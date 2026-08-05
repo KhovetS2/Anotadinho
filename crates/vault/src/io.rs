@@ -190,6 +190,25 @@ impl VaultIo {
         Ok(relative)
     }
 
+    /// Busca texto no conteúdo de todas as páginas.
+    /// Retorna pares (page_path, excerpt com 50 chars ao redor do match).
+    pub fn search_content(&self, query: &str) -> Result<Vec<(String, String)>> {
+        let pages = self.list_pages()?;
+        let mut results = Vec::new();
+        let q = query.to_lowercase();
+        for page in &pages {
+            let content = self.read_page(&page.path).unwrap_or_default();
+            let lower = content.to_lowercase();
+            if let Some(pos) = lower.find(&q) {
+                let start = pos.saturating_sub(20);
+                let end = (pos + q.len() + 30).min(content.len());
+                let excerpt = content[start..end].replace('\n', " ");
+                results.push((page.path.clone(), format!("...{}...", excerpt)));
+            }
+        }
+        Ok(results)
+    }
+
     /// Escreve conteúdo UTF-8 numa página pelo path relativo ao vault.
     ///
     /// Cria diretórios pais se necessário. Rejeita path traversal.

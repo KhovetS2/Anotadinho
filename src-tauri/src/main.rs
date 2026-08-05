@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use anotadinho_ipc::{
     handle_copy_to_assets, handle_create_page, handle_delete_page, handle_list_assets,
     handle_list_pages, handle_open_today_journal, handle_ping, handle_read_page,
-    handle_write_page, PageMeta, PingArgs, PingResult, VaultInfo,
+    handle_search_content, handle_write_page, PageMeta, PingArgs, PingResult, VaultInfo,
 };
 use anotadinho_vault::{VaultIo, VaultWatcher};
 use tauri_plugin_dialog::DialogExt;
@@ -93,6 +93,11 @@ fn copy_to_assets(vault_path: String, source_path: String) -> Result<String, Str
 }
 
 #[tauri::command]
+fn search_content(vault_path: String, query: String) -> Result<Vec<(String, String)>, String> {
+    handle_search_content(vault_path, query)
+}
+
+#[tauri::command]
 async fn open_vault_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
@@ -125,6 +130,7 @@ fn main() {
             delete_page,
             list_assets,
             copy_to_assets,
+            search_content,
             check_changes,
             open_vault_dialog
         ])

@@ -170,6 +170,18 @@ pub async fn copy_to_assets(vault_path: &str, source_path: &str) -> Result<Strin
     result.as_string().ok_or_else(|| "path inválido".to_string())
 }
 
+/// Busca texto no conteúdo de todas as páginas.
+pub async fn search_content(vault_path: &str, query: &str) -> Result<Vec<(String, String)>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("query"), &JsValue::from_str(query))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("search_content", &args).await.map_err(|e| format!("{:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
 /// Verifica se houve mudanças no vault desde a última verificação.
 pub async fn check_changes(vault_path: &str) -> Result<bool, String> {
     let args = js_sys::Object::new();

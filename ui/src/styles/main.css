@@ -443,6 +443,22 @@ body {
     white-space: nowrap;
 }
 
+.sidebar-item__result {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+}
+
+.sidebar-item__excerpt {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Collapsed sidebar */
 .app-sidebar--collapsed {
     width: 40px !important;

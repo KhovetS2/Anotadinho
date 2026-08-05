@@ -124,6 +124,15 @@ pub fn handle_copy_to_assets(vault_path: String, source_path: String) -> Result<
     vault.copy_to_assets(&source_path).map_err(|e| e.to_string())
 }
 
+/// Handler de search_content: busca texto no conteúdo das páginas.
+pub fn handle_search_content(
+    vault_path: String,
+    query: String,
+) -> Result<Vec<(String, String)>, String> {
+    let vault = VaultIo::open(&vault_path);
+    vault.search_content(&query).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

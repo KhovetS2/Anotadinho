@@ -76,6 +76,37 @@ pub fn sidebar(props: &SidebarProps) -> Html {
     let page_items: Vec<PageMeta> = all_pages.iter().filter(|p| p.section == "pages").cloned().collect();
     let journal_items: Vec<PageMeta> = all_pages.iter().filter(|p| p.section == "journals").cloned().collect();
 
+    // Content search results
+    let content_results = use_state(Vec::<(String, String)>::new);
+    let searching = use_state(|| false);
+    {
+        let vault_path = props.vault_path.clone();
+        let filter = filter.clone();
+        let content_results = content_results.clone();
+        let searching = searching.clone();
+        use_effect_with(filter.clone(), move |_| {
+            let should_run = filter.len() >= 3;
+            if should_run {
+                let vault_path = vault_path.clone();
+                let filter = filter.clone();
+                let content_results = content_results.clone();
+                let searching = searching.clone();
+                searching.set(true);
+                wasm_bindgen_futures::spawn_local(async move {
+                    match api::search_content(&vault_path, &filter).await {
+                        Ok(r) => content_results.set(r),
+                        Err(_) => content_results.set(Vec::new()),
+                    }
+                    searching.set(false);
+                });
+            } else {
+                content_results.set(Vec::new());
+                searching.set(false);
+            }
+            || {}
+        });
+    }
+
     let on_search_input = {
         let search = search.clone();
         Callback::from(move |e: InputEvent| {
@@ -206,6 +237,35 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                     </div>
                     { render_list(&journal_items, &selected_path, &props.on_page_selected) }
                 </div>
+                if !content_results.is_empty() {
+                    <div class="sidebar-section">
+                        <h3 class="sidebar-section__title">{ format!("Resultados ({})", content_results.len()) }</h3>
+                        <ul class="sidebar-list">
+                            { for content_results.iter().map(|(path, excerpt)| {
+                                let path = path.clone();
+                                let excerpt = excerpt.clone();
+                                let title = std::path::Path::new(&path).file_stem()
+                                    .map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                                let page_meta = PageMeta { path: path.clone(), title: title.clone(), section: "pages".to_string() };
+                                let on_page_selected = props.on_page_selected.clone();
+                                let selected_path = selected_path.clone();
+                                let onclick = Callback::from(move |_| {
+                                    selected_path.set(Some(path.clone()));
+                                    on_page_selected.emit(page_meta.clone());
+                                });
+                                html! {
+                                    <li class="sidebar-item" {onclick}>
+                                        <span class="sidebar-item__icon">{ page_icon("search") }</span>
+                                        <div class="sidebar-item__result">
+                                            <span class="sidebar-item__title">{ &title }</span>
+                                            <span class="sidebar-item__excerpt">{ &excerpt }</span>
+                                        </div>
+                                    </li>
+                                }
+                            }) }
+                        </ul>
+                    </div>
+                }
             }
             }
         </aside>
@@ -255,6 +315,7 @@ fn render_list(
 fn page_icon(section: &str) -> &'static str {
     match section {
         "journals" => "📅",
+        "search" => "🔍",
         _ => "📄",
     }
 }
