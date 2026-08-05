@@ -3,6 +3,7 @@
 //! Mantém o vault atual, nome do vault, e persiste no localStorage
 //! via `gloo-storage` para reabrir automaticamente na próxima sessão.
 
+use gloo_storage::Storage;
 use serde::{Deserialize, Serialize};
 
 const KEY_VAULT_PATH: &str = "anotadinho.vault_path";

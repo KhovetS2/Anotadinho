@@ -3,6 +3,7 @@
 //! Fornece funções async que chamam comandos Tauri via
 //! `window.__TAURI_INTERNALS__.invoke()`.
 
+use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use serde::{Deserialize, Serialize};
