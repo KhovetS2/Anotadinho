@@ -562,6 +562,22 @@ body {
     transition: color 0.1s ease, border-color 0.1s ease;
 }
 
+.editor__export {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: var(--sp-1) var(--sp-3);
+    font-size: 0.8125rem;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: color 0.1s ease, border-color 0.1s ease;
+}
+
+.editor__export:hover {
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
+}
+
 .editor__delete:hover {
     color: var(--error);
     border-color: var(--error);

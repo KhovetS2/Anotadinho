@@ -54,4 +54,5 @@ features = [
     "Range",
     "DragEvent",
     "Url",
+    "Blob",
 ]

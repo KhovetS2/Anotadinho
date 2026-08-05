@@ -343,6 +343,24 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
+    let on_export = {
+        let editor_ref = editor_ref.clone();
+        let page_title = page.title.clone();
+        Callback::from(move |_| {
+            if let Some(div) = editor_ref.cast::<web_sys::Element>() {
+                let html = div.inner_html();
+                let full = format!("<!DOCTYPE html>\n<html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>{}</title><style>body{{max-width:800px;margin:2rem auto;font-family:system-ui;line-height:1.7;color:#1a1a1a;padding:0 1rem}}h1,h2,h3{{margin-top:1.5rem}}pre{{background:#f5f5f5;padding:1rem;border-radius:8px}}code{{background:#f0f0f0;padding:0.2em 0.4em;border-radius:4px}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ddd;padding:8px}}img{{max-width:100%}}blockquote{{border-left:3px solid #ccc;padding-left:1rem;color:#666}}</style></head><body>{}</body></html>", page_title, html);
+                let arr = js_sys::Array::new();
+                arr.push(&wasm_bindgen::JsValue::from_str(&full));
+                let blob = web_sys::Blob::new_with_str_sequence(&arr).ok();
+                if let (Some(blob), Some(window)) = (blob, web_sys::window()) {
+                    let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap_or_default();
+                    let _ = window.open_with_url_and_target(&url, "_blank");
+                }
+            }
+        })
+    };
+
     let save_label = if *saving { "Salvando..." } else if *edited { "Salvar *" } else { "Salvar" };
     let on_edit = {
         let e = edited.clone();
@@ -400,6 +418,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     if let Some(ref s) = *status { <span class="editor__status-badge">{ s }</span> }
                     if *edited { <span class="editor__dirty">{ "não salvo" }</span> }
                     <button class="editor__delete" onclick={on_delete}>{ "Excluir" }</button>
+                    <button class="editor__export" onclick={on_export} title="Exportar HTML">{ "⬇" }</button>
                     <button class="editor__save" onclick={do_save.reform(|_| ())} disabled={*saving || !*edited}>{ save_label }</button>
                 </div>
             </header>

@@ -1,0 +1,4 @@
+- generic [ref=f5e4]:
+  - heading "Anotadinho" [level=1] [ref=f5e5]
+  - paragraph [ref=f5e6]: Selecione um vault para começar.
+  - button "Abrir vault" [ref=f5e7] [cursor=pointer]
