@@ -60,40 +60,71 @@ pub fn editor(props: &EditorProps) -> Html {
     let char_count = content_md.chars().count();
     let word_count = content_md.split_whitespace().count();
 
+    // Effect 1: fetch page content when page changes
     {
-        let content_md = content_md.clone(); let page = props.page.clone();
-        let vault_path = props.vault_path.clone(); let saved_content = saved_content.clone();
-        let loading = loading.clone(); let error = error.clone();
-        let editor_ref = editor_ref.clone();
+        let content_md = content_md.clone();
+        let page = props.page.clone();
+        let vault_path = props.vault_path.clone();
+        let saved_content = saved_content.clone();
+        let loading = loading.clone();
+        let error = error.clone();
+        let edited = edited.clone();
 
         use_effect_with(page.clone(), move |page| {
             if let Some(p) = page {
-                let vault_path = vault_path.clone(); let path = p.path.clone();
-                let content_md = content_md.clone(); let saved_content = saved_content.clone();
-                let loading = loading.clone(); let error = error.clone();
-                let editor_ref = editor_ref.clone();
+                let vault_path = vault_path.clone();
+                let path = p.path.clone();
+                let content_md = content_md.clone();
+                let saved_content = saved_content.clone();
+                let loading = loading.clone();
+                let error = error.clone();
+                let edited = edited.clone();
                 loading.set(true);
+                error.set(None);
+                edited.set(false);
                 wasm_bindgen_futures::spawn_local(async move {
                     match api::read_page(&vault_path, &path).await {
                         Ok(text) => {
-                            let html = crate::markdown_render::render(&text);
-                            if let Some(div) = editor_ref.cast::<web_sys::Element>() {
-                                div.set_inner_html(&html);
-                            }
-                            content_md.set(text.clone()); saved_content.set(text);
-                            // Init Mermaid diagrams if any
-                            init_mermaid();
+                            content_md.set(text.clone());
+                            saved_content.set(text);
                         }
                         Err(e) => { error.set(Some(e)); }
                     }
                     loading.set(false);
                 });
             } else {
-                content_md.set(String::new()); saved_content.set(String::new()); error.set(None);
-                if let Some(div) = editor_ref.cast::<web_sys::Element>() { div.set_inner_html(""); }
+                content_md.set(String::new());
+                saved_content.set(String::new());
+                error.set(None);
+                edited.set(false);
                 loading.set(false);
             }
             || ()
+        });
+    }
+
+    // Effect 2: sync content_md → contenteditable innerHTML
+    {
+        let content_md = content_md.clone();
+        let loading = loading.clone();
+        let editor_ref = editor_ref.clone();
+
+        use_effect_with((content_md.clone(), *loading), move |_| {
+            let mut ran = false;
+            if !*loading && !content_md.is_empty() {
+                if let Some(div) = editor_ref.cast::<web_sys::Element>() {
+                    let html = crate::markdown_render::render(&content_md);
+                    div.set_inner_html(&html);
+                    ran = true;
+                    let _div = div.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
+                        init_mermaid_at(&_div);
+                    });
+                }
+            }
+            let _ = ran;
+            || {}
         });
     }
 
@@ -163,7 +194,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     "Escape" => { slash_open.set(false); slash_text.set(String::new()); slash_idx.set(0); e.prevent_default(); }
                     "ArrowDown" => { e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + 1) % filtered_len); } }
                     "ArrowUp" => { e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len); } }
-                    "Enter" => { e.prevent_default(); return; } // handled by select_slash
+                    "Enter" => { e.prevent_default(); return; }
                     "Backspace" => {
                         e.prevent_default();
                         if !slash_text.is_empty() { slash_text.set(slash_text[..slash_text.len()-1].to_string()); }
@@ -211,10 +242,17 @@ pub fn editor(props: &EditorProps) -> Html {
             slash_open.set(false);
             slash_text.set(String::new());
             slash_idx.set(0);
-            // Re-init mermaid after insert
             wasm_bindgen_futures::spawn_local(async {
                 gloo_timers::future::sleep(std::time::Duration::from_millis(100)).await;
-                init_mermaid();
+                if let Some(window) = web_sys::window() {
+                    if let Some(doc) = window.document() {
+                        if let Some(el) = doc.query_selector(".editor__wysiwyg .mermaid").ok().flatten() {
+                            if let Ok(el) = el.dyn_into::<web_sys::Element>() {
+                                init_mermaid_at(&el);
+                            }
+                        }
+                    }
+                }
             });
         })
     };
@@ -272,59 +310,62 @@ pub fn editor(props: &EditorProps) -> Html {
                 <div class="toolbar-divider"></div>
                 { toolbar("\u{1f517}", "Link", "createLink", "https://") }
             </div>
-            if *loading {
-                <p class="editor__status">{ "Carregando..." }</p>
-            } else if let Some(ref err) = *error {
-                <p class="editor__error">{ err }</p>
-            } else {
+            <div class="editor__body">
+                if *loading {
+                    <div class="editor__overlay">{ "Carregando..." }</div>
+                }
+                if let Some(ref err) = *error {
+                    <div class="editor__overlay editor__overlay--error">{ err }</div>
+                }
                 <div class="editor__wysiwyg" ref={editor_ref} contenteditable="true"
                     spellcheck="false" onkeydown={on_keydown} oninput={on_edit} />
-                if *slash_open {
-                    <div class="slash-menu">
-                        <div class="slash-menu__header">
-                            <span>{ "/" }{ &*slash_text }</span>
-                            <span class="slash-menu__hint">{ format!("{} resultados", filtered.len()) }</span>
-                        </div>
-                        <div class="slash-menu__list">
-                            { for filtered.iter().enumerate().map(|(vi, &item_idx)| {
-                                let item = &SLASH_ITEMS[item_idx];
-                                let class = if vi == *slash_idx { "slash-menu__item slash-menu__item--active" } else { "slash-menu__item" };
-                                let sel = select_slash.clone();
-                                html! {
-                                    <div {class} onclick={Callback::from(move |_| sel.emit(()))}>
-                                        <span class="slash-menu__item-label">{ item.label }</span>
-                                        <span class="slash-menu__item-desc">{ item.desc }</span>
-                                    </div>
-                                }
-                            }) }
-                        </div>
+            </div>
+            if *slash_open {
+                <div class="slash-menu">
+                    <div class="slash-menu__header">
+                        <span>{ "/" }{ &*slash_text }</span>
+                        <span class="slash-menu__hint">{ format!("{} resultados", filtered.len()) }</span>
                     </div>
-                }
-                <div class="editor__statusbar">
-                    <span>{ format!("{} palavras · {} caracteres", word_count, char_count) }</span>
-                    <span class="editor__statusbar-hint">{ "Digite / para comandos" }</span>
+                    <div class="slash-menu__list">
+                        { for filtered.iter().enumerate().map(|(vi, &item_idx)| {
+                            let item = &SLASH_ITEMS[item_idx];
+                            let class = if vi == *slash_idx { "slash-menu__item slash-menu__item--active" } else { "slash-menu__item" };
+                            let sel = select_slash.clone();
+                            html! {
+                                <div {class} onclick={Callback::from(move |_| sel.emit(()))}>
+                                    <span class="slash-menu__item-label">{ item.label }</span>
+                                    <span class="slash-menu__item-desc">{ item.desc }</span>
+                                </div>
+                            }
+                        }) }
+                    </div>
                 </div>
             }
+            <div class="editor__statusbar">
+                <span>{ format!("{} palavras · {} caracteres", word_count, char_count) }</span>
+                <span class="editor__statusbar-hint">{ "Digite / para comandos" }</span>
+            </div>
         </main>
     }
 }
 
-fn init_mermaid() {
+fn init_mermaid_at(el: &web_sys::Element) {
     if let Some(window) = web_sys::window() {
         if let Some(mermaid) = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("mermaid"))
             .ok()
             .and_then(|v| v.dyn_into::<js_sys::Object>().ok())
         {
-            // Configure mermaid with dark theme
             let config = js_sys::Object::new();
             js_sys::Reflect::set(&config, &wasm_bindgen::JsValue::from_str("theme"), &wasm_bindgen::JsValue::from_str("dark")).ok();
-            js_sys::Reflect::set(&config, &wasm_bindgen::JsValue::from_str("startOnLoad"), &wasm_bindgen::JsValue::from_bool(true)).ok();
-            let _ = js_sys::Reflect::set(&mermaid, &wasm_bindgen::JsValue::from_str("initialize"), &config);
+            js_sys::Reflect::set(&config, &wasm_bindgen::JsValue::from_str("startOnLoad"), &wasm_bindgen::JsValue::from_bool(false)).ok();
+            js_sys::Reflect::set(&mermaid, &wasm_bindgen::JsValue::from_str("initialize"), &config).ok();
             let run = js_sys::Reflect::get(&mermaid, &wasm_bindgen::JsValue::from_str("run"))
                 .ok()
                 .and_then(|v| v.dyn_into::<js_sys::Function>().ok());
             if let Some(run_fn) = run {
-                let _ = run_fn.call0(&wasm_bindgen::JsValue::null());
+                let opts = js_sys::Object::new();
+                js_sys::Reflect::set(&opts, &wasm_bindgen::JsValue::from_str("nodes"), el).ok();
+                let _ = run_fn.call1(&wasm_bindgen::JsValue::null(), &opts);
             }
         }
     }
