@@ -149,17 +149,15 @@ pub fn app() -> Html {
             if let (Some(path), Some(name)) = ((*vault_path).clone(), (*vault_name).clone()) {
                 <div class="app-layout">
                     <header class="app-header">
-                        <button class="app-header__toggle" onclick={toggle_sidebar}>
-                            { if *sidebar_collapsed { "\u{25b6}" } else { "\u{25c0}" } }
+                        <button class="btn btn--ghost btn--xs" onclick={toggle_sidebar}>
+                            { if *sidebar_collapsed { "▶" } else { "◀" } }
                         </button>
                         <h2 class="app-header__title">{ &name }</h2>
                         <span class="app-header__path">{ &path }</span>
-                        <button class="app-header__theme" onclick={toggle_theme} title="Alternar tema">
+                        <button class="btn btn--ghost btn--xs" onclick={toggle_theme}>
                             { if *theme_light { "☀" } else { "🌙" } }
                         </button>
-                        <button class="app-header__close" onclick={on_close_vault}>
-                            { "Fechar" }
-                        </button>
+                        <button class="btn btn--danger btn--sm" onclick={on_close_vault}>{ "Fechar" }</button>
                     </header>
                     <div class="app-body">
                         <Sidebar

@@ -417,9 +417,9 @@ pub fn editor(props: &EditorProps) -> Html {
                 <div class="editor__actions">
                     if let Some(ref s) = *status { <span class="editor__status-badge">{ s }</span> }
                     if *edited { <span class="editor__dirty">{ "não salvo" }</span> }
-                    <button class="editor__delete" onclick={on_delete}>{ "Excluir" }</button>
-                    <button class="editor__export" onclick={on_export} title="Exportar HTML">{ "⬇" }</button>
-                    <button class="editor__save" onclick={do_save.reform(|_| ())} disabled={*saving || !*edited}>{ save_label }</button>
+                    <button class="btn btn--danger btn--sm" onclick={on_delete}>{ "Excluir" }</button>
+                    <button class="btn btn--ghost btn--sm" onclick={on_export} title="Exportar HTML">{ "⬇" }</button>
+                    <button class="btn btn--primary btn--sm" onclick={do_save.reform(|_| ())} disabled={*saving || !*edited}>{ save_label }</button>
                 </div>
             </header>
             <div class="editor__body">

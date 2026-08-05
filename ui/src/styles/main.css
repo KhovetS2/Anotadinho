@@ -83,6 +83,7 @@
 html, body {
     height: 100%;
     width: 100%;
+    overflow: hidden;
 }
 
 body {
@@ -93,6 +94,9 @@ body {
     background-color: var(--bg-base);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
 }
 
 /* Scrollbar global */

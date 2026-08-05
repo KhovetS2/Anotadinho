@@ -1,1 +1,6 @@
 [     117ms] [WARNING] The `integrity` attribute is currently ignored for preload destinations that do not support subresource integrity. See https://crbug.com/981419 for more information @ http://localhost:1420/:20
+[   41059ms] [WARNING] dialog error: dialog error: JsValue("__TAURI_INTERNALS__ not available") @ http://localhost:1420/anotadinho-ui-1075fc98bbc60b07.js:741
+[   42935ms] [WARNING] dialog error: dialog error: JsValue("__TAURI_INTERNALS__ not available") @ http://localhost:1420/anotadinho-ui-1075fc98bbc60b07.js:741
+[   43370ms] [WARNING] dialog error: dialog error: JsValue("__TAURI_INTERNALS__ not available") @ http://localhost:1420/anotadinho-ui-1075fc98bbc60b07.js:741
+[   49516ms] [WARNING] dialog error: dialog error: JsValue("__TAURI_INTERNALS__ not available") @ http://localhost:1420/anotadinho-ui-1075fc98bbc60b07.js:741
+[   50439ms] [WARNING] dialog error: dialog error: JsValue("__TAURI_INTERNALS__ not available") @ http://localhost:1420/anotadinho-ui-1075fc98bbc60b07.js:741

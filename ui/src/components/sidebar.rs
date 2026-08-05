@@ -200,14 +200,8 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 </div>
             } else {
             <div class="sidebar-search">
-                <input
-                    class="sidebar-search__input"
-                    type="text"
-                    placeholder="Buscar páginas..."
-                    value={(*search).clone()}
-                    oninput={on_search_input}
-                    onkeydown={on_search_keydown}
-                />
+                <input class="input input--sm" type="text" placeholder="Buscar páginas..."
+                    value={(*search).clone()} oninput={on_search_input} onkeydown={on_search_keydown} />
                 if !search.is_empty() {
                     <button class="sidebar-search__clear" onclick={clear_search} title="Limpar busca">
                         { "✕" }
@@ -222,18 +216,14 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 <div class="sidebar-section">
                     <div class="sidebar-section__header">
                         <h3 class="sidebar-section__title">{ "Pages" }</h3>
-                        <button class="sidebar-section__add" title="Nova página" onclick={on_new_page}>
-                            { "+" }
-                        </button>
+                        <button class="btn btn--ghost btn--xs" title="Nova página" onclick={on_new_page}>{ "+" }</button>
                     </div>
                     { render_list(&page_items, &selected_path, &props.on_page_selected) }
                 </div>
                 <div class="sidebar-section">
                     <div class="sidebar-section__header">
                         <h3 class="sidebar-section__title">{ "Journals" }</h3>
-                        <button class="sidebar-section__add sidebar-section__today" title="Journal de hoje" onclick={on_today}>
-                            { "Hoje" }
-                        </button>
+                        <button class="btn btn--ghost btn--xs" title="Journal de hoje" onclick={on_today}>{ "Hoje" }</button>
                     </div>
                     { render_list(&journal_items, &selected_path, &props.on_page_selected) }
                 </div>
