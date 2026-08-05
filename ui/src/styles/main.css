@@ -215,31 +215,6 @@ body {
 }
 
 /* Collapsed sidebar */
-.app-sidebar--collapsed {
-    width: 40px;
-    padding: var(--sp-2);
-}
-
-.sidebar-collapsed {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--sp-3);
-    padding-top: var(--sp-2);
-}
-
-.sidebar-collapsed__icon {
-    font-size: 1rem;
-    cursor: pointer;
-    opacity: 0.5;
-    transition: opacity 0.1s;
-}
-
-.sidebar-collapsed__icon:hover {
-    opacity: 1;
-}
-
-/* App layout (vault aberto) */
 .app-layout {
     height: 100%;
     display: flex;
@@ -419,6 +394,31 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Collapsed sidebar */
+.app-sidebar--collapsed {
+    width: 40px !important;
+    padding: var(--sp-2);
+}
+
+.sidebar-collapsed {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-3);
+    padding-top: var(--sp-2);
+}
+
+.sidebar-collapsed__icon {
+    font-size: 1rem;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.1s;
+}
+
+.sidebar-collapsed__icon:hover {
+    opacity: 1;
 }
 
 .app-main {

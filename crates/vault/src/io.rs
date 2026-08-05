@@ -145,6 +145,51 @@ impl VaultIo {
         }
     }
 
+    /// Lista arquivos no diretório `assets/` do vault.
+    pub fn list_assets(&self) -> Result<Vec<String>> {
+        let dir = self.root.join("assets");
+        if !dir.is_dir() {
+            return Ok(Vec::new());
+        }
+        let mut files = Vec::new();
+        for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
+            if entry.path().is_file() {
+                let relative = entry.path()
+                    .strip_prefix(&self.root)
+                    .unwrap_or(entry.path())
+                    .to_string_lossy()
+                    .to_string();
+                files.push(relative);
+            }
+        }
+        files.sort();
+        Ok(files)
+    }
+
+    /// Copia um arquivo externo para `assets/` e retorna o path relativo.
+    pub fn copy_to_assets(&self, source_path: &str) -> Result<String> {
+        let src = std::path::Path::new(source_path);
+        if !src.is_file() {
+            anyhow::bail!("arquivo fonte não existe: {}", source_path);
+        }
+        let file_name = src.file_name()
+            .ok_or_else(|| anyhow::anyhow!("nome de arquivo inválido"))?
+            .to_string_lossy()
+            .to_string();
+        let dest_dir = self.root.join("assets");
+        std::fs::create_dir_all(&dest_dir)
+            .map_err(|e| anyhow::anyhow!("erro ao criar assets/: {}", e))?;
+        let dest = dest_dir.join(&file_name);
+        std::fs::copy(src, &dest)
+            .map_err(|e| anyhow::anyhow!("erro ao copiar {}: {}", source_path, e))?;
+        let relative = dest
+            .strip_prefix(&self.root)
+            .unwrap_or(&dest)
+            .to_string_lossy()
+            .to_string();
+        Ok(relative)
+    }
+
     /// Escreve conteúdo UTF-8 numa página pelo path relativo ao vault.
     ///
     /// Cria diretórios pais se necessário. Rejeita path traversal.

@@ -148,6 +148,28 @@ pub async fn delete_page(vault_path: &str, page_path: &str) -> Result<(), String
     Ok(())
 }
 
+/// Lista arquivos no diretório assets/.
+pub async fn list_assets(vault_path: &str) -> Result<Vec<String>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("list_assets", &args).await.map_err(|e| format!("{:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
+/// Copia um arquivo para assets/ e retorna o path relativo.
+pub async fn copy_to_assets(vault_path: &str, source_path: &str) -> Result<String, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("sourcePath"), &JsValue::from_str(source_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("copy_to_assets", &args).await.map_err(|e| format!("{:?}", e))?;
+    result.as_string().ok_or_else(|| "path inválido".to_string())
+}
+
 /// Verifica se houve mudanças no vault desde a última verificação.
 pub async fn check_changes(vault_path: &str) -> Result<bool, String> {
     let args = js_sys::Object::new();

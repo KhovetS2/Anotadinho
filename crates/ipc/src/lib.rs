@@ -112,6 +112,18 @@ pub fn handle_delete_page(vault_path: String, page_path: String) -> Result<(), S
     vault.delete_page(&page_path).map_err(|e| e.to_string())
 }
 
+/// Handler de list_assets: lista arquivos em assets/.
+pub fn handle_list_assets(vault_path: String) -> Result<Vec<String>, String> {
+    let vault = VaultIo::open(&vault_path);
+    vault.list_assets().map_err(|e| e.to_string())
+}
+
+/// Handler de copy_to_assets: copia arquivo para assets/.
+pub fn handle_copy_to_assets(vault_path: String, source_path: String) -> Result<String, String> {
+    let vault = VaultIo::open(&vault_path);
+    vault.copy_to_assets(&source_path).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

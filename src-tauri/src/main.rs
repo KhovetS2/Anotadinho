@@ -9,8 +9,9 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use anotadinho_ipc::{
-    handle_create_page, handle_delete_page, handle_list_pages, handle_open_today_journal,
-    handle_ping, handle_read_page, handle_write_page, PageMeta, PingArgs, PingResult, VaultInfo,
+    handle_copy_to_assets, handle_create_page, handle_delete_page, handle_list_assets,
+    handle_list_pages, handle_open_today_journal, handle_ping, handle_read_page,
+    handle_write_page, PageMeta, PingArgs, PingResult, VaultInfo,
 };
 use anotadinho_vault::{VaultIo, VaultWatcher};
 use tauri_plugin_dialog::DialogExt;
@@ -82,6 +83,16 @@ fn delete_page(vault_path: String, page_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn list_assets(vault_path: String) -> Result<Vec<String>, String> {
+    handle_list_assets(vault_path)
+}
+
+#[tauri::command]
+fn copy_to_assets(vault_path: String, source_path: String) -> Result<String, String> {
+    handle_copy_to_assets(vault_path, source_path)
+}
+
+#[tauri::command]
 async fn open_vault_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
@@ -112,6 +123,8 @@ fn main() {
             create_page,
             open_today_journal,
             delete_page,
+            list_assets,
+            copy_to_assets,
             check_changes,
             open_vault_dialog
         ])

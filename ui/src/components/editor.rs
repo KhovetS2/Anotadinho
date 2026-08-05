@@ -30,8 +30,9 @@ static SLASH_ITEMS: &[SlashItem] = &[
     SlashItem { label: "Código", desc: "Bloco de código", html: "<pre><code>código</code></pre>" },
     SlashItem { label: "Tabela", desc: "Tabela 3×2", html: "<table><tr><td>A</td><td>B</td><td>C</td></tr><tr><td></td><td></td><td></td></tr></table>" },
     SlashItem { label: "Linha", desc: "Divisor horizontal", html: "<hr>" },
-    SlashItem { label: "Imagem", desc: "URL de imagem", html: "__IMG__" },
+    SlashItem { label: "Imagem", desc: "URL ou arquivo de imagem", html: "__IMG__" },
     SlashItem { label: "Diagrama", desc: "Mermaid (fluxograma)", html: "__MERMAID__" },
+    SlashItem { label: "Assets", desc: "Inserir arquivo do vault", html: "__ASSET__" },
 ];
 
 #[function_component(Editor)]
@@ -174,19 +175,90 @@ pub fn editor(props: &EditorProps) -> Html {
         let slash_idx = slash_idx.clone();
         let exec_fn = doc_exec.clone();
         let items = filtered.clone();
+        let vault_path = props.vault_path.clone();
         Callback::from(move |_| {
             if let Some(&item_idx) = items.get(*slash_idx) {
                 let item = &SLASH_ITEMS[item_idx];
                 let html = match item.html {
                     "__IMG__" => {
-                        let url = gloo_dialogs::prompt("URL da imagem:", None).unwrap_or_default();
-                        if url.is_empty() { String::new() }
-                        else { format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", url.replace('"', "&quot;")) }
+                        // Open file dialog, copy to assets
+                        let path = gloo_dialogs::prompt(
+                            "Caminho da imagem ou URL:\n(ex: /home/user/foto.png ou https://...)",
+                            None
+                        ).unwrap_or_default();
+                        if path.is_empty() { String::new() }
+                        else if path.starts_with("http") {
+                            format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", path.replace('"', "&quot;"))
+                        } else {
+                            // Copy to assets
+                            let vp = vault_path.clone();
+                            wasm_bindgen_futures::spawn_local(async move {
+                                if let Ok(relative) = crate::api::copy_to_assets(&vp, &path).await {
+                                    // Insert the image after the slash closes
+                                    let doc = web_sys::window().and_then(|w| w.document());
+                                    if let Some(doc) = doc {
+                                        let html = format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", relative.replace('"', "&quot;"));
+                                        let args = js_sys::Array::new();
+                                        args.push(&wasm_bindgen::JsValue::from_str("insertHTML"));
+                                        args.push(&wasm_bindgen::JsValue::from_bool(false));
+                                        args.push(&wasm_bindgen::JsValue::from_str(&html));
+                                        if let Some(f) = js_sys::Reflect::get(&doc, &wasm_bindgen::JsValue::from_str("execCommand"))
+                                            .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
+                                        { let _ = f.apply(&doc, &args); }
+                                    }
+                                }
+                            });
+                            String::new() // Don't insert now, async will handle it
+                        }
                     }
                     "__MERMAID__" => {
                         let code = gloo_dialogs::prompt("Código Mermaid:\n(ex: graph TD; A-->B)", None).unwrap_or_default();
                         if code.is_empty() { String::new() }
                         else { format!("<div class=\"mermaid\">{}</div>", code.replace('<', "&lt;").replace('>', "&gt;")) }
+                    }
+                    "__ASSET__" => {
+                        let vp = vault_path.clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            match crate::api::list_assets(&vp).await {
+                                Ok(assets) => {
+                                    if assets.is_empty() {
+                                        gloo_dialogs::alert("Nenhum arquivo em assets/. Use /img para adicionar imagens.");
+                                    } else {
+                                        let list = assets.join("\n");
+                                        let choice = gloo_dialogs::prompt(
+                                            &format!("Assets disponíveis:\n{}\n\nDigite o nome do arquivo:", list),
+                                            None
+                                        ).unwrap_or_default();
+                                        if !choice.is_empty() {
+                                            let relative = if choice.starts_with("assets/") { choice } else { format!("assets/{}", choice) };
+                                            let doc = web_sys::window().and_then(|w| w.document());
+                                            if let Some(doc) = doc {
+                                                let ext = std::path::Path::new(&relative).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+                                                let html = match ext.as_str() {
+                                                    "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" => {
+                                                        format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", relative.replace('"', "&quot;"))
+                                                    }
+                                                    _ => {
+                                                        format!("<a href=\"{}\">{}</a>", relative.replace('"', "&quot;"), relative)
+                                                    }
+                                                };
+                                                let args = js_sys::Array::new();
+                                                args.push(&wasm_bindgen::JsValue::from_str("insertHTML"));
+                                                args.push(&wasm_bindgen::JsValue::from_bool(false));
+                                                args.push(&wasm_bindgen::JsValue::from_str(&html));
+                                                if let Some(f) = js_sys::Reflect::get(&doc, &wasm_bindgen::JsValue::from_str("execCommand"))
+                                                    .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
+                                                { let _ = f.apply(&doc, &args); }
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    gloo_dialogs::alert(&format!("Erro ao listar assets: {}", e));
+                                }
+                            }
+                        });
+                        String::new() // async, don't insert now
                     }
                     other => other.to_string()
                 };
