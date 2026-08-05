@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.khovet.anotadinho",
   "build": {
-    "beforeDevCommand": "cd ../ui && PATH=\"$HOME/.cargo/bin:$PATH\" trunk serve --port 1420",
+    "beforeDevCommand": "cd ui && PATH=\"$HOME/.cargo/bin:$PATH\" trunk serve --port 1420",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "cd ../ui && trunk build --release",
     "frontendDist": "../ui/dist"
