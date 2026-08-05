@@ -3,7 +3,10 @@
 //! Mostra duas seções: Pages (vault/pages/) e Journals (vault/journals/).
 //! Click em um item emite callback com o path da página selecionada.
 //! Botão "+" na seção Pages cria nova página.
+//! Campo de busca filtra por título.
 
+use wasm_bindgen::JsCast;
+use web_sys::{HtmlInputElement, KeyboardEvent};
 use yew::prelude::*;
 
 use crate::api::{self, PageMeta};
@@ -27,6 +30,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
     let selected_path = use_state(|| None::<String>);
     let loading = use_state(|| true);
     let refresh_tick = use_state(|| 0u32);
+    let search = use_state(String::new);
 
     {
         let vault_path = props.vault_path.clone();
@@ -54,6 +58,43 @@ pub fn sidebar(props: &SidebarProps) -> Html {
             || ()
         });
     }
+
+    let filter = search.trim().to_lowercase();
+    let all_pages: Vec<PageMeta> = if filter.is_empty() {
+        (*pages).clone()
+    } else {
+        pages
+            .iter()
+            .filter(|p| p.title.to_lowercase().contains(&filter))
+            .cloned()
+            .collect()
+    };
+
+    let page_items: Vec<PageMeta> = all_pages.iter().filter(|p| p.section == "pages").cloned().collect();
+    let journal_items: Vec<PageMeta> = all_pages.iter().filter(|p| p.section == "journals").cloned().collect();
+
+    let on_search_input = {
+        let search = search.clone();
+        Callback::from(move |e: InputEvent| {
+            if let Some(input) = e.target().and_then(|t| t.dyn_into::<HtmlInputElement>().ok()) {
+                search.set(input.value());
+            }
+        })
+    };
+
+    let clear_search = {
+        let search = search.clone();
+        Callback::from(move |_| search.set(String::new()))
+    };
+
+    let on_search_keydown = {
+        let search = search.clone();
+        Callback::from(move |e: KeyboardEvent| {
+            if e.key() == "Escape" {
+                search.set(String::new());
+            }
+        })
+    };
 
     let on_new_page = {
         let vault_path = props.vault_path.clone();
@@ -113,30 +154,34 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         })
     };
 
-    let page_items: Vec<PageMeta> = pages
-        .iter()
-        .filter(|p| p.section == "pages")
-        .cloned()
-        .collect();
-    let journal_items: Vec<PageMeta> = pages
-        .iter()
-        .filter(|p| p.section == "journals")
-        .cloned()
-        .collect();
+    let has_results = !all_pages.is_empty() || filter.is_empty();
 
     html! {
         <aside class="app-sidebar">
+            <div class="sidebar-search">
+                <input
+                    class="sidebar-search__input"
+                    type="text"
+                    placeholder="Buscar páginas..."
+                    value={(*search).clone()}
+                    oninput={on_search_input}
+                    onkeydown={on_search_keydown}
+                />
+                if !search.is_empty() {
+                    <button class="sidebar-search__clear" onclick={clear_search} title="Limpar busca">
+                        { "✕" }
+                    </button>
+                }
+            </div>
             if *loading && pages.is_empty() {
                 <p class="app-sidebar__hint">{ "Carregando..." }</p>
+            } else if !has_results {
+                <p class="app-sidebar__hint">{ "Nenhum resultado" }</p>
             } else {
                 <div class="sidebar-section">
                     <div class="sidebar-section__header">
                         <h3 class="sidebar-section__title">{ "Pages" }</h3>
-                        <button
-                            class="sidebar-section__add"
-                            title="Nova página"
-                            onclick={on_new_page}
-                        >
+                        <button class="sidebar-section__add" title="Nova página" onclick={on_new_page}>
                             { "+" }
                         </button>
                     </div>
@@ -145,11 +190,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 <div class="sidebar-section">
                     <div class="sidebar-section__header">
                         <h3 class="sidebar-section__title">{ "Journals" }</h3>
-                        <button
-                            class="sidebar-section__add sidebar-section__today"
-                            title="Journal de hoje"
-                            onclick={on_today}
-                        >
+                        <button class="sidebar-section__add sidebar-section__today" title="Journal de hoje" onclick={on_today}>
                             { "Hoje" }
                         </button>
                     </div>

@@ -120,6 +120,52 @@ body {
     font-size: 0.875rem;
 }
 
+/* Search bar */
+.sidebar-search {
+    position: relative;
+    margin-bottom: var(--sp-3);
+}
+
+.sidebar-search__input {
+    width: 100%;
+    padding: var(--sp-1) var(--sp-2);
+    padding-right: 1.75rem;
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    outline: none;
+    transition: border-color 0.1s ease;
+}
+
+.sidebar-search__input:focus {
+    border-color: var(--accent-blue);
+}
+
+.sidebar-search__input::placeholder {
+    color: var(--text-muted);
+}
+
+.sidebar-search__clear {
+    position: absolute;
+    right: var(--sp-1);
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px;
+    line-height: 1;
+}
+
+.sidebar-search__clear:hover {
+    color: var(--text-primary);
+}
+
 /* App layout (vault aberto) */
 .app-layout {
     height: 100%;
