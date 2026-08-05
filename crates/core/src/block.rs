@@ -15,6 +15,11 @@ impl BlockId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
+
+    /// Parseia um UUID string.
+    pub fn parse(s: &str) -> Option<Self> {
+        Uuid::parse_str(s.trim()).ok().map(Self)
+    }
 }
 
 impl Default for BlockId {
