@@ -1,7 +1,7 @@
 ---
 id: "027"
 titulo: "Undo/Redo (Ctrl+Z / Ctrl+Y) no editor"
-status: pending
+status: done
 criado: 2026-08-05
 autor: humano
 prioridade: alta

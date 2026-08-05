@@ -30,6 +30,50 @@
     --r-lg: 12px;
 }
 
+/* Light theme override */
+.theme-light {
+    --bg-base: #F8FAFC;
+    --bg-surface: #FFFFFF;
+    --bg-elevated: #E2E8F0;
+    --text-primary: #0F172A;
+    --text-muted: #64748B;
+    --accent-blue: #2563EB;
+    --accent-blue-hover: #1D4ED8;
+    --accent-purple: #7C3AED;
+    --border: #CBD5E1;
+    --success: #059669;
+    --warning: #D97706;
+    --error: #DC2626;
+}
+    --bg-base: #0F172A;
+    --bg-surface: #1E293B;
+    --bg-elevated: #334155;
+    --text-primary: #F1F5F9;
+    --text-muted: #94A3B8;
+    --accent-blue: #3B82F6;
+    --accent-blue-hover: #2563EB;
+    --accent-purple: #8B5CF6;
+    --accent-purple-hover: #7C3AED;
+    --border: #334155;
+    --success: #10B981;
+    --warning: #F59E0B;
+    --error: #EF4444;
+
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+    --sp-1: 0.25rem;
+    --sp-2: 0.5rem;
+    --sp-3: 0.75rem;
+    --sp-4: 1rem;
+    --sp-6: 1.5rem;
+    --sp-8: 2rem;
+
+    --r-sm: 4px;
+    --r-md: 8px;
+    --r-lg: 12px;
+}
+
 * {
     box-sizing: border-box;
     margin: 0;

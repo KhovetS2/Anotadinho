@@ -292,6 +292,8 @@ pub fn editor(props: &EditorProps) -> Html {
         let select_slash = select_slash.clone();
         Callback::from(move |e: KeyboardEvent| {
             if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); do_save.emit(()); return; }
+            if (e.ctrl_key()||e.meta_key()) && !e.shift_key() && e.key()=="z" { e.prevent_default(); exec_cmd_global("undo"); return; }
+            if (e.ctrl_key()||e.meta_key()) && (e.key()=="y" || (e.shift_key() && e.key()=="z")) { e.prevent_default(); exec_cmd_global("redo"); return; }
 
             if *slash_open {
                 match e.key().as_str() {
@@ -342,7 +344,52 @@ pub fn editor(props: &EditorProps) -> Html {
     };
 
     let save_label = if *saving { "Salvando..." } else if *edited { "Salvar *" } else { "Salvar" };
-    let on_edit = { let e = edited.clone(); Callback::from(move |_| e.set(true)) };
+    let on_edit = {
+        let e = edited.clone();
+        let do_save = do_save.clone();
+        Callback::from(move |_| {
+            e.set(true);
+            let do_save = do_save.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                gloo_timers::future::sleep(std::time::Duration::from_secs(2)).await;
+                do_save.emit(());
+            });
+        })
+    };
+
+    let on_drop = {
+        let vault_path = props.vault_path.clone();
+        Callback::from(move |e: DragEvent| {
+            e.prevent_default();
+            let dt = js_sys::Reflect::get(&e, &wasm_bindgen::JsValue::from_str("dataTransfer")).ok();
+            let files = dt.and_then(|v| js_sys::Reflect::get(&v, &wasm_bindgen::JsValue::from_str("files")).ok())
+                .and_then(|v| v.dyn_into::<web_sys::FileList>().ok());
+            if let Some(files) = files {
+                let doc = web_sys::window().and_then(|w| w.document());
+                for i in 0..files.length() {
+                    if let Some(file) = files.item(i) {
+                        let name = file.name();
+                        let ext = std::path::Path::new(&name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+                        if !matches!(ext.as_str(), "png"|"jpg"|"jpeg"|"gif"|"svg"|"webp") { continue; }
+                        if let Ok(blob) = file.slice() {
+                            let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap_or_default();
+                            let html = format!("<img src=\"{}\" alt=\"{}\" style=\"max-width:100%;border-radius:8px;\">", url, name.replace('"', "&quot;"));
+                            if let Some(ref doc) = doc {
+                                let args = js_sys::Array::new();
+                                args.push(&wasm_bindgen::JsValue::from_str("insertHTML"));
+                                args.push(&wasm_bindgen::JsValue::from_bool(false));
+                                args.push(&wasm_bindgen::JsValue::from_str(&html));
+                                if let Some(f) = js_sys::Reflect::get(doc, &wasm_bindgen::JsValue::from_str("execCommand"))
+                                    .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
+                                { let _ = f.apply(doc, &args); }
+                            }
+                        }
+                    }
+                }
+            }
+        })
+    };
+    let on_dragover = Callback::from(|e: DragEvent| { e.prevent_default(); });
 
     html! {
         <main class="editor">
@@ -364,7 +411,8 @@ pub fn editor(props: &EditorProps) -> Html {
                     <div class="editor__overlay editor__overlay--error">{ err }</div>
                 }
                 <div class="editor__wysiwyg" ref={editor_ref} contenteditable="true"
-                    spellcheck="false" onkeydown={on_keydown} oninput={on_edit} />
+                    spellcheck="false" onkeydown={on_keydown} oninput={on_edit}
+                    ondrop={on_drop} ondragover={on_dragover} />
             </div>
             if *slash_open {
                 <div class="slash-menu">
@@ -392,6 +440,17 @@ pub fn editor(props: &EditorProps) -> Html {
                 <span class="editor__statusbar-hint">{ "Digite / ou use # - > * para formatar" }</span>
             </div>
         </main>
+    }
+}
+
+fn exec_cmd_global(cmd: &str) {
+    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+        let args = js_sys::Array::new();
+        args.push(&wasm_bindgen::JsValue::from_str(cmd));
+        args.push(&wasm_bindgen::JsValue::from_bool(false));
+        if let Some(f) = js_sys::Reflect::get(&doc, &wasm_bindgen::JsValue::from_str("execCommand"))
+            .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
+        { let _ = f.apply(&doc, &args); }
     }
 }
 

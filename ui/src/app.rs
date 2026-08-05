@@ -1,7 +1,4 @@
 //! Componente raiz da aplicação.
-//!
-//! Gerencia o estado global: vault aberto vs tela inicial.
-//! Se um vault está aberto, mostra header + sidebar + editor.
 
 use web_sys::KeyboardEvent;
 use yew::prelude::*;
@@ -13,7 +10,6 @@ use crate::components::empty_state::EmptyState;
 use crate::components::sidebar::Sidebar;
 use crate::state;
 
-/// Componente raiz.
 #[function_component(App)]
 pub fn app() -> Html {
     let vault_path = use_state(|| state::load_vault_path());
@@ -22,7 +18,7 @@ pub fn app() -> Html {
     let list_version = use_state(|| 0u32);
     let sidebar_collapsed = use_state(|| false);
 
-    // Polling: verifica mudanças a cada 3s e recarrega sidebar se houver
+    // Polling
     {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();
@@ -61,9 +57,7 @@ pub fn app() -> Html {
 
     let on_page_selected = {
         let selected_page = selected_page.clone();
-        Callback::from(move |page: PageMeta| {
-            selected_page.set(Some(page));
-        })
+        Callback::from(move |page: PageMeta| selected_page.set(Some(page)))
     };
 
     let on_close_vault = {
@@ -102,12 +96,9 @@ pub fn app() -> Html {
             match (ctrl, e.key().as_str()) {
                 (true, "n") => {
                     e.prevent_default();
-                    let title = gloo_dialogs::prompt("Título da nova página:", Some("Nova nota"))
-                        .unwrap_or_default();
+                    let title = gloo_dialogs::prompt("Título da nova página:", Some("Nova nota")).unwrap_or_default();
                     let title = title.trim().to_string();
-                    if title.is_empty() {
-                        return;
-                    }
+                    if title.is_empty() { return; }
                     let vault = (*vault_path).clone().unwrap_or_default();
                     let list_version = list_version.clone();
                     let on_page_selected = on_page_selected.clone();
@@ -118,11 +109,7 @@ pub fn app() -> Html {
                         }
                     });
                 }
-                (false, "Escape") => {
-                    if selected_page.is_some() {
-                        selected_page.set(None);
-                    }
-                }
+                (false, "Escape") => { if selected_page.is_some() { selected_page.set(None); } }
                 _ => {}
             }
         })
