@@ -1,13 +1,14 @@
 ---
 id: "003"
 titulo: "Sidebar com lista de páginas (pages/ e journals/)"
-status: pending
+status: done
 criado: 2026-08-04
 autor: humano
 prioridade: alta
 depende_de: ["002"]
 estima_min: 60
 agente_alvo: claude-sonnet
+finalizado: 2026-08-04T22:15:00
 ---
 
 # Sidebar com lista de páginas
@@ -22,15 +23,15 @@ Click em um item deve carregar a página no editor (placeholder por enquanto).
 
 ## Critérios de aceite
 
-- [ ] Sidebar renderiza com 2 seções (Pages, Journals)
-- [ ] Cada seção lista os `.md` do diretório correspondente
-- [ ] Click num item seleciona (highlight visual)
-- [ ] Ordem alfabética
-- [ ] Empty state ("Nenhuma página ainda") se diretório vazio
-- [ ] Teste unitário em `vault::io::VaultIo::list_pages` que cria diretório
+- [x] Sidebar renderiza com 2 seções (Pages, Journals)
+- [x] Cada seção lista os `.md` do diretório correspondente
+- [x] Click num item seleciona (highlight visual)
+- [x] Ordem alfabética
+- [x] Empty state ("Nenhuma página ainda") se diretório vazio
+- [x] Teste unitário em `vault::io::VaultIo::list_pages` que cria diretório
       temp, coloca 3 arquivos `.md`, valida retorno
-- [ ] `cargo test --workspace` exit 0
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` exit 0
+- [x] `cargo test --workspace` exit 0
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` exit 0
 
 ## Comandos de validação
 

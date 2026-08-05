@@ -5,7 +5,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use anotadinho_ipc::{handle_ping, PingArgs, PingResult, VaultInfo};
+use anotadinho_ipc::{handle_list_pages, handle_ping, PageMeta, PingArgs, PingResult, VaultInfo};
 use anotadinho_vault::VaultIo;
 
 #[tauri::command]
@@ -27,6 +27,11 @@ fn get_vault_info(path: String) -> Result<VaultInfo, String> {
     })
 }
 
+#[tauri::command]
+fn list_pages(vault_path: String) -> Result<Vec<PageMeta>, String> {
+    handle_list_pages(vault_path)
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -37,7 +42,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![ping, get_vault_info])
+        .invoke_handler(tauri::generate_handler![ping, get_vault_info, list_pages])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar Anotadinho");
 }

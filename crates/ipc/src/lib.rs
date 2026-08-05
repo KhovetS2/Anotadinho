@@ -5,6 +5,7 @@
 
 #![warn(missing_docs)]
 
+use anotadinho_vault::VaultIo;
 use serde::{Deserialize, Serialize};
 
 /// Comando de exemplo: ping.
@@ -38,6 +39,31 @@ pub struct VaultInfo {
     pub path: String,
     /// Nome do diretório.
     pub name: String,
+}
+
+/// Metadados de uma página listada.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageMeta {
+    /// Path relativo ao vault.
+    pub path: String,
+    /// Nome do arquivo (sem extensão).
+    pub title: String,
+    /// Seção (`pages` ou `journals`).
+    pub section: String,
+}
+
+/// Handler de list_pages: retorna todas as páginas `.md` do vault.
+pub fn handle_list_pages(vault_path: String) -> Result<Vec<PageMeta>, String> {
+    let vault = VaultIo::open(&vault_path);
+    let pages = vault.list_pages().map_err(|e| e.to_string())?;
+    Ok(pages
+        .into_iter()
+        .map(|p| PageMeta {
+            path: p.path,
+            title: p.title,
+            section: p.section,
+        })
+        .collect())
 }
 
 #[cfg(test)]

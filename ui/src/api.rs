@@ -17,6 +17,17 @@ pub struct VaultInfo {
     pub name: String,
 }
 
+/// Metadados de uma página listada.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PageMeta {
+    /// Path relativo ao vault.
+    pub path: String,
+    /// Nome do arquivo (sem extensão).
+    pub title: String,
+    /// Seção (`pages` ou `journals`).
+    pub section: String,
+}
+
 fn get_invoke_fn() -> Result<js_sys::Function, JsValue> {
     let w = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
     let ipc = js_sys::Reflect::get(&w, &JsValue::from_str("__TAURI_INTERNALS__"))?;
@@ -35,9 +46,6 @@ async fn tauri_invoke(cmd: &str, args: &JsValue) -> Result<JsValue, JsValue> {
 }
 
 /// Abre o dialog nativo de seleção de pasta (Tauri dialog plugin).
-///
-/// Retorna `Some(path)` se o usuário selecionou uma pasta, ou
-/// `None` se cancelou.
 pub async fn open_folder_dialog() -> Result<Option<String>, String> {
     let args = js_sys::Object::new();
     js_sys::Reflect::set(
@@ -88,4 +96,24 @@ pub async fn get_vault_info(path: &str) -> Result<VaultInfo, String> {
     let info: VaultInfo =
         serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))?;
     Ok(info)
+}
+
+/// Lista todas as páginas `.md` do vault.
+pub async fn list_pages(vault_path: &str) -> Result<Vec<PageMeta>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("vaultPath"),
+        &JsValue::from_str(vault_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+
+    let result = tauri_invoke("list_pages", &args)
+        .await
+        .map_err(|e| format!("list_pages error: {:?}", e))?;
+
+    let pages: Vec<PageMeta> =
+        serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))?;
+    Ok(pages)
 }

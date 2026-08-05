@@ -1,12 +1,13 @@
 //! Componente raiz da aplicação.
 //!
 //! Gerencia o estado global: vault aberto vs tela inicial.
-//! Se um vault está aberto, mostra header com path + sidebar.
-//! Se não, mostra EmptyState com botão de seleção.
+//! Se um vault está aberto, mostra header + sidebar + editor placeholder.
 
 use yew::prelude::*;
 
+use crate::api::PageMeta;
 use crate::components::empty_state::EmptyState;
+use crate::components::sidebar::Sidebar;
 use crate::state;
 
 /// Componente raiz.
@@ -14,6 +15,7 @@ use crate::state;
 pub fn app() -> Html {
     let vault_path = use_state(|| state::load_vault_path());
     let vault_name = use_state(|| state::load_vault_name());
+    let selected_page = use_state(|| None::<PageMeta>);
 
     let on_vault_selected = {
         let vault_path = vault_path.clone();
@@ -27,6 +29,13 @@ pub fn app() -> Html {
         })
     };
 
+    let on_page_selected = {
+        let selected_page = selected_page.clone();
+        Callback::from(move |page: PageMeta| {
+            selected_page.set(Some(page));
+        })
+    };
+
     html! {
         <div class="app-root">
             if let (Some(path), Some(name)) = ((*vault_path).clone(), (*vault_name).clone()) {
@@ -36,11 +45,13 @@ pub fn app() -> Html {
                         <span class="app-header__path">{ &path }</span>
                     </header>
                     <div class="app-body">
-                        <aside class="app-sidebar">
-                            <p class="app-sidebar__hint">{ "Vault aberto. Sidebar virá no ciclo 003." }</p>
-                        </aside>
+                        <Sidebar vault_path={path.clone()} on_page_selected={on_page_selected} />
                         <main class="app-main">
-                            <p class="app-main__placeholder">{ "Editor virá nos próximos ciclos." }</p>
+                            if let Some(ref page) = *selected_page {
+                                <p class="app-main__placeholder">{ format!("Selecionado: {}", page.title) }</p>
+                            } else {
+                                <p class="app-main__placeholder">{ "Selecione uma página na sidebar" }</p>
+                            }
                         </main>
                     </div>
                 </div>
