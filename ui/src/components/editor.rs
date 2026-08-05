@@ -210,6 +210,15 @@ pub fn editor(props: &EditorProps) -> Html {
                 slash_open.set(true); slash_text.set(String::new()); slash_idx.set(0);
                 e.prevent_default();
             }
+
+            // Markdown block shortcuts on Space/Enter
+            if (e.key() == " " || e.key() == "Enter") && !*slash_open {
+                if let Some(window) = web_sys::window() {
+                    if let Some(doc) = window.document() {
+                        apply_block_shortcut(&window, &doc, &e);
+                    }
+                }
+            }
         })
     };
 
@@ -369,4 +378,82 @@ fn init_mermaid_at(el: &web_sys::Element) {
             }
         }
     }
+}
+
+/// Detecta e aplica shortcuts de markdown no bloco atual (heading, lista, quote).
+fn apply_block_shortcut(win: &web_sys::Window, doc: &web_sys::Document, e: &KeyboardEvent) {
+    let sel = match win.get_selection().ok().flatten() {
+        Some(s) => s,
+        None => return,
+    };
+    if sel.range_count() == 0 { return; }
+    let range = match sel.get_range_at(0) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    let container = match range.start_container() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let offset = range.start_offset().unwrap_or(0) as usize;
+    let text = container.text_content().unwrap_or_default();
+
+    // Texto do incio do bloco ate o cursor
+    let prefix = &text[..offset.min(text.len())];
+
+    let is_newline = e.key() == "Enter";
+
+    // Heading: # ## ### etc at the start of a block
+    if prefix.chars().all(|c| c == '#') && prefix.len() >= 1 && prefix.len() <= 6 {
+        let level = prefix.len();
+        // Select the # signs and delete them
+        if let Ok(mut r) = doc.create_range() {
+            r.set_start(&container, 0u32).ok();
+            r.set_end(&container, prefix.len() as u32).ok();
+            sel.remove_all_ranges().ok();
+            sel.add_range(&r).ok();
+        }
+        // Delete the # signs
+        exec_cmd(doc, "delete", "");
+        // Apply heading format
+        let tag = format!("h{}", level);
+        exec_cmd(doc, "formatBlock", &tag);
+        e.prevent_default();
+        return;
+    }
+
+    if !is_newline { return; }
+
+    // List: "- "
+    if prefix == "- " || prefix == "* " {
+        exec_cmd(doc, "delete", ""); // delete the "- " after insert
+        exec_cmd(doc, "insertUnorderedList", "");
+        e.prevent_default();
+        return;
+    }
+
+    // Quote: "> " 
+    if prefix == "> " {
+        exec_cmd(doc, "delete", "");
+        exec_cmd(doc, "formatBlock", "blockquote");
+        e.prevent_default();
+        return;
+    }
+
+    // Numbered list: "1. "
+    if prefix.len() > 2 && prefix[..prefix.len()-1].chars().all(|c| c.is_ascii_digit() || c == '.') && prefix.ends_with(". ") {
+        exec_cmd(doc, "delete", "");
+        exec_cmd(doc, "insertOrderedList", "");
+        e.prevent_default();
+    }
+}
+
+fn exec_cmd(doc: &web_sys::Document, cmd: &str, val: &str) {
+    let args = js_sys::Array::new();
+    args.push(&wasm_bindgen::JsValue::from_str(cmd));
+    args.push(&wasm_bindgen::JsValue::from_bool(false));
+    if !val.is_empty() { args.push(&wasm_bindgen::JsValue::from_str(val)); }
+    if let Some(f) = js_sys::Reflect::get(doc, &wasm_bindgen::JsValue::from_str("execCommand"))
+        .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
+    { let _ = f.apply(doc, &args); }
 }
