@@ -524,6 +524,18 @@ body {
     margin: var(--sp-4) 0;
 }
 
+/* Status bar */
+.editor__statusbar {
+    display: flex;
+    align-items: center;
+    padding: var(--sp-1) var(--sp-4);
+    border-top: 1px solid var(--border);
+    background: var(--bg-surface);
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
 .editor__status,
 .editor__error {
     padding: var(--sp-4);

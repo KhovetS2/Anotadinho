@@ -29,6 +29,9 @@ pub fn editor(props: &EditorProps) -> Html {
     let status = use_state(|| None::<String>);
     let preview = use_state(|| false);
 
+    let word_count = content.split_whitespace().count();
+    let char_count = content.chars().count();
+
     {
         let content = content.clone();
         let saved_content = saved_content.clone();
@@ -232,6 +235,9 @@ pub fn editor(props: &EditorProps) -> Html {
                         crate::markdown_render::render(&(*content).clone()).into()
                     ) }
                 </div>
+                <div class="editor__statusbar">
+                    <span>{ format!("{} palavras · {} caracteres", word_count, char_count) }</span>
+                </div>
             } else {
                 <textarea
                     class="editor__textarea"
@@ -239,6 +245,9 @@ pub fn editor(props: &EditorProps) -> Html {
                     {oninput}
                     spellcheck="false"
                 />
+                <div class="editor__statusbar">
+                    <span>{ format!("{} palavras · {} caracteres", word_count, char_count) }</span>
+                </div>
             }
         </main>
     }
