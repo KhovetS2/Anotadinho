@@ -52,3 +52,9 @@ pub fn extract_name_from_path(path: &str) -> String {
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "vault".to_string())
 }
+
+/// Remove vault path/name do localStorage.
+pub fn clear_vault() {
+    let _ = gloo_storage::LocalStorage::delete(KEY_VAULT_PATH);
+    let _ = gloo_storage::LocalStorage::delete(KEY_VAULT_NAME);
+}

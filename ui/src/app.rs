@@ -39,6 +39,18 @@ pub fn app() -> Html {
         })
     };
 
+    let on_close_vault = {
+        let vault_path = vault_path.clone();
+        let vault_name = vault_name.clone();
+        let selected_page = selected_page.clone();
+        Callback::from(move |_| {
+            state::clear_vault();
+            vault_path.set(None);
+            vault_name.set(None);
+            selected_page.set(None);
+        })
+    };
+
     html! {
         <div class="app-root">
             if let (Some(path), Some(name)) = ((*vault_path).clone(), (*vault_name).clone()) {
@@ -46,6 +58,9 @@ pub fn app() -> Html {
                     <header class="app-header">
                         <h2 class="app-header__title">{ &name }</h2>
                         <span class="app-header__path">{ &path }</span>
+                        <button class="app-header__close" onclick={on_close_vault}>
+                            { "Fechar" }
+                        </button>
                     </header>
                     <div class="app-body">
                         <Sidebar vault_path={path.clone()} on_page_selected={on_page_selected} />
