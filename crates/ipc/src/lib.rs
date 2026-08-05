@@ -2,16 +2,12 @@
 //!
 //! Os comandos IPC são a única ponte entre o Yew (no WebView) e o
 //! backend Rust (Tauri core). Tudo que o UI faz passa por aqui.
-//!
-//! Stub: comandos concretos virão nos próximos ciclos.
 
 #![warn(missing_docs)]
 
 use serde::{Deserialize, Serialize};
 
 /// Comando de exemplo: ping.
-///
-/// TODO: remover quando os comandos reais existirem.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PingArgs {
     /// Mensagem a ecoar.
@@ -27,12 +23,21 @@ pub struct PingResult {
     pub version: String,
 }
 
-/// Handler de ping (placeholder).
+/// Handler de ping.
 pub fn handle_ping(args: PingArgs) -> PingResult {
     PingResult {
         echo: format!("pong: {}", args.message),
         version: env!("CARGO_PKG_VERSION").to_string(),
     }
+}
+
+/// Informações de um vault aberto.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultInfo {
+    /// Path absoluto do vault.
+    pub path: String,
+    /// Nome do diretório.
+    pub name: String,
 }
 
 #[cfg(test)]

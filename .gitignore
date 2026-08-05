@@ -23,7 +23,7 @@ src-tauri/gen/
 Thumbs.db
 
 # Vault local (fora do repo, em ~/.anotadinho-vault ou pendrive)
-vault/
+/vault/
 *.vault/
 
 # Cycles - mantém tasks e status, ignora logs de execução

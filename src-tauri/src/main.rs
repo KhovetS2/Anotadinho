@@ -5,11 +5,26 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use anotadinho_ipc::{handle_ping, PingArgs, PingResult};
+use anotadinho_ipc::{handle_ping, PingArgs, PingResult, VaultInfo};
+use anotadinho_vault::VaultIo;
 
 #[tauri::command]
 fn ping(args: PingArgs) -> PingResult {
     handle_ping(args)
+}
+
+#[tauri::command]
+fn get_vault_info(path: String) -> Result<VaultInfo, String> {
+    let vault = VaultIo::open(&path);
+    let name = vault
+        .root()
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "vault".to_string());
+    Ok(VaultInfo {
+        path: path.to_string(),
+        name,
+    })
 }
 
 fn main() {
@@ -21,7 +36,8 @@ fn main() {
         .init();
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![ping])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![ping, get_vault_info])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar Anotadinho");
 }

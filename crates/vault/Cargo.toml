@@ -1,0 +1,19 @@
+[package]
+name = "anotadinho-vault"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "I/O de arquivos do vault, watcher, locks (Anotadinho vault)"
+
+[dependencies]
+anotadinho-core = { path = "../core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+walkdir = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.9"
