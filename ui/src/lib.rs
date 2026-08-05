@@ -7,8 +7,9 @@
 
 pub mod api;
 pub mod app;
+pub mod components;
+pub mod markdown_render;
 pub mod state;
 pub mod theme;
-pub mod components;
 
 pub use app::App;

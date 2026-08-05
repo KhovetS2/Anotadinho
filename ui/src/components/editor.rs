@@ -27,6 +27,7 @@ pub fn editor(props: &EditorProps) -> Html {
     let saving = use_state(|| false);
     let error = use_state(|| None::<String>);
     let status = use_state(|| None::<String>);
+    let preview = use_state(|| false);
 
     {
         let content = content.clone();
@@ -180,6 +181,11 @@ pub fn editor(props: &EditorProps) -> Html {
         "Salvar"
     };
 
+    let toggle_preview = {
+        let preview = preview.clone();
+        Callback::from(move |_| preview.set(!*preview))
+    };
+
     html! {
         <main class="editor" {onkeydown}>
             <header class="editor__header">
@@ -193,25 +199,39 @@ pub fn editor(props: &EditorProps) -> Html {
                         <span class="editor__dirty">{ "não salvo" }</span>
                     }
                     <button
+                        class="editor__preview"
+                        onclick={toggle_preview}
+                    >
+                        { if *preview { "Editar" } else { "Visualizar" } }
+                    </button>
+                    <button
                         class="editor__delete"
                         onclick={on_delete}
                         title="Excluir página"
                     >
                         { "Excluir" }
                     </button>
-                    <button
-                        class="editor__save"
-                        onclick={do_save.reform(|_| ())}
-                        disabled={*saving || !dirty}
-                    >
-                        { save_label }
-                    </button>
+                    if !*preview {
+                        <button
+                            class="editor__save"
+                            onclick={do_save.reform(|_| ())}
+                            disabled={*saving || !dirty}
+                        >
+                            { save_label }
+                        </button>
+                    }
                 </div>
             </header>
             if *loading {
                 <p class="editor__status">{ "Carregando..." }</p>
             } else if let Some(ref err) = *error {
                 <p class="editor__error">{ err }</p>
+            } else if *preview {
+                <div class="editor__preview-content">
+                    { Html::from_html_unchecked(
+                        crate::markdown_render::render(&(*content).clone()).into()
+                    ) }
+                </div>
             } else {
                 <textarea
                     class="editor__textarea"
