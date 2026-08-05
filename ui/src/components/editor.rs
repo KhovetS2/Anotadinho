@@ -1,4 +1,4 @@
-//! Editor Markdown: carrega, edita e salva o conteúdo bruto da página.
+//! Editor Markdown split-pane: edição (esquerda) + preview ao vivo (direita).
 
 use wasm_bindgen::JsCast;
 use web_sys::{HtmlTextAreaElement, KeyboardEvent};
@@ -9,11 +9,8 @@ use crate::api::{self, PageMeta};
 /// Props do Editor.
 #[derive(Properties, PartialEq, Clone)]
 pub struct EditorProps {
-    /// Path absoluto do vault.
     pub vault_path: String,
-    /// Página selecionada (None = placeholder).
     pub page: Option<PageMeta>,
-    /// Callback após exclusão bem-sucedida.
     #[prop_or_default]
     pub on_page_deleted: Callback<()>,
 }
@@ -27,7 +24,6 @@ pub fn editor(props: &EditorProps) -> Html {
     let saving = use_state(|| false);
     let error = use_state(|| None::<String>);
     let status = use_state(|| None::<String>);
-    let preview = use_state(|| false);
 
     let word_count = content.split_whitespace().count();
     let char_count = content.chars().count();
@@ -176,18 +172,9 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
-    let save_label = if *saving {
-        "Salvando..."
-    } else if dirty {
-        "Salvar *"
-    } else {
-        "Salvar"
-    };
+    let save_label = if *saving { "Salvando..." } else if dirty { "Salvar *" } else { "Salvar" };
 
-    let toggle_preview = {
-        let preview = preview.clone();
-        Callback::from(move |_| preview.set(!*preview))
-    };
+    let preview_html = crate::markdown_render::render(&(*content).clone());
 
     html! {
         <main class="editor" {onkeydown}>
@@ -201,50 +188,34 @@ pub fn editor(props: &EditorProps) -> Html {
                     if dirty {
                         <span class="editor__dirty">{ "não salvo" }</span>
                     }
-                    <button
-                        class="editor__preview"
-                        onclick={toggle_preview}
-                    >
-                        { if *preview { "Editar" } else { "Visualizar" } }
-                    </button>
-                    <button
-                        class="editor__delete"
-                        onclick={on_delete}
-                        title="Excluir página"
-                    >
+                    <button class="editor__delete" onclick={on_delete} title="Excluir página">
                         { "Excluir" }
                     </button>
-                    if !*preview {
-                        <button
-                            class="editor__save"
-                            onclick={do_save.reform(|_| ())}
-                            disabled={*saving || !dirty}
-                        >
-                            { save_label }
-                        </button>
-                    }
+                    <button class="editor__save" onclick={do_save.reform(|_| ())} disabled={*saving || !dirty}>
+                        { save_label }
+                    </button>
                 </div>
             </header>
             if *loading {
                 <p class="editor__status">{ "Carregando..." }</p>
             } else if let Some(ref err) = *error {
                 <p class="editor__error">{ err }</p>
-            } else if *preview {
-                <div class="editor__preview-content">
-                    { Html::from_html_unchecked(
-                        crate::markdown_render::render(&(*content).clone()).into()
-                    ) }
-                </div>
-                <div class="editor__statusbar">
-                    <span>{ format!("{} palavras · {} caracteres", word_count, char_count) }</span>
-                </div>
             } else {
-                <textarea
-                    class="editor__textarea"
-                    value={(*content).clone()}
-                    {oninput}
-                    spellcheck="false"
-                />
+                <div class="editor__split">
+                    <div class="editor__edit-pane">
+                        <textarea
+                            class="editor__textarea"
+                            value={(*content).clone()}
+                            {oninput}
+                            spellcheck="false"
+                        />
+                    </div>
+                    <div class="editor__preview-pane">
+                        <div class="editor__preview-content">
+                            { Html::from_html_unchecked(preview_html.into()) }
+                        </div>
+                    </div>
+                </div>
                 <div class="editor__statusbar">
                     <span>{ format!("{} palavras · {} caracteres", word_count, char_count) }</span>
                 </div>
