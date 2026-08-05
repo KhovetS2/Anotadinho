@@ -1,4 +1,4 @@
-//! Editor WYSIWYG contenteditable + toolbar + slash commands.
+//! Editor WYSIWYG contenteditable + slash commands + markdown live formatting.
 
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
@@ -110,12 +110,11 @@ pub fn editor(props: &EditorProps) -> Html {
         let editor_ref = editor_ref.clone();
 
         use_effect_with((content_md.clone(), *loading), move |_| {
-            let mut ran = false;
-            if !*loading && !content_md.is_empty() {
+            let should_run = !*loading && !content_md.is_empty();
+            if should_run {
                 if let Some(div) = editor_ref.cast::<web_sys::Element>() {
                     let html = crate::markdown_render::render(&content_md);
                     div.set_inner_html(&html);
-                    ran = true;
                     let _div = div.clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
@@ -123,7 +122,6 @@ pub fn editor(props: &EditorProps) -> Html {
                     });
                 }
             }
-            let _ = ran;
             || {}
         });
     }
@@ -139,21 +137,10 @@ pub fn editor(props: &EditorProps) -> Html {
         let doc = web_sys::window().and_then(|w| w.document());
         move |cmd: &str, val: &str| {
             if let Some(ref doc) = doc {
-                let args = js_sys::Array::new();
-                args.push(&wasm_bindgen::JsValue::from_str(cmd));
-                args.push(&wasm_bindgen::JsValue::from_bool(false));
-                if !val.is_empty() { args.push(&wasm_bindgen::JsValue::from_str(val)); }
-                if let Some(f) = js_sys::Reflect::get(doc, &wasm_bindgen::JsValue::from_str("execCommand"))
-                    .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
-                { let _ = f.apply(doc, &args); }
+                exec_cmd(doc, cmd, val);
             }
             edited.set(true);
         }
-    };
-
-    let toolbar_cb = {
-        let exec = doc_exec.clone();
-        Callback::from(move |(cmd, val): (String, String)| exec(&cmd, &val))
     };
 
     let do_save = {
@@ -178,49 +165,6 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
                 saving.set(false);
             });
-        })
-    };
-
-    let on_keydown = {
-        let do_save = do_save.clone();
-        let slash_open = slash_open.clone(); let slash_text = slash_text.clone();
-        let slash_idx = slash_idx.clone();
-        let filtered_len = filtered.len();
-        Callback::from(move |e: KeyboardEvent| {
-            if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); do_save.emit(()); return; }
-
-            if *slash_open {
-                match e.key().as_str() {
-                    "Escape" => { slash_open.set(false); slash_text.set(String::new()); slash_idx.set(0); e.prevent_default(); }
-                    "ArrowDown" => { e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + 1) % filtered_len); } }
-                    "ArrowUp" => { e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len); } }
-                    "Enter" => { e.prevent_default(); return; }
-                    "Backspace" => {
-                        e.prevent_default();
-                        if !slash_text.is_empty() { slash_text.set(slash_text[..slash_text.len()-1].to_string()); }
-                        else { slash_open.set(false); slash_idx.set(0); }
-                    }
-                    _ if e.key().len() == 1 => { slash_text.set(format!("{}{}", *slash_text, e.key())); slash_idx.set(0); e.prevent_default(); }
-                    _ => {}
-                }
-                return;
-            }
-
-            if e.key() == "/" && !e.ctrl_key() && !e.meta_key() {
-                slash_open.set(true); slash_text.set(String::new()); slash_idx.set(0);
-                e.prevent_default();
-            }
-
-            // Markdown block + inline shortcuts on Space/Enter
-            if (e.key() == " " || e.key() == "Enter") && !*slash_open {
-                if let Some(window) = web_sys::window() {
-                    if let Some(doc) = window.document() {
-                        apply_block_shortcut(&window, &doc, &e);
-                        // Inline formatting: **bold**, *italic*, `code`
-                        apply_inline_formatting(&window, &doc);
-                    }
-                }
-            }
         })
     };
 
@@ -268,6 +212,49 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
+    let on_keydown = {
+        let do_save = do_save.clone();
+        let slash_open = slash_open.clone(); let slash_text = slash_text.clone();
+        let slash_idx = slash_idx.clone();
+        let filtered_len = filtered.len();
+        let select_slash = select_slash.clone();
+        Callback::from(move |e: KeyboardEvent| {
+            if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); do_save.emit(()); return; }
+
+            if *slash_open {
+                match e.key().as_str() {
+                    "Escape" => { slash_open.set(false); slash_text.set(String::new()); slash_idx.set(0); e.prevent_default(); }
+                    "ArrowDown" => { e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + 1) % filtered_len); } }
+                    "ArrowUp" => { e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len); } }
+                    "Enter" => { e.prevent_default(); select_slash.emit(()); return; }
+                    "Backspace" => {
+                        e.prevent_default();
+                        if !slash_text.is_empty() { slash_text.set(slash_text[..slash_text.len()-1].to_string()); }
+                        else { slash_open.set(false); slash_idx.set(0); }
+                    }
+                    _ if e.key().len() == 1 => { slash_text.set(format!("{}{}", *slash_text, e.key())); slash_idx.set(0); e.prevent_default(); }
+                    _ => {}
+                }
+                return;
+            }
+
+            if e.key() == "/" && !e.ctrl_key() && !e.meta_key() {
+                slash_open.set(true); slash_text.set(String::new()); slash_idx.set(0);
+                e.prevent_default();
+            }
+
+            // Markdown block + inline shortcuts on Space/Enter
+            if (e.key() == " " || e.key() == "Enter") && !*slash_open {
+                if let Some(window) = web_sys::window() {
+                    if let Some(doc) = window.document() {
+                        apply_block_shortcut(&window, &doc, &e);
+                        apply_inline_formatting(&window, &doc);
+                    }
+                }
+            }
+        })
+    };
+
     let on_delete = {
         let vault_path = props.vault_path.clone(); let page_path = page.path.clone();
         let page_title = page.title.clone(); let cb = props.on_page_deleted.clone();
@@ -283,13 +270,6 @@ pub fn editor(props: &EditorProps) -> Html {
     };
 
     let save_label = if *saving { "Salvando..." } else if *edited { "Salvar *" } else { "Salvar" };
-
-    let toolbar = |label: &str, title: &str, cmd: &str, val: &str| {
-        let cb = toolbar_cb.clone();
-        let c = cmd.to_string(); let v = val.to_string();
-        html! { <button class="toolbar-btn" onclick={Callback::from(move |_| cb.emit((c.clone(), v.clone())))} title={title.to_string()}>{ label }</button> }
-    };
-
     let on_edit = { let e = edited.clone(); Callback::from(move |_| e.set(true)) };
 
     html! {
@@ -304,23 +284,6 @@ pub fn editor(props: &EditorProps) -> Html {
                     <button class="editor__save" onclick={do_save.reform(|_| ())} disabled={*saving || !*edited}>{ save_label }</button>
                 </div>
             </header>
-            <div class="editor__toolbar">
-                { toolbar("B", "Negrito", "bold", "") }
-                { toolbar("I", "Itálico", "italic", "") }
-                { toolbar("U", "Sublinhado", "underline", "") }
-                { toolbar("S", "Riscado", "strikeThrough", "") }
-                <div class="toolbar-divider"></div>
-                { toolbar("H1", "Título 2", "formatBlock", "h2") }
-                { toolbar("H2", "Título 3", "formatBlock", "h3") }
-                { toolbar("¶", "Parágrafo", "formatBlock", "p") }
-                <div class="toolbar-divider"></div>
-                { toolbar("\u{2014}", "Lista", "insertUnorderedList", "") }
-                { toolbar("1.", "Lista ordenada", "insertOrderedList", "") }
-                { toolbar("❝", "Citação", "formatBlock", "blockquote") }
-                { toolbar("<>", "Código", "formatBlock", "pre") }
-                <div class="toolbar-divider"></div>
-                { toolbar("\u{1f517}", "Link", "createLink", "https://") }
-            </div>
             <div class="editor__body">
                 if *loading {
                     <div class="editor__overlay">{ "Carregando..." }</div>
@@ -354,35 +317,22 @@ pub fn editor(props: &EditorProps) -> Html {
             }
             <div class="editor__statusbar">
                 <span>{ format!("{} palavras · {} caracteres", word_count, char_count) }</span>
-                <span class="editor__statusbar-hint">{ "Digite / para comandos" }</span>
+                <span class="editor__statusbar-hint">{ "Digite / ou use # - > * para formatar" }</span>
             </div>
         </main>
     }
 }
 
-fn init_mermaid_at(el: &web_sys::Element) {
-    if let Some(window) = web_sys::window() {
-        if let Some(mermaid) = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("mermaid"))
-            .ok()
-            .and_then(|v| v.dyn_into::<js_sys::Object>().ok())
-        {
-            let config = js_sys::Object::new();
-            js_sys::Reflect::set(&config, &wasm_bindgen::JsValue::from_str("theme"), &wasm_bindgen::JsValue::from_str("dark")).ok();
-            js_sys::Reflect::set(&config, &wasm_bindgen::JsValue::from_str("startOnLoad"), &wasm_bindgen::JsValue::from_bool(false)).ok();
-            js_sys::Reflect::set(&mermaid, &wasm_bindgen::JsValue::from_str("initialize"), &config).ok();
-            let run = js_sys::Reflect::get(&mermaid, &wasm_bindgen::JsValue::from_str("run"))
-                .ok()
-                .and_then(|v| v.dyn_into::<js_sys::Function>().ok());
-            if let Some(run_fn) = run {
-                let opts = js_sys::Object::new();
-                js_sys::Reflect::set(&opts, &wasm_bindgen::JsValue::from_str("nodes"), el).ok();
-                let _ = run_fn.call1(&wasm_bindgen::JsValue::null(), &opts);
-            }
-        }
-    }
+fn exec_cmd(doc: &web_sys::Document, cmd: &str, val: &str) {
+    let args = js_sys::Array::new();
+    args.push(&wasm_bindgen::JsValue::from_str(cmd));
+    args.push(&wasm_bindgen::JsValue::from_bool(false));
+    if !val.is_empty() { args.push(&wasm_bindgen::JsValue::from_str(val)); }
+    if let Some(f) = js_sys::Reflect::get(doc, &wasm_bindgen::JsValue::from_str("execCommand"))
+        .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
+    { let _ = f.apply(doc, &args); }
 }
 
-/// Detecta e aplica shortcuts de markdown no bloco atual (heading, lista, quote).
 fn apply_block_shortcut(win: &web_sys::Window, doc: &web_sys::Document, e: &KeyboardEvent) {
     let sel = match win.get_selection().ok().flatten() {
         Some(s) => s,
@@ -399,42 +349,32 @@ fn apply_block_shortcut(win: &web_sys::Window, doc: &web_sys::Document, e: &Keyb
     };
     let offset = range.start_offset().unwrap_or(0) as usize;
     let text = container.text_content().unwrap_or_default();
-
-    // Texto do incio do bloco ate o cursor
     let prefix = &text[..offset.min(text.len())];
-
     let is_newline = e.key() == "Enter";
 
-    // Heading: # ## ### etc at the start of a block
     if prefix.chars().all(|c| c == '#') && prefix.len() >= 1 && prefix.len() <= 6 {
         let level = prefix.len();
-        // Select the # signs and delete them
         if let Ok(mut r) = doc.create_range() {
             r.set_start(&container, 0u32).ok();
             r.set_end(&container, prefix.len() as u32).ok();
             sel.remove_all_ranges().ok();
             sel.add_range(&r).ok();
         }
-        // Delete the # signs
         exec_cmd(doc, "delete", "");
-        // Apply heading format
-        let tag = format!("h{}", level);
-        exec_cmd(doc, "formatBlock", &tag);
+        exec_cmd(doc, "formatBlock", &format!("h{}", level));
         e.prevent_default();
         return;
     }
 
     if !is_newline { return; }
 
-    // List: "- "
     if prefix == "- " || prefix == "* " {
-        exec_cmd(doc, "delete", ""); // delete the "- " after insert
+        exec_cmd(doc, "delete", "");
         exec_cmd(doc, "insertUnorderedList", "");
         e.prevent_default();
         return;
     }
 
-    // Quote: "> " 
     if prefix == "> " {
         exec_cmd(doc, "delete", "");
         exec_cmd(doc, "formatBlock", "blockquote");
@@ -442,7 +382,6 @@ fn apply_block_shortcut(win: &web_sys::Window, doc: &web_sys::Document, e: &Keyb
         return;
     }
 
-    // Numbered list: "1. "
     if prefix.len() > 2 && prefix[..prefix.len()-1].chars().all(|c| c.is_ascii_digit() || c == '.') && prefix.ends_with(". ") {
         exec_cmd(doc, "delete", "");
         exec_cmd(doc, "insertOrderedList", "");
@@ -450,17 +389,6 @@ fn apply_block_shortcut(win: &web_sys::Window, doc: &web_sys::Document, e: &Keyb
     }
 }
 
-fn exec_cmd(doc: &web_sys::Document, cmd: &str, val: &str) {
-    let args = js_sys::Array::new();
-    args.push(&wasm_bindgen::JsValue::from_str(cmd));
-    args.push(&wasm_bindgen::JsValue::from_bool(false));
-    if !val.is_empty() { args.push(&wasm_bindgen::JsValue::from_str(val)); }
-    if let Some(f) = js_sys::Reflect::get(doc, &wasm_bindgen::JsValue::from_str("execCommand"))
-        .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
-    { let _ = f.apply(doc, &args); }
-}
-
-/// Aplica formatação inline: **bold**, *italic*, `code`.
 fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
     let sel = match win.get_selection().ok().flatten() {
         Some(s) => s,
@@ -479,38 +407,28 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
     let full_text = container.text_content().unwrap_or_default();
     let before = &full_text[..offset.min(full_text.len())];
 
-    // Detect **bold** — find the last "**" before cursor that has a matching closing "**"
+    // **bold**
     if let Some(start) = before.rfind("**") {
-        let prefix = &before[..start]; // everything before the "**"
-        let between = &before[start + 2..]; // between "**" and cursor (the content)
-        // The word just before cursor should be the closing "**word**"
-        // We look for a word ending with "**" at cursor position
-        if between.contains("**") {
-            // Already has closing ** - find the inner content
+        let between = &before[start + 2..];
+        if let Some(inner_end) = between.find("**") {
+            let inner = &between[..inner_end];
             let inner_start = start + 2;
-            if let Some(inner_end) = before[inner_start..].find("**") {
-                let inner = &before[inner_start..inner_start + inner_end];
-                // Select the inner content
+            if !inner.is_empty() {
                 if let Ok(mut r) = doc.create_range() {
-                    let start_node = &container;
-                    r.set_start(start_node, inner_start as u32).ok();
-                    r.set_end(start_node, (inner_start + inner.len()) as u32).ok();
+                    r.set_start(&container, inner_start as u32).ok();
+                    r.set_end(&container, (inner_start + inner.len()) as u32).ok();
                     sel.remove_all_ranges().ok();
                     sel.add_range(&r).ok();
                     exec_cmd(doc, "bold", "");
                 }
-                // Delete markers: select and delete inner end **, then select and delete start **
-                // Delete closing ** first (innermost to outermost)
-                let close_end = inner_start + inner.len() + 2;
+                let close_pos = inner_start + inner.len();
                 if let Ok(mut r) = doc.create_range() {
-                    r.set_start(&container, (close_end - 2) as u32).ok();
-                    r.set_end(&container, close_end as u32).ok();
+                    r.set_start(&container, close_pos as u32).ok();
+                    r.set_end(&container, (close_pos + 2) as u32).ok();
                     sel.remove_all_ranges().ok();
                     sel.add_range(&r).ok();
                     exec_cmd(doc, "delete", "");
                 }
-                // Delete opening **
-                let new_start = start.saturating_sub(0); // position shifted if needed, but delete at original position
                 if let Ok(mut r) = doc.create_range() {
                     r.set_start(&container, start as u32).ok();
                     r.set_end(&container, (start + 2) as u32).ok();
@@ -523,18 +441,14 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
         }
     }
 
-    // Detect *italic* — single * (but not **)
+    // *italic* (single, not part of **)
     if let Some(start) = before.rfind('*') {
-        // Make sure it's not part of **
-        if start > 0 && before.as_bytes()[start - 1] == b'*' {
-            // It's **, handled above
-        } else {
+        if start == 0 || before.as_bytes()[start - 1] != b'*' {
             let between = &before[start + 1..];
-            if between.contains('*') {
-                let inner = &between[..between.find('*').unwrap_or(0)];
+            if let Some(inner_end) = between.find('*') {
+                let inner = &between[..inner_end];
+                let inner_start = start + 1;
                 if !inner.is_empty() {
-                    let inner_start = start + 1;
-                    // Select inner content and apply italic
                     if let Ok(mut r) = doc.create_range() {
                         r.set_start(&container, inner_start as u32).ok();
                         r.set_end(&container, (inner_start + inner.len()) as u32).ok();
@@ -542,7 +456,6 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
                         sel.add_range(&r).ok();
                         exec_cmd(doc, "italic", "");
                     }
-                    // Delete closing *
                     let close_pos = inner_start + inner.len();
                     if let Ok(mut r) = doc.create_range() {
                         r.set_start(&container, close_pos as u32).ok();
@@ -551,7 +464,6 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
                         sel.add_range(&r).ok();
                         exec_cmd(doc, "delete", "");
                     }
-                    // Delete opening *
                     if let Ok(mut r) = doc.create_range() {
                         r.set_start(&container, start as u32).ok();
                         r.set_end(&container, (start + 1) as u32).ok();
@@ -559,24 +471,20 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
                         sel.add_range(&r).ok();
                         exec_cmd(doc, "delete", "");
                     }
-                    return;
                 }
             }
         }
     }
 
-    // Detect `code`
+    // `code`
     if let Some(start) = before.rfind('`') {
         let between = &before[start + 1..];
-        if between.contains('`') {
-            let inner = &between[..between.find('`').unwrap_or(0)];
+        if let Some(inner_end) = between.find('`') {
+            let inner = &between[..inner_end];
+            let inner_start = start + 1;
             if !inner.is_empty() {
-                let inner_start = start + 1;
-                // Apply inline code manually (execCommand doesn't have "code" style)
-                // We'll insert a <code> tag with inner content
                 let code_html = format!("<code>{}</code>", inner.replace('<', "&lt;").replace('>', "&gt;"));
-                // Select the full `code` range and replace with <code> HTML
-                let full_end = inner_start + inner.len() + 1; // position of closing `
+                let full_end = inner_start + inner.len() + 1;
                 if let Ok(mut r) = doc.create_range() {
                     r.set_start(&container, start as u32).ok();
                     r.set_end(&container, full_end as u32).ok();
@@ -584,6 +492,26 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
                     sel.add_range(&r).ok();
                     exec_cmd(doc, "insertHTML", &code_html);
                 }
+            }
+        }
+    }
+}
+
+fn init_mermaid_at(el: &web_sys::Element) {
+    if let Some(window) = web_sys::window() {
+        if let Some(mermaid) = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("mermaid"))
+            .ok().and_then(|v| v.dyn_into::<js_sys::Object>().ok())
+        {
+            let config = js_sys::Object::new();
+            js_sys::Reflect::set(&config, &wasm_bindgen::JsValue::from_str("theme"), &wasm_bindgen::JsValue::from_str("dark")).ok();
+            js_sys::Reflect::set(&config, &wasm_bindgen::JsValue::from_str("startOnLoad"), &wasm_bindgen::JsValue::from_bool(false)).ok();
+            js_sys::Reflect::set(&mermaid, &wasm_bindgen::JsValue::from_str("initialize"), &config).ok();
+            let run = js_sys::Reflect::get(&mermaid, &wasm_bindgen::JsValue::from_str("run"))
+                .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok());
+            if let Some(run_fn) = run {
+                let opts = js_sys::Object::new();
+                js_sys::Reflect::set(&opts, &wasm_bindgen::JsValue::from_str("nodes"), el).ok();
+                let _ = run_fn.call1(&wasm_bindgen::JsValue::null(), &opts);
             }
         }
     }
