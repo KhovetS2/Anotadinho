@@ -1,0 +1,26 @@
+[package]
+name = "anotadinho"
+version = "0.1.0"
+edition = "2021"
+description = "Anotadinho - editor de notas Markdown nativo (Tauri shell)"
+license = "MIT"
+
+[lib]
+name = "anotadinho_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+anotadinho-core = { path = "../crates/core" }
+anotadinho-vault = { path = "../crates/vault" }
+anotadinho-search = { path = "../crates/search" }
+anotadinho-ipc = { path = "../crates/ipc" }
+tauri = { version = "2.0", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
