@@ -125,6 +125,29 @@ pub async fn read_page(vault_path: &str, page_path: &str) -> Result<String, Stri
         .ok_or_else(|| "conteúdo retornado não é string".to_string())
 }
 
+/// Exclui uma página do vault.
+pub async fn delete_page(vault_path: &str, page_path: &str) -> Result<(), String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("vaultPath"),
+        &JsValue::from_str(vault_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("pagePath"),
+        &JsValue::from_str(page_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+
+    tauri_invoke("delete_page", &args)
+        .await
+        .map_err(|e| format!("delete_page error: {:?}", e))?;
+    Ok(())
+}
+
 /// Abre ou cria o journal do dia.
 pub async fn open_today_journal(vault_path: &str) -> Result<PageMeta, String> {
     let args = js_sys::Object::new();

@@ -75,6 +75,17 @@ impl VaultIo {
         Ok(pages)
     }
 
+    /// Remove uma página do vault (arquivo `.md`).
+    pub fn delete_page(&self, relative_path: &str) -> Result<()> {
+        let full = self.resolve_safe(relative_path)?;
+        if full.extension().map_or(true, |e| e != "md") {
+            anyhow::bail!("só é permitido excluir arquivos .md");
+        }
+        std::fs::remove_file(&full)
+            .map_err(|e| anyhow::anyhow!("erro ao excluir {}: {}", relative_path, e))?;
+        Ok(())
+    }
+
     /// Lê o conteúdo UTF-8 de uma página pelo path relativo ao vault.
     ///
     /// Rejeita paths que escapem da raiz do vault (`..`).
@@ -358,6 +369,20 @@ mod tests {
     fn slugify_basic() {
         assert_eq!(slugify("Hello World"), "hello-world");
         assert_eq!(slugify("  "), "untitled");
+    }
+
+    #[test]
+    fn delete_page_removes_file() {
+        let (_dir, io) = setup_vault();
+        assert!(io.read_page("pages/alpha.md").is_ok());
+        io.delete_page("pages/alpha.md").unwrap();
+        assert!(io.read_page("pages/alpha.md").is_err());
+    }
+
+    #[test]
+    fn delete_page_rejects_escape() {
+        let (_dir, io) = setup_vault();
+        assert!(io.delete_page("../secret.md").is_err());
     }
 
     #[test]

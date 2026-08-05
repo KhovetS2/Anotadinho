@@ -15,6 +15,9 @@ pub struct SidebarProps {
     pub vault_path: String,
     /// Callback ao selecionar uma página (path relativo).
     pub on_page_selected: Callback<PageMeta>,
+    /// Incrementa para forçar reload da lista.
+    #[prop_or_default]
+    pub list_version: u32,
 }
 
 /// Componente Sidebar.
@@ -29,7 +32,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         let vault_path = props.vault_path.clone();
         let pages = pages.clone();
         let loading = loading.clone();
-        let tick = *refresh_tick;
+        let tick = (*refresh_tick, props.list_version);
 
         use_effect_with(tick, move |_| {
             let vault_path = vault_path.clone();

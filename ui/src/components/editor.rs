@@ -13,6 +13,9 @@ pub struct EditorProps {
     pub vault_path: String,
     /// Página selecionada (None = placeholder).
     pub page: Option<PageMeta>,
+    /// Callback após exclusão bem-sucedida.
+    #[prop_or_default]
+    pub on_page_deleted: Callback<()>,
 }
 
 /// Componente Editor.
@@ -145,6 +148,30 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
+    let on_delete = {
+        let vault_path = props.vault_path.clone();
+        let page_path = page.path.clone();
+        let page_title = page.title.clone();
+        let on_page_deleted = props.on_page_deleted.clone();
+        let error = error.clone();
+        Callback::from(move |_| {
+            let msg = format!("Excluir a página \"{}\"? Esta ação não pode ser desfeita.", page_title);
+            if !gloo_dialogs::confirm(&msg) {
+                return;
+            }
+            let vault_path = vault_path.clone();
+            let page_path = page_path.clone();
+            let on_page_deleted = on_page_deleted.clone();
+            let error = error.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::delete_page(&vault_path, &page_path).await {
+                    Ok(()) => on_page_deleted.emit(()),
+                    Err(e) => error.set(Some(e)),
+                }
+            });
+        })
+    };
+
     let save_label = if *saving {
         "Salvando..."
     } else if dirty {
@@ -165,6 +192,13 @@ pub fn editor(props: &EditorProps) -> Html {
                     if dirty {
                         <span class="editor__dirty">{ "não salvo" }</span>
                     }
+                    <button
+                        class="editor__delete"
+                        onclick={on_delete}
+                        title="Excluir página"
+                    >
+                        { "Excluir" }
+                    </button>
                     <button
                         class="editor__save"
                         onclick={do_save.reform(|_| ())}

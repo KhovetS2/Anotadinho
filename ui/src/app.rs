@@ -17,6 +17,7 @@ pub fn app() -> Html {
     let vault_path = use_state(|| state::load_vault_path());
     let vault_name = use_state(|| state::load_vault_name());
     let selected_page = use_state(|| None::<PageMeta>);
+    let list_version = use_state(|| 0u32);
 
     let on_vault_selected = {
         let vault_path = vault_path.clone();
@@ -51,6 +52,15 @@ pub fn app() -> Html {
         })
     };
 
+    let on_page_deleted = {
+        let selected_page = selected_page.clone();
+        let list_version = list_version.clone();
+        Callback::from(move |_| {
+            selected_page.set(None);
+            list_version.set(*list_version + 1);
+        })
+    };
+
     html! {
         <div class="app-root">
             if let (Some(path), Some(name)) = ((*vault_path).clone(), (*vault_name).clone()) {
@@ -63,8 +73,16 @@ pub fn app() -> Html {
                         </button>
                     </header>
                     <div class="app-body">
-                        <Sidebar vault_path={path.clone()} on_page_selected={on_page_selected} />
-                        <Editor vault_path={path.clone()} page={(*selected_page).clone()} />
+                        <Sidebar
+                            vault_path={path.clone()}
+                            on_page_selected={on_page_selected}
+                            list_version={*list_version}
+                        />
+                        <Editor
+                            vault_path={path.clone()}
+                            page={(*selected_page).clone()}
+                            on_page_deleted={on_page_deleted}
+                        />
                     </div>
                 </div>
             } else {

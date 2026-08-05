@@ -369,6 +369,22 @@ body {
     color: var(--success);
 }
 
+.editor__delete {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: var(--sp-1) var(--sp-3);
+    font-size: 0.8125rem;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: color 0.1s ease, border-color 0.1s ease;
+}
+
+.editor__delete:hover {
+    color: var(--error);
+    border-color: var(--error);
+}
+
 .editor__save {
     background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
     color: var(--text-primary);

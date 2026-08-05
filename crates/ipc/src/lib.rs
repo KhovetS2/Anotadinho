@@ -106,6 +106,12 @@ pub fn handle_open_today_journal(vault_path: String) -> Result<PageMeta, String>
     })
 }
 
+/// Handler de delete_page: remove arquivo .md do vault.
+pub fn handle_delete_page(vault_path: String, page_path: String) -> Result<(), String> {
+    let vault = VaultIo::open(&vault_path);
+    vault.delete_page(&page_path).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
