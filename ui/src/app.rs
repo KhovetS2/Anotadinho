@@ -7,7 +7,9 @@ use crate::api;
 use crate::api::PageMeta;
 use crate::components::editor::Editor;
 use crate::components::empty_state::EmptyState;
+use crate::components::header_bar::HeaderBar;
 use crate::components::sidebar::Sidebar;
+use crate::components::tab_bar::TabBar;
 use crate::state;
 
 #[function_component(App)]
@@ -17,14 +19,15 @@ pub fn app() -> Html {
     let selected_page = use_state(|| None::<PageMeta>);
     let list_version = use_state(|| 0u32);
     let sidebar_collapsed = use_state(|| false);
+    let open_tabs = use_state(Vec::<PageMeta>::new);
+    let vim_mode = use_state(|| false);
     let theme_light = use_state(|| {
-        web_sys::window()
-            .and_then(|w| w.local_storage().ok().flatten())
+        web_sys::window().and_then(|w| w.local_storage().ok().flatten())
             .and_then(|s| s.get_item("anotadinho.theme").ok().flatten())
             .map_or(false, |v| v == "light")
     });
 
-    // Apply theme to <html>
+    // Apply theme
     {
         let light = *theme_light;
         use_effect_with(light, move |_| {
@@ -59,10 +62,27 @@ pub fn app() -> Html {
         });
     }
 
+    // Track tabs when page is selected
+    {
+        let selected_page = selected_page.clone();
+        let open_tabs = open_tabs.clone();
+        use_effect_with(selected_page.clone(), move |_| {
+            if let Some(ref page) = *selected_page {
+                let mut tabs = (*open_tabs).clone();
+                if !tabs.iter().any(|t| t.path == page.path) {
+                    tabs.push(page.clone());
+                    open_tabs.set(tabs);
+                }
+            }
+            || {}
+        });
+    }
+
     let on_vault_selected = {
         let vault_path = vault_path.clone();
         let vault_name = vault_name.clone();
         let selected_page = selected_page.clone();
+        let open_tabs = open_tabs.clone();
         Callback::from(move |path: String| {
             let name = state::extract_name_from_path(&path);
             state::save_vault_path(&path);
@@ -70,6 +90,7 @@ pub fn app() -> Html {
             vault_path.set(Some(path));
             vault_name.set(Some(name));
             selected_page.set(None);
+            open_tabs.set(Vec::new());
         })
     };
 
@@ -82,20 +103,38 @@ pub fn app() -> Html {
         let vault_path = vault_path.clone();
         let vault_name = vault_name.clone();
         let selected_page = selected_page.clone();
+        let open_tabs = open_tabs.clone();
         Callback::from(move |_| {
             state::clear_vault();
-            vault_path.set(None);
-            vault_name.set(None);
-            selected_page.set(None);
+            vault_path.set(None); vault_name.set(None);
+            selected_page.set(None); open_tabs.set(Vec::new());
         })
     };
 
     let on_page_deleted = {
         let selected_page = selected_page.clone();
         let list_version = list_version.clone();
+        let open_tabs = open_tabs.clone();
         Callback::from(move |_| {
+            if let Some(ref page) = *selected_page {
+                let mut tabs = (*open_tabs).clone();
+                tabs.retain(|t| t.path != page.path);
+                open_tabs.set(tabs);
+            }
             selected_page.set(None);
             list_version.set(*list_version + 1);
+        })
+    };
+
+    let on_open_vault_shortcut = {
+        let cb = on_vault_selected.clone();
+        Callback::from(move |_: ()| {
+            let cb = cb.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Ok(Some(path)) = api::open_folder_dialog().await {
+                    cb.emit(path);
+                }
+            });
         })
     };
 
@@ -115,11 +154,36 @@ pub fn app() -> Html {
         })
     };
 
+    let on_tab_select = {
+        let selected_page = selected_page.clone();
+        Callback::from(move |page: PageMeta| selected_page.set(Some(page)))
+    };
+
+    let on_tab_close = {
+        let selected_page = selected_page.clone();
+        let open_tabs = open_tabs.clone();
+        Callback::from(move |idx: usize| {
+            let mut tabs = (*open_tabs).clone();
+            if idx < tabs.len() {
+                let closed = tabs.remove(idx);
+                if selected_page.as_ref().map_or(false, |p| p.path == closed.path) {
+                    let next = tabs.get(idx).or_else(|| tabs.get(idx.saturating_sub(1))).cloned();
+                    selected_page.set(next);
+                }
+                open_tabs.set(tabs);
+            }
+        })
+    };
+
+    // Global keyboard (Ctrl+N, Escape, Vim mode toggle)
     let onkeydown = {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();
         let selected_page = selected_page.clone();
         let on_page_selected = on_page_selected.clone();
+        let sidebar_collapsed = sidebar_collapsed.clone();
+        let vim_mode = vim_mode.clone();
+        let open_tabs = open_tabs.clone();
         Callback::from(move |e: KeyboardEvent| {
             let ctrl = e.ctrl_key() || e.meta_key();
             match (ctrl, e.key().as_str()) {
@@ -138,36 +202,67 @@ pub fn app() -> Html {
                         }
                     });
                 }
-                (false, "Escape") => { if selected_page.is_some() { selected_page.set(None); } }
+                (true, "b") => {
+                    e.prevent_default();
+                    sidebar_collapsed.set(!*sidebar_collapsed);
+                }
+                // Vim mode toggle
+                (false, "Escape") => {
+                    if selected_page.is_some() {
+                        selected_page.set(None);
+                    } else {
+                        vim_mode.set(false);
+                    }
+                }
+                // Tab switching
+                (true, "w") => {
+                    e.prevent_default();
+                    let tabs = (*open_tabs).clone();
+                    if tabs.is_empty() { return; }
+                    if let Some(ref sel) = *selected_page {
+                        let pos = tabs.iter().position(|t| t.path == sel.path).unwrap_or(0);
+                        let next = (pos + 1) % tabs.len();
+                        selected_page.set(Some(tabs[next].clone()));
+                    } else {
+                        selected_page.set(Some(tabs[0].clone()));
+                    }
+                }
                 _ => {}
             }
         })
     };
 
+    let vault_open = vault_path.is_some();
+
     html! {
         <div class="app-root" tabindex="0" {onkeydown}>
-            if let (Some(path), Some(name)) = ((*vault_path).clone(), (*vault_name).clone()) {
+            <HeaderBar
+                vault_name={(*vault_name).clone()}
+                vault_path={(*vault_path).clone()}
+                sidebar_collapsed={*sidebar_collapsed}
+                theme_light={*theme_light}
+                on_toggle_sidebar={toggle_sidebar}
+                on_toggle_theme={toggle_theme}
+                on_close_vault={on_close_vault}
+                on_open_vault={on_open_vault_shortcut}
+            />
+            if vault_open {
+                <TabBar
+                    tabs={(*open_tabs).clone()}
+                    active_path={selected_page.as_ref().map(|p| p.path.clone())}
+                    on_select={on_tab_select}
+                    on_close={on_tab_close}
+                />
                 <div class="app-layout">
-                    <header class="app-header">
-                        <button class="btn btn--ghost btn--xs" onclick={toggle_sidebar}>
-                            { if *sidebar_collapsed { "▶" } else { "◀" } }
-                        </button>
-                        <h2 class="app-header__title">{ &name }</h2>
-                        <span class="app-header__path">{ &path }</span>
-                        <button class="btn btn--ghost btn--xs" onclick={toggle_theme}>
-                            { if *theme_light { "☀" } else { "🌙" } }
-                        </button>
-                        <button class="btn btn--danger btn--sm" onclick={on_close_vault}>{ "Fechar" }</button>
-                    </header>
                     <div class="app-body">
                         <Sidebar
-                            vault_path={path.clone()}
+                            vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
                             on_page_selected={on_page_selected}
                             list_version={*list_version}
                             collapsed={*sidebar_collapsed}
                         />
                         <Editor
-                            vault_path={path.clone()}
+                            vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
                             page={(*selected_page).clone()}
                             on_page_deleted={on_page_deleted}
                         />
