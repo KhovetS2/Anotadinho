@@ -98,3 +98,29 @@ pub async fn list_pages(vault_path: &str) -> Result<Vec<PageMeta>, String> {
         serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))?;
     Ok(pages)
 }
+
+/// Lê o conteúdo bruto de uma página.
+pub async fn read_page(vault_path: &str, page_path: &str) -> Result<String, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("vaultPath"),
+        &JsValue::from_str(vault_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("pagePath"),
+        &JsValue::from_str(page_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+
+    let result = tauri_invoke("read_page", &args)
+        .await
+        .map_err(|e| format!("read_page error: {:?}", e))?;
+
+    result
+        .as_string()
+        .ok_or_else(|| "conteúdo retornado não é string".to_string())
+}

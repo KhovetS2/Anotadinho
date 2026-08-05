@@ -74,6 +74,32 @@ impl VaultIo {
         pages.sort_by(|a, b| a.title.cmp(&b.title));
         Ok(pages)
     }
+
+    /// Lê o conteúdo UTF-8 de uma página pelo path relativo ao vault.
+    ///
+    /// Rejeita paths que escapem da raiz do vault (`..`).
+    pub fn read_page(&self, relative_path: &str) -> Result<String> {
+        let full = self.resolve_safe(relative_path)?;
+        let content = std::fs::read_to_string(&full)
+            .map_err(|e| anyhow::anyhow!("erro ao ler {}: {}", relative_path, e))?;
+        Ok(content)
+    }
+
+    /// Resolve path relativo garantindo que fica dentro do vault.
+    fn resolve_safe(&self, relative_path: &str) -> Result<PathBuf> {
+        let joined = self.root.join(relative_path);
+        let canonical = joined
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("path inválido {}: {}", relative_path, e))?;
+        let root_canonical = self
+            .root
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("vault root inválido: {}", e))?;
+        if !canonical.starts_with(&root_canonical) {
+            anyhow::bail!("path fora do vault: {}", relative_path);
+        }
+        Ok(canonical)
+    }
 }
 
 #[cfg(test)]
@@ -137,5 +163,24 @@ mod tests {
     fn open_returns_root() {
         let (_dir, io) = setup_vault();
         assert!(io.root().is_dir());
+    }
+
+    #[test]
+    fn read_page_returns_content() {
+        let (_dir, io) = setup_vault();
+        let content = io.read_page("pages/alpha.md").unwrap();
+        assert_eq!(content, "# Alpha\n");
+    }
+
+    #[test]
+    fn read_page_missing_returns_err() {
+        let (_dir, io) = setup_vault();
+        assert!(io.read_page("pages/nao-existe.md").is_err());
+    }
+
+    #[test]
+    fn read_page_rejects_escape() {
+        let (_dir, io) = setup_vault();
+        assert!(io.read_page("../etc/passwd").is_err());
     }
 }

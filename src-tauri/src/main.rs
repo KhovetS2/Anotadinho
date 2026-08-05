@@ -5,7 +5,9 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use anotadinho_ipc::{handle_list_pages, handle_ping, PageMeta, PingArgs, PingResult, VaultInfo};
+use anotadinho_ipc::{
+    handle_list_pages, handle_ping, handle_read_page, PageMeta, PingArgs, PingResult, VaultInfo,
+};
 use anotadinho_vault::VaultIo;
 use tauri_plugin_dialog::DialogExt;
 
@@ -34,6 +36,11 @@ fn list_pages(vault_path: String) -> Result<Vec<PageMeta>, String> {
 }
 
 #[tauri::command]
+fn read_page(vault_path: String, page_path: String) -> Result<String, String> {
+    handle_read_page(vault_path, page_path)
+}
+
+#[tauri::command]
 async fn open_vault_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
@@ -54,7 +61,13 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![ping, get_vault_info, list_pages, open_vault_dialog])
+        .invoke_handler(tauri::generate_handler![
+            ping,
+            get_vault_info,
+            list_pages,
+            read_page,
+            open_vault_dialog
+        ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar Anotadinho");
 }

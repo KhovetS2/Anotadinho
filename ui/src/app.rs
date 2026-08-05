@@ -1,11 +1,12 @@
 //! Componente raiz da aplicação.
 //!
 //! Gerencia o estado global: vault aberto vs tela inicial.
-//! Se um vault está aberto, mostra header + sidebar + editor placeholder.
+//! Se um vault está aberto, mostra header + sidebar + editor.
 
 use yew::prelude::*;
 
 use crate::api::PageMeta;
+use crate::components::editor::Editor;
 use crate::components::empty_state::EmptyState;
 use crate::components::sidebar::Sidebar;
 use crate::state;
@@ -20,12 +21,14 @@ pub fn app() -> Html {
     let on_vault_selected = {
         let vault_path = vault_path.clone();
         let vault_name = vault_name.clone();
+        let selected_page = selected_page.clone();
         Callback::from(move |path: String| {
             let name = state::extract_name_from_path(&path);
             state::save_vault_path(&path);
             state::save_vault_name(&name);
             vault_path.set(Some(path));
             vault_name.set(Some(name));
+            selected_page.set(None);
         })
     };
 
@@ -46,13 +49,7 @@ pub fn app() -> Html {
                     </header>
                     <div class="app-body">
                         <Sidebar vault_path={path.clone()} on_page_selected={on_page_selected} />
-                        <main class="app-main">
-                            if let Some(ref page) = *selected_page {
-                                <p class="app-main__placeholder">{ format!("Selecionado: {}", page.title) }</p>
-                            } else {
-                                <p class="app-main__placeholder">{ "Selecione uma página na sidebar" }</p>
-                            }
-                        </main>
+                        <Editor vault_path={path.clone()} page={(*selected_page).clone()} />
                     </div>
                 </div>
             } else {

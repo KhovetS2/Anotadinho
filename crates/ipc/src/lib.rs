@@ -66,6 +66,12 @@ pub fn handle_list_pages(vault_path: String) -> Result<Vec<PageMeta>, String> {
         .collect())
 }
 
+/// Handler de read_page: retorna o conteúdo Markdown bruto.
+pub fn handle_read_page(vault_path: String, page_path: String) -> Result<String, String> {
+    let vault = VaultIo::open(&vault_path);
+    vault.read_page(&page_path).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
