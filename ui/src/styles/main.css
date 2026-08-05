@@ -452,7 +452,108 @@ body {
     cursor: not-allowed;
 }
 
-/* Split pane */
+/* Toolbar */
+.editor__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: var(--sp-1) var(--sp-3);
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.toolbar-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 3px 8px;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-family: var(--font-sans);
+    font-weight: 500;
+    transition: color 0.1s, background 0.1s;
+    line-height: 1;
+}
+
+.toolbar-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+}
+
+.toolbar-btn:nth-child(1) { font-weight: 700; }
+.toolbar-btn:nth-child(2) { font-style: italic; }
+
+.toolbar-divider {
+    width: 1px;
+    height: 1.25rem;
+    background: var(--border);
+    margin: 0 var(--sp-2);
+}
+
+/* WYSIWYG editor */
+.editor__wysiwyg {
+    flex: 1;
+    padding: var(--sp-4);
+    outline: none;
+    overflow-y: auto;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: 1.7;
+    min-height: 0;
+}
+
+.editor__wysiwyg h1 { font-size: 1.75rem; font-weight: 700; margin: 1rem 0 0.5rem; }
+.editor__wysiwyg h2 { font-size: 1.4rem; font-weight: 600; margin: 1rem 0 0.4rem; }
+.editor__wysiwyg h3 { font-size: 1.15rem; font-weight: 600; margin: 0.8rem 0 0.3rem; }
+
+.editor__wysiwyg p { margin: 0 0 0.5rem; }
+
+.editor__wysiwyg strong, .editor__wysiwyg b { color: var(--accent-blue); }
+.editor__wysiwyg em, .editor__wysiwyg i { color: var(--text-muted); font-style: italic; }
+
+.editor__wysiwyg code {
+    background: var(--bg-elevated);
+    padding: 0.1em 0.3em;
+    border-radius: var(--r-sm);
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+}
+
+.editor__wysiwyg pre {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: var(--sp-3);
+    margin: 0.5rem 0;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    white-space: pre-wrap;
+}
+
+.editor__wysiwyg pre code { background: none; padding: 0; }
+
+.editor__wysiwyg ul, .editor__wysiwyg ol { padding-left: 1.5rem; margin: 0 0 0.5rem; }
+.editor__wysiwyg li { margin-bottom: 0.15rem; }
+
+.editor__wysiwyg blockquote {
+    border-left: 3px solid var(--accent-purple);
+    padding: 0.25rem 0 0.25rem 1rem;
+    margin: 0.5rem 0;
+    color: var(--text-muted);
+}
+
+.editor__wysiwyg a { color: var(--accent-blue); text-decoration: underline; }
+
+.editor__wysiwyg hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 1rem 0;
+}
+
+/* Split pane (deprecated, mantido para compatibilidade) */
 .editor__split {
     flex: 1;
     display: flex;
