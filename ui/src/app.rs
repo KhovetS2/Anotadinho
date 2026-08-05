@@ -87,6 +87,11 @@ pub fn app() -> Html {
         })
     };
 
+    let toggle_sidebar = {
+        let collapsed = sidebar_collapsed.clone();
+        Callback::from(move |_| collapsed.set(!*collapsed))
+    };
+
     let onkeydown = {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();
@@ -128,10 +133,7 @@ pub fn app() -> Html {
             if let (Some(path), Some(name)) = ((*vault_path).clone(), (*vault_name).clone()) {
                 <div class="app-layout">
                     <header class="app-header">
-                        <button class="app-header__toggle" onclick={
-                            let collapsed = sidebar_collapsed.clone();
-                            Callback::from(move |_| collapsed.set(!*collapsed))
-                        }>
+                        <button class="app-header__toggle" onclick={toggle_sidebar}>
                             { if *sidebar_collapsed { "\u{25b6}" } else { "\u{25c0}" } }
                         </button>
                         <h2 class="app-header__title">{ &name }</h2>

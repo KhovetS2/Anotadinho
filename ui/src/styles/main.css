@@ -51,6 +51,31 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* Scrollbar global */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--bg-elevated);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+/* Firefox scrollbar */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg-elevated) transparent;
+}
+
 #app {
     height: 100%;
     width: 100%;
@@ -623,6 +648,37 @@ body {
     border: none;
     border-top: 1px solid var(--border);
     margin: 1rem 0;
+}
+
+.editor__wysiwyg table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: var(--sp-3) 0;
+    font-size: 0.875rem;
+}
+
+.editor__wysiwyg th {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    font-weight: 600;
+    text-align: left;
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--border);
+}
+
+.editor__wysiwyg td {
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
+.editor__wysiwyg tr:nth-child(even) td {
+    background: rgba(51, 65, 85, 0.3);
+}
+
+.editor__wysiwyg img {
+    max-width: 100%;
+    border-radius: var(--r-md);
 }
 
 /* Split pane (deprecated, mantido para compatibilidade) */
