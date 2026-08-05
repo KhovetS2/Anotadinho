@@ -129,6 +129,7 @@ body {
     height: 100%;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 /* Empty state */
@@ -263,6 +264,7 @@ body {
     height: 100%;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 /* Header */
