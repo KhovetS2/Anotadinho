@@ -84,6 +84,17 @@ pub fn handle_write_page(
         .map_err(|e| e.to_string())
 }
 
+/// Handler de create_page: cria nova página em pages/.
+pub fn handle_create_page(vault_path: String, title: String) -> Result<PageMeta, String> {
+    let vault = VaultIo::open(&vault_path);
+    let meta = vault.create_page(&title).map_err(|e| e.to_string())?;
+    Ok(PageMeta {
+        path: meta.path,
+        title: meta.title,
+        section: meta.section,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

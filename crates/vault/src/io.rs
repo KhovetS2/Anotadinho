@@ -85,6 +85,36 @@ impl VaultIo {
         Ok(content)
     }
 
+    /// Cria uma nova página em `pages/` com frontmatter básico.
+    ///
+    /// Retorna metadados da página criada. Gera slug único se colidir.
+    pub fn create_page(&self, title: &str) -> Result<PageMeta> {
+        let base_slug = slugify(title);
+        let mut slug = base_slug.clone();
+        let mut n = 2u32;
+        loop {
+            let relative = format!("pages/{}.md", slug);
+            let full = self.root.join(&relative);
+            if !full.exists() {
+                let content = format!(
+                    "---\ntitle: {}\n---\n\n- \n",
+                    title.replace(':', " -")
+                );
+                self.write_page(&relative, &content)?;
+                return Ok(PageMeta {
+                    path: relative,
+                    title: slug,
+                    section: "pages".to_string(),
+                });
+            }
+            slug = format!("{}-{}", base_slug, n);
+            n += 1;
+            if n > 1000 {
+                anyhow::bail!("não foi possível gerar slug único para {}", title);
+            }
+        }
+    }
+
     /// Escreve conteúdo UTF-8 numa página pelo path relativo ao vault.
     ///
     /// Cria diretórios pais se necessário. Rejeita path traversal.
@@ -152,6 +182,33 @@ impl VaultIo {
             .file_name()
             .ok_or_else(|| anyhow::anyhow!("path sem nome de arquivo"))?;
         Ok(parent_canonical.join(file_name))
+    }
+}
+
+/// Converte título em slug de arquivo seguro.
+fn slugify(title: &str) -> String {
+    let s: String = title
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else if c.is_whitespace() || c == '-' || c == '_' {
+                '-'
+            } else {
+                '\0'
+            }
+        })
+        .filter(|c| *c != '\0')
+        .collect();
+    let s = s
+        .split('-')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if s.is_empty() {
+        "untitled".to_string()
+    } else {
+        s
     }
 }
 
@@ -257,5 +314,30 @@ mod tests {
     fn write_page_rejects_escape() {
         let (_dir, io) = setup_vault();
         assert!(io.write_page("../escape.md", "x").is_err());
+    }
+
+    #[test]
+    fn create_page_writes_file() {
+        let (_dir, io) = setup_vault();
+        let meta = io.create_page("Minha Nota").unwrap();
+        assert_eq!(meta.path, "pages/minha-nota.md");
+        assert_eq!(meta.section, "pages");
+        let content = io.read_page(&meta.path).unwrap();
+        assert!(content.contains("title: Minha Nota"));
+    }
+
+    #[test]
+    fn create_page_unique_slug_on_collision() {
+        let (_dir, io) = setup_vault();
+        let a = io.create_page("Dup").unwrap();
+        let b = io.create_page("Dup").unwrap();
+        assert_eq!(a.path, "pages/dup.md");
+        assert_eq!(b.path, "pages/dup-2.md");
+    }
+
+    #[test]
+    fn slugify_basic() {
+        assert_eq!(slugify("Hello World"), "hello-world");
+        assert_eq!(slugify("  "), "untitled");
     }
 }

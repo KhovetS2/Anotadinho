@@ -125,6 +125,30 @@ pub async fn read_page(vault_path: &str, page_path: &str) -> Result<String, Stri
         .ok_or_else(|| "conteúdo retornado não é string".to_string())
 }
 
+/// Cria uma nova página em pages/.
+pub async fn create_page(vault_path: &str, title: &str) -> Result<PageMeta, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("vaultPath"),
+        &JsValue::from_str(vault_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("title"),
+        &JsValue::from_str(title),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+
+    let result = tauri_invoke("create_page", &args)
+        .await
+        .map_err(|e| format!("create_page error: {:?}", e))?;
+
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
 /// Grava o conteúdo de uma página no disco.
 pub async fn write_page(vault_path: &str, page_path: &str, content: &str) -> Result<(), String> {
     let args = js_sys::Object::new();

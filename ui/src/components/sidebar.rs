@@ -2,6 +2,7 @@
 //!
 //! Mostra duas seções: Pages (vault/pages/) e Journals (vault/journals/).
 //! Click em um item emite callback com o path da página selecionada.
+//! Botão "+" na seção Pages cria nova página.
 
 use yew::prelude::*;
 
@@ -22,13 +23,18 @@ pub fn sidebar(props: &SidebarProps) -> Html {
     let pages = use_state(Vec::<PageMeta>::new);
     let selected_path = use_state(|| None::<String>);
     let loading = use_state(|| true);
+    let refresh_tick = use_state(|| 0u32);
 
     {
         let vault_path = props.vault_path.clone();
         let pages = pages.clone();
         let loading = loading.clone();
+        let tick = *refresh_tick;
 
-        use_effect_with((), move |_| {
+        use_effect_with(tick, move |_| {
+            let vault_path = vault_path.clone();
+            let pages = pages.clone();
+            let loading = loading.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 loading.set(true);
                 match api::list_pages(&vault_path).await {
@@ -46,55 +52,118 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         });
     }
 
-    let page_items: Vec<&PageMeta> = pages.iter().filter(|p| p.section == "pages").collect();
-    let journal_items: Vec<&PageMeta> = pages.iter().filter(|p| p.section == "journals").collect();
-
-    let render_section = |title: &str, items: &[&PageMeta],
-                          selected_path: &UseStateHandle<Option<String>>,
-                          on_page_selected: &Callback<PageMeta>| {
-        let empty = items.is_empty();
-        html! {
-            <div class="sidebar-section">
-                <h3 class="sidebar-section__title">{ title }</h3>
-                if empty {
-                    <p class="sidebar-section__empty">{ "Nenhuma página ainda" }</p>
-                } else {
-                    <ul class="sidebar-list">
-                        { for items.iter().map(|page| {
-                            let path = page.path.clone();
-                            let title = page.title.clone();
-                            let page_meta = (*page).clone();
-                            let is_selected = selected_path.as_deref() == Some(path.as_str());
-                            let class = if is_selected { "sidebar-item sidebar-item--selected" } else { "sidebar-item" };
-                            let on_page_selected = on_page_selected.clone();
-                            let selected_path = selected_path.clone();
-                            let path_for_cb = path.clone();
-                            let onclick = Callback::from(move |_| {
-                                selected_path.set(Some(path_for_cb.clone()));
-                                on_page_selected.emit(page_meta.clone());
-                            });
-                            html! {
-                                <li {class} {onclick}>
-                                    <span class="sidebar-item__icon">{ page_icon(&page.section) }</span>
-                                    <span class="sidebar-item__title">{ &title }</span>
-                                </li>
-                            }
-                        }) }
-                    </ul>
+    let on_new_page = {
+        let vault_path = props.vault_path.clone();
+        let pages = pages.clone();
+        let selected_path = selected_path.clone();
+        let on_page_selected = props.on_page_selected.clone();
+        let refresh_tick = refresh_tick.clone();
+        Callback::from(move |_| {
+            let title = gloo_dialogs::prompt("Título da nova página:", Some("Nova nota"))
+                .unwrap_or_default();
+            let title = title.trim().to_string();
+            if title.is_empty() {
+                return;
+            }
+            let vault_path = vault_path.clone();
+            let pages = pages.clone();
+            let selected_path = selected_path.clone();
+            let on_page_selected = on_page_selected.clone();
+            let refresh_tick = refresh_tick.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::create_page(&vault_path, &title).await {
+                    Ok(meta) => {
+                        selected_path.set(Some(meta.path.clone()));
+                        on_page_selected.emit(meta);
+                        refresh_tick.set(*refresh_tick + 1);
+                        let _ = pages;
+                    }
+                    Err(e) => {
+                        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
+                        gloo_dialogs::alert(&format!("Erro ao criar página: {}", e));
+                    }
                 }
-            </div>
-        }
+            });
+        })
     };
+
+    let page_items: Vec<PageMeta> = pages
+        .iter()
+        .filter(|p| p.section == "pages")
+        .cloned()
+        .collect();
+    let journal_items: Vec<PageMeta> = pages
+        .iter()
+        .filter(|p| p.section == "journals")
+        .cloned()
+        .collect();
 
     html! {
         <aside class="app-sidebar">
-            if *loading {
+            if *loading && pages.is_empty() {
                 <p class="app-sidebar__hint">{ "Carregando..." }</p>
             } else {
-                { render_section("Pages", &page_items, &selected_path, &props.on_page_selected) }
-                { render_section("Journals", &journal_items, &selected_path, &props.on_page_selected) }
+                <div class="sidebar-section">
+                    <div class="sidebar-section__header">
+                        <h3 class="sidebar-section__title">{ "Pages" }</h3>
+                        <button
+                            class="sidebar-section__add"
+                            title="Nova página"
+                            onclick={on_new_page}
+                        >
+                            { "+" }
+                        </button>
+                    </div>
+                    { render_list(&page_items, &selected_path, &props.on_page_selected) }
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-section__header">
+                        <h3 class="sidebar-section__title">{ "Journals" }</h3>
+                    </div>
+                    { render_list(&journal_items, &selected_path, &props.on_page_selected) }
+                </div>
             }
         </aside>
+    }
+}
+
+fn render_list(
+    items: &[PageMeta],
+    selected_path: &UseStateHandle<Option<String>>,
+    on_page_selected: &Callback<PageMeta>,
+) -> Html {
+    if items.is_empty() {
+        return html! {
+            <p class="sidebar-section__empty">{ "Nenhuma página ainda" }</p>
+        };
+    }
+    html! {
+        <ul class="sidebar-list">
+            { for items.iter().map(|page| {
+                let path = page.path.clone();
+                let title = page.title.clone();
+                let page_meta = page.clone();
+                let is_selected = selected_path.as_deref() == Some(path.as_str());
+                let class = if is_selected {
+                    "sidebar-item sidebar-item--selected"
+                } else {
+                    "sidebar-item"
+                };
+                let on_page_selected = on_page_selected.clone();
+                let selected_path = selected_path.clone();
+                let path_for_cb = path.clone();
+                let onclick = Callback::from(move |_| {
+                    selected_path.set(Some(path_for_cb.clone()));
+                    on_page_selected.emit(page_meta.clone());
+                });
+                html! {
+                    <li {class} {onclick}>
+                        <span class="sidebar-item__icon">{ page_icon(&page.section) }</span>
+                        <span class="sidebar-item__title">{ &title }</span>
+                    </li>
+                }
+            }) }
+        </ul>
     }
 }
 
