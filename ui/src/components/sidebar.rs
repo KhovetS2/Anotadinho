@@ -21,6 +21,9 @@ pub struct SidebarProps {
     /// Incrementa para forçar reload da lista.
     #[prop_or_default]
     pub list_version: u32,
+    /// Sidebar colapsada (compacta).
+    #[prop_or_default]
+    pub collapsed: bool,
 }
 
 /// Componente Sidebar.
@@ -157,7 +160,14 @@ pub fn sidebar(props: &SidebarProps) -> Html {
     let has_results = !all_pages.is_empty() || filter.is_empty();
 
     html! {
-        <aside class="app-sidebar">
+        <aside class={ if props.collapsed { "app-sidebar app-sidebar--collapsed" } else { "app-sidebar" } }>
+            if props.collapsed {
+                <div class="sidebar-collapsed" title="Expandir sidebar">
+                    <span class="sidebar-collapsed__icon" title="Pages">{ "📄" }</span>
+                    <span class="sidebar-collapsed__icon" title="Journals">{ "📅" }</span>
+                    <span class="sidebar-collapsed__icon" title="Buscar">{ "🔍" }</span>
+                </div>
+            } else {
             <div class="sidebar-search">
                 <input
                     class="sidebar-search__input"
@@ -196,6 +206,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                     </div>
                     { render_list(&journal_items, &selected_path, &props.on_page_selected) }
                 </div>
+            }
             }
         </aside>
     }

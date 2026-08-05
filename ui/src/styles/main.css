@@ -166,6 +166,54 @@ body {
     color: var(--text-primary);
 }
 
+.sidebar-collapsed__icon:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+    background: var(--bg-elevated);
+}
+
+/* Header toggle */
+.app-header__toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 1px 5px;
+    font-size: 0.75rem;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: color 0.1s ease;
+    flex-shrink: 0;
+}
+
+.app-header__toggle:hover {
+    color: var(--text-primary);
+}
+
+/* Collapsed sidebar */
+.app-sidebar--collapsed {
+    width: 40px;
+    padding: var(--sp-2);
+}
+
+.sidebar-collapsed {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-3);
+    padding-top: var(--sp-2);
+}
+
+.sidebar-collapsed__icon {
+    font-size: 1rem;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.1s;
+}
+
+.sidebar-collapsed__icon:hover {
+    opacity: 1;
+}
+
 /* App layout (vault aberto) */
 .app-layout {
     height: 100%;

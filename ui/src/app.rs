@@ -20,6 +20,7 @@ pub fn app() -> Html {
     let vault_name = use_state(|| state::load_vault_name());
     let selected_page = use_state(|| None::<PageMeta>);
     let list_version = use_state(|| 0u32);
+    let sidebar_collapsed = use_state(|| false);
 
     // Polling: verifica mudanças a cada 3s e recarrega sidebar se houver
     {
@@ -127,6 +128,12 @@ pub fn app() -> Html {
             if let (Some(path), Some(name)) = ((*vault_path).clone(), (*vault_name).clone()) {
                 <div class="app-layout">
                     <header class="app-header">
+                        <button class="app-header__toggle" onclick={
+                            let collapsed = sidebar_collapsed.clone();
+                            Callback::from(move |_| collapsed.set(!*collapsed))
+                        }>
+                            { if *sidebar_collapsed { "\u{25b6}" } else { "\u{25c0}" } }
+                        </button>
                         <h2 class="app-header__title">{ &name }</h2>
                         <span class="app-header__path">{ &path }</span>
                         <button class="app-header__close" onclick={on_close_vault}>
@@ -138,6 +145,7 @@ pub fn app() -> Html {
                             vault_path={path.clone()}
                             on_page_selected={on_page_selected}
                             list_version={*list_version}
+                            collapsed={*sidebar_collapsed}
                         />
                         <Editor
                             vault_path={path.clone()}
