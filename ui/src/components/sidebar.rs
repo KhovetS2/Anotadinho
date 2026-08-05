@@ -54,7 +54,6 @@ pub fn sidebar(props: &SidebarProps) -> Html {
 
     let on_new_page = {
         let vault_path = props.vault_path.clone();
-        let pages = pages.clone();
         let selected_path = selected_path.clone();
         let on_page_selected = props.on_page_selected.clone();
         let refresh_tick = refresh_tick.clone();
@@ -66,7 +65,6 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 return;
             }
             let vault_path = vault_path.clone();
-            let pages = pages.clone();
             let selected_path = selected_path.clone();
             let on_page_selected = on_page_selected.clone();
             let refresh_tick = refresh_tick.clone();
@@ -76,11 +74,36 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                         selected_path.set(Some(meta.path.clone()));
                         on_page_selected.emit(meta);
                         refresh_tick.set(*refresh_tick + 1);
-                        let _ = pages;
                     }
                     Err(e) => {
                         web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
                         gloo_dialogs::alert(&format!("Erro ao criar página: {}", e));
+                    }
+                }
+            });
+        })
+    };
+
+    let on_today = {
+        let vault_path = props.vault_path.clone();
+        let selected_path = selected_path.clone();
+        let on_page_selected = props.on_page_selected.clone();
+        let refresh_tick = refresh_tick.clone();
+        Callback::from(move |_| {
+            let vault_path = vault_path.clone();
+            let selected_path = selected_path.clone();
+            let on_page_selected = on_page_selected.clone();
+            let refresh_tick = refresh_tick.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::open_today_journal(&vault_path).await {
+                    Ok(meta) => {
+                        selected_path.set(Some(meta.path.clone()));
+                        on_page_selected.emit(meta);
+                        refresh_tick.set(*refresh_tick + 1);
+                    }
+                    Err(e) => {
+                        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
+                        gloo_dialogs::alert(&format!("Erro ao abrir journal: {}", e));
                     }
                 }
             });
@@ -119,6 +142,13 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 <div class="sidebar-section">
                     <div class="sidebar-section__header">
                         <h3 class="sidebar-section__title">{ "Journals" }</h3>
+                        <button
+                            class="sidebar-section__add sidebar-section__today"
+                            title="Journal de hoje"
+                            onclick={on_today}
+                        >
+                            { "Hoje" }
+                        </button>
                     </div>
                     { render_list(&journal_items, &selected_path, &props.on_page_selected) }
                 </div>

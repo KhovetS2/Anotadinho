@@ -6,8 +6,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use anotadinho_ipc::{
-    handle_create_page, handle_list_pages, handle_ping, handle_read_page, handle_write_page,
-    PageMeta, PingArgs, PingResult, VaultInfo,
+    handle_create_page, handle_list_pages, handle_open_today_journal, handle_ping,
+    handle_read_page, handle_write_page, PageMeta, PingArgs, PingResult, VaultInfo,
 };
 use anotadinho_vault::VaultIo;
 use tauri_plugin_dialog::DialogExt;
@@ -52,6 +52,11 @@ fn create_page(vault_path: String, title: String) -> Result<PageMeta, String> {
 }
 
 #[tauri::command]
+fn open_today_journal(vault_path: String) -> Result<PageMeta, String> {
+    handle_open_today_journal(vault_path)
+}
+
+#[tauri::command]
 async fn open_vault_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
@@ -79,6 +84,7 @@ fn main() {
             read_page,
             write_page,
             create_page,
+            open_today_journal,
             open_vault_dialog
         ])
         .run(tauri::generate_context!())

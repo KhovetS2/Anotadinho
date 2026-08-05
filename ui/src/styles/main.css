@@ -221,6 +221,16 @@ body {
     background: var(--bg-elevated);
 }
 
+.sidebar-section__today {
+    width: auto;
+    height: auto;
+    padding: 0 var(--sp-2);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
 .sidebar-section__empty {
     color: var(--text-muted);
     font-size: 0.8125rem;

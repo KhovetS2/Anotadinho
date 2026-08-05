@@ -95,6 +95,17 @@ pub fn handle_create_page(vault_path: String, title: String) -> Result<PageMeta,
     })
 }
 
+/// Handler de open_today_journal: abre ou cria journal do dia.
+pub fn handle_open_today_journal(vault_path: String) -> Result<PageMeta, String> {
+    let vault = VaultIo::open(&vault_path);
+    let meta = vault.open_today_journal().map_err(|e| e.to_string())?;
+    Ok(PageMeta {
+        path: meta.path,
+        title: meta.title,
+        section: meta.section,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -85,6 +85,25 @@ impl VaultIo {
         Ok(content)
     }
 
+    /// Abre ou cria o journal do dia (`journals/YYYY-MM-DD.md`).
+    pub fn open_today_journal(&self) -> Result<PageMeta> {
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let relative = format!("journals/{}.md", today);
+        let full = self.root.join(&relative);
+        if !full.exists() {
+            let content = format!(
+                "---\ntitle: {}\n---\n\n- \n",
+                today
+            );
+            self.write_page(&relative, &content)?;
+        }
+        Ok(PageMeta {
+            path: relative,
+            title: today,
+            section: "journals".to_string(),
+        })
+    }
+
     /// Cria uma nova página em `pages/` com frontmatter básico.
     ///
     /// Retorna metadados da página criada. Gera slug único se colidir.
@@ -339,5 +358,19 @@ mod tests {
     fn slugify_basic() {
         assert_eq!(slugify("Hello World"), "hello-world");
         assert_eq!(slugify("  "), "untitled");
+    }
+
+    #[test]
+    fn open_today_journal_creates_file() {
+        let (_dir, io) = setup_vault();
+        let meta = io.open_today_journal().unwrap();
+        assert_eq!(meta.section, "journals");
+        assert!(meta.path.starts_with("journals/"));
+        assert!(meta.path.ends_with(".md"));
+        let content = io.read_page(&meta.path).unwrap();
+        assert!(content.contains("title:"));
+        // second call returns same file
+        let meta2 = io.open_today_journal().unwrap();
+        assert_eq!(meta.path, meta2.path);
     }
 }
