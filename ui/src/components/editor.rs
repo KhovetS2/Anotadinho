@@ -211,11 +211,13 @@ pub fn editor(props: &EditorProps) -> Html {
                 e.prevent_default();
             }
 
-            // Markdown block shortcuts on Space/Enter
+            // Markdown block + inline shortcuts on Space/Enter
             if (e.key() == " " || e.key() == "Enter") && !*slash_open {
                 if let Some(window) = web_sys::window() {
                     if let Some(doc) = window.document() {
                         apply_block_shortcut(&window, &doc, &e);
+                        // Inline formatting: **bold**, *italic*, `code`
+                        apply_inline_formatting(&window, &doc);
                     }
                 }
             }
@@ -456,4 +458,133 @@ fn exec_cmd(doc: &web_sys::Document, cmd: &str, val: &str) {
     if let Some(f) = js_sys::Reflect::get(doc, &wasm_bindgen::JsValue::from_str("execCommand"))
         .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
     { let _ = f.apply(doc, &args); }
+}
+
+/// Aplica formatação inline: **bold**, *italic*, `code`.
+fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
+    let sel = match win.get_selection().ok().flatten() {
+        Some(s) => s,
+        None => return,
+    };
+    if sel.range_count() == 0 { return; }
+    let range = match sel.get_range_at(0) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+    let container = match range.start_container() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let offset = range.start_offset().unwrap_or(0) as usize;
+    let full_text = container.text_content().unwrap_or_default();
+    let before = &full_text[..offset.min(full_text.len())];
+
+    // Detect **bold** — find the last "**" before cursor that has a matching closing "**"
+    if let Some(start) = before.rfind("**") {
+        let prefix = &before[..start]; // everything before the "**"
+        let between = &before[start + 2..]; // between "**" and cursor (the content)
+        // The word just before cursor should be the closing "**word**"
+        // We look for a word ending with "**" at cursor position
+        if between.contains("**") {
+            // Already has closing ** - find the inner content
+            let inner_start = start + 2;
+            if let Some(inner_end) = before[inner_start..].find("**") {
+                let inner = &before[inner_start..inner_start + inner_end];
+                // Select the inner content
+                if let Ok(mut r) = doc.create_range() {
+                    let start_node = &container;
+                    r.set_start(start_node, inner_start as u32).ok();
+                    r.set_end(start_node, (inner_start + inner.len()) as u32).ok();
+                    sel.remove_all_ranges().ok();
+                    sel.add_range(&r).ok();
+                    exec_cmd(doc, "bold", "");
+                }
+                // Delete markers: select and delete inner end **, then select and delete start **
+                // Delete closing ** first (innermost to outermost)
+                let close_end = inner_start + inner.len() + 2;
+                if let Ok(mut r) = doc.create_range() {
+                    r.set_start(&container, (close_end - 2) as u32).ok();
+                    r.set_end(&container, close_end as u32).ok();
+                    sel.remove_all_ranges().ok();
+                    sel.add_range(&r).ok();
+                    exec_cmd(doc, "delete", "");
+                }
+                // Delete opening **
+                let new_start = start.saturating_sub(0); // position shifted if needed, but delete at original position
+                if let Ok(mut r) = doc.create_range() {
+                    r.set_start(&container, start as u32).ok();
+                    r.set_end(&container, (start + 2) as u32).ok();
+                    sel.remove_all_ranges().ok();
+                    sel.add_range(&r).ok();
+                    exec_cmd(doc, "delete", "");
+                }
+                return;
+            }
+        }
+    }
+
+    // Detect *italic* — single * (but not **)
+    if let Some(start) = before.rfind('*') {
+        // Make sure it's not part of **
+        if start > 0 && before.as_bytes()[start - 1] == b'*' {
+            // It's **, handled above
+        } else {
+            let between = &before[start + 1..];
+            if between.contains('*') {
+                let inner = &between[..between.find('*').unwrap_or(0)];
+                if !inner.is_empty() {
+                    let inner_start = start + 1;
+                    // Select inner content and apply italic
+                    if let Ok(mut r) = doc.create_range() {
+                        r.set_start(&container, inner_start as u32).ok();
+                        r.set_end(&container, (inner_start + inner.len()) as u32).ok();
+                        sel.remove_all_ranges().ok();
+                        sel.add_range(&r).ok();
+                        exec_cmd(doc, "italic", "");
+                    }
+                    // Delete closing *
+                    let close_pos = inner_start + inner.len();
+                    if let Ok(mut r) = doc.create_range() {
+                        r.set_start(&container, close_pos as u32).ok();
+                        r.set_end(&container, (close_pos + 1) as u32).ok();
+                        sel.remove_all_ranges().ok();
+                        sel.add_range(&r).ok();
+                        exec_cmd(doc, "delete", "");
+                    }
+                    // Delete opening *
+                    if let Ok(mut r) = doc.create_range() {
+                        r.set_start(&container, start as u32).ok();
+                        r.set_end(&container, (start + 1) as u32).ok();
+                        sel.remove_all_ranges().ok();
+                        sel.add_range(&r).ok();
+                        exec_cmd(doc, "delete", "");
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    // Detect `code`
+    if let Some(start) = before.rfind('`') {
+        let between = &before[start + 1..];
+        if between.contains('`') {
+            let inner = &between[..between.find('`').unwrap_or(0)];
+            if !inner.is_empty() {
+                let inner_start = start + 1;
+                // Apply inline code manually (execCommand doesn't have "code" style)
+                // We'll insert a <code> tag with inner content
+                let code_html = format!("<code>{}</code>", inner.replace('<', "&lt;").replace('>', "&gt;"));
+                // Select the full `code` range and replace with <code> HTML
+                let full_end = inner_start + inner.len() + 1; // position of closing `
+                if let Ok(mut r) = doc.create_range() {
+                    r.set_start(&container, start as u32).ok();
+                    r.set_end(&container, full_end as u32).ok();
+                    sel.remove_all_ranges().ok();
+                    sel.add_range(&r).ok();
+                    exec_cmd(doc, "insertHTML", &code_html);
+                }
+            }
+        }
+    }
 }
