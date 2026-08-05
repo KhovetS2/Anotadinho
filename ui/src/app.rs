@@ -3,9 +3,11 @@
 //! Gerencia o estado global: vault aberto vs tela inicial.
 //! Se um vault está aberto, mostra header + sidebar + editor.
 
+use web_sys::KeyboardEvent;
 use yew::prelude::*;
 
-use crate::api::{self, PageMeta};
+use crate::api;
+use crate::api::PageMeta;
 use crate::components::editor::Editor;
 use crate::components::empty_state::EmptyState;
 use crate::components::sidebar::Sidebar;
@@ -84,8 +86,44 @@ pub fn app() -> Html {
         })
     };
 
+    let onkeydown = {
+        let vault_path = vault_path.clone();
+        let list_version = list_version.clone();
+        let selected_page = selected_page.clone();
+        let on_page_selected = on_page_selected.clone();
+        Callback::from(move |e: KeyboardEvent| {
+            let ctrl = e.ctrl_key() || e.meta_key();
+            match (ctrl, e.key().as_str()) {
+                (true, "n") => {
+                    e.prevent_default();
+                    let title = gloo_dialogs::prompt("Título da nova página:", Some("Nova nota"))
+                        .unwrap_or_default();
+                    let title = title.trim().to_string();
+                    if title.is_empty() {
+                        return;
+                    }
+                    let vault = (*vault_path).clone().unwrap_or_default();
+                    let list_version = list_version.clone();
+                    let on_page_selected = on_page_selected.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        if let Ok(meta) = api::create_page(&vault, &title).await {
+                            on_page_selected.emit(meta);
+                            list_version.set(*list_version + 1);
+                        }
+                    });
+                }
+                (false, "Escape") => {
+                    if selected_page.is_some() {
+                        selected_page.set(None);
+                    }
+                }
+                _ => {}
+            }
+        })
+    };
+
     html! {
-        <div class="app-root">
+        <div class="app-root" tabindex="0" {onkeydown}>
             if let (Some(path), Some(name)) = ((*vault_path).clone(), (*vault_name).clone()) {
                 <div class="app-layout">
                     <header class="app-header">
