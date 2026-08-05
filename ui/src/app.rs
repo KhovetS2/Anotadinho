@@ -17,6 +17,24 @@ pub fn app() -> Html {
     let selected_page = use_state(|| None::<PageMeta>);
     let list_version = use_state(|| 0u32);
     let sidebar_collapsed = use_state(|| false);
+    let theme_light = use_state(|| {
+        web_sys::window()
+            .and_then(|w| w.local_storage().ok().flatten())
+            .and_then(|s| s.get_item("anotadinho.theme").ok().flatten())
+            .map_or(false, |v| v == "light")
+    });
+
+    // Apply theme to <html>
+    {
+        let light = *theme_light;
+        use_effect_with(light, move |_| {
+            if let Some(html) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element()) {
+                if light { html.class_list().add_1("theme-light").ok(); }
+                else { html.class_list().remove_1("theme-light").ok(); }
+            }
+            || {}
+        });
+    }
 
     // Polling
     {
@@ -86,6 +104,17 @@ pub fn app() -> Html {
         Callback::from(move |_| collapsed.set(!*collapsed))
     };
 
+    let toggle_theme = {
+        let light = theme_light.clone();
+        Callback::from(move |_| {
+            let next = !*light;
+            light.set(next);
+            if let Some(s) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+                let _ = s.set_item("anotadinho.theme", if next { "light" } else { "dark" });
+            }
+        })
+    };
+
     let onkeydown = {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();
@@ -125,6 +154,9 @@ pub fn app() -> Html {
                         </button>
                         <h2 class="app-header__title">{ &name }</h2>
                         <span class="app-header__path">{ &path }</span>
+                        <button class="app-header__theme" onclick={toggle_theme} title="Alternar tema">
+                            { if *theme_light { "☀" } else { "🌙" } }
+                        </button>
                         <button class="app-header__close" onclick={on_close_vault}>
                             { "Fechar" }
                         </button>
