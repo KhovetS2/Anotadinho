@@ -72,6 +72,18 @@ pub fn handle_read_page(vault_path: String, page_path: String) -> Result<String,
     vault.read_page(&page_path).map_err(|e| e.to_string())
 }
 
+/// Handler de write_page: grava conteúdo Markdown no disco.
+pub fn handle_write_page(
+    vault_path: String,
+    page_path: String,
+    content: String,
+) -> Result<(), String> {
+    let vault = VaultIo::open(&vault_path);
+    vault
+        .write_page(&page_path, &content)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

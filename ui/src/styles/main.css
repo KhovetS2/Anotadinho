@@ -265,7 +265,7 @@ body {
 
 .editor__header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: var(--sp-3);
     padding: var(--sp-3) var(--sp-4);
     border-bottom: 1px solid var(--border);
@@ -283,6 +283,49 @@ body {
     font-size: 0.75rem;
     color: var(--text-muted);
     font-family: var(--font-mono);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.editor__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.editor__dirty {
+    font-size: 0.75rem;
+    color: var(--warning);
+}
+
+.editor__status-badge {
+    font-size: 0.75rem;
+    color: var(--success);
+}
+
+.editor__save {
+    background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
+    color: var(--text-primary);
+    border: none;
+    padding: var(--sp-1) var(--sp-3);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+.editor__save:hover:not(:disabled) {
+    opacity: 0.85;
+}
+
+.editor__save:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 .editor__status,

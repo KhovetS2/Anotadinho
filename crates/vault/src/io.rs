@@ -85,7 +85,21 @@ impl VaultIo {
         Ok(content)
     }
 
-    /// Resolve path relativo garantindo que fica dentro do vault.
+    /// Escreve conteúdo UTF-8 numa página pelo path relativo ao vault.
+    ///
+    /// Cria diretórios pais se necessário. Rejeita path traversal.
+    pub fn write_page(&self, relative_path: &str, content: &str) -> Result<()> {
+        let full = self.resolve_safe_for_write(relative_path)?;
+        if let Some(parent) = full.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| anyhow::anyhow!("erro ao criar dirs: {}", e))?;
+        }
+        std::fs::write(&full, content)
+            .map_err(|e| anyhow::anyhow!("erro ao escrever {}: {}", relative_path, e))?;
+        Ok(())
+    }
+
+    /// Resolve path relativo garantindo que fica dentro do vault (arquivo deve existir).
     fn resolve_safe(&self, relative_path: &str) -> Result<PathBuf> {
         let joined = self.root.join(relative_path);
         let canonical = joined
@@ -99,6 +113,45 @@ impl VaultIo {
             anyhow::bail!("path fora do vault: {}", relative_path);
         }
         Ok(canonical)
+    }
+
+    /// Resolve path para escrita: valida que o path normalizado fica no vault
+    /// mesmo se o arquivo ainda não existir.
+    fn resolve_safe_for_write(&self, relative_path: &str) -> Result<PathBuf> {
+        if relative_path.is_empty()
+            || relative_path.contains('\0')
+            || Path::new(relative_path)
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            anyhow::bail!("path inválido: {}", relative_path);
+        }
+        let joined = self.root.join(relative_path);
+        let root_canonical = self
+            .root
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("vault root inválido: {}", e))?;
+        // Normaliza sem exigir que o arquivo exista
+        let parent = joined.parent().unwrap_or(&self.root);
+        let parent_canonical = if parent.exists() {
+            parent
+                .canonicalize()
+                .map_err(|e| anyhow::anyhow!("parent inválido: {}", e))?
+        } else {
+            // Cria parent e canonicaliza
+            std::fs::create_dir_all(parent)
+                .map_err(|e| anyhow::anyhow!("erro ao criar parent: {}", e))?;
+            parent
+                .canonicalize()
+                .map_err(|e| anyhow::anyhow!("parent inválido: {}", e))?
+        };
+        if !parent_canonical.starts_with(&root_canonical) {
+            anyhow::bail!("path fora do vault: {}", relative_path);
+        }
+        let file_name = joined
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("path sem nome de arquivo"))?;
+        Ok(parent_canonical.join(file_name))
     }
 }
 
@@ -182,5 +235,27 @@ mod tests {
     fn read_page_rejects_escape() {
         let (_dir, io) = setup_vault();
         assert!(io.read_page("../etc/passwd").is_err());
+    }
+
+    #[test]
+    fn write_page_overwrites_content() {
+        let (_dir, io) = setup_vault();
+        io.write_page("pages/alpha.md", "# Novo Alpha\n").unwrap();
+        let content = io.read_page("pages/alpha.md").unwrap();
+        assert_eq!(content, "# Novo Alpha\n");
+    }
+
+    #[test]
+    fn write_page_creates_new_file() {
+        let (_dir, io) = setup_vault();
+        io.write_page("pages/nova.md", "conteudo novo\n").unwrap();
+        let content = io.read_page("pages/nova.md").unwrap();
+        assert_eq!(content, "conteudo novo\n");
+    }
+
+    #[test]
+    fn write_page_rejects_escape() {
+        let (_dir, io) = setup_vault();
+        assert!(io.write_page("../escape.md", "x").is_err());
     }
 }

@@ -1,5 +1,7 @@
-//! Editor Markdown básico: carrega e exibe o conteúdo bruto da página.
+//! Editor Markdown: carrega, edita e salva o conteúdo bruto da página.
 
+use wasm_bindgen::JsCast;
+use web_sys::{HtmlTextAreaElement, KeyboardEvent};
 use yew::prelude::*;
 
 use crate::api::{self, PageMeta};
@@ -17,13 +19,18 @@ pub struct EditorProps {
 #[function_component(Editor)]
 pub fn editor(props: &EditorProps) -> Html {
     let content = use_state(String::new);
+    let saved_content = use_state(String::new);
     let loading = use_state(|| false);
+    let saving = use_state(|| false);
     let error = use_state(|| None::<String>);
+    let status = use_state(|| None::<String>);
 
     {
         let content = content.clone();
+        let saved_content = saved_content.clone();
         let loading = loading.clone();
         let error = error.clone();
+        let status = status.clone();
         let vault_path = props.vault_path.clone();
         let page = props.page.clone();
 
@@ -32,18 +39,23 @@ pub fn editor(props: &EditorProps) -> Html {
                 let vault_path = vault_path.clone();
                 let path = p.path.clone();
                 let content = content.clone();
+                let saved_content = saved_content.clone();
                 let loading = loading.clone();
                 let error = error.clone();
+                let status = status.clone();
                 loading.set(true);
                 error.set(None);
+                status.set(None);
                 wasm_bindgen_futures::spawn_local(async move {
                     match api::read_page(&vault_path, &path).await {
                         Ok(text) => {
-                            content.set(text);
+                            content.set(text.clone());
+                            saved_content.set(text);
                             error.set(None);
                         }
                         Err(e) => {
                             content.set(String::new());
+                            saved_content.set(String::new());
                             error.set(Some(e));
                         }
                     }
@@ -51,7 +63,9 @@ pub fn editor(props: &EditorProps) -> Html {
                 });
             } else {
                 content.set(String::new());
+                saved_content.set(String::new());
                 error.set(None);
+                status.set(None);
                 loading.set(false);
             }
             || ()
@@ -66,13 +80,99 @@ pub fn editor(props: &EditorProps) -> Html {
         };
     }
 
-    let page = props.page.as_ref().unwrap();
+    let page = props.page.as_ref().unwrap().clone();
+    let dirty = *content != *saved_content;
+
+    let oninput = {
+        let content = content.clone();
+        let status = status.clone();
+        Callback::from(move |e: InputEvent| {
+            if let Some(input) = e
+                .target()
+                .and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok())
+            {
+                content.set(input.value());
+                status.set(None);
+            }
+        })
+    };
+
+    let do_save = {
+        let content = content.clone();
+        let saved_content = saved_content.clone();
+        let saving = saving.clone();
+        let error = error.clone();
+        let status = status.clone();
+        let vault_path = props.vault_path.clone();
+        let page_path = page.path.clone();
+        Callback::from(move |_| {
+            if *saving {
+                return;
+            }
+            let content_val = (*content).clone();
+            let vault_path = vault_path.clone();
+            let page_path = page_path.clone();
+            let content = content.clone();
+            let saved_content = saved_content.clone();
+            let saving = saving.clone();
+            let error = error.clone();
+            let status = status.clone();
+            saving.set(true);
+            error.set(None);
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::write_page(&vault_path, &page_path, &content_val).await {
+                    Ok(()) => {
+                        saved_content.set(content_val);
+                        status.set(Some("Salvo".to_string()));
+                    }
+                    Err(e) => {
+                        error.set(Some(e));
+                        let _ = content;
+                    }
+                }
+                saving.set(false);
+            });
+        })
+    };
+
+    let onkeydown = {
+        let do_save = do_save.clone();
+        Callback::from(move |e: KeyboardEvent| {
+            if (e.ctrl_key() || e.meta_key()) && e.key() == "s" {
+                e.prevent_default();
+                do_save.emit(());
+            }
+        })
+    };
+
+    let save_label = if *saving {
+        "Salvando..."
+    } else if dirty {
+        "Salvar *"
+    } else {
+        "Salvar"
+    };
 
     html! {
-        <main class="editor">
+        <main class="editor" {onkeydown}>
             <header class="editor__header">
                 <h2 class="editor__title">{ &page.title }</h2>
                 <span class="editor__path">{ &page.path }</span>
+                <div class="editor__actions">
+                    if let Some(ref s) = *status {
+                        <span class="editor__status-badge">{ s }</span>
+                    }
+                    if dirty {
+                        <span class="editor__dirty">{ "não salvo" }</span>
+                    }
+                    <button
+                        class="editor__save"
+                        onclick={do_save.reform(|_| ())}
+                        disabled={*saving || !dirty}
+                    >
+                        { save_label }
+                    </button>
+                </div>
             </header>
             if *loading {
                 <p class="editor__status">{ "Carregando..." }</p>
@@ -82,7 +182,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 <textarea
                     class="editor__textarea"
                     value={(*content).clone()}
-                    readonly=true
+                    {oninput}
                     spellcheck="false"
                 />
             }
