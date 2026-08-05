@@ -148,6 +148,24 @@ pub async fn delete_page(vault_path: &str, page_path: &str) -> Result<(), String
     Ok(())
 }
 
+/// Verifica se houve mudanças no vault desde a última verificação.
+pub async fn check_changes(vault_path: &str) -> Result<bool, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("vaultPath"),
+        &JsValue::from_str(vault_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+
+    let result = tauri_invoke("check_changes", &args)
+        .await
+        .map_err(|e| format!("check_changes error: {:?}", e))?;
+
+    Ok(result.as_bool().unwrap_or(false))
+}
+
 /// Abre ou cria o journal do dia.
 pub async fn open_today_journal(vault_path: &str) -> Result<PageMeta, String> {
     let args = js_sys::Object::new();

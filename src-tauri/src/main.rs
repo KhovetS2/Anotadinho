@@ -5,12 +5,32 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use anotadinho_ipc::{
     handle_create_page, handle_delete_page, handle_list_pages, handle_open_today_journal,
     handle_ping, handle_read_page, handle_write_page, PageMeta, PingArgs, PingResult, VaultInfo,
 };
-use anotadinho_vault::VaultIo;
+use anotadinho_vault::{VaultIo, VaultWatcher};
 use tauri_plugin_dialog::DialogExt;
+
+struct AppWatchers(Mutex<HashMap<String, VaultWatcher>>);
+
+#[tauri::command]
+fn check_changes(
+    vault_path: String,
+    state: tauri::State<'_, AppWatchers>,
+) -> Result<bool, String> {
+    let mut map = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(watcher) = map.get_mut(&vault_path) {
+        return Ok(watcher.has_changes());
+    }
+    let watcher = VaultWatcher::start(vault_path.clone().into()).map_err(|e| e.to_string())?;
+    let changed = watcher.has_changes();
+    let _ = map.insert(vault_path, watcher);
+    Ok(changed)
+}
 
 #[tauri::command]
 fn ping(args: PingArgs) -> PingResult {
@@ -82,6 +102,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(AppWatchers(Mutex::new(HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             ping,
             get_vault_info,
@@ -91,6 +112,7 @@ fn main() {
             create_page,
             open_today_journal,
             delete_page,
+            check_changes,
             open_vault_dialog
         ])
         .run(tauri::generate_context!())

@@ -6,5 +6,7 @@
 #![warn(missing_docs)]
 
 pub mod io;
+pub mod watcher;
 
 pub use io::VaultIo;
+pub use watcher::VaultWatcher;

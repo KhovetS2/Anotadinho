@@ -5,7 +5,7 @@
 
 use yew::prelude::*;
 
-use crate::api::PageMeta;
+use crate::api::{self, PageMeta};
 use crate::components::editor::Editor;
 use crate::components::empty_state::EmptyState;
 use crate::components::sidebar::Sidebar;
@@ -18,6 +18,29 @@ pub fn app() -> Html {
     let vault_name = use_state(|| state::load_vault_name());
     let selected_page = use_state(|| None::<PageMeta>);
     let list_version = use_state(|| 0u32);
+
+    // Polling: verifica mudanças a cada 3s e recarrega sidebar se houver
+    {
+        let vault_path = vault_path.clone();
+        let list_version = list_version.clone();
+        use_effect_with(vault_path.clone(), move |_| {
+            let mut interval: Option<gloo_timers::callback::Interval> = None;
+            if let Some(ref p) = *vault_path {
+                let path = p.clone();
+                let iv = gloo_timers::callback::Interval::new(3000, move || {
+                    let path = path.clone();
+                    let list_version = list_version.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        if let Ok(true) = api::check_changes(&path).await {
+                            list_version.set(*list_version + 1);
+                        }
+                    });
+                });
+                interval = Some(iv);
+            }
+            move || drop(interval.take())
+        });
+    }
 
     let on_vault_selected = {
         let vault_path = vault_path.clone();
