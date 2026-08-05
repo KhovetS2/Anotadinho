@@ -63,12 +63,22 @@ fn walk(node: &Element, _depth: usize) -> String {
             let href = node.get_attribute("href").unwrap_or_default();
             if href.is_empty() { text } else { format!("[{}]({})", text, href) }
         }
-        "p" | "div" => {
-            let inner = inline_children(node);
-            if inner.is_empty() { "\n".to_string() } else { format!("{}\n\n", inner) }
+        "p" |         "div" => {
+            if node.class_name().contains("mermaid") {
+                let text = text_of(node);
+                format!("```mermaid\n{}\n```\n\n", text)
+            } else {
+                let inner = inline_children(node);
+                if inner.is_empty() { "\n".to_string() } else { format!("{}\n\n", inner) }
+            }
         }
         "br" => "\n".to_string(),
         "hr" => "---\n".to_string(),
+        "img" => {
+            let alt = node.get_attribute("alt").unwrap_or_default();
+            let src = node.get_attribute("src").unwrap_or_default();
+            format!("![{}]({})\n", alt, src)
+        }
         "input" => "- [ ] ".to_string(),
         _ => {
             if child_count > 0 {

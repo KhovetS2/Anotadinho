@@ -30,6 +30,8 @@ static SLASH_ITEMS: &[SlashItem] = &[
     SlashItem { label: "Código", desc: "Bloco de código", html: "<pre><code>código</code></pre>" },
     SlashItem { label: "Tabela", desc: "Tabela 3×2", html: "<table><tr><td>A</td><td>B</td><td>C</td></tr><tr><td></td><td></td><td></td></tr></table>" },
     SlashItem { label: "Linha", desc: "Divisor horizontal", html: "<hr>" },
+    SlashItem { label: "Imagem", desc: "URL de imagem", html: "__IMG__" },
+    SlashItem { label: "Diagrama", desc: "Mermaid (fluxograma)", html: "__MERMAID__" },
 ];
 
 #[function_component(Editor)]
@@ -79,6 +81,8 @@ pub fn editor(props: &EditorProps) -> Html {
                                 div.set_inner_html(&html);
                             }
                             content_md.set(text.clone()); saved_content.set(text);
+                            // Init Mermaid diagrams if any
+                            init_mermaid();
                         }
                         Err(e) => { error.set(Some(e)); }
                     }
@@ -187,11 +191,31 @@ pub fn editor(props: &EditorProps) -> Html {
         Callback::from(move |_| {
             if let Some(&item_idx) = items.get(*slash_idx) {
                 let item = &SLASH_ITEMS[item_idx];
-                exec_fn("insertHTML", item.html);
+                let html = match item.html {
+                    "__IMG__" => {
+                        let url = gloo_dialogs::prompt("URL da imagem:", None).unwrap_or_default();
+                        if url.is_empty() { String::new() }
+                        else { format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", url.replace('"', "&quot;")) }
+                    }
+                    "__MERMAID__" => {
+                        let code = gloo_dialogs::prompt("Código Mermaid:\n(ex: graph TD; A-->B)", None).unwrap_or_default();
+                        if code.is_empty() { String::new() }
+                        else { format!("<div class=\"mermaid\">{}</div>", code.replace('<', "&lt;").replace('>', "&gt;")) }
+                    }
+                    other => other.to_string()
+                };
+                if !html.is_empty() {
+                    exec_fn("insertHTML", &html);
+                }
             }
             slash_open.set(false);
             slash_text.set(String::new());
             slash_idx.set(0);
+            // Re-init mermaid after insert
+            wasm_bindgen_futures::spawn_local(async {
+                gloo_timers::future::sleep(std::time::Duration::from_millis(100)).await;
+                init_mermaid();
+            });
         })
     };
 
@@ -282,5 +306,26 @@ pub fn editor(props: &EditorProps) -> Html {
                 </div>
             }
         </main>
+    }
+}
+
+fn init_mermaid() {
+    if let Some(window) = web_sys::window() {
+        if let Some(mermaid) = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("mermaid"))
+            .ok()
+            .and_then(|v| v.dyn_into::<js_sys::Object>().ok())
+        {
+            // Configure mermaid with dark theme
+            let config = js_sys::Object::new();
+            js_sys::Reflect::set(&config, &wasm_bindgen::JsValue::from_str("theme"), &wasm_bindgen::JsValue::from_str("dark")).ok();
+            js_sys::Reflect::set(&config, &wasm_bindgen::JsValue::from_str("startOnLoad"), &wasm_bindgen::JsValue::from_bool(true)).ok();
+            let _ = js_sys::Reflect::set(&mermaid, &wasm_bindgen::JsValue::from_str("initialize"), &config);
+            let run = js_sys::Reflect::get(&mermaid, &wasm_bindgen::JsValue::from_str("run"))
+                .ok()
+                .and_then(|v| v.dyn_into::<js_sys::Function>().ok());
+            if let Some(run_fn) = run {
+                let _ = run_fn.call0(&wasm_bindgen::JsValue::null());
+            }
+        }
     }
 }

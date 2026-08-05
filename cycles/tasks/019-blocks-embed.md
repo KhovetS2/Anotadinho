@@ -1,7 +1,7 @@
 ---
 id: "019"
 titulo: "Blocos embed: PDF, imagem, Mermaid (diagramas)"
-status: pending
+status: done
 criado: 2026-08-05
 autor: humano
 prioridade: media
@@ -23,9 +23,9 @@ Assets salvos em `vault/assets/` e referenciados no Markdown.
 
 ## Critérios de aceite
 
-- [ ] `/pdf` seleciona PDF e mostra embed
-- [ ] `/img` seleciona imagem e mostra preview
-- [ ] Arquivos copiados para `vault/assets/`
-- [ ] Markdown gerado com referência `![alt](assets/file)`
-- [ ] `/mermaid` renderiza diagrama (Mermaid.js via CDN)
-- [ ] App continua compilando
+- [x] `/pdf` seleciona PDF e mostra embed
+- [x] `/img` seleciona imagem e mostra preview
+- [x] Arquivos copiados para `vault/assets/`
+- [x] Markdown gerado com referência `![alt](assets/file)`
+- [x] `/mermaid` renderiza diagrama (Mermaid.js via CDN)
+- [x] App continua compilando

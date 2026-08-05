@@ -693,6 +693,21 @@ body {
 
 .editor__statusbar-hint { opacity: 0.6; }
 
+/* Mermaid diagrams */
+.editor__wysiwyg .mermaid {
+    background: var(--bg-surface);
+    border-radius: var(--r-md);
+    padding: var(--sp-4);
+    margin: var(--sp-3) 0;
+    text-align: center;
+    overflow-x: auto;
+}
+
+.editor__wysiwyg .mermaid svg {
+    max-width: 100%;
+    height: auto;
+}
+
 /* Slash menu */
 .slash-menu {
     position: fixed;
