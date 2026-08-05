@@ -7,6 +7,7 @@
 
 use anotadinho_ipc::{handle_list_pages, handle_ping, PageMeta, PingArgs, PingResult, VaultInfo};
 use anotadinho_vault::VaultIo;
+use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]
 fn ping(args: PingArgs) -> PingResult {
@@ -32,6 +33,17 @@ fn list_pages(vault_path: String) -> Result<Vec<PageMeta>, String> {
     handle_list_pages(vault_path)
 }
 
+#[tauri::command]
+async fn open_vault_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .pick_folder(move |file_path| {
+            let _ = tx.send(file_path.map(|p| p.to_string()));
+        });
+    rx.await.map_err(|e| e.to_string())
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -42,7 +54,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![ping, get_vault_info, list_pages])
+        .invoke_handler(tauri::generate_handler![ping, get_vault_info, list_pages, open_vault_dialog])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar Anotadinho");
 }

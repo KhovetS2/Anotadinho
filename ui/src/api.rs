@@ -45,30 +45,11 @@ async fn tauri_invoke(cmd: &str, args: &JsValue) -> Result<JsValue, JsValue> {
     JsFuture::from(promise).await
 }
 
-/// Abre o dialog nativo de seleção de pasta (Tauri dialog plugin).
+/// Abre o dialog nativo de seleção de pasta via comando Tauri.
 pub async fn open_folder_dialog() -> Result<Option<String>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("directory"),
-        &JsValue::from_bool(true),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("multiple"),
-        &JsValue::from_bool(false),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("title"),
-        &JsValue::from_str("Selecione a pasta do vault"),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
+    let args = JsValue::from(js_sys::Object::new());
 
-    let result = tauri_invoke("plugin:dialog|open", &args)
+    let result = tauri_invoke("open_vault_dialog", &args)
         .await
         .map_err(|e| format!("dialog error: {:?}", e))?;
 
