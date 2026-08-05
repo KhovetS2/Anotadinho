@@ -1,0 +1,121 @@
+/* Anotadinho - tema dark com acentos azul/roxo */
+
+:root {
+    --bg-base: #0F172A;
+    --bg-surface: #1E293B;
+    --bg-elevated: #334155;
+    --text-primary: #F1F5F9;
+    --text-muted: #94A3B8;
+    --accent-blue: #3B82F6;
+    --accent-blue-hover: #2563EB;
+    --accent-purple: #8B5CF6;
+    --accent-purple-hover: #7C3AED;
+    --border: #334155;
+    --success: #10B981;
+    --warning: #F59E0B;
+    --error: #EF4444;
+
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+    --sp-1: 0.25rem;
+    --sp-2: 0.5rem;
+    --sp-3: 0.75rem;
+    --sp-4: 1rem;
+    --sp-6: 1.5rem;
+    --sp-8: 2rem;
+
+    --r-sm: 4px;
+    --r-md: 8px;
+    --r-lg: 12px;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    width: 100%;
+}
+
+body {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+    background-color: var(--bg-base);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+    height: 100%;
+    width: 100%;
+}
+
+.app-root {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Empty state */
+.empty-state {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--bg-base) 0%, var(--bg-surface) 100%);
+}
+
+.empty-state__inner {
+    text-align: center;
+    padding: var(--sp-8);
+    max-width: 480px;
+}
+
+.empty-state__title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: var(--sp-4);
+    background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.empty-state__message {
+    color: var(--text-muted);
+    font-size: 1.125rem;
+    margin-bottom: var(--sp-6);
+}
+
+.empty-state__button {
+    background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
+    color: var(--text-primary);
+    border: none;
+    padding: var(--sp-3) var(--sp-6);
+    font-size: 1rem;
+    font-weight: 500;
+    border-radius: var(--r-md);
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+.empty-state__button:hover:not(:disabled) {
+    opacity: 0.85;
+}
+
+.empty-state__button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.empty-state__hint {
+    margin-top: var(--sp-4);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}

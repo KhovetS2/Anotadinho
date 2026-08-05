@@ -1,0 +1,8 @@
+[build]
+target = "wasm32-unknown-unknown"
+release = false
+
+[serve]
+port = 1420
+address = "0.0.0.0"
+open = false
