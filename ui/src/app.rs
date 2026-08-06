@@ -21,7 +21,6 @@ pub fn app() -> Html {
     let list_version = use_state(|| 0u32);
     let sidebar_collapsed = use_state(|| false);
     let open_tabs = use_state(Vec::<PageMeta>::new);
-    let current_view = use_state(|| "editor".to_string());
     let vim_mode = use_state(|| false);
     let theme_light = use_state(|| {
         web_sys::window().and_then(|w| w.local_storage().ok().flatten())
@@ -280,33 +279,11 @@ pub fn app() -> Html {
                                 on_select={on_tab_select}
                                 on_close={on_tab_close}
                             />
-                            <div class="editor__toolbar" style="padding: 4px 12px; gap: 8px;">
-                                <div class="view-switcher">
-                                    { for ["editor", "kanban"].iter().map(|v| {
-                                        let is_active = **v == *current_view;
-                                        let class = if is_active { "view-switcher__btn view-switcher__btn--active" } else { "view-switcher__btn" };
-                                        let view = v.to_string();
-                                        let current_view = current_view.clone();
-                                        html! {
-                                            <button {class} onclick={Callback::from(move |_| current_view.set(view.clone()))}>
-                                                { if *v == "editor" { "📝 Editor" } else { "📋 Kanban" } }
-                                            </button>
-                                        }
-                                    }) }
-                                </div>
-                            </div>
-                            if *current_view == "editor" {
-                                <Editor
-                                    vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
-                                    page={(*selected_page).clone()}
-                                    on_page_deleted={on_page_deleted}
-                                />
-                            } else {
-                                <Kanban
-                                    vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
-                                    on_page_selected={on_page_selected.clone()}
-                                />
-                            }
+                            <Editor
+                                vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
+                                page={(*selected_page).clone()}
+                                on_page_deleted={on_page_deleted}
+                            />
                         </div>
                     </div>
                 </div>

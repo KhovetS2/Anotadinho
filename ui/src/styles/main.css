@@ -278,26 +278,25 @@ body {
     position: absolute;
     top: calc(100% + 4px);
     right: 0;
-    min-width: 190px;
+    min-width: 175px;
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: 10px;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.03) inset;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
     z-index: 200;
     padding: 4px;
     display: flex;
     flex-direction: column;
-    backdrop-filter: blur(8px);
 }
 
 .header-menu__item {
     width: 100%;
     text-align: left;
     justify-content: flex-start;
-    padding: 7px 12px !important;
+    padding: 8px 12px !important;
     border-radius: 6px !important;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: 0.875rem;
+    font-weight: 600;
 }
 
 /* ── Main Panel (TabBar + Editor) ────────────── */
@@ -590,15 +589,16 @@ body {
 .editor__header {
     display: flex;
     align-items: center;
-    gap: var(--sp-3);
-    padding: var(--sp-3) var(--sp-4);
+    gap: 8px;
+    padding: 6px 16px;
+    height: 34px;
     border-bottom: 1px solid var(--border);
-    background: var(--bg-surface);
+    background: var(--bg-base);
     flex-shrink: 0;
 }
 
 .editor__title {
-    font-size: 1rem;
+    font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -616,7 +616,7 @@ body {
 .editor__actions {
     display: flex;
     align-items: center;
-    gap: var(--sp-2);
+    gap: 6px;
     margin-left: auto;
     flex-shrink: 0;
 }
