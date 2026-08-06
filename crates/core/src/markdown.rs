@@ -400,6 +400,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_frontmatter_bare_date_created() {
+        // Regressão: páginas reais do vault usam "created: YYYY-MM-DD" (sem
+        // horário), que não é um DateTime RFC3339 válido. Se o parse falhar
+        // aqui, o fallback do markdown_render acaba renderizando a página
+        // inteira (frontmatter incluso) como texto solto.
+        let text = "---\ntitle: Sobre o Anotadinho\ntags: [projeto, docs]\ncreated: 2026-08-04\n---\n\n# Sobre\n";
+        let page = MarkdownCodec::parse(text).unwrap();
+        assert_eq!(page.frontmatter.title.as_deref(), Some("Sobre o Anotadinho"));
+        assert_eq!(page.frontmatter.tags, vec!["projeto", "docs"]);
+        assert_eq!(page.frontmatter.created.as_deref(), Some("2026-08-04"));
+        assert_eq!(page.blocks.len(), 1);
+        assert_eq!(page.blocks[0].content, "# Sobre");
+    }
+
+    #[test]
     fn parse_block_with_id_and_property() {
         let id = uuid::Uuid::new_v4();
         let text = format!(

@@ -79,7 +79,6 @@ name = "anotadinho-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "chrono",
  "pulldown-cmark",
  "serde",
  "serde_json",

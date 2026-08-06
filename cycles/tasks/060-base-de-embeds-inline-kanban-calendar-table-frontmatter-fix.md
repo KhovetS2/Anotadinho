@@ -31,14 +31,11 @@ tocar no resto do sistema (1 variante de enum + 1 parser + 1 componente).
 - [x] Novo módulo `ui/src/embed.rs`: `EmbedKind`, segmentação por offset de fences via `pulldown-cmark`, parse/serialize por tipo
 - [x] Componentes Yew interativos novos (`ui/src/components/embeds/`) para kanban/calendar/table, renderizados dentro de `editor.rs` como "ilhas" fora do fluxo `contenteditable`
 - [x] Editar um embed (ex: mover card de coluna) regenera o texto daquele trecho e aciona o fluxo de salvar existente
-- [ ] `exemplos-embeds.md` renderiza corretamente no app rodando (validado via MCP) —
-      **não verificado ao vivo nesta rodada**: os MCP servers `tauri`/`playwright`
-      foram registrados (`claude mcp add`) só durante esta sessão, e MCP
-      registrado a meio de sessão só fica disponível numa sessão nova. Validado
-      via `cargo test --workspace` (20 testes em `anotadinho-core`, incluindo
-      round-trip de fence, e 7 testes de segmentação em `anotadinho-ui`) +
-      `trunk build`/`cargo build` limpos. Verificação visual fica pendente pra
-      quando o skill `ui-check` puder rodar com os MCP tools carregados.
+- [x] `exemplos-embeds.md` renderiza corretamente no app rodando (validado via MCP) —
+      confirmado numa sessão nova (ver ciclo 062): kanban/calendar/table renderizam
+      como componentes reais, screenshot conferido. Essa mesma validação expôs 3 bugs
+      que os testes unitários não cobriam (CSS faltando, Frontmatter.created,
+      corrupção de newline no save) — corrigidos no ciclo 062.
 
 ## Comandos de validação
 

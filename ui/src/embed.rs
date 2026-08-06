@@ -84,15 +84,26 @@ pub fn segment(body: &str) -> Vec<DocSegment> {
 
 /// Reconstrói o corpo original a partir dos segmentos (round-trip com
 /// `segment`, exceto por normalização de formatação dentro das fences).
+///
+/// Um trecho de markdown que passou por edição (ex: `html_to_markdown`, que
+/// não preserva a quebra de linha final do texto original) pode acabar sem
+/// `\n` no fim. Sem isso o próximo segmento (ex: a fence de um embed) gruda
+/// na mesma linha e corrompe o arquivo — então garante a quebra aqui, uma
+/// vez, em vez de depender de cada chamador lembrar disso.
 pub fn join(segments: &[DocSegment]) -> String {
-    segments
-        .iter()
-        .map(|s| match s {
-            DocSegment::Markdown(text) => text.clone(),
-            DocSegment::Embed(data) => data.to_fence_text(),
-        })
-        .collect::<Vec<_>>()
-        .join("")
+    let mut out = String::new();
+    for segment in segments {
+        match segment {
+            DocSegment::Markdown(text) => {
+                out.push_str(text);
+                if !text.is_empty() && !text.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            DocSegment::Embed(data) => out.push_str(&data.to_fence_text()),
+        }
+    }
+    out
 }
 
 /// Remove as linhas de abertura (` ```lang `) e fechamento (` ``` `) de um
@@ -381,6 +392,36 @@ items:
 
 Acima do embed você pode ter texto normal. Abaixo também.
 "#;
+
+    #[test]
+    fn join_inserts_missing_newline_before_next_segment() {
+        // Regressão: um trecho de markdown editado (ex: vindo de
+        // html_to_markdown, que não preserva o \n final) não pode grudar no
+        // próximo segmento — isso corrompe o arquivo salvo (ex:
+        // "## Kanban Embed```kanban" numa linha só).
+        let segments = vec![
+            DocSegment::Markdown("## Kanban Embed".to_string()), // sem \n final
+            DocSegment::Embed(EmbedData::Kanban(KanbanEmbedData {
+                columns: vec!["Backlog".into()],
+                items: vec![],
+            })),
+        ];
+        let joined = join(&segments);
+        assert!(
+            joined.starts_with("## Kanban Embed\n```kanban"),
+            "esperava quebra de linha entre o heading e a fence, ficou: {joined:?}"
+        );
+    }
+
+    #[test]
+    fn join_does_not_duplicate_existing_newline() {
+        let segments = vec![
+            DocSegment::Markdown("texto\n\n".to_string()),
+            DocSegment::Embed(EmbedData::Calendar(CalendarEmbedData { entries: vec![] })),
+        ];
+        let joined = join(&segments);
+        assert!(joined.starts_with("texto\n\n```calendar"));
+    }
 
     #[test]
     fn segment_recognizes_all_three_embeds_in_order() {
