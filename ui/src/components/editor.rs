@@ -293,10 +293,9 @@ pub fn editor(props: &EditorProps) -> Html {
         let slash_idx = slash_idx.clone();
         let filtered_len = filtered.len();
         let select_slash = select_slash.clone();
+        let vim_normal = use_state(|| false);
         Callback::from(move |e: KeyboardEvent| {
             if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); do_save.emit(()); return; }
-            if (e.ctrl_key()||e.meta_key()) && !e.shift_key() && e.key()=="z" { e.prevent_default(); exec_cmd_global("undo"); return; }
-            if (e.ctrl_key()||e.meta_key()) && (e.key()=="y" || (e.shift_key() && e.key()=="z")) { e.prevent_default(); exec_cmd_global("redo"); return; }
 
             if *slash_open {
                 match e.key().as_str() {
@@ -365,7 +364,25 @@ pub fn editor(props: &EditorProps) -> Html {
     };
 
     let save_label = if *saving { "Salvando..." } else if *edited { "Salvar *" } else { "Salvar" };
-    let on_edit = { let e = edited.clone(); Callback::from(move |_| e.set(true)) };
+    let save_counter = use_state(|| 0u32);
+    let on_edit = {
+        let e = edited.clone();
+        let do_save = do_save.clone();
+        let save_counter = save_counter.clone();
+        Callback::from(move |_| {
+            e.set(true);
+            let do_save = do_save.clone();
+            let save_counter = save_counter.clone();
+            let id = *save_counter + 1;
+            save_counter.set(id);
+            wasm_bindgen_futures::spawn_local(async move {
+                gloo_timers::future::sleep(std::time::Duration::from_secs(3)).await;
+                if *save_counter == id {
+                    do_save.emit(());
+                }
+            });
+        })
+    };
 
     let on_drop = {
         let vault_path = props.vault_path.clone();
