@@ -209,7 +209,10 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 }
             </div>
             if *loading && pages.is_empty() {
-                <p class="app-sidebar__hint">{ "Carregando..." }</p>
+                <p class="app-sidebar__hint">
+                    <span class="spinner"></span>
+                    { " Carregando..." }
+                </p>
             } else if !has_results {
                 <p class="app-sidebar__hint">{ "Nenhum resultado" }</p>
             } else {

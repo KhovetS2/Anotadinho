@@ -453,7 +453,10 @@ pub fn editor(props: &EditorProps) -> Html {
             </header>
             <div class="editor__body">
                 if *loading {
-                    <div class="editor__overlay">{ "Carregando..." }</div>
+                    <div class="editor__overlay">
+                        <div class="spinner"></div>
+                        { "Carregando..." }
+                    </div>
                 }
                 if let Some(ref err) = *error {
                     <div class="editor__overlay editor__overlay--error">{ err }</div>
