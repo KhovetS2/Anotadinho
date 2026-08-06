@@ -35,7 +35,7 @@ impl std::fmt::Display for BlockId {
 }
 
 /// Tipo semântico de um bloco (nota, tarefa, heading, etc).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum BlockKind {
     /// Bloco de texto livre.
@@ -47,8 +47,10 @@ pub enum BlockKind {
     Heading(u8),
     /// Citação.
     Quote,
-    /// Código.
-    Code,
+    /// Código (fence ```` ``` ````), com a linguagem opcional da fence
+    /// (ex: `Some("rust")`, `Some("kanban")`, ou `None` se a fence não
+    /// declara linguagem).
+    Code(Option<String>),
     /// Lista.
     List,
     /// Tipo custom (definido por property `tipo::`).

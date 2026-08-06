@@ -28,6 +28,24 @@ impl MarkdownCodec {
         })
     }
 
+    /// Separa o frontmatter YAML do corpo, sem tocar no texto do corpo
+    /// (retorna uma fatia do `text` original — sem reserializar blocos).
+    /// Útil quando quem chama só precisa do `type`/`title`/`tags` e quer
+    /// renderizar o corpo verbatim (ex: markdown → HTML).
+    pub fn split_frontmatter(text: &str) -> Result<(Frontmatter, &str)> {
+        split_frontmatter(text)
+    }
+
+    /// Separa o texto em `(bloco de frontmatter cru incluindo os "---",
+    /// corpo)`, sem parsear o YAML. Diferente de `split_frontmatter`, não
+    /// falha em YAML inválido e não perde campos desconhecidos — serve pra
+    /// preservar o frontmatter original ao regravar um corpo editado
+    /// (ex: editor que só edita o corpo, não os metadados).
+    /// Se não houver frontmatter, retorna `("", text)`.
+    pub fn split_frontmatter_text(text: &str) -> (&str, &str) {
+        split_frontmatter_text(text)
+    }
+
     /// Converte uma `Page` de volta em texto Markdown.
     pub fn serialize(page: &Page) -> Result<String> {
         let mut out = String::new();
@@ -79,6 +97,31 @@ fn split_frontmatter(text: &str) -> Result<(Frontmatter, &str)> {
     bail!("frontmatter aberto sem fechamento ---");
 }
 
+fn split_frontmatter_text(text: &str) -> (&str, &str) {
+    let bom_len = text.len() - text.trim_start_matches('\u{feff}').len();
+    let trimmed = &text[bom_len..];
+    if !trimmed.starts_with("---") {
+        return ("", text);
+    }
+
+    let after_first = &trimmed[3..];
+    let nl_len = if after_first.starts_with('\n') { 1 } else { 0 };
+    let after_first = &after_first[nl_len..];
+
+    if let Some(end) = after_first.find("\n---") {
+        let close_end = end + 4; // consome "\n---"
+        let rest = &after_first[close_end..];
+        let rest_nl_len = if rest.starts_with('\n') { 1 } else { 0 };
+
+        let fm_end = 3 + nl_len + close_end;
+        let body_start = fm_end + rest_nl_len;
+
+        return (&trimmed[..fm_end], &trimmed[body_start..]);
+    }
+
+    ("", text)
+}
+
 fn parse_blocks(body: &str) -> Vec<Block> {
     let mut blocks = Vec::new();
     let mut lines = body.lines().peekable();
@@ -97,6 +140,29 @@ fn parse_blocks(body: &str) -> Vec<Block> {
             let t = line.trim_start();
             t.strip_prefix("- ").or_else(|| t.strip_prefix('-')).unwrap_or(t)
         };
+
+        // Fence de código (```lang ... ```): consome tudo verbatim até o
+        // fechamento como um único Block, sem passar pelo scan de
+        // properties/continuação (o conteúdo da fence é opaco).
+        if let Some(lang) = content_line.strip_prefix("```") {
+            let lang = lang.trim();
+            let lang = if lang.is_empty() { None } else { Some(lang.to_string()) };
+            let mut fence_lines = Vec::new();
+            for next in lines.by_ref() {
+                if next.trim() == "```" {
+                    break;
+                }
+                fence_lines.push(next.to_string());
+            }
+            blocks.push(Block {
+                id: BlockId::new(),
+                content: fence_lines.join("\n"),
+                kind: BlockKind::Code(lang),
+                properties: Vec::new(),
+                depth,
+            });
+            continue;
+        }
 
         let mut properties = Vec::new();
         let mut content_parts = Vec::new();
@@ -188,14 +254,35 @@ fn infer_kind(content: &str, properties: &[(String, String)]) -> BlockKind {
     if content.starts_with("> ") {
         return BlockKind::Quote;
     }
-    if content.starts_with("```") {
-        return BlockKind::Code;
+    if let Some(lang) = content.strip_prefix("```") {
+        let lang = lang.trim();
+        return BlockKind::Code(if lang.is_empty() { None } else { Some(lang.to_string()) });
     }
     BlockKind::Note
 }
 
 fn serialize_block(out: &mut String, block: &Block) {
     let indent = "  ".repeat(block.depth as usize);
+
+    // Fences são opacas e não vivem dentro de uma bullet "- id:: ..." —
+    // serializa como texto de fence puro pra dar round-trip com o parser.
+    if let BlockKind::Code(lang) = &block.kind {
+        out.push_str(&indent);
+        out.push_str("```");
+        if let Some(l) = lang {
+            out.push_str(l);
+        }
+        out.push('\n');
+        for line in block.content.lines() {
+            out.push_str(&indent);
+            out.push_str(line);
+            out.push('\n');
+        }
+        out.push_str(&indent);
+        out.push_str("```\n");
+        return;
+    }
+
     out.push_str(&indent);
     out.push_str("- ");
 
@@ -226,6 +313,73 @@ fn serialize_block(out: &mut String, block: &Block) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn split_frontmatter_text_preserves_raw_yaml() {
+        let text = "---\ntitle: Exemplos de Embeds\ntags: [demo, embed]\n---\n\n# corpo\n";
+        let (fm, body) = MarkdownCodec::split_frontmatter_text(text);
+        assert_eq!(fm, "---\ntitle: Exemplos de Embeds\ntags: [demo, embed]\n---");
+        // body preserva a linha em branco original (mesmo comportamento de
+        // split_frontmatter, que também só remove UM '\n' do começo).
+        assert_eq!(body, "\n# corpo\n");
+        // Rejuntar com um "\n" reconstrói o texto original.
+        assert_eq!(format!("{fm}\n{body}"), text);
+    }
+
+    #[test]
+    fn split_frontmatter_text_no_frontmatter() {
+        let text = "# só corpo\n";
+        let (fm, body) = MarkdownCodec::split_frontmatter_text(text);
+        assert_eq!(fm, "");
+        assert_eq!(body, text);
+    }
+
+    #[test]
+    fn parse_fence_with_lang_as_single_block() {
+        let text = "# titulo\n\n```kanban\ncolumns: [Backlog, Todo, Done]\nitems:\n  - Tarefa 1 (backlog)\n```\n\ntexto depois\n";
+        let page = MarkdownCodec::parse(text).unwrap();
+        assert_eq!(page.blocks.len(), 3);
+        assert_eq!(page.blocks[0].content, "# titulo");
+        assert_eq!(
+            page.blocks[1].kind,
+            BlockKind::Code(Some("kanban".to_string()))
+        );
+        assert_eq!(
+            page.blocks[1].content,
+            "columns: [Backlog, Todo, Done]\nitems:\n  - Tarefa 1 (backlog)"
+        );
+        assert_eq!(page.blocks[2].content, "texto depois");
+    }
+
+    #[test]
+    fn parse_fence_without_lang() {
+        let text = "```\nplain code\nmore code\n```\n";
+        let page = MarkdownCodec::parse(text).unwrap();
+        assert_eq!(page.blocks.len(), 1);
+        assert_eq!(page.blocks[0].kind, BlockKind::Code(None));
+        assert_eq!(page.blocks[0].content, "plain code\nmore code");
+    }
+
+    #[test]
+    fn fence_content_not_mistaken_for_properties() {
+        // "columns:" (um só ":") não pode virar Property (precisa de "::").
+        let text = "```calendar\n2026-08-06: Revisão de código\n```\n";
+        let page = MarkdownCodec::parse(text).unwrap();
+        assert_eq!(page.blocks.len(), 1);
+        assert!(page.blocks[0].properties.is_empty());
+        assert_eq!(page.blocks[0].content, "2026-08-06: Revisão de código");
+    }
+
+    #[test]
+    fn serialize_roundtrip_fence_block() {
+        let text = "```table\n| a | b |\n| - | - |\n| 1 | 2 |\n```\n";
+        let page = MarkdownCodec::parse(text).unwrap();
+        let out = MarkdownCodec::serialize(&page).unwrap();
+        let page2 = MarkdownCodec::parse(&out).unwrap();
+        assert_eq!(page2.blocks.len(), 1);
+        assert_eq!(page2.blocks[0].kind, page.blocks[0].kind);
+        assert_eq!(page2.blocks[0].content, page.blocks[0].content);
+    }
 
     #[test]
     fn parse_plain_without_frontmatter() {

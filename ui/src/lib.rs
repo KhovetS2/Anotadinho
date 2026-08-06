@@ -8,9 +8,9 @@
 pub mod api;
 pub mod app;
 pub mod components;
+pub mod embed;
 pub mod html_to_md;
 pub mod markdown_render;
 pub mod state;
-pub mod theme;
 
 pub use app::App;

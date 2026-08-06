@@ -4,14 +4,22 @@ use pulldown_cmark::{html, Options, Parser, Tag, TagEnd, Event, CodeBlockKind};
 use pulldown_cmark::CowStr;
 
 /// Converte Markdown em HTML.
+///
+/// Separa o frontmatter YAML (se houver) antes de renderizar — sem isso o
+/// pulldown-cmark trata `---\ntitle: ...\n---` como texto solto (thematic
+/// break + heading mal formado).
 pub fn render(markdown: &str) -> String {
+    let body = anotadinho_core::MarkdownCodec::split_frontmatter(markdown)
+        .map(|(_, body)| body)
+        .unwrap_or(markdown);
+
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_FOOTNOTES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
 
-    let parser = Parser::new_ext(markdown, options);
+    let parser = Parser::new_ext(body, options);
     let mut in_kanban = false;
 
     let events = parser.map(move |event| {

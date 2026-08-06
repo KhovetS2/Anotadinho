@@ -14,5 +14,6 @@ pub mod property;
 pub mod markdown;
 
 pub use block::{Block, BlockId, BlockKind};
-pub use page::{Page, PageId};
+pub use markdown::MarkdownCodec;
+pub use page::{Frontmatter, Page, PageId};
 pub use property::Property;

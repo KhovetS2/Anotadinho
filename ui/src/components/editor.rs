@@ -5,6 +5,8 @@ use yew::prelude::*;
 use web_sys::KeyboardEvent;
 
 use crate::api::{self, PageMeta};
+use crate::components::embeds::InlineEmbed;
+use crate::embed::DocSegment;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct EditorProps {
@@ -61,6 +63,18 @@ pub fn editor(props: &EditorProps) -> Html {
     let char_count = content_md.chars().count();
     let word_count = content_md.split_whitespace().count();
 
+    // Segmenta o corpo (sem frontmatter) em markdown comum + embeds
+    // (kanban/calendar/table) já parseados. Recalculado a cada render —
+    // é uma varredura barata (pulldown-cmark) sobre o texto da página.
+    // Trechos de markdown continuam no fluxo contenteditable de sempre;
+    // embeds viram componentes Yew reais fora dele (ver InlineEmbed).
+    let full_snapshot = (*content_md).clone();
+    let (frontmatter_text, body_text) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&full_snapshot);
+    let frontmatter_text = frontmatter_text.to_string();
+    let segments: Vec<DocSegment> = crate::embed::segment(body_text);
+    let has_embeds = segments.iter().any(|s| matches!(s, DocSegment::Embed(_)));
+    let segment_refs: Vec<NodeRef> = (0..segments.len()).map(|_| NodeRef::default()).collect();
+
     // Effect 1: fetch page content when page changes
     {
         let content_md = content_md.clone();
@@ -104,31 +118,56 @@ pub fn editor(props: &EditorProps) -> Html {
         });
     }
 
-    // Effect 2: set innerHTML only once when content loads
+    // Effect 2: set innerHTML only once when content loads.
+    // Sem embeds: injeta a página inteira num único contenteditable, como
+    // sempre foi. Com embeds: injeta cada trecho de markdown no seu próprio
+    // contenteditable (via segment_refs) — os embeds em si já são
+    // componentes Yew declarativos, não precisam de injeção imperativa.
     {
-        let content_md = content_md.clone();
-        let loading = loading.clone();
+        let loading_val = *loading;
+        let content_md_empty = content_md.is_empty();
         let editor_ref = editor_ref.clone();
+        let segment_refs_eff = segment_refs.clone();
+        let segments_eff = segments.clone();
+        let full_snapshot_eff = full_snapshot.clone();
+        let has_embeds_eff = has_embeds;
         let last_page_path = use_mut_ref(String::new);
         let current_path = props.page.as_ref().map(|p| p.path.clone()).unwrap_or_default();
 
-        use_effect_with((*loading, current_path.clone()), move |_| {
+        use_effect_with((loading_val, current_path.clone()), move |_| {
             let should_render = {
                 let last = last_page_path.borrow();
-                !*loading && !content_md.is_empty() && *last != current_path
+                !loading_val && !content_md_empty && *last != current_path
             };
             if should_render {
                 *last_page_path.borrow_mut() = current_path;
-                if let Some(div) = editor_ref.cast::<web_sys::Element>() {
-                    let html = crate::markdown_render::render(&content_md);
+
+                if has_embeds_eff {
+                    for (i, seg) in segments_eff.iter().enumerate() {
+                        if let DocSegment::Markdown(text) = seg {
+                            if let Some(div) = segment_refs_eff.get(i).and_then(|r| r.cast::<web_sys::Element>()) {
+                                div.set_inner_html(&crate::markdown_render::render(text));
+                            }
+                        }
+                    }
+                    for r in segment_refs_eff.iter() {
+                        if let Some(el) = r.cast::<web_sys::Element>() {
+                            wasm_bindgen_futures::spawn_local(async move {
+                                gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
+                                init_mermaid_at(&el);
+                            });
+                        }
+                    }
+                } else if let Some(div) = editor_ref.cast::<web_sys::Element>() {
+                    let html = crate::markdown_render::render(&full_snapshot_eff);
                     div.set_inner_html(&html);
                     let _div = div.clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
                         init_mermaid_at(&_div);
-                        init_highlight();
                     });
                 }
+                init_highlight();
             }
             || {}
         });
@@ -158,11 +197,38 @@ pub fn editor(props: &EditorProps) -> Html {
         let saving = saving.clone(); let error = error.clone(); let status = status.clone();
         let vault_path = props.vault_path.clone(); let page_path = page.path.clone();
         let editor_ref = editor_ref.clone(); let edited = edited.clone();
+        let segment_refs = segment_refs.clone();
         Callback::from(move |_| {
             if *saving { return; }
-            let md = if let Some(div) = editor_ref.cast::<web_sys::Element>() {
+
+            // Recalcula a partir do content_md mais recente (não do snapshot
+            // de renderização) — embeds já editados via on_change já estão
+            // refletidos nele; só falta puxar o texto ao vivo dos trechos
+            // de markdown contenteditable.
+            let full = (*content_md).clone();
+            let (fm, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&full);
+            let segs = crate::embed::segment(body);
+            let has_embeds_now = segs.iter().any(|s| matches!(s, DocSegment::Embed(_)));
+
+            let md = if has_embeds_now {
+                let new_segs: Vec<DocSegment> = segs.iter().enumerate().map(|(i, seg)| match seg {
+                    DocSegment::Markdown(orig) => {
+                        let text = segment_refs.get(i)
+                            .and_then(|r| r.cast::<web_sys::Element>())
+                            .map(|el| crate::html_to_md::html_to_markdown(&el))
+                            .unwrap_or_else(|| orig.clone());
+                        DocSegment::Markdown(text)
+                    }
+                    other => other.clone(),
+                }).collect();
+                let new_body = crate::embed::join(&new_segs);
+                if fm.is_empty() { new_body } else { format!("{}\n{}", fm, new_body) }
+            } else if let Some(div) = editor_ref.cast::<web_sys::Element>() {
                 crate::html_to_md::html_to_markdown(&div)
-            } else { (*content_md).clone() };
+            } else {
+                full.clone()
+            };
+
             let saved_content = saved_content.clone(); let saving = saving.clone();
             let error = error.clone(); let status = status.clone();
             let vault_path = vault_path.clone(); let page_path = page_path.clone();
@@ -352,10 +418,32 @@ pub fn editor(props: &EditorProps) -> Html {
 
     let on_export = {
         let editor_ref = editor_ref.clone();
+        let segment_refs = segment_refs.clone();
+        let segments_export = segments.clone();
+        let has_embeds_export = has_embeds;
         let page_title = page.title.clone();
         Callback::from(move |_| {
-            if let Some(div) = editor_ref.cast::<web_sys::Element>() {
-                let html = div.inner_html();
+            let html = if has_embeds_export {
+                let mut out = String::new();
+                for (i, seg) in segments_export.iter().enumerate() {
+                    match seg {
+                        DocSegment::Markdown(_) => {
+                            if let Some(div) = segment_refs.get(i).and_then(|r| r.cast::<web_sys::Element>()) {
+                                out.push_str(&div.inner_html());
+                            }
+                        }
+                        DocSegment::Embed(data) => {
+                            let escaped = data.to_fence_text()
+                                .replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+                            out.push_str(&format!("<pre>{}</pre>", escaped));
+                        }
+                    }
+                }
+                Some(out)
+            } else {
+                editor_ref.cast::<web_sys::Element>().map(|div| div.inner_html())
+            };
+            if let Some(html) = html {
                 let full = format!(
                     "<!DOCTYPE html>\n<html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>{title}</title>\
                     <style>\
@@ -385,11 +473,15 @@ pub fn editor(props: &EditorProps) -> Html {
     };
 
     let save_label = if *saving { "Salvando..." } else if *edited { "Salvar *" } else { "Salvar" };
-    let on_edit = {
+    // trigger_debounced_save: marca como editado e agenda um save daqui a
+    // 3s (cancelado se outra edição chegar antes). `on_edit` é isso ligado
+    // ao evento `oninput` do contenteditable; embeds chamam o mesmo
+    // `Callback<()>` diretamente (não passam por `oninput`).
+    let trigger_debounced_save: Callback<()> = {
         let e = edited.clone();
         let do_save = do_save.clone();
         let save_counter = save_counter.clone();
-        Callback::from(move |_| {
+        Callback::from(move |_: ()| {
             e.set(true);
             let do_save = do_save.clone();
             let save_counter = save_counter.clone();
@@ -403,6 +495,7 @@ pub fn editor(props: &EditorProps) -> Html {
             });
         })
     };
+    let on_edit: Callback<InputEvent> = trigger_debounced_save.reform(|_| ());
 
     let on_drop = {
         let vault_path = props.vault_path.clone();
@@ -460,9 +553,49 @@ pub fn editor(props: &EditorProps) -> Html {
                 if let Some(ref err) = *error {
                     <div class="editor__overlay editor__overlay--error">{ err }</div>
                 }
-                <div class="editor__wysiwyg" ref={editor_ref} contenteditable="true"
-                    spellcheck="false" onkeydown={on_keydown} oninput={on_edit}
-                    ondrop={on_drop} ondragover={on_dragover} />
+                if has_embeds {
+                    <div class="editor__wysiwyg-segments">
+                        { for segments.iter().enumerate().map(|(i, seg)| {
+                            match seg {
+                                DocSegment::Markdown(_) => {
+                                    let node_ref = segment_refs[i].clone();
+                                    html! {
+                                        <div class="editor__wysiwyg" ref={node_ref} contenteditable="true"
+                                            spellcheck="false" onkeydown={on_keydown.clone()} oninput={on_edit.clone()}
+                                            ondrop={on_drop.clone()} ondragover={on_dragover.clone()} />
+                                    }
+                                }
+                                DocSegment::Embed(data) => {
+                                    let content_md = content_md.clone();
+                                    let trigger_debounced_save = trigger_debounced_save.clone();
+                                    let frontmatter_text = frontmatter_text.clone();
+                                    let idx = i;
+                                    let on_change = Callback::from(move |new_data: crate::embed::EmbedData| {
+                                        let full = (*content_md).clone();
+                                        let (_, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&full);
+                                        let mut segs = crate::embed::segment(body);
+                                        if let Some(s) = segs.get_mut(idx) {
+                                            *s = DocSegment::Embed(new_data);
+                                        }
+                                        let new_body = crate::embed::join(&segs);
+                                        let new_full = if frontmatter_text.is_empty() {
+                                            new_body
+                                        } else {
+                                            format!("{}\n{}", frontmatter_text, new_body)
+                                        };
+                                        content_md.set(new_full);
+                                        trigger_debounced_save.emit(());
+                                    });
+                                    html! { <InlineEmbed data={data.clone()} on_change={on_change} /> }
+                                }
+                            }
+                        }) }
+                    </div>
+                } else {
+                    <div class="editor__wysiwyg" ref={editor_ref} contenteditable="true"
+                        spellcheck="false" onkeydown={on_keydown} oninput={on_edit}
+                        ondrop={on_drop} ondragover={on_dragover} />
+                }
             </div>
             if *slash_open {
                 <div class="slash-menu">

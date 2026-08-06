@@ -2,6 +2,7 @@
 
 pub mod calendar;
 pub mod editor;
+pub mod embeds;
 pub mod empty_state;
 pub mod header_bar;
 pub mod kanban;

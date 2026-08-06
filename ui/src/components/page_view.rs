@@ -34,20 +34,13 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 let loading = loading.clone();
                 loading.set(true);
                 wasm_bindgen_futures::spawn_local(async move {
-                    if let Ok(content) = crate::api::read_page(&vault_path, &path).await {
-                        if let Some(fm_start) = content.find("---") {
-                            let after_first = &content[fm_start + 3..];
-                            if let Some(fm_end) = after_first.find("---") {
-                                let fm = &after_first[..fm_end];
-                                if let Some(t) = fm.lines().find(|l| l.trim_start().starts_with("type:")) {
-                                    let pt = t.trim_start_matches("type:").trim();
-                                    page_type.set(pt.to_string());
-                                } else {
-                                    page_type.set("md".to_string());
-                                }
-                            }
-                        }
-                    }
+                    let pt = match crate::api::read_page(&vault_path, &path).await {
+                        Ok(content) => anotadinho_core::MarkdownCodec::split_frontmatter(&content)
+                            .map(|(fm, _)| fm.effective_type().to_string())
+                            .unwrap_or_else(|_| "md".to_string()),
+                        Err(_) => "md".to_string(),
+                    };
+                    page_type.set(pt);
                     loading.set(false);
                 });
             } else {
