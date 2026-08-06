@@ -331,7 +331,7 @@ body {
     height: 36px !important;
     min-height: 36px !important;
     max-height: 36px !important;
-    background: var(--bg-base) !important;
+    background: var(--bg-surface) !important;
     flex-shrink: 0 !important;
     overflow-x: auto !important;
     overflow-y: hidden !important;
@@ -358,12 +358,13 @@ body {
     max-width: 160px;
     height: 30px;
     line-height: 1;
+    background: var(--bg-surface);
 }
 
 .tab-bar__tab:hover { background: var(--bg-elevated); color: var(--text-primary); }
 
 .tab-bar__tab--active {
-    background: var(--bg-surface);
+    background: var(--bg-base);
     color: var(--text-primary);
     border-bottom-color: var(--accent-blue);
 }
