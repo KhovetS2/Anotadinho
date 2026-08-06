@@ -118,6 +118,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_mcp_bridge::init())
         .manage(AppWatchers(Mutex::new(HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             ping,

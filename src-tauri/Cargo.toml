@@ -19,6 +19,7 @@ anotadinho-search = { path = "../crates/search" }
 anotadinho-ipc = { path = "../crates/ipc" }
 tauri = { version = "2.0", features = [] }
 tauri-plugin-dialog = "2.0"
+tauri-plugin-mcp-bridge = "0.12"
 tokio = { version = "1.35", features = ["sync"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
