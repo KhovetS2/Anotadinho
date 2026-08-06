@@ -65,17 +65,6 @@ pub fn app() -> Html {
     // Track tabs when page is selected
     {
         let selected_page = selected_page.clone();
-        let open_tabs = open_tabs.clone();
-        use_effect_with(selected_page.clone(), move |_| {
-            if let Some(ref page) = *selected_page {
-                let mut tabs = (*open_tabs).clone();
-                if !tabs.iter().any(|t| t.path == page.path) {
-                    tabs.push(page.clone());
-                    open_tabs.set(tabs);
-                }
-            }
-            || {}
-        });
     }
 
     let on_vault_selected = {
@@ -96,7 +85,16 @@ pub fn app() -> Html {
 
     let on_page_selected = {
         let selected_page = selected_page.clone();
-        Callback::from(move |page: PageMeta| selected_page.set(Some(page)))
+        let open_tabs = open_tabs.clone();
+        Callback::from(move |page: PageMeta| {
+            // Add to tabs if not already there
+            let mut tabs = (*open_tabs).clone();
+            if !tabs.iter().any(|t| t.path == page.path) {
+                tabs.push(page.clone());
+                open_tabs.set(tabs);
+            }
+            selected_page.set(Some(page));
+        })
     };
 
     let on_close_vault = {
