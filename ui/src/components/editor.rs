@@ -293,7 +293,6 @@ pub fn editor(props: &EditorProps) -> Html {
         let slash_idx = slash_idx.clone();
         let filtered_len = filtered.len();
         let select_slash = select_slash.clone();
-        let vim_normal = use_state(|| false);
         Callback::from(move |e: KeyboardEvent| {
             if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); do_save.emit(()); return; }
 

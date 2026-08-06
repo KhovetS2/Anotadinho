@@ -227,6 +227,24 @@ pub fn app() -> Html {
                         selected_page.set(Some(tabs[0].clone()));
                     }
                 }
+                (true, "p") => {
+                    e.prevent_default();
+                    if let Some(ref path) = *vault_path {
+                        let vault = path.clone();
+                        let on_page_selected = on_page_selected.clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            if let Ok(pages) = api::list_pages(&vault).await {
+                                let list = pages.iter().map(|p| p.title.clone()).collect::<Vec<_>>().join("\n");
+                                let q = gloo_dialogs::prompt(
+                                    &format!("Páginas:\n{}\n\nIr para:", list), None
+                                ).unwrap_or_default();
+                                if let Some(page) = pages.iter().find(|p| p.title.to_lowercase() == q.to_lowercase()) {
+                                    on_page_selected.emit(page.clone());
+                                }
+                            }
+                        });
+                    }
+                }
                 _ => {}
             }
         })
