@@ -104,21 +104,24 @@ pub fn editor(props: &EditorProps) -> Html {
         });
     }
 
-    // Effect 2: sync content_md → contenteditable innerHTML (only if changed)
+    // Effect 2: set innerHTML only once when content loads
     {
         let content_md = content_md.clone();
         let loading = loading.clone();
         let editor_ref = editor_ref.clone();
-        let last_rendered = use_mut_ref(String::new);
+        let last_page_path = use_mut_ref(String::new);
+        let current_path = props.page.as_ref().map(|p| p.path.clone()).unwrap_or_default();
 
-        use_effect_with((content_md.clone(), *loading), move |_| {
-            let should_run = !*loading && !content_md.is_empty()
-                && *last_rendered.borrow() != *content_md;
-            if should_run {
+        use_effect_with((*loading, current_path.clone()), move |_| {
+            let should_render = {
+                let last = last_page_path.borrow();
+                !*loading && !content_md.is_empty() && *last != current_path
+            };
+            if should_render {
+                *last_page_path.borrow_mut() = current_path;
                 if let Some(div) = editor_ref.cast::<web_sys::Element>() {
                     let html = crate::markdown_render::render(&content_md);
                     div.set_inner_html(&html);
-                    *last_rendered.borrow_mut() = (*content_md).clone();
                     let _div = div.clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
