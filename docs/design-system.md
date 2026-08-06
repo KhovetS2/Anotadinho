@@ -11,17 +11,24 @@ as variáveis.
 
 | Token | Valor | Uso |
 |---|---|---|
-| `--bg-base` | `#0F172A` | Fundo principal |
-| `--bg-surface` | `#1E293B` | Cards, sidebar, header |
-| `--bg-elevated` | `#334155` | Hover, selecionado, dialogs |
-| `--text-primary` | `#F1F5F9` | Texto principal |
-| `--text-muted` | `#94A3B8` | Texto secundário, placeholders |
-| `--accent-blue` | `#3B82F6` | Links, destaque, selecionado |
-| `--accent-purple` | `#8B5CF6` | Gradientes, blockquotes |
-| `--border` | `#334155` | Bordas, divisores |
-| `--success` | `#10B981` | Status salvo |
-| `--warning` | `#F59E0B` | Dirty state |
-| `--error` | `#EF4444` | Erros, botão excluir hover |
+| `--bg-base` | `#272930` | Fundo principal |
+| `--bg-surface` | `#32343F` | Cards, sidebar, header |
+| `--bg-elevated` | `#3D404F` | Hover, selecionado, dialogs |
+| `--text-primary` | `#E4E8F5` | Texto principal |
+| `--text-muted` | `#989EB7` | Texto secundário, placeholders |
+| `--accent-blue` | `#00B5FF` | Links, destaque, selecionado |
+| `--accent-purple` | `#9327FF` | Gradientes, blockquotes |
+| `--border` | `#3D404F` | Bordas, divisores |
+| `--success` | `#248569` | Status salvo |
+| `--warning` | `#DB7E21` | Dirty state |
+| `--error` | `#E71D32` | Erros, botão excluir hover |
+
+Pra variações translúcidas de uma cor (ex: fundo de badge, anel de foco),
+use `color-mix(in srgb, var(--token) X%, transparent)` em vez de cravar um
+`rgba(...)` — assim a variação segue o token automaticamente se ele mudar
+de novo no futuro (isso já aconteceu uma vez: a paleta foi trocada e vários
+`rgba()` cravados no CSS ficaram desatualizados até serem encontrados numa
+revisão).
 
 ### Espaçamento
 
@@ -69,8 +76,16 @@ Exemplos válidos:
 
 ### Estrutura do arquivo
 
-`ui/src/styles/main.css` é o único arquivo de estilo. Todas as regras
-de todos os componentes ficam aqui. Separe por seções com comentários:
+Dois arquivos, cada um carregado via `data-trunk` no `ui/index.html`:
+
+- `ui/src/styles/main.css` — tokens (`:root`/`.theme-light`), reset global,
+  chrome do app (header bar, tab bar, sidebar, editor/toolbar/statusbar) e
+  a tipografia do conteúdo renderizado (`.editor__wysiwyg …`).
+- `ui/src/styles/components.css` — componentes reutilizáveis e
+  independentes de contexto: `.btn`, `.badge`, `.input`, `.card`, `.switch`,
+  `.tooltip`, spinner.
+
+Separe por seções com comentários dentro de cada arquivo:
 
 ```css
 /* Nome do componente */
@@ -78,7 +93,9 @@ de todos os componentes ficam aqui. Separe por seções com comentários:
 .component__element { ... }
 ```
 
-Não crie arquivos CSS separados por componente.
+Não crie um terceiro arquivo CSS por componente — se algo não é claramente
+"chrome do app" nem um componente `.btn`-like reutilizável, o padrão é
+`main.css`.
 
 ## Componentes Yew
 

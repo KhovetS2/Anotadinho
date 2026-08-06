@@ -155,7 +155,7 @@
 
 .input:focus {
     border-color: var(--accent-blue);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 15%, transparent);
 }
 
 .input--sm { padding: var(--sp-1) var(--sp-2); font-size: 0.8125rem; border-radius: var(--r-sm); }
@@ -175,10 +175,10 @@
     color: var(--text-muted);
 }
 
-.badge--success { background: rgba(16, 185, 129, 0.15); color: var(--success); }
-.badge--warning { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
-.badge--error   { background: rgba(239, 68, 68, 0.15); color: var(--error); }
-.badge--info    { background: rgba(59, 130, 246, 0.15); color: var(--accent-blue); }
+.badge--success { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+.badge--warning { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
+.badge--error   { background: color-mix(in srgb, var(--error) 15%, transparent); color: var(--error); }
+.badge--info    { background: color-mix(in srgb, var(--accent-blue) 15%, transparent); color: var(--accent-blue); }
 
 /* ── Divider ─────────────────────────────────────── */
 
