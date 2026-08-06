@@ -1,5 +1,6 @@
 //! Componentes Yew reutilizáveis.
 
+pub mod calendar;
 pub mod editor;
 pub mod empty_state;
 pub mod header_bar;
@@ -8,3 +9,4 @@ pub mod modal;
 pub mod page_view;
 pub mod sidebar;
 pub mod tab_bar;
+pub mod task_table;

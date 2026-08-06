@@ -2,8 +2,10 @@
 
 use yew::prelude::*;
 use crate::api::PageMeta;
+use crate::components::calendar::Calendar;
 use crate::components::editor::Editor;
 use crate::components::kanban::Kanban;
+use crate::components::task_table::TaskTable;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct PageViewProps {
@@ -30,26 +32,24 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 let path = p.path.clone();
                 let page_type = page_type.clone();
                 let loading = loading.clone();
-                if p.title != "Nova nota" { // skip for brand new empty pages
-                    loading.set(true);
-                    wasm_bindgen_futures::spawn_local(async move {
-                        if let Ok(content) = crate::api::read_page(&vault_path, &path).await {
-                            if let Some(fm_start) = content.find("---") {
-                                let after_first = &content[fm_start + 3..];
-                                if let Some(fm_end) = after_first.find("---") {
-                                    let fm = &after_first[..fm_end];
-                                    if let Some(t) = fm.lines().find(|l| l.starts_with("type:")) {
-                                        let pt = t.trim_start_matches("type:").trim();
-                                        page_type.set(pt.to_string());
-                                    } else {
-                                        page_type.set("md".to_string());
-                                    }
+                loading.set(true);
+                wasm_bindgen_futures::spawn_local(async move {
+                    if let Ok(content) = crate::api::read_page(&vault_path, &path).await {
+                        if let Some(fm_start) = content.find("---") {
+                            let after_first = &content[fm_start + 3..];
+                            if let Some(fm_end) = after_first.find("---") {
+                                let fm = &after_first[..fm_end];
+                                if let Some(t) = fm.lines().find(|l| l.trim_start().starts_with("type:")) {
+                                    let pt = t.trim_start_matches("type:").trim();
+                                    page_type.set(pt.to_string());
+                                } else {
+                                    page_type.set("md".to_string());
                                 }
                             }
                         }
-                        loading.set(false);
-                    });
-                }
+                    }
+                    loading.set(false);
+                });
             } else {
                 page_type.set("md".to_string());
             }
@@ -65,20 +65,18 @@ pub fn page_view(props: &PageViewProps) -> Html {
         return html! { <main class="editor"><p class="editor__status">{ "Carregando..." }</p></main> };
     }
 
-    let pt = (*page_type).as_str();
-    match pt {
+    match (*page_type).as_str() {
         "kanban" => html! {
-            <Kanban
-                vault_path={props.vault_path.clone()}
-                on_page_selected={props.on_page_selected.clone()}
-            />
+            <Kanban vault_path={props.vault_path.clone()} page={props.page.clone()} on_page_selected={props.on_page_selected.clone()} />
+        },
+        "calendar" => html! {
+            <Calendar vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
+        },
+        "table" => html! {
+            <TaskTable vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
         },
         _ => html! {
-            <Editor
-                vault_path={props.vault_path.clone()}
-                page={props.page.clone()}
-                on_page_deleted={props.on_page_deleted.clone()}
-            />
+            <Editor vault_path={props.vault_path.clone()} page={props.page.clone()} on_page_deleted={props.on_page_deleted.clone()} />
         },
     }
 }
