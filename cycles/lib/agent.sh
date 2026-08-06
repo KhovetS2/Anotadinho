@@ -50,8 +50,43 @@ invoke_agent() {
         return 0
     fi
 
-    # Quando agent estiver disponível, algo como:
-    # $AGENT_CMD --task-file "$task_file" --failure-log "$failure_log" --cd "$ROOT_DIR"
-    echo "ERRO: invocação real do agent ainda não implementada"
-    return 1
+    # Monta o prompt: task + (se houver) log de falha anterior.
+    local prompt
+    prompt="Você está executando UM ciclo de desenvolvimento autônomo do Anotadinho.
+Leia a task abaixo, implemente exatamente o que ela pede, e pare. Não peça
+confirmação — a validação (cargo build/test/clippy + trunk build) roda
+automaticamente depois que você terminar; se falhar, o ciclo é revertido pra
+'pending' e você será chamado de novo com o log da falha.
+
+## Task ($task_file)
+
+$(cat "$task_file")
+"
+    if [[ -n "$failure_log" ]]; then
+        prompt+="
+
+## Falha na tentativa anterior deste ciclo
+
+$(cat "$failure_log")
+
+Não repita a mesma abordagem que causou essa falha."
+    fi
+
+    # Tools liberadas por padrão: leitura livre + escrita de código + os
+    # comandos de validação/git que o próprio orchestrator já roda depois.
+    # Não usamos --dangerously-skip-permissions por padrão (rodar sem
+    # supervisão e com permissão irrestrita é uma decisão que quem chama
+    # o orchestrator deve tomar explicitamente via AGENT_UNATTENDED=1).
+    local allowed_tools="${AGENT_ALLOWED_TOOLS:-Read Edit Write Grep Glob Bash(cargo *) Bash(trunk *) Bash(git *)}"
+
+    local -a claude_args=(-p "$prompt" --add-dir "$ROOT_DIR")
+    if [[ -n "$allowed_tools" ]]; then
+        # shellcheck disable=SC2206
+        claude_args+=(--allowedTools $allowed_tools)
+    fi
+    if [[ "${AGENT_UNATTENDED:-0}" == "1" ]]; then
+        claude_args+=(--dangerously-skip-permissions)
+    fi
+
+    claude "${claude_args[@]}"
 }
