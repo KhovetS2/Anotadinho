@@ -1,19 +1,19 @@
 /* Anotadinho - tema dark com acentos azul/roxo */
 
 :root {
-    --bg-base: #0F172A;
-    --bg-surface: #1E293B;
-    --bg-elevated: #334155;
-    --text-primary: #F1F5F9;
-    --text-muted: #94A3B8;
-    --accent-blue: #3B82F6;
-    --accent-blue-hover: #2563EB;
-    --accent-purple: #8B5CF6;
-    --accent-purple-hover: #7C3AED;
-    --border: #334155;
-    --success: #10B981;
-    --warning: #F59E0B;
-    --error: #EF4444;
+    --bg-base: #272930;
+    --bg-surface: #32343F;
+    --bg-elevated: #3D404F;
+    --text-primary: #E4E8F5;
+    --text-muted: #989EB7;
+    --accent-blue: #00B5FF;
+    --accent-blue-hover: #0092D6;
+    --accent-purple: #9327FF;
+    --accent-purple-hover: #8427E0;
+    --border: #3D404F;
+    --success: #248569;
+    --warning: #DB7E21;
+    --error: #E71D32;
 
     --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
@@ -32,32 +32,32 @@
 
 /* Light theme override */
 .theme-light {
-    --bg-base: #F8FAFC;
-    --bg-surface: #FFFFFF;
-    --bg-elevated: #E2E8F0;
-    --text-primary: #0F172A;
-    --text-muted: #64748B;
-    --accent-blue: #2563EB;
-    --accent-blue-hover: #1D4ED8;
-    --accent-purple: #7C3AED;
-    --border: #CBD5E1;
-    --success: #059669;
-    --warning: #D97706;
-    --error: #DC2626;
+    --bg-base: #FFFFFF;
+    --bg-surface: #F8FAFF;
+    --bg-elevated: #E4E8F5;
+    --text-primary: #21232A;
+    --text-muted: #6F748C;
+    --accent-blue: #00B5FF;
+    --accent-blue-hover: #0092D6;
+    --accent-purple: #9327FF;
+    --border: #E4E8F5;
+    --success: #248569;
+    --warning: #DB7E21;
+    --error: #E71D32;
 }
-    --bg-base: #0F172A;
-    --bg-surface: #1E293B;
-    --bg-elevated: #334155;
-    --text-primary: #F1F5F9;
-    --text-muted: #94A3B8;
-    --accent-blue: #3B82F6;
-    --accent-blue-hover: #2563EB;
-    --accent-purple: #8B5CF6;
-    --accent-purple-hover: #7C3AED;
-    --border: #334155;
-    --success: #10B981;
-    --warning: #F59E0B;
-    --error: #EF4444;
+    --bg-base: #272930;
+    --bg-surface: #32343F;
+    --bg-elevated: #3D404F;
+    --text-primary: #E4E8F5;
+    --text-muted: #989EB7;
+    --accent-blue: #00B5FF;
+    --accent-blue-hover: #0092D6;
+    --accent-purple: #9327FF;
+    --accent-purple-hover: #8427E0;
+    --border: #3D404F;
+    --success: #248569;
+    --warning: #DB7E21;
+    --error: #E71D32;
 
     --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
