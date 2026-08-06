@@ -134,6 +134,8 @@ pub fn editor(props: &EditorProps) -> Html {
         });
     }
 
+    let save_counter = use_state(|| 0u32);
+
     if props.page.is_none() {
         return html! { <main class="app-main"><p class="app-main__placeholder">{ "Selecione uma página na sidebar" }</p></main> };
     }
@@ -383,7 +385,6 @@ pub fn editor(props: &EditorProps) -> Html {
     };
 
     let save_label = if *saving { "Salvando..." } else if *edited { "Salvar *" } else { "Salvar" };
-    let save_counter = use_state(|| 0u32);
     let on_edit = {
         let e = edited.clone();
         let do_save = do_save.clone();

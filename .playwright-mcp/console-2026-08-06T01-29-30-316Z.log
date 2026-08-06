@@ -1,0 +1,60 @@
+[     229ms] [WARNING] The `integrity` attribute is currently ignored for preload destinations that do not support subresource integrity. See https://crbug.com/981419 for more information @ http://localhost:1420/:23
+[   44635ms] [WARNING] The `integrity` attribute is currently ignored for preload destinations that do not support subresource integrity. See https://crbug.com/981419 for more information @ http://localhost:1420/:23
+[  350769ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  355771ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  360772ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  365773ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  370774ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  375779ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  380786ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  385798ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  390807ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  395875ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  401009ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  406167ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  411617ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  417653ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  423311ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  429625ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  439306ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  445867ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  453487ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  460091ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  466588ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  471589ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  476590ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  481591ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  486593ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  491595ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  496597ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  501600ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  506618ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  511656ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  516728ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  521859ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  527153ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  532473ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  538409ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  545777ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  553237ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  561502ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  568719ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  575105ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  582659ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  591415ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  596416ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  601418ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  606419ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  611420ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  616422ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  621425ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  626430ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  631440ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  636450ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  641511ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  646667ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  651778ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  656978ms] [ERROR] WebSocket connection to 'ws://localhost:1420/.well-known/trunk/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:1420/:128
+[  662353ms] [WARNING] The `integrity` attribute is currently ignored for preload destinations that do not support subresource integrity. See https://crbug.com/981419 for more information @ http://localhost:1420/:23
+[  794419ms] [WARNING] The `integrity` attribute is currently ignored for preload destinations that do not support subresource integrity. See https://crbug.com/981419 for more information @ http://localhost:1420/:23
+[  807156ms] [WARNING] The `integrity` attribute is currently ignored for preload destinations that do not support subresource integrity. See https://crbug.com/981419 for more information @ http://localhost:1420/:23
