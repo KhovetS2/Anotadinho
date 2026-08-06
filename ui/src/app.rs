@@ -247,12 +247,6 @@ pub fn app() -> Html {
                 on_open_vault={on_open_vault_shortcut}
             />
             if vault_open {
-                <TabBar
-                    tabs={(*open_tabs).clone()}
-                    active_path={selected_page.as_ref().map(|p| p.path.clone())}
-                    on_select={on_tab_select}
-                    on_close={on_tab_close}
-                />
                 <div class="app-layout">
                     <div class="app-body">
                         <Sidebar
@@ -261,11 +255,19 @@ pub fn app() -> Html {
                             list_version={*list_version}
                             collapsed={*sidebar_collapsed}
                         />
-                        <Editor
-                            vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
-                            page={(*selected_page).clone()}
-                            on_page_deleted={on_page_deleted}
-                        />
+                        <div class="app-main-panel">
+                            <TabBar
+                                tabs={(*open_tabs).clone()}
+                                active_path={selected_page.as_ref().map(|p| p.path.clone())}
+                                on_select={on_tab_select}
+                                on_close={on_tab_close}
+                            />
+                            <Editor
+                                vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
+                                page={(*selected_page).clone()}
+                                on_page_deleted={on_page_deleted}
+                            />
+                        </div>
                     </div>
                 </div>
             } else {

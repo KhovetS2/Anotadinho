@@ -1,12 +1,69 @@
 ---
-title: Arquitetura
+
+## title: Arquitetura
+
 tags: [docs, tech]
 created: 2026-08-04
----
+
 
 # Arquitetura
 
 ```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Anotadinho                              │
 │                                                                 │
@@ -30,26 +87,117 @@ created: 2026-08-04
 │                       │  parser    │    │            │  │      │ │
 │                       └────────────┘    └────────────┘  └─────┘ │
 └─────────────────────────────────────────────────────────────────┘
+
+
 ```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
+
+```
+```
+
+```
+```
+
 
 ## Camadas
 
+┌──────────────────────────────────────────┐
+
+
+│ ◀ Anotadinho VaultAnotadinho    🌙 ⚙ ▼ │ ← HeaderBar
+
+
+│ [📄 sobre.md] [📄 ciclos.md] × [+]     │ ← TabBar  
+
+
+├──────────┬───────────────────────────────┤
+
+
+│ 🔍 Buscar│  Editor WYSIWYG              │
+
+
+│ Pages    │                               │
+
+
+│ Journals │                               │
+
+
+└──────────┴───────────────────────────────┘
+
+
 ### ui/ (Yew/WASM)
+
 Componentes Yew que compilam pra WASM.
 Chama backend via `tauri::command`.
 
+
 ### src-tauri/ (Tauri shell)
+
 Entry point do app. Define comandos IPC.
 
+
 ### crates/ipc
+
 Ponte entre Yew e crates de domínio.
 Structs Args/Result por comando.
 
+
 ### crates/core
+
 Block model, Markdown parser, properties inline.
 
+
 ### crates/vault
+
 I/O de arquivos, watcher, locks.
 
+
 ### crates/search
+
 Full-text search com SQLite FTS5 (futuro).
