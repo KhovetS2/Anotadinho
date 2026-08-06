@@ -946,10 +946,17 @@ body {
     padding: var(--sp-2);
 }
 
+.kanban__column--drag-active {
+    outline: 2px dashed transparent;
+    outline-offset: -2px;
+    border-radius: var(--r-md);
+}
+.kanban__column--drag-active:hover { outline-color: var(--accent-blue); }
+
 .kanban__col-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: var(--sp-1);
     padding: var(--sp-1) var(--sp-2);
     margin-bottom: var(--sp-2);
     font-size: 0.8125rem;
@@ -957,7 +964,17 @@ body {
     color: var(--text-muted);
 }
 
-.kanban__col-title { text-transform: uppercase; letter-spacing: 0.03em; }
+.kanban__col-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+}
+.kanban__col-title:hover { color: var(--text-primary); }
 
 .kanban__col-count {
     background: var(--bg-elevated);
@@ -965,7 +982,20 @@ body {
     border-radius: 999px;
     padding: 0 var(--sp-2);
     font-size: 0.75rem;
+    flex-shrink: 0;
 }
+
+.kanban__col-delete {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px;
+    border-radius: var(--r-sm);
+    flex-shrink: 0;
+}
+.kanban__col-delete:hover { color: var(--error); background: var(--bg-elevated); }
 
 .kanban__col-body {
     display: flex;
@@ -975,6 +1005,10 @@ body {
 }
 
 .kanban__card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: var(--r-sm);
@@ -989,7 +1023,60 @@ body {
 .kanban__card-title {
     font-size: 0.875rem;
     color: var(--text-primary);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
+
+.kanban__card-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    flex-shrink: 0;
+}
+.kanban__card:hover .kanban__card-actions { opacity: 1; }
+
+.kanban__card-action {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    border-radius: var(--r-sm);
+}
+.kanban__card-action:hover { color: var(--text-primary); background: var(--bg-base); }
+
+.kanban__add-card {
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: var(--sp-1) var(--sp-2);
+    font-size: 0.8125rem;
+    text-align: left;
+}
+.kanban__add-card:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+
+.kanban__add-column {
+    flex-shrink: 0;
+    width: 200px;
+}
+
+.kanban__add-column-btn {
+    width: 100%;
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-md);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: var(--sp-2);
+    font-size: 0.8125rem;
+}
+.kanban__add-column-btn:hover { color: var(--text-primary); border-color: var(--accent-blue); }
 
 /* ── Calendar (view de página inteira e embed inline) ── */
 
@@ -1042,7 +1129,22 @@ body {
     font-size: 0.75rem;
 }
 
+.calendar__add {
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: var(--sp-1) var(--sp-3);
+    font-size: 0.8125rem;
+}
+.calendar__add:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+
 .calendar__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
     padding: var(--sp-1) var(--sp-2);
     border-radius: var(--r-sm);
     cursor: pointer;
@@ -1052,6 +1154,20 @@ body {
 .calendar__item:hover { background: var(--bg-elevated); }
 
 .calendar__item-title { font-size: 0.875rem; color: var(--text-primary); }
+
+.calendar__item-delete {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    border-radius: var(--r-sm);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+.calendar__item:hover .calendar__item-delete { opacity: 1; }
+.calendar__item-delete:hover { color: var(--error); background: var(--bg-base); }
 
 /* ── Task table (view de página inteira e embed inline) ── */
 
@@ -1088,13 +1204,95 @@ body {
 
 .task-table__th:hover { color: var(--text-primary); }
 
+.task-table__th-name {
+    margin-right: var(--sp-1);
+}
+
+.task-table__th-action {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    border-radius: var(--r-sm);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+.task-table__th:hover .task-table__th-action { opacity: 1; }
+.task-table__th-action:hover { color: var(--text-primary); background: var(--bg-elevated); }
+
+.task-table__th--add {
+    width: 32px;
+    cursor: default;
+}
+
+.task-table__add {
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px var(--sp-2);
+    font-size: 0.8125rem;
+}
+.task-table__add:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+
+.task-table__row--add { cursor: default; }
+.task-table__row--add:hover { background: transparent; }
+
 .task-table__td {
     padding: var(--sp-2) var(--sp-3);
     border-bottom: 1px solid var(--border);
     color: var(--text-primary);
 }
 
+.task-table__td--select { position: relative; }
+
+.task-table__td--select .badge { cursor: pointer; }
+
+.task-table__td--actions {
+    width: 32px;
+    text-align: center;
+}
+
+.task-table__row-delete {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    border-radius: var(--r-sm);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+.task-table__row:hover .task-table__row-delete { opacity: 1; }
+.task-table__row-delete:hover { color: var(--error); background: var(--bg-elevated); }
+
 .task-table__row:hover { background: var(--bg-surface); }
+
+.table-select-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 50;
+    margin-top: 2px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    min-width: 120px;
+    overflow: hidden;
+}
+
+.table-select-menu__item {
+    padding: var(--sp-2) var(--sp-3);
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+.table-select-menu__item:hover { background: var(--bg-elevated); }
 
 .editor__status,
 .editor__error {

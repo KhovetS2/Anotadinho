@@ -6,6 +6,7 @@ use crate::components::calendar::Calendar;
 use crate::components::editor::Editor;
 use crate::components::kanban::Kanban;
 use crate::components::task_table::TaskTable;
+use crate::dialog::PendingDialog;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct PageViewProps {
@@ -13,6 +14,8 @@ pub struct PageViewProps {
     pub page: Option<PageMeta>,
     pub on_page_deleted: Callback<()>,
     pub on_page_selected: Callback<PageMeta>,
+    /// Abre o modal de diálogo do app (ver `crate::dialog`).
+    pub open_dialog: Callback<PendingDialog>,
 }
 
 #[function_component(PageView)]
@@ -69,7 +72,7 @@ pub fn page_view(props: &PageViewProps) -> Html {
             <TaskTable vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
         },
         _ => html! {
-            <Editor vault_path={props.vault_path.clone()} page={props.page.clone()} on_page_deleted={props.on_page_deleted.clone()} />
+            <Editor vault_path={props.vault_path.clone()} page={props.page.clone()} on_page_deleted={props.on_page_deleted.clone()} open_dialog={props.open_dialog.clone()} />
         },
     }
 }

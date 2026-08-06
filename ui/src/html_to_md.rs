@@ -34,7 +34,20 @@ fn walk(node: &Element, _depth: usize) -> String {
                 format!("`{}`", text_of(node))
             }
         }
-        "pre" => format!("```\n{}\n```\n\n", text_of(node)),
+        "pre" => {
+            // Se o <pre> tem um único filho <code class="language-X">, a
+            // fence sai com a linguagem preservada (```X). Sem isso, inserir
+            // um embed via slash command (ver editor.rs) perderia a
+            // linguagem no primeiro save e nunca viraria um embed de verdade.
+            let lang = node.query_selector("code[class*=\"language-\"]").ok().flatten()
+                .and_then(|code| code.get_attribute("class"))
+                .and_then(|class| {
+                    class.split_whitespace()
+                        .find_map(|c| c.strip_prefix("language-").map(|s| s.to_string()))
+                });
+            let lang = lang.unwrap_or_default();
+            format!("```{}\n{}\n```\n\n", lang, text_of(node))
+        }
         "blockquote" => {
             let body = text_of(node);
             body.lines().map(|l| format!("> {}\n", l)).collect::<String>() + "\n"

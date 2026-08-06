@@ -208,12 +208,64 @@ impl KanbanEmbedData {
     }
 
     fn to_fence_body(&self) -> String {
-        let mut out = format!("columns: [{}]\n", self.columns.join(", "));
+        // yaml_scalar é necessário aqui: um item "Revisar PR #42 (Backlog)"
+        // sem aspas faria o YAML tratar " #42..." como comentário (regra do
+        // YAML: '#' precedido de espaço abre comentário em escalar plano) e
+        // cortar o resto da linha — título truncado E coluna errada no
+        // reparse seguinte.
+        let cols = self.columns.iter().map(|c| yaml_scalar(c)).collect::<Vec<_>>().join(", ");
+        let mut out = format!("columns: [{}]\n", cols);
         out.push_str("items:");
         for item in &self.items {
-            out.push_str(&format!("\n  - {} ({})", item.title, item.column));
+            let composite = format!("{} ({})", item.title, item.column);
+            out.push_str(&format!("\n  - {}", yaml_scalar(&composite)));
         }
         out
+    }
+
+    /// Adiciona uma coluna nova ao fim do board.
+    pub fn add_column(&mut self, name: String) {
+        self.columns.push(name);
+    }
+
+    /// Renomeia a coluna no índice `idx`, atualizando também todo card que
+    /// apontava pro nome antigo.
+    pub fn rename_column(&mut self, idx: usize, new_name: String) {
+        let Some(old_name) = self.columns.get(idx).cloned() else { return };
+        if let Some(c) = self.columns.get_mut(idx) {
+            *c = new_name.clone();
+        }
+        for item in &mut self.items {
+            if item.column == old_name {
+                item.column = new_name.clone();
+            }
+        }
+    }
+
+    /// Remove a coluna no índice `idx` e todos os cards nela.
+    pub fn remove_column(&mut self, idx: usize) {
+        let Some(name) = self.columns.get(idx).cloned() else { return };
+        self.columns.remove(idx);
+        self.items.retain(|item| item.column != name);
+    }
+
+    /// Adiciona um card novo na coluna dada.
+    pub fn add_card(&mut self, column: String, title: String) {
+        self.items.push(KanbanEmbedItem { title, column });
+    }
+
+    /// Edita o título do card no índice `idx`.
+    pub fn edit_card(&mut self, idx: usize, new_title: String) {
+        if let Some(item) = self.items.get_mut(idx) {
+            item.title = new_title;
+        }
+    }
+
+    /// Remove o card no índice `idx`.
+    pub fn remove_card(&mut self, idx: usize) {
+        if idx < self.items.len() {
+            self.items.remove(idx);
+        }
     }
 }
 
@@ -284,23 +336,122 @@ impl CalendarEmbedData {
             .collect::<Vec<_>>()
             .join("\n")
     }
+
+    /// Adiciona um evento novo.
+    pub fn add_entry(&mut self, date: String, title: String) {
+        self.entries.push(CalendarEntry { date, title });
+    }
+
+    /// Edita a data e/ou o título do evento no índice `idx`.
+    pub fn edit_entry(&mut self, idx: usize, new_date: String, new_title: String) {
+        if let Some(entry) = self.entries.get_mut(idx) {
+            entry.date = new_date;
+            entry.title = new_title;
+        }
+    }
+
+    /// Remove o evento no índice `idx`.
+    pub fn remove_entry(&mut self, idx: usize) {
+        if idx < self.entries.len() {
+            self.entries.remove(idx);
+        }
+    }
 }
 
-/// Dados de um embed table: cabeçalho + linhas, no formato de uma tabela
-/// markdown comum (reaproveita o parser de tabela do pulldown-cmark).
+/// Tipo de uma coluna da tabela — controla como a célula é editada e
+/// renderizada. `Text` é o padrão (compatível com qualquer tabela markdown
+/// comum, sem preâmbulo de configuração nenhum).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnKind {
+    /// Texto livre.
+    Text,
+    /// Caixa de seleção (valor `"true"`/`"false"` na célula).
+    Checkbox,
+    /// Valor de uma lista fixa de opções, mostrado como badge colorido.
+    Select {
+        /// Opções permitidas, na ordem em que aparecem no seletor.
+        options: Vec<String>,
+    },
+}
+
+/// Uma coluna da tabela: nome + tipo.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableColumn {
+    /// Nome/cabeçalho da coluna.
+    pub name: String,
+    /// Tipo da célula.
+    pub kind: ColumnKind,
+}
+
+/// Dados de um embed table: colunas (com tipo) + linhas.
+///
+/// Por padrão a fence é só uma tabela markdown comum (todas as colunas
+/// nascem `Text`, 100% compatível com qualquer tabela já existente). Só
+/// quando alguma coluna tem um tipo diferente, um preâmbulo YAML é
+/// escrito antes da tabela, separado por uma linha `---` (mesma convenção
+/// visual do frontmatter da página):
+///
+/// ```text
+/// columns:
+///   - name: Status
+///     type: select
+///     options: [todo, doing, done]
+/// ---
+/// | Tarefa | Status |
+/// | ------ | ------ |
+/// | API    | done   |
+/// ```
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TableEmbedData {
-    /// Cabeçalhos das colunas.
-    pub headers: Vec<String>,
-    /// Linhas de dados.
+    /// Colunas, em ordem.
+    pub columns: Vec<TableColumn>,
+    /// Linhas de dados (cada uma com `columns.len()` células).
     pub rows: Vec<Vec<String>>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawColumnConfig {
+    name: String,
+    #[serde(rename = "type", default)]
+    kind: Option<String>,
+    #[serde(default)]
+    options: Vec<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawTableYaml {
+    #[serde(default)]
+    columns: Vec<RawColumnConfig>,
 }
 
 impl TableEmbedData {
     fn parse(raw: &str) -> Self {
+        let (config_part, table_part) = match raw.find("\n---\n") {
+            Some(pos) => (Some(&raw[..pos]), &raw[pos + 5..]),
+            None => (None, raw),
+        };
+
+        let configured: Vec<(String, ColumnKind)> = config_part
+            .and_then(|yaml| serde_yaml::from_str::<RawTableYaml>(yaml).ok())
+            .map(|parsed| {
+                parsed
+                    .columns
+                    .into_iter()
+                    .map(|c| {
+                        let kind = match c.kind.as_deref() {
+                            Some("select") => ColumnKind::Select { options: c.options },
+                            Some("checkbox") => ColumnKind::Checkbox,
+                            _ => ColumnKind::Text,
+                        };
+                        (c.name, kind)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let mut options = Options::empty();
         options.insert(Options::ENABLE_TABLES);
-        let parser = Parser::new_ext(raw, options);
+        let parser = Parser::new_ext(table_part, options);
 
         let mut headers = Vec::new();
         let mut rows: Vec<Vec<String>> = Vec::new();
@@ -328,22 +479,46 @@ impl TableEmbedData {
             }
         }
 
-        Self { headers, rows }
+        let columns = headers
+            .into_iter()
+            .map(|name| {
+                let kind = configured
+                    .iter()
+                    .find(|(n, _)| *n == name)
+                    .map(|(_, k)| k.clone())
+                    .unwrap_or(ColumnKind::Text);
+                TableColumn { name, kind }
+            })
+            .collect();
+
+        Self { columns, rows }
     }
 
     fn to_fence_body(&self) -> String {
         let mut out = String::new();
+
+        let has_typed = self.columns.iter().any(|c| c.kind != ColumnKind::Text);
+        if has_typed {
+            out.push_str("columns:\n");
+            for c in &self.columns {
+                out.push_str(&format!("  - name: {}\n", yaml_scalar(&c.name)));
+                match &c.kind {
+                    ColumnKind::Text => {}
+                    ColumnKind::Checkbox => out.push_str("    type: checkbox\n"),
+                    ColumnKind::Select { options } => {
+                        out.push_str("    type: select\n");
+                        let opts = options.iter().map(|o| yaml_scalar(o)).collect::<Vec<_>>().join(", ");
+                        out.push_str(&format!("    options: [{}]\n", opts));
+                    }
+                }
+            }
+            out.push_str("---\n");
+        }
+
         out.push_str("| ");
-        out.push_str(&self.headers.join(" | "));
+        out.push_str(&self.columns.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(" | "));
         out.push_str(" |\n| ");
-        out.push_str(
-            &self
-                .headers
-                .iter()
-                .map(|_| "---")
-                .collect::<Vec<_>>()
-                .join(" | "),
-        );
+        out.push_str(&self.columns.iter().map(|_| "---").collect::<Vec<_>>().join(" | "));
         out.push_str(" |");
         for row in &self.rows {
             out.push_str("\n| ");
@@ -351,6 +526,72 @@ impl TableEmbedData {
             out.push_str(" |");
         }
         out
+    }
+
+    /// Adiciona uma linha vazia (uma célula por coluna).
+    pub fn add_row(&mut self) {
+        self.rows.push(vec![String::new(); self.columns.len()]);
+    }
+
+    /// Remove a linha no índice `idx`.
+    pub fn remove_row(&mut self, idx: usize) {
+        if idx < self.rows.len() {
+            self.rows.remove(idx);
+        }
+    }
+
+    /// Adiciona uma coluna nova (tipo `Text`) ao fim, com célula vazia em
+    /// toda linha existente.
+    pub fn add_column(&mut self, name: String) {
+        self.columns.push(TableColumn { name, kind: ColumnKind::Text });
+        for row in &mut self.rows {
+            row.push(String::new());
+        }
+    }
+
+    /// Remove a coluna no índice `idx` e a célula correspondente de toda linha.
+    pub fn remove_column(&mut self, idx: usize) {
+        if idx >= self.columns.len() {
+            return;
+        }
+        self.columns.remove(idx);
+        for row in &mut self.rows {
+            if idx < row.len() {
+                row.remove(idx);
+            }
+        }
+    }
+
+    /// Renomeia a coluna no índice `idx`.
+    pub fn set_column_name(&mut self, idx: usize, name: String) {
+        if let Some(c) = self.columns.get_mut(idx) {
+            c.name = name;
+        }
+    }
+
+    /// Troca o tipo da coluna no índice `idx`.
+    pub fn set_column_kind(&mut self, idx: usize, kind: ColumnKind) {
+        if let Some(c) = self.columns.get_mut(idx) {
+            c.kind = kind;
+        }
+    }
+
+    /// Define o valor da célula em `(row, col)`.
+    pub fn set_cell(&mut self, row: usize, col: usize, value: String) {
+        if let Some(r) = self.rows.get_mut(row) {
+            if col < r.len() {
+                r[col] = value;
+            }
+        }
+    }
+}
+
+fn yaml_scalar(s: &str) -> String {
+    let needs_quote = s.is_empty() || !s.chars().all(|c| c.is_alphanumeric() || c == ' ' || c == '-' || c == '_');
+    if needs_quote {
+        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    } else {
+        s.to_string()
     }
 }
 
@@ -492,9 +733,65 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let DocSegment::Embed(EmbedData::Table(data)) = &segments[5] else {
             panic!("esperava embed table no índice 5");
         };
-        assert_eq!(data.headers, vec!["Tarefa", "Status", "Prioridade"]);
+        let names: Vec<&str> = data.columns.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["Tarefa", "Status", "Prioridade"]);
+        assert!(data.columns.iter().all(|c| c.kind == ColumnKind::Text));
         assert_eq!(data.rows.len(), 3);
         assert_eq!(data.rows[0], vec!["API", "done", "alta"]);
+    }
+
+    #[test]
+    fn table_typed_columns_roundtrip() {
+        let mut data = TableEmbedData {
+            columns: vec![
+                TableColumn { name: "Tarefa".into(), kind: ColumnKind::Text },
+                TableColumn { name: "Status".into(), kind: ColumnKind::Select { options: vec!["todo".into(), "done".into()] } },
+                TableColumn { name: "Feito".into(), kind: ColumnKind::Checkbox },
+            ],
+            rows: vec![vec!["API".into(), "done".into(), "true".into()]],
+        };
+        let fence_body = data.to_fence_body();
+        assert!(fence_body.starts_with("columns:\n"), "esperava preâmbulo YAML, ficou: {fence_body:?}");
+
+        let reparsed = TableEmbedData::parse(&fence_body);
+        assert_eq!(reparsed.columns.len(), 3);
+        assert_eq!(reparsed.columns[0].kind, ColumnKind::Text);
+        assert_eq!(reparsed.columns[1].kind, ColumnKind::Select { options: vec!["todo".into(), "done".into()] });
+        assert_eq!(reparsed.columns[2].kind, ColumnKind::Checkbox);
+        assert_eq!(reparsed.rows, data.rows);
+
+        // Sem tipos especiais, não deve escrever preâmbulo (retrocompatível).
+        data.columns[1].kind = ColumnKind::Text;
+        data.columns[2].kind = ColumnKind::Text;
+        let plain_body = data.to_fence_body();
+        assert!(!plain_body.contains("columns:\n"), "não devia ter preâmbulo: {plain_body:?}");
+    }
+
+    #[test]
+    fn table_add_remove_row_and_column() {
+        let mut data = TableEmbedData {
+            columns: vec![TableColumn { name: "A".into(), kind: ColumnKind::Text }],
+            rows: vec![vec!["1".into()]],
+        };
+        data.add_column("B".into());
+        assert_eq!(data.columns.len(), 2);
+        assert_eq!(data.rows[0], vec!["1", ""]);
+
+        data.add_row();
+        assert_eq!(data.rows.len(), 2);
+        assert_eq!(data.rows[1], vec!["", ""]);
+
+        data.set_cell(1, 1, "x".into());
+        assert_eq!(data.rows[1][1], "x");
+
+        data.remove_column(0);
+        assert_eq!(data.columns[0].name, "B");
+        assert_eq!(data.rows[0], vec![""]);
+        assert_eq!(data.rows[1], vec!["x"]);
+
+        data.remove_row(0);
+        assert_eq!(data.rows.len(), 1);
+        assert_eq!(data.rows[0], vec!["x"]);
     }
 
     #[test]
@@ -504,6 +801,90 @@ Acima do embed você pode ter texto normal. Abaixo também.
         assert!(segments
             .iter()
             .all(|s| matches!(s, DocSegment::Markdown(_))));
+    }
+
+    #[test]
+    fn kanban_add_card_and_column() {
+        let mut data = KanbanEmbedData {
+            columns: vec!["Backlog".into()],
+            items: vec![],
+        };
+        data.add_column("Done".into());
+        data.add_card("Backlog".into(), "Nova tarefa".into());
+        assert_eq!(data.columns, vec!["Backlog", "Done"]);
+        assert_eq!(data.items.len(), 1);
+        assert_eq!(data.items[0].title, "Nova tarefa");
+        assert_eq!(data.items[0].column, "Backlog");
+    }
+
+    #[test]
+    fn kanban_edit_and_remove_card() {
+        let mut data = KanbanEmbedData {
+            columns: vec!["Backlog".into()],
+            items: vec![KanbanEmbedItem { title: "X".into(), column: "Backlog".into() }],
+        };
+        data.edit_card(0, "Y".into());
+        assert_eq!(data.items[0].title, "Y");
+        data.remove_card(0);
+        assert!(data.items.is_empty());
+    }
+
+    #[test]
+    fn kanban_rename_column_cascades_to_items() {
+        let mut data = KanbanEmbedData {
+            columns: vec!["Backlog".into(), "Done".into()],
+            items: vec![
+                KanbanEmbedItem { title: "A".into(), column: "Backlog".into() },
+                KanbanEmbedItem { title: "B".into(), column: "Done".into() },
+            ],
+        };
+        data.rename_column(0, "A Fazer".into());
+        assert_eq!(data.columns, vec!["A Fazer", "Done"]);
+        assert_eq!(data.items[0].column, "A Fazer");
+        assert_eq!(data.items[1].column, "Done");
+    }
+
+    #[test]
+    fn kanban_remove_column_removes_its_cards() {
+        let mut data = KanbanEmbedData {
+            columns: vec!["Backlog".into(), "Done".into()],
+            items: vec![
+                KanbanEmbedItem { title: "A".into(), column: "Backlog".into() },
+                KanbanEmbedItem { title: "B".into(), column: "Done".into() },
+            ],
+        };
+        data.remove_column(0);
+        assert_eq!(data.columns, vec!["Done"]);
+        assert_eq!(data.items.len(), 1);
+        assert_eq!(data.items[0].title, "B");
+    }
+
+    #[test]
+    fn calendar_add_edit_remove_entry() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry("2026-08-06".into(), "Revisão".into());
+        assert_eq!(data.entries.len(), 1);
+        data.edit_entry(0, "2026-08-07".into(), "Revisão adiada".into());
+        assert_eq!(data.entries[0].date, "2026-08-07");
+        assert_eq!(data.entries[0].title, "Revisão adiada");
+        data.remove_entry(0);
+        assert!(data.entries.is_empty());
+    }
+
+    #[test]
+    fn kanban_item_with_hash_survives_roundtrip() {
+        // Regressão: "#" precedido de espaço vira comentário em YAML plano
+        // sem aspas — cortava o título e derrubava o card pra coluna errada.
+        let mut data = KanbanEmbedData {
+            columns: vec!["Backlog".into()],
+            items: vec![],
+        };
+        data.add_card("Backlog".into(), "Revisar PR #42".into());
+        let fence_body = data.to_fence_body();
+        let reparsed = KanbanEmbedData::parse(&fence_body);
+        assert_eq!(reparsed.items.len(), 1);
+        assert_eq!(reparsed.items[0].title, "Revisar PR #42");
+        assert_eq!(reparsed.items[0].column, "Backlog");
     }
 
     #[test]

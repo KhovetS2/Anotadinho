@@ -6,6 +6,7 @@ use web_sys::KeyboardEvent;
 
 use crate::api::{self, PageMeta};
 use crate::components::embeds::InlineEmbed;
+use crate::dialog::PendingDialog;
 use crate::embed::DocSegment;
 
 #[derive(Properties, PartialEq, Clone)]
@@ -14,6 +15,8 @@ pub struct EditorProps {
     pub page: Option<PageMeta>,
     #[prop_or_default]
     pub on_page_deleted: Callback<()>,
+    /// Abre o modal de diálogo do app (ver `crate::dialog`).
+    pub open_dialog: Callback<PendingDialog>,
 }
 
 struct SlashItem {
@@ -35,6 +38,9 @@ static SLASH_ITEMS: &[SlashItem] = &[
     SlashItem { label: "Imagem", desc: "URL ou arquivo de imagem", html: "__IMG__" },
     SlashItem { label: "Diagrama", desc: "Mermaid (fluxograma)", html: "__MERMAID__" },
     SlashItem { label: "Assets", desc: "Inserir arquivo do vault", html: "__ASSET__" },
+    SlashItem { label: "Kanban", desc: "Board kanban interativo", html: "__EMBED_KANBAN__" },
+    SlashItem { label: "Calendário", desc: "Lista de eventos por data", html: "__EMBED_CALENDAR__" },
+    SlashItem { label: "Tabela de Tarefas", desc: "Tabela com colunas tipadas (embed)", html: "__EMBED_TABLE__" },
 ];
 
 #[function_component(Editor)]
@@ -123,6 +129,14 @@ pub fn editor(props: &EditorProps) -> Html {
     // sempre foi. Com embeds: injeta cada trecho de markdown no seu próprio
     // contenteditable (via segment_refs) — os embeds em si já são
     // componentes Yew declarativos, não precisam de injeção imperativa.
+    //
+    // O guard rastreia (path, has_embeds, contagem de segmentos), não só o
+    // path: sem isso, inserir o primeiro embed numa página via slash
+    // command (transição has_embeds false→true na mesma sessão, sem trocar
+    // de página) nunca repovoaria os trechos de markdown recém-criados —
+    // eles ficariam com innerHTML vazio. Digitar texto normal não muda
+    // has_embeds nem a contagem de segmentos, então isso não reintroduz o
+    // loop infinito do ciclo 043 (que reagia a toda mudança de content_md).
     {
         let loading_val = *loading;
         let content_md_empty = content_md.is_empty();
@@ -131,16 +145,18 @@ pub fn editor(props: &EditorProps) -> Html {
         let segments_eff = segments.clone();
         let full_snapshot_eff = full_snapshot.clone();
         let has_embeds_eff = has_embeds;
-        let last_page_path = use_mut_ref(String::new);
+        let segment_count = segments.len();
+        let last_rendered = use_mut_ref(|| (String::new(), false, 0usize));
         let current_path = props.page.as_ref().map(|p| p.path.clone()).unwrap_or_default();
 
-        use_effect_with((loading_val, current_path.clone()), move |_| {
+        use_effect_with((loading_val, current_path.clone(), has_embeds_eff, segment_count), move |_| {
             let should_render = {
-                let last = last_page_path.borrow();
-                !loading_val && !content_md_empty && *last != current_path
+                let last = last_rendered.borrow();
+                !loading_val && !content_md_empty
+                    && (last.0 != current_path || last.1 != has_embeds_eff || last.2 != segment_count)
             };
             if should_render {
-                *last_page_path.borrow_mut() = current_path;
+                *last_rendered.borrow_mut() = (current_path, has_embeds_eff, segment_count);
 
                 if has_embeds_eff {
                     for (i, seg) in segments_eff.iter().enumerate() {
@@ -251,94 +267,114 @@ pub fn editor(props: &EditorProps) -> Html {
         let exec_fn = doc_exec.clone();
         let items = filtered.clone();
         let vault_path = props.vault_path.clone();
+        let open_dialog = props.open_dialog.clone();
         Callback::from(move |_| {
             if let Some(&item_idx) = items.get(*slash_idx) {
                 let item = &SLASH_ITEMS[item_idx];
-                let html = match item.html {
+                match item.html {
                     "__IMG__" => {
-                        // Open file dialog, copy to assets
-                        let path = gloo_dialogs::prompt(
-                            "Caminho da imagem ou URL:\n(ex: /home/user/foto.png ou https://...)",
-                            None
-                        ).unwrap_or_default();
-                        if path.is_empty() { String::new() }
-                        else if path.starts_with("http") {
-                            format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", path.replace('"', "&quot;"))
-                        } else {
-                            // Copy to assets
-                            let vp = vault_path.clone();
-                            wasm_bindgen_futures::spawn_local(async move {
-                                if let Ok(relative) = crate::api::copy_to_assets(&vp, &path).await {
-                                    // Insert the image after the slash closes
-                                    let doc = web_sys::window().and_then(|w| w.document());
-                                    if let Some(doc) = doc {
-                                        let html = format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", relative.replace('"', "&quot;"));
-                                        let args = js_sys::Array::new();
-                                        args.push(&wasm_bindgen::JsValue::from_str("insertHTML"));
-                                        args.push(&wasm_bindgen::JsValue::from_bool(false));
-                                        args.push(&wasm_bindgen::JsValue::from_str(&html));
-                                        if let Some(f) = js_sys::Reflect::get(&doc, &wasm_bindgen::JsValue::from_str("execCommand"))
-                                            .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
-                                        { let _ = f.apply(&doc, &args); }
-                                    }
+                        let exec_fn = exec_fn.clone();
+                        let vault_path = vault_path.clone();
+                        open_dialog.emit(PendingDialog::Prompt {
+                            title: "Caminho da imagem ou URL".to_string(),
+                            default: String::new(),
+                            on_submit: Callback::from(move |path: String| {
+                                if path.starts_with("http") {
+                                    let html = format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", path.replace('"', "&quot;"));
+                                    exec_fn("insertHTML", &html);
+                                } else {
+                                    let vp = vault_path.clone();
+                                    let exec_fn = exec_fn.clone();
+                                    wasm_bindgen_futures::spawn_local(async move {
+                                        if let Ok(relative) = crate::api::copy_to_assets(&vp, &path).await {
+                                            let html = format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", relative.replace('"', "&quot;"));
+                                            exec_fn("insertHTML", &html);
+                                        }
+                                    });
                                 }
-                            });
-                            String::new() // Don't insert now, async will handle it
-                        }
+                            }),
+                        });
                     }
                     "__MERMAID__" => {
-                        let code = gloo_dialogs::prompt("Código Mermaid:\n(ex: graph TD; A-->B)", None).unwrap_or_default();
-                        if code.is_empty() { String::new() }
-                        else { format!("<div class=\"mermaid\">{}</div>", code.replace('<', "&lt;").replace('>', "&gt;")) }
+                        let exec_fn = exec_fn.clone();
+                        open_dialog.emit(PendingDialog::Prompt {
+                            title: "Código Mermaid (ex: graph TD; A-->B)".to_string(),
+                            default: String::new(),
+                            on_submit: Callback::from(move |code: String| {
+                                let html = format!("<div class=\"mermaid\">{}</div>", code.replace('<', "&lt;").replace('>', "&gt;"));
+                                exec_fn("insertHTML", &html);
+                                wasm_bindgen_futures::spawn_local(async {
+                                    gloo_timers::future::sleep(std::time::Duration::from_millis(100)).await;
+                                    if let Some(window) = web_sys::window() {
+                                        if let Some(doc) = window.document() {
+                                            if let Some(el) = doc.query_selector(".mermaid").ok().flatten() {
+                                                if let Ok(el) = el.dyn_into::<web_sys::Element>() {
+                                                    init_mermaid_at(&el);
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            }),
+                        });
                     }
                     "__ASSET__" => {
                         let vp = vault_path.clone();
+                        let exec_fn = exec_fn.clone();
+                        let open_dialog = open_dialog.clone();
                         wasm_bindgen_futures::spawn_local(async move {
                             match crate::api::list_assets(&vp).await {
                                 Ok(assets) => {
                                     if assets.is_empty() {
-                                        gloo_dialogs::alert("Nenhum arquivo em assets/. Use /img para adicionar imagens.");
+                                        open_dialog.emit(PendingDialog::Alert {
+                                            message: "Nenhum arquivo em assets/. Use /img para adicionar imagens.".to_string(),
+                                        });
                                     } else {
                                         let list = assets.join("\n");
-                                        let choice = gloo_dialogs::prompt(
-                                            &format!("Assets disponíveis:\n{}\n\nDigite o nome do arquivo:", list),
-                                            None
-                                        ).unwrap_or_default();
-                                        if !choice.is_empty() {
-                                            let relative = if choice.starts_with("assets/") { choice } else { format!("assets/{}", choice) };
-                                            let doc = web_sys::window().and_then(|w| w.document());
-                                            if let Some(doc) = doc {
+                                        open_dialog.emit(PendingDialog::Prompt {
+                                            title: format!("Assets disponíveis:\n{}\n\nDigite o nome do arquivo", list),
+                                            default: String::new(),
+                                            on_submit: Callback::from(move |choice: String| {
+                                                let relative = if choice.starts_with("assets/") { choice } else { format!("assets/{}", choice) };
                                                 let ext = std::path::Path::new(&relative).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
                                                 let html = match ext.as_str() {
                                                     "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" => {
                                                         format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", relative.replace('"', "&quot;"))
                                                     }
-                                                    _ => {
-                                                        format!("<a href=\"{}\">{}</a>", relative.replace('"', "&quot;"), relative)
-                                                    }
+                                                    _ => format!("<a href=\"{}\">{}</a>", relative.replace('"', "&quot;"), relative),
                                                 };
-                                                let args = js_sys::Array::new();
-                                                args.push(&wasm_bindgen::JsValue::from_str("insertHTML"));
-                                                args.push(&wasm_bindgen::JsValue::from_bool(false));
-                                                args.push(&wasm_bindgen::JsValue::from_str(&html));
-                                                if let Some(f) = js_sys::Reflect::get(&doc, &wasm_bindgen::JsValue::from_str("execCommand"))
-                                                    .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
-                                                { let _ = f.apply(&doc, &args); }
-                                            }
-                                        }
+                                                exec_fn("insertHTML", &html);
+                                            }),
+                                        });
                                     }
                                 }
                                 Err(e) => {
-                                    gloo_dialogs::alert(&format!("Erro ao listar assets: {}", e));
+                                    open_dialog.emit(PendingDialog::Alert {
+                                        message: format!("Erro ao listar assets: {}", e),
+                                    });
                                 }
                             }
                         });
-                        String::new() // async, don't insert now
                     }
-                    other => other.to_string()
-                };
-                if !html.is_empty() {
-                    exec_fn("insertHTML", &html);
+                    "__EMBED_KANBAN__" => {
+                        let html = "<pre><code class=\"language-kanban\">columns: [Backlog, Todo, Done]\nitems:\n  - Novo card (Backlog)</code></pre>";
+                        exec_fn("insertHTML", html);
+                    }
+                    "__EMBED_CALENDAR__" => {
+                        let today = {
+                            let d = js_sys::Date::new_0();
+                            format!("{:04}-{:02}-{:02}", d.get_full_year(), d.get_month() + 1, d.get_date())
+                        };
+                        let html = format!("<pre><code class=\"language-calendar\">{}: Novo evento</code></pre>", today);
+                        exec_fn("insertHTML", &html);
+                    }
+                    "__EMBED_TABLE__" => {
+                        let html = "<pre><code class=\"language-table\">| Tarefa | Status | Prioridade |\n| ------ | ------ | ---------- |\n| Nova tarefa | todo | media |</code></pre>";
+                        exec_fn("insertHTML", html);
+                    }
+                    other => {
+                        exec_fn("insertHTML", other);
+                    }
                 }
             }
             slash_open.set(false);
@@ -405,13 +441,20 @@ pub fn editor(props: &EditorProps) -> Html {
     let on_delete = {
         let vault_path = props.vault_path.clone(); let page_path = page.path.clone();
         let page_title = page.title.clone(); let cb = props.on_page_deleted.clone();
+        let open_dialog = props.open_dialog.clone();
         Callback::from(move |_| {
-            if !gloo_dialogs::confirm(&format!("Excluir \"{}\"?", page_title)) { return; }
             let vault_path = vault_path.clone(); let page_path = page_path.clone(); let cb = cb.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                if let Err(e) = api::delete_page(&vault_path, &page_path).await {
-                    web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
-                } else { cb.emit(()); }
+            open_dialog.emit(PendingDialog::Confirm {
+                message: format!("Excluir \"{}\"?", page_title),
+                confirm_label: "Excluir".to_string(),
+                on_confirm: Callback::from(move |_| {
+                    let vault_path = vault_path.clone(); let page_path = page_path.clone(); let cb = cb.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        if let Err(e) = api::delete_page(&vault_path, &page_path).await {
+                            web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
+                        } else { cb.emit(()); }
+                    });
+                }),
             });
         })
     };
@@ -586,7 +629,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                         content_md.set(new_full);
                                         trigger_debounced_save.emit(());
                                     });
-                                    html! { <InlineEmbed data={data.clone()} on_change={on_change} /> }
+                                    html! { <InlineEmbed data={data.clone()} on_change={on_change} open_dialog={props.open_dialog.clone()} /> }
                                 }
                             }
                         }) }

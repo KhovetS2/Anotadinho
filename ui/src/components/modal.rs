@@ -17,9 +17,15 @@ pub fn modal(props: &ModalProps) -> Html {
         return html! {};
     }
     let close = props.on_close.clone();
+    // stop_propagation no conteúdo é essencial: sem isso, qualquer clique
+    // dentro do modal (ex: no botão "OK") borbulha até o onclick do overlay
+    // e dispara um close() extra DEPOIS do clique original — o que
+    // sobrescreve um diálogo encadeado que o próprio botão acabou de abrir
+    // (ex: nome → tipo → opções na configuração de coluna da tabela).
+    let stop_propagation = Callback::from(|e: MouseEvent| e.stop_propagation());
     html! {
         <div class="modal-overlay" onclick={close.reform(|_| ())}>
-            <div class="modal">
+            <div class="modal" onclick={stop_propagation}>
                 <div class="modal__header">
                     <h3 class="modal__title">{ &props.title }</h3>
                     <button class="btn btn--ghost btn--xs" onclick={close.reform(|_| ())}>

@@ -10,6 +10,7 @@ use web_sys::{HtmlInputElement, KeyboardEvent};
 use yew::prelude::*;
 
 use crate::api::{self, PageMeta};
+use crate::dialog::PendingDialog;
 
 /// Props da Sidebar.
 #[derive(Properties, PartialEq, Clone)]
@@ -24,6 +25,8 @@ pub struct SidebarProps {
     /// Sidebar colapsada (compacta).
     #[prop_or_default]
     pub collapsed: bool,
+    /// Abre o modal de diálogo do app (ver `crate::dialog`).
+    pub open_dialog: Callback<PendingDialog>,
 }
 
 /// Componente Sidebar.
@@ -135,29 +138,38 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         let selected_path = selected_path.clone();
         let on_page_selected = props.on_page_selected.clone();
         let refresh_tick = refresh_tick.clone();
+        let open_dialog = props.open_dialog.clone();
         Callback::from(move |_| {
-            let title = gloo_dialogs::prompt("Título da nova página:", Some("Nova nota"))
-                .unwrap_or_default();
-            let title = title.trim().to_string();
-            if title.is_empty() {
-                return;
-            }
             let vault_path = vault_path.clone();
             let selected_path = selected_path.clone();
             let on_page_selected = on_page_selected.clone();
             let refresh_tick = refresh_tick.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                match api::create_page(&vault_path, &title).await {
-                    Ok(meta) => {
-                        selected_path.set(Some(meta.path.clone()));
-                        on_page_selected.emit(meta);
-                        refresh_tick.set(*refresh_tick + 1);
-                    }
-                    Err(e) => {
-                        web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
-                        gloo_dialogs::alert(&format!("Erro ao criar página: {}", e));
-                    }
-                }
+            let open_dialog_for_error = open_dialog.clone();
+            open_dialog.emit(PendingDialog::Prompt {
+                title: "Título da nova página".to_string(),
+                default: "Nova nota".to_string(),
+                on_submit: Callback::from(move |title: String| {
+                    let vault_path = vault_path.clone();
+                    let selected_path = selected_path.clone();
+                    let on_page_selected = on_page_selected.clone();
+                    let refresh_tick = refresh_tick.clone();
+                    let open_dialog = open_dialog_for_error.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        match api::create_page(&vault_path, &title).await {
+                            Ok(meta) => {
+                                selected_path.set(Some(meta.path.clone()));
+                                on_page_selected.emit(meta);
+                                refresh_tick.set(*refresh_tick + 1);
+                            }
+                            Err(e) => {
+                                web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
+                                open_dialog.emit(PendingDialog::Alert {
+                                    message: format!("Erro ao criar página: {}", e),
+                                });
+                            }
+                        }
+                    });
+                }),
             });
         })
     };
@@ -167,11 +179,13 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         let selected_path = selected_path.clone();
         let on_page_selected = props.on_page_selected.clone();
         let refresh_tick = refresh_tick.clone();
+        let open_dialog = props.open_dialog.clone();
         Callback::from(move |_| {
             let vault_path = vault_path.clone();
             let selected_path = selected_path.clone();
             let on_page_selected = on_page_selected.clone();
             let refresh_tick = refresh_tick.clone();
+            let open_dialog = open_dialog.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 match api::open_today_journal(&vault_path).await {
                     Ok(meta) => {
@@ -181,7 +195,9 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                     }
                     Err(e) => {
                         web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
-                        gloo_dialogs::alert(&format!("Erro ao abrir journal: {}", e));
+                        open_dialog.emit(PendingDialog::Alert {
+                            message: format!("Erro ao abrir journal: {}", e),
+                        });
                     }
                 }
             });
