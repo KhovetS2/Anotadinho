@@ -4,6 +4,7 @@
 //! estilizadas globalmente) e `.badge--*` (já existentes) pras células de
 //! seleção, em vez de criar CSS de badge novo.
 
+use gloo_events::EventListener;
 use wasm_bindgen::JsCast;
 use web_sys::FocusEvent;
 use yew::prelude::*;
@@ -93,6 +94,38 @@ fn configure_column(
 #[function_component(InlineTable)]
 pub fn inline_table(props: &InlineTableProps) -> Html {
     let open_select_cell = use_state(|| None::<(usize, usize)>);
+
+    // Fecha o dropdown de seleção ao clicar fora da célula ou apertar
+    // Escape — antes só fechava escolhendo uma opção.
+    {
+        let open_select_cell = open_select_cell.clone();
+        use_effect_with(*open_select_cell, move |open| {
+            let mut listeners = Vec::new();
+            if open.is_some() {
+                let window = web_sys::window().expect("no global window");
+
+                let close_cell = open_select_cell.clone();
+                listeners.push(EventListener::new(&window, "mousedown", move |e| {
+                    let Some(node) = e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()) else { return };
+                    let target = node.dyn_ref::<web_sys::Element>().cloned().or_else(|| node.parent_element());
+                    let Some(target) = target else { return };
+                    if target.closest(".task-table__td--select").ok().flatten().is_none() {
+                        close_cell.set(None);
+                    }
+                }));
+
+                let close_cell = open_select_cell.clone();
+                listeners.push(EventListener::new(&window, "keydown", move |e| {
+                    if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
+                        if e.key() == "Escape" {
+                            close_cell.set(None);
+                        }
+                    }
+                }));
+            }
+            move || drop(listeners)
+        });
+    }
 
     let add_row = {
         let data = props.data.clone();

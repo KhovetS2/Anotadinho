@@ -1,5 +1,6 @@
 //! Editor WYSIWYG contenteditable + slash commands + markdown live formatting.
 
+use gloo_events::EventListener;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 use web_sys::KeyboardEvent;
@@ -57,6 +58,33 @@ pub fn editor(props: &EditorProps) -> Html {
     let slash_open = use_state(|| false);
     let slash_text = use_state(String::new);
     let slash_idx = use_state(|| 0usize);
+
+    // Fecha o menu de slash ao clicar fora dele — sem isso ele ficava aberto
+    // pra sempre se o usuário clicasse na sidebar ou em outro lugar da
+    // página em vez de Escape/selecionar um item.
+    {
+        let slash_open = slash_open.clone();
+        let slash_text = slash_text.clone();
+        let slash_idx = slash_idx.clone();
+        use_effect_with(*slash_open, move |open| {
+            let listener = if *open {
+                let window = web_sys::window().expect("no global window");
+                Some(EventListener::new(&window, "mousedown", move |e| {
+                    let Some(node) = e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()) else { return };
+                    let target = node.dyn_ref::<web_sys::Element>().cloned().or_else(|| node.parent_element());
+                    let Some(target) = target else { return };
+                    if target.closest(".editor__wysiwyg, .slash-menu").ok().flatten().is_none() {
+                        slash_open.set(false);
+                        slash_text.set(String::new());
+                        slash_idx.set(0);
+                    }
+                }))
+            } else {
+                None
+            };
+            move || drop(listener)
+        });
+    }
 
     let filtered: Vec<usize> = SLASH_ITEMS.iter().enumerate()
         .filter(|(_, item)| {
