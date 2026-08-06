@@ -123,6 +123,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     wasm_bindgen_futures::spawn_local(async move {
                         gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
                         init_mermaid_at(&_div);
+                        init_highlight();
                     });
                 }
             }
@@ -350,13 +351,29 @@ pub fn editor(props: &EditorProps) -> Html {
         Callback::from(move |_| {
             if let Some(div) = editor_ref.cast::<web_sys::Element>() {
                 let html = div.inner_html();
-                let full = format!("<!DOCTYPE html>\n<html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>{}</title><style>body{{max-width:800px;margin:2rem auto;font-family:system-ui;line-height:1.7;color:#1a1a1a;padding:0 1rem}}h1,h2,h3{{margin-top:1.5rem}}pre{{background:#f5f5f5;padding:1rem;border-radius:8px}}code{{background:#f0f0f0;padding:0.2em 0.4em;border-radius:4px}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ddd;padding:8px}}img{{max-width:100%}}blockquote{{border-left:3px solid #ccc;padding-left:1rem;color:#666}}</style></head><body>{}</body></html>", page_title, html);
+                let full = format!(
+                    "<!DOCTYPE html>\n<html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>{title}</title>\
+                    <style>\
+                    body{{max-width:800px;margin:3rem auto;font-family:system-ui,Inter,sans-serif;line-height:1.8;color:#1a1a1a;padding:0 1.5rem}}\
+                    h1,h2,h3{{margin-top:2rem;font-weight:600}}\
+                    h1{{font-size:2rem}} h2{{font-size:1.5rem}} h3{{font-size:1.2rem}}\
+                    pre{{background:#f4f4f4;padding:1.2rem;border-radius:8px;overflow-x:auto}}\
+                    code{{background:#f0f0f0;padding:0.2em 0.4em;border-radius:4px;font-size:0.9em;font-family:JetBrains Mono,Fira Code,monospace}}\
+                    pre code{{background:none;padding:0}}\
+                    table{{border-collapse:collapse;width:100%;margin:1rem 0}}\
+                    td,th{{border:1px solid #ddd;padding:8px 12px}}\
+                    th{{background:#f8f8f8;text-align:left}}\
+                    img{{max-width:100%;height:auto;border-radius:8px}}\
+                    blockquote{{border-left:4px solid #8B5CF6;padding-left:1rem;color:#666;margin:1rem 0}}\
+                    @media print{{body{{max-width:100%;margin:0;font-size:12pt}}}}\
+                    </style></head><body>{html}</body></html>",
+                    title = page_title, html = html
+                );
                 let arr = js_sys::Array::new();
                 arr.push(&wasm_bindgen::JsValue::from_str(&full));
-                let blob = web_sys::Blob::new_with_str_sequence(&arr).ok();
-                if let (Some(blob), Some(window)) = (blob, web_sys::window()) {
+                if let Some(blob) = web_sys::Blob::new_with_str_sequence(&arr).ok() {
                     let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap_or_default();
-                    let _ = window.open_with_url_and_target(&url, "_blank");
+                    let _ = web_sys::window().and_then(|w| w.open_with_url_and_target(&url, "_blank").ok());
                 }
             }
         })
@@ -478,6 +495,21 @@ fn exec_cmd_global(cmd: &str) {
         if let Some(f) = js_sys::Reflect::get(&doc, &wasm_bindgen::JsValue::from_str("execCommand"))
             .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
         { let _ = f.apply(&doc, &args); }
+    }
+}
+
+fn init_highlight() {
+    if let Some(window) = web_sys::window() {
+        if let Some(hljs) = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("hljs")).ok() {
+            if let Some(obj) = hljs.dyn_into::<js_sys::Object>().ok() {
+                let _ = js_sys::Reflect::apply(
+                    &js_sys::Reflect::get(&obj, &wasm_bindgen::JsValue::from_str("highlightAll")).ok()
+                        .and_then(|v| v.dyn_into::<js_sys::Function>().ok()).unwrap_or_else(|| js_sys::Function::new_no_args("")),
+                    &wasm_bindgen::JsValue::null(),
+                    &js_sys::Array::new()
+                );
+            }
+        }
     }
 }
 

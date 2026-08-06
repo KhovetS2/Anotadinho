@@ -819,6 +819,39 @@ body {
     border-radius: var(--r-md);
 }
 
+/* Block hover indicator (AppFlowy-style) */
+.editor__wysiwyg p,
+.editor__wysiwyg h1,
+.editor__wysiwyg h2,
+.editor__wysiwyg h3,
+.editor__wysiwyg h4,
+.editor__wysiwyg h5,
+.editor__wysiwyg h6,
+.editor__wysiwyg ul,
+.editor__wysiwyg ol,
+.editor__wysiwyg blockquote,
+.editor__wysiwyg pre {
+    position: relative;
+    padding-left: 8px;
+    margin-left: -8px;
+    border-left: 2px solid transparent;
+    transition: border-color 0.15s ease;
+}
+
+.editor__wysiwyg p:hover,
+.editor__wysiwyg h1:hover,
+.editor__wysiwyg h2:hover,
+.editor__wysiwyg h3:hover,
+.editor__wysiwyg h4:hover,
+.editor__wysiwyg h5:hover,
+.editor__wysiwyg h6:hover,
+.editor__wysiwyg ul:hover,
+.editor__wysiwyg ol:hover,
+.editor__wysiwyg blockquote:hover,
+.editor__wysiwyg pre:hover {
+    border-left-color: var(--border);
+}
+
 /* Split pane (deprecated, mantido para compatibilidade) */
 .editor__split {
     flex: 1;
