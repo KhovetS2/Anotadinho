@@ -442,7 +442,6 @@ pub fn editor(props: &EditorProps) -> Html {
         <main class="editor">
             <header class="editor__header">
                 <h2 class="editor__title">{ &page.title }</h2>
-                <span class="editor__path">{ &page.path }</span>
                 <div class="editor__actions">
                     if let Some(ref s) = *status { <span class="editor__status-badge">{ s }</span> }
                     if *edited { <span class="editor__dirty">{ "não salvo" }</span> }
