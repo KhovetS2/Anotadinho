@@ -119,6 +119,11 @@ impl VaultIo {
     ///
     /// Retorna metadados da página criada. Gera slug único se colidir.
     pub fn create_page(&self, title: &str) -> Result<PageMeta> {
+        self.create_page_with_type(title, "md")
+    }
+
+    /// Cria nova página com tipo específico (md, kanban, calendar, table).
+    pub fn create_page_with_type(&self, title: &str, page_type: &str) -> Result<PageMeta> {
         let base_slug = slugify(title);
         let mut slug = base_slug.clone();
         let mut n = 2u32;
@@ -126,9 +131,15 @@ impl VaultIo {
             let relative = format!("pages/{}.md", slug);
             let full = self.root.join(&relative);
             if !full.exists() {
+                let type_line = if page_type != "md" {
+                    format!("type: {}\n", page_type)
+                } else {
+                    String::new()
+                };
                 let content = format!(
-                    "---\ntitle: {}\n---\n\n- \n",
-                    title.replace(':', " -")
+                    "---\ntitle: {}\n{}---\n\n- \n",
+                    title.replace(':', " -"),
+                    type_line
                 );
                 self.write_page(&relative, &content)?;
                 return Ok(PageMeta {

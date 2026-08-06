@@ -9,9 +9,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use anotadinho_ipc::{
-    handle_copy_to_assets, handle_create_page, handle_delete_page, handle_list_assets,
-    handle_list_pages, handle_open_today_journal, handle_ping, handle_read_page,
-    handle_search_content, handle_write_page, PageMeta, PingArgs, PingResult, VaultInfo,
+    handle_copy_to_assets, handle_create_page, handle_create_page_typed, handle_delete_page,
+    handle_list_assets, handle_list_pages, handle_open_today_journal, handle_ping,
+    handle_read_page, handle_search_content, handle_write_page, PageMeta, PingArgs, PingResult,
+    VaultInfo,
 };
 use anotadinho_vault::{VaultIo, VaultWatcher};
 use tauri_plugin_dialog::DialogExt;
@@ -73,6 +74,15 @@ fn create_page(vault_path: String, title: String) -> Result<PageMeta, String> {
 }
 
 #[tauri::command]
+fn create_page_with_type(
+    vault_path: String,
+    title: String,
+    page_type: String,
+) -> Result<PageMeta, String> {
+    handle_create_page_typed(vault_path, title, page_type)
+}
+
+#[tauri::command]
 fn open_today_journal(vault_path: String) -> Result<PageMeta, String> {
     handle_open_today_journal(vault_path)
 }
@@ -127,6 +137,7 @@ fn main() {
             read_page,
             write_page,
             create_page,
+            create_page_with_type,
             open_today_journal,
             delete_page,
             list_assets,

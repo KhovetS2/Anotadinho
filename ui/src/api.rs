@@ -220,24 +220,25 @@ pub async fn open_today_journal(vault_path: &str) -> Result<PageMeta, String> {
 
 /// Cria uma nova página em pages/.
 pub async fn create_page(vault_path: &str, title: &str) -> Result<PageMeta, String> {
+    create_page_with_type(vault_path, title, "md").await
+}
+
+/// Cria pagina com tipo especifico (md, kanban, calendar, table).
+pub async fn create_page_with_type(
+    vault_path: &str, title: &str, page_type: &str,
+) -> Result<PageMeta, String> {
     let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("title"),
-        &JsValue::from_str(title),
-    )
-    .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("title"), &JsValue::from_str(title))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("pageType"), &JsValue::from_str(page_type))
+        .map_err(|e| format!("{:?}", e))?;
     let args = JsValue::from(args);
 
-    let result = tauri_invoke("create_page", &args)
+    let result = tauri_invoke("create_page_with_type", &args)
         .await
-        .map_err(|e| format!("create_page error: {:?}", e))?;
+        .map_err(|e| format!("create_page_with_type error: {:?}", e))?;
 
     serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
 }

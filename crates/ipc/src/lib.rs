@@ -86,8 +86,19 @@ pub fn handle_write_page(
 
 /// Handler de create_page: cria nova página em pages/.
 pub fn handle_create_page(vault_path: String, title: String) -> Result<PageMeta, String> {
+    handle_create_page_typed(vault_path, title, "md".to_string())
+}
+
+/// Handler de create_page com tipo.
+pub fn handle_create_page_typed(
+    vault_path: String,
+    title: String,
+    page_type: String,
+) -> Result<PageMeta, String> {
     let vault = VaultIo::open(&vault_path);
-    let meta = vault.create_page(&title).map_err(|e| e.to_string())?;
+    let meta = vault
+        .create_page_with_type(&title, &page_type)
+        .map_err(|e| e.to_string())?;
     Ok(PageMeta {
         path: meta.path,
         title: meta.title,

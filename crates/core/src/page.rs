@@ -34,6 +34,16 @@ pub struct Frontmatter {
     pub created: Option<chrono::DateTime<chrono::Utc>>,
     /// Data de última atualização.
     pub updated: Option<chrono::DateTime<chrono::Utc>>,
+    /// Tipo de página: "md" (default), "kanban", "calendar", "table".
+    #[serde(rename = "type", default)]
+    pub page_type: Option<String>,
+}
+
+impl Frontmatter {
+    /// Retorna o tipo efetivo da página (md se não definido).
+    pub fn effective_type(&self) -> &str {
+        self.page_type.as_deref().unwrap_or("md")
+    }
 }
 
 /// Uma página do vault: frontmatter + lista ordenada de blocos.
