@@ -243,11 +243,12 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 12px;
+    padding: 0 8px;
     height: 40px;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
+    font-size: 0.8125rem;
 }
 
 .header-bar__left,
@@ -277,21 +278,26 @@ body {
     position: absolute;
     top: calc(100% + 4px);
     right: 0;
-    min-width: 180px;
+    min-width: 190px;
     background: var(--bg-surface);
     border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.03) inset;
     z-index: 200;
-    padding: var(--sp-1);
+    padding: 4px;
     display: flex;
     flex-direction: column;
+    backdrop-filter: blur(8px);
 }
 
 .header-menu__item {
     width: 100%;
     text-align: left;
     justify-content: flex-start;
+    padding: 7px 12px !important;
+    border-radius: 6px !important;
+    font-size: 0.8125rem;
+    font-weight: 500;
 }
 
 /* ── Main Panel (TabBar + Editor) ────────────── */
@@ -316,38 +322,42 @@ body {
 }
 
 .tab-bar {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 0;
-    padding: 4px 8px 0;
-    height: 36px;
-    min-height: 36px;
-    background: var(--bg-base);
-    flex-shrink: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 0 !important;
+    padding: 2px 6px 0 !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    max-height: 36px !important;
+    background: var(--bg-base) !important;
+    flex-shrink: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
 }
 
 .tab-bar::-webkit-scrollbar { height: 2px; }
 
 .tab-bar__tab {
-    display: flex;
+    display: inline-flex !important;
     align-items: center;
     gap: 6px;
-    padding: 5px 10px;
+    padding: 4px 10px;
     border-radius: 6px 6px 0 0;
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--text-muted);
     cursor: pointer;
     transition: background 0.12s ease, color 0.12s ease;
-    white-space: nowrap;
+    white-space: nowrap !important;
     user-select: none;
     border-bottom: 2px solid transparent;
-    flex-shrink: 0;
+    flex-shrink: 0 !important;
+    flex-grow: 0 !important;
     max-width: 160px;
+    height: 30px;
+    line-height: 1;
 }
 
 .tab-bar__tab:hover { background: var(--bg-elevated); color: var(--text-primary); }

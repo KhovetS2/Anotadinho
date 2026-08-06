@@ -1,0 +1,12 @@
+- generic [ref=f8e2]:
+  - banner [ref=f8e3]:
+    - generic [ref=f8e4]:
+      - button "◀" [ref=f8e5] [cursor=pointer]
+      - generic [ref=f8e6]: Anotadinho
+    - generic [ref=f8e7]:
+      - button "🌙" [ref=f8e8] [cursor=pointer]
+      - button "⚙" [ref=f8e10] [cursor=pointer]
+  - generic [ref=f8e12]:
+    - heading "Anotadinho" [level=1] [ref=f8e13]
+    - paragraph [ref=f8e14]: Selecione um vault para começar.
+    - button "Abrir vault" [ref=f8e15] [cursor=pointer]
