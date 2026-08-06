@@ -9,6 +9,7 @@ use crate::components::editor::Editor;
 use crate::components::empty_state::EmptyState;
 use crate::components::header_bar::HeaderBar;
 use crate::components::kanban::Kanban;
+use crate::components::page_view::PageView;
 use crate::components::sidebar::Sidebar;
 use crate::components::tab_bar::TabBar;
 use crate::state;
@@ -279,10 +280,11 @@ pub fn app() -> Html {
                                 on_select={on_tab_select}
                                 on_close={on_tab_close}
                             />
-                            <Editor
+                            <PageView
                                 vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
                                 page={(*selected_page).clone()}
-                                on_page_deleted={on_page_deleted}
+                                on_page_deleted={on_page_deleted.clone()}
+                                on_page_selected={on_page_selected.clone()}
                             />
                         </div>
                     </div>
