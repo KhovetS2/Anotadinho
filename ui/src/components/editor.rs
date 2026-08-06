@@ -104,18 +104,21 @@ pub fn editor(props: &EditorProps) -> Html {
         });
     }
 
-    // Effect 2: sync content_md → contenteditable innerHTML
+    // Effect 2: sync content_md → contenteditable innerHTML (only if changed)
     {
         let content_md = content_md.clone();
         let loading = loading.clone();
         let editor_ref = editor_ref.clone();
+        let last_rendered = use_mut_ref(String::new);
 
         use_effect_with((content_md.clone(), *loading), move |_| {
-            let should_run = !*loading && !content_md.is_empty();
+            let should_run = !*loading && !content_md.is_empty()
+                && *last_rendered.borrow() != *content_md;
             if should_run {
                 if let Some(div) = editor_ref.cast::<web_sys::Element>() {
                     let html = crate::markdown_render::render(&content_md);
                     div.set_inner_html(&html);
+                    *last_rendered.borrow_mut() = (*content_md).clone();
                     let _div = div.clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
@@ -362,18 +365,7 @@ pub fn editor(props: &EditorProps) -> Html {
     };
 
     let save_label = if *saving { "Salvando..." } else if *edited { "Salvar *" } else { "Salvar" };
-    let on_edit = {
-        let e = edited.clone();
-        let do_save = do_save.clone();
-        Callback::from(move |_| {
-            e.set(true);
-            let do_save = do_save.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                gloo_timers::future::sleep(std::time::Duration::from_secs(2)).await;
-                do_save.emit(());
-            });
-        })
-    };
+    let on_edit = { let e = edited.clone(); Callback::from(move |_| e.set(true)) };
 
     let on_drop = {
         let vault_path = props.vault_path.clone();
