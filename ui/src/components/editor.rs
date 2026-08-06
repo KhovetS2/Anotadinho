@@ -357,20 +357,32 @@ pub fn editor(props: &EditorProps) -> Html {
                         });
                     }
                     "__EMBED_KANBAN__" => {
-                        let html = "<pre><code class=\"language-kanban\">columns: [Backlog, Todo, Done]\nitems:\n  - Novo card (Backlog)</code></pre>";
-                        exec_fn("insertHTML", html);
+                        let body = "columns:\n- Backlog\n- Todo\n- Done\nitems:\n- title: Novo card\n  column: Backlog";
+                        let html = format!(
+                            "<div data-embed-insert=\"kanban\">{}</div>",
+                            body.replace('\n', "<br>")
+                        );
+                        exec_fn("insertHTML", &html);
                     }
                     "__EMBED_CALENDAR__" => {
                         let today = {
                             let d = js_sys::Date::new_0();
                             format!("{:04}-{:02}-{:02}", d.get_full_year(), d.get_month() + 1, d.get_date())
                         };
-                        let html = format!("<pre><code class=\"language-calendar\">{}: Novo evento</code></pre>", today);
+                        let body = format!("entries:\n- date: '{today}'\n  title: Novo evento");
+                        let html = format!(
+                            "<div data-embed-insert=\"calendar\">{}</div>",
+                            body.replace('\n', "<br>")
+                        );
                         exec_fn("insertHTML", &html);
                     }
                     "__EMBED_TABLE__" => {
-                        let html = "<pre><code class=\"language-table\">| Tarefa | Status | Prioridade |\n| ------ | ------ | ---------- |\n| Nova tarefa | todo | media |</code></pre>";
-                        exec_fn("insertHTML", html);
+                        let body = "| Tarefa | Status | Prioridade |\n| ------ | ------ | ---------- |\n| Nova tarefa | todo | media |";
+                        let html = format!(
+                            "<div data-embed-insert=\"table\">{}</div>",
+                            body.replace('\n', "<br>")
+                        );
+                        exec_fn("insertHTML", &html);
                     }
                     other => {
                         exec_fn("insertHTML", other);
@@ -629,7 +641,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                         content_md.set(new_full);
                                         trigger_debounced_save.emit(());
                                     });
-                                    html! { <InlineEmbed data={data.clone()} on_change={on_change} open_dialog={props.open_dialog.clone()} /> }
+                                    html! { <InlineEmbed data={data.clone()} vault_path={props.vault_path.clone()} on_change={on_change} open_dialog={props.open_dialog.clone()} /> }
                                 }
                             }
                         }) }

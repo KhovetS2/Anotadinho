@@ -1,5 +1,0 @@
----
-title: Nova nota.kanban
----
-
-- 

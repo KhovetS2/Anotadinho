@@ -80,6 +80,13 @@ fn walk(node: &Element, _depth: usize) -> String {
             if node.class_name().contains("mermaid") {
                 let text = text_of(node);
                 format!("```mermaid\n{}\n```\n\n", text)
+            } else if let Some(kind) = node.get_attribute("data-embed-insert") {
+                // Marca deixada por um slash command de embed (ver
+                // editor.rs) — vira o wrapper `{{ type: "X" }}` direto,
+                // no mesmo formato de `EmbedData::to_fence_text()`, sem
+                // passar pelos `<br>` como texto solto.
+                let body = inline_children(node);
+                format!("{{{{ type: \"{kind}\" }}}}\n{body}\n{{{{ /{kind} }}}}\n\n")
             } else {
                 let inner = inline_children(node);
                 if inner.is_empty() { "\n".to_string() } else { format!("{}\n\n", inner) }

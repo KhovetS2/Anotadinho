@@ -1,33 +1,49 @@
-//! Base extensível para embeds inline: blocos ```kanban/calendar/table
-//! dentro de uma página comum, parseados em dados estruturados e
-//! renderizados como componentes Yew de verdade (não texto cru).
+//! Base extensível para embeds inline: blocos `{{ type: "kanban" }} ...
+//! {{ /kanban }}` dentro de uma página comum, parseados em dados
+//! estruturados e renderizados como componentes Yew de verdade (não texto
+//! cru).
+//!
+//! Por que não usar fence markdown (` ```kanban ``` `)? Colide
+//! semanticamente com blocos de código de verdade — alguém que quisesse
+//! mostrar um trecho de código chamado "kanban" teria o mesmo tratamento.
+//! O wrapper `{{ }}` não existe em CommonMark, então nunca conflita com
+//! nada do markdown normal.
 //!
 //! Extensão: um novo tipo de embed é 1 variante em `EmbedKind` + 1 par
 //! parse/serialize em `EmbedData` + 1 componente Yew (`components/embeds/`)
 //! + 1 braço de `match` no editor. Nada mais precisa mudar.
 
-use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
-use serde::Deserialize;
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+use serde::{Deserialize, Serialize};
 
-/// Tipos de embed inline reconhecidos pela linguagem da fence.
+/// Tipos de embed inline reconhecidos pelo `type` do wrapper.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmbedKind {
-    /// ```kanban — board com colunas e cards.
+    /// `{{ type: "kanban" }}` — board com colunas e cards.
     Kanban,
-    /// ```calendar — lista de eventos por data.
+    /// `{{ type: "calendar" }}` — lista de eventos por data.
     Calendar,
-    /// ```table — tabela markdown comum.
+    /// `{{ type: "table" }}` — tabela com colunas tipadas.
     Table,
 }
 
 impl EmbedKind {
-    /// Reconhece a linguagem de uma fence (`kanban`/`calendar`/`table`).
-    pub fn from_lang_tag(tag: &str) -> Option<Self> {
-        match tag {
+    /// Reconhece o `type` do wrapper (`kanban`/`calendar`/`table`).
+    pub fn from_type_name(name: &str) -> Option<Self> {
+        match name {
             "kanban" => Some(Self::Kanban),
             "calendar" => Some(Self::Calendar),
             "table" => Some(Self::Table),
             _ => None,
+        }
+    }
+
+    /// Nome usado no wrapper (`{{ type: "X" }}` / `{{ /X }}`).
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Self::Kanban => "kanban",
+            Self::Calendar => "calendar",
+            Self::Table => "table",
         }
     }
 }
@@ -41,38 +57,63 @@ pub enum DocSegment {
     Embed(EmbedData),
 }
 
-/// Segmenta o corpo (já sem frontmatter) em uma sequência ordenada de
-/// trechos de markdown comum e embeds, usando os offsets de byte do
-/// próprio pulldown-cmark — não perde nem reformata o texto original fora
-/// das fences reconhecidas.
-pub fn segment(body: &str) -> Vec<DocSegment> {
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_TABLES);
-    let parser = Parser::new_ext(body, options);
+/// Reconhece uma linha de abertura `{{ type: "kanban" }}`. Espaçamento
+/// livre: `{{type:"kanban"}}` bate igual.
+fn parse_open_tag(line: &str) -> Option<EmbedKind> {
+    let inner = line.trim().strip_prefix("{{")?.strip_suffix("}}")?.trim();
+    let rest = inner.strip_prefix("type")?.trim_start();
+    let rest = rest.strip_prefix(':')?.trim();
+    let quoted = rest.strip_prefix('"')?.strip_suffix('"')?;
+    EmbedKind::from_type_name(quoted)
+}
 
+/// Reconhece a linha de fechamento `{{ /kanban }}` correspondente a `kind`.
+fn parse_close_tag(line: &str, kind: EmbedKind) -> bool {
+    let Some(inner) = line.trim().strip_prefix("{{").and_then(|s| s.strip_suffix("}}")) else {
+        return false;
+    };
+    inner
+        .trim()
+        .strip_prefix('/')
+        .map(|name| name.trim() == kind.type_name())
+        .unwrap_or(false)
+}
+
+/// Segmenta o corpo (já sem frontmatter) em uma sequência ordenada de
+/// trechos de markdown comum e embeds. Varre linha a linha com um cursor
+/// de offset de byte — não perde nem reformata o texto original fora dos
+/// wrappers reconhecidos. Um wrapper aberto sem fechamento correspondente
+/// consome até o fim do texto (sem pânico, degrada de forma previsível).
+pub fn segment(body: &str) -> Vec<DocSegment> {
     let mut segments = Vec::new();
     let mut cursor = 0usize;
-    let mut open: Option<(EmbedKind, usize)> = None;
+    let mut pos = 0usize;
+    let mut lines = body.split_inclusive('\n');
 
-    for (event, range) in parser.into_offset_iter() {
-        match event {
-            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) => {
-                if let Some(kind) = EmbedKind::from_lang_tag(lang.as_ref()) {
-                    open = Some((kind, range.start));
-                }
-            }
-            Event::End(TagEnd::CodeBlock) => {
-                if let Some((kind, start)) = open.take() {
-                    if cursor < start {
-                        segments.push(DocSegment::Markdown(body[cursor..start].to_string()));
-                    }
-                    let raw = fence_inner(&body[start..range.end]);
-                    segments.push(DocSegment::Embed(EmbedData::parse(kind, &raw)));
-                    cursor = range.end;
-                }
-            }
-            _ => {}
+    while let Some(line) = lines.next() {
+        let line_start = pos;
+        pos += line.len();
+
+        let Some(kind) = parse_open_tag(line) else { continue };
+
+        if cursor < line_start {
+            segments.push(DocSegment::Markdown(body[cursor..line_start].to_string()));
         }
+
+        let content_start = pos;
+        let mut content_end = body.len();
+        for next_line in lines.by_ref() {
+            let next_start = pos;
+            pos += next_line.len();
+            if parse_close_tag(next_line, kind) {
+                content_end = next_start;
+                break;
+            }
+        }
+
+        let raw = &body[content_start..content_end];
+        segments.push(DocSegment::Embed(EmbedData::parse(kind, raw)));
+        cursor = pos;
     }
 
     if cursor < body.len() {
@@ -83,13 +124,13 @@ pub fn segment(body: &str) -> Vec<DocSegment> {
 }
 
 /// Reconstrói o corpo original a partir dos segmentos (round-trip com
-/// `segment`, exceto por normalização de formatação dentro das fences).
+/// `segment`, exceto por normalização de formatação dentro dos wrappers).
 ///
 /// Um trecho de markdown que passou por edição (ex: `html_to_markdown`, que
 /// não preserva a quebra de linha final do texto original) pode acabar sem
-/// `\n` no fim. Sem isso o próximo segmento (ex: a fence de um embed) gruda
-/// na mesma linha e corrompe o arquivo — então garante a quebra aqui, uma
-/// vez, em vez de depender de cada chamador lembrar disso.
+/// `\n` no fim. Sem isso o próximo segmento (ex: o wrapper de um embed)
+/// gruda na mesma linha e corrompe o arquivo — então garante a quebra
+/// aqui, uma vez, em vez de depender de cada chamador lembrar disso.
 pub fn join(segments: &[DocSegment]) -> String {
     let mut out = String::new();
     for segment in segments {
@@ -106,19 +147,6 @@ pub fn join(segments: &[DocSegment]) -> String {
     out
 }
 
-/// Remove as linhas de abertura (` ```lang `) e fechamento (` ``` `) de um
-/// trecho de fence, devolvendo só o conteúdo interno.
-fn fence_inner(fence_text: &str) -> String {
-    let mut lines: Vec<&str> = fence_text.lines().collect();
-    if !lines.is_empty() {
-        lines.remove(0);
-    }
-    if lines.last().map(|l| l.trim() == "```").unwrap_or(false) {
-        lines.pop();
-    }
-    lines.join("\n")
-}
-
 /// Dados estruturados de um embed já parseado, com o tipo carregado nele
 /// mesmo (`EmbedData::kind()`).
 #[derive(Debug, Clone, PartialEq)]
@@ -132,7 +160,7 @@ pub enum EmbedData {
 }
 
 impl EmbedData {
-    /// Parseia o conteúdo interno de uma fence no tipo correspondente.
+    /// Parseia o conteúdo interno de um wrapper no tipo correspondente.
     pub fn parse(kind: EmbedKind, raw: &str) -> Self {
         match kind {
             EmbedKind::Kanban => EmbedData::Kanban(KanbanEmbedData::parse(raw)),
@@ -150,77 +178,99 @@ impl EmbedData {
         }
     }
 
-    /// Serializa de volta pro texto completo da fence (com ```lang / ```),
-    /// pronto pra ser gravado no corpo da página.
+    /// Serializa de volta pro texto completo do wrapper
+    /// (`{{ type: "X" }}` ... `{{ /X }}`), pronto pra ser gravado no
+    /// corpo da página.
     pub fn to_fence_text(&self) -> String {
-        let (lang, body) = match self {
-            EmbedData::Kanban(d) => ("kanban", d.to_fence_body()),
-            EmbedData::Calendar(d) => ("calendar", d.to_fence_body()),
-            EmbedData::Table(d) => ("table", d.to_fence_body()),
+        let name = self.kind().type_name();
+        let body = match self {
+            EmbedData::Kanban(d) => d.to_fence_body(),
+            EmbedData::Calendar(d) => d.to_fence_body(),
+            EmbedData::Table(d) => d.to_fence_body(),
         };
-        format!("```{lang}\n{body}\n```\n")
+        format!("{{{{ type: \"{name}\" }}}}\n{body}\n{{{{ /{name} }}}}\n")
     }
 }
 
-/// Um card do kanban.
-#[derive(Debug, Clone, PartialEq)]
-pub struct KanbanEmbedItem {
+/// Um item de checklist dentro de um card.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChecklistItem {
+    /// Texto do sub-item.
+    pub text: String,
+    /// Se já foi concluído.
+    #[serde(default)]
+    pub done: bool,
+}
+
+/// Um comentário num card.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Comment {
+    /// Texto do comentário.
+    pub text: String,
+    /// Data livre (ex: `"2026-08-06"`), preenchida na hora de criar.
+    pub created: String,
+}
+
+/// Um anexo num card — arquivo copiado pra `assets/` do vault.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Attachment {
+    /// Nome de exibição.
+    pub name: String,
+    /// Path relativo ao vault (ex: `"assets/diagrama.png"`).
+    pub path: String,
+}
+
+/// Um card do kanban, com campos ricos opcionais além de título/coluna.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct KanbanCard {
     /// Título do card.
     pub title: String,
     /// Coluna atual.
     pub column: String,
+    /// Descrição longa, opcional.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Tags/labels do card.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// Data de vencimento livre (`"YYYY-MM-DD"`), opcional.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<String>,
+    /// Sub-itens de checklist.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checklist: Vec<ChecklistItem>,
+    /// Comentários, em ordem cronológica.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comments: Vec<Comment>,
+    /// Arquivos anexados.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<Attachment>,
 }
 
 /// Dados de um embed kanban: colunas + cards.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct KanbanEmbedData {
     /// Colunas do board, em ordem.
     pub columns: Vec<String>,
     /// Cards.
-    pub items: Vec<KanbanEmbedItem>,
-}
-
-#[derive(Deserialize, Default)]
-struct RawKanbanYaml {
     #[serde(default)]
-    columns: Vec<String>,
-    #[serde(default)]
-    items: Vec<String>,
+    pub items: Vec<KanbanCard>,
 }
 
 impl KanbanEmbedData {
     fn parse(raw: &str) -> Self {
-        let parsed: RawKanbanYaml = serde_yaml::from_str(raw).unwrap_or_default();
-        let columns = if parsed.columns.is_empty() {
-            vec!["Backlog".to_string(), "Todo".to_string(), "Done".to_string()]
-        } else {
-            parsed.columns
-        };
-        let default_col = columns.first().cloned().unwrap_or_else(|| "Backlog".to_string());
-
-        let items = parsed
-            .items
-            .iter()
-            .map(|raw_item| parse_kanban_item(raw_item, &columns, &default_col))
-            .collect();
-
-        Self { columns, items }
+        let mut data: Self = serde_yaml::from_str(raw).unwrap_or_default();
+        if data.columns.is_empty() {
+            data.columns = vec!["Backlog".to_string(), "Todo".to_string(), "Done".to_string()];
+        }
+        data
     }
 
     fn to_fence_body(&self) -> String {
-        // yaml_scalar é necessário aqui: um item "Revisar PR #42 (Backlog)"
-        // sem aspas faria o YAML tratar " #42..." como comentário (regra do
-        // YAML: '#' precedido de espaço abre comentário em escalar plano) e
-        // cortar o resto da linha — título truncado E coluna errada no
-        // reparse seguinte.
-        let cols = self.columns.iter().map(|c| yaml_scalar(c)).collect::<Vec<_>>().join(", ");
-        let mut out = format!("columns: [{}]\n", cols);
-        out.push_str("items:");
-        for item in &self.items {
-            let composite = format!("{} ({})", item.title, item.column);
-            out.push_str(&format!("\n  - {}", yaml_scalar(&composite)));
-        }
-        out
+        // derive de serde: sem montagem de string na mão, sem risco de um
+        // "#"/":" no meio de um campo virar sintaxe YAML por engano (bug
+        // real do ciclo anterior) — o serde_yaml escapa tudo sozinho.
+        serde_yaml::to_string(self).unwrap_or_default()
     }
 
     /// Adiciona uma coluna nova ao fim do board.
@@ -249,12 +299,13 @@ impl KanbanEmbedData {
         self.items.retain(|item| item.column != name);
     }
 
-    /// Adiciona um card novo na coluna dada.
+    /// Adiciona um card novo (só título/coluna) na coluna dada. Campos
+    /// ricos se adicionam depois pelo modal de detalhes.
     pub fn add_card(&mut self, column: String, title: String) {
-        self.items.push(KanbanEmbedItem { title, column });
+        self.items.push(KanbanCard { title, column, ..Default::default() });
     }
 
-    /// Edita o título do card no índice `idx`.
+    /// Edita o título do card no índice `idx` (edição rápida).
     pub fn edit_card(&mut self, idx: usize, new_title: String) {
         if let Some(item) = self.items.get_mut(idx) {
             item.title = new_title;
@@ -267,30 +318,90 @@ impl KanbanEmbedData {
             self.items.remove(idx);
         }
     }
-}
 
-fn parse_kanban_item(raw_item: &str, columns: &[String], default_col: &str) -> KanbanEmbedItem {
-    let trimmed = raw_item.trim();
-    if let Some(open) = trimmed.rfind('(') {
-        if trimmed.ends_with(')') {
-            let title = trimmed[..open].trim().to_string();
-            let col_raw = trimmed[open + 1..trimmed.len() - 1].trim();
-            let column = columns
-                .iter()
-                .find(|c| c.eq_ignore_ascii_case(col_raw))
-                .cloned()
-                .unwrap_or_else(|| col_raw.to_string());
-            return KanbanEmbedItem { title, column };
+    /// Substitui o card inteiro no índice `idx` (usado pelo modal de
+    /// detalhes, que edita vários campos de uma vez).
+    pub fn update_card(&mut self, idx: usize, card: KanbanCard) {
+        if let Some(slot) = self.items.get_mut(idx) {
+            *slot = card;
         }
     }
-    KanbanEmbedItem {
-        title: trimmed.to_string(),
-        column: default_col.to_string(),
+
+    /// Alterna concluído/pendente de um item de checklist.
+    pub fn toggle_checklist_item(&mut self, card_idx: usize, item_idx: usize) {
+        if let Some(item) = self
+            .items
+            .get_mut(card_idx)
+            .and_then(|c| c.checklist.get_mut(item_idx))
+        {
+            item.done = !item.done;
+        }
+    }
+
+    /// Adiciona um item de checklist ao card.
+    pub fn add_checklist_item(&mut self, card_idx: usize, text: String) {
+        if let Some(card) = self.items.get_mut(card_idx) {
+            card.checklist.push(ChecklistItem { text, done: false });
+        }
+    }
+
+    /// Remove um item de checklist do card.
+    pub fn remove_checklist_item(&mut self, card_idx: usize, item_idx: usize) {
+        if let Some(card) = self.items.get_mut(card_idx) {
+            if item_idx < card.checklist.len() {
+                card.checklist.remove(item_idx);
+            }
+        }
+    }
+
+    /// Adiciona um comentário ao card.
+    pub fn add_comment(&mut self, card_idx: usize, text: String, created: String) {
+        if let Some(card) = self.items.get_mut(card_idx) {
+            card.comments.push(Comment { text, created });
+        }
+    }
+
+    /// Adiciona um anexo ao card (já copiado pra `assets/`; ver
+    /// `crate::api::copy_to_assets`).
+    pub fn add_attachment(&mut self, card_idx: usize, name: String, path: String) {
+        if let Some(card) = self.items.get_mut(card_idx) {
+            card.attachments.push(Attachment { name, path });
+        }
+    }
+
+    /// Remove um anexo do card.
+    pub fn remove_attachment(&mut self, card_idx: usize, attachment_idx: usize) {
+        if let Some(card) = self.items.get_mut(card_idx) {
+            if attachment_idx < card.attachments.len() {
+                card.attachments.remove(attachment_idx);
+            }
+        }
+    }
+
+    /// Move o card no índice `from_idx` pra coluna `to_column`, na posição
+    /// logo antes de `before_card_idx` (índice ORIGINAL, antes da
+    /// remoção) — ou pro fim da coluna se `before_card_idx` for `None`.
+    /// Resolve trocar de coluna e reordenar dentro da mesma coluna com uma
+    /// única operação.
+    pub fn move_card(&mut self, from_idx: usize, to_column: String, before_card_idx: Option<usize>) {
+        if from_idx >= self.items.len() {
+            return;
+        }
+        let mut card = self.items.remove(from_idx);
+        card.column = to_column;
+        let insert_at = match before_card_idx {
+            Some(idx) => {
+                let adjusted = if idx > from_idx { idx - 1 } else { idx };
+                adjusted.min(self.items.len())
+            }
+            None => self.items.len(),
+        };
+        self.items.insert(insert_at, card);
     }
 }
 
 /// Um evento do calendário.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CalendarEntry {
     /// Data (formato livre, tipicamente `YYYY-MM-DD`).
     pub date: String,
@@ -298,43 +409,21 @@ pub struct CalendarEntry {
     pub title: String,
 }
 
-/// Dados de um embed calendar: lista de eventos `data: título`.
-#[derive(Debug, Clone, PartialEq, Default)]
+/// Dados de um embed calendar: lista de eventos.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CalendarEmbedData {
-    /// Eventos, na ordem em que aparecem na fence.
+    /// Eventos, na ordem em que aparecem no wrapper.
+    #[serde(default)]
     pub entries: Vec<CalendarEntry>,
 }
 
 impl CalendarEmbedData {
     fn parse(raw: &str) -> Self {
-        let entries = raw
-            .lines()
-            .filter_map(|line| {
-                let line = line.trim();
-                if line.is_empty() {
-                    return None;
-                }
-                let (date, title) = line.split_once(':')?;
-                let date = date.trim();
-                let title = title.trim();
-                if date.is_empty() || title.is_empty() {
-                    return None;
-                }
-                Some(CalendarEntry {
-                    date: date.to_string(),
-                    title: title.to_string(),
-                })
-            })
-            .collect();
-        Self { entries }
+        serde_yaml::from_str(raw).unwrap_or_default()
     }
 
     fn to_fence_body(&self) -> String {
-        self.entries
-            .iter()
-            .map(|e| format!("{}: {}", e.date, e.title))
-            .collect::<Vec<_>>()
-            .join("\n")
+        serde_yaml::to_string(self).unwrap_or_default()
     }
 
     /// Adiciona um evento novo.
@@ -385,11 +474,12 @@ pub struct TableColumn {
 
 /// Dados de um embed table: colunas (com tipo) + linhas.
 ///
-/// Por padrão a fence é só uma tabela markdown comum (todas as colunas
-/// nascem `Text`, 100% compatível com qualquer tabela já existente). Só
-/// quando alguma coluna tem um tipo diferente, um preâmbulo YAML é
-/// escrito antes da tabela, separado por uma linha `---` (mesma convenção
-/// visual do frontmatter da página):
+/// O corpo continua sendo uma tabela markdown comum por padrão (todas as
+/// colunas nascem `Text`, 100% compatível com qualquer tabela já
+/// existente — decisão deliberada, diferente do kanban/calendário, pra
+/// manter uma tabela simples fácil de editar à mão). Só quando alguma
+/// coluna tem um tipo diferente, um preâmbulo YAML é escrito antes da
+/// tabela, separado por uma linha `---`:
 ///
 /// ```text
 /// columns:
@@ -605,31 +695,38 @@ Você pode usar blocos especiais dentro de qualquer página `.md`:
 
 ## Kanban Embed
 
-```kanban
+{{ type: "kanban" }}
 columns: [Backlog, Todo, Done]
 items:
-  - Tarefa 1 (backlog)
-  - Tarefa 2 (todo)
-  - Tarefa 3 (done)
-```
+  - title: Tarefa 1
+    column: Backlog
+  - title: Tarefa 2
+    column: Todo
+  - title: Tarefa 3
+    column: Done
+{{ /kanban }}
 
 ## Calendar Embed
 
-```calendar
-2026-08-06: Revisão de código
-2026-08-07: Deploy produção
-2026-08-08: Retrospectiva sprint
-```
+{{ type: "calendar" }}
+entries:
+  - date: "2026-08-06"
+    title: Revisão de código
+  - date: "2026-08-07"
+    title: Deploy produção
+  - date: "2026-08-08"
+    title: Retrospectiva sprint
+{{ /calendar }}
 
 ## Table Embed
 
-```table
+{{ type: "table" }}
 | Tarefa | Status | Prioridade |
 | ------ | ------ | ---------- |
 | API    | done   | alta       |
 | UI     | doing  | media      |
 | Testes | todo   | alta       |
-```
+{{ /table }}
 
 Acima do embed você pode ter texto normal. Abaixo também.
 "#;
@@ -638,8 +735,7 @@ Acima do embed você pode ter texto normal. Abaixo também.
     fn join_inserts_missing_newline_before_next_segment() {
         // Regressão: um trecho de markdown editado (ex: vindo de
         // html_to_markdown, que não preserva o \n final) não pode grudar no
-        // próximo segmento — isso corrompe o arquivo salvo (ex:
-        // "## Kanban Embed```kanban" numa linha só).
+        // próximo segmento — isso corrompe o arquivo salvo.
         let segments = vec![
             DocSegment::Markdown("## Kanban Embed".to_string()), // sem \n final
             DocSegment::Embed(EmbedData::Kanban(KanbanEmbedData {
@@ -649,8 +745,8 @@ Acima do embed você pode ter texto normal. Abaixo também.
         ];
         let joined = join(&segments);
         assert!(
-            joined.starts_with("## Kanban Embed\n```kanban"),
-            "esperava quebra de linha entre o heading e a fence, ficou: {joined:?}"
+            joined.starts_with("## Kanban Embed\n{{ type: \"kanban\" }}"),
+            "esperava quebra de linha entre o heading e o wrapper, ficou: {joined:?}"
         );
     }
 
@@ -661,7 +757,29 @@ Acima do embed você pode ter texto normal. Abaixo também.
             DocSegment::Embed(EmbedData::Calendar(CalendarEmbedData { entries: vec![] })),
         ];
         let joined = join(&segments);
-        assert!(joined.starts_with("texto\n\n```calendar"));
+        assert!(joined.starts_with("texto\n\n{{ type: \"calendar\" }}"));
+    }
+
+    #[test]
+    fn open_close_tag_tolerate_spacing() {
+        assert_eq!(parse_open_tag("{{ type: \"kanban\" }}"), Some(EmbedKind::Kanban));
+        assert_eq!(parse_open_tag("{{type:\"kanban\"}}"), Some(EmbedKind::Kanban));
+        assert_eq!(parse_open_tag("  {{  type:   \"table\"  }}  "), Some(EmbedKind::Table));
+        assert_eq!(parse_open_tag("{{ type: \"desenho\" }}"), None);
+        assert_eq!(parse_open_tag("texto normal"), None);
+
+        assert!(parse_close_tag("{{ /kanban }}", EmbedKind::Kanban));
+        assert!(parse_close_tag("{{/kanban}}", EmbedKind::Kanban));
+        assert!(!parse_close_tag("{{ /calendar }}", EmbedKind::Kanban));
+        assert!(!parse_close_tag("{{ type: \"kanban\" }}", EmbedKind::Kanban));
+    }
+
+    #[test]
+    fn unclosed_wrapper_consumes_to_end_without_panic() {
+        let body = "texto\n\n{{ type: \"kanban\" }}\ncolumns: [A]\nitems: []\n";
+        let segments = segment(body);
+        assert_eq!(segments.len(), 2);
+        assert!(matches!(segments[1], DocSegment::Embed(EmbedData::Kanban(_))));
     }
 
     #[test]
@@ -795,12 +913,57 @@ Acima do embed você pode ter texto normal. Abaixo também.
     }
 
     #[test]
+    fn exemplos_embeds_vault_file_parses() {
+        // Regressão de sincronia: a página de demo do vault precisa parsear
+        // com a sintaxe atual do wrapper, incluindo os campos ricos do
+        // card (description/tags/due/checklist) escritos à mão.
+        let raw = include_str!("../../VaultAnotadinho/pages/exemplos-embeds.md");
+        let (_, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(raw);
+        let segments = segment(body);
+
+        let kinds: Vec<Option<EmbedKind>> = segments
+            .iter()
+            .map(|s| match s {
+                DocSegment::Embed(d) => Some(d.kind()),
+                DocSegment::Markdown(_) => None,
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![None, Some(EmbedKind::Kanban), None, Some(EmbedKind::Calendar), None, Some(EmbedKind::Table), None]
+        );
+
+        let DocSegment::Embed(EmbedData::Kanban(kanban)) = &segments[1] else {
+            panic!("esperava embed kanban");
+        };
+        assert_eq!(kanban.columns, vec!["Backlog", "Todo", "Done"]);
+        assert_eq!(kanban.items.len(), 3);
+        let card = &kanban.items[0];
+        assert_eq!(card.title, "Tarefa 1");
+        assert!(card.description.is_some());
+        assert_eq!(card.tags, vec!["urgente", "bug"]);
+        assert_eq!(card.due.as_deref(), Some("2026-08-10"));
+        assert_eq!(card.checklist.len(), 2);
+        assert!(!card.checklist[0].done);
+        assert!(card.checklist[1].done);
+
+        let DocSegment::Embed(EmbedData::Calendar(calendar)) = &segments[3] else {
+            panic!("esperava embed calendar");
+        };
+        assert_eq!(calendar.entries.len(), 3);
+        assert_eq!(calendar.entries[0].date, "2026-08-06");
+
+        let DocSegment::Embed(EmbedData::Table(table)) = &segments[5] else {
+            panic!("esperava embed table");
+        };
+        assert_eq!(table.rows.len(), 3);
+    }
+
+    #[test]
     fn plain_code_fence_is_not_treated_as_embed() {
         let body = "texto\n\n```rust\nfn main() {}\n```\n\nmais texto\n";
         let segments = segment(body);
-        assert!(segments
-            .iter()
-            .all(|s| matches!(s, DocSegment::Markdown(_))));
+        assert!(segments.iter().all(|s| matches!(s, DocSegment::Markdown(_))));
     }
 
     #[test]
@@ -815,13 +978,15 @@ Acima do embed você pode ter texto normal. Abaixo também.
         assert_eq!(data.items.len(), 1);
         assert_eq!(data.items[0].title, "Nova tarefa");
         assert_eq!(data.items[0].column, "Backlog");
+        assert!(data.items[0].description.is_none());
+        assert!(data.items[0].tags.is_empty());
     }
 
     #[test]
     fn kanban_edit_and_remove_card() {
         let mut data = KanbanEmbedData {
             columns: vec!["Backlog".into()],
-            items: vec![KanbanEmbedItem { title: "X".into(), column: "Backlog".into() }],
+            items: vec![KanbanCard { title: "X".into(), column: "Backlog".into(), ..Default::default() }],
         };
         data.edit_card(0, "Y".into());
         assert_eq!(data.items[0].title, "Y");
@@ -834,8 +999,8 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let mut data = KanbanEmbedData {
             columns: vec!["Backlog".into(), "Done".into()],
             items: vec![
-                KanbanEmbedItem { title: "A".into(), column: "Backlog".into() },
-                KanbanEmbedItem { title: "B".into(), column: "Done".into() },
+                KanbanCard { title: "A".into(), column: "Backlog".into(), ..Default::default() },
+                KanbanCard { title: "B".into(), column: "Done".into(), ..Default::default() },
             ],
         };
         data.rename_column(0, "A Fazer".into());
@@ -849,8 +1014,8 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let mut data = KanbanEmbedData {
             columns: vec!["Backlog".into(), "Done".into()],
             items: vec![
-                KanbanEmbedItem { title: "A".into(), column: "Backlog".into() },
-                KanbanEmbedItem { title: "B".into(), column: "Done".into() },
+                KanbanCard { title: "A".into(), column: "Backlog".into(), ..Default::default() },
+                KanbanCard { title: "B".into(), column: "Done".into(), ..Default::default() },
             ],
         };
         data.remove_column(0);
@@ -873,8 +1038,10 @@ Acima do embed você pode ter texto normal. Abaixo também.
 
     #[test]
     fn kanban_item_with_hash_survives_roundtrip() {
-        // Regressão: "#" precedido de espaço vira comentário em YAML plano
-        // sem aspas — cortava o título e derrubava o card pra coluna errada.
+        // Regressão do ciclo anterior: "#" precedido de espaço vira
+        // comentário em YAML plano sem aspas — cortava o título e derrubava
+        // o card pra coluna errada. Agora é serde_yaml derive puro, então
+        // isso nunca mais deveria acontecer, pra NENHUM campo.
         let mut data = KanbanEmbedData {
             columns: vec!["Backlog".into()],
             items: vec![],
@@ -888,10 +1055,101 @@ Acima do embed você pode ter texto normal. Abaixo também.
     }
 
     #[test]
+    fn kanban_card_rich_fields_roundtrip() {
+        let mut data = KanbanEmbedData {
+            columns: vec!["Backlog".into()],
+            items: vec![],
+        };
+        data.add_card("Backlog".into(), "Card rico".into());
+        data.update_card(0, KanbanCard {
+            title: "Card rico".into(),
+            column: "Backlog".into(),
+            description: Some("Descrição com # e : e \"aspas\"".into()),
+            tags: vec!["infra".into(), "urgente".into()],
+            due: Some("2026-08-10".into()),
+            checklist: vec![
+                ChecklistItem { text: "Passo 1".into(), done: true },
+                ChecklistItem { text: "Passo 2".into(), done: false },
+            ],
+            comments: vec![Comment { text: "Começando".into(), created: "2026-08-06".into() }],
+            attachments: vec![Attachment { name: "diagrama.png".into(), path: "assets/diagrama.png".into() }],
+        });
+
+        let fence_body = data.to_fence_body();
+        let reparsed = KanbanEmbedData::parse(&fence_body);
+        let card = &reparsed.items[0];
+        assert_eq!(card.description.as_deref(), Some("Descrição com # e : e \"aspas\""));
+        assert_eq!(card.tags, vec!["infra", "urgente"]);
+        assert_eq!(card.due.as_deref(), Some("2026-08-10"));
+        assert_eq!(card.checklist.len(), 2);
+        assert!(card.checklist[0].done);
+        assert!(!card.checklist[1].done);
+        assert_eq!(card.comments.len(), 1);
+        assert_eq!(card.comments[0].text, "Começando");
+        assert_eq!(card.attachments.len(), 1);
+        assert_eq!(card.attachments[0].path, "assets/diagrama.png");
+    }
+
+    #[test]
+    fn kanban_checklist_comment_attachment_mutators() {
+        let mut data = KanbanEmbedData {
+            columns: vec!["Backlog".into()],
+            items: vec![KanbanCard { title: "X".into(), column: "Backlog".into(), ..Default::default() }],
+        };
+        data.add_checklist_item(0, "Fazer isso".into());
+        assert_eq!(data.items[0].checklist.len(), 1);
+        assert!(!data.items[0].checklist[0].done);
+        data.toggle_checklist_item(0, 0);
+        assert!(data.items[0].checklist[0].done);
+        data.remove_checklist_item(0, 0);
+        assert!(data.items[0].checklist.is_empty());
+
+        data.add_comment(0, "Comentário".into(), "2026-08-06".into());
+        assert_eq!(data.items[0].comments.len(), 1);
+
+        data.add_attachment(0, "a.png".into(), "assets/a.png".into());
+        assert_eq!(data.items[0].attachments.len(), 1);
+        data.remove_attachment(0, 0);
+        assert!(data.items[0].attachments.is_empty());
+    }
+
+    #[test]
+    fn kanban_move_card_changes_column_appending_at_end() {
+        let mut data = KanbanEmbedData {
+            columns: vec!["Backlog".into(), "Done".into()],
+            items: vec![
+                KanbanCard { title: "A".into(), column: "Backlog".into(), ..Default::default() },
+                KanbanCard { title: "B".into(), column: "Done".into(), ..Default::default() },
+            ],
+        };
+        data.move_card(0, "Done".into(), None);
+        assert_eq!(data.items.len(), 2);
+        assert_eq!(data.items[0].title, "B");
+        assert_eq!(data.items[1].title, "A");
+        assert_eq!(data.items[1].column, "Done");
+    }
+
+    #[test]
+    fn kanban_move_card_reorders_within_same_column() {
+        let mut data = KanbanEmbedData {
+            columns: vec!["Backlog".into()],
+            items: vec![
+                KanbanCard { title: "A".into(), column: "Backlog".into(), ..Default::default() },
+                KanbanCard { title: "B".into(), column: "Backlog".into(), ..Default::default() },
+                KanbanCard { title: "C".into(), column: "Backlog".into(), ..Default::default() },
+            ],
+        };
+        // Move "C" (idx 2) pra antes de "A" (idx 0, original).
+        data.move_card(2, "Backlog".into(), Some(0));
+        let titles: Vec<&str> = data.items.iter().map(|c| c.title.as_str()).collect();
+        assert_eq!(titles, vec!["C", "A", "B"]);
+    }
+
+    #[test]
     fn kanban_roundtrip_reparse() {
         let data = KanbanEmbedData {
             columns: vec!["Backlog".into(), "Doing".into()],
-            items: vec![KanbanEmbedItem { title: "X".into(), column: "Doing".into() }],
+            items: vec![KanbanCard { title: "X".into(), column: "Doing".into(), ..Default::default() }],
         };
         let fence_body = data.to_fence_body();
         let reparsed = KanbanEmbedData::parse(&fence_body);

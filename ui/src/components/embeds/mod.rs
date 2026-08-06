@@ -2,10 +2,12 @@
 //! embed ganha 1 componente aqui + 1 braço de match em `InlineEmbed` — o
 //! resto (segmentação, parsing, editor) não muda.
 
+mod card_detail_modal;
 mod inline_calendar;
 mod inline_kanban;
 mod inline_table;
 
+pub use card_detail_modal::CardDetailModal;
 pub use inline_calendar::InlineCalendar;
 pub use inline_kanban::InlineKanban;
 pub use inline_table::InlineTable;
@@ -20,6 +22,8 @@ use crate::embed::EmbedData;
 pub struct InlineEmbedProps {
     /// Dados do embed (o tipo já vem carregado em `EmbedData::kind()`).
     pub data: EmbedData,
+    /// Path do vault (só usado pelo kanban, pra anexos).
+    pub vault_path: String,
     /// Disparado quando o embed é editado (drag de card, edição de célula, etc).
     pub on_change: Callback<EmbedData>,
     /// Abre o modal de diálogo do app (ver `crate::dialog`).
@@ -33,7 +37,7 @@ pub fn inline_embed(props: &InlineEmbedProps) -> Html {
         EmbedData::Kanban(d) => {
             let on_change = props.on_change.clone();
             html! {
-                <InlineKanban data={d.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Kanban(d)))} open_dialog={props.open_dialog.clone()} />
+                <InlineKanban data={d.clone()} vault_path={props.vault_path.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Kanban(d)))} open_dialog={props.open_dialog.clone()} />
             }
         }
         EmbedData::Calendar(d) => {

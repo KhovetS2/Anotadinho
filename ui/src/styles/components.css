@@ -298,4 +298,189 @@
     gap: var(--sp-2);
 }
 
+.modal--wide { max-width: 640px; }
+
+/* ── Card detail modal (kanban) ─────────────────────── */
+
+.card-modal__title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding: var(--sp-1) 0;
+    border-bottom: 1px solid transparent;
+}
+.card-modal__title:focus { outline: none; border-bottom-color: var(--accent-blue); }
+
+.card-modal__tabs {
+    display: flex;
+    gap: var(--sp-1);
+    border-bottom: 1px solid var(--border);
+}
+
+.card-modal__tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: var(--sp-2) var(--sp-1);
+    font-size: 0.875rem;
+}
+.card-modal__tab:hover { color: var(--text-primary); }
+.card-modal__tab--active {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent-blue);
+}
+
+.card-modal__section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+}
+
+.card-modal__field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+}
+
+.card-modal__label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.card-modal__textarea {
+    min-height: 4.5em;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: var(--sp-2);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+.card-modal__textarea:focus { outline: none; border-color: var(--accent-blue); }
+.card-modal__textarea:empty::before {
+    content: "Sem descrição — clique pra editar.";
+    color: var(--text-muted);
+}
+
+.card-modal__tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-1);
+}
+
+.card-modal__tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.card-modal__tag-remove {
+    background: transparent;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.6875rem;
+    line-height: 1;
+    opacity: 0.6;
+    padding: 0;
+}
+.card-modal__tag-remove:hover { opacity: 1; }
+
+.card-modal__add-chip {
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px var(--sp-2);
+    font-size: 0.75rem;
+}
+.card-modal__add-chip:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+
+.card-modal__due {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+
+.card-modal__due-value {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+.card-modal__due-value--overdue { color: var(--error); font-weight: 600; }
+
+.card-modal__checklist {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    align-items: flex-start;
+}
+
+.card-modal__checklist-item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    width: 100%;
+}
+
+.card-modal__checklist-text {
+    flex: 1;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+.card-modal__checklist-text--done {
+    color: var(--text-muted);
+    text-decoration: line-through;
+}
+
+.card-modal__comments,
+.card-modal__attachments {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+}
+
+.card-modal__comment {
+    background: var(--bg-elevated);
+    border-radius: var(--r-sm);
+    padding: var(--sp-2);
+}
+
+.card-modal__comment-date {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+}
+
+.card-modal__comment-text {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    margin: 4px 0 0;
+}
+
+.card-modal__attachment {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-elevated);
+    border-radius: var(--r-sm);
+    padding: var(--sp-2);
+}
+
+.card-modal__attachment-name {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+.card-modal__empty {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
 @keyframes spin { to { transform: rotate(360deg); } }
