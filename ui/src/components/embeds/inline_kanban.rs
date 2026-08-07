@@ -225,7 +225,15 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
 
                                     let onmousedown = {
                                         let dragging = dragging.clone();
-                                        Callback::from(move |_: MouseEvent| dragging.set(Some(idx)))
+                                        Callback::from(move |e: MouseEvent| {
+                                            // Sem isso, mousedown+mover o mouse seleciona o
+                                            // texto por baixo do cursor e o navegador começa
+                                            // um drag nativo de conteúdo (a "sombra do
+                                            // container" que aparecia arrastando rápido) —
+                                            // atrapalha o nosso drag por mouse próprio.
+                                            e.prevent_default();
+                                            dragging.set(Some(idx));
+                                        })
                                     };
 
                                     // Só relevante durante um arraste — indica onde o

@@ -489,6 +489,7 @@ fn render_month_grid(
                     let dragging_start = dragging.clone();
                     let onmousedown = Callback::from(move |e: MouseEvent| {
                         e.stop_propagation();
+                        e.prevent_default();
                         dragging_start.set(Some(entry_idx));
                     });
                     let editing_entry = editing_entry.clone();
@@ -610,6 +611,7 @@ fn render_day_columns(
         let dragging_start = dragging.clone();
         let onmousedown = Callback::from(move |e: MouseEvent| {
             e.stop_propagation();
+            e.prevent_default();
             dragging_start.set(Some(entry_idx));
         });
         let editing_entry = editing_entry.clone();

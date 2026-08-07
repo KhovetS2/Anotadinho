@@ -1037,6 +1037,9 @@ body {
     align-items: flex-start;
     gap: var(--sp-3);
     height: 100%;
+    /* Board inteiro, não só o card — evita que arrastar rápido selecione
+       texto do título da coluna ou de outro card no caminho. */
+    user-select: none;
 }
 
 .kanban__column {
@@ -1160,6 +1163,11 @@ body {
     padding: var(--sp-2) var(--sp-3);
     cursor: grab;
     transition: border-color 0.12s ease, opacity 0.12s ease, transform 0.12s ease;
+    /* Sem isso, arrastar rápido seleciona o texto do card e o navegador
+       tenta iniciar um drag nativo de conteúdo por baixo do nosso drag
+       por mouse — o preventDefault no mousedown já ajuda, mas isso cobre
+       o caso de o texto ficar "pré-selecionado" de um clique anterior. */
+    user-select: none;
 }
 
 .kanban__card:hover {
@@ -1971,6 +1979,11 @@ body {
     flex: 1;
     border-top: 1px solid var(--border);
     border-left: 1px solid var(--border);
+    /* Evita que arrastar rápido selecione o texto de um evento no
+       caminho (mesmo problema do board do kanban). Só aqui, não no
+       .calendar-grid inteiro — o EventDetailModal é filho dele e
+       precisa continuar selecionável/editável. */
+    user-select: none;
 }
 
 .calendar-grid__week {
@@ -2132,6 +2145,7 @@ body {
     flex: 1;
     overflow-y: auto;
     max-height: 480px;
+    user-select: none;
 }
 
 .calendar-grid__hour-gutter {
