@@ -546,4 +546,45 @@
     font-size: 0.875rem;
 }
 
+/* ── Event detail modal (calendário) ────────────────── */
+
+.event-modal__date-field {
+    position: relative;
+    display: inline-block;
+}
+
+.event-modal__date-chip {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.875rem;
+    padding: var(--sp-1) var(--sp-2);
+}
+.event-modal__date-chip:hover {
+    border-color: var(--accent-blue);
+}
+
+.event-modal__range-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+.event-modal__tag--active {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
+}
+
+.event-modal__delete {
+    margin-top: var(--sp-2);
+    align-self: flex-start;
+}
+
 @keyframes spin { to { transform: rotate(360deg); } }

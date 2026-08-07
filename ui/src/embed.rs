@@ -16,6 +16,21 @@
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use serde::{Deserialize, Serialize};
 
+/// Paleta de cores compartilhada pra badges de tag/select — usada pela
+/// tabela (Select/MultiSelect) e pelo calendário (cor do evento), pra não
+/// duplicar as cores em cada componente.
+pub const BADGE_PALETTE: [&str; 4] = ["badge--info", "badge--success", "badge--warning", "badge--error"];
+
+/// Classe CSS de badge pra `value` dentro da lista `options`, ciclando
+/// pela `BADGE_PALETTE` conforme a posição — mesma opção sempre cai na
+/// mesma cor enquanto a ordem das opções não mudar.
+pub fn badge_class(options: &[String], value: &str) -> &'static str {
+    match options.iter().position(|o| o == value) {
+        Some(i) => BADGE_PALETTE[i % BADGE_PALETTE.len()],
+        None => "badge",
+    }
+}
+
 /// Tipos de embed inline reconhecidos pelo `type` do wrapper.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmbedKind {
@@ -401,12 +416,19 @@ impl KanbanEmbedData {
 }
 
 /// Um evento do calendário.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CalendarEntry {
-    /// Data (formato livre, tipicamente `YYYY-MM-DD`).
+    /// Data de início (`YYYY-MM-DD`).
     pub date: String,
     /// Título do evento.
     pub title: String,
+    /// Data de fim (inclusiva), se o evento se estender por vários dias.
+    /// `None` = evento de 1 dia só.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_date: Option<String>,
+    /// Tag/cor do evento (mesma paleta de badge usada na tabela).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 }
 
 /// Dados de um embed calendar: lista de eventos.
@@ -426,16 +448,16 @@ impl CalendarEmbedData {
         serde_yaml::to_string(self).unwrap_or_default()
     }
 
-    /// Adiciona um evento novo.
+    /// Adiciona um evento novo de 1 dia.
     pub fn add_entry(&mut self, date: String, title: String) {
-        self.entries.push(CalendarEntry { date, title });
+        self.entries.push(CalendarEntry { date, title, ..Default::default() });
     }
 
-    /// Edita a data e/ou o título do evento no índice `idx`.
-    pub fn edit_entry(&mut self, idx: usize, new_date: String, new_title: String) {
-        if let Some(entry) = self.entries.get_mut(idx) {
-            entry.date = new_date;
-            entry.title = new_title;
+    /// Salva a entrada inteira no índice `idx` (usado pelo modal de
+    /// detalhes, que edita título/datas/tag juntos).
+    pub fn update_entry(&mut self, idx: usize, entry: CalendarEntry) {
+        if let Some(e) = self.entries.get_mut(idx) {
+            *e = entry;
         }
     }
 
@@ -444,6 +466,20 @@ impl CalendarEmbedData {
         if idx < self.entries.len() {
             self.entries.remove(idx);
         }
+    }
+
+    /// Desloca o evento no índice `idx` pra começar em `new_start`,
+    /// preservando a duração (se tinha `end_date`, desloca junto pela
+    /// mesma diferença de dias).
+    pub fn move_entry(&mut self, idx: usize, new_start: String) {
+        let Some(entry) = self.entries.get_mut(idx) else { return };
+        if let Some(end) = &entry.end_date {
+            let duration_days = crate::date_util::days_between(&entry.date, end).unwrap_or(0);
+            if let Some(new_end) = crate::date_util::add_days(&new_start, duration_days) {
+                entry.end_date = Some(new_end);
+            }
+        }
+        entry.date = new_start;
     }
 }
 
@@ -1081,8 +1117,13 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let DocSegment::Embed(EmbedData::Calendar(calendar)) = &segments[3] else {
             panic!("esperava embed calendar");
         };
-        assert_eq!(calendar.entries.len(), 3);
+        assert_eq!(calendar.entries.len(), 4);
         assert_eq!(calendar.entries[0].date, "2026-08-06");
+        assert_eq!(calendar.entries[0].tag.as_deref(), Some("urgente"));
+        let ranged = calendar.entries.iter().find(|e| e.end_date.is_some()).expect("esperava 1 evento com end_date");
+        assert_eq!(ranged.date, "2026-08-10");
+        assert_eq!(ranged.end_date.as_deref(), Some("2026-08-14"));
+        assert_eq!(ranged.tag.as_deref(), Some("infra"));
 
         let DocSegment::Embed(EmbedData::Table(table)) = &segments[5] else {
             panic!("esperava embed table");
@@ -1171,11 +1212,66 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let mut data = CalendarEmbedData::default();
         data.add_entry("2026-08-06".into(), "Revisão".into());
         assert_eq!(data.entries.len(), 1);
-        data.edit_entry(0, "2026-08-07".into(), "Revisão adiada".into());
+        data.update_entry(0, CalendarEntry {
+            date: "2026-08-07".into(),
+            title: "Revisão adiada".into(),
+            end_date: None,
+            tag: None,
+        });
         assert_eq!(data.entries[0].date, "2026-08-07");
         assert_eq!(data.entries[0].title, "Revisão adiada");
         data.remove_entry(0);
         assert!(data.entries.is_empty());
+    }
+
+    #[test]
+    fn calendar_entry_backward_compat_without_end_date_or_tag() {
+        // Entradas antigas (antes deste ciclo) não tinham end_date/tag —
+        // precisa continuar parseando.
+        let data = CalendarEmbedData::parse("entries:\n- date: '2026-08-06'\n  title: Revisão\n");
+        assert_eq!(data.entries.len(), 1);
+        assert_eq!(data.entries[0].end_date, None);
+        assert_eq!(data.entries[0].tag, None);
+    }
+
+    #[test]
+    fn calendar_entry_range_and_tag_roundtrip() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry("2026-08-06".into(), "Sprint".into());
+        data.update_entry(0, CalendarEntry {
+            date: "2026-08-06".into(),
+            title: "Sprint".into(),
+            end_date: Some("2026-08-10".into()),
+            tag: Some("urgente".into()),
+        });
+        let fence_body = data.to_fence_body();
+        let reparsed = CalendarEmbedData::parse(&fence_body);
+        assert_eq!(reparsed.entries[0].end_date.as_deref(), Some("2026-08-10"));
+        assert_eq!(reparsed.entries[0].tag.as_deref(), Some("urgente"));
+    }
+
+    #[test]
+    fn calendar_move_entry_preserves_duration() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry("2026-08-06".into(), "Sprint".into());
+        data.update_entry(0, CalendarEntry {
+            date: "2026-08-06".into(),
+            title: "Sprint".into(),
+            end_date: Some("2026-08-08".into()), // 2 dias de duração
+            tag: None,
+        });
+        data.move_entry(0, "2026-08-20".into());
+        assert_eq!(data.entries[0].date, "2026-08-20");
+        assert_eq!(data.entries[0].end_date.as_deref(), Some("2026-08-22"));
+    }
+
+    #[test]
+    fn calendar_move_entry_single_day_has_no_end_date() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry("2026-08-06".into(), "Reunião".into());
+        data.move_entry(0, "2026-08-15".into());
+        assert_eq!(data.entries[0].date, "2026-08-15");
+        assert_eq!(data.entries[0].end_date, None);
     }
 
     #[test]

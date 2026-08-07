@@ -4,12 +4,14 @@
 
 mod card_detail_modal;
 mod column_settings_modal;
+mod event_detail_modal;
 mod inline_calendar;
 mod inline_kanban;
 mod inline_table;
 
 pub use card_detail_modal::CardDetailModal;
 pub use column_settings_modal::ColumnSettingsModal;
+pub use event_detail_modal::EventDetailModal;
 pub use inline_calendar::InlineCalendar;
 pub use inline_kanban::InlineKanban;
 pub use inline_table::InlineTable;

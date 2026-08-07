@@ -8,6 +8,7 @@
 pub mod api;
 pub mod app;
 pub mod components;
+pub mod date_util;
 pub mod dialog;
 pub mod embed;
 pub mod html_to_md;

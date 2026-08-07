@@ -1483,23 +1483,31 @@ body {
     text-align: right;
 }
 
-.task-table__number-input,
-.task-table__date-input {
+.task-table__number-input {
     background: transparent;
     border: none;
     color: var(--text-primary);
     font: inherit;
     width: 100%;
     padding: 0;
-}
-
-.task-table__number-input {
     text-align: right;
 }
 
-.task-table__number-input:focus,
-.task-table__date-input:focus {
+.task-table__number-input:focus {
     outline: none;
+}
+
+.task-table__date-chip {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font: inherit;
+    cursor: pointer;
+    padding: 0;
+    text-align: left;
+}
+.task-table__date-chip:hover {
+    color: var(--accent-blue);
 }
 
 /* Spinner nativo escondido — usamos ▲▼ próprios (ver
@@ -1547,29 +1555,6 @@ body {
 .task-table__number-spin-btn:hover {
     color: var(--bg-base);
     background: var(--accent-blue);
-}
-
-/* Ícone do date picker nativo recolorido via mask (currentColor de verdade
-   não funciona em pseudo-elemento de form control, então usamos
-   background-color + mask-image) — fica cinza-muted igual ao resto dos
-   ícones da UI, accent-blue no hover, em vez do ícone padrão do SO. */
-.task-table__date-input::-webkit-calendar-picker-indicator {
-    -webkit-appearance: none;
-    width: 14px;
-    height: 14px;
-    cursor: pointer;
-    background-color: var(--text-muted);
-    -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='4' width='18' height='18' rx='2'/><line x1='16' y1='2' x2='16' y2='6'/><line x1='8' y1='2' x2='8' y2='6'/><line x1='3' y1='10' x2='21' y2='10'/></svg>");
-    -webkit-mask-size: contain;
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-position: center;
-    opacity: 0.7;
-    transition: opacity 0.12s ease, background-color 0.12s ease;
-}
-
-.task-table__date-input::-webkit-calendar-picker-indicator:hover {
-    opacity: 1;
-    background-color: var(--accent-blue);
 }
 
 /* max-width/overflow ficam no <td> (não pode ser flex — um <td> com
@@ -1750,6 +1735,267 @@ body {
 .table-select-menu__input:focus {
     outline: none;
     border-color: var(--accent-blue);
+}
+
+/* ── Date picker (popover próprio, substitui input[type=date]) ── */
+
+.date-picker {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 50;
+    margin-top: 2px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    padding: var(--sp-2);
+    width: 240px;
+}
+
+.date-picker__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--sp-2);
+}
+
+.date-picker__nav {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.875rem;
+    padding: 2px 8px;
+    border-radius: var(--r-sm);
+}
+.date-picker__nav:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+}
+
+.date-picker__month {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.date-picker__weekdays,
+.date-picker__grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    text-align: center;
+}
+
+.date-picker__weekdays {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.date-picker__day {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    padding: 4px 0;
+    border-radius: var(--r-sm);
+    aspect-ratio: 1;
+}
+.date-picker__day:hover {
+    background: var(--bg-elevated);
+}
+.date-picker__day--muted {
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+.date-picker__day--today {
+    box-shadow: inset 0 0 0 1px var(--accent-blue);
+}
+.date-picker__day--selected {
+    background: var(--accent-blue);
+    color: #fff;
+}
+
+.date-picker__footer {
+    margin-top: var(--sp-1);
+    padding-top: var(--sp-1);
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: center;
+}
+
+.date-picker__today {
+    background: transparent;
+    border: none;
+    color: var(--accent-blue);
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 2px var(--sp-2);
+}
+.date-picker__today:hover {
+    text-decoration: underline;
+}
+
+/* ── Calendar embed — grade mensal ──────────────── */
+
+.calendar-grid {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: var(--sp-4);
+    overflow: auto;
+    min-height: 0;
+}
+
+.calendar-grid__header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-3);
+}
+
+.calendar-grid__nav-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.875rem;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: var(--r-sm);
+}
+.calendar-grid__nav-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+}
+
+.calendar-grid__month-label {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 140px;
+}
+
+.calendar-grid__today-btn,
+.calendar-grid__add-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: var(--sp-1) var(--sp-2);
+    border-radius: var(--r-sm);
+}
+.calendar-grid__today-btn:hover,
+.calendar-grid__add-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+}
+
+.calendar-grid__spacer {
+    flex: 1;
+}
+
+.calendar-grid__count {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+}
+
+.calendar-grid__weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    padding: 0 0 var(--sp-1);
+}
+.calendar-grid__weekdays span {
+    text-align: center;
+}
+
+.calendar-grid__weeks {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+}
+
+.calendar-grid__week {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    grid-template-rows: 22px repeat(3, auto);
+    flex: 1;
+    min-height: 84px;
+    position: relative;
+}
+
+.calendar-grid__cell-bg {
+    grid-row: 1 / -1;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 4px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.calendar-grid__cell-bg:hover {
+    background: var(--bg-surface);
+}
+.calendar-grid__cell-bg--muted .calendar-grid__day-num {
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+.calendar-grid__day-num {
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    align-self: flex-end;
+}
+.calendar-grid__cell-bg--today .calendar-grid__day-num {
+    background: var(--accent-blue);
+    color: #fff;
+    border-radius: 999px;
+    width: 1.25rem;
+    height: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-end;
+}
+
+.calendar-grid__overflow {
+    font-size: 0.625rem;
+    color: var(--text-muted);
+    margin-top: auto;
+}
+
+.calendar-grid__bar {
+    grid-row: 2;
+    margin: 1px 2px;
+    padding: 1px 6px;
+    border-radius: var(--r-sm);
+    font-size: 0.6875rem;
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    cursor: grab;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    align-self: start;
+}
+.calendar-grid__bar:hover {
+    filter: brightness(1.15);
+}
+.calendar-grid__bar--dragging {
+    opacity: 0.5;
 }
 
 .editor__status,

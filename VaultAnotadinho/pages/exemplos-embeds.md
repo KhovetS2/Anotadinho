@@ -41,8 +41,13 @@ items:
 entries:
 - date: '2026-08-06'
   title: Revisão de código
+  tag: urgente
 - date: '2026-08-07'
   title: Deploy produção
+- date: '2026-08-10'
+  title: Sprint de agosto
+  end_date: '2026-08-14'
+  tag: infra
 - date: '2026-08-08'
   title: Retrospectiva sprint
 {{ /calendar }}

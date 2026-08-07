@@ -11,9 +11,10 @@ use web_sys::{FocusEvent, HtmlInputElement};
 use yew::prelude::*;
 
 use crate::api::PageMeta;
+use crate::components::date_picker::DatePicker;
 use crate::components::embeds::ColumnSettingsModal;
 use crate::dialog::PendingDialog;
-use crate::embed::{ColumnKind, TableEmbedData};
+use crate::embed::{badge_class, ColumnKind, TableEmbedData};
 
 /// Props do `InlineTable`.
 #[derive(Properties, PartialEq, Clone)]
@@ -28,15 +29,6 @@ pub struct InlineTableProps {
     pub open_dialog: Callback<PendingDialog>,
     /// Navega pra outra página do vault (célula de tipo Página).
     pub on_page_selected: Callback<PageMeta>,
-}
-
-const BADGE_PALETTE: [&str; 4] = ["badge--info", "badge--success", "badge--warning", "badge--error"];
-
-fn badge_class(options: &[String], value: &str) -> &'static str {
-    match options.iter().position(|o| o == value) {
-        Some(i) => BADGE_PALETTE[i % BADGE_PALETTE.len()],
-        None => "badge",
-    }
 }
 
 fn split_tags(cell: &str) -> Vec<String> {
@@ -324,22 +316,37 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                             }
                                         }
                                         ColumnKind::Date => {
-                                            let data = props.data.clone();
-                                            let on_change = props.on_change.clone();
-                                            let onchange = Callback::from(move |e: Event| {
-                                                let Some(target) = e.target() else { return };
-                                                let Ok(input) = target.dyn_into::<HtmlInputElement>() else { return };
-                                                let mut new_data = data.clone();
-                                                new_data.set_cell(ri, ci, input.value());
-                                                on_change.emit(new_data);
-                                                // O popup nativo do date picker no WebKitGTK não
-                                                // fecha sozinho depois de escolher uma data — tirar
-                                                // o foco do input força o fechamento.
-                                                let _ = input.blur();
-                                            });
+                                            let is_open = *open_cell_menu == Some((ri, ci));
+                                            let cell_value = cell.clone();
+                                            let toggle_open = {
+                                                let open_cell_menu = open_cell_menu.clone();
+                                                Callback::from(move |_: MouseEvent| {
+                                                    open_cell_menu.set(if is_open { None } else { Some((ri, ci)) });
+                                                })
+                                            };
+                                            let on_pick = {
+                                                let data = props.data.clone();
+                                                let on_change = props.on_change.clone();
+                                                let open_cell_menu = open_cell_menu.clone();
+                                                Callback::from(move |date: String| {
+                                                    let mut new_data = data.clone();
+                                                    new_data.set_cell(ri, ci, date);
+                                                    on_change.emit(new_data);
+                                                    open_cell_menu.set(None);
+                                                })
+                                            };
+                                            let on_close = {
+                                                let open_cell_menu = open_cell_menu.clone();
+                                                Callback::from(move |_: ()| open_cell_menu.set(None))
+                                            };
                                             html! {
-                                                <td class="task-table__td">
-                                                    <input class="task-table__date-input" type="date" value={cell.clone()} {onchange} />
+                                                <td class="task-table__td task-table__td--menu">
+                                                    <span class="task-table__date-chip" onclick={toggle_open}>
+                                                        if cell_value.is_empty() { { "+ data" } } else { { cell_value.clone() } }
+                                                    </span>
+                                                    if is_open {
+                                                        <DatePicker value={if cell_value.is_empty() { None } else { Some(cell_value.clone()) }} {on_pick} {on_close} />
+                                                    }
                                                 </td>
                                             }
                                         }
