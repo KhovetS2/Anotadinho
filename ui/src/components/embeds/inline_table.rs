@@ -358,12 +358,14 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                             });
                                             html! {
                                                 <td class="task-table__td task-table__td--url">
-                                                    if cell.is_empty() {
-                                                        <button class="task-table__link-add" onclick={edit}>{ "+ url" }</button>
-                                                    } else {
-                                                        <a class="task-table__link" href={cell.clone()} target="_blank" rel="noopener noreferrer">{ cell.clone() }</a>
-                                                        <button class="task-table__link-edit" onclick={edit} title="Editar URL">{ "✎" }</button>
-                                                    }
+                                                    <div class="task-table__url-cell">
+                                                        if cell.is_empty() {
+                                                            <button class="task-table__link-add" onclick={edit}>{ "+ url" }</button>
+                                                        } else {
+                                                            <a class="task-table__link" href={cell.clone()} target="_blank" rel="noopener noreferrer">{ cell.clone() }</a>
+                                                            <button class="task-table__link-edit" onclick={edit} title="Editar URL">{ "✎" }</button>
+                                                        }
+                                                    </div>
                                                 </td>
                                             }
                                         }

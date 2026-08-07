@@ -1572,12 +1572,21 @@ body {
     background-color: var(--accent-blue);
 }
 
+/* max-width/overflow ficam no <td> (não pode ser flex — um <td> com
+   display:flex sai do algoritmo de layout de tabela e para de esticar
+   junto com as células irmãs da mesma linha, deixando essa célula mais
+   baixa que o resto e a linha divisória desalinhada). O flex de verdade
+   fica no wrapper .task-table__url-cell por dentro. */
 .task-table__td--url {
+    max-width: 260px;
+    overflow: hidden;
+}
+
+.task-table__url-cell {
     display: flex;
     align-items: center;
     gap: var(--sp-1);
-    max-width: 260px;
-    overflow: hidden;
+    height: 100%;
 }
 
 .task-table__link {
