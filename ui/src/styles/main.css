@@ -1454,9 +1454,16 @@ body {
 }
 
 .task-table__td {
+    /* Altura mínima fixa pra toda célula — sem isso, linhas com conteúdo
+       "cheio" (texto, link) e linhas com o botão de estado vazio
+       ("+ url"/"+ página", que é mais baixo) ficavam com alturas
+       diferentes, deixando os divisores horizontais desalinhados entre
+       uma linha e outra. */
+    min-height: 2.5rem;
     padding: var(--sp-2) var(--sp-3);
     border-bottom: 1px solid var(--border);
     color: var(--text-primary);
+    vertical-align: middle;
 }
 
 .task-table__td--menu {
@@ -1529,9 +1536,9 @@ body {
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 0.575rem;
-    width: 0.875rem;
-    height: 0.875rem;
+    font-size: 0.475rem;
+    width: 0.975rem;
+    height: 0.975rem;
     line-height: 1;
     padding: 2px 3px;
     border-radius: 3px;
