@@ -60,7 +60,8 @@
     padding: 0;
 }
 
-html, body {
+html,
+body {
     height: 100%;
     width: 100%;
     overflow: hidden;
@@ -248,7 +249,9 @@ body {
     color: var(--text-muted);
 }
 
-.header-menu-wrapper { position: relative; }
+.header-menu-wrapper {
+    position: relative;
+}
 
 .header-menu {
     position: absolute;
@@ -258,7 +261,7 @@ body {
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: 10px;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
     z-index: 200;
     padding: var(--sp-1);
     display: flex;
@@ -305,7 +308,9 @@ body {
     overflow-y: hidden;
 }
 
-.tab-bar::-webkit-scrollbar { height: 2px; }
+.tab-bar::-webkit-scrollbar {
+    height: 2px;
+}
 
 .tab-bar__tab {
     display: inline-flex;
@@ -330,7 +335,10 @@ body {
     background: var(--bg-surface);
 }
 
-.tab-bar__tab:hover { background: var(--bg-elevated); color: var(--text-primary); }
+.tab-bar__tab:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
 
 .tab-bar__tab--active {
     background: var(--bg-base);
@@ -338,20 +346,40 @@ body {
     border-bottom-color: transparent;
 }
 
-.tab-bar__tab-title { max-width: 120px; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.tab-bar__tab-title {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+}
 
 .tab-bar__tab-close {
-    background: none; border: none; color: var(--text-muted);
-    cursor: pointer; font-size: 0.875rem; padding: 0 2px; line-height: 1;
-    opacity: 0; transition: opacity 0.1s; border-radius: 3px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.875rem;
+    padding: 0 2px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.1s;
+    border-radius: 3px;
 }
 
 .tab-bar__tab:hover .tab-bar__tab-close,
-.tab-bar__tab--active .tab-bar__tab-close { opacity: 0.6; }
+.tab-bar__tab--active .tab-bar__tab-close {
+    opacity: 0.6;
+}
+
 /* !important necessário aqui: hover no botão também ativa o :hover do
    .tab-bar__tab pai, cujo seletor descendente acima é mais específico
    (0,3,0 vs 0,2,0) e ganharia da opacidade 1 sem isso. */
-.tab-bar__tab-close:hover { opacity: 1 !important; color: var(--error); background: color-mix(in srgb, var(--error) 10%, transparent); }
+.tab-bar__tab-close:hover {
+    opacity: 1 !important;
+    color: var(--error);
+    background: color-mix(in srgb, var(--error) 10%, transparent);
+}
 
 /* Collapsed sidebar */
 .app-layout {
@@ -633,8 +661,13 @@ body {
     background: var(--bg-elevated);
 }
 
-.toolbar-btn:nth-child(1) { font-weight: 700; }
-.toolbar-btn:nth-child(2) { font-style: italic; }
+.toolbar-btn:nth-child(1) {
+    font-weight: 700;
+}
+
+.toolbar-btn:nth-child(2) {
+    font-style: italic;
+}
 
 .toolbar-divider {
     width: 1px;
@@ -713,17 +746,60 @@ body {
     margin: var(--sp-4) 0;
 }
 
-.editor__wysiwyg h1 { font-size: 1.75rem; font-weight: 600; margin: 1.25rem 0 0.25rem; line-height: 1.3; }
-.editor__wysiwyg h2 { font-size: 1.5rem; font-weight: 600; margin: 1rem 0 0.2rem; line-height: 1.35; }
-.editor__wysiwyg h3 { font-size: 1.25rem; font-weight: 600; margin: 0.75rem 0 0.15rem; line-height: 1.4; }
-.editor__wysiwyg h4 { font-size: 1.1rem; font-weight: 600; margin: 0.5rem 0 0.1rem; }
-.editor__wysiwyg h5 { font-size: 1rem; font-weight: 600; margin: 0.4rem 0 0.1rem; }
-.editor__wysiwyg h6 { font-size: 0.9375rem; font-weight: 600; margin: 0.3rem 0 0.1rem; color: var(--text-muted); }
+.editor__wysiwyg h1 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    margin: 1.25rem 0 0.25rem;
+    line-height: 1.3;
+}
 
-.editor__wysiwyg p { margin: 0 0 0.5rem; }
+.editor__wysiwyg h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 1rem 0 0.2rem;
+    line-height: 1.35;
+}
 
-.editor__wysiwyg strong, .editor__wysiwyg b { color: var(--accent-blue); }
-.editor__wysiwyg em, .editor__wysiwyg i { color: var(--text-muted); font-style: italic; }
+.editor__wysiwyg h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0.75rem 0 0.15rem;
+    line-height: 1.4;
+}
+
+.editor__wysiwyg h4 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0.5rem 0 0.1rem;
+}
+
+.editor__wysiwyg h5 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0.4rem 0 0.1rem;
+}
+
+.editor__wysiwyg h6 {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin: 0.3rem 0 0.1rem;
+    color: var(--text-muted);
+}
+
+.editor__wysiwyg p {
+    margin: 0 0 0.5rem;
+}
+
+.editor__wysiwyg strong,
+.editor__wysiwyg b {
+    color: var(--accent-blue);
+}
+
+.editor__wysiwyg em,
+.editor__wysiwyg i {
+    color: var(--text-muted);
+    font-style: italic;
+}
 
 .editor__wysiwyg code {
     background: var(--bg-elevated);
@@ -735,7 +811,7 @@ body {
 }
 
 .editor__wysiwyg pre {
-    background: rgba(0,0,0,0.2);
+    background: rgba(0, 0, 0, 0.2);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 14px 16px;
@@ -747,10 +823,21 @@ body {
     overflow-x: auto;
 }
 
-.editor__wysiwyg pre code { background: none; padding: 0; font-size: inherit; }
+.editor__wysiwyg pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+}
 
-.editor__wysiwyg ul, .editor__wysiwyg ol { padding-left: 1.5rem; margin: 0 0 0.5rem; }
-.editor__wysiwyg li { margin-bottom: 0.15rem; }
+.editor__wysiwyg ul,
+.editor__wysiwyg ol {
+    padding-left: 1.5rem;
+    margin: 0 0 0.5rem;
+}
+
+.editor__wysiwyg li {
+    margin-bottom: 0.15rem;
+}
 
 .editor__wysiwyg blockquote {
     border-left: 3px solid var(--accent-purple);
@@ -759,7 +846,10 @@ body {
     color: var(--text-muted);
 }
 
-.editor__wysiwyg a { color: var(--accent-blue); text-decoration: underline; }
+.editor__wysiwyg a {
+    color: var(--accent-blue);
+    text-decoration: underline;
+}
 
 .editor__wysiwyg hr {
     border: none;
@@ -843,8 +933,14 @@ body {
     user-select: none;
 }
 
-.editor__statusbar-hint { opacity: 0.45; transition: opacity 0.2s; }
-.editor__statusbar-hint:hover { opacity: 0.7; }
+.editor__statusbar-hint {
+    opacity: 0.45;
+    transition: opacity 0.2s;
+}
+
+.editor__statusbar-hint:hover {
+    opacity: 0.7;
+}
 
 /* Mermaid diagrams */
 .editor__wysiwyg .mermaid {
@@ -872,7 +968,7 @@ body {
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.04) inset;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
     overflow: hidden;
     z-index: 100;
     backdrop-filter: blur(12px);
@@ -959,7 +1055,10 @@ body {
     outline-offset: -2px;
     border-radius: var(--r-md);
 }
-.kanban__column--drag-active:hover { outline-color: var(--accent-blue); }
+
+.kanban__column--drag-active:hover {
+    outline-color: var(--accent-blue);
+}
 
 .kanban__col-header {
     display: flex;
@@ -982,7 +1081,10 @@ body {
     letter-spacing: 0.03em;
     cursor: pointer;
 }
-.kanban__col-title:hover { color: var(--text-primary); }
+
+.kanban__col-title:hover {
+    color: var(--text-primary);
+}
 
 .kanban__col-count {
     background: var(--bg-elevated);
@@ -1003,7 +1105,11 @@ body {
     border-radius: var(--r-sm);
     flex-shrink: 0;
 }
-.kanban__col-delete:hover { color: var(--error); background: var(--bg-elevated); }
+
+.kanban__col-delete:hover {
+    color: var(--error);
+    background: var(--bg-elevated);
+}
 
 .kanban__col-body {
     display: flex;
@@ -1024,8 +1130,13 @@ body {
     transition: border-color 0.12s ease, opacity 0.12s ease, transform 0.12s ease;
 }
 
-.kanban__card:hover { border-color: var(--accent-blue); }
-.kanban__card:active { cursor: grabbing; }
+.kanban__card:hover {
+    border-color: var(--accent-blue);
+}
+
+.kanban__card:active {
+    cursor: grabbing;
+}
 
 .kanban__card--dragging {
     opacity: 0.5;
@@ -1056,7 +1167,10 @@ body {
     transition: opacity 0.12s ease;
     flex-shrink: 0;
 }
-.kanban__card:hover .kanban__card-actions { opacity: 1; }
+
+.kanban__card:hover .kanban__card-actions {
+    opacity: 1;
+}
 
 .kanban__card-meta {
     display: flex;
@@ -1087,7 +1201,11 @@ body {
     padding: 2px 4px;
     border-radius: var(--r-sm);
 }
-.kanban__card-action:hover { color: var(--text-primary); background: var(--bg-base); }
+
+.kanban__card-action:hover {
+    color: var(--text-primary);
+    background: var(--bg-base);
+}
 
 .kanban__add-card {
     background: transparent;
@@ -1099,7 +1217,11 @@ body {
     font-size: 0.8125rem;
     text-align: left;
 }
-.kanban__add-card:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+
+.kanban__add-card:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+}
 
 .kanban__add-column {
     flex-shrink: 0;
@@ -1116,7 +1238,11 @@ body {
     padding: var(--sp-2);
     font-size: 0.8125rem;
 }
-.kanban__add-column-btn:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+
+.kanban__add-column-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+}
 
 /* ── Calendar (view de página inteira e embed inline) ── */
 
@@ -1133,11 +1259,20 @@ body {
     margin-bottom: var(--sp-3);
 }
 
-.calendar__header h2 { font-size: 1.25rem; font-weight: 600; }
+.calendar__header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
 
-.calendar__count { color: var(--text-muted); font-size: 0.8125rem; }
+.calendar__count {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+}
 
-.calendar__empty { color: var(--text-muted); font-size: 0.875rem; }
+.calendar__empty {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
 
 .calendar__list {
     display: flex;
@@ -1178,7 +1313,11 @@ body {
     padding: var(--sp-1) var(--sp-3);
     font-size: 0.8125rem;
 }
-.calendar__add:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+
+.calendar__add:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+}
 
 .calendar__item {
     display: flex;
@@ -1191,9 +1330,14 @@ body {
     transition: background 0.12s ease;
 }
 
-.calendar__item:hover { background: var(--bg-elevated); }
+.calendar__item:hover {
+    background: var(--bg-elevated);
+}
 
-.calendar__item-title { font-size: 0.875rem; color: var(--text-primary); }
+.calendar__item-title {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
 
 .calendar__item-delete {
     background: transparent;
@@ -1206,8 +1350,15 @@ body {
     opacity: 0;
     transition: opacity 0.12s ease;
 }
-.calendar__item:hover .calendar__item-delete { opacity: 1; }
-.calendar__item-delete:hover { color: var(--error); background: var(--bg-base); }
+
+.calendar__item:hover .calendar__item-delete {
+    opacity: 1;
+}
+
+.calendar__item-delete:hover {
+    color: var(--error);
+    background: var(--bg-base);
+}
 
 /* ── Task table (view de página inteira e embed inline) ── */
 
@@ -1224,7 +1375,10 @@ body {
     margin-bottom: var(--sp-3);
 }
 
-.task-table__header-row h2 { font-size: 1.25rem; font-weight: 600; }
+.task-table__header-row h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
 
 .task-table__table {
     width: 100%;
@@ -1242,7 +1396,9 @@ body {
     user-select: none;
 }
 
-.task-table__th:hover { color: var(--text-primary); }
+.task-table__th:hover {
+    color: var(--text-primary);
+}
 
 .task-table__th-name {
     margin-right: var(--sp-1);
@@ -1259,8 +1415,15 @@ body {
     opacity: 0;
     transition: opacity 0.12s ease;
 }
-.task-table__th:hover .task-table__th-action { opacity: 1; }
-.task-table__th-action:hover { color: var(--text-primary); background: var(--bg-elevated); }
+
+.task-table__th:hover .task-table__th-action {
+    opacity: 1;
+}
+
+.task-table__th-action:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+}
 
 .task-table__th--add {
     width: 32px;
@@ -1276,10 +1439,19 @@ body {
     padding: 2px var(--sp-2);
     font-size: 0.8125rem;
 }
-.task-table__add:hover { color: var(--text-primary); border-color: var(--accent-blue); }
 
-.task-table__row--add { cursor: default; }
-.task-table__row--add:hover { background: transparent; }
+.task-table__add:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+}
+
+.task-table__row--add {
+    cursor: default;
+}
+
+.task-table__row--add:hover {
+    background: transparent;
+}
 
 .task-table__td {
     padding: var(--sp-2) var(--sp-3);
@@ -1287,16 +1459,22 @@ body {
     color: var(--text-primary);
 }
 
-.task-table__td--menu { position: relative; }
+.task-table__td--menu {
+    position: relative;
+}
 
-.task-table__td--menu .badge { cursor: pointer; }
+.task-table__td--menu .badge {
+    cursor: pointer;
+}
 
 .task-table__td--actions {
     width: 32px;
     text-align: center;
 }
 
-.task-table__td--number { text-align: right; }
+.task-table__td--number {
+    text-align: right;
+}
 
 .task-table__number-input,
 .task-table__date-input {
@@ -1307,12 +1485,85 @@ body {
     width: 100%;
     padding: 0;
 }
-.task-table__number-input { text-align: right; }
-.task-table__number-input:focus,
-.task-table__date-input:focus { outline: none; }
 
-/* Espaço mínimo pro spinner nativo não ficar colado no número. */
-.task-table__number-input::-webkit-inner-spin-button { margin-left: 4px; }
+.task-table__number-input {
+    text-align: right;
+}
+
+.task-table__number-input:focus,
+.task-table__date-input:focus {
+    outline: none;
+}
+
+/* Spinner nativo escondido — usamos ▲▼ próprios (ver
+   .task-table__number-spin) pra combinar com o resto da UI em vez do
+   widget genérico do SO. Setas do teclado e scroll continuam funcionando
+   normalmente, só o widget visual some. */
+.task-table__number-input::-webkit-inner-spin-button,
+.task-table__number-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.task-table__number-cell {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+}
+
+.task-table__number-spin {
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+.task-table__row:hover .task-table__number-spin,
+.task-table__number-input:focus~.task-table__number-spin {
+    opacity: 1;
+}
+
+.task-table__number-spin-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.575rem;
+    width: 0.875rem;
+    height: 0.875rem;
+    line-height: 1;
+    padding: 2px 3px;
+    border-radius: 3px;
+}
+
+.task-table__number-spin-btn:hover {
+    color: var(--bg-base);
+    background: var(--accent-blue);
+}
+
+/* Ícone do date picker nativo recolorido via mask (currentColor de verdade
+   não funciona em pseudo-elemento de form control, então usamos
+   background-color + mask-image) — fica cinza-muted igual ao resto dos
+   ícones da UI, accent-blue no hover, em vez do ícone padrão do SO. */
+.task-table__date-input::-webkit-calendar-picker-indicator {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    background-color: var(--text-muted);
+    -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='4' width='18' height='18' rx='2'/><line x1='16' y1='2' x2='16' y2='6'/><line x1='8' y1='2' x2='8' y2='6'/><line x1='3' y1='10' x2='21' y2='10'/></svg>");
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    opacity: 0.7;
+    transition: opacity 0.12s ease, background-color 0.12s ease;
+}
+
+.task-table__date-input::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+    background-color: var(--accent-blue);
+}
 
 .task-table__td--url {
     display: flex;
@@ -1331,7 +1582,10 @@ body {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.task-table__link:hover { text-decoration: underline; }
+
+.task-table__link:hover {
+    text-decoration: underline;
+}
 
 .task-table__link-edit,
 .task-table__link-add,
@@ -1347,10 +1601,17 @@ body {
     opacity: 0;
     transition: opacity 0.12s ease;
 }
+
 .task-table__td--url:hover .task-table__link-edit,
-.task-table__td--menu:hover .task-table__page-link-open { opacity: 1; }
+.task-table__td--menu:hover .task-table__page-link-open {
+    opacity: 1;
+}
+
 .task-table__link-edit:hover,
-.task-table__page-link-open:hover { color: var(--text-primary); background: var(--bg-elevated); }
+.task-table__page-link-open:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+}
 
 .task-table__link-add,
 .task-table__page-link-add {
@@ -1360,15 +1621,22 @@ body {
     font-size: 0.75rem;
     padding: 2px var(--sp-2);
 }
+
 .task-table__link-add:hover,
-.task-table__page-link-add:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+.task-table__page-link-add:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-blue);
+}
 
 .task-table__page-link {
     cursor: pointer;
     color: var(--text-primary);
     font-size: 0.8125rem;
 }
-.task-table__page-link:hover { color: var(--accent-blue); }
+
+.task-table__page-link:hover {
+    color: var(--accent-blue);
+}
 
 .task-table__tags {
     display: flex;
@@ -1395,10 +1663,19 @@ body {
     opacity: 0;
     transition: opacity 0.12s ease;
 }
-.task-table__row:hover .task-table__row-delete { opacity: 1; }
-.task-table__row-delete:hover { color: var(--error); background: var(--bg-elevated); }
 
-.task-table__row:hover { background: var(--bg-surface); }
+.task-table__row:hover .task-table__row-delete {
+    opacity: 1;
+}
+
+.task-table__row-delete:hover {
+    color: var(--error);
+    background: var(--bg-elevated);
+}
+
+.task-table__row:hover {
+    background: var(--bg-surface);
+}
 
 .table-select-menu {
     position: absolute;
@@ -1423,10 +1700,18 @@ body {
     align-items: center;
     gap: var(--sp-1);
 }
-.table-select-menu__item:hover { background: var(--bg-elevated); }
-.table-select-menu__item--checked { color: var(--accent-blue); }
 
-.table-select-menu__check { font-size: 0.75rem; }
+.table-select-menu__item:hover {
+    background: var(--bg-elevated);
+}
+
+.table-select-menu__item--checked {
+    color: var(--accent-blue);
+}
+
+.table-select-menu__check {
+    font-size: 0.75rem;
+}
 
 .table-select-menu__input-row {
     display: flex;
@@ -1445,7 +1730,11 @@ body {
     font-size: 0.8125rem;
     padding: 2px var(--sp-2);
 }
-.table-select-menu__input:focus { outline: none; border-color: var(--accent-blue); }
+
+.table-select-menu__input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
 
 .editor__status,
 .editor__error {

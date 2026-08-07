@@ -275,22 +275,51 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                             });
                                             html! {
                                                 <td class="task-table__td">
-                                                    <input type="checkbox" {checked} onclick={toggle} />
+                                                    <input class="checkbox" type="checkbox" {checked} onclick={toggle} />
                                                 </td>
                                             }
                                         }
                                         ColumnKind::Number => {
                                             let data = props.data.clone();
                                             let on_change = props.on_change.clone();
-                                            let onblur = Callback::from(move |e: FocusEvent| {
-                                                let Some(value) = input_value(&e) else { return };
-                                                let mut new_data = data.clone();
-                                                new_data.set_cell(ri, ci, value);
-                                                on_change.emit(new_data);
-                                            });
+                                            let input_ref = NodeRef::default();
+                                            let onblur = {
+                                                let data = data.clone();
+                                                let on_change = on_change.clone();
+                                                Callback::from(move |e: FocusEvent| {
+                                                    let Some(value) = input_value(&e) else { return };
+                                                    let mut new_data = data.clone();
+                                                    new_data.set_cell(ri, ci, value);
+                                                    on_change.emit(new_data);
+                                                })
+                                            };
+                                            // Spinner nativo escondido via CSS — estas ▲▼ próprias
+                                            // usam HTMLInputElement::step_up/step_down (mesmo
+                                            // comportamento nativo) e commitam na hora, sem
+                                            // depender de blur.
+                                            let step = |delta: f64| {
+                                                let input_ref = input_ref.clone();
+                                                let data = data.clone();
+                                                let on_change = on_change.clone();
+                                                Callback::from(move |_: MouseEvent| {
+                                                    let Some(input) = input_ref.cast::<web_sys::HtmlInputElement>() else { return };
+                                                    let current: f64 = input.value().parse().unwrap_or(0.0);
+                                                    let new_value = (current + delta).to_string();
+                                                    input.set_value(&new_value);
+                                                    let mut new_data = data.clone();
+                                                    new_data.set_cell(ri, ci, new_value);
+                                                    on_change.emit(new_data);
+                                                })
+                                            };
                                             html! {
                                                 <td class="task-table__td task-table__td--number">
-                                                    <input class="task-table__number-input" type="number" value={cell.clone()} {onblur} />
+                                                    <div class="task-table__number-cell">
+                                                        <input ref={input_ref.clone()} class="task-table__number-input" type="number" value={cell.clone()} {onblur} />
+                                                        <div class="task-table__number-spin">
+                                                            <button class="task-table__number-spin-btn" type="button" tabindex="-1" onclick={step(1.0)}>{ "▲" }</button>
+                                                            <button class="task-table__number-spin-btn" type="button" tabindex="-1" onclick={step(-1.0)}>{ "▼" }</button>
+                                                        </div>
+                                                    </div>
                                                 </td>
                                             }
                                         }

@@ -262,7 +262,7 @@ pub fn card_detail_modal(props: &CardDetailModalProps) -> Html {
                             let item_class = if item.done { "card-modal__checklist-text card-modal__checklist-text--done" } else { "card-modal__checklist-text" };
                             html! {
                                 <div class="card-modal__checklist-item">
-                                    <input type="checkbox" checked={item.done} onclick={toggle} />
+                                    <input class="checkbox" type="checkbox" checked={item.done} onclick={toggle} />
                                     <span class={item_class}>{ &item.text }</span>
                                     <button class="card-modal__tag-remove" onclick={remove}>{ "✕" }</button>
                                 </div>
