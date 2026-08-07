@@ -52,6 +52,7 @@ entries:
   tag: infra
 - date: '2026-08-08'
   title: Retrospectiva sprint
+- title: Ligar pro fornecedor
 {{ /calendar }}
 
 ## Table Embed

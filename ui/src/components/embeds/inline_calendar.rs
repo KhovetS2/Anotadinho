@@ -88,7 +88,8 @@ fn pack_days(entries: &[CalendarEntry], day_dates: &[String], exclude_timed: boo
         if exclude_timed && e.start_time.is_some() {
             continue;
         }
-        let e_start = e.date.as_str();
+        // Evento sem data (na gaveta) não aparece na grade.
+        let Some(e_start) = e.date.as_deref() else { continue };
         let e_end = e.end_date.as_deref().unwrap_or(e_start);
         if e_end < window_start || e_start > window_end {
             continue;
@@ -164,6 +165,8 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
     // (`false`) na grade de horas.
     let resizing = use_state(|| None::<(usize, bool)>);
     let resize_preview_min = use_state(|| None::<u32>);
+    // Gaveta de eventos sem data — recolhida por padrão.
+    let drawer_open = use_state(|| false);
 
     // Zera o arraste sempre que o mouse for solto em qualquer lugar —
     // mesmo padrão do InlineKanban, evita estado de drag preso se o
@@ -349,10 +352,69 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
         })
     };
 
+    let add_unscheduled_event = {
+        let data = props.data.clone();
+        let on_change = props.on_change.clone();
+        let open_dialog = props.open_dialog.clone();
+        Callback::from(move |_: MouseEvent| {
+            let data = data.clone();
+            let on_change = on_change.clone();
+            open_dialog.emit(PendingDialog::Prompt {
+                title: "Título do evento (sem data)".to_string(),
+                default: String::new(),
+                on_submit: Callback::from(move |title: String| {
+                    let mut new_data = data.clone();
+                    new_data.add_unscheduled_entry(title);
+                    on_change.emit(new_data);
+                }),
+            });
+        })
+    };
+    let toggle_drawer = {
+        let drawer_open = drawer_open.clone();
+        Callback::from(move |_: MouseEvent| drawer_open.set(!*drawer_open))
+    };
+
     let existing_tags: Vec<String> = {
         let set: BTreeSet<String> = props.data.entries.iter().filter_map(|e| e.tag.clone()).collect();
         set.into_iter().collect()
     };
+
+    // Eventos sem data (`date: None`) — ficam fora da grade, na gaveta.
+    // Arrastar um item daqui reusa o MESMO mecanismo de `dragging` já
+    // usado pelas barras/blocos da grade: soltar num dia/coluna chama
+    // `move_entry`/`move_entry_time` normalmente, que atribuem a data.
+    let unscheduled_idxs: Vec<usize> = props.data.entries.iter().enumerate()
+        .filter_map(|(i, e)| e.date.is_none().then_some(i))
+        .collect();
+    let drawer_items = unscheduled_idxs.iter().map(|&idx| {
+        let entry = &props.data.entries[idx];
+        let class = classes!(
+            "calendar-grid__drawer-item",
+            entry.tag.as_deref().map(|t| badge_class(&existing_tags, t)),
+            (*dragging == Some(idx)).then_some("calendar-grid__bar--dragging"),
+        );
+        let dragging_start = dragging.clone();
+        let onmousedown = Callback::from(move |e: MouseEvent| {
+            e.stop_propagation();
+            e.prevent_default();
+            dragging_start.set(Some(idx));
+        });
+        let editing_entry_click = editing_entry.clone();
+        let dragging_click = dragging.clone();
+        let onmouseup = Callback::from(move |e: MouseEvent| {
+            e.stop_propagation();
+            if *dragging_click == Some(idx) {
+                editing_entry_click.set(Some(idx));
+            }
+            dragging_click.set(None);
+        });
+        html! {
+            <div {class} {onmousedown} {onmouseup} title={entry.title.clone()}>
+                { &entry.title }
+            </div>
+        }
+    }).collect::<Vec<_>>();
 
     let event_modal = (*editing_entry).and_then(|idx| {
         props.data.entries.get(idx).cloned().map(|entry| {
@@ -434,6 +496,23 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
             </div>
 
             { body }
+
+            <div class="calendar-grid__drawer">
+                <button class="calendar-grid__drawer-toggle" onclick={toggle_drawer}>
+                    { if *drawer_open { "▾" } else { "▸" } }
+                    { format!(" Sem data ({})", unscheduled_idxs.len()) }
+                </button>
+                <button class="calendar-grid__add-btn calendar-grid__add-btn--ghost" onclick={add_unscheduled_event}>{ "+ evento sem data" }</button>
+                if *drawer_open {
+                    <div class="calendar-grid__drawer-list">
+                        if unscheduled_idxs.is_empty() {
+                            <span class="calendar-grid__drawer-empty">{ "Nenhum evento sem data." }</span>
+                        } else {
+                            { for drawer_items }
+                        }
+                    </div>
+                }
+            </div>
 
             if let (Some(idx), Some((x, y))) = (*dragging, *drag_pos) {
                 if let Some(entry) = props.data.entries.get(idx) {
@@ -776,7 +855,7 @@ fn render_day_columns(
         });
 
         let timed_blocks = props.data.entries.iter().enumerate().filter_map(|(idx, entry)| {
-            if &entry.date != date_str {
+            if entry.date.as_deref() != Some(date_str.as_str()) {
                 return None;
             }
             let (sh, sm) = date_util::parse_time(entry.start_time.as_deref()?)?;

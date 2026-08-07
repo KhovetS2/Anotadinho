@@ -52,6 +52,10 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
     let open_field = use_state(|| None::<DateField>);
     let entry = &props.entry;
     let has_range = entry.end_date.is_some();
+    // Evento sem data (veio da gaveta) — só mostra o campo de início
+    // (que funciona como "definir data"); "Vários dias"/"Horário
+    // específico" só fazem sentido depois que uma data existe.
+    let has_date = entry.date.is_some();
 
     let on_title_blur = {
         let entry = entry.clone();
@@ -87,11 +91,13 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
             let mut new_entry = entry.clone();
             // Move o fim junto, preservando a duração — evita que o fim
             // fique antes do início se o usuário só mexer na data inicial.
-            if let Some(end) = &new_entry.end_date {
-                let duration = crate::date_util::days_between(&new_entry.date, end).unwrap_or(0);
+            // Sem efeito se o evento não tinha data antes (veio da
+            // gaveta): não existe duração antiga pra preservar.
+            if let (Some(old_start), Some(end)) = (&new_entry.date, &new_entry.end_date) {
+                let duration = crate::date_util::days_between(old_start, end).unwrap_or(0);
                 new_entry.end_date = crate::date_util::add_days(&date, duration);
             }
-            new_entry.date = date;
+            new_entry.date = Some(date);
             on_change.emit(new_entry);
             open_field.set(None);
         })
@@ -113,7 +119,7 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
         let on_change = props.on_change.clone();
         Callback::from(move |_: MouseEvent| {
             let mut new_entry = entry.clone();
-            new_entry.end_date = if new_entry.end_date.is_some() { None } else { Some(new_entry.date.clone()) };
+            new_entry.end_date = if new_entry.end_date.is_some() { None } else { new_entry.date.clone() };
             on_change.emit(new_entry);
         })
     };
@@ -214,13 +220,16 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
                 <div class="card-modal__field">
                     <label class="card-modal__label">{ "Início" }</label>
                     <div class="event-modal__date-field">
-                        <button class="event-modal__date-chip" onclick={toggle_open(DateField::Start)}>{ &entry.date }</button>
+                        <button class="event-modal__date-chip" onclick={toggle_open(DateField::Start)}>
+                            { entry.date.clone().unwrap_or_else(|| "Sem data — clique para definir".to_string()) }
+                        </button>
                         if *open_field == Some(DateField::Start) {
-                            <DatePicker value={Some(entry.date.clone())} on_pick={pick_start} on_close={close_picker.clone()} />
+                            <DatePicker value={entry.date.clone()} on_pick={pick_start} on_close={close_picker.clone()} />
                         }
                     </div>
                 </div>
 
+                if has_date {
                 <div class="card-modal__field">
                     <label class="card-modal__label event-modal__range-toggle">
                         <input class="checkbox" type="checkbox" checked={has_range} onclick={toggle_range} />
@@ -265,6 +274,7 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
                         </div>
                     }
                 </div>
+                }
 
                 <div class="card-modal__field">
                     <label class="card-modal__label">{ "Tag" }</label>

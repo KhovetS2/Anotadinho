@@ -418,8 +418,11 @@ impl KanbanEmbedData {
 /// Um evento do calendário.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CalendarEntry {
-    /// Data de início (`YYYY-MM-DD`).
-    pub date: String,
+    /// Data de início (`YYYY-MM-DD`). `None` = evento "sem data" — fica
+    /// fora da grade, na gaveta de eventos sem data, até o usuário
+    /// arrastar pra um dia ou definir pelo modal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
     /// Título do evento.
     pub title: String,
     /// Data de fim (inclusiva), se o evento se estender por vários dias.
@@ -458,19 +461,25 @@ impl CalendarEmbedData {
 
     /// Adiciona um evento novo de 1 dia.
     pub fn add_entry(&mut self, date: String, title: String) {
-        self.entries.push(CalendarEntry { date, title, ..Default::default() });
+        self.entries.push(CalendarEntry { date: Some(date), title, ..Default::default() });
     }
 
     /// Adiciona um evento novo já com horário (`"HH:MM"`) — usado ao
     /// clicar num horário específico da grade de Semana/Dia.
     pub fn add_entry_timed(&mut self, date: String, title: String, start_time: String, end_time: String) {
         self.entries.push(CalendarEntry {
-            date,
+            date: Some(date),
             title,
             start_time: Some(start_time),
             end_time: Some(end_time),
             ..Default::default()
         });
+    }
+
+    /// Adiciona um evento sem data — fica na gaveta até o usuário
+    /// arrastar pra um dia da grade ou definir uma data pelo modal.
+    pub fn add_unscheduled_entry(&mut self, title: String) {
+        self.entries.push(CalendarEntry { date: None, title, ..Default::default() });
     }
 
     /// Salva a entrada inteira no índice `idx` (usado pelo modal de
@@ -490,16 +499,19 @@ impl CalendarEmbedData {
 
     /// Desloca o evento no índice `idx` pra começar em `new_start`,
     /// preservando a duração (se tinha `end_date`, desloca junto pela
-    /// mesma diferença de dias).
+    /// mesma diferença de dias). Também é o caminho usado pra atribuir
+    /// data a um evento "sem data" (arrastar da gaveta pra um dia) — nesse
+    /// caso não existe data antiga pra calcular duração, então só define
+    /// `date` mesmo.
     pub fn move_entry(&mut self, idx: usize, new_start: String) {
         let Some(entry) = self.entries.get_mut(idx) else { return };
-        if let Some(end) = &entry.end_date {
-            let duration_days = crate::date_util::days_between(&entry.date, end).unwrap_or(0);
+        if let (Some(old_start), Some(end)) = (&entry.date, &entry.end_date) {
+            let duration_days = crate::date_util::days_between(old_start, end).unwrap_or(0);
             if let Some(new_end) = crate::date_util::add_days(&new_start, duration_days) {
                 entry.end_date = Some(new_end);
             }
         }
-        entry.date = new_start;
+        entry.date = Some(new_start);
     }
 
     /// Desloca o evento no índice `idx` pra uma nova data + horário de
@@ -521,7 +533,7 @@ impl CalendarEmbedData {
             }
         }
         entry.start_time = Some(new_start_time);
-        entry.date = new_date;
+        entry.date = Some(new_date);
     }
 
     /// Redimensiona um evento com horário arrastando a borda superior
@@ -1023,7 +1035,7 @@ Acima do embed você pode ter texto normal. Abaixo também.
             panic!("esperava embed calendar no índice 3");
         };
         assert_eq!(data.entries.len(), 3);
-        assert_eq!(data.entries[0].date, "2026-08-06");
+        assert_eq!(data.entries[0].date.as_deref(), Some("2026-08-06"));
         assert_eq!(data.entries[0].title, "Revisão de código");
     }
 
@@ -1185,16 +1197,18 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let DocSegment::Embed(EmbedData::Calendar(calendar)) = &segments[3] else {
             panic!("esperava embed calendar");
         };
-        assert_eq!(calendar.entries.len(), 4);
-        assert_eq!(calendar.entries[0].date, "2026-08-06");
+        assert_eq!(calendar.entries.len(), 5);
+        assert_eq!(calendar.entries[0].date.as_deref(), Some("2026-08-06"));
         assert_eq!(calendar.entries[0].tag.as_deref(), Some("urgente"));
         let ranged = calendar.entries.iter().find(|e| e.end_date.is_some()).expect("esperava 1 evento com end_date");
-        assert_eq!(ranged.date, "2026-08-10");
+        assert_eq!(ranged.date.as_deref(), Some("2026-08-10"));
         assert_eq!(ranged.end_date.as_deref(), Some("2026-08-14"));
         assert_eq!(ranged.tag.as_deref(), Some("infra"));
         let timed = calendar.entries.iter().find(|e| e.start_time.is_some()).expect("esperava 1 evento com horário");
         assert_eq!(timed.start_time.as_deref(), Some("14:30"));
         assert_eq!(timed.end_time.as_deref(), Some("15:15"));
+        let unscheduled = calendar.entries.iter().find(|e| e.date.is_none()).expect("esperava 1 evento sem data");
+        assert_eq!(unscheduled.title, "Ligar pro fornecedor");
 
         let DocSegment::Embed(EmbedData::Table(table)) = &segments[5] else {
             panic!("esperava embed table");
@@ -1284,13 +1298,13 @@ Acima do embed você pode ter texto normal. Abaixo também.
         data.add_entry("2026-08-06".into(), "Revisão".into());
         assert_eq!(data.entries.len(), 1);
         data.update_entry(0, CalendarEntry {
-            date: "2026-08-07".into(),
+            date: Some("2026-08-07".into()),
             title: "Revisão adiada".into(),
             end_date: None,
             tag: None,
             ..Default::default()
         });
-        assert_eq!(data.entries[0].date, "2026-08-07");
+        assert_eq!(data.entries[0].date.as_deref(), Some("2026-08-07"));
         assert_eq!(data.entries[0].title, "Revisão adiada");
         data.remove_entry(0);
         assert!(data.entries.is_empty());
@@ -1311,7 +1325,7 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let mut data = CalendarEmbedData::default();
         data.add_entry("2026-08-06".into(), "Sprint".into());
         data.update_entry(0, CalendarEntry {
-            date: "2026-08-06".into(),
+            date: Some("2026-08-06".into()),
             title: "Sprint".into(),
             end_date: Some("2026-08-10".into()),
             tag: Some("urgente".into()),
@@ -1328,14 +1342,14 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let mut data = CalendarEmbedData::default();
         data.add_entry("2026-08-06".into(), "Sprint".into());
         data.update_entry(0, CalendarEntry {
-            date: "2026-08-06".into(),
+            date: Some("2026-08-06".into()),
             title: "Sprint".into(),
             end_date: Some("2026-08-08".into()), // 2 dias de duração
             tag: None,
             ..Default::default()
         });
         data.move_entry(0, "2026-08-20".into());
-        assert_eq!(data.entries[0].date, "2026-08-20");
+        assert_eq!(data.entries[0].date.as_deref(), Some("2026-08-20"));
         assert_eq!(data.entries[0].end_date.as_deref(), Some("2026-08-22"));
     }
 
@@ -1344,7 +1358,7 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let mut data = CalendarEmbedData::default();
         data.add_entry("2026-08-06".into(), "Reunião".into());
         data.update_entry(0, CalendarEntry {
-            date: "2026-08-06".into(),
+            date: Some("2026-08-06".into()),
             title: "Reunião".into(),
             start_time: Some("09:30".into()),
             end_time: Some("10:15".into()),
@@ -1368,7 +1382,7 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let mut data = CalendarEmbedData::default();
         data.add_entry("2026-08-06".into(), "Reunião".into());
         data.move_entry(0, "2026-08-15".into());
-        assert_eq!(data.entries[0].date, "2026-08-15");
+        assert_eq!(data.entries[0].date.as_deref(), Some("2026-08-15"));
         assert_eq!(data.entries[0].end_date, None);
     }
 
@@ -1394,9 +1408,39 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let mut data = CalendarEmbedData::default();
         data.add_entry_timed("2026-08-06".into(), "Reunião".into(), "23:00".into(), "23:30".into());
         data.move_entry_time(0, "2026-08-07".into(), "10:15".into());
-        assert_eq!(data.entries[0].date, "2026-08-07");
+        assert_eq!(data.entries[0].date.as_deref(), Some("2026-08-07"));
         assert_eq!(data.entries[0].start_time.as_deref(), Some("10:15"));
         assert_eq!(data.entries[0].end_time.as_deref(), Some("10:45"));
+    }
+
+    #[test]
+    fn calendar_add_unscheduled_entry_has_no_date() {
+        let mut data = CalendarEmbedData::default();
+        data.add_unscheduled_entry("Sem data ainda".into());
+        assert_eq!(data.entries[0].date, None);
+        assert_eq!(data.entries[0].title, "Sem data ainda");
+    }
+
+    #[test]
+    fn calendar_move_entry_assigns_date_to_unscheduled_entry() {
+        // Arrastar da gaveta pra um dia: não tinha data antiga pra
+        // calcular duração, só define a data mesmo.
+        let mut data = CalendarEmbedData::default();
+        data.add_unscheduled_entry("Sem data ainda".into());
+        data.move_entry(0, "2026-08-12".into());
+        assert_eq!(data.entries[0].date.as_deref(), Some("2026-08-12"));
+        assert_eq!(data.entries[0].end_date, None);
+    }
+
+    #[test]
+    fn calendar_unscheduled_entry_roundtrips_without_date_key() {
+        let mut data = CalendarEmbedData::default();
+        data.add_unscheduled_entry("Sem data ainda".into());
+        let yaml = data.to_fence_body();
+        assert!(!yaml.contains("date:"), "não deveria serializar `date:` pra evento sem data:\n{yaml}");
+        let reparsed = CalendarEmbedData::parse(&yaml);
+        assert_eq!(reparsed.entries[0].date, None);
+        assert_eq!(reparsed.entries[0].title, "Sem data ainda");
     }
 
     #[test]
