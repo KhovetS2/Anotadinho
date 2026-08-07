@@ -1054,10 +1054,42 @@ body {
     outline: 2px dashed transparent;
     outline-offset: -2px;
     border-radius: var(--r-md);
+    transition: background 0.1s ease, outline-color 0.1s ease;
 }
 
 .kanban__column--drag-active:hover {
     outline-color: var(--accent-blue);
+    background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-surface));
+}
+
+/* Linha fina indicando onde o card vai entrar se soltar ali — some se o
+   drag terminar (a condição que a mostra já exige `dragging.is_some()`). */
+.kanban__insertion-line {
+    height: 2px;
+    margin: 0 2px;
+    background: var(--accent-blue);
+    border-radius: 1px;
+}
+
+/* Ghost que segue o cursor durante o arraste — `position: fixed` +
+   `pointer-events: none` pra não atrapalhar os eventos de mouse dos
+   elementos por baixo (coluna/card sob o cursor continuam recebendo
+   onmouseenter/onmouseup normalmente). */
+.kanban__drag-ghost {
+    position: fixed;
+    z-index: 500;
+    pointer-events: none;
+    background: var(--bg-elevated);
+    border: 1px solid var(--accent-blue);
+    border-radius: var(--r-sm);
+    padding: var(--sp-1) var(--sp-2);
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .kanban__col-header {
@@ -1896,6 +1928,20 @@ body {
     border-color: var(--accent-blue);
 }
 
+.calendar-grid__view-select {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    padding: var(--sp-1) var(--sp-2);
+}
+.calendar-grid__view-select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
+
 .calendar-grid__spacer {
     flex: 1;
 }
@@ -1971,6 +2017,28 @@ body {
     align-self: flex-end;
 }
 
+.calendar-grid__cell-bg--drop-target {
+    background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+    box-shadow: inset 0 0 0 2px var(--accent-blue);
+}
+
+.calendar-grid__drag-ghost {
+    position: fixed;
+    z-index: 500;
+    pointer-events: none;
+    background: var(--bg-elevated);
+    border: 1px solid var(--accent-blue);
+    border-radius: var(--r-sm);
+    padding: var(--sp-1) var(--sp-2);
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .calendar-grid__overflow {
     font-size: 0.625rem;
     color: var(--text-muted);
@@ -1996,6 +2064,151 @@ body {
 }
 .calendar-grid__bar--dragging {
     opacity: 0.5;
+}
+
+/* ── Calendar embed — visões Semana/Dia (grade de horas) ── */
+
+.calendar-grid__daygrid-labels {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: var(--sp-2);
+    margin-bottom: var(--sp-1);
+}
+
+.calendar-grid__daygrid-gutter-spacer {
+    width: 48px;
+    flex-shrink: 0;
+}
+
+.calendar-grid__daygrid-daylabel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.calendar-grid__daygrid-weekday {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.03em;
+}
+
+.calendar-grid__daygrid-daynum {
+    font-size: 1.125rem;
+    color: var(--text-primary);
+}
+
+.calendar-grid__daygrid-daylabel--today .calendar-grid__daygrid-daynum {
+    background: var(--accent-blue);
+    color: #fff;
+    border-radius: 999px;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9375rem;
+}
+
+.calendar-grid__allday-strip {
+    display: flex;
+    min-height: 32px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: var(--sp-1);
+    margin-bottom: var(--sp-1);
+}
+
+.calendar-grid__allday-columns {
+    flex: 1;
+    display: grid;
+    position: relative;
+    gap: 2px;
+}
+
+.calendar-grid__hour-scroll {
+    display: flex;
+    flex: 1;
+    overflow-y: auto;
+    max-height: 480px;
+}
+
+.calendar-grid__hour-gutter {
+    width: 48px;
+    flex-shrink: 0;
+}
+
+.calendar-grid__hour-label {
+    height: 48px;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    text-align: right;
+    padding-right: var(--sp-2);
+    transform: translateY(-0.5em);
+}
+.calendar-grid__hour-label:first-child {
+    visibility: hidden;
+}
+
+.calendar-grid__hour-columns {
+    flex: 1;
+    display: flex;
+}
+
+.calendar-grid__day-column {
+    flex: 1;
+    position: relative;
+    height: calc(48px * 24);
+    border-left: 1px solid var(--border);
+    cursor: pointer;
+    background-image: repeating-linear-gradient(
+        to bottom,
+        transparent,
+        transparent 47px,
+        var(--border) 47px,
+        var(--border) 48px
+    );
+}
+
+.calendar-grid__timed-block {
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    background: var(--bg-elevated);
+    border-left: 3px solid var(--accent-blue);
+    border-radius: var(--r-sm);
+    padding: 2px 6px;
+    font-size: 0.6875rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: grab;
+    z-index: 1;
+}
+.calendar-grid__timed-block:hover {
+    filter: brightness(1.15);
+}
+
+.calendar-grid__now-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 0;
+    border-top: 2px solid var(--error);
+    z-index: 2;
+    pointer-events: none;
+}
+
+.calendar-grid__now-dot {
+    position: absolute;
+    left: -4px;
+    top: -4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--error);
 }
 
 .editor__status,

@@ -111,6 +111,45 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
         })
     };
 
+    let has_time = entry.start_time.is_some();
+    let toggle_time = {
+        let entry = entry.clone();
+        let on_change = props.on_change.clone();
+        Callback::from(move |_: MouseEvent| {
+            let mut new_entry = entry.clone();
+            if new_entry.start_time.is_some() {
+                new_entry.start_time = None;
+                new_entry.end_time = None;
+            } else {
+                new_entry.start_time = Some("09:00".to_string());
+                new_entry.end_time = Some("10:00".to_string());
+            }
+            on_change.emit(new_entry);
+        })
+    };
+    let on_start_time_change = {
+        let entry = entry.clone();
+        let on_change = props.on_change.clone();
+        Callback::from(move |e: Event| {
+            let Some(target) = e.target() else { return };
+            let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() else { return };
+            let mut new_entry = entry.clone();
+            new_entry.start_time = Some(input.value());
+            on_change.emit(new_entry);
+        })
+    };
+    let on_end_time_change = {
+        let entry = entry.clone();
+        let on_change = props.on_change.clone();
+        Callback::from(move |e: Event| {
+            let Some(target) = e.target() else { return };
+            let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() else { return };
+            let mut new_entry = entry.clone();
+            new_entry.end_time = Some(input.value());
+            on_change.emit(new_entry);
+        })
+    };
+
     let new_tag_text = use_state(String::new);
     let pick_tag = {
         let entry = entry.clone();
@@ -175,6 +214,20 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
                             if *open_field == Some(DateField::End) {
                                 <DatePicker value={entry.end_date.clone()} on_pick={pick_end} on_close={close_picker.clone()} />
                             }
+                        </div>
+                    }
+                </div>
+
+                <div class="card-modal__field">
+                    <label class="card-modal__label event-modal__range-toggle">
+                        <input class="checkbox" type="checkbox" checked={has_time} onclick={toggle_time} />
+                        { "Horário específico" }
+                    </label>
+                    if has_time {
+                        <div class="event-modal__time-row">
+                            <input class="event-modal__time-input" type="time" value={entry.start_time.clone().unwrap_or_default()} onchange={on_start_time_change} />
+                            <span class="event-modal__time-sep">{ "–" }</span>
+                            <input class="event-modal__time-input" type="time" value={entry.end_time.clone().unwrap_or_default()} onchange={on_end_time_change} />
                         </div>
                     }
                 </div>

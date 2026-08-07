@@ -114,6 +114,36 @@ pub fn today_string() -> String {
     format_date(y, m, d)
 }
 
+/// Parseia `"HH:MM"`. `None` se o formato não bater.
+pub fn parse_time(s: &str) -> Option<(u32, u32)> {
+    let mut parts = s.trim().splitn(2, ':');
+    let h: u32 = parts.next()?.parse().ok()?;
+    let m: u32 = parts.next()?.parse().ok()?;
+    if h < 24 && m < 60 {
+        Some((h, m))
+    } else {
+        None
+    }
+}
+
+/// Formata `(hora, minuto)` como `"HH:MM"`.
+pub fn format_time(h: u32, m: u32) -> String {
+    format!("{:02}:{:02}", h, m)
+}
+
+/// Minutos desde meia-noite — usado pra posicionar um evento na grade de
+/// horas (`top`/`height` em função do horário).
+pub fn minutes_since_midnight(h: u32, m: u32) -> u32 {
+    h * 60 + m
+}
+
+/// Hora atual via `js_sys::Date`, em minutos desde meia-noite — usado pra
+/// desenhar a linha do horário atual na grade de horas.
+pub fn now_minutes() -> u32 {
+    let d = js_sys::Date::new_0();
+    minutes_since_midnight(d.get_hours(), d.get_minutes())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +189,27 @@ mod tests {
     fn prev_next_month_wrap_year() {
         assert_eq!(prev_month(2026, 1), (2025, 12));
         assert_eq!(next_month(2026, 12), (2027, 1));
+    }
+
+    #[test]
+    fn parse_time_valid_and_invalid() {
+        assert_eq!(parse_time("09:30"), Some((9, 30)));
+        assert_eq!(parse_time("23:59"), Some((23, 59)));
+        assert_eq!(parse_time("24:00"), None);
+        assert_eq!(parse_time("09:60"), None);
+        assert_eq!(parse_time("not-a-time"), None);
+    }
+
+    #[test]
+    fn format_time_zero_padded() {
+        assert_eq!(format_time(9, 5), "09:05");
+        assert_eq!(format_time(14, 30), "14:30");
+    }
+
+    #[test]
+    fn minutes_since_midnight_calc() {
+        assert_eq!(minutes_since_midnight(0, 0), 0);
+        assert_eq!(minutes_since_midnight(9, 30), 570);
+        assert_eq!(minutes_since_midnight(23, 59), 1439);
     }
 }

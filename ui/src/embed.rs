@@ -429,6 +429,14 @@ pub struct CalendarEntry {
     /// Tag/cor do evento (mesma paleta de badge usada na tabela).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+    /// Horário de início (`"HH:MM"`). `None` = evento de dia inteiro (sem
+    /// horário) — comportamento padrão, igual ao de antes deste campo
+    /// existir.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<String>,
+    /// Horário de fim (`"HH:MM"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<String>,
 }
 
 /// Dados de um embed calendar: lista de eventos.
@@ -1124,6 +1132,9 @@ Acima do embed você pode ter texto normal. Abaixo também.
         assert_eq!(ranged.date, "2026-08-10");
         assert_eq!(ranged.end_date.as_deref(), Some("2026-08-14"));
         assert_eq!(ranged.tag.as_deref(), Some("infra"));
+        let timed = calendar.entries.iter().find(|e| e.start_time.is_some()).expect("esperava 1 evento com horário");
+        assert_eq!(timed.start_time.as_deref(), Some("14:30"));
+        assert_eq!(timed.end_time.as_deref(), Some("15:15"));
 
         let DocSegment::Embed(EmbedData::Table(table)) = &segments[5] else {
             panic!("esperava embed table");
@@ -1217,6 +1228,7 @@ Acima do embed você pode ter texto normal. Abaixo também.
             title: "Revisão adiada".into(),
             end_date: None,
             tag: None,
+            ..Default::default()
         });
         assert_eq!(data.entries[0].date, "2026-08-07");
         assert_eq!(data.entries[0].title, "Revisão adiada");
@@ -1243,6 +1255,7 @@ Acima do embed você pode ter texto normal. Abaixo também.
             title: "Sprint".into(),
             end_date: Some("2026-08-10".into()),
             tag: Some("urgente".into()),
+            ..Default::default()
         });
         let fence_body = data.to_fence_body();
         let reparsed = CalendarEmbedData::parse(&fence_body);
@@ -1259,10 +1272,35 @@ Acima do embed você pode ter texto normal. Abaixo também.
             title: "Sprint".into(),
             end_date: Some("2026-08-08".into()), // 2 dias de duração
             tag: None,
+            ..Default::default()
         });
         data.move_entry(0, "2026-08-20".into());
         assert_eq!(data.entries[0].date, "2026-08-20");
         assert_eq!(data.entries[0].end_date.as_deref(), Some("2026-08-22"));
+    }
+
+    #[test]
+    fn calendar_entry_start_end_time_roundtrip() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry("2026-08-06".into(), "Reunião".into());
+        data.update_entry(0, CalendarEntry {
+            date: "2026-08-06".into(),
+            title: "Reunião".into(),
+            start_time: Some("09:30".into()),
+            end_time: Some("10:15".into()),
+            ..Default::default()
+        });
+        let fence_body = data.to_fence_body();
+        let reparsed = CalendarEmbedData::parse(&fence_body);
+        assert_eq!(reparsed.entries[0].start_time.as_deref(), Some("09:30"));
+        assert_eq!(reparsed.entries[0].end_time.as_deref(), Some("10:15"));
+    }
+
+    #[test]
+    fn calendar_entry_backward_compat_without_times() {
+        let data = CalendarEmbedData::parse("entries:\n- date: '2026-08-06'\n  title: Sem horário\n");
+        assert_eq!(data.entries[0].start_time, None);
+        assert_eq!(data.entries[0].end_time, None);
     }
 
     #[test]

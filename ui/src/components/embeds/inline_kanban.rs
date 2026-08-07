@@ -13,6 +13,7 @@
 //! área do board.
 
 use gloo_events::EventListener;
+use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
 use crate::components::embeds::CardDetailModal;
@@ -38,6 +39,8 @@ pub struct InlineKanbanProps {
 pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
     let dragging = use_state(|| None::<usize>);
     let editing_card = use_state(|| None::<usize>);
+    let drag_pos = use_state(|| None::<(i32, i32)>);
+    let hover_card = use_state(|| None::<usize>);
 
     // Garante que o estado de arraste nunca fica preso: se o usuário
     // soltar o mouse fora de qualquer card/coluna (sidebar, outro embed,
@@ -51,6 +54,27 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
             let listener = EventListener::new(&window, "mouseup", move |_event| {
                 dragging.set(None);
             });
+            move || drop(listener)
+        });
+    }
+
+    // Ghost que segue o cursor durante o arraste — só existe um listener
+    // de mousemove enquanto `dragging` está ativo (liga/desliga junto).
+    {
+        let drag_pos = drag_pos.clone();
+        use_effect_with(*dragging, move |dragging| {
+            let listener = dragging.map(|_| {
+                let window = web_sys::window().expect("no global window");
+                let drag_pos = drag_pos.clone();
+                EventListener::new(&window, "mousemove", move |e| {
+                    if let Some(e) = e.dyn_ref::<web_sys::MouseEvent>() {
+                        drag_pos.set(Some((e.client_x(), e.client_y())));
+                    }
+                })
+            });
+            if dragging.is_none() {
+                drag_pos.set(None);
+            }
             move || drop(listener)
         });
     }
@@ -204,6 +228,18 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                                         Callback::from(move |_: MouseEvent| dragging.set(Some(idx)))
                                     };
 
+                                    // Só relevante durante um arraste — indica onde o
+                                    // card vai ser inserido se soltar aqui.
+                                    let onmouseenter = {
+                                        let dragging = dragging.clone();
+                                        let hover_card = hover_card.clone();
+                                        Callback::from(move |_: MouseEvent| {
+                                            if dragging.is_some() {
+                                                hover_card.set(Some(idx));
+                                            }
+                                        })
+                                    };
+
                                     // Soltar em cima de OUTRO card: se não
                                     // houve arraste de verdade (soltou no
                                     // mesmo card que começou), é um clique —
@@ -278,6 +314,8 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                                         "kanban__card"
                                     };
 
+                                    let show_insertion = dragging.is_some() && *dragging != Some(idx) && *hover_card == Some(idx);
+
                                     let has_extras = item.description.is_some()
                                         || !item.tags.is_empty()
                                         || item.due.is_some()
@@ -286,7 +324,11 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                                         || !item.attachments.is_empty();
 
                                     html! {
-                                        <div class={card_class} {onmousedown} {onmouseup}>
+                                        <>
+                                        if show_insertion {
+                                            <div class="kanban__insertion-line" />
+                                        }
+                                        <div class={card_class} {onmousedown} {onmouseup} {onmouseenter}>
                                             <div class="kanban__card-main">
                                                 <span class="kanban__card-title">{ &item.title }</span>
                                                 <span class="kanban__card-actions">
@@ -318,6 +360,7 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                                                 </div>
                                             }
                                         </div>
+                                        </>
                                     }
                                 }) }
                                 <button class="kanban__add-card" onclick={add_card}>{ "+ card" }</button>
@@ -346,6 +389,13 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                     }}>{ "+ coluna" }</button>
                 </div>
             </div>
+            if let (Some(idx), Some((x, y))) = (*dragging, *drag_pos) {
+                if let Some(item) = props.data.items.get(idx) {
+                    <div class="kanban__drag-ghost" style={format!("left: {}px; top: {}px;", x + 12, y + 12)}>
+                        { &item.title }
+                    </div>
+                }
+            }
             { for card_detail }
         </div>
     }

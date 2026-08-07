@@ -582,6 +582,30 @@
     outline-offset: 1px;
 }
 
+.event-modal__time-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+
+.event-modal__time-input {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.875rem;
+    padding: var(--sp-1) var(--sp-2);
+}
+.event-modal__time-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
+
+.event-modal__time-sep {
+    color: var(--text-muted);
+}
+
 .event-modal__delete {
     margin-top: var(--sp-2);
     align-self: flex-start;

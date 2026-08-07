@@ -44,6 +44,8 @@ entries:
   tag: urgente
 - date: '2026-08-07'
   title: Deploy produção
+  start_time: '14:30'
+  end_time: '15:15'
 - date: '2026-08-10'
   title: Sprint de agosto
   end_date: '2026-08-14'
