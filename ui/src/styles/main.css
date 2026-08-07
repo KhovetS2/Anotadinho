@@ -1879,6 +1879,46 @@ body {
     text-decoration: underline;
 }
 
+/* ── Time picker (popover próprio, substitui input[type=time]) ── */
+
+.time-picker {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 50;
+    margin-top: 2px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    width: 100px;
+}
+
+.time-picker__list {
+    max-height: 224px;
+    overflow-y: auto;
+    padding: var(--sp-1) 0;
+}
+
+.time-picker__item {
+    display: block;
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    text-align: left;
+    padding: 4px var(--sp-2);
+}
+.time-picker__item:hover {
+    background: var(--bg-elevated);
+}
+.time-picker__item--selected {
+    background: var(--accent-blue);
+    color: #fff;
+}
+
 /* ── Calendar embed — grade mensal ──────────────── */
 
 .calendar-grid {

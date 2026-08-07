@@ -588,17 +588,16 @@
     gap: var(--sp-2);
 }
 
-.event-modal__time-input {
+.event-modal__time-chip {
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: var(--r-sm);
     color: var(--text-primary);
-    font: inherit;
+    cursor: pointer;
     font-size: 0.875rem;
     padding: var(--sp-1) var(--sp-2);
 }
-.event-modal__time-input:focus {
-    outline: none;
+.event-modal__time-chip:hover {
     border-color: var(--accent-blue);
 }
 

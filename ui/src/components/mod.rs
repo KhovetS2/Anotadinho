@@ -13,3 +13,4 @@ pub mod page_view;
 pub mod sidebar;
 pub mod tab_bar;
 pub mod task_table;
+pub mod time_picker;

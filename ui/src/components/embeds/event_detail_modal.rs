@@ -9,10 +9,17 @@ use yew::prelude::*;
 
 use crate::components::date_picker::DatePicker;
 use crate::components::modal::Modal;
+use crate::components::time_picker::TimePicker;
 use crate::embed::{badge_class, CalendarEntry};
 
 #[derive(Clone, Copy, PartialEq)]
 enum DateField {
+    Start,
+    End,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum TimeField {
     Start,
     End,
 }
@@ -111,6 +118,19 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
         })
     };
 
+    let open_time_field = use_state(|| None::<TimeField>);
+    let toggle_time_open = |field: TimeField| {
+        let open_time_field = open_time_field.clone();
+        Callback::from(move |e: MouseEvent| {
+            e.stop_propagation();
+            open_time_field.set(if *open_time_field == Some(field) { None } else { Some(field) });
+        })
+    };
+    let close_time_picker = {
+        let open_time_field = open_time_field.clone();
+        Callback::from(move |_: ()| open_time_field.set(None))
+    };
+
     let has_time = entry.start_time.is_some();
     let toggle_time = {
         let entry = entry.clone();
@@ -127,26 +147,26 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
             on_change.emit(new_entry);
         })
     };
-    let on_start_time_change = {
+    let pick_start_time = {
         let entry = entry.clone();
         let on_change = props.on_change.clone();
-        Callback::from(move |e: Event| {
-            let Some(target) = e.target() else { return };
-            let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() else { return };
+        let open_time_field = open_time_field.clone();
+        Callback::from(move |time: String| {
             let mut new_entry = entry.clone();
-            new_entry.start_time = Some(input.value());
+            new_entry.start_time = Some(time);
             on_change.emit(new_entry);
+            open_time_field.set(None);
         })
     };
-    let on_end_time_change = {
+    let pick_end_time = {
         let entry = entry.clone();
         let on_change = props.on_change.clone();
-        Callback::from(move |e: Event| {
-            let Some(target) = e.target() else { return };
-            let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() else { return };
+        let open_time_field = open_time_field.clone();
+        Callback::from(move |time: String| {
             let mut new_entry = entry.clone();
-            new_entry.end_time = Some(input.value());
+            new_entry.end_time = Some(time);
             on_change.emit(new_entry);
+            open_time_field.set(None);
         })
     };
 
@@ -225,9 +245,23 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
                     </label>
                     if has_time {
                         <div class="event-modal__time-row">
-                            <input class="event-modal__time-input" type="time" value={entry.start_time.clone().unwrap_or_default()} onchange={on_start_time_change} />
+                            <div class="event-modal__date-field">
+                                <button class="event-modal__time-chip" onclick={toggle_time_open(TimeField::Start)}>
+                                    { entry.start_time.clone().unwrap_or_default() }
+                                </button>
+                                if *open_time_field == Some(TimeField::Start) {
+                                    <TimePicker value={entry.start_time.clone()} on_pick={pick_start_time} on_close={close_time_picker.clone()} />
+                                }
+                            </div>
                             <span class="event-modal__time-sep">{ "–" }</span>
-                            <input class="event-modal__time-input" type="time" value={entry.end_time.clone().unwrap_or_default()} onchange={on_end_time_change} />
+                            <div class="event-modal__date-field">
+                                <button class="event-modal__time-chip" onclick={toggle_time_open(TimeField::End)}>
+                                    { entry.end_time.clone().unwrap_or_default() }
+                                </button>
+                                if *open_time_field == Some(TimeField::End) {
+                                    <TimePicker value={entry.end_time.clone()} on_pick={pick_end_time} on_close={close_time_picker.clone()} />
+                                }
+                            </div>
                         </div>
                     }
                 </div>
