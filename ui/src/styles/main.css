@@ -1,6 +1,12 @@
 /* Anotadinho - tema dark com acentos azul/roxo */
 
 :root {
+    /* Faz o WebKit renderizar controles nativos (spinner do
+       input[type=number], date picker, checkbox) na variante escura —
+       sem isso eles vêm sempre no estilo claro do SO, destoando do resto
+       da UI. */
+    color-scheme: dark;
+
     --bg-base: #272930;
     --bg-surface: #32343F;
     --bg-elevated: #3D404F;
@@ -32,6 +38,8 @@
 
 /* Light theme override */
 .theme-light {
+    color-scheme: light;
+
     --bg-base: #FFFFFF;
     --bg-surface: #F8FAFF;
     --bg-elevated: #E4E8F5;
@@ -262,12 +270,12 @@ body {
    cascade (components.css é carregado após main.css). */
 .header-menu__item {
     width: 100%;
-    text-align: left;
-    justify-content: flex-start;
+    text-align: left !important;
+    justify-content: flex-start !important;
     padding: var(--sp-2) var(--sp-3) !important;
     border-radius: 6px !important;
     font-size: 0.875rem;
-    font-weight: 600;
+    font-weight: 500;
 }
 
 /* ── Main Panel (TabBar + Editor) ────────────── */
@@ -1303,15 +1311,25 @@ body {
 .task-table__number-input:focus,
 .task-table__date-input:focus { outline: none; }
 
-.task-table__td--url { display: flex; align-items: center; gap: var(--sp-1); }
+/* Espaço mínimo pro spinner nativo não ficar colado no número. */
+.task-table__number-input::-webkit-inner-spin-button { margin-left: 4px; }
+
+.task-table__td--url {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+    max-width: 260px;
+    overflow: hidden;
+}
 
 .task-table__link {
+    flex: 1 1 auto;
+    min-width: 0;
     color: var(--accent-blue);
     text-decoration: none;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 220px;
 }
 .task-table__link:hover { text-decoration: underline; }
 
