@@ -33,6 +33,17 @@ const WEEKDAY_LABELS: [&str; 7] = ["D", "S", "T", "Q", "Q", "S", "S"];
 const WEEKDAY_ABBR: [&str; 7] = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
 const MAX_LANES: usize = 3;
 const HOUR_PX: f64 = 48.0;
+const SNAP_MINUTES: f64 = 15.0;
+
+/// Converte um deslocamento vertical (px, a partir do topo da coluna do
+/// dia = 0h) em minutos desde meia-noite, arredondado pro múltiplo de
+/// `SNAP_MINUTES` mais próximo (mesmo "encaixe" de 15 em 15 minutos do
+/// Google Calendar).
+fn y_to_snapped_minutes(y_px: f64) -> u32 {
+    let raw_minutes = (y_px / HOUR_PX) * 60.0;
+    let snapped = (raw_minutes / SNAP_MINUTES).round() * SNAP_MINUTES;
+    snapped.clamp(0.0, 23.0 * 60.0 + 45.0) as u32
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum ViewMode {
@@ -643,19 +654,50 @@ fn render_day_columns(
         let on_change = props.on_change.clone();
         let open_dialog = props.open_dialog.clone();
         let date_for_click = date_str.clone();
-        let onclick = Callback::from(move |_: MouseEvent| {
+        let onclick = Callback::from(move |e: MouseEvent| {
             let data = data.clone();
             let on_change = on_change.clone();
             let date_for_click = date_for_click.clone();
+            // Cria o evento já com o horário do ponto clicado (arredondado
+            // pro quarto de hora mais próximo) em vez de sempre dia
+            // inteiro — mesmo comportamento do Google Calendar.
+            let start_min = y_to_snapped_minutes(e.offset_y() as f64);
+            let end_min = (start_min + 60).min(23 * 60 + 59);
+            let start_time = date_util::format_time(start_min / 60, start_min % 60);
+            let end_time = date_util::format_time(end_min / 60, end_min % 60);
             open_dialog.emit(PendingDialog::Prompt {
                 title: "Título do evento".to_string(),
                 default: String::new(),
                 on_submit: Callback::from(move |title: String| {
                     let mut new_data = data.clone();
-                    new_data.add_entry(date_for_click.clone(), title);
+                    new_data.add_entry_timed(date_for_click.clone(), title, start_time.clone(), end_time.clone());
                     on_change.emit(new_data);
                 }),
             });
+        });
+
+        let data_drop = props.data.clone();
+        let on_change_drop = props.on_change.clone();
+        let dragging_drop = dragging.clone();
+        let date_for_drop = date_str.clone();
+        let onmouseup = Callback::from(move |e: MouseEvent| {
+            e.stop_propagation();
+            if let Some(idx) = *dragging_drop {
+                let mut new_data = data_drop.clone();
+                let has_time = new_data.entries.get(idx).map(|en| en.start_time.is_some()).unwrap_or(false);
+                if has_time {
+                    let start_min = y_to_snapped_minutes(e.offset_y() as f64);
+                    let start_time = date_util::format_time(start_min / 60, start_min % 60);
+                    new_data.move_entry_time(idx, date_for_drop.clone(), start_time);
+                } else {
+                    // Evento de dia inteiro/intervalo caiu aqui (raro —
+                    // normalmente solta na faixa do topo) — só muda a
+                    // data, sem inventar um horário do nada.
+                    new_data.move_entry(idx, date_for_drop.clone());
+                }
+                on_change_drop.emit(new_data);
+            }
+            dragging_drop.set(None);
         });
 
         let timed_blocks = props.data.entries.iter().enumerate().filter_map(|(idx, entry)| {
@@ -702,7 +744,7 @@ fn render_day_columns(
         });
 
         html! {
-            <div class="calendar-grid__day-column" {onclick}>
+            <div class="calendar-grid__day-column" {onclick} {onmouseup}>
                 { for timed_blocks }
                 if is_today {
                     <div class="calendar-grid__now-line" style={format!("top: {}px;", (now_min as f64 / 60.0) * HOUR_PX)}>

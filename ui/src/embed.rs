@@ -461,6 +461,18 @@ impl CalendarEmbedData {
         self.entries.push(CalendarEntry { date, title, ..Default::default() });
     }
 
+    /// Adiciona um evento novo já com horário (`"HH:MM"`) — usado ao
+    /// clicar num horário específico da grade de Semana/Dia.
+    pub fn add_entry_timed(&mut self, date: String, title: String, start_time: String, end_time: String) {
+        self.entries.push(CalendarEntry {
+            date,
+            title,
+            start_time: Some(start_time),
+            end_time: Some(end_time),
+            ..Default::default()
+        });
+    }
+
     /// Salva a entrada inteira no índice `idx` (usado pelo modal de
     /// detalhes, que edita título/datas/tag juntos).
     pub fn update_entry(&mut self, idx: usize, entry: CalendarEntry) {
@@ -488,6 +500,28 @@ impl CalendarEmbedData {
             }
         }
         entry.date = new_start;
+    }
+
+    /// Desloca o evento no índice `idx` pra uma nova data + horário de
+    /// início, preservando a duração em minutos (se tinha
+    /// `start_time`/`end_time` definidos). Usado ao arrastar
+    /// verticalmente/entre dias na grade de horas (Semana/Dia). Eventos
+    /// sem horário (dia inteiro) não são afetados por essa função — a
+    /// grade de horas só arrasta blocos que já têm `start_time`.
+    pub fn move_entry_time(&mut self, idx: usize, new_date: String, new_start_time: String) {
+        let Some(entry) = self.entries.get_mut(idx) else { return };
+        let new_start_parsed = crate::date_util::parse_time(&new_start_time);
+        if let (Some(start), Some(end), Some((nsh, nsm))) = (&entry.start_time, &entry.end_time, new_start_parsed) {
+            if let (Some((sh, sm)), Some((eh, em))) = (crate::date_util::parse_time(start), crate::date_util::parse_time(end)) {
+                let duration = crate::date_util::minutes_since_midnight(eh, em) as i64
+                    - crate::date_util::minutes_since_midnight(sh, sm) as i64;
+                let new_start_min = crate::date_util::minutes_since_midnight(nsh, nsm) as i64;
+                let new_end_min = (new_start_min + duration).clamp(0, 23 * 60 + 59) as u32;
+                entry.end_time = Some(crate::date_util::format_time(new_end_min / 60, new_end_min % 60));
+            }
+        }
+        entry.start_time = Some(new_start_time);
+        entry.date = new_date;
     }
 }
 
@@ -1310,6 +1344,44 @@ Acima do embed você pode ter texto normal. Abaixo também.
         data.move_entry(0, "2026-08-15".into());
         assert_eq!(data.entries[0].date, "2026-08-15");
         assert_eq!(data.entries[0].end_date, None);
+    }
+
+    #[test]
+    fn calendar_add_entry_timed() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry_timed("2026-08-06".into(), "Reunião".into(), "09:00".into(), "09:30".into());
+        assert_eq!(data.entries[0].start_time.as_deref(), Some("09:00"));
+        assert_eq!(data.entries[0].end_time.as_deref(), Some("09:30"));
+    }
+
+    #[test]
+    fn calendar_move_entry_time_preserves_duration_same_day() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry_timed("2026-08-06".into(), "Reunião".into(), "09:00".into(), "09:45".into());
+        data.move_entry_time(0, "2026-08-06".into(), "14:00".into());
+        assert_eq!(data.entries[0].start_time.as_deref(), Some("14:00"));
+        assert_eq!(data.entries[0].end_time.as_deref(), Some("14:45"));
+    }
+
+    #[test]
+    fn calendar_move_entry_time_across_days_keeps_duration() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry_timed("2026-08-06".into(), "Reunião".into(), "23:00".into(), "23:30".into());
+        data.move_entry_time(0, "2026-08-07".into(), "10:15".into());
+        assert_eq!(data.entries[0].date, "2026-08-07");
+        assert_eq!(data.entries[0].start_time.as_deref(), Some("10:15"));
+        assert_eq!(data.entries[0].end_time.as_deref(), Some("10:45"));
+    }
+
+    #[test]
+    fn calendar_move_entry_time_noop_without_start_time() {
+        // Evento sem horário (dia inteiro) — move_entry_time só define o
+        // novo start_time/date, não deveria inventar um end_time do nada.
+        let mut data = CalendarEmbedData::default();
+        data.add_entry("2026-08-06".into(), "Dia inteiro".into());
+        data.move_entry_time(0, "2026-08-06".into(), "10:00".into());
+        assert_eq!(data.entries[0].start_time.as_deref(), Some("10:00"));
+        assert_eq!(data.entries[0].end_time, None);
     }
 
     #[test]
