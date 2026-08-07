@@ -523,6 +523,32 @@ impl CalendarEmbedData {
         entry.start_time = Some(new_start_time);
         entry.date = new_date;
     }
+
+    /// Redimensiona um evento com horário arrastando a borda superior
+    /// (`is_start_edge = true`) ou inferior do bloco na grade de horas.
+    /// Mantém duração mínima de 15min — se a borda arrastada ultrapassar a
+    /// oposta, para no limite em vez de inverter início/fim. Sem efeito em
+    /// eventos sem `start_time` (dia inteiro).
+    pub fn resize_entry_time(&mut self, idx: usize, is_start_edge: bool, new_minutes: u32) {
+        const MIN_DURATION: u32 = 15;
+        let Some(entry) = self.entries.get_mut(idx) else { return };
+        let Some(start_min) = entry.start_time.as_deref()
+            .and_then(crate::date_util::parse_time)
+            .map(|(h, m)| crate::date_util::minutes_since_midnight(h, m))
+        else { return };
+        let end_min = entry.end_time.as_deref()
+            .and_then(crate::date_util::parse_time)
+            .map(|(h, m)| crate::date_util::minutes_since_midnight(h, m))
+            .unwrap_or(start_min + 60);
+
+        if is_start_edge {
+            let clamped = new_minutes.min(end_min.saturating_sub(MIN_DURATION));
+            entry.start_time = Some(crate::date_util::format_time(clamped / 60, clamped % 60));
+        } else {
+            let clamped = new_minutes.max(start_min + MIN_DURATION).min(23 * 60 + 59);
+            entry.end_time = Some(crate::date_util::format_time(clamped / 60, clamped % 60));
+        }
+    }
 }
 
 /// Tipo de uma coluna da tabela — controla como a célula é editada e
@@ -1381,6 +1407,52 @@ Acima do embed você pode ter texto normal. Abaixo também.
         data.add_entry("2026-08-06".into(), "Dia inteiro".into());
         data.move_entry_time(0, "2026-08-06".into(), "10:00".into());
         assert_eq!(data.entries[0].start_time.as_deref(), Some("10:00"));
+        assert_eq!(data.entries[0].end_time, None);
+    }
+
+    #[test]
+    fn calendar_resize_entry_time_moves_start_edge() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry_timed("2026-08-06".into(), "Reunião".into(), "09:00".into(), "10:00".into());
+        // Arrasta a borda de cima pra 09:30 — início muda, fim intacto.
+        data.resize_entry_time(0, true, 9 * 60 + 30);
+        assert_eq!(data.entries[0].start_time.as_deref(), Some("09:30"));
+        assert_eq!(data.entries[0].end_time.as_deref(), Some("10:00"));
+    }
+
+    #[test]
+    fn calendar_resize_entry_time_moves_end_edge() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry_timed("2026-08-06".into(), "Reunião".into(), "09:00".into(), "10:00".into());
+        data.resize_entry_time(0, false, 11 * 60);
+        assert_eq!(data.entries[0].start_time.as_deref(), Some("09:00"));
+        assert_eq!(data.entries[0].end_time.as_deref(), Some("11:00"));
+    }
+
+    #[test]
+    fn calendar_resize_entry_time_clamps_to_minimum_duration() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry_timed("2026-08-06".into(), "Reunião".into(), "09:00".into(), "10:00".into());
+        // Tenta arrastar a borda de cima passando do fim — trava 15min
+        // antes do fim em vez de inverter início/fim.
+        data.resize_entry_time(0, true, 10 * 60 + 30);
+        assert_eq!(data.entries[0].start_time.as_deref(), Some("09:45"));
+        assert_eq!(data.entries[0].end_time.as_deref(), Some("10:00"));
+
+        let mut data2 = CalendarEmbedData::default();
+        data2.add_entry_timed("2026-08-06".into(), "Reunião".into(), "09:00".into(), "10:00".into());
+        // Tenta arrastar a borda de baixo passando do início.
+        data2.resize_entry_time(0, false, 8 * 60 + 30);
+        assert_eq!(data2.entries[0].start_time.as_deref(), Some("09:00"));
+        assert_eq!(data2.entries[0].end_time.as_deref(), Some("09:15"));
+    }
+
+    #[test]
+    fn calendar_resize_entry_time_noop_without_start_time() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry("2026-08-06".into(), "Dia inteiro".into());
+        data.resize_entry_time(0, true, 9 * 60);
+        assert_eq!(data.entries[0].start_time, None);
         assert_eq!(data.entries[0].end_time, None);
     }
 

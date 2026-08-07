@@ -59,4 +59,5 @@ features = [
     "DragEvent",
     "Url",
     "Blob",
+    "DomRect",
 ]

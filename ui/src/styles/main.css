@@ -2244,6 +2244,25 @@ body {
 .calendar-grid__timed-block:hover {
     filter: brightness(1.15);
 }
+.calendar-grid__timed-block--resizing {
+    filter: brightness(1.2);
+    box-shadow: 0 0 0 2px var(--accent-blue);
+    z-index: 3;
+}
+
+.calendar-grid__resize-handle {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 6px;
+    cursor: ns-resize;
+}
+.calendar-grid__resize-handle--top {
+    top: -1px;
+}
+.calendar-grid__resize-handle--bottom {
+    bottom: -1px;
+}
 
 .calendar-grid__now-line {
     position: absolute;

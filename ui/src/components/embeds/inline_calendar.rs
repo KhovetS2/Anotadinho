@@ -159,6 +159,11 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
     let drag_pos = use_state(|| None::<(i32, i32)>);
     let hover_day = use_state(|| None::<String>);
     let hour_scroll_ref = use_node_ref();
+    // `(entry_idx, is_start_edge)` — qual bloco/borda está sendo
+    // redimensionado arrastando a borda de cima (`true`) ou baixo
+    // (`false`) na grade de horas.
+    let resizing = use_state(|| None::<(usize, bool)>);
+    let resize_preview_min = use_state(|| None::<u32>);
 
     // Zera o arraste sempre que o mouse for solto em qualquer lugar —
     // mesmo padrão do InlineKanban, evita estado de drag preso se o
@@ -192,6 +197,73 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
                 drag_pos.set(None);
             }
             move || drop(listener)
+        });
+    }
+
+    // Redimensionar duração arrastando a borda de cima/baixo de um bloco
+    // com horário: `mousemove` global atualiza a prévia (minutos
+    // encaixados no quarto de hora mais próximo, mesma lógica de
+    // `y_to_snapped_minutes` usada no drag vertical); `mouseup` confirma a
+    // mudança em `start_time`/`end_time` e encerra o resize. Estado
+    // separado de `dragging` — não usa o mecanismo de mover/reordenar.
+    {
+        let resize_preview_min = resize_preview_min.clone();
+        let hour_scroll_ref = hour_scroll_ref.clone();
+        let resizing_state = resizing.clone();
+        let data = props.data.clone();
+        let on_change = props.on_change.clone();
+        use_effect_with(*resizing, move |resizing_val| {
+            let listeners = resizing_val.map(|(idx, is_start_edge)| {
+                let window = web_sys::window().expect("no global window");
+
+                let move_hour_scroll_ref = hour_scroll_ref.clone();
+                let move_preview = resize_preview_min.clone();
+                let mousemove = EventListener::new(&window, "mousemove", move |e| {
+                    if let Some(e) = e.dyn_ref::<web_sys::MouseEvent>() {
+                        if let Some(el) = move_hour_scroll_ref.cast::<web_sys::Element>() {
+                            let rect = el.get_bounding_client_rect();
+                            let col_top = rect.top() - el.scroll_top() as f64;
+                            let y = e.client_y() as f64 - col_top;
+                            move_preview.set(Some(y_to_snapped_minutes(y)));
+                        }
+                    }
+                });
+
+                // Calcula o minuto final direto da posição do mouse (via
+                // NodeRef, que sempre reflete o DOM atual) em vez de ler o
+                // `resize_preview_min` guardado no `use_state` — esse
+                // handler só é criado UMA VEZ (no início do resize), então
+                // o clone do handle que ele capturou fica congelado no
+                // valor daquele instante; `.set()` chamado depois por outra
+                // instância do handle (no listener de `mousemove`, criado
+                // no mesmo momento) não atualiza esse clone congelado.
+                let up_hour_scroll_ref = hour_scroll_ref.clone();
+                let up_data = data.clone();
+                let up_on_change = on_change.clone();
+                let up_resizing = resizing_state.clone();
+                let up_preview = resize_preview_min.clone();
+                let mouseup = EventListener::new(&window, "mouseup", move |e| {
+                    if let Some(e) = e.dyn_ref::<web_sys::MouseEvent>() {
+                        if let Some(el) = up_hour_scroll_ref.cast::<web_sys::Element>() {
+                            let rect = el.get_bounding_client_rect();
+                            let col_top = rect.top() - el.scroll_top() as f64;
+                            let y = e.client_y() as f64 - col_top;
+                            let new_min = y_to_snapped_minutes(y);
+                            let mut new_data = up_data.clone();
+                            new_data.resize_entry_time(idx, is_start_edge, new_min);
+                            up_on_change.emit(new_data);
+                        }
+                    }
+                    up_resizing.set(None);
+                    up_preview.set(None);
+                });
+
+                (mousemove, mouseup)
+            });
+            if resizing_val.is_none() {
+                resize_preview_min.set(None);
+            }
+            move || drop(listeners)
         });
     }
 
@@ -340,6 +412,7 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
         ),
         ViewMode::Week | ViewMode::Day => render_day_columns(
             props, &window_dates, &today_str, &dragging, &hover_day, &editing_entry, &existing_tags, &hour_scroll_ref,
+            &resizing, &resize_preview_min,
         ),
     };
 
@@ -544,6 +617,8 @@ fn render_day_columns(
     editing_entry: &UseStateHandle<Option<usize>>,
     existing_tags: &[String],
     hour_scroll_ref: &NodeRef,
+    resizing: &UseStateHandle<Option<(usize, bool)>>,
+    resize_preview_min: &UseStateHandle<Option<u32>>,
 ) -> Html {
     let (bars, _overflow) = pack_days(&props.data.entries, day_dates, true);
     let n = day_dates.len();
@@ -710,18 +785,31 @@ fn render_day_columns(
                 .and_then(date_util::parse_time)
                 .map(|(h, m)| date_util::minutes_since_midnight(h, m))
                 .unwrap_or(start_min + 60);
-            let top = (start_min as f64 / 60.0) * HOUR_PX;
-            let height = (((end_min.max(start_min + 15) - start_min) as f64) / 60.0 * HOUR_PX).max(18.0);
+
+            // Enquanto arrasta a borda de cima/baixo, mostra a duração em
+            // tempo real seguindo o cursor em vez de só no soltar — mesmo
+            // princípio do ghost de drag (feedback visual imediato).
+            let is_resizing_start = **resizing == Some((idx, true));
+            let is_resizing_end = **resizing == Some((idx, false));
+            let (preview_start, preview_end) = match (is_resizing_start, is_resizing_end, **resize_preview_min) {
+                (true, _, Some(new_min)) => (new_min.min(end_min.saturating_sub(15)), end_min),
+                (_, true, Some(new_min)) => (start_min, new_min.max(start_min + 15).min(23 * 60 + 59)),
+                _ => (start_min, end_min),
+            };
+            let top = (preview_start as f64 / 60.0) * HOUR_PX;
+            let height = (((preview_end.max(preview_start + 15) - preview_start) as f64) / 60.0 * HOUR_PX).max(18.0);
             let style = format!("top: {top}px; height: {height}px;");
             let class = classes!(
                 "calendar-grid__timed-block",
                 entry.tag.as_deref().map(|t| badge_class(existing_tags, t)),
                 (**dragging == Some(idx)).then_some("calendar-grid__bar--dragging"),
+                (is_resizing_start || is_resizing_end).then_some("calendar-grid__timed-block--resizing"),
             );
             let onmousedown = {
                 let dragging = dragging.clone();
                 Callback::from(move |e: MouseEvent| {
                     e.stop_propagation();
+                    e.prevent_default();
                     dragging.set(Some(idx));
                 })
             };
@@ -736,9 +824,27 @@ fn render_day_columns(
                     dragging.set(None);
                 })
             };
+            let onmousedown_top = {
+                let resizing = resizing.clone();
+                Callback::from(move |e: MouseEvent| {
+                    e.stop_propagation();
+                    e.prevent_default();
+                    resizing.set(Some((idx, true)));
+                })
+            };
+            let onmousedown_bottom = {
+                let resizing = resizing.clone();
+                Callback::from(move |e: MouseEvent| {
+                    e.stop_propagation();
+                    e.prevent_default();
+                    resizing.set(Some((idx, false)));
+                })
+            };
             Some(html! {
                 <div {class} {style} {onmousedown} {onmouseup} title={entry.title.clone()}>
+                    <div class="calendar-grid__resize-handle calendar-grid__resize-handle--top" onmousedown={onmousedown_top} />
                     { &entry.title }
+                    <div class="calendar-grid__resize-handle calendar-grid__resize-handle--bottom" onmousedown={onmousedown_bottom} />
                 </div>
             })
         });
