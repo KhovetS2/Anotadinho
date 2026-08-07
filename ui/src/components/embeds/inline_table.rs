@@ -327,10 +327,15 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                             let data = props.data.clone();
                                             let on_change = props.on_change.clone();
                                             let onchange = Callback::from(move |e: Event| {
-                                                let Some(value) = input_value(&e) else { return };
+                                                let Some(target) = e.target() else { return };
+                                                let Ok(input) = target.dyn_into::<HtmlInputElement>() else { return };
                                                 let mut new_data = data.clone();
-                                                new_data.set_cell(ri, ci, value);
+                                                new_data.set_cell(ri, ci, input.value());
                                                 on_change.emit(new_data);
+                                                // O popup nativo do date picker no WebKitGTK não
+                                                // fecha sozinho depois de escolher uma data — tirar
+                                                // o foco do input força o fechamento.
+                                                let _ = input.blur();
                                             });
                                             html! {
                                                 <td class="task-table__td">
