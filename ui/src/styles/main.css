@@ -1574,6 +1574,18 @@ body {
     outline: none;
 }
 
+.task-table__text-input {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font: inherit;
+    width: 100%;
+    padding: 0;
+}
+.task-table__text-input:focus {
+    outline: none;
+}
+
 .task-table__date-chip {
     background: transparent;
     border: none;

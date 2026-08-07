@@ -594,16 +594,28 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                         ColumnKind::Text => {
                                             let data = props.data.clone();
                                             let on_change = props.on_change.clone();
+                                            // `<input>` em vez de `contenteditable` (mesmo padrão
+                                            // já usado na coluna Number) — um `<td contenteditable>`
+                                            // cujo filho de texto é re-renderizado pelo Yew a cada
+                                            // mudança em QUALQUER célula da tabela duplicava o texto:
+                                            // digitar sem `oninput` deixa o VDOM do Yew com uma
+                                            // referência desatualizada do nó de texto; se o Enter
+                                            // criava um `<div>`/quebra de linha novo (comportamento
+                                            // padrão de contenteditable no WebKit), esse nó extra
+                                            // nunca era rastreado pelo Yew, então nunca era removido
+                                            // ao reconciliar — sobrava like um "duplicado" na célula.
+                                            // `<input>` não tem esse problema: o valor é uma
+                                            // propriedade do elemento, não filhos de DOM.
                                             let onblur = Callback::from(move |e: FocusEvent| {
-                                                let Some(target) = e.target() else { return };
-                                                let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
-                                                let text = el.text_content().unwrap_or_default();
+                                                let Some(value) = input_value(&e) else { return };
                                                 let mut new_data = data.clone();
-                                                new_data.set_cell(ri, ci, text);
+                                                new_data.set_cell(ri, ci, value);
                                                 on_change.emit(new_data);
                                             });
                                             html! {
-                                                <td class="task-table__td" contenteditable="true" onblur={onblur}>{ cell }</td>
+                                                <td class="task-table__td">
+                                                    <input class="task-table__text-input" type="text" value={cell.clone()} {onblur} />
+                                                </td>
                                             }
                                         }
                                     }
