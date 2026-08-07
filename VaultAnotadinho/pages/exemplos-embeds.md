@@ -50,11 +50,28 @@ entries:
 ## Table Embed
 
 {{ type: "table" }}
-| Tarefa | Status | Prioridade |
-| ------ | ------ | ---------- |
-| API    | done   | alta       |
-| UI     | doing  | media      |
-| Testes | todo   | alta       |
+columns:
+- name: Tarefa
+- name: Status
+  type: select
+  options: [todo, doing, done]
+- name: Tags
+  type: multiselect
+  options: [urgente, bug, infra]
+- name: Estimativa
+  type: number
+- name: Prazo
+  type: date
+- name: Referência
+  type: url
+- name: Relacionado
+  type: page
+---
+| Tarefa | Status | Tags         | Estimativa | Prazo      | Referência          | Relacionado             |
+| ------ | ------ | ------------ | ---------- | ---------- | ------------------- | ------------------------ |
+| API    | done   | infra        | 8          | 2026-08-05 | https://example.com | pages/kanban-projeto.md |
+| UI     | doing  | urgente, bug | 5          | 2026-08-10 |                      |                          |
+| Testes | todo   |              | 3          |            |                      |                          |
 {{ /table }}
 
 Acima do embed você pode ter texto normal. Abaixo também.

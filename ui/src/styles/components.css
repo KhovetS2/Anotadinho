@@ -404,6 +404,34 @@
 }
 .card-modal__add-chip:hover { color: var(--text-primary); border-color: var(--accent-blue); }
 
+.column-settings__type {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    padding: var(--sp-1) var(--sp-2);
+}
+.column-settings__type:focus { outline: none; border-color: var(--accent-blue); }
+
+.column-settings__add-option {
+    display: flex;
+    gap: var(--sp-1);
+    margin-top: var(--sp-1);
+}
+
+.column-settings__add-option-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    padding: var(--sp-1) var(--sp-2);
+}
+.column-settings__add-option-input:focus { outline: none; border-color: var(--accent-blue); }
+
 .card-modal__due {
     display: flex;
     align-items: center;

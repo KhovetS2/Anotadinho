@@ -38,6 +38,7 @@ features = [
     "Element",
     "HtmlElement",
     "HtmlInputElement",
+    "HtmlSelectElement",
     "HtmlTextAreaElement",
     "Window",
     "Location",

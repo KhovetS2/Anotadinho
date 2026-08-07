@@ -18,6 +18,10 @@ pub struct EditorProps {
     pub on_page_deleted: Callback<()>,
     /// Abre o modal de diálogo do app (ver `crate::dialog`).
     pub open_dialog: Callback<PendingDialog>,
+    /// Navega pra outra página do vault — usado pela célula de tipo
+    /// Página do embed de tabela.
+    #[prop_or_default]
+    pub on_page_selected: Callback<PageMeta>,
 }
 
 struct SlashItem {
@@ -669,7 +673,15 @@ pub fn editor(props: &EditorProps) -> Html {
                                         content_md.set(new_full);
                                         trigger_debounced_save.emit(());
                                     });
-                                    html! { <InlineEmbed data={data.clone()} vault_path={props.vault_path.clone()} on_change={on_change} open_dialog={props.open_dialog.clone()} /> }
+                                    html! {
+                                        <InlineEmbed
+                                            data={data.clone()}
+                                            vault_path={props.vault_path.clone()}
+                                            on_change={on_change}
+                                            open_dialog={props.open_dialog.clone()}
+                                            on_page_selected={props.on_page_selected.clone()}
+                                        />
+                                    }
                                 }
                             }
                         }) }

@@ -1,14 +1,17 @@
-//! Tabela inline (dentro de uma fence ```table), dinâmica: criar/excluir
-//! linha e coluna, configurar o tipo de cada coluna (texto, seleção com
-//! opções coloridas, ou checkbox). Reaproveita `.task-table__*` (já
-//! estilizadas globalmente) e `.badge--*` (já existentes) pras células de
-//! seleção, em vez de criar CSS de badge novo.
+//! Tabela inline (dentro do wrapper `{{ type: "table" }}`), dinâmica:
+//! criar/excluir linha e coluna, configurar cada coluna com 1 de 8 tipos
+//! (texto, número, data, checkbox, url, página, seleção, tags) via
+//! `ColumnSettingsModal`. Reaproveita `.task-table__*` (já estilizadas
+//! globalmente) e `.badge--*` (já existentes) pras células de
+//! seleção/tags, em vez de criar CSS de badge novo.
 
 use gloo_events::EventListener;
 use wasm_bindgen::JsCast;
-use web_sys::FocusEvent;
+use web_sys::{FocusEvent, HtmlInputElement};
 use yew::prelude::*;
 
+use crate::api::PageMeta;
+use crate::components::embeds::ColumnSettingsModal;
 use crate::dialog::PendingDialog;
 use crate::embed::{ColumnKind, TableEmbedData};
 
@@ -17,10 +20,14 @@ use crate::embed::{ColumnKind, TableEmbedData};
 pub struct InlineTableProps {
     /// Colunas (com tipo) + linhas.
     pub data: TableEmbedData,
+    /// Path do vault (pra listar páginas na célula de tipo Página).
+    pub vault_path: String,
     /// Disparado quando a tabela muda.
     pub on_change: Callback<TableEmbedData>,
     /// Abre o modal de diálogo do app.
     pub open_dialog: Callback<PendingDialog>,
+    /// Navega pra outra página do vault (célula de tipo Página).
+    pub on_page_selected: Callback<PageMeta>,
 }
 
 const BADGE_PALETTE: [&str; 4] = ["badge--info", "badge--success", "badge--warning", "badge--error"];
@@ -32,89 +39,64 @@ fn badge_class(options: &[String], value: &str) -> &'static str {
     }
 }
 
-fn kind_label(kind: &ColumnKind) -> &'static str {
-    match kind {
-        ColumnKind::Text => "texto",
-        ColumnKind::Checkbox => "checkbox",
-        ColumnKind::Select { .. } => "selecao",
-    }
+fn split_tags(cell: &str) -> Vec<String> {
+    cell.split(", ").map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
 }
 
-/// Abre o fluxo encadeado de configuração de coluna: nome → tipo → (se
-/// seleção) opções. Cada etapa é um `Prompt` — mais simples que um formulário
-/// multi-campo dedicado nesta rodada.
-fn configure_column(
-    open_dialog: &Callback<PendingDialog>,
-    current_name: String,
-    current_kind: ColumnKind,
-    on_done: Callback<(String, ColumnKind)>,
-) {
-    let open_dialog_kind = open_dialog.clone();
-    let current_kind_label = kind_label(&current_kind).to_string();
-    let current_options = match &current_kind {
-        ColumnKind::Select { options } => options.join(", "),
-        _ => String::new(),
-    };
-    open_dialog.emit(PendingDialog::Prompt {
-        title: "Nome da coluna".to_string(),
-        default: current_name,
-        on_submit: Callback::from(move |name: String| {
-            let open_dialog_options = open_dialog_kind.clone();
-            let on_done = on_done.clone();
-            let name_for_kind = name.clone();
-            let current_options = current_options.clone();
-            open_dialog_kind.emit(PendingDialog::Prompt {
-                title: "Tipo da coluna (texto / selecao / checkbox)".to_string(),
-                default: current_kind_label.clone(),
-                on_submit: Callback::from(move |kind_input: String| {
-                    let name = name_for_kind.clone();
-                    match kind_input.trim().to_lowercase().as_str() {
-                        "selecao" | "seleção" | "select" => {
-                            let on_done = on_done.clone();
-                            let name = name.clone();
-                            open_dialog_options.emit(PendingDialog::Prompt {
-                                title: "Opções (separadas por vírgula)".to_string(),
-                                default: current_options.clone(),
-                                on_submit: Callback::from(move |opts: String| {
-                                    let options = opts.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
-                                    on_done.emit((name.clone(), ColumnKind::Select { options }));
-                                }),
-                            });
-                        }
-                        "checkbox" | "check" => on_done.emit((name, ColumnKind::Checkbox)),
-                        _ => on_done.emit((name, ColumnKind::Text)),
-                    }
-                }),
-            });
-        }),
-    });
+fn join_tags(tags: &[String]) -> String {
+    tags.join(", ")
+}
+
+fn input_value(e: &Event) -> Option<String> {
+    e.target().and_then(|t| t.dyn_into::<HtmlInputElement>().ok()).map(|el| el.value())
 }
 
 /// Tabela inline com colunas tipadas e células editáveis.
 #[function_component(InlineTable)]
 pub fn inline_table(props: &InlineTableProps) -> Html {
-    let open_select_cell = use_state(|| None::<(usize, usize)>);
+    let open_cell_menu = use_state(|| None::<(usize, usize)>);
+    let menu_filter = use_state(String::new);
+    let editing_column = use_state(|| None::<usize>);
+    let pages = use_state(Vec::<PageMeta>::new);
 
-    // Fecha o dropdown de seleção ao clicar fora da célula ou apertar
-    // Escape — antes só fechava escolhendo uma opção.
+    // Carrega as páginas do vault uma vez (pra célula de tipo Página) —
+    // barato o bastante pra não precisar condicionar a colunas do tipo
+    // certo existirem.
     {
-        let open_select_cell = open_select_cell.clone();
-        use_effect_with(*open_select_cell, move |open| {
+        let pages = pages.clone();
+        let vault_path = props.vault_path.clone();
+        use_effect_with(vault_path.clone(), move |vault_path| {
+            let pages = pages.clone();
+            let vault_path = vault_path.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Ok(list) = crate::api::list_pages(&vault_path).await {
+                    pages.set(list);
+                }
+            });
+            || {}
+        });
+    }
+
+    // Fecha o dropdown de célula (seleção/tags/página) ao clicar fora ou
+    // apertar Escape.
+    {
+        let open_cell_menu = open_cell_menu.clone();
+        use_effect_with(*open_cell_menu, move |open| {
             let mut listeners = Vec::new();
             if open.is_some() {
                 let window = web_sys::window().expect("no global window");
 
-                let close_cell = open_select_cell.clone();
+                let close_cell = open_cell_menu.clone();
                 listeners.push(EventListener::new(&window, "mousedown", move |e| {
                     let Some(node) = e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()) else { return };
                     let target = node.dyn_ref::<web_sys::Element>().cloned().or_else(|| node.parent_element());
                     let Some(target) = target else { return };
-                    if target.closest(".task-table__td--select").ok().flatten().is_none() {
+                    if target.closest(".task-table__td--menu").ok().flatten().is_none() {
                         close_cell.set(None);
                     }
                 }));
 
-                let close_cell = open_select_cell.clone();
+                let close_cell = open_cell_menu.clone();
                 listeners.push(EventListener::new(&window, "keydown", move |e| {
                     if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
                         if e.key() == "Escape" {
@@ -158,28 +140,72 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
 
     let n_cols = props.data.columns.len();
 
+    // Modal de configuração de coluna — um único componente pra tabela
+    // inteira, gated no índice em `editing_column` (mesmo padrão do
+    // `editing_card` do InlineKanban).
+    let column_modal = (*editing_column).and_then(|idx| {
+        props.data.columns.get(idx).cloned().map(|column| {
+            let close = { let editing_column = editing_column.clone(); Callback::from(move |_: ()| editing_column.set(None)) };
+
+            let on_rename = {
+                let data = props.data.clone();
+                let on_change = props.on_change.clone();
+                Callback::from(move |name: String| {
+                    let mut new_data = data.clone();
+                    new_data.set_column_name(idx, name);
+                    on_change.emit(new_data);
+                })
+            };
+            let on_retype = {
+                let data = props.data.clone();
+                let on_change = props.on_change.clone();
+                Callback::from(move |kind: ColumnKind| {
+                    let mut new_data = data.clone();
+                    new_data.set_column_kind(idx, kind);
+                    on_change.emit(new_data);
+                })
+            };
+            let on_add_option = {
+                let data = props.data.clone();
+                let on_change = props.on_change.clone();
+                Callback::from(move |opt: String| {
+                    let mut new_data = data.clone();
+                    new_data.add_column_option(idx, opt);
+                    on_change.emit(new_data);
+                })
+            };
+            let on_remove_option = {
+                let data = props.data.clone();
+                let on_change = props.on_change.clone();
+                Callback::from(move |opt: String| {
+                    let mut new_data = data.clone();
+                    new_data.remove_column_option(idx, &opt);
+                    on_change.emit(new_data);
+                })
+            };
+
+            html! {
+                <ColumnSettingsModal
+                    {column}
+                    {on_rename}
+                    {on_retype}
+                    {on_add_option}
+                    {on_remove_option}
+                    on_close={close}
+                />
+            }
+        })
+    });
+
     html! {
         <div class="embed-table">
             <table class="task-table__table">
                 <thead>
                     <tr>
                         { for props.data.columns.iter().enumerate().map(|(ci, col)| {
-                            let settings = {
-                                let data = props.data.clone();
-                                let on_change = props.on_change.clone();
-                                let open_dialog = props.open_dialog.clone();
-                                let name = col.name.clone();
-                                let kind = col.kind.clone();
-                                Callback::from(move |_: MouseEvent| {
-                                    let data = data.clone();
-                                    let on_change = on_change.clone();
-                                    configure_column(&open_dialog, name.clone(), kind.clone(), Callback::from(move |(new_name, new_kind): (String, ColumnKind)| {
-                                        let mut new_data = data.clone();
-                                        new_data.set_column_name(ci, new_name);
-                                        new_data.set_column_kind(ci, new_kind);
-                                        on_change.emit(new_data);
-                                    }));
-                                })
+                            let open_settings = {
+                                let editing_column = editing_column.clone();
+                                Callback::from(move |_: MouseEvent| editing_column.set(Some(ci)))
                             };
                             let delete_col = {
                                 let data = props.data.clone();
@@ -203,7 +229,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                             html! {
                                 <th class="task-table__th">
                                     <span class="task-table__th-name">{ &col.name }</span>
-                                    <button class="task-table__th-action" onclick={settings} title="Configurar coluna">{ "⚙" }</button>
+                                    <button class="task-table__th-action" onclick={open_settings} title="Configurar coluna">{ "⚙" }</button>
                                     <button class="task-table__th-action" onclick={delete_col} title="Excluir coluna">{ "✕" }</button>
                                 </th>
                             }
@@ -253,17 +279,250 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                 </td>
                                             }
                                         }
-                                        ColumnKind::Select { options } => {
-                                            let is_open = *open_select_cell == Some((ri, ci));
+                                        ColumnKind::Number => {
+                                            let data = props.data.clone();
+                                            let on_change = props.on_change.clone();
+                                            let onblur = Callback::from(move |e: FocusEvent| {
+                                                let Some(value) = input_value(&e) else { return };
+                                                let mut new_data = data.clone();
+                                                new_data.set_cell(ri, ci, value);
+                                                on_change.emit(new_data);
+                                            });
+                                            html! {
+                                                <td class="task-table__td task-table__td--number">
+                                                    <input class="task-table__number-input" type="number" value={cell.clone()} {onblur} />
+                                                </td>
+                                            }
+                                        }
+                                        ColumnKind::Date => {
+                                            let data = props.data.clone();
+                                            let on_change = props.on_change.clone();
+                                            let onchange = Callback::from(move |e: Event| {
+                                                let Some(value) = input_value(&e) else { return };
+                                                let mut new_data = data.clone();
+                                                new_data.set_cell(ri, ci, value);
+                                                on_change.emit(new_data);
+                                            });
+                                            html! {
+                                                <td class="task-table__td">
+                                                    <input class="task-table__date-input" type="date" value={cell.clone()} {onchange} />
+                                                </td>
+                                            }
+                                        }
+                                        ColumnKind::Url => {
+                                            let data = props.data.clone();
+                                            let on_change = props.on_change.clone();
+                                            let open_dialog = props.open_dialog.clone();
+                                            let current = cell.clone();
+                                            let edit = Callback::from(move |_: MouseEvent| {
+                                                let data = data.clone();
+                                                let on_change = on_change.clone();
+                                                open_dialog.emit(PendingDialog::Prompt {
+                                                    title: "URL".to_string(),
+                                                    default: current.clone(),
+                                                    on_submit: Callback::from(move |value: String| {
+                                                        let mut new_data = data.clone();
+                                                        new_data.set_cell(ri, ci, value);
+                                                        on_change.emit(new_data);
+                                                    }),
+                                                });
+                                            });
+                                            html! {
+                                                <td class="task-table__td task-table__td--url">
+                                                    if cell.is_empty() {
+                                                        <button class="task-table__link-add" onclick={edit}>{ "+ url" }</button>
+                                                    } else {
+                                                        <a class="task-table__link" href={cell.clone()} target="_blank" rel="noopener noreferrer">{ cell.clone() }</a>
+                                                        <button class="task-table__link-edit" onclick={edit} title="Editar URL">{ "✎" }</button>
+                                                    }
+                                                </td>
+                                            }
+                                        }
+                                        ColumnKind::PageLink => {
+                                            let is_open = *open_cell_menu == Some((ri, ci));
                                             let cell_value = cell.clone();
+                                            let linked = pages.iter().find(|p| p.path == cell_value).cloned();
                                             let toggle_open = {
-                                                let open_select_cell = open_select_cell.clone();
+                                                let open_cell_menu = open_cell_menu.clone();
+                                                let menu_filter = menu_filter.clone();
                                                 Callback::from(move |_: MouseEvent| {
-                                                    open_select_cell.set(if is_open { None } else { Some((ri, ci)) });
+                                                    menu_filter.set(String::new());
+                                                    open_cell_menu.set(if is_open { None } else { Some((ri, ci)) });
+                                                })
+                                            };
+                                            let open_page = {
+                                                let on_page_selected = props.on_page_selected.clone();
+                                                let cell_value = cell_value.clone();
+                                                let linked = linked.clone();
+                                                Callback::from(move |e: MouseEvent| {
+                                                    e.stop_propagation();
+                                                    let meta = linked.clone().unwrap_or_else(|| PageMeta {
+                                                        path: cell_value.clone(),
+                                                        title: cell_value.clone(),
+                                                        section: "pages".to_string(),
+                                                    });
+                                                    on_page_selected.emit(meta);
                                                 })
                                             };
                                             html! {
-                                                <td class="task-table__td task-table__td--select">
+                                                <td class="task-table__td task-table__td--menu">
+                                                    if cell_value.is_empty() {
+                                                        <button class="task-table__page-link-add" onclick={toggle_open}>{ "+ página" }</button>
+                                                    } else {
+                                                        <span class="task-table__page-link" onclick={toggle_open}>
+                                                            { format!("📄 {}", linked.as_ref().map(|p| p.title.as_str()).unwrap_or(cell_value.as_str())) }
+                                                        </span>
+                                                        <button class="task-table__page-link-open" onclick={open_page} title="Abrir página">{ "↗" }</button>
+                                                    }
+                                                    if is_open {
+                                                        <div class="table-select-menu">
+                                                            <div class="table-select-menu__input-row">
+                                                                <input
+                                                                    class="table-select-menu__input"
+                                                                    type="text"
+                                                                    placeholder="Filtrar páginas..."
+                                                                    value={(*menu_filter).clone()}
+                                                                    oninput={{
+                                                                        let menu_filter = menu_filter.clone();
+                                                                        Callback::from(move |e: InputEvent| {
+                                                                            if let Some(v) = input_value(&e) { menu_filter.set(v); }
+                                                                        })
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                            { for pages.iter()
+                                                                .filter(|p| menu_filter.is_empty() || p.title.to_lowercase().contains(&menu_filter.to_lowercase()))
+                                                                .map(|p| {
+                                                                    let data = props.data.clone();
+                                                                    let on_change = props.on_change.clone();
+                                                                    let open_cell_menu = open_cell_menu.clone();
+                                                                    let path = p.path.clone();
+                                                                    let pick = Callback::from(move |_: MouseEvent| {
+                                                                        let mut new_data = data.clone();
+                                                                        new_data.set_cell(ri, ci, path.clone());
+                                                                        on_change.emit(new_data);
+                                                                        open_cell_menu.set(None);
+                                                                    });
+                                                                    html! {
+                                                                        <div class="table-select-menu__item" onclick={pick}>{ &p.title }</div>
+                                                                    }
+                                                                }) }
+                                                        </div>
+                                                    }
+                                                </td>
+                                            }
+                                        }
+                                        ColumnKind::MultiSelect { options } => {
+                                            let is_open = *open_cell_menu == Some((ri, ci));
+                                            let selected = split_tags(cell);
+                                            let toggle_open = {
+                                                let open_cell_menu = open_cell_menu.clone();
+                                                let menu_filter = menu_filter.clone();
+                                                Callback::from(move |_: MouseEvent| {
+                                                    menu_filter.set(String::new());
+                                                    open_cell_menu.set(if is_open { None } else { Some((ri, ci)) });
+                                                })
+                                            };
+                                            let submit_new_tag = {
+                                                let data = props.data.clone();
+                                                let on_change = props.on_change.clone();
+                                                let menu_filter = menu_filter.clone();
+                                                let selected = selected.clone();
+                                                Callback::from(move |_: ()| {
+                                                    let new_tag = menu_filter.trim().to_string();
+                                                    if new_tag.is_empty() { return; }
+                                                    let mut new_data = data.clone();
+                                                    new_data.add_column_option(ci, new_tag.clone());
+                                                    if !selected.iter().any(|t| t == &new_tag) {
+                                                        let mut tags = selected.clone();
+                                                        tags.push(new_tag);
+                                                        new_data.set_cell(ri, ci, join_tags(&tags));
+                                                    }
+                                                    on_change.emit(new_data);
+                                                    menu_filter.set(String::new());
+                                                })
+                                            };
+                                            html! {
+                                                <td class="task-table__td task-table__td--menu task-table__td--tags">
+                                                    <span class="task-table__tags" onclick={toggle_open}>
+                                                        { for selected.iter().map(|t| html! {
+                                                            <span class={classes!("badge", badge_class(&options, t))}>{ t }</span>
+                                                        }) }
+                                                        if selected.is_empty() {
+                                                            <span class="task-table__tags-empty">{ "+ tags" }</span>
+                                                        }
+                                                    </span>
+                                                    if is_open {
+                                                        <div class="table-select-menu">
+                                                            { for options.iter().map(|opt| {
+                                                                let data = props.data.clone();
+                                                                let on_change = props.on_change.clone();
+                                                                let opt_value = opt.clone();
+                                                                let is_checked = selected.iter().any(|t| t == opt);
+                                                                let selected = selected.clone();
+                                                                let toggle_tag = Callback::from(move |_: MouseEvent| {
+                                                                    let mut tags = selected.clone();
+                                                                    if is_checked {
+                                                                        tags.retain(|t| t != &opt_value);
+                                                                    } else {
+                                                                        tags.push(opt_value.clone());
+                                                                    }
+                                                                    let mut new_data = data.clone();
+                                                                    new_data.set_cell(ri, ci, join_tags(&tags));
+                                                                    on_change.emit(new_data);
+                                                                });
+                                                                let class = if is_checked {
+                                                                    "table-select-menu__item table-select-menu__item--checked"
+                                                                } else {
+                                                                    "table-select-menu__item"
+                                                                };
+                                                                html! {
+                                                                    <div {class} onclick={toggle_tag}>
+                                                                        <span class="table-select-menu__check">{ if is_checked { "☑" } else { "☐" } }</span>
+                                                                        { opt }
+                                                                    </div>
+                                                                }
+                                                            }) }
+                                                            <div class="table-select-menu__input-row">
+                                                                <input
+                                                                    class="table-select-menu__input"
+                                                                    type="text"
+                                                                    placeholder="Nova tag..."
+                                                                    value={(*menu_filter).clone()}
+                                                                    oninput={{
+                                                                        let menu_filter = menu_filter.clone();
+                                                                        Callback::from(move |e: InputEvent| {
+                                                                            if let Some(v) = input_value(&e) { menu_filter.set(v); }
+                                                                        })
+                                                                    }}
+                                                                    onkeydown={{
+                                                                        let submit_new_tag = submit_new_tag.clone();
+                                                                        Callback::from(move |e: KeyboardEvent| {
+                                                                            if e.key() == "Enter" {
+                                                                                e.prevent_default();
+                                                                                submit_new_tag.emit(());
+                                                                            }
+                                                                        })
+                                                                    }}
+                                                                />
+                                                                <button class="card-modal__add-chip" onclick={Callback::from(move |_: MouseEvent| submit_new_tag.emit(()))}>{ "+ tag" }</button>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                </td>
+                                            }
+                                        }
+                                        ColumnKind::Select { options } => {
+                                            let is_open = *open_cell_menu == Some((ri, ci));
+                                            let cell_value = cell.clone();
+                                            let toggle_open = {
+                                                let open_cell_menu = open_cell_menu.clone();
+                                                Callback::from(move |_: MouseEvent| {
+                                                    open_cell_menu.set(if is_open { None } else { Some((ri, ci)) });
+                                                })
+                                            };
+                                            html! {
+                                                <td class="task-table__td task-table__td--menu">
                                                     <span class={classes!("badge", badge_class(&options, &cell_value))} onclick={toggle_open}>
                                                         { if cell_value.is_empty() { "—".to_string() } else { cell_value.clone() } }
                                                     </span>
@@ -272,13 +531,13 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                             { for options.iter().map(|opt| {
                                                                 let data = props.data.clone();
                                                                 let on_change = props.on_change.clone();
-                                                                let open_select_cell = open_select_cell.clone();
+                                                                let open_cell_menu = open_cell_menu.clone();
                                                                 let opt_value = opt.clone();
                                                                 let pick = Callback::from(move |_: MouseEvent| {
                                                                     let mut new_data = data.clone();
                                                                     new_data.set_cell(ri, ci, opt_value.clone());
                                                                     on_change.emit(new_data);
-                                                                    open_select_cell.set(None);
+                                                                    open_cell_menu.set(None);
                                                                 });
                                                                 html! {
                                                                     <div class="table-select-menu__item" onclick={pick}>{ opt }</div>
@@ -319,6 +578,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                     </tr>
                 </tbody>
             </table>
+            { for column_modal }
         </div>
     }
 }

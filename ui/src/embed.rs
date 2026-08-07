@@ -461,6 +461,22 @@ pub enum ColumnKind {
         /// Opções permitidas, na ordem em que aparecem no seletor.
         options: Vec<String>,
     },
+    /// Múltiplos valores de uma lista de opções ("tags"), mostrados como
+    /// vários badges — a lista de opções cresce dinamicamente: digitar um
+    /// valor novo na célula cadastra a opção na coluna.
+    MultiSelect {
+        /// Opções já cadastradas na coluna, na ordem em que foram criadas.
+        options: Vec<String>,
+    },
+    /// Número (célula editada com `<input type="number">`).
+    Number,
+    /// Data no formato `"YYYY-MM-DD"`.
+    Date,
+    /// URL — célula mostra um link clicável.
+    Url,
+    /// Referência a outra página do vault — guarda o `path` relativo
+    /// (`PageMeta::path`); o título exibido é resolvido em runtime.
+    PageLink,
 }
 
 /// Uma coluna da tabela: nome + tipo.
@@ -530,7 +546,12 @@ impl TableEmbedData {
                     .map(|c| {
                         let kind = match c.kind.as_deref() {
                             Some("select") => ColumnKind::Select { options: c.options },
+                            Some("multiselect") | Some("tags") => ColumnKind::MultiSelect { options: c.options },
                             Some("checkbox") => ColumnKind::Checkbox,
+                            Some("number") => ColumnKind::Number,
+                            Some("date") => ColumnKind::Date,
+                            Some("url") => ColumnKind::Url,
+                            Some("page") => ColumnKind::PageLink,
                             _ => ColumnKind::Text,
                         };
                         (c.name, kind)
@@ -595,8 +616,17 @@ impl TableEmbedData {
                 match &c.kind {
                     ColumnKind::Text => {}
                     ColumnKind::Checkbox => out.push_str("    type: checkbox\n"),
+                    ColumnKind::Number => out.push_str("    type: number\n"),
+                    ColumnKind::Date => out.push_str("    type: date\n"),
+                    ColumnKind::Url => out.push_str("    type: url\n"),
+                    ColumnKind::PageLink => out.push_str("    type: page\n"),
                     ColumnKind::Select { options } => {
                         out.push_str("    type: select\n");
+                        let opts = options.iter().map(|o| yaml_scalar(o)).collect::<Vec<_>>().join(", ");
+                        out.push_str(&format!("    options: [{}]\n", opts));
+                    }
+                    ColumnKind::MultiSelect { options } => {
+                        out.push_str("    type: multiselect\n");
                         let opts = options.iter().map(|o| yaml_scalar(o)).collect::<Vec<_>>().join(", ");
                         out.push_str(&format!("    options: [{}]\n", opts));
                     }
@@ -672,6 +702,54 @@ impl TableEmbedData {
             if col < r.len() {
                 r[col] = value;
             }
+        }
+    }
+
+    /// Adiciona `option` à lista de opções da coluna `idx`, se ela for
+    /// `Select`/`MultiSelect` e a opção ainda não existir. Usado tanto pela
+    /// criação inline de tag numa célula quanto pelo editor de opções do
+    /// modal de configuração de coluna.
+    pub fn add_column_option(&mut self, idx: usize, option: String) {
+        if option.trim().is_empty() {
+            return;
+        }
+        if let Some(c) = self.columns.get_mut(idx) {
+            let options = match &mut c.kind {
+                ColumnKind::Select { options } | ColumnKind::MultiSelect { options } => options,
+                _ => return,
+            };
+            if !options.iter().any(|o| o == &option) {
+                options.push(option);
+            }
+        }
+    }
+
+    /// Remove `option` da lista de opções da coluna `idx` e de toda célula
+    /// que a referencia (pra `Select`, limpa a célula se era o valor
+    /// selecionado; pra `MultiSelect`, remove só essa tag da lista).
+    pub fn remove_column_option(&mut self, idx: usize, option: &str) {
+        let Some(c) = self.columns.get_mut(idx) else { return };
+        match &mut c.kind {
+            ColumnKind::Select { options } => {
+                options.retain(|o| o != option);
+                for row in &mut self.rows {
+                    if let Some(cell) = row.get_mut(idx) {
+                        if cell == option {
+                            cell.clear();
+                        }
+                    }
+                }
+            }
+            ColumnKind::MultiSelect { options } => {
+                options.retain(|o| o != option);
+                for row in &mut self.rows {
+                    if let Some(cell) = row.get_mut(idx) {
+                        let remaining: Vec<&str> = cell.split(", ").filter(|t| !t.is_empty() && *t != option).collect();
+                        *cell = remaining.join(", ");
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -913,6 +991,59 @@ Acima do embed você pode ter texto normal. Abaixo também.
     }
 
     #[test]
+    fn table_new_column_kinds_roundtrip() {
+        let data = TableEmbedData {
+            columns: vec![
+                TableColumn { name: "Tags".into(), kind: ColumnKind::MultiSelect { options: vec!["urgente".into(), "bug".into()] } },
+                TableColumn { name: "Estimativa".into(), kind: ColumnKind::Number },
+                TableColumn { name: "Prazo".into(), kind: ColumnKind::Date },
+                TableColumn { name: "Link".into(), kind: ColumnKind::Url },
+                TableColumn { name: "Relacionado".into(), kind: ColumnKind::PageLink },
+            ],
+            rows: vec![vec![
+                "urgente, bug".into(),
+                "8".into(),
+                "2026-08-10".into(),
+                "https://example.com".into(),
+                "pages/kanban-projeto.md".into(),
+            ]],
+        };
+        let fence_body = data.to_fence_body();
+        let reparsed = TableEmbedData::parse(&fence_body);
+        assert_eq!(reparsed.columns[0].kind, ColumnKind::MultiSelect { options: vec!["urgente".into(), "bug".into()] });
+        assert_eq!(reparsed.columns[1].kind, ColumnKind::Number);
+        assert_eq!(reparsed.columns[2].kind, ColumnKind::Date);
+        assert_eq!(reparsed.columns[3].kind, ColumnKind::Url);
+        assert_eq!(reparsed.columns[4].kind, ColumnKind::PageLink);
+        assert_eq!(reparsed.rows, data.rows);
+    }
+
+    #[test]
+    fn table_add_remove_column_option() {
+        let mut data = TableEmbedData {
+            columns: vec![TableColumn { name: "Tags".into(), kind: ColumnKind::MultiSelect { options: vec![] } }],
+            rows: vec![vec!["".into()]],
+        };
+        data.add_column_option(0, "urgente".into());
+        data.add_column_option(0, "bug".into());
+        data.add_column_option(0, "urgente".into()); // duplicata ignorada
+        assert_eq!(data.columns[0].kind, ColumnKind::MultiSelect { options: vec!["urgente".into(), "bug".into()] });
+
+        data.set_cell(0, 0, "urgente, bug".into());
+        data.remove_column_option(0, "urgente");
+        assert_eq!(data.columns[0].kind, ColumnKind::MultiSelect { options: vec!["bug".into()] });
+        assert_eq!(data.rows[0][0], "bug");
+
+        let mut select_data = TableEmbedData {
+            columns: vec![TableColumn { name: "Status".into(), kind: ColumnKind::Select { options: vec!["todo".into(), "done".into()] } }],
+            rows: vec![vec!["todo".into()]],
+        };
+        select_data.remove_column_option(0, "todo");
+        assert_eq!(select_data.columns[0].kind, ColumnKind::Select { options: vec!["done".into()] });
+        assert_eq!(select_data.rows[0][0], "", "célula devia ser limpa ao remover a opção selecionada");
+    }
+
+    #[test]
     fn exemplos_embeds_vault_file_parses() {
         // Regressão de sincronia: a página de demo do vault precisa parsear
         // com a sintaxe atual do wrapper, incluindo os campos ricos do
@@ -957,6 +1088,17 @@ Acima do embed você pode ter texto normal. Abaixo também.
             panic!("esperava embed table");
         };
         assert_eq!(table.rows.len(), 3);
+        let kinds: Vec<&ColumnKind> = table.columns.iter().map(|c| &c.kind).collect();
+        assert_eq!(kinds[0], &ColumnKind::Text);
+        assert_eq!(kinds[1], &ColumnKind::Select { options: vec!["todo".into(), "doing".into(), "done".into()] });
+        assert_eq!(kinds[2], &ColumnKind::MultiSelect { options: vec!["urgente".into(), "bug".into(), "infra".into()] });
+        assert_eq!(kinds[3], &ColumnKind::Number);
+        assert_eq!(kinds[4], &ColumnKind::Date);
+        assert_eq!(kinds[5], &ColumnKind::Url);
+        assert_eq!(kinds[6], &ColumnKind::PageLink);
+        assert_eq!(table.rows[0][2], "infra");
+        assert_eq!(table.rows[1][2], "urgente, bug");
+        assert_eq!(table.rows[0][6], "pages/kanban-projeto.md");
     }
 
     #[test]

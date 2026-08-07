@@ -72,7 +72,13 @@ pub fn page_view(props: &PageViewProps) -> Html {
             <TaskTable vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
         },
         _ => html! {
-            <Editor vault_path={props.vault_path.clone()} page={props.page.clone()} on_page_deleted={props.on_page_deleted.clone()} open_dialog={props.open_dialog.clone()} />
+            <Editor
+                vault_path={props.vault_path.clone()}
+                page={props.page.clone()}
+                on_page_deleted={props.on_page_deleted.clone()}
+                open_dialog={props.open_dialog.clone()}
+                on_page_selected={props.on_page_selected.clone()}
+            />
         },
     }
 }
