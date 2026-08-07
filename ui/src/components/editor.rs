@@ -22,6 +22,13 @@ pub struct EditorProps {
     /// Página do embed de tabela.
     #[prop_or_default]
     pub on_page_selected: Callback<PageMeta>,
+    /// Se falso, edições só marcam "não salvo" — sem agendar o save
+    /// automático após alguns segundos de inatividade. O flush ao trocar
+    /// de página (evitar perder edições) continua acontecendo de qualquer
+    /// jeito, independente disso — essa flag só controla a conveniência
+    /// de salvar sozinho enquanto o usuário ainda está na página.
+    #[prop_or(true)]
+    pub autosave_enabled: bool,
 }
 
 struct SlashItem {
@@ -58,6 +65,18 @@ pub fn editor(props: &EditorProps) -> Html {
     let status = use_state(|| None::<String>);
     let edited = use_state(|| false);
     let editor_ref = use_node_ref();
+    // `edited_ref`/`pending_flush_ref`: espelham `edited`/o markdown mais
+    // recente fora do ciclo de render do Yew (`use_mut_ref` devolve o
+    // MESMO `Rc<RefCell<_>>` em toda renderização — diferente de
+    // `use_state`, cujo handle capturado por um efeito antigo fica
+    // congelado no valor de quando foi criado). Precisamos disso porque o
+    // flush-ao-trocar-de-página roda dentro do cleanup do efeito que
+    // observa `props.page`, criado só uma vez por página — se ele lesse
+    // `*edited`/`*content_md` diretamente, sempre veria os valores de
+    // quando a página foi carregada (sempre `false`/vazio), nunca as
+    // edições feitas depois.
+    let edited_ref = use_mut_ref(|| false);
+    let pending_flush_ref = use_mut_ref(String::new);
 
     let slash_open = use_state(|| false);
     let slash_text = use_state(String::new);
@@ -139,8 +158,17 @@ pub fn editor(props: &EditorProps) -> Html {
         let loading = loading.clone();
         let error = error.clone();
         let edited = edited.clone();
+        let edited_ref = edited_ref.clone();
+        let pending_flush_ref = pending_flush_ref.clone();
 
         use_effect_with(page.clone(), move |page| {
+            // Página que ESTE efeito está carregando — usada no cleanup
+            // como identidade da página que está sendo deixada pra trás
+            // (o cleanup roda antes do próximo efeito, ou seja, exatamente
+            // no momento da troca).
+            let leaving_page = page.clone();
+            let flush_vault_path = vault_path.clone();
+
             if let Some(p) = page {
                 let vault_path = vault_path.clone();
                 let path = p.path.clone();
@@ -149,9 +177,13 @@ pub fn editor(props: &EditorProps) -> Html {
                 let loading = loading.clone();
                 let error = error.clone();
                 let edited = edited.clone();
+                let edited_ref = edited_ref.clone();
+                let pending_flush_ref = pending_flush_ref.clone();
                 loading.set(true);
                 error.set(None);
                 edited.set(false);
+                *edited_ref.borrow_mut() = false;
+                pending_flush_ref.borrow_mut().clear();
                 wasm_bindgen_futures::spawn_local(async move {
                     match api::read_page(&vault_path, &path).await {
                         Ok(text) => {
@@ -167,9 +199,31 @@ pub fn editor(props: &EditorProps) -> Html {
                 saved_content.set(String::new());
                 error.set(None);
                 edited.set(false);
+                *edited_ref.borrow_mut() = false;
+                pending_flush_ref.borrow_mut().clear();
                 loading.set(false);
             }
-            || ()
+
+            // Flush de segurança: se a página que está sendo deixada tinha
+            // edições pendentes (marcadas via `edited_ref`/
+            // `pending_flush_ref`, que — diferente de `edited`/
+            // `content_md` — refletem o valor mais recente mesmo lido de
+            // dentro de um efeito criado só uma vez), salva antes de
+            // trocar. Sem isso, editar rápido e clicar noutra página na
+            // sidebar descartava o texto digitado silenciosamente.
+            move || {
+                if *edited_ref.borrow() {
+                    if let Some(p) = leaving_page {
+                        let md = pending_flush_ref.borrow().clone();
+                        if !md.is_empty() {
+                            let vp = flush_vault_path.clone();
+                            wasm_bindgen_futures::spawn_local(async move {
+                                let _ = api::write_page(&vp, &p.path, &md).await;
+                            });
+                        }
+                    }
+                }
+            }
         });
     }
 
@@ -263,45 +317,27 @@ pub fn editor(props: &EditorProps) -> Html {
         let vault_path = props.vault_path.clone(); let page_path = page.path.clone();
         let editor_ref = editor_ref.clone(); let edited = edited.clone();
         let segment_refs = segment_refs.clone();
+        let edited_ref = edited_ref.clone();
+        let pending_flush_ref = pending_flush_ref.clone();
         Callback::from(move |_| {
             if *saving { return; }
 
-            // Recalcula a partir do content_md mais recente (não do snapshot
-            // de renderização) — embeds já editados via on_change já estão
-            // refletidos nele; só falta puxar o texto ao vivo dos trechos
-            // de markdown contenteditable.
-            let full = (*content_md).clone();
-            let (fm, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&full);
-            let segs = crate::embed::segment(body);
-            let has_embeds_now = segs.iter().any(|s| matches!(s, DocSegment::Embed(_)));
-
-            let md = if has_embeds_now {
-                let new_segs: Vec<DocSegment> = segs.iter().enumerate().map(|(i, seg)| match seg {
-                    DocSegment::Markdown(orig) => {
-                        let text = segment_refs.get(i)
-                            .and_then(|r| r.cast::<web_sys::Element>())
-                            .map(|el| crate::html_to_md::html_to_markdown(&el))
-                            .unwrap_or_else(|| orig.clone());
-                        DocSegment::Markdown(text)
-                    }
-                    other => other.clone(),
-                }).collect();
-                let new_body = crate::embed::join(&new_segs);
-                if fm.is_empty() { new_body } else { format!("{}\n{}", fm, new_body) }
-            } else if let Some(div) = editor_ref.cast::<web_sys::Element>() {
-                crate::html_to_md::html_to_markdown(&div)
-            } else {
-                full.clone()
-            };
+            let md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
 
             let saved_content = saved_content.clone(); let saving = saving.clone();
             let error = error.clone(); let status = status.clone();
             let vault_path = vault_path.clone(); let page_path = page_path.clone();
             let content_md = content_md.clone(); let edited = edited.clone();
+            let edited_ref = edited_ref.clone();
+            let pending_flush_ref = pending_flush_ref.clone();
             saving.set(true); error.set(None);
             wasm_bindgen_futures::spawn_local(async move {
                 match api::write_page(&vault_path, &page_path, &md).await {
-                    Ok(()) => { content_md.set(md.clone()); saved_content.set(md); edited.set(false); status.set(Some("Salvo".to_string())); }
+                    Ok(()) => {
+                        content_md.set(md.clone()); saved_content.set(md); edited.set(false);
+                        *edited_ref.borrow_mut() = false; pending_flush_ref.borrow_mut().clear();
+                        status.set(Some("Salvo".to_string()));
+                    }
                     Err(e) => { error.set(Some(e)); }
                 }
                 saving.set(false);
@@ -590,8 +626,23 @@ pub fn editor(props: &EditorProps) -> Html {
         let e = edited.clone();
         let do_save = do_save.clone();
         let save_counter = save_counter.clone();
+        let edited_ref = edited_ref.clone();
+        let pending_flush_ref = pending_flush_ref.clone();
+        let content_md_snapshot = content_md.clone();
+        let editor_ref = editor_ref.clone();
+        let segment_refs = segment_refs.clone();
+        let autosave_enabled = props.autosave_enabled;
         Callback::from(move |_: ()| {
             e.set(true);
+            *edited_ref.borrow_mut() = true;
+            // Mantém o flush de segurança sempre atualizado, independente
+            // do salvamento automático estar ligado — isso é o que evita
+            // perder texto ao trocar de página rápido, não o timer de 3s.
+            *pending_flush_ref.borrow_mut() = recompute_markdown_from_dom(&content_md_snapshot, &editor_ref, &segment_refs);
+
+            if !autosave_enabled {
+                return;
+            }
             let do_save = do_save.clone();
             let save_counter = save_counter.clone();
             let id = *save_counter + 1;
@@ -750,6 +801,44 @@ pub fn editor(props: &EditorProps) -> Html {
                 <span class="editor__statusbar-hint">{ "Digite / ou use # - > * para formatar" }</span>
             </div>
         </main>
+    }
+}
+
+/// Recalcula o markdown a partir do `content_md` mais recente + o texto
+/// ao vivo dos trechos contenteditable (`editor_ref` pra página sem
+/// embeds, `segment_refs` pra página com embeds — embeds em si já vêm
+/// atualizados dentro de `content_md` via `on_change`). Extraído de
+/// `do_save` pra ser reaproveitado no flush de segurança ao trocar de
+/// página sem salvar.
+fn recompute_markdown_from_dom(content_md: &str, editor_ref: &NodeRef, segment_refs: &[NodeRef]) -> String {
+    let (fm, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(content_md);
+    let segs = crate::embed::segment(body);
+    let has_embeds_now = segs.iter().any(|s| matches!(s, DocSegment::Embed(_)));
+
+    if has_embeds_now {
+        let new_segs: Vec<DocSegment> = segs.iter().enumerate().map(|(i, seg)| match seg {
+            DocSegment::Markdown(orig) => {
+                let text = segment_refs.get(i)
+                    .and_then(|r| r.cast::<web_sys::Element>())
+                    .map(|el| crate::html_to_md::html_to_markdown(&el))
+                    .unwrap_or_else(|| orig.clone());
+                DocSegment::Markdown(text)
+            }
+            other => other.clone(),
+        }).collect();
+        let new_body = crate::embed::join(&new_segs);
+        if fm.is_empty() { new_body } else { format!("{}\n{}", fm, new_body) }
+    } else if let Some(div) = editor_ref.cast::<web_sys::Element>() {
+        // Bug real encontrado durante o ciclo do autosave: esse branch
+        // (páginas sem embed) reconstruía só o corpo a partir do DOM sem
+        // recolocar `fm` na frente — qualquer salvamento de uma página
+        // com frontmatter (`title::`, `type::` etc) e sem embeds perdia o
+        // frontmatter inteiro. O branch com embeds (acima) já fazia isso
+        // certo, só esse aqui estava faltando.
+        let body_md = crate::html_to_md::html_to_markdown(&div);
+        if fm.is_empty() { body_md } else { format!("{}\n{}", fm, body_md) }
+    } else {
+        content_md.to_string()
     }
 }
 

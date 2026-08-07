@@ -10,8 +10,10 @@ pub struct HeaderBarProps {
     pub vault_path: Option<String>,
     pub sidebar_collapsed: bool,
     pub theme_light: bool,
+    pub autosave_enabled: bool,
     pub on_toggle_sidebar: Callback<()>,
     pub on_toggle_theme: Callback<()>,
+    pub on_toggle_autosave: Callback<()>,
     pub on_close_vault: Callback<()>,
     pub on_open_vault: Callback<()>,
 }
@@ -104,6 +106,13 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                                 Callback::from(move |_| { menu_open.set(false); on_toggle_theme.emit(()); })
                             }}>
                                 { if props.theme_light { "🌙 Tema escuro" } else { "☀ Tema claro" } }
+                            </button>
+                            <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
+                                let menu_open = menu_open.clone();
+                                let on_toggle_autosave = props.on_toggle_autosave.clone();
+                                Callback::from(move |_| { menu_open.set(false); on_toggle_autosave.emit(()); })
+                            }}>
+                                { if props.autosave_enabled { "✓ Salvamento automático" } else { "Salvamento automático" } }
                             </button>
                         </div>
                     }

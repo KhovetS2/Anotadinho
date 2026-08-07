@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 const KEY_VAULT_PATH: &str = "anotadinho.vault_path";
 const KEY_VAULT_NAME: &str = "anotadinho.vault_name";
+const KEY_AUTOSAVE_ENABLED: &str = "anotadinho.autosave_enabled";
 
 /// Estado da aplicação.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -57,4 +58,15 @@ pub fn extract_name_from_path(path: &str) -> String {
 pub fn clear_vault() {
     let _ = gloo_storage::LocalStorage::delete(KEY_VAULT_PATH);
     let _ = gloo_storage::LocalStorage::delete(KEY_VAULT_NAME);
+}
+
+/// Salva a preferência de salvamento automático no localStorage.
+pub fn save_autosave_enabled(enabled: bool) {
+    let _ = gloo_storage::LocalStorage::set(KEY_AUTOSAVE_ENABLED, enabled);
+}
+
+/// Carrega a preferência de salvamento automático (padrão: ativado — sem
+/// isso o usuário perdia edições ao trocar de página sem salvar antes).
+pub fn load_autosave_enabled() -> bool {
+    gloo_storage::LocalStorage::get(KEY_AUTOSAVE_ENABLED).unwrap_or(true)
 }

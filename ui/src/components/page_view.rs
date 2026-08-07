@@ -16,6 +16,10 @@ pub struct PageViewProps {
     pub on_page_selected: Callback<PageMeta>,
     /// Abre o modal de diálogo do app (ver `crate::dialog`).
     pub open_dialog: Callback<PendingDialog>,
+    /// Se falso, o `Editor` não agenda o save automático após alguns
+    /// segundos de inatividade — o usuário precisa clicar em "Salvar".
+    #[prop_or(true)]
+    pub autosave_enabled: bool,
 }
 
 #[function_component(PageView)]
@@ -78,6 +82,7 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 on_page_deleted={props.on_page_deleted.clone()}
                 open_dialog={props.open_dialog.clone()}
                 on_page_selected={props.on_page_selected.clone()}
+                autosave_enabled={props.autosave_enabled}
             />
         },
     }

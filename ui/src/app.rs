@@ -31,6 +31,15 @@ pub fn app() -> Html {
             .and_then(|s| s.get_item("anotadinho.theme").ok().flatten())
             .map_or(false, |v| v == "light")
     });
+    let autosave_enabled = use_state(state::load_autosave_enabled);
+    let toggle_autosave = {
+        let autosave_enabled = autosave_enabled.clone();
+        Callback::from(move |_: ()| {
+            let next = !*autosave_enabled;
+            state::save_autosave_enabled(next);
+            autosave_enabled.set(next);
+        })
+    };
 
     // Apply theme
     {
@@ -283,8 +292,10 @@ pub fn app() -> Html {
                 vault_path={(*vault_path).clone()}
                 sidebar_collapsed={*sidebar_collapsed}
                 theme_light={*theme_light}
+                autosave_enabled={*autosave_enabled}
                 on_toggle_sidebar={toggle_sidebar}
                 on_toggle_theme={toggle_theme}
+                on_toggle_autosave={toggle_autosave}
                 on_close_vault={on_close_vault}
                 on_open_vault={on_open_vault_shortcut}
             />
@@ -311,6 +322,7 @@ pub fn app() -> Html {
                                 on_page_deleted={on_page_deleted.clone()}
                                 on_page_selected={on_page_selected.clone()}
                                 open_dialog={open_dialog.clone()}
+                                autosave_enabled={*autosave_enabled}
                             />
                         </div>
                     </div>
