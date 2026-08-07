@@ -365,6 +365,47 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
+    // mark_edited: marca como editado e agenda um save daqui a 3s
+    // (cancelado se outra edição chegar antes) — recebe o markdown JÁ
+    // CALCULADO em vez de recalcular de dentro do `spawn_local` (mesmo
+    // motivo do `persist`: evita persistir um valor desatualizado se
+    // `content_md` tiver sido atualizado por uma edição de embed bem
+    // antes do timer disparar). `on_edit` (ligado ao `oninput` do
+    // contenteditable) recalcula a partir do DOM ao vivo antes de chamar
+    // — sempre correto pra texto puro, já que a fonte de verdade ali é o
+    // DOM, não `content_md`. Embeds chamam com o markdown que ELES já
+    // calcularam (`new_full`), sem depender de `content_md` nenhuma.
+    let mark_edited = {
+        let e = edited.clone();
+        let save_counter = save_counter.clone();
+        let edited_ref = edited_ref.clone();
+        let pending_flush_ref = pending_flush_ref.clone();
+        let autosave_enabled = props.autosave_enabled;
+        let persist = persist.clone();
+        move |md: String| {
+            e.set(true);
+            *edited_ref.borrow_mut() = true;
+            // Mantém o flush de segurança sempre atualizado, independente
+            // do salvamento automático estar ligado — isso é o que evita
+            // perder texto ao trocar de página rápido, não o timer de 3s.
+            *pending_flush_ref.borrow_mut() = md.clone();
+
+            if !autosave_enabled {
+                return;
+            }
+            let save_counter = save_counter.clone();
+            let id = *save_counter + 1;
+            save_counter.set(id);
+            let persist = persist.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                gloo_timers::future::sleep(std::time::Duration::from_secs(3)).await;
+                if *save_counter == id {
+                    persist(md);
+                }
+            });
+        }
+    };
+
     let select_slash = {
         let slash_open = slash_open.clone();
         let slash_text = slash_text.clone();
@@ -373,6 +414,10 @@ pub fn editor(props: &EditorProps) -> Html {
         let items = filtered.clone();
         let vault_path = props.vault_path.clone();
         let open_dialog = props.open_dialog.clone();
+        let content_md = content_md.clone();
+        let editor_ref = editor_ref.clone();
+        let segment_refs = segment_refs.clone();
+        let mark_edited = mark_edited.clone();
         // Recebe a posição na lista filtrada explicitamente (`vi`) em vez
         // de ler `*slash_idx` — o clique do mouse num item precisa
         // aplicar AQUELE item, não o que estava destacado por último via
@@ -466,13 +511,21 @@ pub fn editor(props: &EditorProps) -> Html {
                             }
                         });
                     }
+                    // Insere o marcador via `Range` (não `execCommand`,
+                    // que fragmentava o HTML de forma imprevisível — ver
+                    // `insert_embed_marker_at_cursor`) e já recalcula +
+                    // aplica o markdown na hora, em vez de esperar o
+                    // usuário clicar em "Salvar" ou digitar de novo pra
+                    // disparar o `oninput`: o board/calendário/tabela de
+                    // verdade (componente Yew interativo) já aparece no
+                    // lugar do marcador imediatamente.
                     "__EMBED_KANBAN__" => {
                         let body = "columns:\n- Backlog\n- Todo\n- Done\nitems:\n- title: Novo card\n  column: Backlog";
-                        let html = format!(
-                            "<div data-embed-insert=\"kanban\">{}</div>",
-                            body.replace('\n', "<br>")
-                        );
-                        exec_fn("insertHTML", &html);
+                        if insert_embed_marker_at_cursor("kanban", body) {
+                            let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                            content_md.set(new_md.clone());
+                            mark_edited(new_md);
+                        }
                     }
                     "__EMBED_CALENDAR__" => {
                         let today = {
@@ -480,19 +533,19 @@ pub fn editor(props: &EditorProps) -> Html {
                             format!("{:04}-{:02}-{:02}", d.get_full_year(), d.get_month() + 1, d.get_date())
                         };
                         let body = format!("entries:\n- date: '{today}'\n  title: Novo evento");
-                        let html = format!(
-                            "<div data-embed-insert=\"calendar\">{}</div>",
-                            body.replace('\n', "<br>")
-                        );
-                        exec_fn("insertHTML", &html);
+                        if insert_embed_marker_at_cursor("calendar", &body) {
+                            let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                            content_md.set(new_md.clone());
+                            mark_edited(new_md);
+                        }
                     }
                     "__EMBED_TABLE__" => {
                         let body = "| Tarefa | Status | Prioridade |\n| ------ | ------ | ---------- |\n| Nova tarefa | todo | media |";
-                        let html = format!(
-                            "<div data-embed-insert=\"table\">{}</div>",
-                            body.replace('\n', "<br>")
-                        );
-                        exec_fn("insertHTML", &html);
+                        if insert_embed_marker_at_cursor("table", body) {
+                            let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                            content_md.set(new_md.clone());
+                            mark_edited(new_md);
+                        }
                     }
                     other => {
                         exec_fn("insertHTML", other);
@@ -638,46 +691,6 @@ pub fn editor(props: &EditorProps) -> Html {
     };
 
     let save_label = if *saving { "Salvando..." } else if *edited { "Salvar *" } else { "Salvar" };
-    // mark_edited: marca como editado e agenda um save daqui a 3s
-    // (cancelado se outra edição chegar antes) — recebe o markdown JÁ
-    // CALCULADO em vez de recalcular de dentro do `spawn_local` (mesmo
-    // motivo do `persist`: evita persistir um valor desatualizado se
-    // `content_md` tiver sido atualizado por uma edição de embed bem
-    // antes do timer disparar). `on_edit` (ligado ao `oninput` do
-    // contenteditable) recalcula a partir do DOM ao vivo antes de chamar
-    // — sempre correto pra texto puro, já que a fonte de verdade ali é o
-    // DOM, não `content_md`. Embeds chamam com o markdown que ELES já
-    // calcularam (`new_full`), sem depender de `content_md` nenhuma.
-    let mark_edited = {
-        let e = edited.clone();
-        let save_counter = save_counter.clone();
-        let edited_ref = edited_ref.clone();
-        let pending_flush_ref = pending_flush_ref.clone();
-        let autosave_enabled = props.autosave_enabled;
-        let persist = persist.clone();
-        move |md: String| {
-            e.set(true);
-            *edited_ref.borrow_mut() = true;
-            // Mantém o flush de segurança sempre atualizado, independente
-            // do salvamento automático estar ligado — isso é o que evita
-            // perder texto ao trocar de página rápido, não o timer de 3s.
-            *pending_flush_ref.borrow_mut() = md.clone();
-
-            if !autosave_enabled {
-                return;
-            }
-            let save_counter = save_counter.clone();
-            let id = *save_counter + 1;
-            save_counter.set(id);
-            let persist = persist.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                gloo_timers::future::sleep(std::time::Duration::from_secs(3)).await;
-                if *save_counter == id {
-                    persist(md);
-                }
-            });
-        }
-    };
     let on_edit: Callback<InputEvent> = {
         let content_md = content_md.clone();
         let editor_ref = editor_ref.clone();
@@ -796,7 +809,17 @@ pub fn editor(props: &EditorProps) -> Html {
                     <div class="editor__overlay editor__overlay--error">{ err }</div>
                 }
                 if has_embeds {
-                    <div class="editor__wysiwyg-segments">
+                    // `key` força o Yew a desmontar/remontar esse `<div>`
+                    // de verdade ao trocar de modo (em vez de reaproveitar
+                    // o mesmo nó e só ajustar a classe) — os dois branches
+                    // (com/sem embeds) renderizam `<div>` como raiz, então
+                    // sem uma identidade explícita o Yew via essa raiz
+                    // como "a mesma", e o conteúdo do modo anterior
+                    // (injetado via `set_inner_html`/inserção de embed via
+                    // `Range`, imperativos, fora do rastreamento do VDOM)
+                    // ficava "grudado" ali, aparecendo duplicado ao lado
+                    // do conteúdo novo de verdade.
+                    <div class="editor__wysiwyg-segments" key="segments">
                         { for segments.iter().enumerate().map(|(i, seg)| {
                             match seg {
                                 DocSegment::Markdown(_) => {
@@ -854,7 +877,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         }) }
                     </div>
                 } else {
-                    <div class="editor__wysiwyg" ref={editor_ref} contenteditable="true"
+                    <div class="editor__wysiwyg" key="plain" ref={editor_ref} contenteditable="true"
                         spellcheck="false" onkeydown={on_keydown} oninput={on_edit}
                         ondrop={on_drop} ondragover={on_dragover} />
                 }
@@ -904,6 +927,78 @@ pub fn editor(props: &EditorProps) -> Html {
 /// atualizados dentro de `content_md` via `on_change`). Extraído de
 /// `do_save` pra ser reaproveitado no flush de segurança ao trocar de
 /// página sem salvar.
+/// Insere um marcador `<div data-embed-insert="kind">corpo</div>` na
+/// posição do cursor via `Range::insert_node` em vez de
+/// `execCommand("insertHTML", ...)`. O `execCommand` demonstrou ser
+/// pouco confiável no WebKitGTK pra HTML multi-linha: dependendo de
+/// onde o cursor estava (dentro de um item de lista, no fim de um
+/// parágrafo com texto), ele fragmentava o HTML inserido de formas
+/// imprevisíveis — texto do corpo do embed vazava pro parágrafo vizinho,
+/// ou a própria abertura `{{ type: "..." }}` saía com um `- ` de bullet
+/// grudado na frente, quebrando o parser de embeds pra sempre (o embed
+/// nunca virava um componente de verdade, nem depois de salvar).
+/// `Range::insert_node` é uma API de DOM mais baixo nível e previsível:
+/// insere o nó EXATAMENTE onde o cursor está, sem o `execCommand`
+/// reinterpretar/reformatar o HTML ao redor.
+fn insert_embed_marker_at_cursor(kind: &str, body: &str) -> bool {
+    let Some(window) = web_sys::window() else { return false };
+    let Some(doc) = window.document() else { return false };
+    let Some(sel) = window.get_selection().ok().flatten() else { return false };
+    if sel.range_count() == 0 {
+        return false;
+    }
+    let Ok(range) = sel.get_range_at(0) else { return false };
+    let Ok(div) = doc.create_element("div") else { return false };
+    if div.set_attribute("data-embed-insert", kind).is_err() {
+        return false;
+    }
+    div.set_inner_html(&body.replace('\n', "<br>"));
+
+    // Um embed precisa ficar como linha própria — `html_to_markdown`
+    // converte `<li>`/`<p>`/`<blockquote>`/headings prefixando/envolvendo
+    // o que estiver DENTRO deles (via `inline_children`), incluindo um
+    // marcador de embed aninhado ali: por exemplo um `<li>` vira
+    // `- {{ type: "kanban" }}`, o que quebra o parser de embeds pra
+    // sempre (a abertura do wrapper deixa de estar sozinha na linha). Se
+    // o cursor estiver dentro de um desses blocos, insere o marcador como
+    // IRMÃO do bloco (ou da lista inteira, no caso de `<li>`) em vez de
+    // aninhado dentro dele — mesmo princípio de "quebrar pra fora do
+    // bloco" que outros editores fazem ao inserir conteúdo não-inline no
+    // meio de um parágrafo/item de lista.
+    let start_container = range.start_container().ok();
+    let container_el: Option<web_sys::Element> = start_container.and_then(|n| {
+        n.dyn_ref::<web_sys::Element>().cloned().or_else(|| n.parent_element())
+    });
+    let block_ancestor = container_el.and_then(|e| {
+        e.closest("li, p, blockquote, h1, h2, h3, h4, h5, h6").ok().flatten()
+    });
+
+    let inserted = if let Some(block) = block_ancestor {
+        let anchor = if block.tag_name().to_lowercase() == "li" {
+            block.parent_element() // quebra pra fora da lista inteira, não só do item
+        } else {
+            Some(block)
+        };
+        anchor.and_then(|a| a.parent_node().map(|p| (p, a.next_sibling())))
+            .map(|(parent, next)| parent.insert_before(&div, next.as_ref()).is_ok())
+            .unwrap_or(false)
+    } else {
+        let _ = range.delete_contents();
+        range.insert_node(&div).is_ok()
+    };
+    if !inserted {
+        return false;
+    }
+
+    // Move o cursor pra depois do nó inserido, senão continuaria "dentro"
+    // dele — próxima tecla digitada iria pro lugar errado.
+    range.set_start_after(&div).ok();
+    range.collapse();
+    sel.remove_all_ranges().ok();
+    let _ = sel.add_range(&range);
+    true
+}
+
 fn recompute_markdown_from_dom(content_md: &str, editor_ref: &NodeRef, segment_refs: &[NodeRef]) -> String {
     let (fm, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(content_md);
     let segs = crate::embed::segment(body);
