@@ -7,7 +7,7 @@
 
 use gloo_events::EventListener;
 use wasm_bindgen::JsCast;
-use web_sys::{FocusEvent, HtmlInputElement};
+use web_sys::{FocusEvent, HtmlInputElement, HtmlTextAreaElement, InputEvent};
 use yew::prelude::*;
 
 use crate::api::PageMeta;
@@ -41,6 +41,21 @@ fn join_tags(tags: &[String]) -> String {
 
 fn input_value(e: &Event) -> Option<String> {
     e.target().and_then(|t| t.dyn_into::<HtmlInputElement>().ok()).map(|el| el.value())
+}
+
+fn textarea_value(e: &Event) -> Option<String> {
+    e.target().and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok()).map(|el| el.value())
+}
+
+/// Redimensiona a altura do `<textarea>` pra caber o conteúdo — coluna
+/// Text precisa "crescer em altura" em vez de deixar a coluna esticar em
+/// largura (era o comportamento do `contenteditable` antigo). Zera a
+/// altura antes de medir `scroll_height` pra funcionar tanto ao crescer
+/// quanto ao encolher (apagar texto).
+fn autogrow_textarea(el: &HtmlTextAreaElement) {
+    let style = el.style();
+    let _ = style.set_property("height", "auto");
+    let _ = style.set_property("height", &format!("{}px", el.scroll_height()));
 }
 
 /// Tabela inline com colunas tipadas e células editáveis.
@@ -594,27 +609,40 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                         ColumnKind::Text => {
                                             let data = props.data.clone();
                                             let on_change = props.on_change.clone();
-                                            // `<input>` em vez de `contenteditable` (mesmo padrão
-                                            // já usado na coluna Number) — um `<td contenteditable>`
-                                            // cujo filho de texto é re-renderizado pelo Yew a cada
-                                            // mudança em QUALQUER célula da tabela duplicava o texto:
-                                            // digitar sem `oninput` deixa o VDOM do Yew com uma
-                                            // referência desatualizada do nó de texto; se o Enter
-                                            // criava um `<div>`/quebra de linha novo (comportamento
-                                            // padrão de contenteditable no WebKit), esse nó extra
-                                            // nunca era rastreado pelo Yew, então nunca era removido
-                                            // ao reconciliar — sobrava like um "duplicado" na célula.
-                                            // `<input>` não tem esse problema: o valor é uma
-                                            // propriedade do elemento, não filhos de DOM.
+                                            // `<textarea>` em vez de `contenteditable` (mesmo
+                                            // princípio da coluna Number usando `<input>`) — um `<td
+                                            // contenteditable>` cujo filho de texto é re-renderizado
+                                            // pelo Yew a cada mudança em QUALQUER célula da tabela
+                                            // duplicava o texto: digitar sem `oninput` deixa o VDOM
+                                            // do Yew com uma referência desatualizada do nó de texto;
+                                            // se o Enter criava um `<div>`/quebra de linha novo
+                                            // (comportamento padrão de contenteditable no WebKit),
+                                            // esse nó extra nunca era rastreado pelo Yew, então nunca
+                                            // era removido ao reconciliar — sobrava como um
+                                            // "duplicado" na célula. `<textarea>` não tem esse
+                                            // problema (valor é propriedade do elemento, não filhos
+                                            // de DOM) e, diferente de `<input>`, permite crescer em
+                                            // altura pra caber texto longo em vez de esticar a
+                                            // coluna em largura.
                                             let onblur = Callback::from(move |e: FocusEvent| {
-                                                let Some(value) = input_value(&e) else { return };
+                                                let Some(value) = textarea_value(&e) else { return };
                                                 let mut new_data = data.clone();
                                                 new_data.set_cell(ri, ci, value);
                                                 on_change.emit(new_data);
                                             });
+                                            let oninput = Callback::from(|e: InputEvent| {
+                                                if let Some(el) = e.target().and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok()) {
+                                                    autogrow_textarea(&el);
+                                                }
+                                            });
+                                            let onfocus = Callback::from(|e: FocusEvent| {
+                                                if let Some(el) = e.target().and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok()) {
+                                                    autogrow_textarea(&el);
+                                                }
+                                            });
                                             html! {
                                                 <td class="task-table__td">
-                                                    <input class="task-table__text-input" type="text" value={cell.clone()} {onblur} />
+                                                    <textarea class="task-table__text-input" rows="1" value={cell.clone()} {onblur} {oninput} {onfocus} />
                                                 </td>
                                             }
                                         }

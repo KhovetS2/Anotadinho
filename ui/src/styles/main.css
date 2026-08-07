@@ -1459,6 +1459,13 @@ body {
 
 .task-table__table {
     width: 100%;
+    /* `fixed` em vez do `auto` padrão — com layout automático, uma
+       célula de texto longo esticava a coluna inteira (e as vizinhas
+       ficavam espremidas). Com `fixed`, a largura de cada coluna é
+       decidida pela primeira linha (o cabeçalho) e não muda por causa do
+       conteúdo — texto longo quebra dentro da célula em vez de esticar a
+       tabela. */
+    table-layout: fixed;
     border-collapse: collapse;
     font-size: 0.875rem;
 }
@@ -1471,6 +1478,8 @@ body {
     font-weight: 600;
     cursor: pointer;
     user-select: none;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .task-table__th:hover {
@@ -1541,6 +1550,8 @@ body {
     border-bottom: 1px solid var(--border);
     color: var(--text-primary);
     vertical-align: middle;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .task-table__td--menu {
@@ -1581,6 +1592,18 @@ body {
     font: inherit;
     width: 100%;
     padding: 0;
+    /* Cresce em altura em vez da coluna esticar em largura — o JS
+       (`autogrow_textarea`) ajusta `height` conforme digita/foca;
+       `resize:none` tira a alça de redimensionar manual (não faz
+       sentido numa célula de tabela), `overflow:hidden` esconde a barra
+       de rolagem enquanto o JS mantém a altura ajustada. */
+    resize: none;
+    overflow: hidden;
+    min-height: 1.5rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: block;
 }
 .task-table__text-input:focus {
     outline: none;
