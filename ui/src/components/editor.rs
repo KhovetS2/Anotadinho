@@ -657,6 +657,56 @@ pub fn editor(props: &EditorProps) -> Html {
     };
     let on_edit: Callback<InputEvent> = trigger_debounced_save.reform(|_| ());
 
+    // Insere uma linha de markdown vazia na posição `pos` e foca nela —
+    // usado pelos botões de hover que aparecem na borda de cima/baixo de
+    // um embed. Sem isso, um embed que nasce como primeiro/último
+    // segmento (ou colado a outro embed, sem nenhuma linha de markdown
+    // entre eles) não tinha nenhum lugar clicável pra digitar texto ali.
+    // Reconsulta o DOM pelo atributo `data-segment-index` depois de um
+    // sleep curto em vez de guardar um `NodeRef` — os `segment_refs` são
+    // recriados a cada renderização (o array muda de tamanho ao
+    // inserir), então um `NodeRef` capturado antes da inserção não
+    // apontaria pro elemento novo depois.
+    let insert_blank_line = {
+        let content_md = content_md.clone();
+        let frontmatter_text = frontmatter_text.clone();
+        let trigger_debounced_save = trigger_debounced_save.clone();
+        move |pos: usize| {
+            let content_md = content_md.clone();
+            let frontmatter_text = frontmatter_text.clone();
+            let trigger_debounced_save = trigger_debounced_save.clone();
+            Callback::from(move |e: MouseEvent| {
+                e.stop_propagation();
+                let full = (*content_md).clone();
+                let (_, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&full);
+                let mut segs = crate::embed::segment(body);
+                let pos = pos.min(segs.len());
+                // Não pode ser string vazia: `embed::join` não escreve
+                // nada (nem quebra de linha) pra um `Markdown("")`, então
+                // ao serializar e reparsear o segmento em branco some de
+                // novo (os dois embeds ficam colados, sem nada entre eles
+                // pro parser reconhecer como um segmento distinto).
+                segs.insert(pos, DocSegment::Markdown("\n".to_string()));
+                let new_body = crate::embed::join(&segs);
+                let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
+                content_md.set(new_full);
+                trigger_debounced_save.emit(());
+
+                wasm_bindgen_futures::spawn_local(async move {
+                    gloo_timers::future::sleep(std::time::Duration::from_millis(60)).await;
+                    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                        let selector = format!("[data-segment-index=\"{pos}\"]");
+                        if let Some(el) = doc.query_selector(&selector).ok().flatten() {
+                            if let Ok(el) = el.dyn_into::<web_sys::HtmlElement>() {
+                                let _ = el.focus();
+                            }
+                        }
+                    }
+                });
+            })
+        }
+    };
+
     let on_drop = {
         let vault_path = props.vault_path.clone();
         Callback::from(move |e: DragEvent| {
@@ -720,7 +770,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                 DocSegment::Markdown(_) => {
                                     let node_ref = segment_refs[i].clone();
                                     html! {
-                                        <div class="editor__wysiwyg" ref={node_ref} contenteditable="true"
+                                        <div class="editor__wysiwyg" data-segment-index={i.to_string()} ref={node_ref} contenteditable="true"
                                             spellcheck="false" onkeydown={on_keydown.clone()} oninput={on_edit.clone()}
                                             ondrop={on_drop.clone()} ondragover={on_dragover.clone()} />
                                     }
@@ -746,14 +796,26 @@ pub fn editor(props: &EditorProps) -> Html {
                                         content_md.set(new_full);
                                         trigger_debounced_save.emit(());
                                     });
+                                    // Botões que só aparecem no hover da borda de
+                                    // cima/baixo do embed — sem isso, um embed que
+                                    // nasce sem uma linha de markdown vizinha (é o
+                                    // primeiro/último segmento, ou está colado a
+                                    // outro embed) não tinha nenhum lugar clicável
+                                    // pra digitar texto ali.
                                     html! {
-                                        <InlineEmbed
-                                            data={data.clone()}
-                                            vault_path={props.vault_path.clone()}
-                                            on_change={on_change}
-                                            open_dialog={props.open_dialog.clone()}
-                                            on_page_selected={props.on_page_selected.clone()}
-                                        />
+                                        <div class="embed-hover-wrapper">
+                                            <button class="embed-hover-wrapper__add-line embed-hover-wrapper__add-line--top"
+                                                onclick={insert_blank_line(i)} title="Adicionar linha acima">{ "+" }</button>
+                                            <InlineEmbed
+                                                data={data.clone()}
+                                                vault_path={props.vault_path.clone()}
+                                                on_change={on_change}
+                                                open_dialog={props.open_dialog.clone()}
+                                                on_page_selected={props.on_page_selected.clone()}
+                                            />
+                                            <button class="embed-hover-wrapper__add-line embed-hover-wrapper__add-line--bottom"
+                                                onclick={insert_blank_line(i + 1)} title="Adicionar linha abaixo">{ "+" }</button>
+                                        </div>
                                     }
                                 }
                             }
