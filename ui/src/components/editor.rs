@@ -311,19 +311,26 @@ pub fn editor(props: &EditorProps) -> Html {
         }
     };
 
-    let do_save = {
+    // `persist`: grava `md` (já calculado, recebido por valor) no disco e
+    // atualiza o estado de "salvo" — compartilhado pelo clique manual em
+    // "Salvar" e pelo autosave debounced. Recebe o markdown JÁ PRONTO em
+    // vez de reler `content_md` de dentro do `spawn_local`: um
+    // `UseStateHandle` capturado numa closure não vê `.set()` chamado por
+    // OUTRO clone do mesmo handle (cada clone fica congelado no valor de
+    // quando foi criado) — se o autosave debounced relesse `content_md`
+    // só na hora de persistir, qualquer edição de embed feita
+    // logo antes (que já tinha chamado `content_md.set()` mas cujo efeito
+    // só aparece na PRÓXIMA renderização) seria perdida silenciosamente.
+    // Passando `md` como valor isso não acontece: o autosave sempre grava
+    // exatamente o que foi calculado no momento da edição.
+    let persist = {
         let content_md = content_md.clone(); let saved_content = saved_content.clone();
         let saving = saving.clone(); let error = error.clone(); let status = status.clone();
         let vault_path = props.vault_path.clone(); let page_path = page.path.clone();
-        let editor_ref = editor_ref.clone(); let edited = edited.clone();
-        let segment_refs = segment_refs.clone();
+        let edited = edited.clone();
         let edited_ref = edited_ref.clone();
         let pending_flush_ref = pending_flush_ref.clone();
-        Callback::from(move |_| {
-            if *saving { return; }
-
-            let md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
-
+        move |md: String| {
             let saved_content = saved_content.clone(); let saving = saving.clone();
             let error = error.clone(); let status = status.clone();
             let vault_path = vault_path.clone(); let page_path = page_path.clone();
@@ -342,6 +349,19 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
                 saving.set(false);
             });
+        }
+    };
+
+    let do_save = {
+        let content_md = content_md.clone();
+        let editor_ref = editor_ref.clone();
+        let segment_refs = segment_refs.clone();
+        let saving = saving.clone();
+        let persist = persist.clone();
+        Callback::from(move |_| {
+            if *saving { return; }
+            let md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+            persist(md);
         })
     };
 
@@ -618,44 +638,56 @@ pub fn editor(props: &EditorProps) -> Html {
     };
 
     let save_label = if *saving { "Salvando..." } else if *edited { "Salvar *" } else { "Salvar" };
-    // trigger_debounced_save: marca como editado e agenda um save daqui a
-    // 3s (cancelado se outra edição chegar antes). `on_edit` é isso ligado
-    // ao evento `oninput` do contenteditable; embeds chamam o mesmo
-    // `Callback<()>` diretamente (não passam por `oninput`).
-    let trigger_debounced_save: Callback<()> = {
+    // mark_edited: marca como editado e agenda um save daqui a 3s
+    // (cancelado se outra edição chegar antes) — recebe o markdown JÁ
+    // CALCULADO em vez de recalcular de dentro do `spawn_local` (mesmo
+    // motivo do `persist`: evita persistir um valor desatualizado se
+    // `content_md` tiver sido atualizado por uma edição de embed bem
+    // antes do timer disparar). `on_edit` (ligado ao `oninput` do
+    // contenteditable) recalcula a partir do DOM ao vivo antes de chamar
+    // — sempre correto pra texto puro, já que a fonte de verdade ali é o
+    // DOM, não `content_md`. Embeds chamam com o markdown que ELES já
+    // calcularam (`new_full`), sem depender de `content_md` nenhuma.
+    let mark_edited = {
         let e = edited.clone();
-        let do_save = do_save.clone();
         let save_counter = save_counter.clone();
         let edited_ref = edited_ref.clone();
         let pending_flush_ref = pending_flush_ref.clone();
-        let content_md_snapshot = content_md.clone();
-        let editor_ref = editor_ref.clone();
-        let segment_refs = segment_refs.clone();
         let autosave_enabled = props.autosave_enabled;
-        Callback::from(move |_: ()| {
+        let persist = persist.clone();
+        move |md: String| {
             e.set(true);
             *edited_ref.borrow_mut() = true;
             // Mantém o flush de segurança sempre atualizado, independente
             // do salvamento automático estar ligado — isso é o que evita
             // perder texto ao trocar de página rápido, não o timer de 3s.
-            *pending_flush_ref.borrow_mut() = recompute_markdown_from_dom(&content_md_snapshot, &editor_ref, &segment_refs);
+            *pending_flush_ref.borrow_mut() = md.clone();
 
             if !autosave_enabled {
                 return;
             }
-            let do_save = do_save.clone();
             let save_counter = save_counter.clone();
             let id = *save_counter + 1;
             save_counter.set(id);
+            let persist = persist.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 gloo_timers::future::sleep(std::time::Duration::from_secs(3)).await;
                 if *save_counter == id {
-                    do_save.emit(());
+                    persist(md);
                 }
             });
+        }
+    };
+    let on_edit: Callback<InputEvent> = {
+        let content_md = content_md.clone();
+        let editor_ref = editor_ref.clone();
+        let segment_refs = segment_refs.clone();
+        let mark_edited = mark_edited.clone();
+        Callback::from(move |_: InputEvent| {
+            let md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+            mark_edited(md);
         })
     };
-    let on_edit: Callback<InputEvent> = trigger_debounced_save.reform(|_| ());
 
     // Insere uma linha de markdown vazia na posição `pos` e foca nela —
     // usado pelos botões de hover que aparecem na borda de cima/baixo de
@@ -670,11 +702,11 @@ pub fn editor(props: &EditorProps) -> Html {
     let insert_blank_line = {
         let content_md = content_md.clone();
         let frontmatter_text = frontmatter_text.clone();
-        let trigger_debounced_save = trigger_debounced_save.clone();
+        let mark_edited = mark_edited.clone();
         move |pos: usize| {
             let content_md = content_md.clone();
             let frontmatter_text = frontmatter_text.clone();
-            let trigger_debounced_save = trigger_debounced_save.clone();
+            let mark_edited = mark_edited.clone();
             Callback::from(move |e: MouseEvent| {
                 e.stop_propagation();
                 let full = (*content_md).clone();
@@ -689,8 +721,8 @@ pub fn editor(props: &EditorProps) -> Html {
                 segs.insert(pos, DocSegment::Markdown("\n".to_string()));
                 let new_body = crate::embed::join(&segs);
                 let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
-                content_md.set(new_full);
-                trigger_debounced_save.emit(());
+                content_md.set(new_full.clone());
+                mark_edited(new_full);
 
                 wasm_bindgen_futures::spawn_local(async move {
                     gloo_timers::future::sleep(std::time::Duration::from_millis(60)).await;
@@ -777,7 +809,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                 }
                                 DocSegment::Embed(data) => {
                                     let content_md = content_md.clone();
-                                    let trigger_debounced_save = trigger_debounced_save.clone();
+                                    let mark_edited = mark_edited.clone();
                                     let frontmatter_text = frontmatter_text.clone();
                                     let idx = i;
                                     let on_change = Callback::from(move |new_data: crate::embed::EmbedData| {
@@ -793,8 +825,8 @@ pub fn editor(props: &EditorProps) -> Html {
                                         } else {
                                             format!("{}\n{}", frontmatter_text, new_body)
                                         };
-                                        content_md.set(new_full);
-                                        trigger_debounced_save.emit(());
+                                        content_md.set(new_full.clone());
+                                        mark_edited(new_full);
                                     });
                                     // Botões que só aparecem no hover da borda de
                                     // cima/baixo do embed — sem isso, um embed que

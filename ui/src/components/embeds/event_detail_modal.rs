@@ -177,15 +177,28 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
     };
 
     let new_tag_text = use_state(String::new);
-    let pick_tag = {
+    // Múltiplas tags por evento (antes deste ciclo era só uma) — clicar
+    // numa tag da paleta liga/desliga ela na lista, igual ao padrão já
+    // usado nas tags do card do kanban. `all_tags()` cobre tanto eventos
+    // já migrados (`tags`) quanto os antigos (`legacy_tag`); qualquer
+    // edição por aqui grava só em `tags` e limpa `legacy_tag`, migrando
+    // o evento de vez.
+    let toggle_tag = {
         let entry = entry.clone();
         let on_change = props.on_change.clone();
-        move |tag: Option<String>| {
+        move |tag: String| {
             let entry = entry.clone();
             let on_change = on_change.clone();
             Callback::from(move |_: MouseEvent| {
                 let mut new_entry = entry.clone();
-                new_entry.tag = tag.clone();
+                let mut tags = entry.all_tags();
+                if let Some(pos) = tags.iter().position(|t| t == &tag) {
+                    tags.remove(pos);
+                } else {
+                    tags.push(tag.clone());
+                }
+                new_entry.tags = tags;
+                new_entry.legacy_tag = None;
                 on_change.emit(new_entry);
             })
         }
@@ -200,7 +213,12 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
                 return;
             }
             let mut new_entry = entry.clone();
-            new_entry.tag = Some(value);
+            let mut tags = entry.all_tags();
+            if !tags.iter().any(|t| t == &value) {
+                tags.push(value);
+            }
+            new_entry.tags = tags;
+            new_entry.legacy_tag = None;
             on_change.emit(new_entry);
             new_tag_text.set(String::new());
         })
@@ -277,12 +295,12 @@ pub fn event_detail_modal(props: &EventDetailModalProps) -> Html {
                 }
 
                 <div class="card-modal__field">
-                    <label class="card-modal__label">{ "Tag" }</label>
+                    <label class="card-modal__label">{ "Tags" }</label>
                     <div class="card-modal__tags">
                         { for props.existing_tags.iter().map(|tag| {
-                            let is_active = entry.tag.as_deref() == Some(tag.as_str());
+                            let is_active = entry.all_tags().iter().any(|t| t == tag);
                             let class = classes!("badge", badge_class(&props.existing_tags, tag), is_active.then_some("event-modal__tag--active"));
-                            let onclick = pick_tag(if is_active { None } else { Some(tag.clone()) });
+                            let onclick = toggle_tag(tag.clone());
                             html! { <span {class} {onclick}>{ tag }</span> }
                         }) }
                         <input

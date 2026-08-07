@@ -429,9 +429,17 @@ pub struct CalendarEntry {
     /// `None` = evento de 1 dia só.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end_date: Option<String>,
-    /// Tag/cor do evento (mesma paleta de badge usada na tabela).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
+    /// Tags/cores do evento (mesma paleta de badge usada na tabela e no
+    /// kanban). Múltiplas tags por evento — antes deste ciclo era só uma
+    /// (`tag: string` singular no YAML).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// Campo antigo (uma tag só) — só leitura, pra continuar parseando
+    /// entradas de antes deste ciclo. Nunca é serializado de volta;
+    /// `all_tags()` incorpora ele automaticamente enquanto o evento não
+    /// for editado (a primeira edição migra pra `tags` de vez).
+    #[serde(default, skip_serializing, rename = "tag")]
+    pub legacy_tag: Option<String>,
     /// Horário de início (`"HH:MM"`). `None` = evento de dia inteiro (sem
     /// horário) — comportamento padrão, igual ao de antes deste campo
     /// existir.
@@ -440,6 +448,22 @@ pub struct CalendarEntry {
     /// Horário de fim (`"HH:MM"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end_time: Option<String>,
+}
+
+impl CalendarEntry {
+    /// Todas as tags do evento — usa `tags` se tiver alguma, senão cai
+    /// pro campo antigo `legacy_tag` (evento de antes deste ciclo, ainda
+    /// não editado). Ponto único de leitura pra UI não precisar saber da
+    /// migração.
+    pub fn all_tags(&self) -> Vec<String> {
+        if !self.tags.is_empty() {
+            self.tags.clone()
+        } else if let Some(t) = &self.legacy_tag {
+            vec![t.clone()]
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 /// Dados de um embed calendar: lista de eventos.
@@ -1199,11 +1223,11 @@ Acima do embed você pode ter texto normal. Abaixo também.
         };
         assert_eq!(calendar.entries.len(), 5);
         assert_eq!(calendar.entries[0].date.as_deref(), Some("2026-08-06"));
-        assert_eq!(calendar.entries[0].tag.as_deref(), Some("urgente"));
+        assert_eq!(calendar.entries[0].all_tags(), vec!["urgente".to_string()]);
         let ranged = calendar.entries.iter().find(|e| e.end_date.is_some()).expect("esperava 1 evento com end_date");
         assert_eq!(ranged.date.as_deref(), Some("2026-08-10"));
         assert_eq!(ranged.end_date.as_deref(), Some("2026-08-14"));
-        assert_eq!(ranged.tag.as_deref(), Some("infra"));
+        assert_eq!(ranged.all_tags(), vec!["infra".to_string()]);
         let timed = calendar.entries.iter().find(|e| e.start_time.is_some()).expect("esperava 1 evento com horário");
         assert_eq!(timed.start_time.as_deref(), Some("14:30"));
         assert_eq!(timed.end_time.as_deref(), Some("15:15"));
@@ -1301,7 +1325,6 @@ Acima do embed você pode ter texto normal. Abaixo também.
             date: Some("2026-08-07".into()),
             title: "Revisão adiada".into(),
             end_date: None,
-            tag: None,
             ..Default::default()
         });
         assert_eq!(data.entries[0].date.as_deref(), Some("2026-08-07"));
@@ -1317,7 +1340,33 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let data = CalendarEmbedData::parse("entries:\n- date: '2026-08-06'\n  title: Revisão\n");
         assert_eq!(data.entries.len(), 1);
         assert_eq!(data.entries[0].end_date, None);
-        assert_eq!(data.entries[0].tag, None);
+        assert_eq!(data.entries[0].all_tags(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn calendar_entry_legacy_single_tag_still_parses_via_all_tags() {
+        // Formato antigo (uma tag só, chave `tag:` singular) continua
+        // parseando — `all_tags()` incorpora ele automaticamente.
+        let data = CalendarEmbedData::parse("entries:\n- date: '2026-08-06'\n  title: Revisão\n  tag: urgente\n");
+        assert_eq!(data.entries[0].all_tags(), vec!["urgente".to_string()]);
+        assert_eq!(data.entries[0].tags, Vec::<String>::new());
+        assert_eq!(data.entries[0].legacy_tag.as_deref(), Some("urgente"));
+    }
+
+    #[test]
+    fn calendar_entry_multiple_tags_roundtrip() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry("2026-08-06".into(), "Sprint".into());
+        data.update_entry(0, CalendarEntry {
+            date: Some("2026-08-06".into()),
+            title: "Sprint".into(),
+            tags: vec!["urgente".into(), "infra".into()],
+            ..Default::default()
+        });
+        let fence_body = data.to_fence_body();
+        assert!(!fence_body.contains("tag:"), "não deveria sobrar a chave antiga `tag:` no YAML:\n{fence_body}");
+        let reparsed = CalendarEmbedData::parse(&fence_body);
+        assert_eq!(reparsed.entries[0].all_tags(), vec!["urgente".to_string(), "infra".to_string()]);
     }
 
     #[test]
@@ -1328,13 +1377,13 @@ Acima do embed você pode ter texto normal. Abaixo também.
             date: Some("2026-08-06".into()),
             title: "Sprint".into(),
             end_date: Some("2026-08-10".into()),
-            tag: Some("urgente".into()),
+            tags: vec!["urgente".into()],
             ..Default::default()
         });
         let fence_body = data.to_fence_body();
         let reparsed = CalendarEmbedData::parse(&fence_body);
         assert_eq!(reparsed.entries[0].end_date.as_deref(), Some("2026-08-10"));
-        assert_eq!(reparsed.entries[0].tag.as_deref(), Some("urgente"));
+        assert_eq!(reparsed.entries[0].all_tags(), vec!["urgente".to_string()]);
     }
 
     #[test]
@@ -1345,7 +1394,6 @@ Acima do embed você pode ter texto normal. Abaixo também.
             date: Some("2026-08-06".into()),
             title: "Sprint".into(),
             end_date: Some("2026-08-08".into()), // 2 dias de duração
-            tag: None,
             ..Default::default()
         });
         data.move_entry(0, "2026-08-20".into());

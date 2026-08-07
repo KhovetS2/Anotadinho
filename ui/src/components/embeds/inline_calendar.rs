@@ -376,7 +376,7 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
     };
 
     let existing_tags: Vec<String> = {
-        let set: BTreeSet<String> = props.data.entries.iter().filter_map(|e| e.tag.clone()).collect();
+        let set: BTreeSet<String> = props.data.entries.iter().flat_map(|e| e.all_tags()).collect();
         set.into_iter().collect()
     };
 
@@ -391,7 +391,7 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
         let entry = &props.data.entries[idx];
         let class = classes!(
             "calendar-grid__drawer-item",
-            entry.tag.as_deref().map(|t| badge_class(&existing_tags, t)),
+            entry.all_tags().first().map(|t| badge_class(&existing_tags, t)),
             (*dragging == Some(idx)).then_some("calendar-grid__bar--dragging"),
         );
         let dragging_start = dragging.clone();
@@ -645,7 +645,7 @@ fn render_month_grid(
                     );
                     let class = classes!(
                         "calendar-grid__bar",
-                        entry.tag.as_deref().map(|t| badge_class(existing_tags, t)),
+                        entry.all_tags().first().map(|t| badge_class(existing_tags, t)),
                         (**dragging == Some(bar.entry_idx)).then_some("calendar-grid__bar--dragging"),
                     );
                     let entry_idx = bar.entry_idx;
@@ -769,7 +769,7 @@ fn render_day_columns(
         let style = format!("grid-column: {} / {}; grid-row: {};", bar.start_col + 1, bar.end_col + 2, bar.lane + 1);
         let class = classes!(
             "calendar-grid__bar",
-            entry.tag.as_deref().map(|t| badge_class(existing_tags, t)),
+            entry.all_tags().first().map(|t| badge_class(existing_tags, t)),
             (**dragging == Some(bar.entry_idx)).then_some("calendar-grid__bar--dragging"),
         );
         let entry_idx = bar.entry_idx;
@@ -880,7 +880,7 @@ fn render_day_columns(
             let style = format!("top: {top}px; height: {height}px;");
             let class = classes!(
                 "calendar-grid__timed-block",
-                entry.tag.as_deref().map(|t| badge_class(existing_tags, t)),
+                entry.all_tags().first().map(|t| badge_class(existing_tags, t)),
                 (**dragging == Some(idx)).then_some("calendar-grid__bar--dragging"),
                 (is_resizing_start || is_resizing_end).then_some("calendar-grid__timed-block--resizing"),
             );
