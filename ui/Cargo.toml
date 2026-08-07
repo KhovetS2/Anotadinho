@@ -60,4 +60,6 @@ features = [
     "Url",
     "Blob",
     "DomRect",
+    "ScrollIntoViewOptions",
+    "ScrollLogicalPosition",
 ]

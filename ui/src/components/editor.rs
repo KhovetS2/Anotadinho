@@ -62,6 +62,23 @@ pub fn editor(props: &EditorProps) -> Html {
     let slash_open = use_state(|| false);
     let slash_text = use_state(String::new);
     let slash_idx = use_state(|| 0usize);
+    let slash_active_ref = use_node_ref();
+
+    // Rola a lista pra manter o item ativo visível ao navegar com o
+    // teclado — sem isso, se o item selecionado saísse da área visível do
+    // menu (scrollável), a navegação continuava funcionando mas o usuário
+    // não via qual item estava ativo.
+    {
+        let slash_active_ref = slash_active_ref.clone();
+        use_effect_with((*slash_idx, *slash_open), move |_| {
+            if let Some(el) = slash_active_ref.cast::<web_sys::Element>() {
+                let opts = web_sys::ScrollIntoViewOptions::new();
+                opts.set_block(web_sys::ScrollLogicalPosition::Nearest);
+                el.scroll_into_view_with_scroll_into_view_options(&opts);
+            }
+            || {}
+        });
+    }
 
     // Fecha o menu de slash ao clicar fora dele — sem isso ele ficava aberto
     // pra sempre se o usuário clicasse na sidebar ou em outro lugar da
@@ -300,8 +317,13 @@ pub fn editor(props: &EditorProps) -> Html {
         let items = filtered.clone();
         let vault_path = props.vault_path.clone();
         let open_dialog = props.open_dialog.clone();
-        Callback::from(move |_| {
-            if let Some(&item_idx) = items.get(*slash_idx) {
+        // Recebe a posição na lista filtrada explicitamente (`vi`) em vez
+        // de ler `*slash_idx` — o clique do mouse num item precisa
+        // aplicar AQUELE item, não o que estava destacado por último via
+        // teclado (podiam divergir: navegar com seta e depois clicar em
+        // outro item aplicava o item errado).
+        Callback::from(move |vi: usize| {
+            if let Some(&item_idx) = items.get(vi) {
                 let item = &SLASH_ITEMS[item_idx];
                 match item.html {
                     "__IMG__" => {
@@ -453,7 +475,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     "Escape" => { slash_open.set(false); slash_text.set(String::new()); slash_idx.set(0); e.prevent_default(); }
                     "ArrowDown" => { e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + 1) % filtered_len); } }
                     "ArrowUp" => { e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len); } }
-                    "Enter" => { e.prevent_default(); select_slash.emit(()); return; }
+                    "Enter" => { e.prevent_default(); select_slash.emit(*slash_idx); return; }
                     "Backspace" => {
                         e.prevent_default();
                         if !slash_text.is_empty() { slash_text.set(slash_text[..slash_text.len()-1].to_string()); }
@@ -701,10 +723,20 @@ pub fn editor(props: &EditorProps) -> Html {
                     <div class="slash-menu__list">
                         { for filtered.iter().enumerate().map(|(vi, &item_idx)| {
                             let item = &SLASH_ITEMS[item_idx];
-                            let class = if vi == *slash_idx { "slash-menu__item slash-menu__item--active" } else { "slash-menu__item" };
+                            let is_active = vi == *slash_idx;
+                            let class = if is_active { "slash-menu__item slash-menu__item--active" } else { "slash-menu__item" };
                             let sel = select_slash.clone();
+                            // Sem isso o clique do mouse tira o foco/seleção
+                            // de dentro do contenteditable (o navegador
+                            // colapsa a seleção no mousedown antes do
+                            // onclick disparar), e o insertHTML do
+                            // execCommand acaba não tendo onde inserir —
+                            // aplicava em lugar nenhum ou no lugar errado.
+                            let onmousedown = Callback::from(|e: MouseEvent| e.prevent_default());
+                            let onclick = Callback::from(move |_| sel.emit(vi));
+                            let node_ref = if is_active { slash_active_ref.clone() } else { NodeRef::default() };
                             html! {
-                                <div {class} onclick={Callback::from(move |_| sel.emit(()))}>
+                                <div {class} ref={node_ref} {onmousedown} {onclick}>
                                     <span class="slash-menu__item-label">{ item.label }</span>
                                     <span class="slash-menu__item-desc">{ item.desc }</span>
                                 </div>
