@@ -1,7 +1,7 @@
 ---
 id: "120"
 titulo: "Grafo visual de backlinks"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: baixa
@@ -21,26 +21,28 @@ ajuda a navegar um vault de specs/decisões que já está crescendo.
 
 ## Critérios de aceite
 
-- [ ] Novo `page_type` "graph", dispatch em `page_view.rs` (mesmo
-      padrão de `kanban`/`calendar`/`tags`)
-- [ ] Componente novo `ui/src/components/graph_view.rs`: varre todas
-      as páginas por `[[wikilink]]` (reaproveita a lógica de scan já
-      usada pra backlinks no editor), monta nós (uma página = um nó,
-      rótulo = título) e arestas (um wikilink = uma aresta)
-- [ ] Layout simples — nós num círculo (`2πi/n` por índice), SEM física
-      de force-directed (evita dependência nova); arestas como linhas
-      SVG entre os nós
-- [ ] Clicar um nó abre a página (mesmo `on_page_selected` usado em
+- [x] Novo `page_type` "graph", dispatch em `page_view.rs` (mesmo
+      padrão de `kanban`/`calendar`/`tags`), listado em `KNOWN_TYPES`
+      do painel de propriedades
+- [x] Componente novo `ui/src/components/graph_view.rs`: varre todas
+      as páginas por `[[wikilink]]` (`wikilink::extract_titles`, novo,
+      extraído da mesma lógica de `linkify`), monta nós (uma página =
+      um nó, rótulo = título) e arestas (um wikilink resolvido = uma
+      aresta)
+- [x] Layout simples — nós num círculo (`2πi/n` por índice), SEM física
+      de force-directed; arestas como `<line>` SVG entre os nós
+- [x] Clicar um nó abre a página (mesmo `on_page_selected` usado em
       todo o resto do app)
-- [ ] Vault grande (100+ páginas) não trava a UI — cálculo é O(n²) no
-      pior caso pro scan de wikilinks; aceitável pro tamanho atual,
-      documentar a limitação
-- [ ] `cargo test --workspace`, `cd ui && cargo test --lib`,
+- [x] Vault grande: cálculo é O(n) leituras + regex por página,
+      aceitável pro tamanho atual; limitação documentada no docstring
+      do componente
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
       `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
       passam
-- [ ] Validação ao vivo via MCP `tauri`: criar página `type: graph`,
-      confirmar que nós/arestas aparecem coerentes com os wikilinks
-      reais do vault de demonstração
+- [x] Validação ao vivo via MCP `tauri`: criei página `type: graph` no
+      vault real, 24 nós (todas as páginas) + 2 arestas renderizaram
+      corretamente, clicar um nó ("missao") abriu a página numa aba
+      nova
 
 ## Comandos de validação
 
@@ -61,7 +63,15 @@ cargo build --manifest-path src-tauri/Cargo.toml
 
 ## Notas
 
-Reaproveita o scan de wikilinks já usado pelo painel de Backlinks
-(`editor.rs`, ciclo 088) — extrair essa lógica de scan pra uma função
-compartilhada (`ui/src/wikilink.rs` ou novo módulo) em vez de
-duplicar, já que agora tem dois consumidores.
+Não reaproveitou o painel de Backlinks de `editor.rs` diretamente
+(que usa `search_content`/FTS5 como "grep" de `[[Título desta
+página]]` — funciona bem pra UMA página, mas pra montar TODAS as
+arestas do vault de uma vez seria N buscas separadas). Em vez disso,
+`extract_titles` (novo, `wikilink.rs`) extrai a lista de wikilinks de
+um texto — mesma lógica de scan de `linkify` mas coletando em vez de
+substituir — e o `GraphView` faz `list_pages` + `read_page` de cada
+uma, resolvendo cada wikilink por título (case-insensitive, mesmo
+critério de `on_wysiwyg_click`). Isso deixa duas formas de achar
+conexões no código (`search_content` pro painel por página,
+`extract_titles` pro grafo do vault inteiro) — aceitável, resolvem
+problemas de granularidade diferentes.

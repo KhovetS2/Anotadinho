@@ -75,6 +75,47 @@ pub fn linkify(markdown: &str) -> String {
     out
 }
 
+/// Extrai os títulos de todos os wikilinks `[[Título]]` num texto
+/// markdown, na ordem em que aparecem (com duplicatas, se o mesmo link
+/// aparecer mais de uma vez) — pula blocos de código, mesmo critério
+/// de `linkify`. Usado pelo grafo de backlinks (ciclo 120), que
+/// precisa da lista de TODOS os links de cada página pra montar as
+/// arestas, não só substituir `[[..]]` por link markdown.
+pub fn extract_titles(markdown: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_fence = false;
+    for line in markdown.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        extract_titles_line(line, &mut out);
+    }
+    out
+}
+
+fn extract_titles_line(line: &str, out: &mut Vec<String>) {
+    let mut i = 0;
+    while i < line.len() {
+        if line[i..].starts_with("[[") {
+            if let Some(rel_end) = line[i + 2..].find("]]") {
+                let title = &line[i + 2..i + 2 + rel_end];
+                if !title.is_empty() && !title.contains('[') && !title.contains(']') {
+                    out.push(title.to_string());
+                    i = i + 2 + rel_end + 2;
+                    continue;
+                }
+            }
+        }
+        let ch = line[i..].chars().next().unwrap();
+        i += ch.len_utf8();
+    }
+}
+
 fn linkify_line(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut i = 0;
@@ -159,5 +200,28 @@ mod tests {
     fn linkify_leaves_normal_markdown_links_untouched() {
         let md = "[texto](https://example.com)";
         assert_eq!(linkify(md), md);
+    }
+
+    #[test]
+    fn extract_titles_finds_multiple_links() {
+        let md = "veja [[A]] e também [[B]]\noutra linha com [[C]]";
+        assert_eq!(extract_titles(md), vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn extract_titles_skips_fenced_code() {
+        let md = "texto\n```\n[[Não]]\n```\n[[Sim]]";
+        assert_eq!(extract_titles(md), vec!["Sim"]);
+    }
+
+    #[test]
+    fn extract_titles_empty_for_no_links() {
+        assert!(extract_titles("nada aqui").is_empty());
+    }
+
+    #[test]
+    fn extract_titles_keeps_duplicates() {
+        let md = "[[A]] e de novo [[A]]";
+        assert_eq!(extract_titles(md), vec!["A", "A"]);
     }
 }

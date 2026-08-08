@@ -24,6 +24,7 @@ const KNOWN_TYPES: &[(&str, &str)] = &[
     ("table", "Tabela de tarefas"),
     ("tags", "Tags"),
     ("assets", "Assets"),
+    ("graph", "Grafo de conexões"),
 ];
 
 /// Props do `PropertiesPanel`.

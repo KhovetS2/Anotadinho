@@ -1827,6 +1827,57 @@ body {
     padding: var(--sp-4);
 }
 
+/* Página type: graph (ciclo 120) */
+.graph-view {
+    flex: 1;
+    overflow: auto;
+    padding: var(--sp-4);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.graph-view__hint {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    margin-bottom: var(--sp-2);
+}
+
+.graph-view__svg {
+    width: 100%;
+    max-width: 800px;
+    height: auto;
+}
+
+.graph-view__edge {
+    stroke: var(--border);
+    stroke-width: 1;
+}
+
+.graph-view__node {
+    cursor: pointer;
+}
+
+.graph-view__node circle {
+    fill: var(--accent-blue);
+    transition: r 0.1s ease;
+}
+
+.graph-view__node:hover circle {
+    r: 11;
+}
+
+.graph-view__node text {
+    fill: var(--text-primary);
+    font-size: 11px;
+    font-family: var(--font-sans);
+    user-select: none;
+}
+
+.graph-view__node:hover text {
+    fill: var(--accent-blue);
+}
+
 /* Página type: tags */
 .tags-page {
     flex: 1;
