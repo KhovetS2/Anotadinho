@@ -10,9 +10,10 @@ use std::sync::Mutex;
 
 use anotadinho_ipc::{
     handle_copy_to_assets, handle_create_folder, handle_create_page, handle_create_page_in_folder,
-    handle_create_page_typed, handle_delete_page, handle_list_assets, handle_list_folders,
-    handle_list_pages, handle_move_page, handle_open_today_journal, handle_ping, handle_read_page,
-    handle_search_content, handle_write_page, PageMeta, PingArgs, PingResult, VaultInfo,
+    handle_create_page_typed, handle_delete_asset, handle_delete_page, handle_list_assets,
+    handle_list_assets_info, handle_list_folders, handle_list_pages, handle_move_page,
+    handle_open_today_journal, handle_ping, handle_read_page, handle_search_content,
+    handle_write_page, AssetInfo, PageMeta, PingArgs, PingResult, VaultInfo,
 };
 use anotadinho_vault::{VaultIo, VaultWatcher};
 use tauri_plugin_dialog::DialogExt;
@@ -128,6 +129,16 @@ fn copy_to_assets(vault_path: String, source_path: String) -> Result<String, Str
 }
 
 #[tauri::command]
+fn list_assets_info(vault_path: String) -> Result<Vec<AssetInfo>, String> {
+    handle_list_assets_info(vault_path)
+}
+
+#[tauri::command]
+fn delete_asset(vault_path: String, asset_path: String) -> Result<(), String> {
+    handle_delete_asset(vault_path, asset_path)
+}
+
+#[tauri::command]
 fn search_content(vault_path: String, query: String) -> Result<Vec<(String, String)>, String> {
     handle_search_content(vault_path, query)
 }
@@ -171,6 +182,8 @@ fn main() {
             create_page_in_folder,
             list_assets,
             copy_to_assets,
+            list_assets_info,
+            delete_asset,
             search_content,
             check_changes,
             open_vault_dialog

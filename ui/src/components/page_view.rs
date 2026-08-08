@@ -2,6 +2,7 @@
 
 use yew::prelude::*;
 use crate::api::PageMeta;
+use crate::components::assets_page::AssetsPage;
 use crate::components::calendar::Calendar;
 use crate::components::editor::Editor;
 use crate::components::kanban::Kanban;
@@ -84,6 +85,9 @@ pub fn page_view(props: &PageViewProps) -> Html {
         },
         "tags" => html! {
             <TagsPage vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
+        },
+        "assets" => html! {
+            <AssetsPage vault_path={props.vault_path.clone()} open_dialog={props.open_dialog.clone()} />
         },
         // "landing" não tem componente próprio — é uma página normal
         // (mesmo Editor de sempre), só marcada como tal pra aparecer com

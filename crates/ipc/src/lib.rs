@@ -177,6 +177,28 @@ pub fn handle_list_assets(vault_path: String) -> Result<Vec<String>, String> {
     vault.list_assets().map_err(|e| e.to_string())
 }
 
+/// Metadados de um arquivo em `assets/`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetInfo {
+    /// Path relativo ao vault.
+    pub path: String,
+    /// Tamanho em bytes.
+    pub size: u64,
+}
+
+/// Handler de list_assets_info: lista arquivos em assets/ com tamanho.
+pub fn handle_list_assets_info(vault_path: String) -> Result<Vec<AssetInfo>, String> {
+    let vault = VaultIo::open(&vault_path);
+    let assets = vault.list_assets_info().map_err(|e| e.to_string())?;
+    Ok(assets.into_iter().map(|a| AssetInfo { path: a.path, size: a.size }).collect())
+}
+
+/// Handler de delete_asset: remove um arquivo de assets/.
+pub fn handle_delete_asset(vault_path: String, asset_path: String) -> Result<(), String> {
+    let vault = VaultIo::open(&vault_path);
+    vault.delete_asset(&asset_path).map_err(|e| e.to_string())
+}
+
 /// Handler de copy_to_assets: copia arquivo para assets/.
 pub fn handle_copy_to_assets(vault_path: String, source_path: String) -> Result<String, String> {
     let vault = VaultIo::open(&vault_path);

@@ -21,6 +21,15 @@ pub struct PageMeta {
     pub section: String,
 }
 
+/// Metadados de um arquivo em `assets/`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetInfo {
+    /// Path relativo ao vault.
+    pub path: String,
+    /// Tamanho em bytes.
+    pub size: u64,
+}
+
 /// Interface de I/O do vault.
 pub struct VaultIo {
     /// Path absoluto do diretório raiz do vault.
@@ -274,6 +283,43 @@ impl VaultIo {
         }
         files.sort();
         Ok(files)
+    }
+
+    /// Lista arquivos em `assets/` com tamanho — usado pela página
+    /// `type: assets` (gestão de anexos). `list_assets` (só paths)
+    /// continua existindo pro autocomplete do editor, que não precisa
+    /// de tamanho.
+    pub fn list_assets_info(&self) -> Result<Vec<AssetInfo>> {
+        let dir = self.root.join("assets");
+        if !dir.is_dir() {
+            return Ok(Vec::new());
+        }
+        let mut files = Vec::new();
+        for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
+            if entry.path().is_file() {
+                let relative = entry.path()
+                    .strip_prefix(&self.root)
+                    .unwrap_or(entry.path())
+                    .to_string_lossy()
+                    .to_string();
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                files.push(AssetInfo { path: relative, size });
+            }
+        }
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(files)
+    }
+
+    /// Remove um arquivo de `assets/`. Recusa qualquer path fora de
+    /// `assets/` (não é uma exclusão de página).
+    pub fn delete_asset(&self, relative_path: &str) -> Result<()> {
+        if !relative_path.starts_with("assets/") {
+            anyhow::bail!("só é permitido excluir arquivos dentro de assets/");
+        }
+        let full = self.resolve_safe(relative_path)?;
+        std::fs::remove_file(&full)
+            .map_err(|e| anyhow::anyhow!("erro ao excluir {}: {}", relative_path, e))?;
+        Ok(())
     }
 
     /// Copia um arquivo externo para `assets/` e retorna o path relativo.
@@ -546,6 +592,44 @@ mod tests {
     fn delete_page_rejects_escape() {
         let (_dir, io) = setup_vault();
         assert!(io.delete_page("../secret.md").is_err());
+    }
+
+    #[test]
+    fn list_assets_info_returns_size() {
+        let (dir, io) = setup_vault();
+        std::fs::create_dir_all(dir.path().join("assets")).unwrap();
+        std::fs::write(dir.path().join("assets/foto.png"), b"12345").unwrap();
+        let assets = io.list_assets_info().unwrap();
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].path, "assets/foto.png");
+        assert_eq!(assets[0].size, 5);
+    }
+
+    #[test]
+    fn list_assets_info_empty_without_dir() {
+        let (_dir, io) = setup_vault();
+        assert!(io.list_assets_info().unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_asset_removes_file() {
+        let (dir, io) = setup_vault();
+        std::fs::create_dir_all(dir.path().join("assets")).unwrap();
+        std::fs::write(dir.path().join("assets/foto.png"), b"x").unwrap();
+        io.delete_asset("assets/foto.png").unwrap();
+        assert!(io.list_assets_info().unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_asset_rejects_outside_assets_dir() {
+        let (_dir, io) = setup_vault();
+        assert!(io.delete_asset("pages/alpha.md").is_err());
+    }
+
+    #[test]
+    fn delete_asset_rejects_escape() {
+        let (_dir, io) = setup_vault();
+        assert!(io.delete_asset("assets/../../etc/passwd").is_err());
     }
 
     #[test]

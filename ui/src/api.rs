@@ -226,6 +226,37 @@ pub async fn copy_to_assets(vault_path: &str, source_path: &str) -> Result<Strin
     result.as_string().ok_or_else(|| "path inválido".to_string())
 }
 
+/// Metadados de um arquivo em `assets/`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AssetInfo {
+    /// Path relativo ao vault.
+    pub path: String,
+    /// Tamanho em bytes.
+    pub size: u64,
+}
+
+/// Lista arquivos em assets/ com tamanho.
+pub async fn list_assets_info(vault_path: &str) -> Result<Vec<AssetInfo>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("list_assets_info", &args).await.map_err(|e| format!("{:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
+/// Remove um arquivo de assets/.
+pub async fn delete_asset(vault_path: &str, asset_path: &str) -> Result<(), String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("assetPath"), &JsValue::from_str(asset_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    tauri_invoke("delete_asset", &args).await.map_err(|e| format!("{:?}", e))?;
+    Ok(())
+}
+
 /// Busca texto no conteúdo de todas as páginas.
 pub async fn search_content(vault_path: &str, query: &str) -> Result<Vec<(String, String)>, String> {
     let args = js_sys::Object::new();

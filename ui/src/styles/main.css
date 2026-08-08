@@ -1629,6 +1629,51 @@ body {
     filter: brightness(1.15);
 }
 
+/* Página type: assets */
+.assets-page {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--sp-4);
+}
+
+.assets-page__title {
+    margin: 0 0 var(--sp-2);
+}
+
+.assets-page__summary {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    margin: 0 0 var(--sp-3);
+}
+
+.assets-page__empty {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.assets-page__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+}
+
+.assets-page__table th {
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.assets-page__table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
 .calendar__header {
     display: flex;
     align-items: center;

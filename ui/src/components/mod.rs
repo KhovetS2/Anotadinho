@@ -1,5 +1,6 @@
 //! Componentes Yew reutilizáveis.
 
+pub mod assets_page;
 pub mod calendar;
 pub mod command_palette;
 pub mod date_picker;
