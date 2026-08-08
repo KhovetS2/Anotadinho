@@ -1756,6 +1756,13 @@ body {
     color: var(--text-primary);
 }
 
+.calendar__item-time {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    margin-right: var(--sp-1);
+}
+
 .calendar__item-delete {
     background: transparent;
     border: none;
@@ -2529,6 +2536,56 @@ body {
 }
 .calendar-grid__bar--dragging {
     opacity: 0.5;
+}
+.calendar-grid__bar--readonly {
+    cursor: pointer;
+    border-left: 2px solid var(--accent-blue);
+}
+
+/* ── Calendar embed — modo Vault (agenda somente-leitura Semana/Dia) ── */
+
+.calendar-grid__vault-agenda {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: var(--sp-2);
+    overflow-y: auto;
+}
+
+.calendar-grid__vault-day {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.calendar-grid__vault-day-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    width: 90px;
+}
+
+.calendar-grid__vault-agenda-item {
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: var(--r-sm);
+    background: var(--bg-elevated);
+}
+
+.calendar-grid__vault-agenda-item:hover {
+    filter: brightness(1.15);
+}
+
+.calendar-grid__vault-agenda-empty {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    opacity: 0.6;
 }
 
 /* ── Calendar embed — visões Semana/Dia (grade de horas) ── */

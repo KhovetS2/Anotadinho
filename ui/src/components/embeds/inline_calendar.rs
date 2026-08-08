@@ -15,10 +15,11 @@ use gloo_events::EventListener;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
+use crate::api::PageMeta;
 use crate::components::embeds::EventDetailModal;
 use crate::date_util;
 use crate::dialog::PendingDialog;
-use crate::embed::{badge_class, CalendarEmbedData, CalendarEntry};
+use crate::embed::{badge_class, CalendarEmbedData, CalendarEntry, CalendarSource};
 
 /// Props do `InlineCalendar`.
 #[derive(Properties, PartialEq, Clone)]
@@ -29,6 +30,14 @@ pub struct InlineCalendarProps {
     pub on_change: Callback<CalendarEmbedData>,
     /// Abre o modal de diálogo do app (usado no fluxo rápido de criação).
     pub open_dialog: Callback<PendingDialog>,
+    /// Path do vault — usado só em modo Vault (`CalendarSource::Vault`),
+    /// pra escanear o vault inteiro por `date::`/`time::`.
+    #[prop_or_default]
+    pub vault_path: String,
+    /// Navega pra outra página — usado só em modo Vault, ao clicar um
+    /// evento (abre a página de origem em vez do `EventDetailModal`).
+    #[prop_or_default]
+    pub on_page_selected: Callback<PageMeta>,
 }
 
 const WEEKDAY_LABELS: [&str; 7] = ["D", "S", "T", "Q", "Q", "S", "S"];
@@ -176,6 +185,29 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
     // de dentro de um handler montado antes do mousedown que o setou —
     // mesma razão do `edited_ref` do editor (ciclo 074).
     let suppress_click_ref = use_mut_ref(|| false);
+
+    // Fonte dos eventos: Manual (padrão, `props.data.entries`) ou Vault
+    // (escaneia o vault inteiro por `date::`/`time::`, somente leitura —
+    // ver `CalendarSource`). `source` inicializa do valor persistido no
+    // embed (`props.data.mode`) e é reescrito de volta via `on_change`
+    // ao trocar, pra lembrar da escolha depois de salvar/reabrir.
+    let source = use_state(|| props.data.mode);
+    let vault_entries = use_state(Vec::<CalendarEntry>::new);
+    {
+        let vault_entries = vault_entries.clone();
+        let vault_path = props.vault_path.clone();
+        use_effect_with(*source, move |source| {
+            if *source == CalendarSource::Vault {
+                let vault_path = vault_path.clone();
+                let vault_entries = vault_entries.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let entries = crate::embed::scan_vault_calendar_entries(&vault_path).await;
+                    vault_entries.set(entries);
+                });
+            }
+            || {}
+        });
+    }
 
     // Zera o arraste sempre que o mouse for solto em qualquer lugar —
     // mesmo padrão do InlineKanban, evita estado de drag preso se o
@@ -363,6 +395,21 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
         })
     };
 
+    let toggle_source = {
+        let source = source.clone();
+        let data = props.data.clone();
+        let on_change = props.on_change.clone();
+        Callback::from(move |e: Event| {
+            let Some(target) = e.target() else { return };
+            let Ok(select) = target.dyn_into::<web_sys::HtmlSelectElement>() else { return };
+            let new_source = if select.value() == "vault" { CalendarSource::Vault } else { CalendarSource::Manual };
+            source.set(new_source);
+            let mut new_data = data.clone();
+            new_data.mode = new_source;
+            on_change.emit(new_data);
+        })
+    };
+
     let add_event = {
         let data = props.data.clone();
         let on_change = props.on_change.clone();
@@ -502,16 +549,25 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
         ViewMode::Month => Vec::new(),
     };
 
-    let body = match *view_mode {
-        ViewMode::Month => render_month_grid(
-            props, ay, am, &today_str, &dragging, &hover_day, &editing_entry, &existing_tags, &open_dialog_clone(props),
-            &suppress_click_ref,
-        ),
-        ViewMode::Week | ViewMode::Day => render_day_columns(
-            props, &window_dates, &today_str, &dragging, &hover_day, &editing_entry, &existing_tags, &hour_scroll_ref,
-            &resizing, &resize_preview_min, &suppress_click_ref,
-        ),
+    let is_vault = *source == CalendarSource::Vault;
+    let body = if is_vault {
+        match *view_mode {
+            ViewMode::Month => render_vault_month_grid(&vault_entries, ay, am, &today_str, &props.on_page_selected),
+            ViewMode::Week | ViewMode::Day => render_vault_agenda(&vault_entries, &window_dates, &props.on_page_selected),
+        }
+    } else {
+        match *view_mode {
+            ViewMode::Month => render_month_grid(
+                props, ay, am, &today_str, &dragging, &hover_day, &editing_entry, &existing_tags, &open_dialog_clone(props),
+                &suppress_click_ref,
+            ),
+            ViewMode::Week | ViewMode::Day => render_day_columns(
+                props, &window_dates, &today_str, &dragging, &hover_day, &editing_entry, &existing_tags, &hour_scroll_ref,
+                &resizing, &resize_preview_min, &suppress_click_ref,
+            ),
+        }
     };
+    let displayed_count = if is_vault { vault_entries.len() } else { props.data.entries.len() };
 
     html! {
         <div class="calendar-grid">
@@ -525,29 +581,38 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
                     <option value="week" selected={*view_mode == ViewMode::Week}>{ "Semana" }</option>
                     <option value="day" selected={*view_mode == ViewMode::Day}>{ "Dia" }</option>
                 </select>
+                <select class="calendar-grid__view-select" onchange={toggle_source}
+                    title="Manual: eventos deste embed. Vault: páginas do vault com date:: (somente leitura, clique abre a página)">
+                    <option value="manual" selected={!is_vault}>{ "Manual" }</option>
+                    <option value="vault" selected={is_vault}>{ "Vault" }</option>
+                </select>
                 <span class="calendar-grid__spacer" />
-                <span class="calendar-grid__count">{ props.data.entries.len() } {" eventos"}</span>
-                <button class="calendar-grid__add-btn" onclick={add_event}>{ "+ evento" }</button>
+                <span class="calendar-grid__count">{ displayed_count } {" eventos"}</span>
+                if !is_vault {
+                    <button class="calendar-grid__add-btn" onclick={add_event}>{ "+ evento" }</button>
+                }
             </div>
 
             { body }
 
-            <div class="calendar-grid__drawer">
-                <button class="calendar-grid__drawer-toggle" onclick={toggle_drawer}>
-                    { if *drawer_open { "▾" } else { "▸" } }
-                    { format!(" Sem data ({})", unscheduled_idxs.len()) }
-                </button>
-                <button class="calendar-grid__add-btn calendar-grid__add-btn--ghost" onclick={add_unscheduled_event}>{ "+ evento sem data" }</button>
-                if *drawer_open {
-                    <div class="calendar-grid__drawer-list">
-                        if unscheduled_idxs.is_empty() {
-                            <span class="calendar-grid__drawer-empty">{ "Nenhum evento sem data." }</span>
-                        } else {
-                            { for drawer_items }
-                        }
-                    </div>
-                }
-            </div>
+            if !is_vault {
+                <div class="calendar-grid__drawer">
+                    <button class="calendar-grid__drawer-toggle" onclick={toggle_drawer}>
+                        { if *drawer_open { "▾" } else { "▸" } }
+                        { format!(" Sem data ({})", unscheduled_idxs.len()) }
+                    </button>
+                    <button class="calendar-grid__add-btn calendar-grid__add-btn--ghost" onclick={add_unscheduled_event}>{ "+ evento sem data" }</button>
+                    if *drawer_open {
+                        <div class="calendar-grid__drawer-list">
+                            if unscheduled_idxs.is_empty() {
+                                <span class="calendar-grid__drawer-empty">{ "Nenhum evento sem data." }</span>
+                            } else {
+                                { for drawer_items }
+                            }
+                        </div>
+                    }
+                </div>
+            }
 
             if let (Some(idx), Some((x, y))) = (*dragging, *drag_pos) {
                 if let Some(entry) = props.data.entries.get(idx) {
@@ -557,6 +622,138 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
                 }
             }
             { for event_modal }
+        </div>
+    }
+}
+
+/// Mês somente-leitura pro modo Vault: mesma disposição de barras do
+/// `render_month_grid` (reaproveita `pack_days`, que é puro), sem
+/// nenhum handler de arraste/edição — clicar uma barra navega pra
+/// página de origem em vez de abrir o `EventDetailModal`.
+fn render_vault_month_grid(
+    entries: &[CalendarEntry],
+    vy: i32,
+    vm: u32,
+    today_str: &str,
+    on_page_selected: &Callback<PageMeta>,
+) -> Html {
+    let first_weekday = date_util::weekday_of(vy, vm, 1);
+    let days_in_month = date_util::days_in_month(vy, vm);
+    let (py, pm) = date_util::prev_month(vy, vm);
+    let days_in_prev = date_util::days_in_month(py, pm);
+    let (ny, nm) = date_util::next_month(vy, vm);
+
+    let mut cells: Vec<(i32, u32, u32, bool)> = Vec::with_capacity(42);
+    for i in 0..first_weekday {
+        cells.push((py, pm, days_in_prev - (first_weekday - 1 - i), false));
+    }
+    for d in 1..=days_in_month {
+        cells.push((vy, vm, d, true));
+    }
+    let mut trailing = 1;
+    while cells.len() < 42 {
+        cells.push((ny, nm, trailing, false));
+        trailing += 1;
+    }
+
+    html! {
+        <>
+        <div class="calendar-grid__weekdays">
+            { for WEEKDAY_LABELS.iter().map(|w| html! { <span>{ *w }</span> }) }
+        </div>
+        <div class="calendar-grid__weeks">
+            { for cells.chunks(7).map(|week| {
+                let week_dates: Vec<String> = week.iter().map(|&(y, m, d, _)| date_util::format_date(y, m, d)).collect();
+                let (bars, overflow) = pack_days(entries, &week_dates, false);
+
+                let day_bgs = week.iter().enumerate().map(|(col, &(y, m, d, in_month))| {
+                    let date_str = date_util::format_date(y, m, d);
+                    let is_today = date_str == today_str;
+                    let class = classes!(
+                        "calendar-grid__cell-bg",
+                        (!in_month).then_some("calendar-grid__cell-bg--muted"),
+                        is_today.then_some("calendar-grid__cell-bg--today"),
+                    );
+                    let style = format!("grid-column: {} / {};", col + 1, col + 2);
+                    let overflow_n = overflow[col];
+                    html! {
+                        <div {class} {style}>
+                            <span class="calendar-grid__day-num">{ d }</span>
+                            if overflow_n > 0 {
+                                <span class="calendar-grid__overflow">{ format!("+{} mais", overflow_n) }</span>
+                            }
+                        </div>
+                    }
+                });
+
+                let bar_els = bars.iter().map(|bar| {
+                    let entry = &entries[bar.entry_idx];
+                    let style = format!(
+                        "grid-column: {} / {}; grid-row: {};",
+                        bar.start_col + 1, bar.end_col + 2, bar.lane + 2
+                    );
+                    let label = match &entry.start_time {
+                        Some(t) => format!("{} {}", t, entry.title),
+                        None => entry.title.clone(),
+                    };
+                    let meta = entry.page_path.clone().map(|path| PageMeta { path, title: entry.title.clone(), section: "pages".to_string() });
+                    let on_page_selected = on_page_selected.clone();
+                    let onclick = Callback::from(move |_: MouseEvent| {
+                        if let Some(meta) = meta.clone() { on_page_selected.emit(meta); }
+                    });
+                    html! {
+                        <div class="calendar-grid__bar calendar-grid__bar--readonly" {style} {onclick} title={label.clone()}>
+                            { label }
+                        </div>
+                    }
+                });
+
+                html! {
+                    <div class="calendar-grid__week">
+                        { for day_bgs }
+                        { for bar_els }
+                    </div>
+                }
+            }) }
+        </div>
+        </>
+    }
+}
+
+/// Semana/Dia somente-leitura pro modo Vault: lista simples por dia (sem
+/// grade de horas posicionada) — mais barato de implementar
+/// corretamente que replicar o posicionamento por horário do modo
+/// Manual, e já mostra data+hora de entrega, que é o que importa aqui.
+fn render_vault_agenda(entries: &[CalendarEntry], window_dates: &[String], on_page_selected: &Callback<PageMeta>) -> Html {
+    html! {
+        <div class="calendar-grid__vault-agenda">
+            { for window_dates.iter().map(|date_str| {
+                let mut day_entries: Vec<&CalendarEntry> = entries.iter()
+                    .filter(|e| e.date.as_deref() == Some(date_str.as_str()))
+                    .collect();
+                day_entries.sort_by(|a, b| a.start_time.cmp(&b.start_time));
+                let (_, _, d) = date_util::parse_date(date_str).unwrap_or((0, 0, 0));
+                html! {
+                    <div class="calendar-grid__vault-day">
+                        <div class="calendar-grid__vault-day-label">{ format!("{} — {}", d, date_str) }</div>
+                        { for day_entries.iter().map(|entry| {
+                            let meta = entry.page_path.clone().map(|path| PageMeta { path, title: entry.title.clone(), section: "pages".to_string() });
+                            let on_page_selected = on_page_selected.clone();
+                            let onclick = Callback::from(move |_: MouseEvent| {
+                                if let Some(meta) = meta.clone() { on_page_selected.emit(meta); }
+                            });
+                            let label = match &entry.start_time {
+                                Some(t) => format!("{} · {}", t, entry.title),
+                                None => entry.title.clone(),
+                            };
+                            html! { <div class="calendar-grid__vault-agenda-item" {onclick}>{ label }</div> }
+                        }) }
+                        if day_entries.is_empty() {
+                            <span class="calendar-grid__vault-agenda-empty">{ "—" }</span>
+                        }
+                    </div>
+                }
+            }) }
         </div>
     }
 }

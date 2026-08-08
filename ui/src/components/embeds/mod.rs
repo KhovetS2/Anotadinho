@@ -52,7 +52,8 @@ pub fn inline_embed(props: &InlineEmbedProps) -> Html {
         EmbedData::Calendar(d) => {
             let on_change = props.on_change.clone();
             html! {
-                <InlineCalendar data={d.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Calendar(d)))} open_dialog={props.open_dialog.clone()} />
+                <InlineCalendar data={d.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Calendar(d)))} open_dialog={props.open_dialog.clone()}
+                    vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
             }
         }
         EmbedData::Table(d) => {

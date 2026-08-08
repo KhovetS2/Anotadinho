@@ -17,7 +17,7 @@ pub struct CalendarProps {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct DayItem { path: String, title: String, date: String }
+struct DayItem { path: String, title: String, date: String, time: Option<String> }
 
 #[derive(Clone, Copy, PartialEq)]
 enum ViewMode {
@@ -65,24 +65,20 @@ pub fn calendar(props: &CalendarProps) -> Html {
             let loading = loading.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 loading.set(true);
-                if let Ok(pages) = api::list_pages(&vault_path).await {
-                    let mut list = Vec::new();
-                    for page in &pages {
-                        if let Ok(content) = api::read_page(&vault_path, &page.path).await {
-                            for line in content.lines() {
-                                if let Some(date) = line.trim().strip_prefix("date:: ") {
-                                    list.push(DayItem {
-                                        path: page.path.clone(),
-                                        title: page.title.clone(),
-                                        date: date.trim().to_string(),
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    list.sort_by(|a, b| a.date.cmp(&b.date));
-                    items.set(list);
-                }
+                // Reaproveita o mesmo scanner do embed `{{ type: "calendar" }}`
+                // em modo Vault (`crate::embed::scan_vault_calendar_entries`)
+                // — mesma fonte de dados, uma implementação só, e ganha
+                // suporte a `time::` de graça.
+                let entries = crate::embed::scan_vault_calendar_entries(&vault_path).await;
+                let mut list: Vec<DayItem> = entries.into_iter()
+                    .filter_map(|e| {
+                        let date = e.date?;
+                        let path = e.page_path?;
+                        Some(DayItem { path, title: e.title, date, time: e.start_time })
+                    })
+                    .collect();
+                list.sort_by(|a, b| a.date.cmp(&b.date).then(a.time.cmp(&b.time)));
+                items.set(list);
                 loading.set(false);
             });
             || {}
@@ -175,10 +171,14 @@ pub fn calendar(props: &CalendarProps) -> Html {
                     { for day_items.iter().map(|item| {
                         let meta = PageMeta { path: item.path.clone(), title: item.title.clone(), section: "pages".to_string() };
                         let on_page_selected = on_page_selected.clone();
+                        let label = match &item.time {
+                            Some(t) => format!("{} {}", t, item.title),
+                            None => item.title.clone(),
+                        };
                         html! {
-                            <div class="page-calendar__cell-item" title={item.title.clone()}
+                            <div class="page-calendar__cell-item" title={label.clone()}
                                 onclick={Callback::from(move |_| on_page_selected.emit(meta.clone()))}>
-                                { &item.title }
+                                { label }
                             </div>
                         }
                     }) }
@@ -205,10 +205,14 @@ pub fn calendar(props: &CalendarProps) -> Html {
                                     let title = item.title.clone();
                                     let meta = PageMeta { path: path.clone(), title: title.clone(), section: "pages".to_string() };
                                     let on_page_selected = on_page_selected.clone();
+                                    let time_label = item.time.clone();
                                     html! {
                                         <div class="calendar__item"
                                             onclick={Callback::from(move |_| on_page_selected.emit(meta.clone()))}
                                         >
+                                            if let Some(t) = time_label {
+                                                <span class="calendar__item-time">{ t }</span>
+                                            }
                                             <span class="calendar__item-title">{ &item.title }</span>
                                         </div>
                                     }

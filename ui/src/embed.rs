@@ -448,6 +448,30 @@ pub struct CalendarEntry {
     /// Horário de fim (`"HH:MM"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end_time: Option<String>,
+    /// Path da página de origem — só populado em entradas sintéticas do
+    /// modo Vault (`scan_vault_calendar_entries`), nunca serializado no
+    /// YAML do embed. Entradas manuais não têm página de origem: a
+    /// entrada É o evento, não uma referência a algo mais.
+    #[serde(default, skip)]
+    pub page_path: Option<String>,
+}
+
+/// Fonte dos eventos exibidos pelo embed `{{ type: "calendar" }}`.
+/// `Manual` (padrão) usa `CalendarEmbedData::entries`, editável pelo
+/// próprio embed. `Vault` escaneia o vault inteiro por `date::`/`time::`
+/// no frontmatter (mesma fonte da página `type: calendar`) — somente
+/// leitura aqui, clicar um evento abre a página de origem; editar
+/// continua sendo feito na página, não no embed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CalendarSource {
+    #[default]
+    Manual,
+    Vault,
+}
+
+fn is_manual_source(m: &CalendarSource) -> bool {
+    *m == CalendarSource::Manual
 }
 
 impl CalendarEntry {
@@ -472,6 +496,50 @@ pub struct CalendarEmbedData {
     /// Eventos, na ordem em que aparecem no wrapper.
     #[serde(default)]
     pub entries: Vec<CalendarEntry>,
+    /// Fonte dos eventos exibidos — ver `CalendarSource`.
+    #[serde(default, skip_serializing_if = "is_manual_source")]
+    pub mode: CalendarSource,
+}
+
+/// Escaneia o vault inteiro por páginas com `date::` (e opcionalmente
+/// `time::`) no frontmatter — mesma fonte de dados da página inteira
+/// `type: calendar` (`components/calendar.rs`), reaproveitada aqui pra
+/// alimentar o embed em modo Vault. Cada página com `date::` vira uma
+/// `CalendarEntry` sintética com `page_path` preenchido (nunca
+/// persistida — recalculada toda vez que o modo Vault é exibido).
+pub async fn scan_vault_calendar_entries(vault_path: &str) -> Vec<CalendarEntry> {
+    let mut out = Vec::new();
+    let Ok(pages) = crate::api::list_pages(vault_path).await else {
+        return out;
+    };
+    for page in &pages {
+        let Ok(content) = crate::api::read_page(vault_path, &page.path).await else {
+            continue;
+        };
+        let mut date: Option<String> = None;
+        let mut time: Option<String> = None;
+        for line in content.lines() {
+            let t = line.trim();
+            if let Some(v) = t.strip_prefix("date:: ") {
+                date = Some(v.trim().to_string());
+            } else if let Some(v) = t.strip_prefix("time:: ") {
+                time = Some(v.trim().to_string());
+            }
+        }
+        if let Some(date) = date {
+            out.push(CalendarEntry {
+                date: Some(date),
+                title: page.title.clone(),
+                end_date: None,
+                tags: Vec::new(),
+                legacy_tag: None,
+                start_time: time,
+                end_time: None,
+                page_path: Some(page.path.clone()),
+            });
+        }
+    }
+    out
 }
 
 impl CalendarEmbedData {
@@ -972,7 +1040,7 @@ Acima do embed você pode ter texto normal. Abaixo também.
     fn join_does_not_duplicate_existing_newline() {
         let segments = vec![
             DocSegment::Markdown("texto\n\n".to_string()),
-            DocSegment::Embed(EmbedData::Calendar(CalendarEmbedData { entries: vec![] })),
+            DocSegment::Embed(EmbedData::Calendar(CalendarEmbedData::default())),
         ];
         let joined = join(&segments);
         assert!(joined.starts_with("texto\n\n{{ type: \"calendar\" }}"));
@@ -1423,6 +1491,40 @@ Acima do embed você pode ter texto normal. Abaixo também.
         let data = CalendarEmbedData::parse("entries:\n- date: '2026-08-06'\n  title: Sem horário\n");
         assert_eq!(data.entries[0].start_time, None);
         assert_eq!(data.entries[0].end_time, None);
+    }
+
+    #[test]
+    fn calendar_mode_defaults_to_manual_without_key() {
+        // YAML de antes deste ciclo não tem `mode:` — precisa continuar
+        // parseando como Manual (comportamento idêntico ao de sempre).
+        let data = CalendarEmbedData::parse("entries:\n- date: '2026-08-06'\n  title: X\n");
+        assert_eq!(data.mode, CalendarSource::Manual);
+    }
+
+    #[test]
+    fn calendar_mode_manual_not_serialized() {
+        let data = CalendarEmbedData::default();
+        let fence_body = data.to_fence_body();
+        assert!(!fence_body.contains("mode:"), "modo Manual (padrão) não deveria poluir o YAML:\n{fence_body}");
+    }
+
+    #[test]
+    fn calendar_mode_vault_roundtrips() {
+        let mut data = CalendarEmbedData::default();
+        data.mode = CalendarSource::Vault;
+        let fence_body = data.to_fence_body();
+        assert!(fence_body.contains("mode: vault"));
+        let reparsed = CalendarEmbedData::parse(&fence_body);
+        assert_eq!(reparsed.mode, CalendarSource::Vault);
+    }
+
+    #[test]
+    fn calendar_entry_page_path_never_serialized() {
+        let mut data = CalendarEmbedData::default();
+        data.add_entry("2026-08-06".into(), "X".into());
+        data.entries[0].page_path = Some("pages/x.md".into());
+        let fence_body = data.to_fence_body();
+        assert!(!fence_body.contains("page_path"), "page_path é só em memória (modo Vault), nunca deveria ir pro YAML:\n{fence_body}");
     }
 
     #[test]
