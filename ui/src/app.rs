@@ -192,6 +192,27 @@ pub fn app() -> Html {
         let selected_page = selected_page.clone();
     }
 
+    // Depois de um pull/commit+push (ciclo 119), rebusca git status
+    // imediatamente (sem esperar o próximo tick do polling de 3s,
+    // ciclo 103) e a lista de páginas (pull pode trazer arquivos
+    // novos/mudados de outra máquina).
+    let on_git_changed = {
+        let vault_path = vault_path.clone();
+        let git_files = git_files.clone();
+        let list_version = list_version.clone();
+        Callback::from(move |_: ()| {
+            let Some(path) = (*vault_path).clone() else { return };
+            let git_files = git_files.clone();
+            let list_version = list_version.clone();
+            list_version.set(*list_version + 1);
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Ok(status) = api::git_status(&path).await {
+                    git_files.set(status);
+                }
+            });
+        })
+    };
+
     let on_vault_selected = {
         let vault_path = vault_path.clone();
         let vault_name = vault_name.clone();
@@ -704,6 +725,8 @@ pub fn app() -> Html {
                 autosave_enabled={*autosave_enabled}
                 vim_mode_enabled={*vim_mode}
                 git_files={(*git_files).clone()}
+                open_dialog={open_dialog.clone()}
+                on_git_changed={on_git_changed}
                 on_toggle_sidebar={toggle_sidebar}
                 on_toggle_theme={toggle_theme}
                 on_toggle_autosave={toggle_autosave}

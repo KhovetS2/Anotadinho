@@ -4,7 +4,8 @@ use gloo_events::EventListener;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
-use crate::api::GitFileEntry;
+use crate::api::{self, GitFileEntry};
+use crate::dialog::PendingDialog;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct HeaderBarProps {
@@ -18,6 +19,14 @@ pub struct HeaderBarProps {
     /// instalado) — indicador simplesmente não aparece. `Some(vec![])`
     /// = repo git limpo, sem mudanças.
     pub git_files: Option<Vec<GitFileEntry>>,
+    /// Abre o modal de diálogo do app (ver `crate::dialog`) — usado
+    /// pra pedir a mensagem de commit e mostrar erro de pull/push.
+    pub open_dialog: Callback<PendingDialog>,
+    /// Disparado depois de um pull/commit+push bem-sucedido, pra quem
+    /// possui o estado de `git_files`/lista de páginas re-buscar
+    /// (ciclo 119).
+    #[prop_or_default]
+    pub on_git_changed: Callback<()>,
     pub on_toggle_sidebar: Callback<()>,
     pub on_toggle_theme: Callback<()>,
     pub on_toggle_autosave: Callback<()>,
@@ -75,6 +84,64 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
             move || drop(listeners)
         });
     }
+
+    // Sincronização via git (ciclo 119) — pull e commit+push, sempre
+    // disparados por clique explícito, nunca automático.
+    let syncing = use_state(|| false);
+    let do_pull = {
+        let vault_path = props.vault_path.clone();
+        let open_dialog = props.open_dialog.clone();
+        let on_git_changed = props.on_git_changed.clone();
+        let syncing = syncing.clone();
+        Callback::from(move |_: MouseEvent| {
+            let Some(vault_path) = vault_path.clone() else { return };
+            let open_dialog = open_dialog.clone();
+            let on_git_changed = on_git_changed.clone();
+            let syncing = syncing.clone();
+            syncing.set(true);
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::git_pull(&vault_path).await {
+                    Ok(_) => on_git_changed.emit(()),
+                    Err(e) => open_dialog.emit(PendingDialog::Alert {
+                        message: format!("Erro ao dar pull:\n{}", e),
+                    }),
+                }
+                syncing.set(false);
+            });
+        })
+    };
+    let do_commit_and_push = {
+        let vault_path = props.vault_path.clone();
+        let open_dialog = props.open_dialog.clone();
+        let on_git_changed = props.on_git_changed.clone();
+        let syncing = syncing.clone();
+        Callback::from(move |_: MouseEvent| {
+            let Some(vault_path) = vault_path.clone() else { return };
+            let open_dialog_for_error = open_dialog.clone();
+            let on_git_changed = on_git_changed.clone();
+            let syncing = syncing.clone();
+            open_dialog.emit(PendingDialog::Prompt {
+                title: "Mensagem do commit".to_string(),
+                default: String::new(),
+                on_submit: Callback::from(move |message: String| {
+                    let vault_path = vault_path.clone();
+                    let open_dialog = open_dialog_for_error.clone();
+                    let on_git_changed = on_git_changed.clone();
+                    let syncing = syncing.clone();
+                    syncing.set(true);
+                    wasm_bindgen_futures::spawn_local(async move {
+                        match api::git_commit_and_push(&vault_path, &message).await {
+                            Ok(_) => on_git_changed.emit(()),
+                            Err(e) => open_dialog.emit(PendingDialog::Alert {
+                                message: format!("Erro ao commitar/dar push:\n{}", e),
+                            }),
+                        }
+                        syncing.set(false);
+                    });
+                }),
+            });
+        })
+    };
 
     // Fecha o menu ao clicar fora dele ou apertar Escape — sem isso ele só
     // fechava clicando de novo no botão ⚙ ou (por acidente) ao recarregar
@@ -145,6 +212,14 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                                         }) }
                                     </ul>
                                 }
+                                <div class="git-status__actions">
+                                    <button class="btn btn--ghost btn--xs" onclick={do_pull} disabled={*syncing}>
+                                        { if *syncing { "..." } else { "Pull" } }
+                                    </button>
+                                    <button class="btn btn--ghost btn--xs" onclick={do_commit_and_push} disabled={*syncing}>
+                                        { if *syncing { "..." } else { "Commit + Push" } }
+                                    </button>
+                                </div>
                             </div>
                         }
                     </div>

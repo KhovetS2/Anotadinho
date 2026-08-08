@@ -186,6 +186,21 @@ pub fn handle_git_log(vault_path: String, page_path: String) -> Option<Vec<GitLo
     anotadinho_vault::git_log(std::path::Path::new(&vault_path), &page_path)
 }
 
+/// Handler de git_pull: `git pull`, ação explícita do usuário
+/// (ciclo 119). Erro (conflito, sem remote, etc) vira `Err` com a
+/// mensagem do git tal qual — diferente de `handle_git_status`, aqui
+/// o usuário precisa saber se falhou.
+pub fn handle_git_pull(vault_path: String) -> Result<String, String> {
+    anotadinho_vault::git_pull(std::path::Path::new(&vault_path)).map_err(|e| e.to_string())
+}
+
+/// Handler de git_commit_and_push: `git add -A && commit && push`,
+/// ação explícita do usuário (ciclo 119).
+pub fn handle_git_commit_and_push(vault_path: String, message: String) -> Result<String, String> {
+    anotadinho_vault::git_commit_and_push(std::path::Path::new(&vault_path), &message)
+        .map_err(|e| e.to_string())
+}
+
 /// Handler de export_folder: concatena o markdown fonte de todas as
 /// páginas dentro de uma pasta (recursivo) num dump único.
 /// `folder_path` vazio exporta o vault inteiro.

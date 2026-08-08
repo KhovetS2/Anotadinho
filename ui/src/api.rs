@@ -250,6 +250,31 @@ pub async fn git_log(vault_path: &str, page_path: &str) -> Result<Option<Vec<Git
     serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
 }
 
+/// `git pull` — ação explícita do usuário (ciclo 119). Retorna a
+/// saída do git em sucesso, ou `Err` com a mensagem de erro (conflito,
+/// sem remote, etc) tal qual.
+pub async fn git_pull(vault_path: &str) -> Result<String, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("git_pull", &args).await.map_err(|e| e.as_string().unwrap_or_else(|| format!("{:?}", e)))?;
+    result.as_string().ok_or_else(|| "resposta inválida".to_string())
+}
+
+/// `git add -A && commit -m <message> && push` — ação explícita do
+/// usuário (ciclo 119).
+pub async fn git_commit_and_push(vault_path: &str, message: &str) -> Result<String, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("message"), &JsValue::from_str(message))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("git_commit_and_push", &args).await.map_err(|e| e.as_string().unwrap_or_else(|| format!("{:?}", e)))?;
+    result.as_string().ok_or_else(|| "resposta inválida".to_string())
+}
+
 /// Concatena o markdown fonte de todas as páginas dentro de uma pasta
 /// (recursivo) num dump único. `folder_path` vazio exporta o vault
 /// inteiro (`pages/` + `journals/`).
