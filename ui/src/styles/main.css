@@ -1163,6 +1163,23 @@ body {
     margin: 1rem 0;
 }
 
+/* Embed de PDF (ciclo 121) — link markdown pra um .pdf vira um frame
+   próprio com scroll interno em vez de um <a> comum. */
+.pdf-embed {
+    margin: var(--sp-3) 0;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    overflow: hidden;
+}
+
+.pdf-embed__frame {
+    display: block;
+    width: 100%;
+    height: 600px;
+    border: none;
+    background: var(--bg-surface);
+}
+
 .editor__wysiwyg table {
     border-collapse: collapse;
     width: 100%;

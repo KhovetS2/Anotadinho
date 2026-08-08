@@ -105,6 +105,16 @@ impl VaultIo {
         Ok(content)
     }
 
+    /// Lê os bytes brutos de um arquivo do vault (ex: `assets/x.png`)
+    /// — usado pra resolver `<img>`/embed de PDF pra uma `data:` URL
+    /// no frontend (ciclo 121), já que um path relativo cru
+    /// (`assets/x.png`) resolve contra a origem do webview, não contra
+    /// a pasta real do vault no disco.
+    pub fn read_asset_bytes(&self, relative_path: &str) -> Result<Vec<u8>> {
+        let full = self.resolve_safe(relative_path)?;
+        std::fs::read(&full).map_err(|e| anyhow::anyhow!("erro ao ler {}: {}", relative_path, e))
+    }
+
     /// Abre ou cria o journal do dia (`journals/YYYY-MM-DD.md`).
     pub fn open_today_journal(&self) -> Result<PageMeta> {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -1012,5 +1022,25 @@ mod tests {
         let (_dir, io) = setup_vault();
         let relative = io.save_asset_bytes(".jpg", b"x").unwrap();
         assert_eq!(relative, "assets/colado-1.jpg");
+    }
+
+    #[test]
+    fn read_asset_bytes_returns_exact_content() {
+        let (_dir, io) = setup_vault();
+        let relative = io.save_asset_bytes("pdf", b"%PDF-fake-bytes").unwrap();
+        let bytes = io.read_asset_bytes(&relative).unwrap();
+        assert_eq!(bytes, b"%PDF-fake-bytes");
+    }
+
+    #[test]
+    fn read_asset_bytes_rejects_escape() {
+        let (_dir, io) = setup_vault();
+        assert!(io.read_asset_bytes("../escape.txt").is_err());
+    }
+
+    #[test]
+    fn read_asset_bytes_missing_file_returns_err() {
+        let (_dir, io) = setup_vault();
+        assert!(io.read_asset_bytes("assets/nope.png").is_err());
     }
 }

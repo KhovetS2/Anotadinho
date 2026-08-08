@@ -86,7 +86,16 @@ fn walk(node: &Element, _depth: usize) -> String {
             }
         }
         "p" |         "div" => {
-            if node.class_name().contains("mermaid") {
+            if let Some(href) = node.get_attribute("data-pdf-href") {
+                // Wrapper de embed de PDF (ver `editor.rs::
+                // upgrade_embedded_assets_at`, ciclo 121) — reconstrói
+                // o MESMO link markdown original (`[texto](x.pdf)`),
+                // não desce pro `<iframe>` dentro. Precisa ficar
+                // inline (sem `\n\n`) porque nasceu de um `<a>` que
+                // estava dentro de um `<p>`.
+                let text = node.get_attribute("data-pdf-text").unwrap_or_default();
+                format!("[{}]({})", text, href)
+            } else if node.class_name().contains("mermaid") {
                 let text = text_of(node);
                 format!("```mermaid\n{}\n```\n\n", text)
             } else if let Some(kind) = node.get_attribute("data-embed-insert") {

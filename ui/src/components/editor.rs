@@ -403,6 +403,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let last_rendered = use_mut_ref(|| (String::new(), false, 0usize, 0u32));
         let current_path = props.page.as_ref().map(|p| p.path.clone()).unwrap_or_default();
         let render_gen_val = *render_gen;
+        let vault_path_eff = props.vault_path.clone();
 
         use_effect_with((loading_val, current_path.clone(), has_embeds_eff, segment_count, render_gen_val), move |_| {
             let should_render = {
@@ -418,6 +419,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         if let DocSegment::Markdown(text) = seg {
                             if let Some(div) = segment_refs_eff.get(i).and_then(|r| r.cast::<web_sys::Element>()) {
                                 div.set_inner_html(&crate::markdown_render::render(text));
+                                upgrade_embedded_assets_at(&div, vault_path_eff.clone());
                             }
                         }
                     }
@@ -432,6 +434,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 } else if let Some(div) = editor_ref.cast::<web_sys::Element>() {
                     let html = crate::markdown_render::render(&full_snapshot_eff);
                     div.set_inner_html(&html);
+                    upgrade_embedded_assets_at(&div, vault_path_eff.clone());
                     let _div = div.clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
@@ -2418,6 +2421,75 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
                     exec_cmd(doc, "insertHTML", &code_html);
                 }
             }
+        }
+    }
+}
+
+/// Roda depois de `set_inner_html`, ciclo 121:
+///
+/// 1. Troca `<a href="*.pdf">` (link markdown normal, `[texto](x.pdf)`)
+///    por um wrapper `.pdf-embed` com um `<iframe>` dentro — pdf num
+///    frame próprio com scroll interno, em vez de um link que abriria
+///    em outro lugar. `html_to_md.rs` reconhece o wrapper (via
+///    `data-pdf-href`/`data-pdf-text`) e serializa de volta pro MESMO
+///    `[texto](x.pdf)` original ao salvar — ver ciclo 111 (cuidado
+///    extra de round-trip depois do bug de tabela).
+/// 2. Resolve `<img src="assets/...">` e o `data-asset-src` do iframe
+///    recém-criado pra uma `data:` URL de verdade — um `src` relativo
+///    cru (`assets/x.png`) resolve contra a origem do webview
+///    (`http://localhost:1420/...` em dev), não contra a pasta real do
+///    vault no disco, então SEM ISSO nenhuma imagem embutida jamais
+///    aparecia — bug pré-existente (provavelmente desde a introdução
+///    do slash command `/img`), corrigido de quebra aqui.
+fn upgrade_embedded_assets_at(el: &web_sys::Element, vault_path: String) {
+    let doc = el.owner_document();
+
+    if let Ok(links) = el.query_selector_all("a[href]") {
+        for i in 0..links.length() {
+            let Some(node) = links.item(i) else { continue };
+            let Ok(a) = node.dyn_into::<web_sys::Element>() else { continue };
+            let Some(href) = a.get_attribute("href") else { continue };
+            let is_local_pdf = href.to_lowercase().ends_with(".pdf")
+                && !href.starts_with("http://")
+                && !href.starts_with("https://")
+                && !href.starts_with("data:")
+                && !href.starts_with(crate::wikilink::SCHEME_PREFIX);
+            if !is_local_pdf {
+                continue;
+            }
+            let Some(ref doc) = doc else { continue };
+            let Ok(wrapper) = doc.create_element("div") else { continue };
+            let _ = wrapper.set_attribute("class", "pdf-embed");
+            let _ = wrapper.set_attribute("data-pdf-href", &href);
+            let _ = wrapper.set_attribute("data-pdf-text", &a.text_content().unwrap_or_default());
+            let Ok(iframe) = doc.create_element("iframe") else { continue };
+            let _ = iframe.set_attribute("class", "pdf-embed__frame");
+            let _ = iframe.set_attribute("data-asset-src", &href);
+            let _ = wrapper.append_child(&iframe);
+            if let Some(parent) = a.parent_node() {
+                let _ = parent.replace_child(&wrapper, &a);
+            }
+        }
+    }
+
+    if let Ok(assets) = el.query_selector_all("img[src^='assets/'], iframe[data-asset-src]") {
+        for i in 0..assets.length() {
+            let Some(node) = assets.item(i) else { continue };
+            let Ok(target) = node.dyn_into::<web_sys::Element>() else { continue };
+            let is_iframe = target.tag_name().eq_ignore_ascii_case("iframe");
+            let asset_path = if is_iframe {
+                target.get_attribute("data-asset-src")
+            } else {
+                target.get_attribute("src")
+            };
+            let Some(asset_path) = asset_path else { continue };
+            let vault_path = vault_path.clone();
+            let target = target.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Ok(data_url) = api::read_asset_data_url(&vault_path, &asset_path).await {
+                    let _ = target.set_attribute("src", &data_url);
+                }
+            });
         }
     }
 }

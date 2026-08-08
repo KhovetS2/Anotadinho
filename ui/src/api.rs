@@ -358,6 +358,21 @@ pub async fn save_pasted_asset(vault_path: &str, extension: &str, base64_data: &
     result.as_string().ok_or_else(|| "path inválido".to_string())
 }
 
+/// Lê um arquivo do vault (ex: `assets/x.png`, `assets/x.pdf`) como
+/// uma `data:` URL (ciclo 121) — necessário porque um `src`/`href`
+/// relativo cru resolve contra a origem do webview, não contra a
+/// pasta real do vault no disco.
+pub async fn read_asset_data_url(vault_path: &str, asset_path: &str) -> Result<String, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("assetPath"), &JsValue::from_str(asset_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("read_asset_data_url", &args).await.map_err(|e| format!("{:?}", e))?;
+    result.as_string().ok_or_else(|| "resposta inválida".to_string())
+}
+
 /// Metadados de um arquivo em `assets/`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssetInfo {

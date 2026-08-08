@@ -281,6 +281,38 @@ pub fn handle_save_pasted_asset(
     vault.save_asset_bytes(&extension, &bytes).map_err(|e| e.to_string())
 }
 
+/// Handler de read_asset_data_url: lê um arquivo de `assets/` (ou
+/// qualquer path dentro do vault) e devolve como `data:` URL
+/// (ciclo 121) — um `src` relativo cru (`assets/x.png`) resolve
+/// contra a origem do webview, não contra a pasta real do vault no
+/// disco, então imagens/PDFs embutidos precisam desse passo pra
+/// aparecer de verdade.
+pub fn handle_read_asset_data_url(vault_path: String, asset_path: String) -> Result<String, String> {
+    use base64::Engine;
+    let vault = VaultIo::open(&vault_path);
+    let bytes = vault.read_asset_bytes(&asset_path).map_err(|e| e.to_string())?;
+    let mime = guess_mime(&asset_path);
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, b64))
+}
+
+fn guess_mime(path: &str) -> &'static str {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        "pdf" => "application/pdf",
+        _ => "application/octet-stream",
+    }
+}
+
 /// Handler de copy_to_assets: copia arquivo para assets/.
 pub fn handle_copy_to_assets(vault_path: String, source_path: String) -> Result<String, String> {
     let vault = VaultIo::open(&vault_path);
@@ -317,5 +349,26 @@ mod tests {
         });
         assert_eq!(r.echo, "pong: hello");
         assert!(!r.version.is_empty());
+    }
+
+    #[test]
+    fn guess_mime_recognizes_known_extensions() {
+        assert_eq!(guess_mime("assets/x.png"), "image/png");
+        assert_eq!(guess_mime("assets/x.PDF"), "application/pdf");
+        assert_eq!(guess_mime("assets/x.jpeg"), "image/jpeg");
+        assert_eq!(guess_mime("assets/x.unknown"), "application/octet-stream");
+    }
+
+    #[test]
+    fn handle_read_asset_data_url_roundtrips_bytes() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("assets")).unwrap();
+        std::fs::write(dir.path().join("assets/x.pdf"), b"%PDF-1.4 fake").unwrap();
+        let url = handle_read_asset_data_url(
+            dir.path().to_string_lossy().to_string(),
+            "assets/x.pdf".to_string(),
+        )
+        .unwrap();
+        assert!(url.starts_with("data:application/pdf;base64,"));
     }
 }

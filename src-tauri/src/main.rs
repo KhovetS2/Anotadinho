@@ -10,6 +10,7 @@ use std::sync::Mutex;
 
 use anotadinho_ipc::{
     handle_copy_to_assets, handle_create_folder, handle_create_page, handle_create_page_from_template,
+    handle_read_asset_data_url,
     handle_create_page_in_folder, handle_create_page_typed, handle_delete_asset, handle_delete_page,
     handle_export_folder, handle_git_commit_and_push, handle_git_log, handle_git_pull, handle_git_status,
     handle_list_assets, handle_list_assets_info,
@@ -171,6 +172,11 @@ fn copy_to_assets(vault_path: String, source_path: String) -> Result<String, Str
 }
 
 #[tauri::command]
+fn read_asset_data_url(vault_path: String, asset_path: String) -> Result<String, String> {
+    handle_read_asset_data_url(vault_path, asset_path)
+}
+
+#[tauri::command]
 fn save_pasted_asset(vault_path: String, extension: String, base64_data: String) -> Result<String, String> {
     handle_save_pasted_asset(vault_path, extension, base64_data)
 }
@@ -236,6 +242,7 @@ fn main() {
             create_page_from_template,
             list_assets,
             copy_to_assets,
+            read_asset_data_url,
             save_pasted_asset,
             list_assets_info,
             delete_asset,
