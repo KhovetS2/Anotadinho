@@ -85,6 +85,27 @@ pub fn editor(props: &EditorProps) -> Html {
     let edited_ref = use_mut_ref(|| false);
     let pending_flush_ref = use_mut_ref(String::new);
 
+    // Undo/redo genérico: pilha de snapshots de markdown inteiro
+    // (cap. ~20), não um mecanismo por tipo de embed — cobre texto solto
+    // E qualquer mutação de embed (mover card, editar evento, etc) com
+    // uma implementação só, já que TODA mutação passa por `mark_edited`
+    // (ponto único desde o ciclo 074). `last_content_ref` guarda o
+    // último markdown que `mark_edited` viu — não é o mesmo que
+    // `content_md` (que nem sempre é atualizado em sync, ver
+    // `on_edit`), é a base de comparação certa pra decidir quando
+    // empilhar um novo snapshot (agrupa digitação rápida numa pausa só,
+    // em vez de um snapshot por tecla). `render_gen` força o Effect 2
+    // (abaixo) a reinjetar o HTML mesmo quando path/has_embeds/
+    // segment_count não mudaram — sem isso, desfazer/refazer atualizava
+    // `content_md` (embeds declarativos refletiam certo) mas os trechos
+    // de markdown solto injetados via `set_inner_html` ficavam com o
+    // texto antigo na tela.
+    let undo_stack = use_mut_ref(Vec::<String>::new);
+    let redo_stack = use_mut_ref(Vec::<String>::new);
+    let last_content_ref = use_mut_ref(String::new);
+    let last_snapshot_at = use_mut_ref(|| 0.0f64);
+    let render_gen = use_state(|| 0u32);
+
     // Vim mode: modo Normal (motions/comandos) vs Insert (digitação
     // normal). Começa em Normal quando ativado — mesmo comportamento do
     // vim de verdade (abrir um arquivo não te deixa digitando na hora).
@@ -253,8 +274,16 @@ pub fn editor(props: &EditorProps) -> Html {
         let edited = edited.clone();
         let edited_ref = edited_ref.clone();
         let pending_flush_ref = pending_flush_ref.clone();
+        let undo_stack = undo_stack.clone();
+        let redo_stack = redo_stack.clone();
+        let last_content_ref = last_content_ref.clone();
 
         use_effect_with(page.clone(), move |page| {
+            // Histórico de undo/redo é por página — trocar de página não
+            // deveria deixar "desfazer" aplicar uma edição de outra
+            // página bem diferente.
+            undo_stack.borrow_mut().clear();
+            redo_stack.borrow_mut().clear();
             // Página que ESTE efeito está carregando — usada no cleanup
             // como identidade da página que está sendo deixada pra trás
             // (o cleanup roda antes do próximo efeito, ou seja, exatamente
@@ -272,6 +301,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 let edited = edited.clone();
                 let edited_ref = edited_ref.clone();
                 let pending_flush_ref = pending_flush_ref.clone();
+                let last_content_ref = last_content_ref.clone();
                 loading.set(true);
                 error.set(None);
                 edited.set(false);
@@ -280,6 +310,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 wasm_bindgen_futures::spawn_local(async move {
                     match api::read_page(&vault_path, &path).await {
                         Ok(text) => {
+                            *last_content_ref.borrow_mut() = text.clone();
                             content_md.set(text.clone());
                             saved_content.set(text);
                         }
@@ -342,17 +373,18 @@ pub fn editor(props: &EditorProps) -> Html {
         let full_snapshot_eff = full_snapshot.clone();
         let has_embeds_eff = has_embeds;
         let segment_count = segments.len();
-        let last_rendered = use_mut_ref(|| (String::new(), false, 0usize));
+        let last_rendered = use_mut_ref(|| (String::new(), false, 0usize, 0u32));
         let current_path = props.page.as_ref().map(|p| p.path.clone()).unwrap_or_default();
+        let render_gen_val = *render_gen;
 
-        use_effect_with((loading_val, current_path.clone(), has_embeds_eff, segment_count), move |_| {
+        use_effect_with((loading_val, current_path.clone(), has_embeds_eff, segment_count, render_gen_val), move |_| {
             let should_render = {
                 let last = last_rendered.borrow();
                 !loading_val && !content_md_empty
-                    && (last.0 != current_path || last.1 != has_embeds_eff || last.2 != segment_count)
+                    && (last.0 != current_path || last.1 != has_embeds_eff || last.2 != segment_count || last.3 != render_gen_val)
             };
             if should_render {
-                *last_rendered.borrow_mut() = (current_path, has_embeds_eff, segment_count);
+                *last_rendered.borrow_mut() = (current_path, has_embeds_eff, segment_count, render_gen_val);
 
                 if has_embeds_eff {
                     for (i, seg) in segments_eff.iter().enumerate() {
@@ -540,6 +572,10 @@ pub fn editor(props: &EditorProps) -> Html {
         let pending_flush_ref = pending_flush_ref.clone();
         let autosave_enabled = props.autosave_enabled;
         let persist = persist.clone();
+        let undo_stack = undo_stack.clone();
+        let redo_stack = redo_stack.clone();
+        let last_content_ref = last_content_ref.clone();
+        let last_snapshot_at = last_snapshot_at.clone();
         move |md: String| {
             e.set(true);
             *edited_ref.borrow_mut() = true;
@@ -547,6 +583,28 @@ pub fn editor(props: &EditorProps) -> Html {
             // do salvamento automático estar ligado — isso é o que evita
             // perder texto ao trocar de página rápido, não o timer de 3s.
             *pending_flush_ref.borrow_mut() = md.clone();
+
+            // Empilha o markdown ANTERIOR pro undo — só se já passou um
+            // tempinho desde o último snapshot (agrupa uma rajada de
+            // digitação numa pausa só num único passo de "desfazer", em
+            // vez de um passo por tecla). `last_content_ref` (não
+            // `content_md`) é a base porque `content_md` nem sempre é
+            // atualizado em sync com toda edição (ver `on_edit`).
+            let now = js_sys::Date::now();
+            let previous = last_content_ref.borrow().clone();
+            if previous != md {
+                let elapsed = now - *last_snapshot_at.borrow();
+                if elapsed > 800.0 {
+                    let mut stack = undo_stack.borrow_mut();
+                    stack.push(previous);
+                    if stack.len() > 20 {
+                        stack.remove(0);
+                    }
+                    redo_stack.borrow_mut().clear();
+                    *last_snapshot_at.borrow_mut() = now;
+                }
+                *last_content_ref.borrow_mut() = md.clone();
+            }
 
             if !autosave_enabled {
                 return;
@@ -562,6 +620,49 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
             });
         }
+    };
+
+    // `Ctrl+Z`/`Ctrl+Shift+Z` — desfazer/refazer genérico (texto solto E
+    // qualquer mutação de embed, mesma pilha pras duas coisas). Atualiza
+    // `content_md` na hora (feedback imediato) + `render_gen` (força o
+    // Effect 2 a reinjetar os trechos de markdown solto, que não
+    // reagem sozinhos a `content_md` mudar) + `persist` (grava a versão
+    // restaurada, mesmo caminho do salvamento normal).
+    let do_undo = {
+        let content_md = content_md.clone();
+        let undo_stack = undo_stack.clone();
+        let redo_stack = redo_stack.clone();
+        let last_content_ref = last_content_ref.clone();
+        let render_gen = render_gen.clone();
+        let persist = persist.clone();
+        Callback::from(move |_: ()| {
+            let popped = undo_stack.borrow_mut().pop();
+            let Some(prev) = popped else { return };
+            let current = last_content_ref.borrow().clone();
+            redo_stack.borrow_mut().push(current);
+            *last_content_ref.borrow_mut() = prev.clone();
+            content_md.set(prev.clone());
+            render_gen.set(*render_gen + 1);
+            persist(prev);
+        })
+    };
+    let do_redo = {
+        let content_md = content_md.clone();
+        let undo_stack = undo_stack.clone();
+        let redo_stack = redo_stack.clone();
+        let last_content_ref = last_content_ref.clone();
+        let render_gen = render_gen.clone();
+        let persist = persist.clone();
+        Callback::from(move |_: ()| {
+            let popped = redo_stack.borrow_mut().pop();
+            let Some(next) = popped else { return };
+            let current = last_content_ref.borrow().clone();
+            undo_stack.borrow_mut().push(current);
+            *last_content_ref.borrow_mut() = next.clone();
+            content_md.set(next.clone());
+            render_gen.set(*render_gen + 1);
+            persist(next);
+        })
     };
 
     let select_slash = {
@@ -844,8 +945,20 @@ pub fn editor(props: &EditorProps) -> Html {
         let editor_ref_vim = editor_ref.clone();
         let segment_refs_vim = segment_refs.clone();
         let mark_edited_vim = mark_edited.clone();
+        let do_undo = do_undo.clone();
+        let do_redo = do_redo.clone();
         Callback::from(move |e: KeyboardEvent| {
             if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); do_save.emit(()); return; }
+
+            // Ctrl+Z/Ctrl+Shift+Z funcionam independente do vim mode
+            // estar ligado (checado ANTES da interceptação de modo
+            // Normal, mesma prioridade do Ctrl+S acima) — desfazer é
+            // uma ação de documento, não uma motion de texto.
+            if (e.ctrl_key()||e.meta_key()) && e.key().eq_ignore_ascii_case("z") {
+                e.prevent_default();
+                if e.shift_key() { do_redo.emit(()); } else { do_undo.emit(()); }
+                return;
+            }
 
             // Vim mode — modo Normal: toda tecla é comando, nada digita
             // no texto. `stop_propagation` nas duas saídas (Normal e o
