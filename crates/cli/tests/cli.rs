@@ -12,10 +12,16 @@ use tempfile::TempDir;
 fn setup_vault() -> TempDir {
     let dir = TempDir::new().expect("cria temp dir");
     fs::create_dir_all(dir.path().join("pages")).unwrap();
+    fs::create_dir_all(dir.path().join("pages/specs")).unwrap();
     fs::create_dir_all(dir.path().join("templates")).unwrap();
     fs::write(
         dir.path().join("pages/alpha.md"),
         "---\ntitle: Alpha\n---\nConteúdo da página alpha.\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("pages/specs/minha-spec.md"),
+        "---\ntitle: Minha Spec\nstatus: backlog\npriority: alta\ntags:\n- spec\n---\n# Minha Spec\n",
     )
     .unwrap();
     fs::write(
@@ -104,6 +110,88 @@ fn list_templates_finds_template() {
         .assert()
         .success()
         .stdout(predicates::str::contains("templates/spec.md"));
+}
+
+#[test]
+fn list_pages_filters_by_folder() {
+    let dir = setup_vault();
+    let output = Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args(["--vault", dir.path().to_str().unwrap(), "list-pages", "--folder", "pages/specs"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("minha-spec"));
+    assert!(!stdout.contains("alpha"));
+}
+
+#[test]
+fn list_pages_filters_by_tag() {
+    let dir = setup_vault();
+    let output = Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args(["--vault", dir.path().to_str().unwrap(), "list-pages", "--tag", "spec"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("minha-spec"));
+    assert!(!stdout.contains("alpha.md"));
+}
+
+#[test]
+fn list_pages_filters_by_status_and_priority_combined() {
+    let dir = setup_vault();
+    let output = Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args([
+            "--vault", dir.path().to_str().unwrap(), "list-pages",
+            "--status", "backlog", "--priority", "alta",
+        ])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("minha-spec"));
+
+    let output_no_match = Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args(["--vault", dir.path().to_str().unwrap(), "list-pages", "--status", "done"])
+        .output()
+        .unwrap();
+    assert!(String::from_utf8(output_no_match.stdout).unwrap().trim().is_empty());
+}
+
+#[test]
+fn set_property_updates_existing_field_preserves_body() {
+    let dir = setup_vault();
+    Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args([
+            "--vault", dir.path().to_str().unwrap(), "set-property",
+            "pages/specs/minha-spec.md", "status", "in-progress",
+        ])
+        .assert()
+        .success();
+    let content = fs::read_to_string(dir.path().join("pages/specs/minha-spec.md")).unwrap();
+    assert!(content.contains("status: in-progress"));
+    assert!(content.contains("# Minha Spec"));
+    assert!(!content.contains("status: backlog"));
+}
+
+#[test]
+fn set_property_adds_new_key_without_touching_others() {
+    let dir = setup_vault();
+    Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args([
+            "--vault", dir.path().to_str().unwrap(), "set-property",
+            "pages/specs/minha-spec.md", "owner", "elis",
+        ])
+        .assert()
+        .success();
+    let content = fs::read_to_string(dir.path().join("pages/specs/minha-spec.md")).unwrap();
+    assert!(content.contains("owner: elis"));
+    assert!(content.contains("status: backlog"));
+    assert!(content.contains("priority: alta"));
 }
 
 #[test]

@@ -1,7 +1,7 @@
 ---
 id: "115"
 titulo: "CLI filtros de busca status prioridade tag pasta"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: alta
@@ -21,16 +21,16 @@ Adiciona filtros opcionais direto no CLI.
 
 ## Critérios de aceite
 
-- [ ] `list-pages` ganha `--folder <prefix>` (filtra por prefixo de
+- [x] `list-pages` ganha `--folder <prefix>` (filtra por prefixo de
       path, ex: `pages/specs`), `--tag <tag>` (uma ou mais, repetível),
       `--status <valor>` e `--priority <valor>` (lêem o frontmatter de
       cada página candidata)
-- [ ] Filtros combináveis (AND entre eles)
-- [ ] Sem nenhum filtro, comportamento idêntico ao de hoje
-- [ ] `--json` continua funcionando com os filtros aplicados
-- [ ] Testes de integração novos em `crates/cli/tests/cli.rs` cobrindo
-      pelo menos `--folder`, `--tag` e a combinação de dois filtros
-- [ ] `cargo test --workspace` passa
+- [x] Filtros combináveis (AND entre eles)
+- [x] Sem nenhum filtro, comportamento idêntico ao de hoje
+- [x] `--json` continua funcionando com os filtros aplicados
+- [x] Testes de integração novos em `crates/cli/tests/cli.rs` cobrindo
+      `--folder`, `--tag` e a combinação de `--status`+`--priority`
+- [x] `cargo test --workspace` passa
 
 ## Comandos de validação
 

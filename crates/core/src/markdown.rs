@@ -46,6 +46,47 @@ impl MarkdownCodec {
         split_frontmatter_text(text)
     }
 
+    /// Atualiza um campo do frontmatter de um documento Markdown
+    /// completo, preservando o corpo byte-a-byte intocado — mesma
+    /// lógica que `ui/src/components/editor.rs::on_frontmatter_change`
+    /// (ciclo 099) já usa no frontend, extraída aqui pra ter um único
+    /// lugar (agora com dois consumidores: o editor E o CLI, ciclo 116).
+    ///
+    /// Campos conhecidos (`title`, `type`) setam o campo tipado
+    /// correspondente; `tags` aceita uma lista separada por vírgula;
+    /// qualquer outra chave vai pra `Frontmatter.extra` (ciclo 098).
+    pub fn set_frontmatter_field(text: &str, key: &str, value: &str) -> Result<String> {
+        let (_, body) = split_frontmatter_text(text);
+        let mut fm = split_frontmatter(text)
+            .map(|(fm, _)| fm)
+            .unwrap_or_default();
+
+        match key {
+            "title" => fm.title = if value.is_empty() { None } else { Some(value.to_string()) },
+            "type" => fm.page_type = if value.is_empty() { None } else { Some(value.to_string()) },
+            "tags" => {
+                fm.tags = value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            _ => {
+                fm.extra.insert(key.to_string(), serde_yaml::Value::String(value.to_string()));
+            }
+        }
+
+        let yaml = serde_yaml::to_string(&fm)
+            .map_err(|e| anyhow::anyhow!("frontmatter serialize: {}", e))?;
+        let mut block = String::from("---\n");
+        block.push_str(yaml.trim_start_matches("---\n"));
+        if !block.ends_with('\n') {
+            block.push('\n');
+        }
+        block.push_str("---");
+        Ok(format!("{}\n{}", block, body))
+    }
+
     /// Converte uma `Page` de volta em texto Markdown.
     pub fn serialize(page: &Page) -> Result<String> {
         let mut out = String::new();
@@ -474,5 +515,43 @@ mod tests {
         let page2 = MarkdownCodec::parse(&out).unwrap();
         assert_eq!(page2.blocks[0].id.0, id);
         assert_eq!(page2.blocks[0].content, "body");
+    }
+
+    #[test]
+    fn set_frontmatter_field_sets_new_extra_key() {
+        let text = "---\ntitle: Spec\nstatus: backlog\n---\n# Spec\n\nCorpo intocado.\n";
+        let out = MarkdownCodec::set_frontmatter_field(text, "status", "in-progress").unwrap();
+        let (fm, body) = split_frontmatter(&out).unwrap();
+        assert_eq!(fm.extra.get("status").and_then(|v| v.as_str()), Some("in-progress"));
+        assert_eq!(body, "# Spec\n\nCorpo intocado.\n");
+    }
+
+    #[test]
+    fn set_frontmatter_field_adds_brand_new_key() {
+        let text = "---\ntitle: Spec\n---\ncorpo\n";
+        let out = MarkdownCodec::set_frontmatter_field(text, "owner", "elis").unwrap();
+        let (fm, _) = split_frontmatter(&out).unwrap();
+        assert_eq!(fm.extra.get("owner").and_then(|v| v.as_str()), Some("elis"));
+    }
+
+    #[test]
+    fn set_frontmatter_field_sets_known_typed_fields() {
+        let text = "---\ntitle: Old\n---\ncorpo\n";
+        let out = MarkdownCodec::set_frontmatter_field(text, "title", "Novo").unwrap();
+        let out = MarkdownCodec::set_frontmatter_field(&out, "tags", "a, b, c").unwrap();
+        let out = MarkdownCodec::set_frontmatter_field(&out, "type", "kanban").unwrap();
+        let (fm, _) = split_frontmatter(&out).unwrap();
+        assert_eq!(fm.title.as_deref(), Some("Novo"));
+        assert_eq!(fm.tags, vec!["a", "b", "c"]);
+        assert_eq!(fm.page_type.as_deref(), Some("kanban"));
+    }
+
+    #[test]
+    fn set_frontmatter_field_works_without_existing_frontmatter() {
+        let text = "# Sem frontmatter\n\ncorpo\n";
+        let out = MarkdownCodec::set_frontmatter_field(text, "status", "done").unwrap();
+        let (fm, body) = split_frontmatter(&out).unwrap();
+        assert_eq!(fm.extra.get("status").and_then(|v| v.as_str()), Some("done"));
+        assert_eq!(body, "# Sem frontmatter\n\ncorpo\n");
     }
 }

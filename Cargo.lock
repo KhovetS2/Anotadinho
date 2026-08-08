@@ -36,6 +36,7 @@ dependencies = [
 name = "anotadinho-cli"
 version = "0.1.0"
 dependencies = [
+ "anotadinho-core",
  "anotadinho-ipc",
  "assert_cmd",
  "clap",
