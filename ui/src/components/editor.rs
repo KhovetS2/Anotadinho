@@ -367,6 +367,42 @@ pub fn editor(props: &EditorProps) -> Html {
         });
     }
 
+    // Backlinks: quais páginas têm `[[Título desta página]]`. Calculado
+    // sob demanda ao abrir a página (não é um índice mantido — mesmo
+    // perfil de custo da busca ingênua já existente), reaproveitando
+    // `search_content` como "grep" no servidor em vez de expor uma rota
+    // nova só pra isso: procurar pela sintaxe `[[Título]]` literal já
+    // acha exatamente os wikilinks que apontam pra cá.
+    let backlinks = use_state(Vec::<(String, String)>::new);
+    {
+        let vault_path = props.vault_path.clone();
+        let page = props.page.clone();
+        let backlinks = backlinks.clone();
+        use_effect_with(page.clone(), move |page| {
+            if let Some(p) = page.clone() {
+                let vault_path = vault_path.clone();
+                let backlinks = backlinks.clone();
+                let current_path = p.path.clone();
+                let query = format!("[[{}]]", p.title);
+                wasm_bindgen_futures::spawn_local(async move {
+                    match api::search_content(&vault_path, &query).await {
+                        Ok(results) => {
+                            let filtered: Vec<(String, String)> = results
+                                .into_iter()
+                                .filter(|(path, _)| path != &current_path)
+                                .collect();
+                            backlinks.set(filtered);
+                        }
+                        Err(_) => backlinks.set(Vec::new()),
+                    }
+                });
+            } else {
+                backlinks.set(Vec::new());
+            }
+            || {}
+        });
+    }
+
     let save_counter = use_state(|| 0u32);
 
     if props.page.is_none() {
@@ -1259,6 +1295,30 @@ pub fn editor(props: &EditorProps) -> Html {
                         }) }
                     </div>
                 </div>
+            }
+            if !backlinks.is_empty() {
+                <details class="editor__backlinks">
+                    <summary class="editor__backlinks-summary">
+                        { format!("🔗 Backlinks ({})", backlinks.len()) }
+                    </summary>
+                    <ul class="editor__backlinks-list">
+                        { for backlinks.iter().map(|(path, excerpt)| {
+                            let path = path.clone();
+                            let excerpt = excerpt.clone();
+                            let title = std::path::Path::new(&path).file_stem()
+                                .map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                            let meta = PageMeta { path: path.clone(), title: title.clone(), section: "pages".to_string() };
+                            let on_page_selected = props.on_page_selected.clone();
+                            let onclick = Callback::from(move |_| on_page_selected.emit(meta.clone()));
+                            html! {
+                                <li class="editor__backlinks-item" {onclick}>
+                                    <span class="editor__backlinks-item-title">{ &title }</span>
+                                    <span class="editor__backlinks-item-excerpt">{ &excerpt }</span>
+                                </li>
+                            }
+                        }) }
+                    </ul>
+                </details>
             }
             <div class="editor__statusbar">
                 <span>{ format!("{} palavras · {} caracteres", word_count, char_count) }</span>
