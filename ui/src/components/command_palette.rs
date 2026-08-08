@@ -18,6 +18,7 @@ pub enum PaletteAction {
     ToggleTheme,
     ToggleSidebar,
     Today,
+    ViewTags,
 }
 
 const COMMANDS: &[(&str, PaletteAction)] = &[
@@ -26,6 +27,7 @@ const COMMANDS: &[(&str, PaletteAction)] = &[
     ("Alternar tema", PaletteAction::ToggleTheme),
     ("Alternar sidebar", PaletteAction::ToggleSidebar),
     ("Ir pra Hoje (journal)", PaletteAction::Today),
+    ("Ver Tags", PaletteAction::ViewTags),
 ];
 
 #[derive(Debug, Clone, PartialEq)]

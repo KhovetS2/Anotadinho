@@ -13,6 +13,7 @@ pub mod modal;
 pub mod page_view;
 pub mod sidebar;
 pub mod tab_bar;
+pub mod tags_page;
 pub mod task_table;
 pub mod time_picker;
 pub mod vim_settings_modal;

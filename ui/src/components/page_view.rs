@@ -5,6 +5,7 @@ use crate::api::PageMeta;
 use crate::components::calendar::Calendar;
 use crate::components::editor::Editor;
 use crate::components::kanban::Kanban;
+use crate::components::tags_page::TagsPage;
 use crate::components::task_table::TaskTable;
 use crate::dialog::PendingDialog;
 
@@ -80,6 +81,9 @@ pub fn page_view(props: &PageViewProps) -> Html {
         },
         "table" => html! {
             <TaskTable vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
+        },
+        "tags" => html! {
+            <TagsPage vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
         },
         // "landing" não tem componente próprio — é uma página normal
         // (mesmo Editor de sempre), só marcada como tal pra aparecer com

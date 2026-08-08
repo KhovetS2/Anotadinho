@@ -313,18 +313,43 @@ pub fn app() -> Html {
         })
     };
 
+    let view_tags_action = {
+        let vault_path = vault_path.clone();
+        let list_version = list_version.clone();
+        let on_page_selected = on_page_selected.clone();
+        Callback::from(move |_: ()| {
+            let vault = (*vault_path).clone().unwrap_or_default();
+            let list_version = list_version.clone();
+            let on_page_selected = on_page_selected.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Ok(pages) = api::list_pages(&vault).await {
+                    if let Some(existing) = pages.iter().find(|p| p.path == "pages/tags.md") {
+                        on_page_selected.emit(existing.clone());
+                        return;
+                    }
+                }
+                if let Ok(meta) = api::create_page_with_type(&vault, "Tags", "tags").await {
+                    on_page_selected.emit(meta);
+                    list_version.set(*list_version + 1);
+                }
+            });
+        })
+    };
+
     let on_palette_action = {
         let new_page_action = new_page_action.clone();
         let new_folder_action = new_folder_action.clone();
         let today_action = today_action.clone();
         let toggle_theme = toggle_theme.clone();
         let toggle_sidebar = toggle_sidebar.clone();
+        let view_tags_action = view_tags_action.clone();
         Callback::from(move |action: PaletteAction| match action {
             PaletteAction::NewPage => new_page_action.emit(()),
             PaletteAction::NewFolder => new_folder_action.emit(()),
             PaletteAction::ToggleTheme => toggle_theme.emit(()),
             PaletteAction::ToggleSidebar => toggle_sidebar.emit(()),
             PaletteAction::Today => today_action.emit(()),
+            PaletteAction::ViewTags => view_tags_action.emit(()),
         })
     };
 
