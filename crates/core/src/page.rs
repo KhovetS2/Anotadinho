@@ -25,7 +25,7 @@ impl std::fmt::Display for PageId {
 }
 
 /// Frontmatter YAML no topo de uma página.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Frontmatter {
     /// Título da página.
     pub title: Option<String>,

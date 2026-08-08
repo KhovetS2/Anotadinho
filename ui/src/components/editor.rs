@@ -7,6 +7,7 @@ use web_sys::KeyboardEvent;
 
 use crate::api::{self, PageMeta};
 use crate::components::embeds::InlineEmbed;
+use crate::components::properties_panel::PropertiesPanel;
 use crate::dialog::PendingDialog;
 use crate::embed::DocSegment;
 use crate::state;
@@ -262,6 +263,15 @@ pub fn editor(props: &EditorProps) -> Html {
     let segments: Vec<DocSegment> = crate::embed::segment(body_text);
     let has_embeds = segments.iter().any(|s| matches!(s, DocSegment::Embed(_)));
     let segment_refs: Vec<NodeRef> = (0..segments.len()).map(|_| NodeRef::default()).collect();
+
+    // Painel de propriedades (ciclo 099): parseia o frontmatter cru pro
+    // tipo estruturado (`Frontmatter`, com `extra` do ciclo 098) só pra
+    // ALIMENTAR o painel — `on_frontmatter_change` (definido mais abaixo,
+    // depois de `mark_edited` existir) é quem escreve de volta.
+    let parsed_frontmatter: anotadinho_core::Frontmatter =
+        anotadinho_core::MarkdownCodec::split_frontmatter(&frontmatter_text)
+            .map(|(fm, _)| fm)
+            .unwrap_or_default();
 
     // Effect 1: fetch page content when page changes
     {
@@ -620,6 +630,31 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
             });
         }
+    };
+
+    // Painel de propriedades (ciclo 099): único lugar do editor que
+    // edita frontmatter de verdade — o resto do editor sempre preservou
+    // o bloco de frontmatter cru, intocado, ao salvar (ver `persist`/
+    // `recompute_markdown_from_dom`). Serializa `Frontmatter` de volta
+    // pra YAML e reconstrói `content_md` com o MESMO corpo (`body_text`)
+    // intocado — mesmo formato de bloco (`---\n...\n---`, sem newline
+    // final) que `split_frontmatter_text` espera.
+    let on_frontmatter_change = {
+        let body_text = body_text.to_string();
+        let content_md = content_md.clone();
+        let mark_edited = mark_edited.clone();
+        Callback::from(move |new_fm: anotadinho_core::Frontmatter| {
+            let yaml = serde_yaml::to_string(&new_fm).unwrap_or_default();
+            let mut block = String::from("---\n");
+            block.push_str(yaml.trim_start_matches("---\n"));
+            if !block.ends_with('\n') {
+                block.push('\n');
+            }
+            block.push_str("---");
+            let new_full = format!("{}\n{}", block, body_text);
+            content_md.set(new_full.clone());
+            mark_edited(new_full);
+        })
     };
 
     // `Ctrl+Z`/`Ctrl+Shift+Z` — desfazer/refazer genérico (texto solto E
@@ -1416,6 +1451,11 @@ pub fn editor(props: &EditorProps) -> Html {
                     <button class="btn btn--primary btn--sm" onclick={do_save.reform(|_| ())} disabled={*saving || !*edited}>{ save_label }</button>
                 </div>
             </header>
+            <PropertiesPanel
+                frontmatter={parsed_frontmatter}
+                on_change={on_frontmatter_change}
+                open_dialog={props.open_dialog.clone()}
+            />
             <div class="editor__body">
                 if *loading {
                     <div class="editor__overlay">

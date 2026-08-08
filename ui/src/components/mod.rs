@@ -12,6 +12,7 @@ pub mod header_bar;
 pub mod kanban;
 pub mod modal;
 pub mod page_view;
+pub mod properties_panel;
 pub mod sidebar;
 pub mod tab_bar;
 pub mod tags_page;

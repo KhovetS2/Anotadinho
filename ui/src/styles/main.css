@@ -1136,6 +1136,109 @@ body {
     white-space: nowrap;
 }
 
+/* Painel de propriedades (frontmatter) */
+.properties-panel {
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface);
+    padding: var(--sp-2) var(--sp-4);
+    flex-shrink: 0;
+}
+
+.properties-panel__summary {
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    user-select: none;
+    list-style: none;
+}
+
+.properties-panel__summary::-webkit-details-marker {
+    display: none;
+}
+
+.properties-panel__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    margin-top: var(--sp-2);
+}
+
+.properties-panel__row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+
+.properties-panel__key {
+    flex: 0 0 96px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: lowercase;
+}
+
+.properties-panel__input {
+    flex: 1;
+    padding: var(--sp-1) var(--sp-2);
+    font-size: 0.8125rem;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.properties-panel__tags {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-1);
+}
+
+.properties-panel__tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    border-radius: var(--r-full, 999px);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.properties-panel__tag-remove {
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.625rem;
+    line-height: 1;
+}
+
+.properties-panel__tag-remove:hover {
+    color: var(--error);
+}
+
+.properties-panel__remove {
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0 var(--sp-1);
+    font-size: 0.75rem;
+    line-height: 1;
+}
+
+.properties-panel__remove:hover {
+    color: var(--error);
+}
+
+.properties-panel__add {
+    align-self: flex-start;
+}
+
 .editor__statusbar {
     display: flex;
     align-items: center;
