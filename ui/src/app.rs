@@ -1,5 +1,6 @@
 //! Componente raiz da aplicação.
 
+use wasm_bindgen::JsCast;
 use web_sys::KeyboardEvent;
 use yew::prelude::*;
 
@@ -88,6 +89,12 @@ pub fn app() -> Html {
     // sequência (só trocar a `action` não bastaria se ela repetir).
     let global_editor_action = use_state(|| None::<(state::GlobalEditorAction, u32)>);
     let global_editor_action_nonce = use_mut_ref(|| 0u32);
+    // "Focar sidebar" (ciclo 105/106) — nonce que a `Sidebar` observa
+    // pra ativar a navegação por teclado (destaca o primeiro item e
+    // foca o container). `None` = nunca ativado (não força foco no
+    // boot do app).
+    let sidebar_activate_nav = use_state(|| None::<u32>);
+    let sidebar_activate_nav_nonce = use_mut_ref(|| 0u32);
     let pending_dialog = use_state(|| None::<PendingDialog>);
     let palette_open = use_state(|| false);
     let theme_light = use_state(|| {
@@ -534,6 +541,8 @@ pub fn app() -> Html {
         let global_keymap = global_keymap.clone();
         let global_editor_action = global_editor_action.clone();
         let global_editor_action_nonce = global_editor_action_nonce.clone();
+        let sidebar_activate_nav = sidebar_activate_nav.clone();
+        let sidebar_activate_nav_nonce = sidebar_activate_nav_nonce.clone();
         Callback::from(move |e: KeyboardEvent| {
             let ctrl = e.ctrl_key() || e.meta_key();
 
@@ -626,11 +635,18 @@ pub fn app() -> Html {
                 }
             } else if matches(&km.focus_sidebar) {
                 e.prevent_default();
-                // Comportamento completo (destacar item + navegar por
-                // seta) chega no ciclo 106 — aqui só reserva a tecla.
+                let mut nonce = sidebar_activate_nav_nonce.borrow_mut();
+                *nonce += 1;
+                sidebar_activate_nav.set(Some(*nonce));
             } else if matches(&km.focus_editor) {
                 e.prevent_default();
-                // Idem — comportamento completo em ciclo futuro.
+                if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                    if let Some(el) = doc.query_selector(".editor__wysiwyg[contenteditable=\"true\"]").ok().flatten()
+                        .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+                    {
+                        let _ = el.focus();
+                    }
+                }
             }
         })
     };
@@ -671,6 +687,7 @@ pub fn app() -> Html {
                             list_version={*list_version}
                             collapsed={*sidebar_collapsed}
                             open_dialog={open_dialog.clone()}
+                            activate_nav_signal={*sidebar_activate_nav}
                         />
                         <div class="app-main-panel">
                             <TabBar

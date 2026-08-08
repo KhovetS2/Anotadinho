@@ -61,6 +61,7 @@ features = [
     "Blob",
     "BlobPropertyBag",
     "HtmlAnchorElement",
+    "HtmlDetailsElement",
     "DomRect",
     "ScrollIntoViewOptions",
     "ScrollLogicalPosition",

@@ -9,7 +9,7 @@
 //! dentro dela. Campo de busca (com filtro ativo) volta pra lista flat
 //! — mais simples de escanear resultados espalhados por várias pastas.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use wasm_bindgen::JsCast;
 use web_sys::{HtmlInputElement, KeyboardEvent};
@@ -52,6 +52,38 @@ fn build_tree(pages: &[PageMeta], folders: &[String]) -> TreeNode {
     root
 }
 
+/// Um item navegável por teclado (ciclo 106) — pasta ou página, na
+/// mesma ordem visual em que `render_tree` desenha (folders primeiro,
+/// alfabético via `BTreeMap`, depois páginas), respeitando pastas
+/// colapsadas (filhas de uma pasta colapsada não entram na lista).
+struct NavItem {
+    /// Path da pasta ou da página — mesma chave usada em
+    /// `collapsed_folders`/`selected_path`.
+    key: String,
+    is_folder: bool,
+    /// Path do pai (`None` pra itens no nível raiz, que não têm um
+    /// `NavItem` de pasta correspondente pra subir com `ArrowLeft`).
+    parent: Option<String>,
+}
+
+/// Achata a árvore de pastas numa lista navegável, na mesma ordem em
+/// que `render_tree` renderiza — usada pra `ArrowDown`/`ArrowUp`/
+/// `ArrowRight`/`ArrowLeft` (ciclo 106) sem duplicar a lógica de
+/// travessia em dois lugares.
+fn flatten_nav(node: &TreeNode, path_prefix: &str, collapsed: &HashSet<String>, depth: usize, out: &mut Vec<NavItem>) {
+    let parent = if depth == 0 { None } else { Some(path_prefix.to_string()) };
+    for (name, sub) in node.folders.iter() {
+        let full_path = format!("{}/{}", path_prefix, name);
+        out.push(NavItem { key: full_path.clone(), is_folder: true, parent: parent.clone() });
+        if !collapsed.contains(&full_path) {
+            flatten_nav(sub, &full_path, collapsed, depth + 1, out);
+        }
+    }
+    for p in &node.pages {
+        out.push(NavItem { key: p.path.clone(), is_folder: false, parent: parent.clone() });
+    }
+}
+
 /// Remove `/`/`\`/`..` de um nome de pasta digitado pelo usuário — pastas
 /// são só um nível de organização visual, não precisam de slug com
 /// hífens como as páginas.
@@ -79,6 +111,11 @@ pub struct SidebarProps {
     pub collapsed: bool,
     /// Abre o modal de diálogo do app (ver `crate::dialog`).
     pub open_dialog: Callback<PendingDialog>,
+    /// Nonce disparado pela ação "Focar sidebar" do `GlobalKeymap`
+    /// (ciclo 105/106) — qualquer mudança de valor (mesmo repetida)
+    /// ativa a navegação por teclado, destacando o primeiro item.
+    #[prop_or_default]
+    pub activate_nav_signal: Option<u32>,
 }
 
 /// Componente Sidebar.
@@ -90,6 +127,19 @@ pub fn sidebar(props: &SidebarProps) -> Html {
     let loading = use_state(|| true);
     let refresh_tick = use_state(|| 0u32);
     let search = use_state(String::new);
+    // Navegação por teclado (ciclo 106). `collapsed_folders` substitui
+    // o `<details open=true>` sempre-aberto de antes por um estado de
+    // verdade — precisa ser controlável pra `ArrowLeft`/`ArrowRight`
+    // funcionarem; um listener `ontoggle` mantém o clique nativo do
+    // mouse no `<summary>` sincronizado com esse mesmo estado (fonte
+    // única, não duas coisas competindo).
+    let collapsed_folders = use_state(HashSet::<String>::new);
+    // `None` = navegação por teclado inativa (comportamento de sempre,
+    // só clique de mouse); `Some(key)` = item destacado (pasta ou
+    // página) — ativado pela ação "Focar sidebar" do `GlobalKeymap`.
+    let nav_active = use_state(|| None::<String>);
+    let nav_container_ref = use_node_ref();
+    let nav_item_ref = use_node_ref();
 
     {
         let vault_path = props.vault_path.clone();
@@ -140,6 +190,134 @@ pub fn sidebar(props: &SidebarProps) -> Html {
 
     let page_items: Vec<PageMeta> = all_pages.iter().filter(|p| p.section == "pages").cloned().collect();
     let journal_items: Vec<PageMeta> = all_pages.iter().filter(|p| p.section == "journals").cloned().collect();
+
+    // Lista navegável (ciclo 106) — árvore achatada quando sem filtro
+    // (mesma ordem de `render_tree`), ou a lista flat de resultados
+    // quando filtrando (mesma ordem de `render_movable_list`). Só a
+    // seção Pages entra aqui (Journals fica de fora, ver Não-objetivos
+    // do ciclo 106).
+    let flat_nav: Vec<NavItem> = if filter.is_empty() {
+        let mut out = Vec::new();
+        flatten_nav(&build_tree(&page_items, &folders), "pages", &collapsed_folders, 0, &mut out);
+        out
+    } else {
+        page_items.iter().map(|p| NavItem { key: p.path.clone(), is_folder: false, parent: None }).collect()
+    };
+
+    // Ativa a navegação por teclado quando "Focar sidebar"
+    // (`GlobalKeymap`) dispara — destaca o primeiro item e foca o
+    // container (pra `onkeydown` capturar as setas a partir daqui).
+    {
+        let nav_active = nav_active.clone();
+        let nav_container_ref = nav_container_ref.clone();
+        let first_key = flat_nav.first().map(|i| i.key.clone());
+        use_effect_with(props.activate_nav_signal, move |signal| {
+            if signal.is_some() {
+                nav_active.set(first_key);
+                if let Some(el) = nav_container_ref.cast::<web_sys::HtmlElement>() {
+                    let _ = el.focus();
+                }
+            }
+            || ()
+        });
+    }
+
+    // Rola o item destacado pra dentro da área visível ao navegar —
+    // mesmo padrão do menu `/` do editor (ciclo 073/082).
+    {
+        let nav_item_ref = nav_item_ref.clone();
+        use_effect_with((*nav_active).clone(), move |_| {
+            if let Some(el) = nav_item_ref.cast::<web_sys::Element>() {
+                let opts = web_sys::ScrollIntoViewOptions::new();
+                opts.set_block(web_sys::ScrollLogicalPosition::Nearest);
+                el.scroll_into_view_with_scroll_into_view_options(&opts);
+            }
+            || ()
+        });
+    }
+
+    let on_nav_keydown = {
+        let nav_active = nav_active.clone();
+        let collapsed_folders = collapsed_folders.clone();
+        let selected_path = selected_path.clone();
+        let on_page_selected = props.on_page_selected.clone();
+        let flat_nav_keys: Vec<(String, bool, Option<String>)> = flat_nav.iter()
+            .map(|i| (i.key.clone(), i.is_folder, i.parent.clone()))
+            .collect();
+        let page_items_kd = page_items.clone();
+        Callback::from(move |e: KeyboardEvent| {
+            let Some(ref active) = *nav_active else { return };
+            let Some(idx) = flat_nav_keys.iter().position(|(k, ..)| k == active) else { return };
+            let (key, is_folder, parent) = flat_nav_keys[idx].clone();
+            match e.key().as_str() {
+                "ArrowDown" => {
+                    e.prevent_default();
+                    if let Some((next_key, ..)) = flat_nav_keys.get(idx + 1) {
+                        nav_active.set(Some(next_key.clone()));
+                    }
+                }
+                "ArrowUp" => {
+                    e.prevent_default();
+                    if idx > 0 {
+                        if let Some((prev_key, ..)) = flat_nav_keys.get(idx - 1) {
+                            nav_active.set(Some(prev_key.clone()));
+                        }
+                    }
+                }
+                "ArrowRight" => {
+                    e.prevent_default();
+                    if is_folder {
+                        if collapsed_folders.contains(&key) {
+                            let mut c = (*collapsed_folders).clone();
+                            c.remove(&key);
+                            collapsed_folders.set(c);
+                        } else if let Some((child_key, _, child_parent)) = flat_nav_keys.get(idx + 1) {
+                            if child_parent.as_deref() == Some(key.as_str()) {
+                                nav_active.set(Some(child_key.clone()));
+                            }
+                        }
+                    }
+                }
+                "ArrowLeft" => {
+                    e.prevent_default();
+                    if is_folder && !collapsed_folders.contains(&key) {
+                        let mut c = (*collapsed_folders).clone();
+                        c.insert(key.clone());
+                        collapsed_folders.set(c);
+                    } else if let Some(parent_key) = parent {
+                        nav_active.set(Some(parent_key));
+                    }
+                }
+                "Enter" => {
+                    e.prevent_default();
+                    if !is_folder {
+                        if let Some(meta) = page_items_kd.iter().find(|p| p.path == key) {
+                            selected_path.set(Some(key.clone()));
+                            on_page_selected.emit(meta.clone());
+                        }
+                    }
+                }
+                "Escape" => {
+                    e.prevent_default();
+                    // Sem isso o Escape também borbulha até `.app-root`,
+                    // que tem seu PRÓPRIO caso especial de Escape (fora
+                    // do GlobalKeymap) pra deselecionar a página aberta —
+                    // sairia da região da sidebar E fechava a página ao
+                    // mesmo tempo, dois efeitos por um Escape só.
+                    e.stop_propagation();
+                    nav_active.set(None);
+                    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                        let target = doc.query_selector(".editor__wysiwyg[contenteditable=\"true\"]").ok().flatten()
+                            .or_else(|| doc.query_selector(".app-root").ok().flatten());
+                        if let Some(el) = target.and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok()) {
+                            let _ = el.focus();
+                        }
+                    }
+                }
+                _ => {}
+            }
+        })
+    };
 
     // Content search results
     let content_results = use_state(Vec::<(String, String)>::new);
@@ -505,7 +683,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
             } else if !has_results {
                 <p class="app-sidebar__hint">{ "Nenhum resultado" }</p>
             } else {
-                <div class="sidebar-section">
+                <div class="sidebar-section" tabindex="0" ref={nav_container_ref} onkeydown={on_nav_keydown}>
                     <div class="sidebar-section__header">
                         <h3 class="sidebar-section__title">{ "Pages" }</h3>
                         <button class="btn btn--ghost btn--xs" title="Nova página inicial (landing)" onclick={on_new_landing}>{ "🏠+" }</button>
@@ -515,9 +693,9 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                     if page_items.is_empty() {
                         <p class="sidebar-section__empty">{ "Nenhuma página ainda" }</p>
                     } else if filter.is_empty() {
-                        { render_tree(&build_tree(&page_items, &folders), "pages", &selected_path, &props.on_page_selected, &make_on_move_page, &make_on_new_page_in, &make_on_export) }
+                        { render_tree(&build_tree(&page_items, &folders), "pages", &selected_path, &props.on_page_selected, &make_on_move_page, &make_on_new_page_in, &make_on_export, &collapsed_folders, &nav_active, &nav_item_ref) }
                     } else {
-                        { render_movable_list(&page_items, &selected_path, &props.on_page_selected, &make_on_move_page) }
+                        { render_movable_list(&page_items, &selected_path, &props.on_page_selected, &make_on_move_page, &nav_active, &nav_item_ref) }
                     }
                 </div>
                 <div class="sidebar-section">
@@ -610,6 +788,8 @@ fn render_movable_list<F: Fn(String) -> Callback<MouseEvent>>(
     selected_path: &UseStateHandle<Option<String>>,
     on_page_selected: &Callback<PageMeta>,
     make_on_move: &F,
+    nav_active: &Option<String>,
+    nav_item_ref: &NodeRef,
 ) -> Html {
     if items.is_empty() {
         return html! {};
@@ -621,11 +801,14 @@ fn render_movable_list<F: Fn(String) -> Callback<MouseEvent>>(
                 let title = page.title.clone();
                 let page_meta = page.clone();
                 let is_selected = selected_path.as_deref() == Some(path.as_str());
-                let class = if is_selected {
-                    "sidebar-item sidebar-item--selected"
-                } else {
-                    "sidebar-item"
+                let is_nav_active = nav_active.as_deref() == Some(path.as_str());
+                let class = match (is_selected, is_nav_active) {
+                    (true, true) => "sidebar-item sidebar-item--selected sidebar-item--nav-active",
+                    (true, false) => "sidebar-item sidebar-item--selected",
+                    (false, true) => "sidebar-item sidebar-item--nav-active",
+                    (false, false) => "sidebar-item",
                 };
+                let node_ref = if is_nav_active { nav_item_ref.clone() } else { NodeRef::default() };
                 let on_page_selected = on_page_selected.clone();
                 let selected_path = selected_path.clone();
                 let path_for_cb = path.clone();
@@ -635,7 +818,7 @@ fn render_movable_list<F: Fn(String) -> Callback<MouseEvent>>(
                 });
                 let on_move = make_on_move(path.clone());
                 html! {
-                    <li {class} {onclick}>
+                    <li {class} ref={node_ref} {onclick}>
                         <span class="sidebar-item__icon">{ page_icon(&page.section) }</span>
                         <span class="sidebar-item__title">{ &title }</span>
                         <button class="sidebar-item__move btn btn--ghost btn--xs" title="Mover pra pasta" onclick={on_move}>{ "📁" }</button>
@@ -646,10 +829,12 @@ fn render_movable_list<F: Fn(String) -> Callback<MouseEvent>>(
     }
 }
 
-/// Renderiza a árvore de pastas recursivamente — pastas primeiro
-/// (`<details>` nativo, aberto por padrão, dá o expandir/colapsar de
-/// graça sem precisar de estado extra), depois as páginas do nível
-/// atual.
+/// Renderiza a árvore de pastas recursivamente — pastas primeiro,
+/// depois as páginas do nível atual. `<details open>` é CONTROLADO por
+/// `collapsed` (ciclo 106, pra `ArrowLeft`/`ArrowRight` poderem
+/// expandir/colapsar) — um `ontoggle` sincroniza de volta o clique
+/// nativo do mouse no `<summary>`, fonte única de verdade.
+#[allow(clippy::too_many_arguments)]
 fn render_tree<
     F: Fn(String) -> Callback<MouseEvent>,
     G: Fn(String) -> Callback<MouseEvent>,
@@ -662,6 +847,9 @@ fn render_tree<
     make_on_move: &F,
     make_on_new_page_in: &G,
     make_on_export: &H,
+    collapsed_folders: &UseStateHandle<HashSet<String>>,
+    nav_active: &Option<String>,
+    nav_item_ref: &NodeRef,
 ) -> Html {
     html! {
         <>
@@ -669,21 +857,39 @@ fn render_tree<
                 let full_path = format!("{}/{}", path_prefix, name);
                 let on_new = make_on_new_page_in(full_path.clone());
                 let on_export = make_on_export(full_path.clone());
+                let is_open = !collapsed_folders.contains(&full_path);
+                let is_nav_active = nav_active.as_deref() == Some(full_path.as_str());
+                let summary_class = if is_nav_active {
+                    "sidebar-folder__header sidebar-folder__header--nav-active"
+                } else {
+                    "sidebar-folder__header"
+                };
+                let summary_ref = if is_nav_active { nav_item_ref.clone() } else { NodeRef::default() };
+                let ontoggle = {
+                    let collapsed_folders = collapsed_folders.clone();
+                    let full_path = full_path.clone();
+                    Callback::from(move |e: Event| {
+                        let Some(target) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlDetailsElement>().ok()) else { return };
+                        let mut c = (*collapsed_folders).clone();
+                        if target.open() { c.remove(&full_path); } else { c.insert(full_path.clone()); }
+                        collapsed_folders.set(c);
+                    })
+                };
                 html! {
-                    <details class="sidebar-folder" open=true>
-                        <summary class="sidebar-folder__header">
+                    <details class="sidebar-folder" open={is_open} {ontoggle}>
+                        <summary class={summary_class} ref={summary_ref}>
                             <span class="sidebar-folder__icon">{ "📁" }</span>
                             <span class="sidebar-folder__name">{ name }</span>
                             <button class="btn btn--ghost btn--xs" title="Nova página nesta pasta" onclick={on_new}>{ "+" }</button>
                             <button class="btn btn--ghost btn--xs" title="Exportar pasta" onclick={on_export}>{ "⬇" }</button>
                         </summary>
                         <div class="sidebar-folder__body">
-                            { render_tree(sub, &full_path, selected_path, on_page_selected, make_on_move, make_on_new_page_in, make_on_export) }
+                            { render_tree(sub, &full_path, selected_path, on_page_selected, make_on_move, make_on_new_page_in, make_on_export, collapsed_folders, nav_active, nav_item_ref) }
                         </div>
                     </details>
                 }
             }) }
-            { render_movable_list(&node.pages, selected_path, on_page_selected, make_on_move) }
+            { render_movable_list(&node.pages, selected_path, on_page_selected, make_on_move, nav_active, nav_item_ref) }
         </>
     }
 }
@@ -715,5 +921,61 @@ fn page_icon(section: &str) -> &'static str {
         "journals" => "📅",
         "search" => "🔍",
         _ => "📄",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn page(path: &str) -> PageMeta {
+        let title = std::path::Path::new(path).file_stem().unwrap().to_string_lossy().to_string();
+        PageMeta { path: path.to_string(), title, section: "pages".to_string() }
+    }
+
+    #[test]
+    fn flatten_nav_orders_folders_before_pages_alphabetically() {
+        let pages = vec![page("pages/alpha.md"), page("pages/trabalho/nota.md")];
+        let folders = vec!["pages/trabalho".to_string()];
+        let tree = build_tree(&pages, &folders);
+        let mut out = Vec::new();
+        flatten_nav(&tree, "pages", &HashSet::new(), 0, &mut out);
+        let keys: Vec<&str> = out.iter().map(|i| i.key.as_str()).collect();
+        assert_eq!(keys, vec!["pages/trabalho", "pages/trabalho/nota.md", "pages/alpha.md"]);
+    }
+
+    #[test]
+    fn flatten_nav_skips_children_of_collapsed_folder() {
+        let pages = vec![page("pages/trabalho/nota.md")];
+        let folders = vec!["pages/trabalho".to_string()];
+        let tree = build_tree(&pages, &folders);
+        let mut collapsed = HashSet::new();
+        collapsed.insert("pages/trabalho".to_string());
+        let mut out = Vec::new();
+        flatten_nav(&tree, "pages", &collapsed, 0, &mut out);
+        let keys: Vec<&str> = out.iter().map(|i| i.key.as_str()).collect();
+        assert_eq!(keys, vec!["pages/trabalho"]);
+    }
+
+    #[test]
+    fn flatten_nav_tracks_parent_for_nested_items() {
+        let pages = vec![page("pages/trabalho/nota.md")];
+        let folders = vec!["pages/trabalho".to_string()];
+        let tree = build_tree(&pages, &folders);
+        let mut out = Vec::new();
+        flatten_nav(&tree, "pages", &HashSet::new(), 0, &mut out);
+        let folder_item = out.iter().find(|i| i.key == "pages/trabalho").unwrap();
+        assert_eq!(folder_item.parent, None);
+        let page_item = out.iter().find(|i| i.key == "pages/trabalho/nota.md").unwrap();
+        assert_eq!(page_item.parent.as_deref(), Some("pages/trabalho"));
+    }
+
+    #[test]
+    fn flatten_nav_root_level_page_has_no_parent() {
+        let pages = vec![page("pages/alpha.md")];
+        let tree = build_tree(&pages, &[]);
+        let mut out = Vec::new();
+        flatten_nav(&tree, "pages", &HashSet::new(), 0, &mut out);
+        assert_eq!(out[0].parent, None);
     }
 }

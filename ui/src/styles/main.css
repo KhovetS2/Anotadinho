@@ -580,6 +580,15 @@ body {
     color: var(--accent-blue);
 }
 
+/* Item destacado por navegação de teclado (ciclo 106) — distinto de
+   "selecionado" (página aberta): um anel, não preenchimento, pra
+   compor visualmente com `--selected` quando os dois coincidem. */
+.sidebar-item--nav-active,
+.sidebar-folder__header--nav-active {
+    outline: 2px solid var(--accent-purple);
+    outline-offset: -2px;
+}
+
 .sidebar-item__icon {
     font-size: 0.75rem;
     flex-shrink: 0;
