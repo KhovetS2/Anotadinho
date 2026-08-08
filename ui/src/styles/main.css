@@ -1358,8 +1358,11 @@ body {
 .calendar__header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: var(--sp-2);
     margin-bottom: var(--sp-3);
+}
+.calendar__header-spacer {
+    flex: 1;
 }
 
 .calendar__header h2 {
@@ -1435,6 +1438,103 @@ body {
 
 .calendar__item:hover {
     background: var(--bg-elevated);
+}
+
+/* Visões Mês/Semana/Dia da página de calendário inteira (frontmatter
+   `type: calendar`) — só navegação/visualização (clicar abre a página),
+   sem edição nenhuma; por isso as células são bem mais simples que as do
+   embed interativo `.calendar-grid__*` (sem drag, sem resize, sem criar
+   evento). */
+.page-calendar__weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    text-align: center;
+    padding-bottom: var(--sp-1);
+}
+
+.page-calendar__grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    overflow: hidden;
+}
+.page-calendar__grid--month {
+    grid-template-rows: repeat(6, minmax(90px, 1fr));
+}
+.page-calendar__grid--week {
+    grid-template-rows: minmax(200px, 1fr);
+}
+.page-calendar__grid--day {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(300px, 1fr);
+}
+
+.page-calendar__cell {
+    background: var(--bg-surface);
+    padding: var(--sp-1) var(--sp-2);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    overflow: hidden;
+}
+.page-calendar__cell--muted {
+    background: var(--bg-base);
+    color: var(--text-muted);
+}
+.page-calendar__cell--muted .page-calendar__cell-daynum {
+    color: var(--text-muted);
+    opacity: 0.6;
+}
+.page-calendar__cell--today {
+    background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-surface));
+}
+.page-calendar__cell--today .page-calendar__cell-daynum {
+    background: var(--accent-blue);
+    color: white;
+}
+
+.page-calendar__cell-daynum {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+}
+
+.page-calendar__cell-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.page-calendar__cell-item {
+    font-size: 0.75rem;
+    padding: 2px var(--sp-1);
+    border-radius: var(--r-sm);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.page-calendar__cell-item:hover {
+    filter: brightness(1.15);
 }
 
 .calendar__item-title {
