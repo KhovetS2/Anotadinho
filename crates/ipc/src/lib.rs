@@ -5,6 +5,7 @@
 
 #![warn(missing_docs)]
 
+use anotadinho_search::SearchIndex;
 use anotadinho_vault::VaultIo;
 use serde::{Deserialize, Serialize};
 
@@ -188,7 +189,17 @@ pub fn handle_search_content(
     query: String,
 ) -> Result<Vec<(String, String)>, String> {
     let vault = VaultIo::open(&vault_path);
-    vault.search_content(&query).map_err(|e| e.to_string())
+    let pages = vault.list_pages().map_err(|e| e.to_string())?;
+    let mut index = SearchIndex::new().map_err(|e| e.to_string())?;
+    for page in &pages {
+        if let Ok(content) = vault.read_page(&page.path) {
+            index
+                .index_page(&page.path, &page.title, &content)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    let results = index.search(&query, 20).map_err(|e| e.to_string())?;
+    Ok(results.into_iter().map(|r| (r.page_path, r.snippet)).collect())
 }
 
 #[cfg(test)]

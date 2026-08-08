@@ -514,7 +514,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                                         <span class="sidebar-item__icon">{ page_icon("search") }</span>
                                         <div class="sidebar-item__result">
                                             <span class="sidebar-item__title">{ &title }</span>
-                                            <span class="sidebar-item__excerpt">{ &excerpt }</span>
+                                            <span class="sidebar-item__excerpt">{ render_excerpt_highlight(&excerpt) }</span>
                                         </div>
                                     </li>
                                 }
@@ -643,6 +643,25 @@ fn render_tree<F: Fn(String) -> Callback<MouseEvent>, G: Fn(String) -> Callback<
                 }
             }) }
             { render_movable_list(&node.pages, selected_path, on_page_selected, make_on_move) }
+        </>
+    }
+}
+
+/// Converte os marcadores `**termo**` que `search_content` usa pra
+/// indicar o trecho que casou com a busca (via `snippet()` do FTS5, ver
+/// `crates/search`) em `<strong>` de verdade — sem isso o usuário via
+/// os asteriscos literais em vez de destaque visual.
+fn render_excerpt_highlight(excerpt: &str) -> Html {
+    let parts: Vec<&str> = excerpt.split("**").collect();
+    html! {
+        <>
+            { for parts.iter().enumerate().map(|(i, part)| {
+                if i % 2 == 1 {
+                    html! { <strong>{ *part }</strong> }
+                } else {
+                    html! { { *part } }
+                }
+            }) }
         </>
     }
 }

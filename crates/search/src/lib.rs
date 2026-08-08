@@ -1,6 +1,5 @@
-//! Anotadinho search: full-text e embeddings opcionais.
-//!
-//! Stub: implementação concreta virá no ciclo 011.
+//! Anotadinho search: full-text (SQLite FTS5) e embeddings opcionais
+//! (futuro).
 
 #![warn(missing_docs)]
 
