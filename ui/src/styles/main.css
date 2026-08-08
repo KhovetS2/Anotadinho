@@ -253,6 +253,69 @@ body {
     position: relative;
 }
 
+.git-status-wrapper {
+    position: relative;
+}
+
+.git-status__indicator {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.75rem;
+}
+
+.git-status__popover {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 220px;
+    max-width: 340px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    z-index: 200;
+    padding: var(--sp-2);
+}
+
+.git-status__empty {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    padding: var(--sp-1) var(--sp-2);
+    margin: 0;
+}
+
+.git-status__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.git-status__item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 4px var(--sp-2);
+    font-size: 0.75rem;
+}
+
+.git-status__code {
+    flex: 0 0 20px;
+    font-family: var(--font-mono, monospace);
+    color: var(--accent-purple);
+    font-weight: 600;
+}
+
+.git-status__path {
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .header-menu {
     position: absolute;
     top: calc(100% + 4px);

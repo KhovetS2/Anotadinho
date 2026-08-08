@@ -1,7 +1,7 @@
 ---
 id: "103"
 titulo: "Visibilidade de git read-only"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: media
@@ -22,19 +22,19 @@ quais, sem nenhuma ação de commit/push pela UI.
 
 ## Critérios de aceite
 
-- [ ] Chama o binário `git` do sistema via `std::process::Command`
+- [x] Chama o binário `git` do sistema via `std::process::Command`
       (`git -C <vault> status --porcelain`) — SEM depender da crate
       `git2`/libgit2 (dependência pesada nova evitada de propósito)
-- [ ] Se `git` não estiver instalado OU o vault não for um repositório
+- [x] Se `git` não estiver instalado OU o vault não for um repositório
       git, degrada silenciosamente (indicador de git simplesmente não
       aparece) — nunca trava nem mostra erro pro usuário por causa disso
-- [ ] Indicador na `HeaderBar` (contagem de arquivos modificados/não
+- [x] Indicador na `HeaderBar` (contagem de arquivos modificados/não
       rastreados), atualizado no mesmo polling de 3s que já existe
       (`app.rs`, `check_changes`)
-- [ ] Clicar o indicador mostra a lista de arquivos modificados (nome +
+- [x] Clicar o indicador mostra a lista de arquivos modificados (nome +
       status M/A/D/??) num popover simples — sem diff de conteúdo nesta
       v1
-- [ ] `cargo test --workspace`, `cd ui && cargo test --lib`,
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
       `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
       passam
 
@@ -67,3 +67,22 @@ timeout/processo travado com cuidado (não deixar o polling de 3s
 empilhar processos `git` se um demorar) — um jeito simples: só disparar
 a checagem de git se a anterior já tiver terminado (flag de "em
 andamento", mesmo padrão de `AppWatchers` já usado por `check_changes`).
+
+Implementado em `crates/vault/src/git_status.rs` (módulo pequeno, sem
+crate nova). A guarda contra empilhar processos `git` ficou no
+FRONTEND (`app.rs`, `Rc<RefCell<bool>>` no mesmo efeito de polling de
+`check_changes`), não no backend — mais simples, e correto porque o
+runtime WASM é single-threaded (não tem race de verdade entre
+check-e-set).
+
+Comando IPC `git_status` retorna `Option<Vec<GitFileEntry>>`
+diretamente (sem `Result<_, String>`) — toda falha (git não instalado,
+não é repo) já vira `None` dentro de `anotadinho_vault::git_status`,
+então não tem "erro" pra propagar, só "não tem indicador pra mostrar".
+
+Validado ao vivo via MCP `tauri`: indicador mostra "⎇ 14" (contagem
+real do repo do projeto — o vault de demonstração é um subdiretório do
+monorepo, então `git -C <vault> status` reflete o repo INTEIRO, não só
+o vault; num deploy real de agent-os o vault normalmente É a raiz do
+repo, cenário onde o indicador mostraria só as mudanças do vault).
+Popover ao clicar lista os arquivos com status M/??  corretamente.

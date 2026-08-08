@@ -4,6 +4,8 @@ use gloo_events::EventListener;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
+use crate::api::GitFileEntry;
+
 #[derive(Properties, PartialEq, Clone)]
 pub struct HeaderBarProps {
     pub vault_name: Option<String>,
@@ -12,6 +14,10 @@ pub struct HeaderBarProps {
     pub theme_light: bool,
     pub autosave_enabled: bool,
     pub vim_mode_enabled: bool,
+    /// `None` = vault não é um repositório git (ou `git` não
+    /// instalado) — indicador simplesmente não aparece. `Some(vec![])`
+    /// = repo git limpo, sem mudanças.
+    pub git_files: Option<Vec<GitFileEntry>>,
     pub on_toggle_sidebar: Callback<()>,
     pub on_toggle_theme: Callback<()>,
     pub on_toggle_autosave: Callback<()>,
@@ -26,6 +32,47 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
     let menu_open = use_state(|| false);
     let menu_ref = use_node_ref();
     let toggle_menu = { let m = menu_open.clone(); Callback::from(move |_| m.set(!*m)) };
+
+    let git_popover_open = use_state(|| false);
+    let git_popover_ref = use_node_ref();
+    let toggle_git_popover = { let p = git_popover_open.clone(); Callback::from(move |_| p.set(!*p)) };
+
+    // Mesmo padrão de fechar ao clicar fora/Escape do menu ⚙ acima.
+    {
+        let git_popover_open = git_popover_open.clone();
+        let git_popover_ref = git_popover_ref.clone();
+        use_effect_with(*git_popover_open, move |open| {
+            let mut listeners = Vec::new();
+            if *open {
+                let window = web_sys::window().expect("no global window");
+                let close_on_outside = {
+                    let git_popover_open = git_popover_open.clone();
+                    let git_popover_ref = git_popover_ref.clone();
+                    EventListener::new(&window, "mousedown", move |e| {
+                        let Some(target) = e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()) else { return };
+                        if let Some(el) = git_popover_ref.cast::<web_sys::Element>() {
+                            if !el.contains(Some(&target)) {
+                                git_popover_open.set(false);
+                            }
+                        }
+                    })
+                };
+                let close_on_escape = {
+                    let git_popover_open = git_popover_open.clone();
+                    EventListener::new(&window, "keydown", move |e| {
+                        if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
+                            if e.key() == "Escape" {
+                                git_popover_open.set(false);
+                            }
+                        }
+                    })
+                };
+                listeners.push(close_on_outside);
+                listeners.push(close_on_escape);
+            }
+            move || drop(listeners)
+        });
+    }
 
     // Fecha o menu ao clicar fora dele ou apertar Escape — sem isso ele só
     // fechava clicando de novo no botão ⚙ ou (por acidente) ao recarregar
@@ -76,6 +123,29 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                 <span class="header-bar__title">{ "Anotadinho" }</span>
                 if let Some(ref name) = props.vault_name {
                     <span class="header-bar__vault">{ name }</span>
+                }
+                if let Some(ref files) = props.git_files {
+                    <div class="git-status-wrapper" ref={git_popover_ref}>
+                        <button class="btn btn--ghost btn--xs git-status__indicator" onclick={toggle_git_popover} title="Status do git">
+                            { format!("⎇ {}", files.len()) }
+                        </button>
+                        if *git_popover_open {
+                            <div class="git-status__popover">
+                                if files.is_empty() {
+                                    <p class="git-status__empty">{ "Sem mudanças" }</p>
+                                } else {
+                                    <ul class="git-status__list">
+                                        { for files.iter().map(|f| html! {
+                                            <li class="git-status__item">
+                                                <span class="git-status__code">{ &f.status }</span>
+                                                <span class="git-status__path">{ &f.path }</span>
+                                            </li>
+                                        }) }
+                                    </ul>
+                                }
+                            </div>
+                        }
+                    </div>
                 }
             </div>
             <div class="header-bar__right">

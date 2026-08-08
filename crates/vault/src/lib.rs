@@ -5,8 +5,10 @@
 
 #![warn(missing_docs)]
 
+pub mod git_status;
 pub mod io;
 pub mod watcher;
 
+pub use git_status::{git_status, GitFileEntry};
 pub use io::VaultIo;
 pub use watcher::VaultWatcher;

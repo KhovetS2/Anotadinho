@@ -28,6 +28,15 @@ pub struct PageMeta {
     pub section: String,
 }
 
+/// Uma linha de `git status --porcelain` (ciclo 103, somente leitura).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GitFileEntry {
+    /// Path relativo ao vault.
+    pub path: String,
+    /// Status resumido: `M`/`A`/`D`/`R`/`??`.
+    pub status: String,
+}
+
 fn get_invoke_fn() -> Result<js_sys::Function, JsValue> {
     let w = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
     let ipc = js_sys::Reflect::get(&w, &JsValue::from_str("__TAURI_INTERNALS__"))?;
@@ -201,6 +210,19 @@ pub async fn create_page_in_folder(
     let result = tauri_invoke("create_page_in_folder", &args)
         .await
         .map_err(|e| format!("create_page_in_folder error: {:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
+/// Lista arquivos modificados/não rastreados via `git status
+/// --porcelain` (somente leitura). `None` se o vault não for um
+/// repositório git ou `git` não estiver instalado — a UI deve tratar
+/// isso como "não mostrar indicador", não como erro.
+pub async fn git_status(vault_path: &str) -> Result<Option<Vec<GitFileEntry>>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("git_status", &args).await.map_err(|e| format!("{:?}", e))?;
     serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
 }
 

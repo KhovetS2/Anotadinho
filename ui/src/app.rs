@@ -24,6 +24,7 @@ pub fn app() -> Html {
     let vault_name = use_state(|| state::load_vault_name());
     let selected_page = use_state(|| None::<PageMeta>);
     let list_version = use_state(|| 0u32);
+    let git_files = use_state(|| None::<Vec<api::GitFileEntry>>);
     let sidebar_collapsed = use_state(|| false);
     let open_tabs = use_state(Vec::<PageMeta>::new);
     let vim_mode = use_state(state::load_vim_mode_enabled);
@@ -77,16 +78,41 @@ pub fn app() -> Html {
     {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();
+        let git_files = git_files.clone();
         use_effect_with(vault_path.clone(), move |_| {
             let mut interval: Option<gloo_timers::callback::Interval> = None;
             if let Some(ref p) = *vault_path {
                 let path = p.clone();
+                // Busca inicial imediata — sem isso o indicador só
+                // apareceria depois do primeiro tick do intervalo (3s).
+                {
+                    let path = path.clone();
+                    let git_files = git_files.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        if let Ok(status) = api::git_status(&path).await {
+                            git_files.set(status);
+                        }
+                    });
+                }
+                // Guarda contra empilhar processos `git` se `git status`
+                // demorar mais que os 3s do intervalo — só dispara a
+                // próxima checagem se a anterior já terminou.
+                let git_busy = std::rc::Rc::new(std::cell::RefCell::new(false));
                 let iv = gloo_timers::callback::Interval::new(3000, move || {
                     let path = path.clone();
                     let list_version = list_version.clone();
+                    let git_files = git_files.clone();
+                    let git_busy = git_busy.clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         if let Ok(true) = api::check_changes(&path).await {
                             list_version.set(*list_version + 1);
+                        }
+                        if !*git_busy.borrow() {
+                            *git_busy.borrow_mut() = true;
+                            if let Ok(status) = api::git_status(&path).await {
+                                git_files.set(status);
+                            }
+                            *git_busy.borrow_mut() = false;
                         }
                     });
                 });
@@ -500,6 +526,7 @@ pub fn app() -> Html {
                 theme_light={*theme_light}
                 autosave_enabled={*autosave_enabled}
                 vim_mode_enabled={*vim_mode}
+                git_files={(*git_files).clone()}
                 on_toggle_sidebar={toggle_sidebar}
                 on_toggle_theme={toggle_theme}
                 on_toggle_autosave={toggle_autosave}

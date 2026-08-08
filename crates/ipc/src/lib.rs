@@ -6,7 +6,7 @@
 #![warn(missing_docs)]
 
 use anotadinho_search::SearchIndex;
-use anotadinho_vault::VaultIo;
+use anotadinho_vault::{GitFileEntry, VaultIo};
 use serde::{Deserialize, Serialize};
 
 /// Comando de exemplo: ping.
@@ -169,6 +169,14 @@ pub fn handle_create_page_in_folder(
         title: meta.title,
         section: meta.section,
     })
+}
+
+/// Handler de git_status: lista arquivos modificados/não rastreados no
+/// vault via `git status --porcelain` (somente leitura). `None` se o
+/// vault não for um repositório git ou `git` não estiver instalado —
+/// nunca um erro, pra degradar silenciosamente na UI.
+pub fn handle_git_status(vault_path: String) -> Option<Vec<GitFileEntry>> {
+    anotadinho_vault::git_status(std::path::Path::new(&vault_path))
 }
 
 /// Handler de export_folder: concatena o markdown fonte de todas as
