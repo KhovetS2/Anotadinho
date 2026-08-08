@@ -7,7 +7,9 @@
 //! evento rápido, arrastar reagenda preservando a duração (entre dias —
 //! mudar o horário arrastando verticalmente fica pra um ciclo futuro).
 
+use std::cell::RefCell;
 use std::collections::BTreeSet;
+use std::rc::Rc;
 
 use gloo_events::EventListener;
 use wasm_bindgen::JsCast;
@@ -167,16 +169,37 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
     let resize_preview_min = use_state(|| None::<u32>);
     // Gaveta de eventos sem data — recolhida por padrão.
     let drawer_open = use_state(|| false);
+    // Sinaliza "acabei de soltar um resize/drag" pro clique-de-criar-
+    // evento do dia/coluna (`onclick`) saber que deve ignorar esse
+    // clique em vez de abrir o diálogo de novo evento. `use_mut_ref` (não
+    // `use_state`) porque precisa refletir o valor mais atual mesmo lido
+    // de dentro de um handler montado antes do mousedown que o setou —
+    // mesma razão do `edited_ref` do editor (ciclo 074).
+    let suppress_click_ref = use_mut_ref(|| false);
 
     // Zera o arraste sempre que o mouse for solto em qualquer lugar —
     // mesmo padrão do InlineKanban, evita estado de drag preso se o
     // usuário soltar fora da grade.
     {
         let dragging = dragging.clone();
+        let suppress_click_ref = suppress_click_ref.clone();
         use_effect_with((), move |_| {
             let window = web_sys::window().expect("no global window");
             let listener = EventListener::new(&window, "mouseup", move |_event| {
                 dragging.set(None);
+                // Reset adiado: precisa continuar `true` durante o
+                // "click" sintético que pode disparar logo depois desse
+                // mouseup (é isso que o onclick do dia/coluna verifica
+                // pra ignorar o clique fantasma), mas não pode ficar
+                // `true` pra sempre — senão um clique de verdade,
+                // legítimo, bem depois (sem nenhum "click" tendo
+                // disparado logo após ESSE arraste em particular) seria
+                // ignorado por engano.
+                let suppress_click_ref = suppress_click_ref.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    gloo_timers::future::sleep(std::time::Duration::from_millis(0)).await;
+                    *suppress_click_ref.borrow_mut() = false;
+                });
             });
             move || drop(listener)
         });
@@ -215,6 +238,7 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
         let resizing_state = resizing.clone();
         let data = props.data.clone();
         let on_change = props.on_change.clone();
+        let suppress_click_ref = suppress_click_ref.clone();
         use_effect_with(*resizing, move |resizing_val| {
             let listeners = resizing_val.map(|(idx, is_start_edge)| {
                 let window = web_sys::window().expect("no global window");
@@ -245,6 +269,7 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
                 let up_on_change = on_change.clone();
                 let up_resizing = resizing_state.clone();
                 let up_preview = resize_preview_min.clone();
+                let up_suppress_click_ref = suppress_click_ref.clone();
                 let mouseup = EventListener::new(&window, "mouseup", move |e| {
                     if let Some(e) = e.dyn_ref::<web_sys::MouseEvent>() {
                         if let Some(el) = up_hour_scroll_ref.cast::<web_sys::Element>() {
@@ -259,6 +284,13 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
                     }
                     up_resizing.set(None);
                     up_preview.set(None);
+                    // Reset adiado — ver comentário equivalente no listener
+                    // de arraste (`dragging`) logo acima nesse componente.
+                    let up_suppress_click_ref = up_suppress_click_ref.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        gloo_timers::future::sleep(std::time::Duration::from_millis(0)).await;
+                        *up_suppress_click_ref.borrow_mut() = false;
+                    });
                 });
 
                 (mousemove, mouseup)
@@ -395,9 +427,11 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
             (*dragging == Some(idx)).then_some("calendar-grid__bar--dragging"),
         );
         let dragging_start = dragging.clone();
+        let suppress_click_ref_down = suppress_click_ref.clone();
         let onmousedown = Callback::from(move |e: MouseEvent| {
             e.stop_propagation();
             e.prevent_default();
+            *suppress_click_ref_down.borrow_mut() = true;
             dragging_start.set(Some(idx));
         });
         let editing_entry_click = editing_entry.clone();
@@ -471,10 +505,11 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
     let body = match *view_mode {
         ViewMode::Month => render_month_grid(
             props, ay, am, &today_str, &dragging, &hover_day, &editing_entry, &existing_tags, &open_dialog_clone(props),
+            &suppress_click_ref,
         ),
         ViewMode::Week | ViewMode::Day => render_day_columns(
             props, &window_dates, &today_str, &dragging, &hover_day, &editing_entry, &existing_tags, &hour_scroll_ref,
-            &resizing, &resize_preview_min,
+            &resizing, &resize_preview_min, &suppress_click_ref,
         ),
     };
 
@@ -542,6 +577,7 @@ fn render_month_grid(
     editing_entry: &UseStateHandle<Option<usize>>,
     existing_tags: &[String],
     open_dialog: &Callback<PendingDialog>,
+    suppress_click_ref: &Rc<RefCell<bool>>,
 ) -> Html {
     let first_weekday = date_util::weekday_of(vy, vm, 1);
     let days_in_month = date_util::days_in_month(vy, vm);
@@ -600,7 +636,17 @@ fn render_month_grid(
                             }
                         })
                     };
+                    let suppress_click_ref_click = suppress_click_ref.clone();
                     let onclick = Callback::from(move |_: MouseEvent| {
+                        // Um clique logo depois de soltar um arraste/resize
+                        // (o mouseup pode acabar virando um "click" sintético
+                        // no mesmo dia) não deveria abrir o diálogo de novo
+                        // evento — só o próprio mouseup do arraste já tratou
+                        // a ação de verdade.
+                        if *suppress_click_ref_click.borrow() {
+                            *suppress_click_ref_click.borrow_mut() = false;
+                            return;
+                        }
                         let data = data.clone();
                         let on_change = on_change.clone();
                         let date_for_click = date_for_click.clone();
@@ -650,9 +696,11 @@ fn render_month_grid(
                     );
                     let entry_idx = bar.entry_idx;
                     let dragging_start = dragging.clone();
+                    let suppress_click_ref_down = suppress_click_ref.clone();
                     let onmousedown = Callback::from(move |e: MouseEvent| {
                         e.stop_propagation();
                         e.prevent_default();
+                        *suppress_click_ref_down.borrow_mut() = true;
                         dragging_start.set(Some(entry_idx));
                     });
                     let editing_entry = editing_entry.clone();
@@ -698,6 +746,7 @@ fn render_day_columns(
     hour_scroll_ref: &NodeRef,
     resizing: &UseStateHandle<Option<(usize, bool)>>,
     resize_preview_min: &UseStateHandle<Option<u32>>,
+    suppress_click_ref: &Rc<RefCell<bool>>,
 ) -> Html {
     let (bars, _overflow) = pack_days(&props.data.entries, day_dates, true);
     let n = day_dates.len();
@@ -736,7 +785,12 @@ fn render_day_columns(
                 }
             })
         };
+        let suppress_click_ref_click = suppress_click_ref.clone();
         let onclick = Callback::from(move |_: MouseEvent| {
+            if *suppress_click_ref_click.borrow() {
+                *suppress_click_ref_click.borrow_mut() = false;
+                return;
+            }
             let data = data.clone();
             let on_change = on_change.clone();
             let date_for_click = date_for_click.clone();
@@ -774,9 +828,11 @@ fn render_day_columns(
         );
         let entry_idx = bar.entry_idx;
         let dragging_start = dragging.clone();
+        let suppress_click_ref_down = suppress_click_ref.clone();
         let onmousedown = Callback::from(move |e: MouseEvent| {
             e.stop_propagation();
             e.prevent_default();
+            *suppress_click_ref_down.borrow_mut() = true;
             dragging_start.set(Some(entry_idx));
         });
         let editing_entry = editing_entry.clone();
@@ -808,7 +864,17 @@ fn render_day_columns(
         let on_change = props.on_change.clone();
         let open_dialog = props.open_dialog.clone();
         let date_for_click = date_str.clone();
+        let suppress_click_ref_click = suppress_click_ref.clone();
         let onclick = Callback::from(move |e: MouseEvent| {
+            // Soltar um resize/drag pode terminar num "click" sintético
+            // na coluna do dia por baixo — sem essa checagem, isso abria
+            // o diálogo de novo evento por cima da atualização que
+            // acabou de acontecer (o resize/drag em si já foi commitado
+            // no próprio mouseup, esse clique é só ruído).
+            if *suppress_click_ref_click.borrow() {
+                *suppress_click_ref_click.borrow_mut() = false;
+                return;
+            }
             let data = data.clone();
             let on_change = on_change.clone();
             let date_for_click = date_for_click.clone();
@@ -886,9 +952,11 @@ fn render_day_columns(
             );
             let onmousedown = {
                 let dragging = dragging.clone();
+                let suppress_click_ref_down = suppress_click_ref.clone();
                 Callback::from(move |e: MouseEvent| {
                     e.stop_propagation();
                     e.prevent_default();
+                    *suppress_click_ref_down.borrow_mut() = true;
                     dragging.set(Some(idx));
                 })
             };
@@ -905,17 +973,21 @@ fn render_day_columns(
             };
             let onmousedown_top = {
                 let resizing = resizing.clone();
+                let suppress_click_ref_down = suppress_click_ref.clone();
                 Callback::from(move |e: MouseEvent| {
                     e.stop_propagation();
                     e.prevent_default();
+                    *suppress_click_ref_down.borrow_mut() = true;
                     resizing.set(Some((idx, true)));
                 })
             };
             let onmousedown_bottom = {
                 let resizing = resizing.clone();
+                let suppress_click_ref_down = suppress_click_ref.clone();
                 Callback::from(move |e: MouseEvent| {
                     e.stop_propagation();
                     e.prevent_default();
+                    *suppress_click_ref_down.borrow_mut() = true;
                     resizing.set(Some((idx, false)));
                 })
             };
