@@ -373,6 +373,55 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         })
     };
 
+    // Pede o título e cria a página — sem template ou a partir de um
+    // (ciclo 100/113). Espelha `prompt_title_and_create` de `app.rs`;
+    // duplicado aqui (não delegado ao callback de `app.rs`) porque a
+    // Sidebar já gerencia seu próprio refresh via `refresh_tick` e
+    // `selected_path` (destaque do item na árvore), independente do
+    // `list_version` de `app.rs` — mesmo padrão que o resto das ações
+    // desta Sidebar (criar pasta, mover página) já segue.
+    fn prompt_title_and_create(
+        open_dialog: &Callback<PendingDialog>,
+        vault_path: String,
+        selected_path: UseStateHandle<Option<String>>,
+        on_page_selected: Callback<PageMeta>,
+        refresh_tick: UseStateHandle<u32>,
+        template_path: Option<String>,
+    ) {
+        let open_dialog_for_error = open_dialog.clone();
+        open_dialog.emit(PendingDialog::Prompt {
+            title: "Título da nova página".to_string(),
+            default: "Nova nota".to_string(),
+            on_submit: Callback::from(move |title: String| {
+                let vault_path = vault_path.clone();
+                let selected_path = selected_path.clone();
+                let on_page_selected = on_page_selected.clone();
+                let refresh_tick = refresh_tick.clone();
+                let open_dialog = open_dialog_for_error.clone();
+                let template_path = template_path.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let result = match template_path {
+                        Some(tpl) => api::create_page_from_template(&vault_path, &tpl, &title).await,
+                        None => api::create_page(&vault_path, &title).await,
+                    };
+                    match result {
+                        Ok(meta) => {
+                            selected_path.set(Some(meta.path.clone()));
+                            on_page_selected.emit(meta);
+                            refresh_tick.set(*refresh_tick + 1);
+                        }
+                        Err(e) => {
+                            web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
+                            open_dialog.emit(PendingDialog::Alert {
+                                message: format!("Erro ao criar página: {}", e),
+                            });
+                        }
+                    }
+                });
+            }),
+        });
+    }
+
     let on_new_page = {
         let vault_path = props.vault_path.clone();
         let selected_path = selected_path.clone();
@@ -384,32 +433,36 @@ pub fn sidebar(props: &SidebarProps) -> Html {
             let selected_path = selected_path.clone();
             let on_page_selected = on_page_selected.clone();
             let refresh_tick = refresh_tick.clone();
-            let open_dialog_for_error = open_dialog.clone();
-            open_dialog.emit(PendingDialog::Prompt {
-                title: "Título da nova página".to_string(),
-                default: "Nova nota".to_string(),
-                on_submit: Callback::from(move |title: String| {
-                    let vault_path = vault_path.clone();
-                    let selected_path = selected_path.clone();
-                    let on_page_selected = on_page_selected.clone();
-                    let refresh_tick = refresh_tick.clone();
-                    let open_dialog = open_dialog_for_error.clone();
-                    wasm_bindgen_futures::spawn_local(async move {
-                        match api::create_page(&vault_path, &title).await {
-                            Ok(meta) => {
-                                selected_path.set(Some(meta.path.clone()));
-                                on_page_selected.emit(meta);
-                                refresh_tick.set(*refresh_tick + 1);
-                            }
-                            Err(e) => {
-                                web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
-                                open_dialog.emit(PendingDialog::Alert {
-                                    message: format!("Erro ao criar página: {}", e),
-                                });
-                            }
-                        }
-                    });
-                }),
+            let open_dialog = open_dialog.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let templates = api::list_templates(&vault_path).await.unwrap_or_default();
+                if templates.is_empty() {
+                    prompt_title_and_create(&open_dialog, vault_path, selected_path, on_page_selected, refresh_tick, None);
+                    return;
+                }
+                let mut options: Vec<(String, String)> =
+                    vec![(String::new(), "Página em branco".to_string())];
+                options.extend(templates.into_iter().map(|t| (t.path, t.title)));
+                let vault_path2 = vault_path.clone();
+                let selected_path2 = selected_path.clone();
+                let on_page_selected2 = on_page_selected.clone();
+                let refresh_tick2 = refresh_tick.clone();
+                let open_dialog2 = open_dialog.clone();
+                open_dialog.emit(PendingDialog::Select {
+                    title: "Escolher template".to_string(),
+                    options,
+                    on_select: Callback::from(move |template_path: String| {
+                        let template = if template_path.is_empty() { None } else { Some(template_path.clone()) };
+                        prompt_title_and_create(
+                            &open_dialog2,
+                            vault_path2.clone(),
+                            selected_path2.clone(),
+                            on_page_selected2.clone(),
+                            refresh_tick2.clone(),
+                            template,
+                        );
+                    }),
+                });
             });
         })
     };
