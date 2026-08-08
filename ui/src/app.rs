@@ -5,6 +5,7 @@ use yew::prelude::*;
 
 use crate::api;
 use crate::api::PageMeta;
+use crate::components::command_palette::{CommandPalette, PaletteAction};
 use crate::components::dialog_host::DialogHost;
 use crate::components::editor::Editor;
 use crate::components::empty_state::EmptyState;
@@ -26,6 +27,7 @@ pub fn app() -> Html {
     let open_tabs = use_state(Vec::<PageMeta>::new);
     let vim_mode = use_state(|| false);
     let pending_dialog = use_state(|| None::<PendingDialog>);
+    let palette_open = use_state(|| false);
     let theme_light = use_state(|| {
         web_sys::window().and_then(|w| w.local_storage().ok().flatten())
             .and_then(|s| s.get_item("anotadinho.theme").ok().flatten())
@@ -222,39 +224,110 @@ pub fn app() -> Html {
         })
     };
 
-    // Global keyboard (Ctrl+N, Escape, Vim mode toggle)
-    let onkeydown = {
+    // Ações reaproveitadas tanto pelos atalhos diretos (Ctrl+N etc)
+    // quanto pelos comandos nomeados da paleta (Ctrl+K) — uma
+    // implementação só de cada, dois jeitos de disparar.
+    let new_page_action = {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();
-        let selected_page = selected_page.clone();
         let on_page_selected = on_page_selected.clone();
+        let open_dialog = open_dialog.clone();
+        Callback::from(move |_: ()| {
+            let vault = (*vault_path).clone().unwrap_or_default();
+            let list_version = list_version.clone();
+            let on_page_selected = on_page_selected.clone();
+            open_dialog.emit(PendingDialog::Prompt {
+                title: "Título da nova página".to_string(),
+                default: "Nova nota".to_string(),
+                on_submit: Callback::from(move |title: String| {
+                    let vault = vault.clone();
+                    let list_version = list_version.clone();
+                    let on_page_selected = on_page_selected.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        if let Ok(meta) = api::create_page(&vault, &title).await {
+                            on_page_selected.emit(meta);
+                            list_version.set(*list_version + 1);
+                        }
+                    });
+                }),
+            });
+        })
+    };
+
+    let new_folder_action = {
+        let vault_path = vault_path.clone();
+        let list_version = list_version.clone();
+        let open_dialog = open_dialog.clone();
+        Callback::from(move |_: ()| {
+            let vault = (*vault_path).clone().unwrap_or_default();
+            let list_version = list_version.clone();
+            open_dialog.emit(PendingDialog::Prompt {
+                title: "Nome da nova pasta".to_string(),
+                default: "Nova pasta".to_string(),
+                on_submit: Callback::from(move |name: String| {
+                    let vault = vault.clone();
+                    let list_version = list_version.clone();
+                    let folder_path = format!("pages/{}", name.trim().replace(['/', '\\'], "-"));
+                    wasm_bindgen_futures::spawn_local(async move {
+                        if api::create_folder(&vault, &folder_path).await.is_ok() {
+                            list_version.set(*list_version + 1);
+                        }
+                    });
+                }),
+            });
+        })
+    };
+
+    let today_action = {
+        let vault_path = vault_path.clone();
+        let list_version = list_version.clone();
+        let on_page_selected = on_page_selected.clone();
+        Callback::from(move |_: ()| {
+            let vault = (*vault_path).clone().unwrap_or_default();
+            let list_version = list_version.clone();
+            let on_page_selected = on_page_selected.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Ok(meta) = api::open_today_journal(&vault).await {
+                    on_page_selected.emit(meta);
+                    list_version.set(*list_version + 1);
+                }
+            });
+        })
+    };
+
+    let on_palette_action = {
+        let new_page_action = new_page_action.clone();
+        let new_folder_action = new_folder_action.clone();
+        let today_action = today_action.clone();
+        let toggle_theme = toggle_theme.clone();
+        let toggle_sidebar = toggle_sidebar.clone();
+        Callback::from(move |action: PaletteAction| match action {
+            PaletteAction::NewPage => new_page_action.emit(()),
+            PaletteAction::NewFolder => new_folder_action.emit(()),
+            PaletteAction::ToggleTheme => toggle_theme.emit(()),
+            PaletteAction::ToggleSidebar => toggle_sidebar.emit(()),
+            PaletteAction::Today => today_action.emit(()),
+        })
+    };
+
+    // Global keyboard (Ctrl+N, Ctrl+K, Escape, Vim mode toggle)
+    let onkeydown = {
+        let selected_page = selected_page.clone();
         let sidebar_collapsed = sidebar_collapsed.clone();
         let vim_mode = vim_mode.clone();
         let open_tabs = open_tabs.clone();
-        let open_dialog = open_dialog.clone();
+        let palette_open = palette_open.clone();
+        let new_page_action = new_page_action.clone();
         Callback::from(move |e: KeyboardEvent| {
             let ctrl = e.ctrl_key() || e.meta_key();
             match (ctrl, e.key().as_str()) {
                 (true, "n") => {
                     e.prevent_default();
-                    let vault = (*vault_path).clone().unwrap_or_default();
-                    let list_version = list_version.clone();
-                    let on_page_selected = on_page_selected.clone();
-                    open_dialog.emit(PendingDialog::Prompt {
-                        title: "Título da nova página".to_string(),
-                        default: "Nova nota".to_string(),
-                        on_submit: Callback::from(move |title: String| {
-                            let vault = vault.clone();
-                            let list_version = list_version.clone();
-                            let on_page_selected = on_page_selected.clone();
-                            wasm_bindgen_futures::spawn_local(async move {
-                                if let Ok(meta) = api::create_page(&vault, &title).await {
-                                    on_page_selected.emit(meta);
-                                    list_version.set(*list_version + 1);
-                                }
-                            });
-                        }),
-                    });
+                    new_page_action.emit(());
+                }
+                (true, "k") | (true, "p") => {
+                    e.prevent_default();
+                    palette_open.set(true);
                 }
                 (true, "b") => {
                     e.prevent_default();
@@ -279,28 +352,6 @@ pub fn app() -> Html {
                         selected_page.set(Some(tabs[next].clone()));
                     } else {
                         selected_page.set(Some(tabs[0].clone()));
-                    }
-                }
-                (true, "p") => {
-                    e.prevent_default();
-                    if let Some(ref path) = *vault_path {
-                        let vault = path.clone();
-                        let on_page_selected = on_page_selected.clone();
-                        let open_dialog = open_dialog.clone();
-                        wasm_bindgen_futures::spawn_local(async move {
-                            if let Ok(pages) = api::list_pages(&vault).await {
-                                let list = pages.iter().map(|p| p.title.clone()).collect::<Vec<_>>().join("\n");
-                                open_dialog.emit(PendingDialog::Prompt {
-                                    title: format!("Ir para página\n{}", list),
-                                    default: String::new(),
-                                    on_submit: Callback::from(move |q: String| {
-                                        if let Some(page) = pages.iter().find(|p| p.title.to_lowercase() == q.to_lowercase()) {
-                                            on_page_selected.emit(page.clone());
-                                        }
-                                    }),
-                                });
-                            }
-                        });
                     }
                 }
                 _ => {}
@@ -356,6 +407,17 @@ pub fn app() -> Html {
                 <EmptyState on_vault_selected={on_vault_selected} />
             }
             <DialogHost pending={(*pending_dialog).clone()} on_dismiss={dismiss_dialog} />
+            if *palette_open && vault_open {
+                <CommandPalette
+                    vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
+                    on_close={{
+                        let palette_open = palette_open.clone();
+                        Callback::from(move |_: ()| palette_open.set(false))
+                    }}
+                    on_page_selected={on_page_selected.clone()}
+                    on_action={on_palette_action}
+                />
+            }
         </div>
     }
 }
