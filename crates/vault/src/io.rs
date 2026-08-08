@@ -264,8 +264,12 @@ impl VaultIo {
     }
 
     /// Cria uma página nova em `pages/` a partir de um template em
-    /// `templates/`, substituindo `{{title}}` (corpo E frontmatter) pelo
-    /// título escolhido. Mesma lógica de slug único de `create_page_in`.
+    /// `templates/`, substituindo `{{title}}` e `{{date}}` (corpo E
+    /// frontmatter) pelo título escolhido e a data de hoje
+    /// (`YYYY-MM-DD`, mesmo formato de `open_today_journal`/
+    /// `created`/`updated`). Mesma lógica de slug único de
+    /// `create_page_in`. Placeholders desconhecidos (`{{outracoisa}}`)
+    /// não são tocados — só esses dois são suportados.
     pub fn create_page_from_template(
         &self,
         template_relative: &str,
@@ -275,7 +279,8 @@ impl VaultIo {
         let template_full = self.resolve_safe(template_relative)?;
         let template_content = std::fs::read_to_string(&template_full)
             .map_err(|e| anyhow::anyhow!("erro ao ler template {}: {}", template_relative, e))?;
-        let content = template_content.replace("{{title}}", title);
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let content = template_content.replace("{{title}}", title).replace("{{date}}", &today);
 
         let dir_prefix = match folder_relative {
             Some(f) => format!("{}/", f.trim_end_matches('/')),
@@ -900,6 +905,41 @@ mod tests {
         assert!(content.contains("# Minha Spec"));
         assert!(content.contains("status: draft"));
         assert!(!content.contains("{{title}}"));
+    }
+
+    #[test]
+    fn create_page_from_template_substitutes_date_in_body_and_frontmatter() {
+        let (dir, io) = setup_vault();
+        fs::create_dir_all(dir.path().join("templates")).unwrap();
+        fs::write(
+            dir.path().join("templates/decisao.md"),
+            "---\ntitle: {{title}}\ndate: {{date}}\n---\n# {{title}}\n\nDecidido em {{date}}.\n",
+        )
+        .unwrap();
+        let meta = io
+            .create_page_from_template("templates/decisao.md", "Minha Decisão", None)
+            .unwrap();
+        let content = io.read_page(&meta.path).unwrap();
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        assert!(content.contains(&format!("date: {}", today)));
+        assert!(content.contains(&format!("Decidido em {}.", today)));
+        assert!(!content.contains("{{date}}"));
+    }
+
+    #[test]
+    fn create_page_from_template_leaves_unknown_placeholders_untouched() {
+        let (dir, io) = setup_vault();
+        fs::create_dir_all(dir.path().join("templates")).unwrap();
+        fs::write(
+            dir.path().join("templates/spec.md"),
+            "---\ntitle: {{title}}\nowner: {{owner}}\n---\n# {{title}}\n",
+        )
+        .unwrap();
+        let meta = io
+            .create_page_from_template("templates/spec.md", "X", None)
+            .unwrap();
+        let content = io.read_page(&meta.path).unwrap();
+        assert!(content.contains("owner: {{owner}}"));
     }
 
     #[test]
