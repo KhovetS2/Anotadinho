@@ -1,5 +1,7 @@
 //! Page model: uma página é um arquivo .md com frontmatter + blocos.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -39,6 +41,19 @@ pub struct Frontmatter {
     /// Tipo de página: "md" (default), "kanban", "calendar", "table".
     #[serde(rename = "type", default)]
     pub page_type: Option<String>,
+    /// Qualquer propriedade YAML além das reconhecidas acima — ex:
+    /// `status:: doing`, `owner:: elis`, `spec-id:: 42`. Sem isso,
+    /// `serde_yaml::from_str` nesta struct simplesmente IGNORA (não dá
+    /// erro, só descarta) qualquer chave desconhecida, então uma página
+    /// que passasse pelo caminho de round-trip TIPADO
+    /// (`MarkdownCodec::serialize`, hoje sem nenhum caller fora dos
+    /// testes do próprio crate — a UI usa `split_frontmatter_text`, que
+    /// preserva o texto cru e por isso nunca perdeu nada) perderia essas
+    /// propriedades. Necessário pro painel de propriedades (ciclo 099)
+    /// ter um modelo de dados genérico pra ler/escrever QUALQUER
+    /// propriedade, não só as 5 fixas.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 impl Frontmatter {
@@ -87,5 +102,34 @@ mod tests {
         let p = Page::new(PageId::from_path("pages/test.md"), "Test");
         assert_eq!(p.frontmatter.title.as_deref(), Some("Test"));
         assert!(p.blocks.is_empty());
+    }
+
+    #[test]
+    fn frontmatter_extra_captures_unknown_keys() {
+        let yaml = "title: Spec\nstatus: draft\nowner: elis\n";
+        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(fm.title.as_deref(), Some("Spec"));
+        assert_eq!(fm.extra.get("status").and_then(|v| v.as_str()), Some("draft"));
+        assert_eq!(fm.extra.get("owner").and_then(|v| v.as_str()), Some("elis"));
+        // campos conhecidos não vazam pra `extra`
+        assert!(!fm.extra.contains_key("title"));
+    }
+
+    #[test]
+    fn frontmatter_extra_roundtrips_through_serialize() {
+        let yaml = "title: Spec\nstatus: draft\npriority: 2\n";
+        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
+        let out = serde_yaml::to_string(&fm).unwrap();
+        let fm2: Frontmatter = serde_yaml::from_str(&out).unwrap();
+        assert_eq!(fm2.title, fm.title);
+        assert_eq!(fm2.extra, fm.extra);
+        assert_eq!(fm2.extra.get("priority").and_then(|v| v.as_i64()), Some(2));
+    }
+
+    #[test]
+    fn frontmatter_without_extra_keys_has_empty_map() {
+        let yaml = "title: Simples\ntags: [a, b]\n";
+        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
+        assert!(fm.extra.is_empty());
     }
 }

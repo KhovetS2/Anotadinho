@@ -444,6 +444,16 @@ mod tests {
     }
 
     #[test]
+    fn serialize_roundtrip_frontmatter_preserves_custom_properties() {
+        let text = "---\ntitle: Spec\nstatus: draft\nowner: elis\n---\n\n- hello\n";
+        let page = MarkdownCodec::parse(text).unwrap();
+        assert_eq!(page.frontmatter.extra.get("status").and_then(|v| v.as_str()), Some("draft"));
+        let out = MarkdownCodec::serialize(&page).unwrap();
+        let page2 = MarkdownCodec::parse(&out).unwrap();
+        assert_eq!(page2.frontmatter.extra, page.frontmatter.extra);
+    }
+
+    #[test]
     fn serialize_roundtrip_frontmatter() {
         let text = "---\ntitle: Round\ntags:\n  - x\n---\n\n- hello\n";
         let page = MarkdownCodec::parse(text).unwrap();
