@@ -20,6 +20,7 @@ pub enum PaletteAction {
     Today,
     ViewTags,
     ViewAssets,
+    ExportVault,
 }
 
 const COMMANDS: &[(&str, PaletteAction)] = &[
@@ -30,6 +31,7 @@ const COMMANDS: &[(&str, PaletteAction)] = &[
     ("Ir pra Hoje (journal)", PaletteAction::Today),
     ("Ver Tags", PaletteAction::ViewTags),
     ("Ver Assets", PaletteAction::ViewAssets),
+    ("Exportar vault inteiro", PaletteAction::ExportVault),
 ];
 
 #[derive(Debug, Clone, PartialEq)]

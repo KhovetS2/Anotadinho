@@ -10,6 +10,7 @@ pub mod app;
 pub mod components;
 pub mod date_util;
 pub mod dialog;
+pub mod download;
 pub mod embed;
 pub mod html_to_md;
 pub mod markdown_render;

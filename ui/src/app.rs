@@ -406,6 +406,23 @@ pub fn app() -> Html {
         })
     };
 
+    let export_vault_action = {
+        let vault_path = vault_path.clone();
+        let open_dialog = open_dialog.clone();
+        Callback::from(move |_: ()| {
+            let vault = (*vault_path).clone().unwrap_or_default();
+            let open_dialog = open_dialog.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::export_folder(&vault, "").await {
+                    Ok(dump) => crate::download::download_text_file("vault.md", "text/markdown", &dump),
+                    Err(e) => open_dialog.emit(PendingDialog::Alert {
+                        message: format!("Erro ao exportar vault: {}", e),
+                    }),
+                }
+            });
+        })
+    };
+
     let on_palette_action = {
         let new_page_action = new_page_action.clone();
         let new_folder_action = new_folder_action.clone();
@@ -414,6 +431,7 @@ pub fn app() -> Html {
         let toggle_sidebar = toggle_sidebar.clone();
         let view_tags_action = view_tags_action.clone();
         let view_assets_action = view_assets_action.clone();
+        let export_vault_action = export_vault_action.clone();
         Callback::from(move |action: PaletteAction| match action {
             PaletteAction::NewPage => new_page_action.emit(()),
             PaletteAction::NewFolder => new_folder_action.emit(()),
@@ -422,6 +440,7 @@ pub fn app() -> Html {
             PaletteAction::Today => today_action.emit(()),
             PaletteAction::ViewTags => view_tags_action.emit(()),
             PaletteAction::ViewAssets => view_assets_action.emit(()),
+            PaletteAction::ExportVault => export_vault_action.emit(()),
         })
     };
 

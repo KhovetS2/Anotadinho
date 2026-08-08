@@ -1,7 +1,7 @@
 ---
 id: "101"
 titulo: "Exportacao em massa dump de contexto"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: media
@@ -23,18 +23,18 @@ separadores.
 
 ## Critérios de aceite
 
-- [ ] `crates/vault/src/io.rs`: `export_folder(folder_relative) ->
+- [x] `crates/vault/src/io.rs`: `export_folder(folder_relative) ->
       Result<String>` — lê todas as páginas dentro da pasta (recursivo,
       reaproveita `list_pages` filtrado por prefixo de path), concatena
       o markdown de cada uma separado por `\n\n---\n\n## {título}\n\n`
       antes do conteúdo de cada página
-- [ ] Botão/ação "Exportar pasta" na árvore de pastas da sidebar
+- [x] Botão/ação "Exportar pasta" na árvore de pastas da sidebar
       (ciclo 086) — baixa um `.md` só com o conteúdo concatenado
       (mesmo mecanismo de Blob+download já usado por `on_export`)
-- [ ] Comando "Exportar vault inteiro" na paleta de comandos (mesma
+- [x] Comando "Exportar vault inteiro" na paleta de comandos (mesma
       lógica, sem filtro de pasta — todas as páginas de `pages/` e
       `journals/`)
-- [ ] `cargo test --workspace`, `cd ui && cargo test --lib`,
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
       `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
       passam
 
@@ -64,3 +64,21 @@ Diferente do `on_export` existente (lê o DOM renderizado — só funciona
 pra 1 página aberta na hora), este usa `read_page` direto do disco pra
 cada página da pasta — mais simples e mais correto pra esse caso de uso
 (não depende de nenhuma página estar aberta/renderizada).
+
+Um único comando IPC `export_folder` cobre os dois casos: `folder_path`
+vazio exporta o vault inteiro (`export_vault` em `VaultIo` é só um
+atalho pra isso), evitando duplicar handler/comando/wrapper.
+
+Novo módulo `ui/src/download.rs`: `download_text_file(filename, mime,
+content)` — Blob + `<a download>` sintético, reusado pelo botão da
+sidebar e pelo comando da paleta. Precisou adicionar
+`BlobPropertyBag`/`HtmlAnchorElement` às features do `web-sys` em
+`ui/Cargo.toml`.
+
+Validado ao vivo via MCP `tauri`: comando direto (`invoke`) confirma
+o dump do vault inteiro (11153 chars, cabeçalhos `## título`
+corretos); botão "Exportar pasta" na árvore da sidebar baixou
+`Nova_pasta.md` (pasta de teste vazia → conteúdo vazio, como esperado);
+comando "Exportar vault inteiro" da paleta baixou `vault.md` (12KB,
+524 linhas) em `~/Downloads/` — sem diálogo nativo bloqueante, o
+`<a download>` funciona direto no webview do Tauri.

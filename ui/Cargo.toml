@@ -59,6 +59,8 @@ features = [
     "DragEvent",
     "Url",
     "Blob",
+    "BlobPropertyBag",
+    "HtmlAnchorElement",
     "DomRect",
     "ScrollIntoViewOptions",
     "ScrollLogicalPosition",

@@ -171,6 +171,14 @@ pub fn handle_create_page_in_folder(
     })
 }
 
+/// Handler de export_folder: concatena o markdown fonte de todas as
+/// páginas dentro de uma pasta (recursivo) num dump único.
+/// `folder_path` vazio exporta o vault inteiro.
+pub fn handle_export_folder(vault_path: String, folder_path: String) -> Result<String, String> {
+    let vault = VaultIo::open(&vault_path);
+    vault.export_folder(&folder_path).map_err(|e| e.to_string())
+}
+
 /// Handler de list_templates: lista templates em `templates/`.
 pub fn handle_list_templates(vault_path: String) -> Result<Vec<PageMeta>, String> {
     let vault = VaultIo::open(&vault_path);

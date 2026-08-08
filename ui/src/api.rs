@@ -204,6 +204,22 @@ pub async fn create_page_in_folder(
     serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
 }
 
+/// Concatena o markdown fonte de todas as páginas dentro de uma pasta
+/// (recursivo) num dump único. `folder_path` vazio exporta o vault
+/// inteiro (`pages/` + `journals/`).
+pub async fn export_folder(vault_path: &str, folder_path: &str) -> Result<String, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("folderPath"), &JsValue::from_str(folder_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("export_folder", &args)
+        .await
+        .map_err(|e| format!("export_folder error: {:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
 /// Lista templates em `templates/`.
 pub async fn list_templates(vault_path: &str) -> Result<Vec<PageMeta>, String> {
     let args = js_sys::Object::new();

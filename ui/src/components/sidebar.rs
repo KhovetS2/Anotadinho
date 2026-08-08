@@ -392,6 +392,40 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         }
     };
 
+    // "Exportar pasta" (ciclo 101): concatena o markdown fonte de
+    // todas as páginas da pasta (recursivo) num dump único e dispara o
+    // download — pensado pra colar o conteúdo inteiro no contexto de
+    // um agente, diferente do `on_export` de 1 página do editor (que
+    // exporta o HTML renderizado).
+    let make_on_export = {
+        let vault_path = props.vault_path.clone();
+        let open_dialog = props.open_dialog.clone();
+        move |folder_path: String| {
+            let vault_path = vault_path.clone();
+            let open_dialog = open_dialog.clone();
+            Callback::from(move |e: MouseEvent| {
+                e.prevent_default();
+                e.stop_propagation();
+                let vault_path = vault_path.clone();
+                let folder_path = folder_path.clone();
+                let open_dialog = open_dialog.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    match api::export_folder(&vault_path, &folder_path).await {
+                        Ok(dump) => {
+                            let name = folder_path.rsplit('/').next().unwrap_or("pasta");
+                            crate::download::download_text_file(&format!("{}.md", name), "text/markdown", &dump);
+                        }
+                        Err(e) => {
+                            open_dialog.emit(PendingDialog::Alert {
+                                message: format!("Erro ao exportar pasta: {}", e),
+                            });
+                        }
+                    }
+                });
+            })
+        }
+    };
+
     let make_on_move_page = {
         let vault_path = props.vault_path.clone();
         let refresh_tick = refresh_tick.clone();
@@ -481,7 +515,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                     if page_items.is_empty() {
                         <p class="sidebar-section__empty">{ "Nenhuma página ainda" }</p>
                     } else if filter.is_empty() {
-                        { render_tree(&build_tree(&page_items, &folders), "pages", &selected_path, &props.on_page_selected, &make_on_move_page, &make_on_new_page_in) }
+                        { render_tree(&build_tree(&page_items, &folders), "pages", &selected_path, &props.on_page_selected, &make_on_move_page, &make_on_new_page_in, &make_on_export) }
                     } else {
                         { render_movable_list(&page_items, &selected_path, &props.on_page_selected, &make_on_move_page) }
                     }
@@ -616,28 +650,35 @@ fn render_movable_list<F: Fn(String) -> Callback<MouseEvent>>(
 /// (`<details>` nativo, aberto por padrão, dá o expandir/colapsar de
 /// graça sem precisar de estado extra), depois as páginas do nível
 /// atual.
-fn render_tree<F: Fn(String) -> Callback<MouseEvent>, G: Fn(String) -> Callback<MouseEvent>>(
+fn render_tree<
+    F: Fn(String) -> Callback<MouseEvent>,
+    G: Fn(String) -> Callback<MouseEvent>,
+    H: Fn(String) -> Callback<MouseEvent>,
+>(
     node: &TreeNode,
     path_prefix: &str,
     selected_path: &UseStateHandle<Option<String>>,
     on_page_selected: &Callback<PageMeta>,
     make_on_move: &F,
     make_on_new_page_in: &G,
+    make_on_export: &H,
 ) -> Html {
     html! {
         <>
             { for node.folders.iter().map(|(name, sub)| {
                 let full_path = format!("{}/{}", path_prefix, name);
                 let on_new = make_on_new_page_in(full_path.clone());
+                let on_export = make_on_export(full_path.clone());
                 html! {
                     <details class="sidebar-folder" open=true>
                         <summary class="sidebar-folder__header">
                             <span class="sidebar-folder__icon">{ "📁" }</span>
                             <span class="sidebar-folder__name">{ name }</span>
                             <button class="btn btn--ghost btn--xs" title="Nova página nesta pasta" onclick={on_new}>{ "+" }</button>
+                            <button class="btn btn--ghost btn--xs" title="Exportar pasta" onclick={on_export}>{ "⬇" }</button>
                         </summary>
                         <div class="sidebar-folder__body">
-                            { render_tree(sub, &full_path, selected_path, on_page_selected, make_on_move, make_on_new_page_in) }
+                            { render_tree(sub, &full_path, selected_path, on_page_selected, make_on_move, make_on_new_page_in, make_on_export) }
                         </div>
                     </details>
                 }

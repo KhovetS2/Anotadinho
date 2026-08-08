@@ -197,6 +197,39 @@ impl VaultIo {
         }
     }
 
+    /// Concatena o markdown fonte de todas as páginas dentro de
+    /// `folder_relative` (recursivo, via `list_pages` filtrado por
+    /// prefixo de path) num dump único, separado por um cabeçalho com
+    /// o título de cada página. `folder_relative` vazio ou `"pages"`/
+    /// `"journals"` exporta a seção inteira; `None` (via
+    /// `export_vault`) exporta tudo.
+    pub fn export_folder(&self, folder_relative: &str) -> Result<String> {
+        let pages = self.list_pages()?;
+        let prefix = format!("{}/", folder_relative.trim_end_matches('/'));
+        let mut matching: Vec<_> = pages
+            .into_iter()
+            .filter(|p| folder_relative.is_empty() || p.path.starts_with(&prefix))
+            .collect();
+        matching.sort_by(|a, b| a.path.cmp(&b.path));
+
+        let mut out = String::new();
+        for page in &matching {
+            let content = self.read_page(&page.path)?;
+            if !out.is_empty() {
+                out.push_str("\n\n---\n\n");
+            }
+            out.push_str(&format!("## {}\n\n", page.title));
+            out.push_str(&content);
+        }
+        Ok(out)
+    }
+
+    /// Concatena o markdown fonte de TODAS as páginas do vault
+    /// (`pages/` e `journals/`) — mesmo formato de `export_folder`.
+    pub fn export_vault(&self) -> Result<String> {
+        self.export_folder("")
+    }
+
     /// Lista templates em `templates/` (mesmo padrão de `list_pages`,
     /// restrito a essa pasta). `templates/` fica fora de `pages/` e
     /// `journals/` de propósito — não é uma "página" (não aparece na
@@ -787,6 +820,37 @@ mod tests {
         // second call returns same file
         let meta2 = io.open_today_journal().unwrap();
         assert_eq!(meta.path, meta2.path);
+    }
+
+    #[test]
+    fn export_vault_concatenates_all_pages_with_headers() {
+        let (_dir, io) = setup_vault();
+        let dump = io.export_vault().unwrap();
+        assert!(dump.contains("## alpha"));
+        assert!(dump.contains("# Alpha"));
+        assert!(dump.contains("## beta"));
+        assert!(dump.contains("## gamma"));
+        assert!(dump.contains("## 2026-01-01"));
+        assert!(dump.contains("\n\n---\n\n"));
+    }
+
+    #[test]
+    fn export_folder_filters_by_prefix() {
+        let (dir, io) = setup_vault();
+        fs::create_dir_all(dir.path().join("pages/trabalho")).unwrap();
+        fs::write(dir.path().join("pages/trabalho/tarefa.md"), "---\ntitle: Tarefa\n---\n# Tarefa\n").unwrap();
+        let dump = io.export_folder("pages/trabalho").unwrap();
+        assert!(dump.contains("## tarefa"));
+        assert!(!dump.contains("## alpha"));
+        assert!(!dump.contains("## beta"));
+    }
+
+    #[test]
+    fn export_folder_empty_folder_returns_empty_string() {
+        let (dir, io) = setup_vault();
+        fs::create_dir_all(dir.path().join("pages/vazia")).unwrap();
+        let dump = io.export_folder("pages/vazia").unwrap();
+        assert_eq!(dump, "");
     }
 
     #[test]
