@@ -12,6 +12,7 @@ const KEY_AUTOSAVE_ENABLED: &str = "anotadinho.autosave_enabled";
 const KEY_HOME_PAGE_PREFIX: &str = "anotadinho.home_page::";
 const KEY_VIM_MODE_ENABLED: &str = "anotadinho.vim_mode_enabled";
 const KEY_VIM_KEYMAP: &str = "anotadinho.vim_keymap";
+const KEY_GLOBAL_KEYMAP: &str = "anotadinho.global_keymap";
 
 /// Mapa de teclas do modo Normal do vim mode — cada ação tem UMA tecla
 /// configurável. `delete_line`/`yank_line` são especiais: pressionar a
@@ -122,6 +123,139 @@ impl VimKeymap {
     }
 }
 
+/// Mapa de atalhos do app inteiro (ciclo 105) — cada ação tem UMA
+/// tecla, sempre combinada com Ctrl/Cmd (mesma convenção de TODOS os
+/// atalhos globais já existentes hoje: Ctrl+N, Ctrl+K, Ctrl+B, Ctrl+W,
+/// Ctrl+S, Ctrl+Z). String vazia = sem atalho atribuído. Reusa o mesmo
+/// `KeymapCaptureModal` genérico (ciclo 104) do `VimKeymap` — por isso
+/// o valor capturado é só a tecla crua (`e.key()`), sem compor
+/// modificador; o Ctrl é sempre implícito no DISPATCHER
+/// (`app.rs::onkeydown`), nunca guardado no valor.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GlobalKeymap {
+    pub new_page: String,
+    pub new_folder: String,
+    pub toggle_theme: String,
+    pub toggle_sidebar: String,
+    pub today: String,
+    pub view_tags: String,
+    pub view_assets: String,
+    pub open_palette: String,
+    pub save: String,
+    pub close_tab: String,
+    pub next_tab: String,
+    pub prev_tab: String,
+    pub undo: String,
+    pub redo: String,
+    pub toggle_vim_mode: String,
+    /// Foca a sidebar pra navegar por teclado — ação já cadastrada
+    /// aqui, mas o COMPORTAMENTO (destacar item + setas) só chega no
+    /// ciclo 106. Sem tecla configurada nesta v1 (vazio).
+    pub focus_sidebar: String,
+    /// Mesma ideia de `focus_sidebar`, mas pro editor — comportamento
+    /// completo é responsabilidade de ciclos futuros.
+    pub focus_editor: String,
+}
+
+impl Default for GlobalKeymap {
+    fn default() -> Self {
+        Self {
+            // Atalhos que já existiam hoje — MESMA tecla, pra não mudar
+            // nada sem o usuário mexer (Ctrl+P como alias de Ctrl+K foi
+            // descontinuado: v1 é uma tecla por ação, ver Notas do
+            // ciclo 105).
+            new_page: "n".into(),
+            open_palette: "k".into(),
+            toggle_sidebar: "b".into(),
+            next_tab: "w".into(),
+            save: "s".into(),
+            undo: "z".into(),
+            // Ctrl+Shift+Z (refazer) não é representável neste esquema
+            // de "uma tecla + Ctrl implícito" — Ctrl+Y é a convenção
+            // alternativa de "refazer" mais comum (Word/VSCode/etc).
+            redo: "y".into(),
+            // Ações novas (não tinham atalho de teclado nenhum antes) —
+            // sem tecla padrão, pra não arriscar colisão course escolhida
+            // às pressas; o usuário atribui a que quiser no modal.
+            new_folder: String::new(),
+            toggle_theme: String::new(),
+            today: String::new(),
+            view_tags: String::new(),
+            view_assets: String::new(),
+            close_tab: String::new(),
+            prev_tab: String::new(),
+            toggle_vim_mode: String::new(),
+            focus_sidebar: String::new(),
+            focus_editor: String::new(),
+        }
+    }
+}
+
+impl GlobalKeymap {
+    /// Lista `(rótulo, tecla)` — mesmo papel de `VimKeymap::labeled_fields`.
+    pub fn labeled_fields(&self) -> Vec<(&'static str, &str)> {
+        vec![
+            ("Nova página", &self.new_page),
+            ("Nova pasta", &self.new_folder),
+            ("Alternar tema", &self.toggle_theme),
+            ("Alternar sidebar", &self.toggle_sidebar),
+            ("Ir pra Hoje", &self.today),
+            ("Ver Tags", &self.view_tags),
+            ("Ver Assets", &self.view_assets),
+            ("Abrir paleta de comandos", &self.open_palette),
+            ("Salvar", &self.save),
+            ("Fechar aba atual", &self.close_tab),
+            ("Próxima aba", &self.next_tab),
+            ("Aba anterior", &self.prev_tab),
+            ("Desfazer", &self.undo),
+            ("Refazer", &self.redo),
+            ("Alternar vim mode", &self.toggle_vim_mode),
+            ("Focar sidebar", &self.focus_sidebar),
+            ("Focar editor", &self.focus_editor),
+        ]
+    }
+
+    /// Atualiza o campo correspondente ao rótulo. Não faz nada se o
+    /// rótulo não existir.
+    pub fn set_by_label(&mut self, label: &str, key: String) {
+        match label {
+            "Nova página" => self.new_page = key,
+            "Nova pasta" => self.new_folder = key,
+            "Alternar tema" => self.toggle_theme = key,
+            "Alternar sidebar" => self.toggle_sidebar = key,
+            "Ir pra Hoje" => self.today = key,
+            "Ver Tags" => self.view_tags = key,
+            "Ver Assets" => self.view_assets = key,
+            "Abrir paleta de comandos" => self.open_palette = key,
+            "Salvar" => self.save = key,
+            "Fechar aba atual" => self.close_tab = key,
+            "Próxima aba" => self.next_tab = key,
+            "Aba anterior" => self.prev_tab = key,
+            "Desfazer" => self.undo = key,
+            "Refazer" => self.redo = key,
+            "Alternar vim mode" => self.toggle_vim_mode = key,
+            "Focar sidebar" => self.focus_sidebar = key,
+            "Focar editor" => self.focus_editor = key,
+            _ => {}
+        }
+    }
+}
+
+/// Ação de editor disparada de fora dele (GlobalKeymap, ciclo 105) —
+/// usada como "ponte" pra `App` conseguir mandar Salvar/Desfazer/Refazer
+/// pro `Editor` mesmo quando o foco de teclado não está dentro do
+/// contenteditable (onde o atalho local — Ctrl+S/Ctrl+Z — já funciona
+/// direto, sem precisar dessa ponte).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GlobalEditorAction {
+    /// Salva a página atual.
+    Save,
+    /// Desfaz a última edição.
+    Undo,
+    /// Refaz a última edição desfeita.
+    Redo,
+}
+
 /// Estado da aplicação.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AppState {
@@ -223,4 +357,62 @@ pub fn save_vim_keymap(keymap: &VimKeymap) {
 /// Carrega o mapa de teclas do vim mode (padrão: teclas clássicas do vim).
 pub fn load_vim_keymap() -> VimKeymap {
     gloo_storage::LocalStorage::get(KEY_VIM_KEYMAP).unwrap_or_default()
+}
+
+/// Salva o mapa de atalhos globais do app.
+pub fn save_global_keymap(keymap: &GlobalKeymap) {
+    let _ = gloo_storage::LocalStorage::set(KEY_GLOBAL_KEYMAP, keymap);
+}
+
+/// Carrega o mapa de atalhos globais do app (padrão: atalhos atuais).
+pub fn load_global_keymap() -> GlobalKeymap {
+    gloo_storage::LocalStorage::get(KEY_GLOBAL_KEYMAP).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn global_keymap_default_preserves_existing_shortcuts() {
+        let km = GlobalKeymap::default();
+        assert_eq!(km.new_page, "n");
+        assert_eq!(km.open_palette, "k");
+        assert_eq!(km.toggle_sidebar, "b");
+        assert_eq!(km.next_tab, "w");
+        assert_eq!(km.save, "s");
+        assert_eq!(km.undo, "z");
+    }
+
+    #[test]
+    fn global_keymap_default_leaves_new_actions_unbound() {
+        let km = GlobalKeymap::default();
+        assert_eq!(km.new_folder, "");
+        assert_eq!(km.close_tab, "");
+        assert_eq!(km.focus_sidebar, "");
+        assert_eq!(km.focus_editor, "");
+    }
+
+    #[test]
+    fn global_keymap_set_by_label_roundtrips_through_labeled_fields() {
+        let mut km = GlobalKeymap::default();
+        km.set_by_label("Nova pasta", "f".to_string());
+        assert_eq!(km.new_folder, "f");
+        let fields = km.labeled_fields();
+        assert!(fields.iter().any(|(label, key)| *label == "Nova pasta" && *key == "f"));
+    }
+
+    #[test]
+    fn global_keymap_set_by_label_unknown_label_is_noop() {
+        let mut km = GlobalKeymap::default();
+        let before = km.clone();
+        km.set_by_label("Ação inexistente", "x".to_string());
+        assert_eq!(km, before);
+    }
+
+    #[test]
+    fn global_keymap_labeled_fields_has_seventeen_entries() {
+        let km = GlobalKeymap::default();
+        assert_eq!(km.labeled_fields().len(), 17);
+    }
 }

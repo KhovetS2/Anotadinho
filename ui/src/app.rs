@@ -9,6 +9,7 @@ use crate::components::command_palette::{CommandPalette, PaletteAction};
 use crate::components::dialog_host::DialogHost;
 use crate::components::editor::Editor;
 use crate::components::empty_state::EmptyState;
+use crate::components::global_keymap_modal::GlobalKeymapModal;
 use crate::components::header_bar::HeaderBar;
 use crate::components::kanban::Kanban;
 use crate::components::page_view::PageView;
@@ -45,6 +46,21 @@ pub fn app() -> Html {
             vim_keymap.set(new_keymap);
         })
     };
+    let global_keymap = use_state(state::load_global_keymap);
+    let global_keymap_settings_open = use_state(|| false);
+    let on_global_keymap_change = {
+        let global_keymap = global_keymap.clone();
+        Callback::from(move |new_keymap: state::GlobalKeymap| {
+            state::save_global_keymap(&new_keymap);
+            global_keymap.set(new_keymap);
+        })
+    };
+    // Ponte pro Editor (ciclo 105) — `Some((action, nonce))` quando o
+    // GlobalKeymap dispara Salvar/Desfazer/Refazer; o nonce garante que
+    // o efeito do Editor reage de novo mesmo pra ações repetidas em
+    // sequência (só trocar a `action` não bastaria se ela repetir).
+    let global_editor_action = use_state(|| None::<(state::GlobalEditorAction, u32)>);
+    let global_editor_action_nonce = use_mut_ref(|| 0u32);
     let pending_dialog = use_state(|| None::<PendingDialog>);
     let palette_open = use_state(|| false);
     let theme_light = use_state(|| {
@@ -470,38 +486,89 @@ pub fn app() -> Html {
         })
     };
 
-    // Global keyboard (Ctrl+N, Ctrl+K, Escape, Vim mode toggle)
+    // GlobalKeymap dispatcher (ciclo 105) — olha a tecla pressionada,
+    // acha qual ação do `GlobalKeymap` corresponde (todas com Ctrl/Cmd
+    // implícito, ver `state::GlobalKeymap`), dispara o callback certo.
+    // Escape continua um caso à parte, fora do keymap (não está na
+    // lista de ações customizáveis).
     let onkeydown = {
         let selected_page = selected_page.clone();
-        let sidebar_collapsed = sidebar_collapsed.clone();
         let open_tabs = open_tabs.clone();
         let palette_open = palette_open.clone();
         let new_page_action = new_page_action.clone();
+        let new_folder_action = new_folder_action.clone();
+        let toggle_theme = toggle_theme.clone();
+        let toggle_sidebar = toggle_sidebar.clone();
+        let today_action = today_action.clone();
+        let view_tags_action = view_tags_action.clone();
+        let view_assets_action = view_assets_action.clone();
+        let toggle_vim_mode = toggle_vim_mode.clone();
+        let on_tab_close = on_tab_close.clone();
+        let global_keymap = global_keymap.clone();
+        let global_editor_action = global_editor_action.clone();
+        let global_editor_action_nonce = global_editor_action_nonce.clone();
         Callback::from(move |e: KeyboardEvent| {
             let ctrl = e.ctrl_key() || e.meta_key();
-            match (ctrl, e.key().as_str()) {
-                (true, "n") => {
-                    e.prevent_default();
-                    new_page_action.emit(());
+
+            if e.key() == "Escape" {
+                if !ctrl && selected_page.is_some() {
+                    selected_page.set(None);
                 }
-                (true, "k") | (true, "p") => {
-                    e.prevent_default();
-                    palette_open.set(true);
-                }
-                (true, "b") => {
-                    e.prevent_default();
-                    sidebar_collapsed.set(!*sidebar_collapsed);
-                }
-                (false, "Escape") => {
-                    if selected_page.is_some() {
-                        selected_page.set(None);
-                    }
-                }
-                // Tab switching
-                (true, "w") => {
-                    e.prevent_default();
-                    let tabs = (*open_tabs).clone();
-                    if tabs.is_empty() { return; }
+                return;
+            }
+            if !ctrl {
+                return;
+            }
+
+            let key = e.key();
+            let km = &*global_keymap;
+            let matches = |bound: &str| !bound.is_empty() && key.eq_ignore_ascii_case(bound);
+            let fire_editor_action = |action: state::GlobalEditorAction| {
+                let mut nonce = global_editor_action_nonce.borrow_mut();
+                *nonce += 1;
+                global_editor_action.set(Some((action, *nonce)));
+            };
+
+            if matches(&km.new_page) {
+                e.prevent_default();
+                new_page_action.emit(());
+            } else if matches(&km.new_folder) {
+                e.prevent_default();
+                new_folder_action.emit(());
+            } else if matches(&km.toggle_theme) {
+                e.prevent_default();
+                toggle_theme.emit(());
+            } else if matches(&km.toggle_sidebar) {
+                e.prevent_default();
+                toggle_sidebar.emit(());
+            } else if matches(&km.today) {
+                e.prevent_default();
+                today_action.emit(());
+            } else if matches(&km.view_tags) {
+                e.prevent_default();
+                view_tags_action.emit(());
+            } else if matches(&km.view_assets) {
+                e.prevent_default();
+                view_assets_action.emit(());
+            } else if matches(&km.open_palette) {
+                e.prevent_default();
+                palette_open.set(true);
+            } else if matches(&km.save) {
+                e.prevent_default();
+                fire_editor_action(state::GlobalEditorAction::Save);
+            } else if matches(&km.undo) {
+                e.prevent_default();
+                fire_editor_action(state::GlobalEditorAction::Undo);
+            } else if matches(&km.redo) {
+                e.prevent_default();
+                fire_editor_action(state::GlobalEditorAction::Redo);
+            } else if matches(&km.toggle_vim_mode) {
+                e.prevent_default();
+                toggle_vim_mode.emit(());
+            } else if matches(&km.next_tab) {
+                e.prevent_default();
+                let tabs = (*open_tabs).clone();
+                if !tabs.is_empty() {
                     if let Some(ref sel) = *selected_page {
                         let pos = tabs.iter().position(|t| t.path == sel.path).unwrap_or(0);
                         let next = (pos + 1) % tabs.len();
@@ -510,7 +577,33 @@ pub fn app() -> Html {
                         selected_page.set(Some(tabs[0].clone()));
                     }
                 }
-                _ => {}
+            } else if matches(&km.prev_tab) {
+                e.prevent_default();
+                let tabs = (*open_tabs).clone();
+                if !tabs.is_empty() {
+                    if let Some(ref sel) = *selected_page {
+                        let pos = tabs.iter().position(|t| t.path == sel.path).unwrap_or(0);
+                        let prev = (pos + tabs.len() - 1) % tabs.len();
+                        selected_page.set(Some(tabs[prev].clone()));
+                    } else {
+                        selected_page.set(Some(tabs[0].clone()));
+                    }
+                }
+            } else if matches(&km.close_tab) {
+                e.prevent_default();
+                let tabs = (*open_tabs).clone();
+                if let Some(ref sel) = *selected_page {
+                    if let Some(pos) = tabs.iter().position(|t| t.path == sel.path) {
+                        on_tab_close.emit(pos);
+                    }
+                }
+            } else if matches(&km.focus_sidebar) {
+                e.prevent_default();
+                // Comportamento completo (destacar item + navegar por
+                // seta) chega no ciclo 106 — aqui só reserva a tecla.
+            } else if matches(&km.focus_editor) {
+                e.prevent_default();
+                // Idem — comportamento completo em ciclo futuro.
             }
         })
     };
@@ -534,6 +627,10 @@ pub fn app() -> Html {
                 on_open_vim_settings={{
                     let vim_settings_open = vim_settings_open.clone();
                     Callback::from(move |_: ()| vim_settings_open.set(true))
+                }}
+                on_open_global_keymap_settings={{
+                    let global_keymap_settings_open = global_keymap_settings_open.clone();
+                    Callback::from(move |_: ()| global_keymap_settings_open.set(true))
                 }}
                 on_close_vault={on_close_vault}
                 on_open_vault={on_open_vault_shortcut}
@@ -564,6 +661,7 @@ pub fn app() -> Html {
                                 autosave_enabled={*autosave_enabled}
                                 vim_mode_enabled={*vim_mode}
                                 vim_keymap={(*vim_keymap).clone()}
+                                global_action={*global_editor_action}
                             />
                         </div>
                     </div>
@@ -579,6 +677,16 @@ pub fn app() -> Html {
                     on_close={{
                         let vim_settings_open = vim_settings_open.clone();
                         Callback::from(move |_: ()| vim_settings_open.set(false))
+                    }}
+                />
+            }
+            if *global_keymap_settings_open {
+                <GlobalKeymapModal
+                    keymap={(*global_keymap).clone()}
+                    on_change={on_global_keymap_change}
+                    on_close={{
+                        let global_keymap_settings_open = global_keymap_settings_open.clone();
+                        Callback::from(move |_: ()| global_keymap_settings_open.set(false))
                     }}
                 />
             }

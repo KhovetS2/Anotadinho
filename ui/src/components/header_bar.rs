@@ -23,6 +23,7 @@ pub struct HeaderBarProps {
     pub on_toggle_autosave: Callback<()>,
     pub on_toggle_vim_mode: Callback<()>,
     pub on_open_vim_settings: Callback<()>,
+    pub on_open_global_keymap_settings: Callback<()>,
     pub on_close_vault: Callback<()>,
     pub on_open_vault: Callback<()>,
 }
@@ -203,6 +204,13 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                                     { "Atalhos do Vim mode..." }
                                 </button>
                             }
+                            <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
+                                let menu_open = menu_open.clone();
+                                let on_open_global_keymap_settings = props.on_open_global_keymap_settings.clone();
+                                Callback::from(move |_| { menu_open.set(false); on_open_global_keymap_settings.emit(()); })
+                            }}>
+                                { "Atalhos globais..." }
+                            </button>
                         </div>
                     }
                 </div>

@@ -1,7 +1,7 @@
 ---
 id: "105"
 titulo: "GlobalKeymap atalhos do app inteiro customizaveis"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: alta
@@ -24,25 +24,25 @@ região (foco na sidebar/editor/abas).
 
 ## Critérios de aceite
 
-- [ ] `ui/src/state.rs`: `GlobalKeymap` — uma tecla (com modificador
+- [x] `ui/src/state.rs`: `GlobalKeymap` — uma tecla (com modificador
       opcional, ex: `Ctrl+N`) por ação, `Default` com os binds ATUAIS
       como padrão (não muda nenhum atalho existente sem o usuário
       mexer), persistido via `gloo_storage` (mesmo padrão de
       `VimKeymap`)
-- [ ] Ações cobertas nesta v1 (todas já existem como funcionalidade
+- [x] Ações cobertas nesta v1 (todas já existem como funcionalidade
       hoje, só ganham keybind configurável):
       Nova página, Nova pasta, Alternar tema, Alternar sidebar,
       Ir pra Hoje, Ver Tags, Ver Assets, Abrir paleta de comandos,
       Salvar, Fechar aba atual, Próxima aba, Aba anterior, Alternar vim
       mode, Desfazer, Refazer, **Focar sidebar**, **Focar editor**
       (as duas últimas são NOVAS — região de foco, ver ciclo 106)
-- [ ] `app.rs`'s `onkeydown` vira um DISPATCHER: olha a tecla
+- [x] `app.rs`'s `onkeydown` vira um DISPATCHER: olha a tecla
       pressionada, procura qual ação do `GlobalKeymap` corresponde,
       dispara o callback certo — em vez de um `match` hardcoded por
       combo de tecla
-- [ ] Novo item no menu ⚙ "Atalhos globais..." abre o modal de
+- [x] Novo item no menu ⚙ "Atalhos globais..." abre o modal de
       configuração (reaproveita o componente genérico do ciclo 104)
-- [ ] `cargo test --workspace`, `cd ui && cargo test --lib`,
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
       `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
       passam
 
@@ -76,3 +76,38 @@ prontas pro ciclo 106 (navegação por teclado na sidebar) implementar o
 que "focar a sidebar" realmente significa (estado de item destacado +
 navegação por seta). Adicionar essas duas ações AGORA, mesmo sem
 comportamento completo ainda, evita ter que voltar no keymap depois.
+
+Decisões de design tomadas durante a implementação:
+
+- Esquema "uma tecla + Ctrl (ou Cmd) sempre implícito" — NÃO um
+  modificador livre por ação. Evita ter que ensinar o
+  `KeymapCaptureModal` genérico (ciclo 104) a compor modificadores, o
+  que quebraria a captura do vim mode (lá, teclas como "G" já vêm com
+  Shift fisicamente pressionado, e compor "Shift+G" no valor gravado
+  quebraria a comparação `key == vim_keymap.doc_end` que compara
+  contra `e.key()` cru). Ctrl+P como alias de Ctrl+K pra paleta foi
+  descontinuado (v1 é uma tecla por ação); "Refazer" usa Ctrl+Y (não
+  Ctrl+Shift+Z, irrepresentável no esquema de tecla única) como
+  convenção alternativa comum (Word/VSCode).
+- `Salvar`/`Desfazer`/`Refazer` continuam funcionando via Ctrl+S/Ctrl+Z/
+  Ctrl+Shift+Z LOCAIS do editor (inalterado) E via `GlobalKeymap`
+  através de uma ponte nova: prop `global_action: Option<(GlobalEditorAction,
+  u32)>` passada `App → PageView → Editor`, que reage num
+  `use_effect_with`. Pra evitar disparo duplo quando o foco JÁ está no
+  editor (evento local trata E borbulha até `.app-root`), o handler
+  local do editor ganhou `e.stop_propagation()` nesses dois blocos —
+  única mudança de comportamento em código pré-existente deste ciclo,
+  de baixo risco (só impede a MESMA tecla disparar a MESMA ação duas
+  vezes).
+- Escape continua fora do `GlobalKeymap` (não está na lista de 17
+  ações) — comportamento de "deselecionar página" inalterado.
+- "Fechar aba atual" fecha de verdade (remove de `open_tabs`, mesmo
+  caminho do × na aba) — distinto do Escape, que só deselect.
+
+Validado ao vivo via MCP `tauri`: Ctrl+N continua funcionando
+(abre o picker de template do ciclo 100); modal "Atalhos globais"
+mostra as 17 ações com os defaults corretos; reatribuí "Ir pra Hoje"
+pra "t" e Ctrl+T abriu o journal de hoje; "Fechar aba atual" atribuído
+a "q" fechou a aba certa; Ctrl+W continua ciclando pras próxima aba
+(default preservado); Ctrl+S com foco no editor não gerou disparo
+duplo (confirma o `stop_propagation`).

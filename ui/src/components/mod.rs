@@ -8,6 +8,7 @@ pub mod dialog_host;
 pub mod editor;
 pub mod embeds;
 pub mod empty_state;
+pub mod global_keymap_modal;
 pub mod header_bar;
 pub mod kanban;
 pub mod keymap_capture_modal;

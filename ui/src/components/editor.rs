@@ -37,6 +37,13 @@ pub struct EditorProps {
     /// Mapa de teclas do vim mode.
     #[prop_or_default]
     pub vim_keymap: crate::state::VimKeymap,
+    /// Ação disparada de fora via `GlobalKeymap` (ciclo 105) — `Some`
+    /// com um nonce (pra disparar de novo mesmo se a mesma ação repetir
+    /// em sequência) quando o app quer Salvar/Desfazer/Refazer sem o
+    /// foco estar dentro do contenteditable (que já trata Ctrl+S/Ctrl+Z
+    /// localmente, sem passar por aqui).
+    #[prop_or_default]
+    pub global_action: Option<(crate::state::GlobalEditorAction, u32)>,
 }
 
 struct SlashItem {
@@ -700,6 +707,27 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
+    // Ponte do GlobalKeymap (ciclo 105): quando `App` dispara
+    // Salvar/Desfazer/Refazer sem o foco estar no contenteditable
+    // (onde Ctrl+S/Ctrl+Z já funcionam direto), reage aqui. O nonce no
+    // prop garante que o efeito dispara de novo mesmo pra ações
+    // repetidas em sequência (`Option` sozinho não mudaria de valor).
+    {
+        let do_save = do_save.clone();
+        let do_undo = do_undo.clone();
+        let do_redo = do_redo.clone();
+        use_effect_with(props.global_action, move |action| {
+            if let Some((action, _nonce)) = action {
+                match action {
+                    crate::state::GlobalEditorAction::Save => do_save.emit(()),
+                    crate::state::GlobalEditorAction::Undo => do_undo.emit(()),
+                    crate::state::GlobalEditorAction::Redo => do_redo.emit(()),
+                }
+            }
+            || ()
+        });
+    }
+
     let select_slash = {
         let slash_open = slash_open.clone();
         let slash_text = slash_text.clone();
@@ -983,7 +1011,12 @@ pub fn editor(props: &EditorProps) -> Html {
         let do_undo = do_undo.clone();
         let do_redo = do_redo.clone();
         Callback::from(move |e: KeyboardEvent| {
-            if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); do_save.emit(()); return; }
+            // `stop_propagation` nos dois blocos abaixo (ciclo 105): sem
+            // isso, o evento borbulha até `.app-root` e o `GlobalKeymap`
+            // (que também reconhece Ctrl+S/Ctrl+Z como Salvar/Desfazer
+            // por padrão) dispara a MESMA ação de novo — aqui já é
+            // tratado por completo, então não deve continuar subindo.
+            if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); e.stop_propagation(); do_save.emit(()); return; }
 
             // Ctrl+Z/Ctrl+Shift+Z funcionam independente do vim mode
             // estar ligado (checado ANTES da interceptação de modo
@@ -991,6 +1024,7 @@ pub fn editor(props: &EditorProps) -> Html {
             // uma ação de documento, não uma motion de texto.
             if (e.ctrl_key()||e.meta_key()) && e.key().eq_ignore_ascii_case("z") {
                 e.prevent_default();
+                e.stop_propagation();
                 if e.shift_key() { do_redo.emit(()); } else { do_undo.emit(()); }
                 return;
             }

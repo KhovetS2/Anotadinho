@@ -28,6 +28,10 @@ pub struct PageViewProps {
     /// Mapa de teclas do vim mode.
     #[prop_or_default]
     pub vim_keymap: crate::state::VimKeymap,
+    /// Ação disparada de fora via `GlobalKeymap` (ciclo 105) — repassada
+    /// direto pro `Editor`, único componente que sabe reagir a ela.
+    #[prop_or_default]
+    pub global_action: Option<(crate::state::GlobalEditorAction, u32)>,
 }
 
 #[function_component(PageView)]
@@ -106,6 +110,7 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 autosave_enabled={props.autosave_enabled}
                 vim_mode_enabled={props.vim_mode_enabled}
                 vim_keymap={props.vim_keymap.clone()}
+                global_action={props.global_action}
             />
         },
     }
