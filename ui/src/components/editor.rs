@@ -7,6 +7,7 @@ use web_sys::KeyboardEvent;
 
 use crate::api::{self, PageMeta};
 use crate::components::embeds::InlineEmbed;
+use crate::components::modal::Modal;
 use crate::components::properties_panel::PropertiesPanel;
 use crate::dialog::PendingDialog;
 use crate::embed::DocSegment;
@@ -44,6 +45,14 @@ pub struct EditorProps {
     /// localmente, sem passar por aqui).
     #[prop_or_default]
     pub global_action: Option<(crate::state::GlobalEditorAction, u32)>,
+    /// Path da página inicial do vault (ciclo 089; estado vive no
+    /// `App`, ver ciclo 109 — a `TabBar`, irmã deste componente,
+    /// também precisa saber pra mostrar o ícone na aba fixa).
+    #[prop_or_default]
+    pub home_page: Option<String>,
+    /// Alterna a página atual como inicial (define/remove).
+    #[prop_or_default]
+    pub on_toggle_home: Callback<String>,
 }
 
 struct SlashItem {
@@ -479,33 +488,58 @@ pub fn editor(props: &EditorProps) -> Html {
     let page = props.page.as_ref().unwrap().clone();
 
     // "Definir como início" — página aberta automaticamente ao abrir este
-    // vault (ver `App`). Guardado no localStorage por vault (`state.rs`),
-    // não no vault em si — é uma preferência de cliente, não algo que faz
-    // sentido versionar/sincronizar junto com as páginas.
-    let is_home = use_state(|| false);
-    {
-        let is_home = is_home.clone();
-        let vault_path = props.vault_path.clone();
+    // vault (ver `App`). Estado vive no `App` desde o ciclo 109 (a
+    // `TabBar`, irmã deste componente, também precisa saber qual página
+    // é a inicial) — aqui é só derivado do prop, sem estado próprio.
+    let is_home = props.home_page.as_deref() == Some(page.path.as_str());
+    let toggle_home = {
+        let on_toggle_home = props.on_toggle_home.clone();
         let path = page.path.clone();
-        use_effect_with(path.clone(), move |path| {
-            is_home.set(state::load_home_page(&vault_path).as_deref() == Some(path.as_str()));
-            || {}
+        Callback::from(move |_: MouseEvent| on_toggle_home.emit(path.clone()))
+    };
+
+    // Menu "⋯" do header (ciclo 109) — agrupa Definir início/Propriedades/
+    // Exportar/Excluir, que antes eram botões soltos. Mesmo padrão visual
+    // e de fechar-ao-clicar-fora/Escape do menu ⚙ da `HeaderBar`.
+    let editor_menu_open = use_state(|| false);
+    let editor_menu_ref = use_node_ref();
+    let toggle_editor_menu = { let m = editor_menu_open.clone(); Callback::from(move |_| m.set(!*m)) };
+    {
+        let editor_menu_open = editor_menu_open.clone();
+        let editor_menu_ref = editor_menu_ref.clone();
+        use_effect_with(*editor_menu_open, move |open| {
+            let mut listeners = Vec::new();
+            if *open {
+                let window = web_sys::window().expect("no global window");
+                let close_on_outside = {
+                    let editor_menu_open = editor_menu_open.clone();
+                    let editor_menu_ref = editor_menu_ref.clone();
+                    EventListener::new(&window, "mousedown", move |e| {
+                        let Some(target) = e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()) else { return };
+                        if let Some(el) = editor_menu_ref.cast::<web_sys::Element>() {
+                            if !el.contains(Some(&target)) {
+                                editor_menu_open.set(false);
+                            }
+                        }
+                    })
+                };
+                let close_on_escape = {
+                    let editor_menu_open = editor_menu_open.clone();
+                    EventListener::new(&window, "keydown", move |e| {
+                        if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
+                            if e.key() == "Escape" {
+                                editor_menu_open.set(false);
+                            }
+                        }
+                    })
+                };
+                listeners.push(close_on_outside);
+                listeners.push(close_on_escape);
+            }
+            move || drop(listeners)
         });
     }
-    let toggle_home = {
-        let is_home = is_home.clone();
-        let vault_path = props.vault_path.clone();
-        let path = page.path.clone();
-        Callback::from(move |_| {
-            if *is_home {
-                state::clear_home_page(&vault_path);
-                is_home.set(false);
-            } else {
-                state::save_home_page(&vault_path, &path);
-                is_home.set(true);
-            }
-        })
-    };
+    let properties_modal_open = use_state(|| false);
 
     let doc_exec = {
         let edited = edited.clone();
@@ -1475,21 +1509,57 @@ pub fn editor(props: &EditorProps) -> Html {
                 <div class="editor__actions">
                     if let Some(ref s) = *status { <span class="editor__status-badge">{ s }</span> }
                     if *edited { <span class="editor__dirty">{ "não salvo" }</span> }
-                    <button class={ if *is_home { "btn btn--ghost btn--sm editor__home-btn editor__home-btn--active" } else { "btn btn--ghost btn--sm editor__home-btn" } }
-                        onclick={toggle_home}
-                        title={ if *is_home { "Página inicial — clique pra remover" } else { "Definir como página inicial" } }>
-                        { "🏠" }
-                    </button>
-                    <button class="btn btn--danger btn--sm" onclick={on_delete}>{ "Excluir" }</button>
-                    <button class="btn btn--ghost btn--sm" onclick={on_export} title="Exportar HTML">{ "⬇" }</button>
                     <button class="btn btn--primary btn--sm" onclick={do_save.reform(|_| ())} disabled={*saving || !*edited}>{ save_label }</button>
+                    <div class="header-menu-wrapper" ref={editor_menu_ref}>
+                        <button class="btn btn--ghost btn--sm" onclick={toggle_editor_menu} title="Mais ações">{ "⋯" }</button>
+                        if *editor_menu_open {
+                            <div class="header-menu">
+                                <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
+                                    let editor_menu_open = editor_menu_open.clone();
+                                    let toggle_home = toggle_home.clone();
+                                    Callback::from(move |e: MouseEvent| { editor_menu_open.set(false); toggle_home.emit(e); })
+                                }}>
+                                    { if is_home { "🏠 Remover como início" } else { "🏠 Definir como início" } }
+                                </button>
+                                <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
+                                    let editor_menu_open = editor_menu_open.clone();
+                                    let properties_modal_open = properties_modal_open.clone();
+                                    Callback::from(move |_| { editor_menu_open.set(false); properties_modal_open.set(true); })
+                                }}>
+                                    { "Propriedades..." }
+                                </button>
+                                <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
+                                    let editor_menu_open = editor_menu_open.clone();
+                                    let on_export = on_export.clone();
+                                    Callback::from(move |e: MouseEvent| { editor_menu_open.set(false); on_export.emit(e); })
+                                }}>
+                                    { "⬇ Exportar HTML" }
+                                </button>
+                                <div class="divider"></div>
+                                <button class="header-menu__item header-menu__item--danger btn btn--ghost btn--sm" onclick={{
+                                    let editor_menu_open = editor_menu_open.clone();
+                                    let on_delete = on_delete.clone();
+                                    Callback::from(move |e: MouseEvent| { editor_menu_open.set(false); on_delete.emit(e); })
+                                }}>
+                                    { "Excluir" }
+                                </button>
+                            </div>
+                        }
+                    </div>
                 </div>
             </header>
-            <PropertiesPanel
-                frontmatter={parsed_frontmatter}
-                on_change={on_frontmatter_change}
-                open_dialog={props.open_dialog.clone()}
-            />
+            if *properties_modal_open {
+                <Modal title={"Propriedades".to_string()} open={true} on_close={{
+                    let properties_modal_open = properties_modal_open.clone();
+                    Callback::from(move |_: ()| properties_modal_open.set(false))
+                }}>
+                    <PropertiesPanel
+                        frontmatter={parsed_frontmatter}
+                        on_change={on_frontmatter_change}
+                        open_dialog={props.open_dialog.clone()}
+                    />
+                </Modal>
+            }
             <div class="editor__body">
                 if *loading {
                     <div class="editor__overlay">

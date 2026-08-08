@@ -1,5 +1,6 @@
-//! Painel de propriedades de frontmatter — colapsável, no topo da
-//! página. Mostra os campos fixos (título/tags/tipo) E qualquer
+//! Conteúdo do painel de propriedades de frontmatter — renderizado
+//! dentro de um `Modal` (ciclo 109, aberto pelo menu "⋯" do header do
+//! editor). Mostra os campos fixos (título/tags/tipo) E qualquer
 //! propriedade customizada (`Frontmatter.extra`, ciclo 098), com
 //! ver/adicionar/editar/remover. Único lugar do app que edita
 //! frontmatter de verdade (o resto do editor sempre preservou o
@@ -170,53 +171,50 @@ pub fn properties_panel(props: &PropertiesPanelProps) -> Html {
         .collect();
 
     html! {
-        <details class="properties-panel" open=true>
-            <summary class="properties-panel__summary">{ "⚙ Propriedades" }</summary>
-            <div class="properties-panel__body">
-                <div class="properties-panel__row">
-                    <span class="properties-panel__key">{ "título" }</span>
-                    <input class="properties-panel__input" type="text"
-                        value={fm.title.clone().unwrap_or_default()} oninput={on_title_input} />
-                </div>
-                <div class="properties-panel__row">
-                    <span class="properties-panel__key">{ "tipo" }</span>
-                    <select class="properties-panel__input" onchange={on_type_change}>
-                        { for KNOWN_TYPES.iter().map(|(value, label)| {
-                            let selected = fm.page_type.as_deref().unwrap_or("") == *value;
-                            html! { <option value={*value} {selected}>{ *label }</option> }
-                        }) }
-                    </select>
-                </div>
-                <div class="properties-panel__row">
-                    <span class="properties-panel__key">{ "tags" }</span>
-                    <div class="properties-panel__tags">
-                        { for fm.tags.iter().map(|tag| {
-                            let onclick = remove_tag(tag.clone());
-                            html! {
-                                <span class="properties-panel__tag-chip">
-                                    { tag }
-                                    <button class="properties-panel__tag-remove" {onclick}>{ "✕" }</button>
-                                </span>
-                            }
-                        }) }
-                        <button class="btn btn--ghost btn--xs" onclick={add_tag}>{ "+ tag" }</button>
-                    </div>
-                </div>
-                { for extra_entries.iter().map(|(key, value)| {
-                    let oninput = update_extra_value(key.clone());
-                    let onclick = remove_extra(key.clone());
-                    html! {
-                        <div class="properties-panel__row">
-                            <span class="properties-panel__key">{ key }</span>
-                            <input class="properties-panel__input" type="text" value={value.clone()} {oninput} />
-                            <button class="properties-panel__remove" title="Remover propriedade" {onclick}>{ "✕" }</button>
-                        </div>
-                    }
-                }) }
-                <button class="btn btn--ghost btn--sm properties-panel__add" onclick={add_property}>
-                    { "+ propriedade" }
-                </button>
+        <div class="properties-panel__body">
+            <div class="properties-panel__row">
+                <span class="properties-panel__key">{ "título" }</span>
+                <input class="properties-panel__input" type="text"
+                    value={fm.title.clone().unwrap_or_default()} oninput={on_title_input} />
             </div>
-        </details>
+            <div class="properties-panel__row">
+                <span class="properties-panel__key">{ "tipo" }</span>
+                <select class="properties-panel__input" onchange={on_type_change}>
+                    { for KNOWN_TYPES.iter().map(|(value, label)| {
+                        let selected = fm.page_type.as_deref().unwrap_or("") == *value;
+                        html! { <option value={*value} {selected}>{ *label }</option> }
+                    }) }
+                </select>
+            </div>
+            <div class="properties-panel__row">
+                <span class="properties-panel__key">{ "tags" }</span>
+                <div class="properties-panel__tags">
+                    { for fm.tags.iter().map(|tag| {
+                        let onclick = remove_tag(tag.clone());
+                        html! {
+                            <span class="properties-panel__tag-chip">
+                                { tag }
+                                <button class="properties-panel__tag-remove" {onclick}>{ "✕" }</button>
+                            </span>
+                        }
+                    }) }
+                    <button class="btn btn--ghost btn--xs" onclick={add_tag}>{ "+ tag" }</button>
+                </div>
+            </div>
+            { for extra_entries.iter().map(|(key, value)| {
+                let oninput = update_extra_value(key.clone());
+                let onclick = remove_extra(key.clone());
+                html! {
+                    <div class="properties-panel__row">
+                        <span class="properties-panel__key">{ key }</span>
+                        <input class="properties-panel__input" type="text" value={value.clone()} {oninput} />
+                        <button class="properties-panel__remove" title="Remover propriedade" {onclick}>{ "✕" }</button>
+                    </div>
+                }
+            }) }
+            <button class="btn btn--ghost btn--sm properties-panel__add" onclick={add_property}>
+                { "+ propriedade" }
+            </button>
+        </div>
     }
 }

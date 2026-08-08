@@ -32,6 +32,13 @@ pub struct PageViewProps {
     /// direto pro `Editor`, único componente que sabe reagir a ela.
     #[prop_or_default]
     pub global_action: Option<(crate::state::GlobalEditorAction, u32)>,
+    /// Path da página inicial do vault (ciclo 089, estado movido pro
+    /// `App` no ciclo 109 — ver `TabBar`).
+    #[prop_or_default]
+    pub home_page: Option<String>,
+    /// Alterna a página `path` como inicial (define/remove).
+    #[prop_or_default]
+    pub on_toggle_home: Callback<String>,
 }
 
 #[function_component(PageView)]
@@ -111,6 +118,8 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 vim_mode_enabled={props.vim_mode_enabled}
                 vim_keymap={props.vim_keymap.clone()}
                 global_action={props.global_action}
+                home_page={props.home_page.clone()}
+                on_toggle_home={props.on_toggle_home.clone()}
             />
         },
     }

@@ -28,6 +28,33 @@ pub fn app() -> Html {
     let git_files = use_state(|| None::<Vec<api::GitFileEntry>>);
     let sidebar_collapsed = use_state(|| false);
     let open_tabs = use_state(Vec::<PageMeta>::new);
+    // Página inicial (ciclo 089) — movida pra cá (ciclo 109) de dentro
+    // do `Editor` porque a `TabBar` (irmã do `Editor`, não descendente)
+    // também precisa saber qual página é a inicial, pra mostrar só o
+    // ícone 🏠 na aba fixa em vez do título.
+    let home_page = use_state(|| None::<String>);
+    {
+        let vault_path = vault_path.clone();
+        let home_page = home_page.clone();
+        use_effect_with(vault_path.clone(), move |_| {
+            home_page.set(vault_path.as_ref().and_then(|v| state::load_home_page(v)));
+            || {}
+        });
+    }
+    let on_toggle_home = {
+        let vault_path = vault_path.clone();
+        let home_page = home_page.clone();
+        Callback::from(move |path: String| {
+            let Some(ref vault) = *vault_path else { return };
+            if home_page.as_deref() == Some(path.as_str()) {
+                state::clear_home_page(vault);
+                home_page.set(None);
+            } else {
+                state::save_home_page(vault, &path);
+                home_page.set(Some(path));
+            }
+        })
+    };
     let vim_mode = use_state(state::load_vim_mode_enabled);
     let vim_keymap = use_state(state::load_vim_keymap);
     let vim_settings_open = use_state(|| false);
@@ -651,6 +678,7 @@ pub fn app() -> Html {
                                 active_path={selected_page.as_ref().map(|p| p.path.clone())}
                                 on_select={on_tab_select}
                                 on_close={on_tab_close}
+                                home_path={(*home_page).clone()}
                             />
                             <PageView
                                 vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
@@ -662,6 +690,8 @@ pub fn app() -> Html {
                                 vim_mode_enabled={*vim_mode}
                                 vim_keymap={(*vim_keymap).clone()}
                                 global_action={*global_editor_action}
+                                home_page={(*home_page).clone()}
+                                on_toggle_home={on_toggle_home.clone()}
                             />
                         </div>
                     </div>

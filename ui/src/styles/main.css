@@ -344,6 +344,14 @@ body {
     font-weight: 500;
 }
 
+.header-menu__item--danger {
+    color: var(--error);
+}
+
+.header-menu__item--danger:hover {
+    background: var(--bg-elevated);
+}
+
 /* ── Main Panel (TabBar + Editor) ────────────── */
 
 .app-main-panel {
@@ -1199,32 +1207,12 @@ body {
     white-space: nowrap;
 }
 
-/* Painel de propriedades (frontmatter) */
-.properties-panel {
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-surface);
-    padding: var(--sp-2) var(--sp-4);
-    flex-shrink: 0;
-}
-
-.properties-panel__summary {
-    cursor: pointer;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    user-select: none;
-    list-style: none;
-}
-
-.properties-panel__summary::-webkit-details-marker {
-    display: none;
-}
-
+/* Painel de propriedades (frontmatter) — conteúdo de dentro do Modal
+   "Propriedades..." (ciclo 109, aberto pelo menu "⋯" do editor) */
 .properties-panel__body {
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
-    margin-top: var(--sp-2);
 }
 
 .properties-panel__row {
