@@ -10,6 +10,7 @@ pub mod embeds;
 pub mod empty_state;
 pub mod header_bar;
 pub mod kanban;
+pub mod keymap_capture_modal;
 pub mod modal;
 pub mod page_view;
 pub mod properties_panel;

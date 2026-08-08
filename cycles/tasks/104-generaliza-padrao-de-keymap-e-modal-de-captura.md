@@ -1,7 +1,7 @@
 ---
 id: "104"
 titulo: "Generaliza padrao de keymap e modal de captura"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: alta
@@ -25,16 +25,16 @@ comportamento nenhum do vim mode existente.
 
 ## Critérios de aceite
 
-- [ ] Novo componente `ui/src/components/keymap_capture_modal.rs` (ou
+- [x] Novo componente `ui/src/components/keymap_capture_modal.rs` (ou
       nome similar): recebe `title: String`, `fields: Vec<(&'static
       str, String)>` (rótulo + tecla atual) e `on_change: Callback<
       (String, String)>` (rótulo, tecla nova) — genérico, não sabe nada
       de vim mode nem de `VimKeymap` especificamente
-- [ ] `VimSettingsModal` passa a usar esse componente genérico por
+- [x] `VimSettingsModal` passa a usar esse componente genérico por
       baixo, mantendo EXATAMENTE o comportamento/aparência atual (teste
       manual: reatribuir uma tecla do vim mode continua funcionando
       igual)
-- [ ] `cargo test --workspace`, `cd ui && cargo test --lib`,
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
       `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
       passam
 
@@ -61,3 +61,13 @@ Ciclo pequeno e de baixo risco de propósito — é puramente um refactor
 nova visível ainda. Serve de base pro ciclo 105 não precisar duplicar a
 lógica de "capturar a próxima tecla pressionada" numa segunda cópia do
 modal.
+
+`KeymapCaptureModal` ganhou um prop `hint: String` (`#[prop_or_default]`,
+vazio omite o parágrafo) — o texto de ajuda específico do vim
+("dd/yy") continua só em `VimSettingsModal`, passado como valor, não
+fica hardcoded no componente genérico.
+
+Validado ao vivo via MCP `tauri`: abri o modal de atalhos do vim mode,
+reatribuí "Esquerda" de `h` pra `z` (persistiu em
+`localStorage.anotadinho.vim_keymap`), reverti de volta pra `h` —
+aparência e comportamento idênticos ao antes da extração.
