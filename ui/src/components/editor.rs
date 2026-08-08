@@ -437,22 +437,40 @@ pub fn editor(props: &EditorProps) -> Html {
                 let item = &SLASH_ITEMS[item_idx];
                 match item.html {
                     "__IMG__" => {
-                        let exec_fn = exec_fn.clone();
                         let vault_path = vault_path.clone();
+                        let content_md = content_md.clone();
+                        let editor_ref = editor_ref.clone();
+                        let segment_refs = segment_refs.clone();
+                        let mark_edited = mark_edited.clone();
                         open_dialog.emit(PendingDialog::Prompt {
                             title: "Caminho da imagem ou URL".to_string(),
                             default: String::new(),
                             on_submit: Callback::from(move |path: String| {
+                                let content_md = content_md.clone();
+                                let editor_ref = editor_ref.clone();
+                                let segment_refs = segment_refs.clone();
+                                let mark_edited = mark_edited.clone();
                                 if path.starts_with("http") {
                                     let html = format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", path.replace('"', "&quot;"));
-                                    exec_fn("insertHTML", &html);
+                                    if let Some(el) = parse_single_element(&html) {
+                                        if insert_element_at_cursor(&el, false) {
+                                            let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                            content_md.set(new_md.clone());
+                                            mark_edited(new_md);
+                                        }
+                                    }
                                 } else {
                                     let vp = vault_path.clone();
-                                    let exec_fn = exec_fn.clone();
                                     wasm_bindgen_futures::spawn_local(async move {
                                         if let Ok(relative) = crate::api::copy_to_assets(&vp, &path).await {
                                             let html = format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", relative.replace('"', "&quot;"));
-                                            exec_fn("insertHTML", &html);
+                                            if let Some(el) = parse_single_element(&html) {
+                                                if insert_element_at_cursor(&el, false) {
+                                                    let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                                    content_md.set(new_md.clone());
+                                                    mark_edited(new_md);
+                                                }
+                                            }
                                         }
                                     });
                                 }
@@ -460,13 +478,22 @@ pub fn editor(props: &EditorProps) -> Html {
                         });
                     }
                     "__MERMAID__" => {
-                        let exec_fn = exec_fn.clone();
+                        let content_md = content_md.clone();
+                        let editor_ref = editor_ref.clone();
+                        let segment_refs = segment_refs.clone();
+                        let mark_edited = mark_edited.clone();
                         open_dialog.emit(PendingDialog::Prompt {
                             title: "Código Mermaid (ex: graph TD; A-->B)".to_string(),
                             default: String::new(),
                             on_submit: Callback::from(move |code: String| {
                                 let html = format!("<div class=\"mermaid\">{}</div>", code.replace('<', "&lt;").replace('>', "&gt;"));
-                                exec_fn("insertHTML", &html);
+                                if let Some(el) = parse_single_element(&html) {
+                                    if insert_element_at_cursor(&el, true) {
+                                        let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                        content_md.set(new_md.clone());
+                                        mark_edited(new_md);
+                                    }
+                                }
                                 wasm_bindgen_futures::spawn_local(async {
                                     gloo_timers::future::sleep(std::time::Duration::from_millis(100)).await;
                                     if let Some(window) = web_sys::window() {
@@ -484,8 +511,11 @@ pub fn editor(props: &EditorProps) -> Html {
                     }
                     "__ASSET__" => {
                         let vp = vault_path.clone();
-                        let exec_fn = exec_fn.clone();
                         let open_dialog = open_dialog.clone();
+                        let content_md = content_md.clone();
+                        let editor_ref = editor_ref.clone();
+                        let segment_refs = segment_refs.clone();
+                        let mark_edited = mark_edited.clone();
                         wasm_bindgen_futures::spawn_local(async move {
                             match crate::api::list_assets(&vp).await {
                                 Ok(assets) => {
@@ -507,7 +537,13 @@ pub fn editor(props: &EditorProps) -> Html {
                                                     }
                                                     _ => format!("<a href=\"{}\">{}</a>", relative.replace('"', "&quot;"), relative),
                                                 };
-                                                exec_fn("insertHTML", &html);
+                                                if let Some(el) = parse_single_element(&html) {
+                                                    if insert_element_at_cursor(&el, false) {
+                                                        let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                                        content_md.set(new_md.clone());
+                                                        mark_edited(new_md);
+                                                    }
+                                                }
                                             }),
                                         });
                                     }
@@ -557,7 +593,25 @@ pub fn editor(props: &EditorProps) -> Html {
                         }
                     }
                     other => {
-                        exec_fn("insertHTML", other);
+                        // Mesma troca de `execCommand` por `Range`
+                        // (ver `insert_embed_marker_at_cursor`/
+                        // `insert_element_at_cursor`) — título, lista,
+                        // checklist, citação, código, linha e tabela
+                        // markdown têm o MESMO risco de fragmentação que
+                        // os embeds tinham (menos catastrófico — não
+                        // ficam irreconhecíveis pra sempre — mas ainda
+                        // saem errados: ex. um heading inserido dentro de
+                        // um item de lista virava `- # Título`, texto
+                        // literal, não um heading de verdade).
+                        if let Some(el) = parse_single_element(other) {
+                            if insert_element_at_cursor(&el, true) {
+                                let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                content_md.set(new_md.clone());
+                                mark_edited(new_md);
+                            }
+                        } else {
+                            exec_fn("insertHTML", other);
+                        }
                     }
                 }
             }
@@ -1078,37 +1132,46 @@ fn delete_slash_context_and_collapse(text_node: &web_sys::Text, slash_pos: u32, 
 }
 
 fn insert_embed_marker_at_cursor(kind: &str, body: &str) -> bool {
-    let Some(window) = web_sys::window() else { return false };
-    let Some(doc) = window.document() else { return false };
-    let Some(sel) = window.get_selection().ok().flatten() else { return false };
-    if sel.range_count() == 0 {
-        return false;
-    }
-    let Ok(range) = sel.get_range_at(0) else { return false };
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return false };
     let Ok(div) = doc.create_element("div") else { return false };
     if div.set_attribute("data-embed-insert", kind).is_err() {
         return false;
     }
     div.set_inner_html(&body.replace('\n', "<br>"));
+    insert_element_at_cursor(&div, true)
+}
 
-    // Um embed precisa ficar como linha própria — `html_to_markdown`
-    // converte `<li>`/`<p>`/`<blockquote>`/headings prefixando/envolvendo
-    // o que estiver DENTRO deles (via `inline_children`), incluindo um
-    // marcador de embed aninhado ali: por exemplo um `<li>` vira
-    // `- {{ type: "kanban" }}`, o que quebra o parser de embeds pra
-    // sempre (a abertura do wrapper deixa de estar sozinha na linha). Se
-    // o cursor estiver dentro de um desses blocos, insere o marcador como
-    // IRMÃO do bloco (ou da lista inteira, no caso de `<li>`) em vez de
-    // aninhado dentro dele — mesmo princípio de "quebrar pra fora do
-    // bloco" que outros editores fazem ao inserir conteúdo não-inline no
-    // meio de um parágrafo/item de lista.
-    let start_container = range.start_container().ok();
-    let container_el: Option<web_sys::Element> = start_container.and_then(|n| {
-        n.dyn_ref::<web_sys::Element>().cloned().or_else(|| n.parent_element())
-    });
-    let block_ancestor = container_el.and_then(|e| {
-        e.closest("li, p, blockquote, h1, h2, h3, h4, h5, h6").ok().flatten()
-    });
+/// Insere `el` na posição do cursor via `Range::insert_node` em vez de
+/// `execCommand("insertHTML", ...)`, que demonstrou ser pouco confiável
+/// no WebKitGTK pra HTML multi-linha (fragmentava de formas
+/// imprevisíveis dependendo de onde o cursor estava). Usado pelos itens
+/// do menu `/` — tanto os embeds (kanban/calendário/tabela) quanto os
+/// blocos "normais" (título, lista, citação, código, linha, tabela
+/// markdown, diagrama).
+///
+/// `break_out_of_block`: quando `true`, se o cursor estiver dentro de um
+/// `<li>`/`<p>`/blockquote/heading, insere `el` como IRMÃO desse bloco
+/// (ou da lista inteira, no caso de `<li>`) em vez de aninhado dentro
+/// dele — necessário pra blocos que precisam ficar em linha própria
+/// (embeds SEMPRE, os itens "normais" de bloco também, pra não virar
+/// `- # Título` em vez de um heading de verdade). `false` pra conteúdo
+/// inline-safe (ex: imagem), que pode ficar aninhado normalmente dentro
+/// de um parágrafo.
+fn insert_element_at_cursor(el: &web_sys::Element, break_out_of_block: bool) -> bool {
+    let Some(window) = web_sys::window() else { return false };
+    let Some(sel) = window.get_selection().ok().flatten() else { return false };
+    if sel.range_count() == 0 {
+        return false;
+    }
+    let Ok(range) = sel.get_range_at(0) else { return false };
+
+    let block_ancestor = break_out_of_block.then(|| {
+        let start_container = range.start_container().ok();
+        let container_el: Option<web_sys::Element> = start_container.and_then(|n| {
+            n.dyn_ref::<web_sys::Element>().cloned().or_else(|| n.parent_element())
+        });
+        container_el.and_then(|e| e.closest("li, p, blockquote, h1, h2, h3, h4, h5, h6").ok().flatten())
+    }).flatten();
 
     let inserted = if let Some(block) = block_ancestor {
         let anchor = if block.tag_name().to_lowercase() == "li" {
@@ -1117,11 +1180,11 @@ fn insert_embed_marker_at_cursor(kind: &str, body: &str) -> bool {
             Some(block)
         };
         anchor.and_then(|a| a.parent_node().map(|p| (p, a.next_sibling())))
-            .map(|(parent, next)| parent.insert_before(&div, next.as_ref()).is_ok())
+            .map(|(parent, next)| parent.insert_before(el, next.as_ref()).is_ok())
             .unwrap_or(false)
     } else {
         let _ = range.delete_contents();
-        range.insert_node(&div).is_ok()
+        range.insert_node(el).is_ok()
     };
     if !inserted {
         return false;
@@ -1129,11 +1192,21 @@ fn insert_embed_marker_at_cursor(kind: &str, body: &str) -> bool {
 
     // Move o cursor pra depois do nó inserido, senão continuaria "dentro"
     // dele — próxima tecla digitada iria pro lugar errado.
-    range.set_start_after(&div).ok();
+    range.set_start_after(el).ok();
     range.collapse();
     sel.remove_all_ranges().ok();
     let _ = sel.add_range(&range);
     true
+}
+
+/// Constrói UM elemento a partir de uma string HTML (assume que `html`
+/// tem exatamente um elemento raiz — todos os itens do menu `/`
+/// respeitam isso).
+fn parse_single_element(html: &str) -> Option<web_sys::Element> {
+    let doc = web_sys::window()?.document()?;
+    let wrapper = doc.create_element("div").ok()?;
+    wrapper.set_inner_html(html);
+    wrapper.first_element_child()
 }
 
 fn recompute_markdown_from_dom(content_md: &str, editor_ref: &NodeRef, segment_refs: &[NodeRef]) -> String {
