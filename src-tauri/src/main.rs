@@ -11,12 +11,12 @@ use std::sync::Mutex;
 use anotadinho_ipc::{
     handle_copy_to_assets, handle_create_folder, handle_create_page, handle_create_page_from_template,
     handle_create_page_in_folder, handle_create_page_typed, handle_delete_asset, handle_delete_page,
-    handle_export_folder, handle_git_status, handle_list_assets, handle_list_assets_info,
+    handle_export_folder, handle_git_log, handle_git_status, handle_list_assets, handle_list_assets_info,
     handle_list_folders, handle_list_pages, handle_list_templates, handle_move_page,
     handle_open_today_journal, handle_ping, handle_read_page, handle_search_content, handle_write_page,
     AssetInfo, PageMeta, PingArgs, PingResult, VaultInfo,
 };
-use anotadinho_vault::{GitFileEntry, VaultIo, VaultWatcher};
+use anotadinho_vault::{GitFileEntry, GitLogEntry, VaultIo, VaultWatcher};
 use tauri_plugin_dialog::DialogExt;
 
 struct AppWatchers(Mutex<HashMap<String, VaultWatcher>>);
@@ -125,6 +125,11 @@ fn git_status(vault_path: String) -> Option<Vec<GitFileEntry>> {
 }
 
 #[tauri::command]
+fn git_log(vault_path: String, page_path: String) -> Option<Vec<GitLogEntry>> {
+    handle_git_log(vault_path, page_path)
+}
+
+#[tauri::command]
 fn export_folder(vault_path: String, folder_path: String) -> Result<String, String> {
     handle_export_folder(vault_path, folder_path)
 }
@@ -207,6 +212,7 @@ fn main() {
             create_page_in_folder,
             export_folder,
             git_status,
+            git_log,
             list_templates,
             create_page_from_template,
             list_assets,

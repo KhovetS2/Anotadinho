@@ -1278,6 +1278,57 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
+    // Histórico de página via git (ciclo 117) — só busca ao abrir o
+    // modal (não a cada render), `None` cobre tanto "ainda não
+    // buscou" quanto "vault não é repo git" (mesmo degrade silencioso
+    // de `git_status`, ciclo 103).
+    let history_modal_open = use_state(|| false);
+    let history_entries: UseStateHandle<Option<Vec<api::GitLogEntry>>> = use_state(|| None);
+    let history_loading = use_state(|| false);
+    let open_history = {
+        let vault_path = props.vault_path.clone();
+        let page_path = page.path.clone();
+        let history_modal_open = history_modal_open.clone();
+        let history_entries = history_entries.clone();
+        let history_loading = history_loading.clone();
+        Callback::from(move |_: MouseEvent| {
+            history_modal_open.set(true);
+            history_loading.set(true);
+            let vault_path = vault_path.clone();
+            let page_path = page_path.clone();
+            let history_entries = history_entries.clone();
+            let history_loading = history_loading.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = api::git_log(&vault_path, &page_path).await.unwrap_or(None);
+                history_entries.set(result);
+                history_loading.set(false);
+            });
+        })
+    };
+    let history_body: Html = if *history_loading {
+        html! { <p class="editor__status">{ "Carregando..." }</p> }
+    } else {
+        match &*history_entries {
+            None => html! {
+                <p class="editor__status">{ "Este vault não é um repositório git (ou git não está instalado)." }</p>
+            },
+            Some(entries) if entries.is_empty() => html! {
+                <p class="editor__status">{ "Nenhum commit encontrado pra esta página." }</p>
+            },
+            Some(entries) => html! {
+                <ul class="git-history-list">
+                    { for entries.iter().map(|e| html! {
+                        <li class="git-history-item">
+                            <span class="git-history-item__hash">{ &e.hash }</span>
+                            <span class="git-history-item__date">{ &e.date }</span>
+                            <span class="git-history-item__message">{ &e.message }</span>
+                        </li>
+                    }) }
+                </ul>
+            },
+        }
+    };
+
     let save_label = if *saving { "Salvando..." } else if *edited { "Salvar *" } else { "Salvar" };
     let on_edit: Callback<InputEvent> = {
         let content_md = content_md.clone();
@@ -1535,6 +1586,13 @@ pub fn editor(props: &EditorProps) -> Html {
                                 }}>
                                     { "⬇ Exportar HTML" }
                                 </button>
+                                <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
+                                    let editor_menu_open = editor_menu_open.clone();
+                                    let open_history = open_history.clone();
+                                    Callback::from(move |e: MouseEvent| { editor_menu_open.set(false); open_history.emit(e); })
+                                }}>
+                                    { "🕐 Histórico" }
+                                </button>
                                 <div class="divider"></div>
                                 <button class="header-menu__item header-menu__item--danger btn btn--ghost btn--sm" onclick={{
                                     let editor_menu_open = editor_menu_open.clone();
@@ -1558,6 +1616,14 @@ pub fn editor(props: &EditorProps) -> Html {
                         on_change={on_frontmatter_change}
                         open_dialog={props.open_dialog.clone()}
                     />
+                </Modal>
+            }
+            if *history_modal_open {
+                <Modal title={"Histórico".to_string()} open={true} on_close={{
+                    let history_modal_open = history_modal_open.clone();
+                    Callback::from(move |_: ()| history_modal_open.set(false))
+                }}>
+                    { history_body }
                 </Modal>
             }
             <div class="editor__body">

@@ -6,7 +6,7 @@
 #![warn(missing_docs)]
 
 use anotadinho_search::SearchIndex;
-use anotadinho_vault::{GitFileEntry, VaultIo};
+use anotadinho_vault::{GitFileEntry, GitLogEntry, VaultIo};
 use serde::{Deserialize, Serialize};
 
 /// Comando de exemplo: ping.
@@ -177,6 +177,13 @@ pub fn handle_create_page_in_folder(
 /// nunca um erro, pra degradar silenciosamente na UI.
 pub fn handle_git_status(vault_path: String) -> Option<Vec<GitFileEntry>> {
     anotadinho_vault::git_status(std::path::Path::new(&vault_path))
+}
+
+/// Handler de git_log: histórico de commits de uma página específica
+/// (somente leitura), via `git log --follow`. `None` nas mesmas
+/// condições de `handle_git_status`.
+pub fn handle_git_log(vault_path: String, page_path: String) -> Option<Vec<GitLogEntry>> {
+    anotadinho_vault::git_log(std::path::Path::new(&vault_path), &page_path)
 }
 
 /// Handler de export_folder: concatena o markdown fonte de todas as

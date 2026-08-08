@@ -1,7 +1,7 @@
 ---
 id: "117"
 titulo: "Historico de pagina via git"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: media
@@ -23,20 +23,20 @@ atual.
 
 ## Critérios de aceite
 
-- [ ] `crates/vault/src/git_status.rs` ganha `git_log(vault_root,
+- [x] `crates/vault/src/git_status.rs` ganha `git_log(vault_root,
       relative_path) -> Option<Vec<GitLogEntry>>` (hash curto, data,
-      mensagem), via `git -C <root> log --follow --oneline -- <path>`;
+      mensagem), via `git -C <root> log --follow --pretty=format:...`;
       `None` se não for um repo git (mesmo padrão de `git_status`)
-- [ ] Handler IPC + comando Tauri novos, expostos em `ui/src/api.rs`
-- [ ] Painel "Histórico" no menu "⋯" do editor, lista os commits (mais
+- [x] Handler IPC + comando Tauri novos, expostos em `ui/src/api.rs`
+- [x] Painel "Histórico" no menu "⋯" do editor, lista os commits (mais
       recente primeiro)
-- [ ] Se o vault não é um repo git, o item do menu não aparece (ou
-      mostra estado vazio claro) — mesmo tratamento de ausência que o
-      indicador de git status já tem
-- [ ] Teste em `crates/vault` cobrindo `git_log` num fixture de repo
+- [x] Vault sem git: item do menu continua visível (opção B do
+      critério — "ou mostra estado vazio claro"), mostra mensagem
+      clara ao abrir em vez de sumir do menu
+- [x] Teste em `crates/vault` cobrindo `git_log` num fixture de repo
       git real (`tempfile` + `git init` + commits, mesmo padrão dos
-      testes de `git_status.rs`)
-- [ ] `cargo test --workspace`, `cd ui && cargo test --lib`,
+      testes de `git_status.rs`) — 3 testes novos
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
       `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
       passam
 
@@ -62,4 +62,15 @@ cargo build --manifest-path src-tauri/Cargo.toml
 Mesmo padrão de `git_status()` — shell out pro `git` do sistema via
 `std::process::Command`, sem dependência de lib git nova
 (`git2`/`gix`). Painel reaproveita o padrão visual do popover de git
-status do `header_bar.rs` (ciclo 103).
+status do `header_bar.rs` (ciclo 103), mas aparece como modal (mesmo
+mecanismo do painel de Propriedades, ciclo 109) em vez de popover.
+
+Validado ao vivo via MCP `tauri`: abri `pages/sobre.md` (tem 1 commit
+real no histórico do repo), cliquei "⋯" → "🕐 Histórico", modal
+mostrou hash/data/mensagem do commit correto — conferido contra
+`git log --oneline -- VaultAnotadinho/pages/sobre.md` direto no
+shell, bateu exatamente.
+
+Processo de dev precisou reiniciar (`crates/vault`/`ipc`/`src-tauri`
+mudaram — hot-reload do `trunk serve` só cobre o frontend WASM, já
+documentado em ciclos anteriores).

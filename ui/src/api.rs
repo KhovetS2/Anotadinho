@@ -37,6 +37,17 @@ pub struct GitFileEntry {
     pub status: String,
 }
 
+/// Um commit do histórico de uma página (ciclo 117, somente leitura).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GitLogEntry {
+    /// Hash curto do commit.
+    pub hash: String,
+    /// Data do commit (`YYYY-MM-DD`).
+    pub date: String,
+    /// Mensagem do commit.
+    pub message: String,
+}
+
 fn get_invoke_fn() -> Result<js_sys::Function, JsValue> {
     let w = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
     let ipc = js_sys::Reflect::get(&w, &JsValue::from_str("__TAURI_INTERNALS__"))?;
@@ -223,6 +234,19 @@ pub async fn git_status(vault_path: &str) -> Result<Option<Vec<GitFileEntry>>, S
         .map_err(|e| format!("{:?}", e))?;
     let args = JsValue::from(args);
     let result = tauri_invoke("git_status", &args).await.map_err(|e| format!("{:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
+/// Histórico de commits que tocaram uma página específica (ciclo 117,
+/// somente leitura). `None` nas mesmas condições de `git_status`.
+pub async fn git_log(vault_path: &str, page_path: &str) -> Result<Option<Vec<GitLogEntry>>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("pagePath"), &JsValue::from_str(page_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("git_log", &args).await.map_err(|e| format!("{:?}", e))?;
     serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
 }
 
