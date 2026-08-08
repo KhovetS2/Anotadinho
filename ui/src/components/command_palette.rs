@@ -8,6 +8,12 @@ use web_sys::{HtmlInputElement, KeyboardEvent};
 use yew::prelude::*;
 
 use crate::api::{self, PageMeta};
+use crate::components::sidebar::render_excerpt_highlight;
+
+/// Só busca conteúdo (via `SearchIndex` FTS5, ciclo 094) a partir desse
+/// tamanho de query — evita disparar buscas caras a cada tecla no
+/// início da digitação.
+const CONTENT_SEARCH_MIN_LEN: usize = 3;
 
 /// Comando nomeado disparado pela paleta — tratado centralmente em
 /// `App` (é quem tem os callbacks de tema/sidebar/etc já em mãos).
@@ -38,6 +44,9 @@ const COMMANDS: &[(&str, PaletteAction)] = &[
 enum Item {
     Command(&'static str, PaletteAction),
     Page(PageMeta),
+    /// Resultado de busca de CONTEÚDO (não só título) — página + trecho
+    /// com o termo destacado, via `search_content` (ciclo 094 FTS5).
+    ContentResult(PageMeta, String),
 }
 
 /// Props da `CommandPalette`.
@@ -62,6 +71,7 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
     let query = use_state(String::new);
     let idx = use_state(|| 0usize);
     let pages = use_state(Vec::<PageMeta>::new);
+    let content_results = use_state(Vec::<(String, String)>::new);
     let input_ref = use_node_ref();
 
     {
@@ -77,6 +87,33 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
         });
     }
 
+    // Busca de conteúdo (não só título) — reusa `api::search_content`
+    // (mesma função da busca da sidebar, ciclo 094 FTS5), com o mesmo
+    // gate de tamanho mínimo pra não disparar busca cara a cada tecla.
+    // Não bloqueia o match instantâneo por título/comando abaixo — só
+    // adiciona uma seção extra quando a busca assíncrona resolve.
+    {
+        let vault_path = props.vault_path.clone();
+        let query = query.clone();
+        let content_results = content_results.clone();
+        use_effect_with(query.clone(), move |_| {
+            if query.len() >= CONTENT_SEARCH_MIN_LEN {
+                let vault_path = vault_path.clone();
+                let query = query.clone();
+                let content_results = content_results.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    match api::search_content(&vault_path, &query).await {
+                        Ok(r) => content_results.set(r),
+                        Err(_) => content_results.set(Vec::new()),
+                    }
+                });
+            } else {
+                content_results.set(Vec::new());
+            }
+            || {}
+        });
+    }
+
     {
         let input_ref = input_ref.clone();
         use_effect_with((), move |_| {
@@ -88,20 +125,35 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
     }
 
     let q = query.to_lowercase();
+    let title_matches: Vec<PageMeta> = pages.iter()
+        .filter(|p| q.is_empty() || p.title.to_lowercase().contains(&q))
+        .cloned()
+        .collect();
     let items: Vec<Item> = {
         let mut v: Vec<Item> = COMMANDS.iter()
             .filter(|(label, _)| q.is_empty() || label.to_lowercase().contains(&q))
             .map(|(label, action)| Item::Command(label, *action))
             .collect();
-        v.extend(
-            pages.iter()
-                .filter(|p| q.is_empty() || p.title.to_lowercase().contains(&q))
-                .cloned()
-                .map(Item::Page),
-        );
+        v.extend(title_matches.iter().cloned().map(Item::Page));
+        // Resultados de conteúdo: só páginas que NÃO já apareceram por
+        // título (evita listar a mesma página duas vezes).
+        v.extend(content_results.iter().filter_map(|(path, excerpt)| {
+            if title_matches.iter().any(|p| &p.path == path) {
+                return None;
+            }
+            let title = std::path::Path::new(path).file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let meta = PageMeta { path: path.clone(), title, section: "pages".to_string() };
+            Some(Item::ContentResult(meta, excerpt.clone()))
+        }));
         v
     };
     let items_len = items.len();
+    // Índice do primeiro `ContentResult` — usado só pra desenhar o
+    // separador de seção uma vez, sem quebrar o match instantâneo por
+    // título/comando (que continua sempre primeiro na lista).
+    let first_content_idx = items.iter().position(|i| matches!(i, Item::ContentResult(..)));
 
     let select_idx = {
         let on_close = props.on_close.clone();
@@ -113,6 +165,7 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
                 match item.clone() {
                     Item::Command(_, action) => on_action.emit(action),
                     Item::Page(meta) => on_page_selected.emit(meta),
+                    Item::ContentResult(meta, _) => on_page_selected.emit(meta),
                 }
             }
             on_close.emit(());
@@ -167,19 +220,41 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
                             let sel = select_idx.clone();
                             let onmousedown = Callback::from(|e: MouseEvent| e.prevent_default());
                             let onclick = Callback::from(move |_| sel.emit(i));
-                            match item {
-                                Item::Command(label, _) => html! {
-                                    <div {class} {onmousedown} {onclick}>
-                                        <span class="command-palette__item-icon">{ "⚡" }</span>
-                                        <span class="command-palette__item-title">{ *label }</span>
-                                    </div>
-                                },
-                                Item::Page(meta) => html! {
-                                    <div {class} {onmousedown} {onclick}>
-                                        <span class="command-palette__item-icon">{ "📄" }</span>
-                                        <span class="command-palette__item-title">{ &meta.title }</span>
-                                    </div>
-                                },
+                            // Separador desenhado uma vez só, antes do primeiro
+                            // resultado de conteúdo — títulos/comandos continuam
+                            // sempre no topo, sem esperar a busca assíncrona.
+                            let section_header = if first_content_idx == Some(i) {
+                                html! { <p class="command-palette__section">{ "No conteúdo" }</p> }
+                            } else {
+                                html! {}
+                            };
+                            html! {
+                                <>
+                                    { section_header }
+                                    { match item {
+                                        Item::Command(label, _) => html! {
+                                            <div {class} {onmousedown} {onclick}>
+                                                <span class="command-palette__item-icon">{ "⚡" }</span>
+                                                <span class="command-palette__item-title">{ *label }</span>
+                                            </div>
+                                        },
+                                        Item::Page(meta) => html! {
+                                            <div {class} {onmousedown} {onclick}>
+                                                <span class="command-palette__item-icon">{ "📄" }</span>
+                                                <span class="command-palette__item-title">{ &meta.title }</span>
+                                            </div>
+                                        },
+                                        Item::ContentResult(meta, excerpt) => html! {
+                                            <div {class} {onmousedown} {onclick}>
+                                                <span class="command-palette__item-icon">{ "📄" }</span>
+                                                <div class="command-palette__item-result">
+                                                    <span class="command-palette__item-title">{ &meta.title }</span>
+                                                    <span class="command-palette__item-excerpt">{ render_excerpt_highlight(excerpt) }</span>
+                                                </div>
+                                            </div>
+                                        },
+                                    } }
+                                </>
                             }
                         }) }
                     }

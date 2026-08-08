@@ -1,7 +1,7 @@
 ---
 id: "102"
 titulo: "Busca full-text real na paleta de comandos"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: media
@@ -23,20 +23,20 @@ ser pelo menos igual.
 
 ## Critérios de aceite
 
-- [ ] `ui/src/components/command_palette.rs`: quando a query tem 3+
+- [x] `ui/src/components/command_palette.rs`: quando a query tem 3+
       caracteres, busca também no CONTEÚDO das páginas via
       `api::search_content` (mesma função já usada pela sidebar,
       ciclo 094), debounced, mostrando resultado com trecho destacado
       (reaproveita `render_excerpt_highlight` de `sidebar.rs`, extraído
       pra um lugar comum se fizer sentido)
-- [ ] Resultados de conteúdo aparecem numa seção separada dos títulos
+- [x] Resultados de conteúdo aparecem numa seção separada dos títulos
       (que continuam com match instantâneo, sem esperar a busca
       assíncrona) — não bloqueia a navegação rápida por título já
       existente
-- [ ] Query com menos de 3 caracteres continua só filtrando por
+- [x] Query com menos de 3 caracteres continua só filtrando por
       título/comando (mesmo comportamento de hoje, sem busca de
       conteúdo — evita disparar buscas caras a cada tecla no início)
-- [ ] `cargo test --workspace`, `cd ui && cargo test --lib`,
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
       `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
       passam
 
@@ -63,3 +63,17 @@ Reaproveita 100% infraestrutura já pronta (`api::search_content` +
 `SearchIndex` FTS5 do ciclo 094, `render_excerpt_highlight` do ciclo
 094/sidebar) — esse ciclo é praticamente só de "fiação" (wiring), não
 precisa de infraestrutura nova.
+
+`render_excerpt_highlight` virou `pub(crate)` em `sidebar.rs` e é
+importada por `command_palette.rs` — sem duplicar a função nem criar
+um módulo novo só pra isso.
+
+Páginas que já batem por TÍTULO não aparecem de novo na seção de
+conteúdo mesmo se o termo também aparecer no corpo (dedupe por
+`path`) — evita listar a mesma página duas vezes.
+
+Validado ao vivo via MCP `tauri`: buscar "Tauri" (não é título de
+nenhuma página) retornou 6 resultados de conteúdo com o cabeçalho "No
+conteúdo" e trechos com `<strong>` no termo destacado; buscar "ta" (2
+chars) mostrou só comandos/títulos, sem seção de conteúdo — confirma
+o gate de tamanho mínimo.

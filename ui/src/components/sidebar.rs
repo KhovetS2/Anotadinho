@@ -692,7 +692,10 @@ fn render_tree<
 /// indicar o trecho que casou com a busca (via `snippet()` do FTS5, ver
 /// `crates/search`) em `<strong>` de verdade — sem isso o usuário via
 /// os asteriscos literais em vez de destaque visual.
-fn render_excerpt_highlight(excerpt: &str) -> Html {
+/// Extraído aqui (não é específico da sidebar) pra ser reusado pela
+/// paleta de comandos (ciclo 102), que também mostra trechos de
+/// `search_content` com o termo destacado.
+pub(crate) fn render_excerpt_highlight(excerpt: &str) -> Html {
     let parts: Vec<&str> = excerpt.split("**").collect();
     html! {
         <>
