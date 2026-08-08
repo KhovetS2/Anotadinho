@@ -6,6 +6,7 @@ use yew::prelude::*;
 
 use crate::api;
 use crate::api::PageMeta;
+use crate::components::cheatsheet_modal::CheatsheetModal;
 use crate::components::command_palette::{CommandPalette, PaletteAction};
 use crate::components::dialog_host::DialogHost;
 use crate::components::editor::Editor;
@@ -19,6 +20,18 @@ use crate::components::sidebar::Sidebar;
 use crate::components::tab_bar::TabBar;
 use crate::dialog::PendingDialog;
 use crate::state;
+
+/// `?` abre o cheatsheet de atalhos (ciclo 108) — mas só fora de campo
+/// de texto/contenteditable, senão digitar um "?" de verdade numa nota
+/// ou na busca da sidebar abriria o overlay sem querer.
+fn is_text_input_target(e: &KeyboardEvent) -> bool {
+    let Some(target) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else { return false };
+    let tag = target.tag_name().to_lowercase();
+    if matches!(tag.as_str(), "input" | "textarea" | "select") {
+        return true;
+    }
+    target.get_attribute("contenteditable").as_deref() == Some("true")
+}
 
 #[function_component(App)]
 pub fn app() -> Html {
@@ -95,6 +108,8 @@ pub fn app() -> Html {
     // boot do app).
     let sidebar_activate_nav = use_state(|| None::<u32>);
     let sidebar_activate_nav_nonce = use_mut_ref(|| 0u32);
+    // Cheatsheet de atalhos (ciclo 108) — leitura dos dois keymaps.
+    let cheatsheet_open = use_state(|| false);
     let pending_dialog = use_state(|| None::<PendingDialog>);
     let palette_open = use_state(|| false);
     let theme_light = use_state(|| {
@@ -508,6 +523,7 @@ pub fn app() -> Html {
         let view_tags_action = view_tags_action.clone();
         let view_assets_action = view_assets_action.clone();
         let export_vault_action = export_vault_action.clone();
+        let cheatsheet_open = cheatsheet_open.clone();
         Callback::from(move |action: PaletteAction| match action {
             PaletteAction::NewPage => new_page_action.emit(()),
             PaletteAction::NewFolder => new_folder_action.emit(()),
@@ -517,6 +533,7 @@ pub fn app() -> Html {
             PaletteAction::ViewTags => view_tags_action.emit(()),
             PaletteAction::ViewAssets => view_assets_action.emit(()),
             PaletteAction::ExportVault => export_vault_action.emit(()),
+            PaletteAction::ViewCheatsheet => cheatsheet_open.set(true),
         })
     };
 
@@ -543,8 +560,15 @@ pub fn app() -> Html {
         let global_editor_action_nonce = global_editor_action_nonce.clone();
         let sidebar_activate_nav = sidebar_activate_nav.clone();
         let sidebar_activate_nav_nonce = sidebar_activate_nav_nonce.clone();
+        let cheatsheet_open = cheatsheet_open.clone();
         Callback::from(move |e: KeyboardEvent| {
             let ctrl = e.ctrl_key() || e.meta_key();
+
+            if e.key() == "?" && !ctrl && !is_text_input_target(&e) {
+                e.prevent_default();
+                cheatsheet_open.set(true);
+                return;
+            }
 
             if e.key() == "Escape" {
                 if !ctrl && selected_page.is_some() {
@@ -692,6 +716,10 @@ pub fn app() -> Html {
                     let global_keymap_settings_open = global_keymap_settings_open.clone();
                     Callback::from(move |_: ()| global_keymap_settings_open.set(true))
                 }}
+                on_open_cheatsheet={{
+                    let cheatsheet_open = cheatsheet_open.clone();
+                    Callback::from(move |_: ()| cheatsheet_open.set(true))
+                }}
                 on_close_vault={on_close_vault}
                 on_open_vault={on_open_vault_shortcut}
             />
@@ -751,6 +779,17 @@ pub fn app() -> Html {
                     on_close={{
                         let global_keymap_settings_open = global_keymap_settings_open.clone();
                         Callback::from(move |_: ()| global_keymap_settings_open.set(false))
+                    }}
+                />
+            }
+            if *cheatsheet_open {
+                <CheatsheetModal
+                    global_keymap={(*global_keymap).clone()}
+                    vim_keymap={(*vim_keymap).clone()}
+                    vim_mode_enabled={*vim_mode}
+                    on_close={{
+                        let cheatsheet_open = cheatsheet_open.clone();
+                        Callback::from(move |_: ()| cheatsheet_open.set(false))
                     }}
                 />
             }

@@ -27,6 +27,7 @@ pub enum PaletteAction {
     ViewTags,
     ViewAssets,
     ExportVault,
+    ViewCheatsheet,
 }
 
 const COMMANDS: &[(&str, PaletteAction)] = &[
@@ -38,6 +39,7 @@ const COMMANDS: &[(&str, PaletteAction)] = &[
     ("Ver Tags", PaletteAction::ViewTags),
     ("Ver Assets", PaletteAction::ViewAssets),
     ("Exportar vault inteiro", PaletteAction::ExportVault),
+    ("Ver atalhos", PaletteAction::ViewCheatsheet),
 ];
 
 #[derive(Debug, Clone, PartialEq)]

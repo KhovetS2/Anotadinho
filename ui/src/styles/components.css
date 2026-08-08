@@ -483,6 +483,61 @@
 
 .modal--wide { max-width: 640px; }
 
+/* Cheatsheet de atalhos (ciclo 108) */
+.cheatsheet {
+    display: flex;
+    gap: var(--sp-5);
+    flex-wrap: wrap;
+}
+
+.cheatsheet__section {
+    flex: 1;
+    min-width: 220px;
+}
+
+.cheatsheet__heading {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin: 0 0 var(--sp-2);
+}
+
+.cheatsheet__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+.cheatsheet__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    font-size: 0.8125rem;
+}
+
+.cheatsheet__label {
+    color: var(--text-primary);
+}
+
+.cheatsheet__key {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 2px 6px;
+    white-space: nowrap;
+}
+
 .modal__select-list {
     list-style: none;
     margin: 0;

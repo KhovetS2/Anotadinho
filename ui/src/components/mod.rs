@@ -2,6 +2,7 @@
 
 pub mod assets_page;
 pub mod calendar;
+pub mod cheatsheet_modal;
 pub mod command_palette;
 pub mod date_picker;
 pub mod dialog_host;
