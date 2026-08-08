@@ -16,6 +16,7 @@ pub fn render(markdown: &str) -> String {
     let body = anotadinho_core::MarkdownCodec::split_frontmatter(markdown)
         .map(|(_, body)| body)
         .unwrap_or(markdown);
+    let body = crate::wikilink::linkify(body);
 
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
@@ -23,7 +24,7 @@ pub fn render(markdown: &str) -> String {
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
 
-    let parser = Parser::new_ext(body, options);
+    let parser = Parser::new_ext(&body, options);
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
     html_output

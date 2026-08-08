@@ -14,5 +14,6 @@ pub mod embed;
 pub mod html_to_md;
 pub mod markdown_render;
 pub mod state;
+pub mod wikilink;
 
 pub use app::App;

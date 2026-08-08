@@ -83,6 +83,15 @@ pub fn editor(props: &EditorProps) -> Html {
     let slash_idx = use_state(|| 0usize);
     let slash_active_ref = use_node_ref();
 
+    // Popup de autocomplete de wikilink (`[[Título`) — mesmo mecanismo do
+    // menu `/`: abre/atualiza olhando o texto de verdade a cada `oninput`
+    // (`find_wikilink_context`), navega com teclado, aplica via `Range`.
+    let wikilink_open = use_state(|| false);
+    let wikilink_text = use_state(String::new);
+    let wikilink_idx = use_state(|| 0usize);
+    let wikilink_active_ref = use_node_ref();
+    let wikilink_pages = use_state(Vec::<PageMeta>::new);
+
     // Rola a lista pra manter o item ativo visível ao navegar com o
     // teclado — sem isso, se o item selecionado saísse da área visível do
     // menu (scrollável), a navegação continuava funcionando mas o usuário
@@ -126,10 +135,76 @@ pub fn editor(props: &EditorProps) -> Html {
         });
     }
 
+    // Mesmo scroll-into-view do menu `/`, pro popup de wikilink.
+    {
+        let wikilink_active_ref = wikilink_active_ref.clone();
+        use_effect_with((*wikilink_idx, *wikilink_open), move |_| {
+            if let Some(el) = wikilink_active_ref.cast::<web_sys::Element>() {
+                let opts = web_sys::ScrollIntoViewOptions::new();
+                opts.set_block(web_sys::ScrollLogicalPosition::Nearest);
+                el.scroll_into_view_with_scroll_into_view_options(&opts);
+            }
+            || {}
+        });
+    }
+
+    // Mesmo fechar-ao-clicar-fora do menu `/`, pro popup de wikilink.
+    {
+        let wikilink_open = wikilink_open.clone();
+        let wikilink_text = wikilink_text.clone();
+        let wikilink_idx = wikilink_idx.clone();
+        use_effect_with(*wikilink_open, move |open| {
+            let listener = if *open {
+                let window = web_sys::window().expect("no global window");
+                Some(EventListener::new(&window, "mousedown", move |e| {
+                    let Some(node) = e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()) else { return };
+                    let target = node.dyn_ref::<web_sys::Element>().cloned().or_else(|| node.parent_element());
+                    let Some(target) = target else { return };
+                    if target.closest(".editor__wysiwyg, .wikilink-menu").ok().flatten().is_none() {
+                        wikilink_open.set(false);
+                        wikilink_text.set(String::new());
+                        wikilink_idx.set(0);
+                    }
+                }))
+            } else {
+                None
+            };
+            move || drop(listener)
+        });
+    }
+
+    // Busca a lista de páginas do vault sempre que o popup abre — dado
+    // simples e barato de buscar de novo (não vale a pena manter em
+    // cache num campo à parte só pra isso).
+    {
+        let vault_path = props.vault_path.clone();
+        let wikilink_pages = wikilink_pages.clone();
+        use_effect_with(*wikilink_open, move |open| {
+            if *open {
+                let vault_path = vault_path.clone();
+                let wikilink_pages = wikilink_pages.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    if let Ok(pages) = api::list_pages(&vault_path).await {
+                        wikilink_pages.set(pages);
+                    }
+                });
+            }
+            || {}
+        });
+    }
+
     let filtered: Vec<usize> = SLASH_ITEMS.iter().enumerate()
         .filter(|(_, item)| {
             let q = slash_text.to_lowercase();
             q.is_empty() || item.label.to_lowercase().contains(&q) || item.desc.to_lowercase().contains(&q)
+        })
+        .map(|(i, _)| i)
+        .collect();
+
+    let filtered_wikilink: Vec<usize> = wikilink_pages.iter().enumerate()
+        .filter(|(_, p)| {
+            let q = wikilink_text.to_lowercase();
+            q.is_empty() || p.title.to_lowercase().contains(&q)
         })
         .map(|(i, _)| i)
         .collect();
@@ -633,12 +708,49 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
+    let select_wikilink = {
+        let wikilink_open = wikilink_open.clone();
+        let wikilink_text = wikilink_text.clone();
+        let wikilink_idx = wikilink_idx.clone();
+        let items = filtered_wikilink.clone();
+        let pages = wikilink_pages.clone();
+        let content_md = content_md.clone();
+        let editor_ref = editor_ref.clone();
+        let segment_refs = segment_refs.clone();
+        let mark_edited = mark_edited.clone();
+        Callback::from(move |vi: usize| {
+            if let Some((text_node, pos, query)) = find_wikilink_context() {
+                delete_range_and_collapse(&text_node, pos, 2 + query.chars().count() as u32);
+            }
+            if let Some(&page_idx) = items.get(vi) {
+                if let Some(page) = pages.get(page_idx) {
+                    let href = format!("{}{}", crate::wikilink::SCHEME_PREFIX, crate::wikilink::encode_title(&page.title));
+                    let html = format!("<a href=\"{}\">{}</a>", href, page.title.replace('<', "&lt;").replace('>', "&gt;"));
+                    if let Some(el) = parse_single_element(&html) {
+                        if insert_element_at_cursor(&el, false) {
+                            let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                            content_md.set(new_md.clone());
+                            mark_edited(new_md);
+                        }
+                    }
+                }
+            }
+            wikilink_open.set(false);
+            wikilink_text.set(String::new());
+            wikilink_idx.set(0);
+        })
+    };
+
     let on_keydown = {
         let do_save = do_save.clone();
         let slash_open = slash_open.clone(); let slash_text = slash_text.clone();
         let slash_idx = slash_idx.clone();
         let filtered_len = filtered.len();
         let select_slash = select_slash.clone();
+        let wikilink_open = wikilink_open.clone(); let wikilink_text = wikilink_text.clone();
+        let wikilink_idx = wikilink_idx.clone();
+        let filtered_wikilink_len = filtered_wikilink.len();
+        let select_wikilink = select_wikilink.clone();
         Callback::from(move |e: KeyboardEvent| {
             if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); do_save.emit(()); return; }
 
@@ -662,6 +774,17 @@ pub fn editor(props: &EditorProps) -> Html {
                     "ArrowDown" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + 1) % filtered_len); } }
                     "ArrowUp" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len); } }
                     "Enter" => { e.stop_propagation(); e.prevent_default(); select_slash.emit(*slash_idx); return; }
+                    _ => {}
+                }
+                return;
+            }
+
+            if *wikilink_open {
+                match e.key().as_str() {
+                    "Escape" => { e.stop_propagation(); wikilink_open.set(false); wikilink_text.set(String::new()); wikilink_idx.set(0); e.prevent_default(); }
+                    "ArrowDown" => { e.stop_propagation(); e.prevent_default(); if filtered_wikilink_len > 0 { wikilink_idx.set((*wikilink_idx + 1) % filtered_wikilink_len); } }
+                    "ArrowUp" => { e.stop_propagation(); e.prevent_default(); if filtered_wikilink_len > 0 { wikilink_idx.set((*wikilink_idx + filtered_wikilink_len - 1) % filtered_wikilink_len); } }
+                    "Enter" => { e.stop_propagation(); e.prevent_default(); select_wikilink.emit(*wikilink_idx); return; }
                     _ => {}
                 }
                 return;
@@ -765,6 +888,9 @@ pub fn editor(props: &EditorProps) -> Html {
         let slash_open = slash_open.clone();
         let slash_text = slash_text.clone();
         let slash_idx = slash_idx.clone();
+        let wikilink_open = wikilink_open.clone();
+        let wikilink_text = wikilink_text.clone();
+        let wikilink_idx = wikilink_idx.clone();
         Callback::from(move |_: InputEvent| {
             let md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
             mark_edited(md);
@@ -789,6 +915,29 @@ pub fn editor(props: &EditorProps) -> Html {
                         slash_open.set(false);
                         slash_text.set(String::new());
                         slash_idx.set(0);
+                    }
+                }
+            }
+
+            // Mesma lógica pro popup de wikilink, gatilho "[[" em vez de
+            // "/" — os dois nunca casam ao mesmo tempo (guardas de prefixo
+            // diferentes), então rodar os dois checks todo `oninput` é
+            // seguro.
+            match find_wikilink_context() {
+                Some((_, _, query)) => {
+                    if !*wikilink_open {
+                        wikilink_open.set(true);
+                    }
+                    if *wikilink_text != query {
+                        wikilink_text.set(query);
+                        wikilink_idx.set(0);
+                    }
+                }
+                None => {
+                    if *wikilink_open {
+                        wikilink_open.set(false);
+                        wikilink_text.set(String::new());
+                        wikilink_idx.set(0);
                     }
                 }
             }
@@ -918,6 +1067,42 @@ pub fn editor(props: &EditorProps) -> Html {
     };
     let on_dragover = Callback::from(|e: DragEvent| { e.prevent_default(); });
 
+    // Clicar num wikilink já renderizado (`<a href="anotadinho://page/...">`,
+    // ver `crate::wikilink`) navega pra página em vez de tentar abrir como
+    // link externo. Resolve por título (case-insensitive); primeiro match
+    // se houver mais de uma página com o mesmo título (v1 — desambiguação
+    // de verdade fica pra depois se virar problema real).
+    let on_wysiwyg_click = {
+        let vault_path = props.vault_path.clone();
+        let on_page_selected = props.on_page_selected.clone();
+        let open_dialog = props.open_dialog.clone();
+        Callback::from(move |e: MouseEvent| {
+            let Some(target) = e.target() else { return };
+            let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
+            let Ok(Some(anchor)) = el.closest("a") else { return };
+            let Some(href) = anchor.get_attribute("href") else { return };
+            let Some(encoded) = href.strip_prefix(crate::wikilink::SCHEME_PREFIX) else { return };
+            e.prevent_default();
+            let title = crate::wikilink::decode_title(encoded);
+            let vault_path = vault_path.clone();
+            let on_page_selected = on_page_selected.clone();
+            let open_dialog = open_dialog.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::list_pages(&vault_path).await {
+                    Ok(pages) => {
+                        match pages.into_iter().find(|p| p.title.eq_ignore_ascii_case(&title)) {
+                            Some(meta) => on_page_selected.emit(meta),
+                            None => open_dialog.emit(PendingDialog::Alert {
+                                message: format!("Página \"{}\" não encontrada.", title),
+                            }),
+                        }
+                    }
+                    Err(e) => web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e)),
+                }
+            });
+        })
+    };
+
     html! {
         <main class="editor">
             <header class="editor__header">
@@ -951,7 +1136,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     // `Range`, imperativos, fora do rastreamento do VDOM)
                     // ficava "grudado" ali, aparecendo duplicado ao lado
                     // do conteúdo novo de verdade.
-                    <div class="editor__wysiwyg-segments" key="segments">
+                    <div class="editor__wysiwyg-segments" key="segments" onclick={on_wysiwyg_click.clone()}>
                         { for segments.iter().enumerate().map(|(i, seg)| {
                             match seg {
                                 DocSegment::Markdown(_) => {
@@ -1013,7 +1198,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 } else {
                     <div class="editor__wysiwyg" key="plain" ref={editor_ref} contenteditable="true"
                         spellcheck="false" onkeydown={on_keydown} oninput={on_edit}
-                        ondrop={on_drop} ondragover={on_dragover} />
+                        ondrop={on_drop} ondragover={on_dragover} onclick={on_wysiwyg_click} />
                 }
             </div>
             if *slash_open {
@@ -1041,6 +1226,34 @@ pub fn editor(props: &EditorProps) -> Html {
                                 <div {class} ref={node_ref} {onmousedown} {onclick}>
                                     <span class="slash-menu__item-label">{ item.label }</span>
                                     <span class="slash-menu__item-desc">{ item.desc }</span>
+                                </div>
+                            }
+                        }) }
+                    </div>
+                </div>
+            }
+            if *wikilink_open {
+                <div class="wikilink-menu">
+                    <div class="wikilink-menu__header">
+                        <span>{ "[[" }{ &*wikilink_text }</span>
+                        <span class="wikilink-menu__hint">{ format!("{} páginas", filtered_wikilink.len()) }</span>
+                    </div>
+                    <div class="wikilink-menu__list">
+                        if filtered_wikilink.is_empty() {
+                            <p class="wikilink-menu__empty">{ "Nenhuma página com esse título" }</p>
+                        }
+                        { for filtered_wikilink.iter().enumerate().map(|(vi, &page_idx)| {
+                            let Some(page) = wikilink_pages.get(page_idx) else { return html! {} };
+                            let is_active = vi == *wikilink_idx;
+                            let class = if is_active { "wikilink-menu__item wikilink-menu__item--active" } else { "wikilink-menu__item" };
+                            let sel = select_wikilink.clone();
+                            let onmousedown = Callback::from(|e: MouseEvent| e.prevent_default());
+                            let onclick = Callback::from(move |_| sel.emit(vi));
+                            let node_ref = if is_active { wikilink_active_ref.clone() } else { NodeRef::default() };
+                            html! {
+                                <div {class} ref={node_ref} {onmousedown} {onclick}>
+                                    <span class="wikilink-menu__item-icon">{ "📄" }</span>
+                                    <span class="wikilink-menu__item-title">{ &page.title }</span>
                                 </div>
                             }
                         }) }
@@ -1115,15 +1328,51 @@ fn find_slash_context() -> Option<(web_sys::Text, u32, String)> {
 /// deixa o cursor colapsado exatamente onde o "/" estava — pronto pro
 /// item selecionado ser inserido ali no lugar.
 fn delete_slash_context_and_collapse(text_node: &web_sys::Text, slash_pos: u32, query_len: usize) -> bool {
-    let delete_len = (1 + query_len) as u32;
-    if text_node.delete_data(slash_pos, delete_len).is_err() {
+    delete_range_and_collapse(text_node, slash_pos, (1 + query_len) as u32)
+}
+
+/// Acha o "[[consulta" imediatamente antes do cursor — mesmo mecanismo de
+/// `find_slash_context`, mas pro gatilho de wikilink. Diferente do "/", o
+/// "[[" não precisa estar em início de linha/depois de espaço (um
+/// wikilink pode aparecer no meio de uma frase) — só exige que não haja
+/// espaço nem "]" entre o "[[" mais recente e o cursor.
+fn find_wikilink_context() -> Option<(web_sys::Text, u32, String)> {
+    let window = web_sys::window()?;
+    let sel = window.get_selection().ok().flatten()?;
+    if sel.range_count() == 0 {
+        return None;
+    }
+    let range = sel.get_range_at(0).ok()?;
+    if !range.collapsed() {
+        return None;
+    }
+    let node = range.start_container().ok()?;
+    let text_node = node.dyn_ref::<web_sys::Text>()?.clone();
+    let offset = range.start_offset().ok()? as usize;
+    let data = text_node.data();
+    let prefix: String = data.chars().take(offset).collect();
+    let open_byte_pos = prefix.rfind("[[")?;
+    let query = &prefix[open_byte_pos + 2..];
+    if query.chars().any(|c| c.is_whitespace() || c == ']' || c == '[') {
+        return None;
+    }
+    let open_char_pos = prefix[..open_byte_pos].chars().count() as u32;
+    Some((text_node, open_char_pos, query.to_string()))
+}
+
+/// Apaga `delete_len` caracteres a partir de `start_pos` no nó de texto e
+/// deixa o cursor colapsado ali — usado tanto pro menu `/` quanto pro
+/// popup de wikilink pra remover o gatilho+consulta digitados antes de
+/// inserir o item escolhido no lugar.
+fn delete_range_and_collapse(text_node: &web_sys::Text, start_pos: u32, delete_len: u32) -> bool {
+    if text_node.delete_data(start_pos, delete_len).is_err() {
         return false;
     }
     let Some(window) = web_sys::window() else { return false };
     let Some(doc) = window.document() else { return false };
     let Some(sel) = window.get_selection().ok().flatten() else { return false };
     let Ok(range) = doc.create_range() else { return false };
-    if range.set_start(text_node, slash_pos).is_err() {
+    if range.set_start(text_node, start_pos).is_err() {
         return false;
     }
     range.collapse_with_to_start(true);

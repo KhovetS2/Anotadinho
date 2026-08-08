@@ -74,7 +74,16 @@ fn walk(node: &Element, _depth: usize) -> String {
         "a" => {
             let text = text_of(node);
             let href = node.get_attribute("href").unwrap_or_default();
-            if href.is_empty() { text } else { format!("[{}]({})", text, href) }
+            if href.starts_with(crate::wikilink::SCHEME_PREFIX) {
+                // Serializa de volta pra sintaxe `[[Título]]` — usa o
+                // texto visível (não o href), pra sobreviver se o
+                // usuário editar o texto do link direto no editor.
+                format!("[[{}]]", text)
+            } else if href.is_empty() {
+                text
+            } else {
+                format!("[{}]({})", text, href)
+            }
         }
         "p" |         "div" => {
             if node.class_name().contains("mermaid") {

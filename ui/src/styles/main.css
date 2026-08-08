@@ -979,6 +979,19 @@ body {
     text-decoration: underline;
 }
 
+.editor__wysiwyg a[href^="anotadinho://page/"] {
+    color: var(--accent-purple, var(--accent-blue));
+    text-decoration: none;
+    background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+    padding: 1px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.editor__wysiwyg a[href^="anotadinho://page/"]:hover {
+    background: color-mix(in srgb, var(--accent-blue) 22%, transparent);
+}
+
 .editor__wysiwyg hr {
     border: none;
     border-top: 1px solid var(--border);
@@ -1150,6 +1163,73 @@ body {
     font-size: 0.6875rem;
     margin-left: auto;
     opacity: 0.7;
+}
+
+/* Popup de wikilink ([[Título) — mesma aparência do menu / */
+.wikilink-menu {
+    position: fixed;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 320px;
+    max-height: 260px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+    overflow: hidden;
+    z-index: 100;
+    backdrop-filter: blur(12px);
+}
+
+.wikilink-menu__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.wikilink-menu__hint {
+    font-size: 0.625rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.wikilink-menu__list {
+    overflow-y: auto;
+    max-height: 220px;
+    padding: var(--sp-1);
+}
+
+.wikilink-menu__empty {
+    padding: var(--sp-2);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.wikilink-menu__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    transition: background 0.1s;
+}
+
+.wikilink-menu__item:hover,
+.wikilink-menu__item--active {
+    background: var(--bg-elevated);
+}
+
+.wikilink-menu__item-title {
+    color: var(--text-primary);
+    font-weight: 500;
 }
 
 /* ── Kanban (view de página inteira e embed inline) ─── */
