@@ -31,10 +31,21 @@ pub fn tab_bar(props: &TabBarProps) -> Html {
                 let on_select = props.on_select.clone();
                 let meta = tab.clone();
                 let on_close = props.on_close.clone();
+                // Indicador do atalho fixo Ctrl+1..9 (ciclo 107) — só
+                // as 9 primeiras abas têm um bind (mesma convenção de
+                // navegador/editor de código).
+                let shortcut_num = if i < 9 { Some(i + 1) } else { None };
+                let title = match shortcut_num {
+                    Some(n) => format!("{} (Ctrl+{})", tab.title, n),
+                    None => tab.title.clone(),
+                };
                 html! {
                     <div {class}>
-                        <span class="tab-bar__tab-title" title={tab.title.clone()}
+                        <span class="tab-bar__tab-title" {title}
                             onclick={Callback::from(move |_| on_select.emit(meta.clone()))}>
+                            if let Some(n) = shortcut_num {
+                                <span class="tab-bar__tab-num">{ n }</span>
+                            }
                             if is_home { { "🏠" } } else { { &tab.title } }
                         </span>
                         <button class="tab-bar__tab-close"

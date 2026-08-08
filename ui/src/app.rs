@@ -557,6 +557,23 @@ pub fn app() -> Html {
             }
 
             let key = e.key();
+
+            // Ctrl+1..9 pula direto pra aba de índice 0-8 — FIXO, fora
+            // do GlobalKeymap customizável de propósito (ciclo 107,
+            // mesma convenção de navegador/editor de código: uma coisa
+            // a menos pra configurar, e menos chance de colisão com uma
+            // tecla que o usuário reatribuiu por engano).
+            if let Some(digit) = key.chars().next().filter(|_| key.len() == 1).and_then(|c| c.to_digit(10)) {
+                if (1..=9).contains(&digit) {
+                    e.prevent_default();
+                    let tabs = (*open_tabs).clone();
+                    if let Some(tab) = tabs.get(digit as usize - 1) {
+                        selected_page.set(Some(tab.clone()));
+                    }
+                    return;
+                }
+            }
+
             let km = &*global_keymap;
             let matches = |bound: &str| !bound.is_empty() && key.eq_ignore_ascii_case(bound);
             let fire_editor_action = |action: state::GlobalEditorAction| {

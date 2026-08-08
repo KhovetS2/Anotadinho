@@ -1,7 +1,7 @@
 ---
 id: "107"
 titulo: "Navegacao de abas via teclado"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: media
@@ -22,17 +22,17 @@ customizar 9 binds separados no `GlobalKeymap`).
 
 ## Critérios de aceite
 
-- [ ] "Próxima aba"/"Aba anterior" (`GlobalKeymap`) navegam
+- [x] "Próxima aba"/"Aba anterior" (`GlobalKeymap`) navegam
       ciclicamente pra frente/trás em `open_tabs` (próxima já existe via
       `Ctrl+W`; anterior é nova)
-- [ ] `Ctrl+1` a `Ctrl+9` pulam direto pra aba de índice 0-8 (se
+- [x] `Ctrl+1` a `Ctrl+9` pulam direto pra aba de índice 0-8 (se
       existir aquele índice; sem efeito se não tiver aba suficiente) —
       fixo, não faz parte do `GlobalKeymap` customizável (mesmo padrão
       de navegador/editor de código)
-- [ ] `ui/src/components/tab_bar.rs` ganha um indicador visual sutil do
+- [x] `ui/src/components/tab_bar.rs` ganha um indicador visual sutil do
       número de cada aba (ex: tooltip ou badge pequeno) pra descobrir
       qual `Ctrl+N` pula pra qual
-- [ ] `cargo test --workspace`, `cd ui && cargo test --lib`,
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
       `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
       passam
 
@@ -59,3 +59,16 @@ Depende do ciclo 105 pro dispatcher de `GlobalKeymap` já existir (esse
 ciclo só adiciona as ações que faltam + a lógica fixa de `Ctrl+1..9`,
 que fica FORA do keymap customizável, direto no dispatcher do
 `app.rs`).
+
+"Próxima aba"/"Aba anterior" já tinham sido implementadas no próprio
+ciclo 105 (fazia sentido construir o dispatcher completo de uma vez,
+já que a estrutura de match já estava lá) — esse ciclo só faltava
+`Ctrl+1..9` + o indicador visual.
+
+`Ctrl+1..9` checado ANTES do match de `GlobalKeymap` (não depois) —
+garante que fica reservado mesmo se o usuário custimizar alguma ação
+pra um dígito por engano.
+
+Validado ao vivo via MCP `tauri`: 3 abas abertas mostram badges 1/2/3;
+Ctrl+2 pula pra "arquitetura", Ctrl+1 pula pra 🏠; Ctrl+9 (sem 9ª aba)
+não faz nada, sem erro; tooltip de cada aba mostra "(Ctrl+N)".
