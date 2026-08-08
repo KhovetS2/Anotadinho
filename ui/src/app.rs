@@ -245,6 +245,39 @@ pub fn app() -> Html {
     // Ações reaproveitadas tanto pelos atalhos diretos (Ctrl+N etc)
     // quanto pelos comandos nomeados da paleta (Ctrl+K) — uma
     // implementação só de cada, dois jeitos de disparar.
+    // Pede o título e cria a página — sem template (comportamento de
+    // sempre) ou a partir de um template (ciclo 100), decidido por
+    // quem chama. Único lugar que sabe pedir título + criar, reusado
+    // pelos dois braços de `new_page_action`.
+    fn prompt_title_and_create(
+        open_dialog: &Callback<PendingDialog>,
+        vault: String,
+        list_version: UseStateHandle<u32>,
+        on_page_selected: Callback<PageMeta>,
+        template_path: Option<String>,
+    ) {
+        open_dialog.emit(PendingDialog::Prompt {
+            title: "Título da nova página".to_string(),
+            default: "Nova nota".to_string(),
+            on_submit: Callback::from(move |title: String| {
+                let vault = vault.clone();
+                let list_version = list_version.clone();
+                let on_page_selected = on_page_selected.clone();
+                let template_path = template_path.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let result = match template_path {
+                        Some(tpl) => api::create_page_from_template(&vault, &tpl, &title).await,
+                        None => api::create_page(&vault, &title).await,
+                    };
+                    if let Ok(meta) = result {
+                        on_page_selected.emit(meta);
+                        list_version.set(*list_version + 1);
+                    }
+                });
+            }),
+        });
+    }
+
     let new_page_action = {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();
@@ -254,20 +287,34 @@ pub fn app() -> Html {
             let vault = (*vault_path).clone().unwrap_or_default();
             let list_version = list_version.clone();
             let on_page_selected = on_page_selected.clone();
-            open_dialog.emit(PendingDialog::Prompt {
-                title: "Título da nova página".to_string(),
-                default: "Nova nota".to_string(),
-                on_submit: Callback::from(move |title: String| {
-                    let vault = vault.clone();
-                    let list_version = list_version.clone();
-                    let on_page_selected = on_page_selected.clone();
-                    wasm_bindgen_futures::spawn_local(async move {
-                        if let Ok(meta) = api::create_page(&vault, &title).await {
-                            on_page_selected.emit(meta);
-                            list_version.set(*list_version + 1);
-                        }
-                    });
-                }),
+            let open_dialog = open_dialog.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let templates = api::list_templates(&vault).await.unwrap_or_default();
+                if templates.is_empty() {
+                    prompt_title_and_create(&open_dialog, vault, list_version, on_page_selected, None);
+                    return;
+                }
+                let mut options: Vec<(String, String)> =
+                    vec![(String::new(), "Página em branco".to_string())];
+                options.extend(templates.into_iter().map(|t| (t.path, t.title)));
+                let vault2 = vault.clone();
+                let list_version2 = list_version.clone();
+                let on_page_selected2 = on_page_selected.clone();
+                let open_dialog2 = open_dialog.clone();
+                open_dialog.emit(PendingDialog::Select {
+                    title: "Escolher template".to_string(),
+                    options,
+                    on_select: Callback::from(move |template_path: String| {
+                        let template = if template_path.is_empty() { None } else { Some(template_path.clone()) };
+                        prompt_title_and_create(
+                            &open_dialog2,
+                            vault2.clone(),
+                            list_version2.clone(),
+                            on_page_selected2.clone(),
+                            template,
+                        );
+                    }),
+                });
             });
         })
     };

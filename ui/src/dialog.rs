@@ -37,4 +37,13 @@ pub enum PendingDialog {
         /// vazio) quando o usuário confirma.
         on_submit: Callback<String>,
     },
+    /// Escolhe uma opção de uma lista (ex: qual template usar).
+    Select {
+        /// Título do modal.
+        title: String,
+        /// Opções `(valor, rótulo)`, na ordem exibida.
+        options: Vec<(String, String)>,
+        /// Disparado com o `valor` da opção escolhida.
+        on_select: Callback<String>,
+    },
 }

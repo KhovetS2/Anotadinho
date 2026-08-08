@@ -121,6 +121,39 @@ pub fn dialog_host(props: &DialogHostProps) -> Html {
                 },
             )
         }
+        PendingDialog::Select { title, options, on_select } => {
+            let dismiss = on_dismiss.clone();
+            (
+                title,
+                html! {
+                    <>
+                        <ul class="modal__select-list">
+                            { for options.iter().map(|(value, label)| {
+                                let onclick = {
+                                    let on_dismiss = on_dismiss.clone();
+                                    let on_select = on_select.clone();
+                                    let value = value.clone();
+                                    Callback::from(move |_: MouseEvent| {
+                                        // Mesma ordem do Confirm/Prompt: fecha antes
+                                        // de emitir, pra suportar diálogo encadeado.
+                                        on_dismiss.emit(());
+                                        on_select.emit(value.clone());
+                                    })
+                                };
+                                html! {
+                                    <li>
+                                        <button class="modal__select-item" {onclick}>{ label }</button>
+                                    </li>
+                                }
+                            }) }
+                        </ul>
+                        <div class="modal__actions">
+                            <button class="btn btn--ghost btn--sm" onclick={dismiss.reform(|_| ())}>{ "Cancelar" }</button>
+                        </div>
+                    </>
+                },
+            )
+        }
     };
 
     html! {

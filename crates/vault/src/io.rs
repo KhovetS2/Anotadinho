@@ -153,33 +153,41 @@ impl VaultIo {
         title: &str,
         page_type: &str,
     ) -> Result<PageMeta> {
-        let base_slug = slugify(title);
-        let mut slug = base_slug.clone();
-        let mut n = 2u32;
         let dir_prefix = match folder_relative {
             Some(f) => format!("{}/", f.trim_end_matches('/')),
             None => "pages/".to_string(),
         };
+        let (slug, relative) = self.find_unique_relative_path(&dir_prefix, title)?;
+        let type_line = if page_type != "md" {
+            format!("type: {}\n", page_type)
+        } else {
+            String::new()
+        };
+        let content = format!(
+            "---\ntitle: {}\n{}---\n\n- \n",
+            title.replace(':', " -"),
+            type_line
+        );
+        self.write_page(&relative, &content)?;
+        Ok(PageMeta {
+            path: relative,
+            title: slug,
+            section: "pages".to_string(),
+        })
+    }
+
+    /// Encontra um path relativo único sob `dir_prefix` a partir do
+    /// slug de `title`, gerando `-2`, `-3`, ... em caso de colisão.
+    /// Compartilhado entre `create_page_in` e `create_page_from_template`.
+    fn find_unique_relative_path(&self, dir_prefix: &str, title: &str) -> Result<(String, String)> {
+        let base_slug = slugify(title);
+        let mut slug = base_slug.clone();
+        let mut n = 2u32;
         loop {
             let relative = format!("{}{}.md", dir_prefix, slug);
             let full = self.root.join(&relative);
             if !full.exists() {
-                let type_line = if page_type != "md" {
-                    format!("type: {}\n", page_type)
-                } else {
-                    String::new()
-                };
-                let content = format!(
-                    "---\ntitle: {}\n{}---\n\n- \n",
-                    title.replace(':', " -"),
-                    type_line
-                );
-                self.write_page(&relative, &content)?;
-                return Ok(PageMeta {
-                    path: relative,
-                    title: slug,
-                    section: "pages".to_string(),
-                });
+                return Ok((slug, relative));
             }
             slug = format!("{}-{}", base_slug, n);
             n += 1;
@@ -187,6 +195,66 @@ impl VaultIo {
                 anyhow::bail!("não foi possível gerar slug único para {}", title);
             }
         }
+    }
+
+    /// Lista templates em `templates/` (mesmo padrão de `list_pages`,
+    /// restrito a essa pasta). `templates/` fica fora de `pages/` e
+    /// `journals/` de propósito — não é uma "página" (não aparece na
+    /// sidebar normal, tags, busca ou backlinks).
+    pub fn list_templates(&self) -> Result<Vec<PageMeta>> {
+        let dir = self.root.join("templates");
+        if !dir.is_dir() {
+            return Ok(Vec::new());
+        }
+        let mut templates = Vec::new();
+        for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().map_or(false, |ext| ext == "md") {
+                let relative = path
+                    .strip_prefix(&self.root)
+                    .unwrap_or(path)
+                    .to_string_lossy()
+                    .to_string();
+                let title = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                templates.push(PageMeta {
+                    path: relative,
+                    title,
+                    section: "templates".to_string(),
+                });
+            }
+        }
+        templates.sort_by(|a, b| a.title.cmp(&b.title));
+        Ok(templates)
+    }
+
+    /// Cria uma página nova em `pages/` a partir de um template em
+    /// `templates/`, substituindo `{{title}}` (corpo E frontmatter) pelo
+    /// título escolhido. Mesma lógica de slug único de `create_page_in`.
+    pub fn create_page_from_template(
+        &self,
+        template_relative: &str,
+        title: &str,
+        folder_relative: Option<&str>,
+    ) -> Result<PageMeta> {
+        let template_full = self.resolve_safe(template_relative)?;
+        let template_content = std::fs::read_to_string(&template_full)
+            .map_err(|e| anyhow::anyhow!("erro ao ler template {}: {}", template_relative, e))?;
+        let content = template_content.replace("{{title}}", title);
+
+        let dir_prefix = match folder_relative {
+            Some(f) => format!("{}/", f.trim_end_matches('/')),
+            None => "pages/".to_string(),
+        };
+        let (slug, relative) = self.find_unique_relative_path(&dir_prefix, title)?;
+        self.write_page(&relative, &content)?;
+        Ok(PageMeta {
+            path: relative,
+            title: slug,
+            section: "pages".to_string(),
+        })
     }
 
     /// Cria uma pasta (subdiretório) dentro do vault, geralmente sob
@@ -719,5 +787,70 @@ mod tests {
         // second call returns same file
         let meta2 = io.open_today_journal().unwrap();
         assert_eq!(meta.path, meta2.path);
+    }
+
+    #[test]
+    fn list_templates_returns_empty_without_folder() {
+        let (_dir, io) = setup_vault();
+        assert!(io.list_templates().unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_templates_finds_md_files_sorted() {
+        let (dir, io) = setup_vault();
+        fs::create_dir_all(dir.path().join("templates")).unwrap();
+        fs::write(dir.path().join("templates/spec.md"), "---\ntitle: {{title}}\n---\n").unwrap();
+        fs::write(dir.path().join("templates/decisao.md"), "---\ntitle: {{title}}\n---\n").unwrap();
+        let templates = io.list_templates().unwrap();
+        let titles: Vec<&str> = templates.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(titles, vec!["decisao", "spec"]);
+        for t in &templates {
+            assert_eq!(t.section, "templates");
+        }
+    }
+
+    #[test]
+    fn list_templates_does_not_leak_into_list_pages() {
+        let (dir, io) = setup_vault();
+        fs::create_dir_all(dir.path().join("templates")).unwrap();
+        fs::write(dir.path().join("templates/spec.md"), "---\ntitle: {{title}}\n---\n").unwrap();
+        let pages = io.list_pages().unwrap();
+        assert!(!pages.iter().any(|p| p.title == "spec"));
+    }
+
+    #[test]
+    fn create_page_from_template_substitutes_title_in_body_and_frontmatter() {
+        let (dir, io) = setup_vault();
+        fs::create_dir_all(dir.path().join("templates")).unwrap();
+        fs::write(
+            dir.path().join("templates/spec.md"),
+            "---\ntitle: {{title}}\nstatus: draft\n---\n# {{title}}\n\nConteúdo.\n",
+        )
+        .unwrap();
+        let meta = io
+            .create_page_from_template("templates/spec.md", "Minha Spec", None)
+            .unwrap();
+        assert_eq!(meta.path, "pages/minha-spec.md");
+        let content = io.read_page(&meta.path).unwrap();
+        assert!(content.contains("title: Minha Spec"));
+        assert!(content.contains("# Minha Spec"));
+        assert!(content.contains("status: draft"));
+        assert!(!content.contains("{{title}}"));
+    }
+
+    #[test]
+    fn create_page_from_template_generates_unique_slug_on_collision() {
+        let (dir, io) = setup_vault();
+        fs::create_dir_all(dir.path().join("templates")).unwrap();
+        fs::write(dir.path().join("templates/spec.md"), "---\ntitle: {{title}}\n---\n").unwrap();
+        io.create_page_from_template("templates/spec.md", "Nova Spec", None).unwrap();
+        let meta = io.create_page_from_template("templates/spec.md", "Nova Spec", None).unwrap();
+        assert_eq!(meta.path, "pages/nova-spec-2.md");
+    }
+
+    #[test]
+    fn create_page_from_template_rejects_missing_template() {
+        let (_dir, io) = setup_vault();
+        assert!(io.create_page_from_template("templates/nope.md", "X", None).is_err());
     }
 }

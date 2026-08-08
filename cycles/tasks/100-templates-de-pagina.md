@@ -1,7 +1,7 @@
 ---
 id: "100"
 titulo: "Templates de pagina"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: alta
@@ -24,20 +24,20 @@ substituindo `{{title}}` pelo título escolhido.
 
 ## Critérios de aceite
 
-- [ ] `crates/vault/src/io.rs`: `create_page_from_template(template_path,
+- [x] `crates/vault/src/io.rs`: `create_page_from_template(template_path,
       title, folder) -> Result<PageMeta>` — lê o template, substitui
       `{{title}}` (corpo E frontmatter) pelo título digitado, escreve a
       página nova (mesma lógica de slug único de `create_page_in`)
-- [ ] `list_templates() -> Result<Vec<PageMeta>>` — lista arquivos em
+- [x] `list_templates() -> Result<Vec<PageMeta>>` — lista arquivos em
       `templates/` (mesmo padrão de `list_pages`, mas escaneando só essa
       pasta)
-- [ ] Fluxo de "Nova página" (Ctrl+N/paleta) ganha uma etapa opcional de
+- [x] Fluxo de "Nova página" (Ctrl+N/paleta) ganha uma etapa opcional de
       escolher um template (lista vazia = comportamento atual,
       inalterado, se `templates/` não existir ou estiver vazia)
-- [ ] `VaultAnotadinho/templates/` ganha 2-3 exemplos reais (ex: "Spec",
+- [x] `VaultAnotadinho/templates/` ganha 2-3 exemplos reais (ex: "Spec",
       "Decisão", "Nota de reunião") documentando o recurso pro próprio
       vault de demonstração
-- [ ] `cargo test --workspace`, `cd ui && cargo test --lib`,
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
       `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
       passam
 
@@ -72,3 +72,29 @@ na lista normal de páginas da sidebar nem ser contada como "página" em
 lugar nenhum (tags, busca, backlinks); confirmar que `list_pages()`
 (que só varre `pages/`/`journals/`) já ignora `templates/` por
 construção (deveria, já que só escaneia essas duas pastas fixas).
+
+Confirmado com teste (`list_templates_does_not_leak_into_list_pages`).
+
+Novo `PendingDialog::Select` genérico (`ui/src/dialog.rs` +
+`dialog_host.rs`) — modal de lista de opções, encadeia com `Prompt`
+igual o padrão já usado (dismiss antes de emitir). Reusável por outros
+fluxos futuros que precisem de uma escolha simples antes de um prompt.
+
+O botão "+" da sidebar (`Sidebar::on_new_page`) tem seu PRÓPRIO fluxo
+de criação de página, independente de `new_page_action` em `app.rs` —
+não foi tocado neste ciclo, conforme o escopo do critério de aceite
+("Ctrl+N/paleta"). Extender templates pro botão da sidebar fica pra um
+ciclo futuro se pedirem.
+
+Validado ao vivo via MCP `tauri`: Ctrl+N → modal de templates lista os
+3 exemplos reais → escolher "spec" → prompt de título → página criada
+em `pages/` com `{{title}}` substituído no corpo E no frontmatter,
+demais propriedades do template (`status: draft`) preservadas. Testado
+também "Página em branco" (comportamento antigo, inalterado).
+
+Bug de descoberta durante a validação (não deste ciclo, ambiente de
+teste): atalhos de teclado (`Ctrl+N`/`Ctrl+K`) só disparam se o
+`<div class="app-root" tabindex="0">` estiver focado — não é um
+listener global em `document`. Isso é esperado (por design, escuta só
+o elemento raiz do app), só documentando pra próxima sessão de
+validação via MCP não perder tempo re-descobrindo.

@@ -204,6 +204,34 @@ pub async fn create_page_in_folder(
     serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
 }
 
+/// Lista templates em `templates/`.
+pub async fn list_templates(vault_path: &str) -> Result<Vec<PageMeta>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("list_templates", &args).await.map_err(|e| format!("{:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
+/// Cria página a partir de um template, substituindo `{{title}}`.
+pub async fn create_page_from_template(
+    vault_path: &str, template_path: &str, title: &str,
+) -> Result<PageMeta, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("templatePath"), &JsValue::from_str(template_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("title"), &JsValue::from_str(title))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("create_page_from_template", &args)
+        .await
+        .map_err(|e| format!("create_page_from_template error: {:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
 /// Lista arquivos no diretório assets/.
 pub async fn list_assets(vault_path: &str) -> Result<Vec<String>, String> {
     let args = js_sys::Object::new();

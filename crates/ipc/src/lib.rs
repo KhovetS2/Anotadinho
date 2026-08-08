@@ -171,6 +171,34 @@ pub fn handle_create_page_in_folder(
     })
 }
 
+/// Handler de list_templates: lista templates em `templates/`.
+pub fn handle_list_templates(vault_path: String) -> Result<Vec<PageMeta>, String> {
+    let vault = VaultIo::open(&vault_path);
+    let templates = vault.list_templates().map_err(|e| e.to_string())?;
+    Ok(templates
+        .into_iter()
+        .map(|t| PageMeta { path: t.path, title: t.title, section: t.section })
+        .collect())
+}
+
+/// Handler de create_page_from_template: cria página a partir de um
+/// template em `templates/`, substituindo `{{title}}` pelo título.
+pub fn handle_create_page_from_template(
+    vault_path: String,
+    template_path: String,
+    title: String,
+) -> Result<PageMeta, String> {
+    let vault = VaultIo::open(&vault_path);
+    let meta = vault
+        .create_page_from_template(&template_path, &title, None)
+        .map_err(|e| e.to_string())?;
+    Ok(PageMeta {
+        path: meta.path,
+        title: meta.title,
+        section: meta.section,
+    })
+}
+
 /// Handler de list_assets: lista arquivos em assets/.
 pub fn handle_list_assets(vault_path: String) -> Result<Vec<String>, String> {
     let vault = VaultIo::open(&vault_path);

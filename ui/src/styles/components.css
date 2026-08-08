@@ -458,6 +458,34 @@
 
 .modal--wide { max-width: 640px; }
 
+.modal__select-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.modal__select-item {
+    width: 100%;
+    text-align: left;
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    cursor: pointer;
+}
+
+.modal__select-item:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border);
+}
+
 /* ── Card detail modal (kanban) ─────────────────────── */
 
 .card-modal__title {
