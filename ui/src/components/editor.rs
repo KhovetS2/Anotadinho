@@ -424,6 +424,15 @@ pub fn editor(props: &EditorProps) -> Html {
         // teclado (podiam divergir: navegar com seta e depois clicar em
         // outro item aplicava o item errado).
         Callback::from(move |vi: usize| {
+            // Apaga o "/consulta" que está de verdade no texto (digitado
+            // normalmente agora, não mais só em estado interno) antes de
+            // inserir o item escolhido no lugar. Reconsulta a posição do
+            // "/" fresca (não reaproveita nada calculado antes) — o
+            // cursor deveria continuar exatamente onde a pessoa parou de
+            // digitar o filtro.
+            if let Some((text_node, slash_pos, query)) = find_slash_context() {
+                delete_slash_context_and_collapse(&text_node, slash_pos, query.chars().count());
+            }
             if let Some(&item_idx) = items.get(vi) {
                 let item = &SLASH_ITEMS[item_idx];
                 match item.html {
@@ -579,30 +588,33 @@ pub fn editor(props: &EditorProps) -> Html {
         Callback::from(move |e: KeyboardEvent| {
             if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); do_save.emit(()); return; }
 
+            // "/" e o texto do filtro digitam normalmente no
+            // contenteditable (não são mais interceptados aqui) — quem
+            // abre/fecha/atualiza o menu é o `oninput` (`find_slash_context`),
+            // olhando o texto de verdade antes do cursor. Aqui só sobra
+            // navegar/selecionar/fechar o menu, sem mexer no texto:
+            // Escape fecha sem tocar em nada (o "/consulta" já digitado
+            // continua lá, como texto normal); Espaço não precisa de
+            // tratamento nenhum — digitar um espaço já invalida o
+            // casamento no próximo `oninput` e fecha o menu sozinho.
             if *slash_open {
                 match e.key().as_str() {
-                    "Escape" => { slash_open.set(false); slash_text.set(String::new()); slash_idx.set(0); e.prevent_default(); }
-                    "ArrowDown" => { e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + 1) % filtered_len); } }
-                    "ArrowUp" => { e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len); } }
-                    "Enter" => { e.prevent_default(); select_slash.emit(*slash_idx); return; }
-                    "Backspace" => {
-                        e.prevent_default();
-                        if !slash_text.is_empty() { slash_text.set(slash_text[..slash_text.len()-1].to_string()); }
-                        else { slash_open.set(false); slash_idx.set(0); }
-                    }
-                    _ if e.key().len() == 1 => { slash_text.set(format!("{}{}", *slash_text, e.key())); slash_idx.set(0); e.prevent_default(); }
+                    // `stop_propagation` é essencial aqui: sem isso, o
+                    // Escape continuava borbulhando pro atalho global do
+                    // app (`app.rs`) que desseleciona a página inteira —
+                    // fechar o menu de comando não deveria fechar a
+                    // página junto.
+                    "Escape" => { e.stop_propagation(); slash_open.set(false); slash_text.set(String::new()); slash_idx.set(0); e.prevent_default(); }
+                    "ArrowDown" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + 1) % filtered_len); } }
+                    "ArrowUp" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len); } }
+                    "Enter" => { e.stop_propagation(); e.prevent_default(); select_slash.emit(*slash_idx); return; }
                     _ => {}
                 }
                 return;
             }
 
-            if e.key() == "/" && !e.ctrl_key() && !e.meta_key() {
-                slash_open.set(true); slash_text.set(String::new()); slash_idx.set(0);
-                e.prevent_default();
-            }
-
             // Markdown block + inline shortcuts on Space/Enter
-            if (e.key() == " " || e.key() == "Enter") && !*slash_open {
+            if e.key() == " " || e.key() == "Enter" {
                 if let Some(window) = web_sys::window() {
                     if let Some(doc) = window.document() {
                         apply_block_shortcut(&window, &doc, &e);
@@ -696,9 +708,36 @@ pub fn editor(props: &EditorProps) -> Html {
         let editor_ref = editor_ref.clone();
         let segment_refs = segment_refs.clone();
         let mark_edited = mark_edited.clone();
+        let slash_open = slash_open.clone();
+        let slash_text = slash_text.clone();
+        let slash_idx = slash_idx.clone();
         Callback::from(move |_: InputEvent| {
             let md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
             mark_edited(md);
+
+            // "/" digitado normalmente no texto (não é mais interceptado
+            // no keydown) — a cada tecla, reconsulta o que está
+            // imediatamente antes do cursor. Se casar com "/consulta",
+            // abre/atualiza o menu; senão, fecha (cobre digitar espaço
+            // sem precisar de tratamento especial pra essa tecla).
+            match find_slash_context() {
+                Some((_, _, query)) => {
+                    if !*slash_open {
+                        slash_open.set(true);
+                    }
+                    if *slash_text != query {
+                        slash_text.set(query);
+                        slash_idx.set(0);
+                    }
+                }
+                None => {
+                    if *slash_open {
+                        slash_open.set(false);
+                        slash_text.set(String::new());
+                        slash_idx.set(0);
+                    }
+                }
+            }
         })
     };
 
@@ -940,6 +979,63 @@ pub fn editor(props: &EditorProps) -> Html {
 /// `Range::insert_node` é uma API de DOM mais baixo nível e previsível:
 /// insere o nó EXATAMENTE onde o cursor está, sem o `execCommand`
 /// reinterpretar/reformatar o HTML ao redor.
+/// Acha o "/consulta" imediatamente antes do cursor — usado tanto pra
+/// decidir se o menu de comando deve abrir/atualizar (chamado a cada
+/// `oninput`) quanto pra saber o que apagar na hora de aplicar um item
+/// selecionado (chamado de novo, fresco, em `select_slash`). Só
+/// reconhece o caso mais comum: cursor colapsado dentro de um nó de
+/// texto puro, com o "/" no início da linha ou logo depois de um espaço
+/// (evita disparar em "3/4"), sem espaço nenhum entre o "/" e o cursor
+/// (digitar espaço encerra o comando naturalmente, sem precisar de
+/// tratamento especial pra tecla Espaço).
+fn find_slash_context() -> Option<(web_sys::Text, u32, String)> {
+    let window = web_sys::window()?;
+    let sel = window.get_selection().ok().flatten()?;
+    if sel.range_count() == 0 {
+        return None;
+    }
+    let range = sel.get_range_at(0).ok()?;
+    if !range.collapsed() {
+        return None;
+    }
+    let node = range.start_container().ok()?;
+    let text_node = node.dyn_ref::<web_sys::Text>()?.clone();
+    let offset = range.start_offset().ok()? as usize;
+    let data = text_node.data();
+    let prefix: String = data.chars().take(offset).collect();
+    let slash_byte_pos = prefix.rfind('/')?;
+    let query = &prefix[slash_byte_pos + 1..];
+    if query.chars().any(char::is_whitespace) {
+        return None;
+    }
+    let before_slash = &prefix[..slash_byte_pos];
+    if !before_slash.is_empty() && !before_slash.ends_with(char::is_whitespace) {
+        return None;
+    }
+    let slash_char_pos = prefix[..slash_byte_pos].chars().count() as u32;
+    Some((text_node, slash_char_pos, query.to_string()))
+}
+
+/// Apaga o "/consulta" (achado por `find_slash_context`) do nó de texto e
+/// deixa o cursor colapsado exatamente onde o "/" estava — pronto pro
+/// item selecionado ser inserido ali no lugar.
+fn delete_slash_context_and_collapse(text_node: &web_sys::Text, slash_pos: u32, query_len: usize) -> bool {
+    let delete_len = (1 + query_len) as u32;
+    if text_node.delete_data(slash_pos, delete_len).is_err() {
+        return false;
+    }
+    let Some(window) = web_sys::window() else { return false };
+    let Some(doc) = window.document() else { return false };
+    let Some(sel) = window.get_selection().ok().flatten() else { return false };
+    let Ok(range) = doc.create_range() else { return false };
+    if range.set_start(text_node, slash_pos).is_err() {
+        return false;
+    }
+    range.collapse_with_to_start(true);
+    sel.remove_all_ranges().ok();
+    sel.add_range(&range).is_ok()
+}
+
 fn insert_embed_marker_at_cursor(kind: &str, body: &str) -> bool {
     let Some(window) = web_sys::window() else { return false };
     let Some(doc) = window.document() else { return false };

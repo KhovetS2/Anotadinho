@@ -62,4 +62,6 @@ features = [
     "DomRect",
     "ScrollIntoViewOptions",
     "ScrollLogicalPosition",
+    "Text",
+    "CharacterData",
 ]
