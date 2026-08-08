@@ -960,6 +960,38 @@ pub fn editor(props: &EditorProps) -> Html {
                 return;
             }
 
+            // Popups (menu `/` e autocomplete de wikilink) SEMPRE têm
+            // prioridade sobre o vim mode — checados antes de qualquer
+            // interceptação de modo Normal/Escape-pra-Normal. Sem isso,
+            // Escape com o popup aberto em modo Insert caía no handler
+            // do vim (Insert→Normal) em vez de fechar o popup: o popup
+            // ficava preso visualmente aberto, o texto cru "/consulta"
+            // nunca era apagado, e teclas seguintes (inclusive Enter)
+            // eram tratadas como motion do vim em vez de navegar/
+            // aplicar o item — o tipo de bug que produzia texto de
+            // tabela cru duplicado ao lado do embed de verdade.
+            if *slash_open {
+                match e.key().as_str() {
+                    "Escape" => { e.stop_propagation(); slash_open.set(false); slash_text.set(String::new()); slash_idx.set(0); e.prevent_default(); }
+                    "ArrowDown" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + 1) % filtered_len); } }
+                    "ArrowUp" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len); } }
+                    "Enter" => { e.stop_propagation(); e.prevent_default(); select_slash.emit(*slash_idx); return; }
+                    _ => {}
+                }
+                return;
+            }
+
+            if *wikilink_open {
+                match e.key().as_str() {
+                    "Escape" => { e.stop_propagation(); wikilink_open.set(false); wikilink_text.set(String::new()); wikilink_idx.set(0); e.prevent_default(); }
+                    "ArrowDown" => { e.stop_propagation(); e.prevent_default(); if filtered_wikilink_len > 0 { wikilink_idx.set((*wikilink_idx + 1) % filtered_wikilink_len); } }
+                    "ArrowUp" => { e.stop_propagation(); e.prevent_default(); if filtered_wikilink_len > 0 { wikilink_idx.set((*wikilink_idx + filtered_wikilink_len - 1) % filtered_wikilink_len); } }
+                    "Enter" => { e.stop_propagation(); e.prevent_default(); select_wikilink.emit(*wikilink_idx); return; }
+                    _ => {}
+                }
+                return;
+            }
+
             // Vim mode — modo Normal: toda tecla é comando, nada digita
             // no texto. `stop_propagation` nas duas saídas (Normal e o
             // Escape de Insert→Normal) pela mesma razão do menu `/`:
@@ -1034,49 +1066,23 @@ pub fn editor(props: &EditorProps) -> Html {
                         mark_edited_vim(new_md);
                     }
                 }
-                else if key == vim_keymap.undo { doc_exec_vim("undo", ""); }
+                else if key == vim_keymap.undo {
+                    // Reusa o MESMO undo de documento do Ctrl+Z (não
+                    // `execCommand("undo")` nativo) — o undo nativo do
+                    // contenteditable opera fora do controle de
+                    // `content_md`/`undo_stack`, podia desincronizar os
+                    // dois (o DOM voltava um passo que `content_md`
+                    // nunca soube que aconteceu) e produzir conteúdo
+                    // duplicado/preso na próxima vez que algo
+                    // reinjetasse HTML a partir de `content_md`.
+                    do_undo.emit(());
+                }
                 return;
             }
             if vim_mode_enabled && *vim_insert && e.key() == "Escape" {
                 e.prevent_default();
                 e.stop_propagation();
                 vim_insert.set(false);
-                return;
-            }
-
-            // "/" e o texto do filtro digitam normalmente no
-            // contenteditable (não são mais interceptados aqui) — quem
-            // abre/fecha/atualiza o menu é o `oninput` (`find_slash_context`),
-            // olhando o texto de verdade antes do cursor. Aqui só sobra
-            // navegar/selecionar/fechar o menu, sem mexer no texto:
-            // Escape fecha sem tocar em nada (o "/consulta" já digitado
-            // continua lá, como texto normal); Espaço não precisa de
-            // tratamento nenhum — digitar um espaço já invalida o
-            // casamento no próximo `oninput` e fecha o menu sozinho.
-            if *slash_open {
-                match e.key().as_str() {
-                    // `stop_propagation` é essencial aqui: sem isso, o
-                    // Escape continuava borbulhando pro atalho global do
-                    // app (`app.rs`) que desseleciona a página inteira —
-                    // fechar o menu de comando não deveria fechar a
-                    // página junto.
-                    "Escape" => { e.stop_propagation(); slash_open.set(false); slash_text.set(String::new()); slash_idx.set(0); e.prevent_default(); }
-                    "ArrowDown" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + 1) % filtered_len); } }
-                    "ArrowUp" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len); } }
-                    "Enter" => { e.stop_propagation(); e.prevent_default(); select_slash.emit(*slash_idx); return; }
-                    _ => {}
-                }
-                return;
-            }
-
-            if *wikilink_open {
-                match e.key().as_str() {
-                    "Escape" => { e.stop_propagation(); wikilink_open.set(false); wikilink_text.set(String::new()); wikilink_idx.set(0); e.prevent_default(); }
-                    "ArrowDown" => { e.stop_propagation(); e.prevent_default(); if filtered_wikilink_len > 0 { wikilink_idx.set((*wikilink_idx + 1) % filtered_wikilink_len); } }
-                    "ArrowUp" => { e.stop_propagation(); e.prevent_default(); if filtered_wikilink_len > 0 { wikilink_idx.set((*wikilink_idx + filtered_wikilink_len - 1) % filtered_wikilink_len); } }
-                    "Enter" => { e.stop_propagation(); e.prevent_default(); select_wikilink.emit(*wikilink_idx); return; }
-                    _ => {}
-                }
                 return;
             }
 
@@ -1433,11 +1439,30 @@ pub fn editor(props: &EditorProps) -> Html {
                     // do conteúdo novo de verdade.
                     <div class="editor__wysiwyg-segments" key="segments" onclick={on_wysiwyg_click.clone()}>
                         { for segments.iter().enumerate().map(|(i, seg)| {
+                            // `key` inclui o TIPO do segmento (`md`/`embed`), não
+                            // só a posição: o caso que realmente quebrava era um
+                            // segmento Markdown virar Embed NO MESMO ÍNDICE, com
+                            // a CONTAGEM total de segmentos igual antes e depois
+                            // (ex: linha vazia + `/tabela` colada nela vira só o
+                            // embed, sem sobrar markdown nenhum ali) — só
+                            // `segments.len()` no key não pegava essa troca, o
+                            // Yew reaproveitava o mesmo `<div>` na mesma posição
+                            // (mesma chave) e só ANEXAVA os filhos novos
+                            // (botões + `InlineEmbed`) depois do marcador
+                            // imperativo que já estava lá (inserido via `Range`,
+                            // ver `insert_element_at_cursor`), em vez de
+                            // desmontar/remontar de verdade — o mesmo bug de
+                            // duplicação já corrigido uma vez (ciclo 079) pra
+                            // transição plain↔segments, agora reaparecendo entre
+                            // segmentos individuais ao inserir um embed onde
+                            // antes havia só markdown.
+                            let seg_kind = match seg { DocSegment::Markdown(_) => "md", DocSegment::Embed(_) => "embed" };
+                            let key = format!("{}-{}-{}", i, seg_kind, segments.len());
                             match seg {
                                 DocSegment::Markdown(_) => {
                                     let node_ref = segment_refs[i].clone();
                                     html! {
-                                        <div class="editor__wysiwyg" data-segment-index={i.to_string()} ref={node_ref} contenteditable="true"
+                                        <div class="editor__wysiwyg" {key} data-segment-index={i.to_string()} ref={node_ref} contenteditable="true"
                                             spellcheck="false" onkeydown={on_keydown.clone()} oninput={on_edit.clone()}
                                             ondrop={on_drop.clone()} ondragover={on_dragover.clone()} />
                                     }
@@ -1470,7 +1495,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                     // outro embed) não tinha nenhum lugar clicável
                                     // pra digitar texto ali.
                                     html! {
-                                        <div class="embed-hover-wrapper">
+                                        <div class="embed-hover-wrapper" {key}>
                                             <button class="embed-hover-wrapper__add-line embed-hover-wrapper__add-line--top"
                                                 onclick={insert_blank_line(i)} title="Adicionar linha acima">{ "+" }</button>
                                             <button class="embed-hover-wrapper__remove"
@@ -1581,6 +1606,11 @@ pub fn editor(props: &EditorProps) -> Html {
             }
             <div class="editor__statusbar">
                 <span>{ format!("{} palavras · {} caracteres", word_count, char_count) }</span>
+                if props.vim_mode_enabled {
+                    <span class={ if *vim_insert { "editor__vim-mode editor__vim-mode--insert" } else { "editor__vim-mode editor__vim-mode--normal" } }>
+                        { if *vim_insert { "-- INSERT --" } else { "-- NORMAL --" } }
+                    </span>
+                }
                 <span class="editor__statusbar-hint">{ "Digite / ou use # - > * para formatar" }</span>
             </div>
         </main>

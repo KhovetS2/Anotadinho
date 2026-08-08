@@ -782,7 +782,7 @@ body {
 
 .editor__wysiwyg {
     flex: 1;
-    padding: var(--sp-4);
+    padding: var(--sp-6);
     outline: none;
     overflow-y: auto;
     color: var(--text-primary);
@@ -801,7 +801,7 @@ body {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
-    padding: var(--sp-4);
+    padding: var(--sp-6);
     color: var(--text-primary);
     font-family: var(--font-sans);
     font-size: 0.9375rem;
@@ -977,6 +977,12 @@ body {
     margin-bottom: 0.15rem;
 }
 
+.editor__wysiwyg li::marker {
+    color: var(--accent-blue);
+    font-size: 1.15em;
+    font-weight: 700;
+}
+
 .editor__wysiwyg blockquote {
     border-left: 3px solid var(--accent-purple);
     padding: 0.25rem 0 0.25rem 1rem;
@@ -1133,7 +1139,7 @@ body {
 .editor__statusbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: var(--sp-3);
     padding: var(--sp-1) var(--sp-4);
     border-top: 1px solid var(--border);
     background: var(--bg-surface);
@@ -1144,12 +1150,32 @@ body {
 }
 
 .editor__statusbar-hint {
+    margin-left: auto;
     opacity: 0.45;
     transition: opacity 0.2s;
 }
 
 .editor__statusbar-hint:hover {
     opacity: 0.7;
+}
+
+.editor__vim-mode {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 0.6875rem;
+    padding: 1px 8px;
+    border-radius: var(--r-sm);
+    letter-spacing: 0.02em;
+}
+
+.editor__vim-mode--normal {
+    background: color-mix(in srgb, var(--accent-blue) 20%, transparent);
+    color: var(--accent-blue);
+}
+
+.editor__vim-mode--insert {
+    background: color-mix(in srgb, var(--success) 20%, transparent);
+    color: var(--success);
 }
 
 /* Mermaid diagrams */
