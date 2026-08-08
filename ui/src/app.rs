@@ -111,6 +111,31 @@ pub fn app() -> Html {
         })
     };
 
+    // Abre automaticamente a página marcada como "início" deste vault (ver
+    // `state::home_page`/`Editor`'s botão 🏠), se houver uma e nenhuma
+    // página já estiver selecionada — cobre tanto abrir um vault novo
+    // quanto reabrir o último vault salvo no boot do app.
+    {
+        let vault_path = vault_path.clone();
+        let selected_page = selected_page.clone();
+        let on_page_selected = on_page_selected.clone();
+        use_effect_with(vault_path.clone(), move |_| {
+            if let Some(ref vp) = *vault_path {
+                if selected_page.is_none() {
+                    if let Some(home_path) = state::load_home_page(vp) {
+                        let title = std::path::Path::new(&home_path)
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let section = if home_path.starts_with("journals/") { "journals" } else { "pages" };
+                        on_page_selected.emit(PageMeta { path: home_path, title, section: section.to_string() });
+                    }
+                }
+            }
+            || {}
+        });
+    }
+
     let on_close_vault = {
         let vault_path = vault_path.clone();
         let vault_name = vault_name.clone();

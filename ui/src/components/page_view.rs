@@ -75,7 +75,14 @@ pub fn page_view(props: &PageViewProps) -> Html {
         "table" => html! {
             <TaskTable vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
         },
-        _ => html! {
+        // "landing" não tem componente próprio — é uma página normal
+        // (mesmo Editor de sempre), só marcada como tal pra aparecer com
+        // ícone diferente na sidebar e pra poder ser definida como
+        // "início" (ver botão 🏠 no editor). "Customizável com
+        // componentes" já vem de graça: o corpo dela usa o sistema de
+        // embeds inline (`{{ type: "kanban" }}` etc) igual qualquer
+        // outra página.
+        "landing" | _ => html! {
             <Editor
                 vault_path={props.vault_path.clone()}
                 page={props.page.clone()}

@@ -266,6 +266,47 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         })
     };
 
+    let on_new_landing = {
+        let vault_path = props.vault_path.clone();
+        let selected_path = selected_path.clone();
+        let on_page_selected = props.on_page_selected.clone();
+        let refresh_tick = refresh_tick.clone();
+        let open_dialog = props.open_dialog.clone();
+        Callback::from(move |_| {
+            let vault_path = vault_path.clone();
+            let selected_path = selected_path.clone();
+            let on_page_selected = on_page_selected.clone();
+            let refresh_tick = refresh_tick.clone();
+            let open_dialog_for_error = open_dialog.clone();
+            open_dialog.emit(PendingDialog::Prompt {
+                title: "Título da página inicial".to_string(),
+                default: "Início".to_string(),
+                on_submit: Callback::from(move |title: String| {
+                    let vault_path = vault_path.clone();
+                    let selected_path = selected_path.clone();
+                    let on_page_selected = on_page_selected.clone();
+                    let refresh_tick = refresh_tick.clone();
+                    let open_dialog = open_dialog_for_error.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        match api::create_page_with_type(&vault_path, &title, "landing").await {
+                            Ok(meta) => {
+                                selected_path.set(Some(meta.path.clone()));
+                                on_page_selected.emit(meta);
+                                refresh_tick.set(*refresh_tick + 1);
+                            }
+                            Err(e) => {
+                                web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
+                                open_dialog.emit(PendingDialog::Alert {
+                                    message: format!("Erro ao criar página inicial: {}", e),
+                                });
+                            }
+                        }
+                    });
+                }),
+            });
+        })
+    };
+
     let on_new_folder = {
         let vault_path = props.vault_path.clone();
         let refresh_tick = refresh_tick.clone();
@@ -433,6 +474,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 <div class="sidebar-section">
                     <div class="sidebar-section__header">
                         <h3 class="sidebar-section__title">{ "Pages" }</h3>
+                        <button class="btn btn--ghost btn--xs" title="Nova página inicial (landing)" onclick={on_new_landing}>{ "🏠+" }</button>
                         <button class="btn btn--ghost btn--xs" title="Nova pasta" onclick={on_new_folder}>{ "📁+" }</button>
                         <button class="btn btn--ghost btn--xs" title="Nova página" onclick={on_new_page}>{ "+" }</button>
                     </div>

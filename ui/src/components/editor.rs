@@ -9,6 +9,7 @@ use crate::api::{self, PageMeta};
 use crate::components::embeds::InlineEmbed;
 use crate::dialog::PendingDialog;
 use crate::embed::DocSegment;
+use crate::state;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct EditorProps {
@@ -410,6 +411,35 @@ pub fn editor(props: &EditorProps) -> Html {
     }
 
     let page = props.page.as_ref().unwrap().clone();
+
+    // "Definir como início" — página aberta automaticamente ao abrir este
+    // vault (ver `App`). Guardado no localStorage por vault (`state.rs`),
+    // não no vault em si — é uma preferência de cliente, não algo que faz
+    // sentido versionar/sincronizar junto com as páginas.
+    let is_home = use_state(|| false);
+    {
+        let is_home = is_home.clone();
+        let vault_path = props.vault_path.clone();
+        let path = page.path.clone();
+        use_effect_with(path.clone(), move |path| {
+            is_home.set(state::load_home_page(&vault_path).as_deref() == Some(path.as_str()));
+            || {}
+        });
+    }
+    let toggle_home = {
+        let is_home = is_home.clone();
+        let vault_path = props.vault_path.clone();
+        let path = page.path.clone();
+        Callback::from(move |_| {
+            if *is_home {
+                state::clear_home_page(&vault_path);
+                is_home.set(false);
+            } else {
+                state::save_home_page(&vault_path, &path);
+                is_home.set(true);
+            }
+        })
+    };
 
     let doc_exec = {
         let edited = edited.clone();
@@ -1146,6 +1176,11 @@ pub fn editor(props: &EditorProps) -> Html {
                 <div class="editor__actions">
                     if let Some(ref s) = *status { <span class="editor__status-badge">{ s }</span> }
                     if *edited { <span class="editor__dirty">{ "não salvo" }</span> }
+                    <button class={ if *is_home { "btn btn--ghost btn--sm editor__home-btn editor__home-btn--active" } else { "btn btn--ghost btn--sm editor__home-btn" } }
+                        onclick={toggle_home}
+                        title={ if *is_home { "Página inicial — clique pra remover" } else { "Definir como página inicial" } }>
+                        { "🏠" }
+                    </button>
                     <button class="btn btn--danger btn--sm" onclick={on_delete}>{ "Excluir" }</button>
                     <button class="btn btn--ghost btn--sm" onclick={on_export} title="Exportar HTML">{ "⬇" }</button>
                     <button class="btn btn--primary btn--sm" onclick={do_save.reform(|_| ())} disabled={*saving || !*edited}>{ save_label }</button>

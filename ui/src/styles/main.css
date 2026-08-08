@@ -691,6 +691,16 @@ body {
     color: var(--warning);
 }
 
+.editor__home-btn {
+    opacity: 0.4;
+    filter: grayscale(1);
+}
+
+.editor__home-btn--active {
+    opacity: 1;
+    filter: none;
+}
+
 .editor__status-badge {
     font-size: 0.75rem;
     color: var(--success);

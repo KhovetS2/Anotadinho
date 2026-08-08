@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 const KEY_VAULT_PATH: &str = "anotadinho.vault_path";
 const KEY_VAULT_NAME: &str = "anotadinho.vault_name";
 const KEY_AUTOSAVE_ENABLED: &str = "anotadinho.autosave_enabled";
+const KEY_HOME_PAGE_PREFIX: &str = "anotadinho.home_page::";
 
 /// Estado da aplicação.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -69,4 +70,26 @@ pub fn save_autosave_enabled(enabled: bool) {
 /// isso o usuário perdia edições ao trocar de página sem salvar antes).
 pub fn load_autosave_enabled() -> bool {
     gloo_storage::LocalStorage::get(KEY_AUTOSAVE_ENABLED).unwrap_or(true)
+}
+
+/// Chave de storage da página inicial — por vault (cada vault tem a sua
+/// própria página de início, guardadas separadamente pelo path do vault).
+fn key_home_page(vault_path: &str) -> String {
+    format!("{}{}", KEY_HOME_PAGE_PREFIX, vault_path)
+}
+
+/// Marca `page_path` como a página inicial deste vault — aberta
+/// automaticamente ao abrir o vault (ver `App`).
+pub fn save_home_page(vault_path: &str, page_path: &str) {
+    let _ = gloo_storage::LocalStorage::set(key_home_page(vault_path), page_path);
+}
+
+/// Path da página inicial deste vault, se alguma tiver sido definida.
+pub fn load_home_page(vault_path: &str) -> Option<String> {
+    gloo_storage::LocalStorage::get(key_home_page(vault_path)).ok()
+}
+
+/// Remove a página inicial deste vault.
+pub fn clear_home_page(vault_path: &str) {
+    let _ = gloo_storage::LocalStorage::delete(key_home_page(vault_path));
 }
