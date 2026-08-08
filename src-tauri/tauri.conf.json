@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "cd ui && PATH=\"$HOME/.cargo/bin:$PATH\" trunk serve --port 1420",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "cd ../ui && trunk build --release",
+    "beforeBuildCommand": "cd ui && PATH=\"$HOME/.cargo/bin:$PATH\" trunk build --release",
     "frontendDist": "../ui/dist"
   },
   "app": {
