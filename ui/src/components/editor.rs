@@ -791,6 +791,45 @@ pub fn editor(props: &EditorProps) -> Html {
         }
     };
 
+    // Remove o embed inteiro (segmento de índice `pos`) da página — antes
+    // deste botão não tinha nenhum jeito de tirar um kanban/calendário/
+    // tabela da página depois de inserido (só dava pra apagar coisas
+    // DENTRO dele, tipo uma coluna ou um card).
+    let remove_embed = {
+        let content_md = content_md.clone();
+        let frontmatter_text = frontmatter_text.clone();
+        let mark_edited = mark_edited.clone();
+        let open_dialog = props.open_dialog.clone();
+        move |pos: usize| {
+            let content_md = content_md.clone();
+            let frontmatter_text = frontmatter_text.clone();
+            let mark_edited = mark_edited.clone();
+            let open_dialog = open_dialog.clone();
+            Callback::from(move |e: MouseEvent| {
+                e.stop_propagation();
+                let content_md = content_md.clone();
+                let frontmatter_text = frontmatter_text.clone();
+                let mark_edited = mark_edited.clone();
+                open_dialog.emit(PendingDialog::Confirm {
+                    message: "Remover este embed da página? O conteúdo dele (cards, eventos ou linhas da tabela) será perdido.".to_string(),
+                    confirm_label: "Remover".to_string(),
+                    on_confirm: Callback::from(move |_| {
+                        let full = (*content_md).clone();
+                        let (_, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&full);
+                        let mut segs = crate::embed::segment(body);
+                        if pos < segs.len() {
+                            segs.remove(pos);
+                        }
+                        let new_body = crate::embed::join(&segs);
+                        let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
+                        content_md.set(new_full.clone());
+                        mark_edited(new_full);
+                    }),
+                });
+            })
+        }
+    };
+
     let on_drop = {
         let vault_path = props.vault_path.clone();
         Callback::from(move |e: DragEvent| {
@@ -900,6 +939,8 @@ pub fn editor(props: &EditorProps) -> Html {
                                         <div class="embed-hover-wrapper">
                                             <button class="embed-hover-wrapper__add-line embed-hover-wrapper__add-line--top"
                                                 onclick={insert_blank_line(i)} title="Adicionar linha acima">{ "+" }</button>
+                                            <button class="embed-hover-wrapper__remove"
+                                                onclick={remove_embed(i)} title="Remover embed">{ "✕" }</button>
                                             <InlineEmbed
                                                 data={data.clone()}
                                                 vault_path={props.vault_path.clone()}
