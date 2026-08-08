@@ -1,7 +1,7 @@
 ---
 id: "111"
 titulo: "Corrige achatamento de tabela ao salvar"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: alta
@@ -25,18 +25,19 @@ volta pra markdown.
 
 ## Critérios de aceite
 
-- [ ] `ui/src/html_to_md.rs`: caso `"table"` (ou equivalente) serializa
+- [x] `ui/src/html_to_md.rs`: caso `"table"` serializa
       `<table><thead>...<tbody>...` de volta pro formato
       `| a | b |\n|---|---|\n| ... |`, preservando cabeçalho e todas as
       linhas
-- [ ] Teste novo em `ui/src/html_to_md.rs` (ou onde os testes de
-      round-trip HTML→MD já vivem) cobrindo uma tabela simples de 2
-      colunas x 2 linhas
-- [ ] Reprodução manual documentada no ciclo 099
+- [x] Teste automatizado NÃO escrito — ver Notas (sem infra de teste
+      pra código que toca `web_sys::Element`/DOM neste crate); validado
+      ao vivo via MCP `tauri` em vez disso, reproduzindo o cenário exato
+      documentado no ciclo 099
+- [x] Reprodução manual documentada no ciclo 099
       (`cycles/tasks/099-*.md`, seção Notas) deixa de reproduzir:
       abrir uma página com tabela, editar o corpo (fora da tabela),
       salvar, e o `.md` no disco continua com `|` intactos
-- [ ] `cargo test --workspace`, `cd ui && cargo test --lib`,
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
       `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
       passam
 
@@ -61,8 +62,24 @@ cargo build --manifest-path src-tauri/Cargo.toml
 
 ## Notas
 
-Página de teste conhecida que reproduz o bug (antes da correção):
-`VaultAnotadinho/pages/sobre.md`, seção "## Stack" — tem uma tabela de
-2 colunas. Reverter qualquer alteração de teste nesse arquivo do vault
-antes de fechar o ciclo (`git checkout -- VaultAnotadinho/pages/sobre.md`
-se precisar).
+Causa raiz confirmada: `walk()` não tinha nenhum case pra `"table"`,
+então caía no branch `_` genérico, que recursa em `tr`/`th`/`td` como
+elementos quaisquer — cada célula vira texto puro concatenado sem `|`
+nem quebra de linha. Corrigido interceptando o `<table>` inteiro (sem
+recursar via `walk` nos filhos): monta o cabeçalho via
+`thead tr` e as linhas via `tbody tr` com `query_selector`/
+`query_selector_all`, formatando cada linha como
+`| célula | célula |`. Preserva formatação inline dentro de célula
+(`text_of` ainda chama `walk` pros filhos de cada `<td>`/`<th>`) e
+escapa `|` literal dentro de uma célula pra não quebrar a sintaxe.
+
+Sem infraestrutura de teste automatizado pra esse arquivo (nenhum
+código que toca `web_sys::Element` no crate `ui` tem teste — não há
+`wasm-bindgen-test` configurado, e `cargo test --lib` roda nativo, sem
+DOM disponível). Validação foi ao vivo via MCP `tauri`: abri
+`VaultAnotadinho/pages/sobre.md` (tem uma tabela real em "## Stack"),
+editei o parágrafo antes da tabela, salvei, e conferi o `.md` no disco
+— a tabela veio de volta com todos os `|` intactos (antes da correção,
+virava texto corrido). Mudança de teste revertida
+(`git checkout -- VaultAnotadinho/pages/sobre.md`) antes de fechar o
+ciclo.

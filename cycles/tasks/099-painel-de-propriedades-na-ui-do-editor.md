@@ -84,3 +84,5 @@ comum (sem envolver frontmatter). É um bug de round-trip DOM→Markdown
 em `recompute_markdown_from_dom`/`html_to_md.rs` especificamente pra
 `<table>`. Vale um ciclo de correção futuro (fora do escopo 098-108
 planejado).
+
+**Corrigido no ciclo 111** — ver `cycles/tasks/111-*.md`.

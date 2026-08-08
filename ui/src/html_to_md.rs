@@ -103,6 +103,50 @@ fn walk(node: &Element, _depth: usize) -> String {
         }
         "br" => "\n".to_string(),
         "hr" => "---\n".to_string(),
+        "table" => {
+            // Não recursa via `walk` pros filhos (tr/td/th cairiam no
+            // branch `_` genérico, concatenando o texto das células sem
+            // `|` nem quebra de linha entre elas — bug real, corrigido
+            // aqui montando a tabela markdown direto a partir de
+            // `<thead>`/`<tbody>` via query_selector).
+            let header: Vec<String> = node
+                .query_selector("thead tr")
+                .ok()
+                .flatten()
+                .map(|tr| table_cell_texts(&tr))
+                .unwrap_or_default();
+
+            let mut rows: Vec<Vec<String>> = Vec::new();
+            if let Ok(trs) = node.query_selector_all("tbody tr") {
+                for i in 0..trs.length() {
+                    if let Some(n) = trs.item(i) {
+                        if let Ok(tr) = n.dyn_into::<Element>() {
+                            rows.push(table_cell_texts(&tr));
+                        }
+                    }
+                }
+            }
+
+            let col_count = header.len().max(rows.iter().map(|r| r.len()).max().unwrap_or(0));
+            if col_count == 0 {
+                String::new()
+            } else {
+                let row_line = |cells: &[String]| -> String {
+                    let mut padded = cells.to_vec();
+                    padded.resize(col_count, String::new());
+                    format!("| {} |\n", padded.join(" | "))
+                };
+                let mut out = row_line(&header);
+                out.push('|');
+                out.push_str(&"---|".repeat(col_count));
+                out.push('\n');
+                for row in &rows {
+                    out.push_str(&row_line(row));
+                }
+                out.push('\n');
+                out
+            }
+        }
         "img" => {
             let alt = node.get_attribute("alt").unwrap_or_default();
             let src = node.get_attribute("src").unwrap_or_default();
@@ -125,6 +169,23 @@ fn walk(node: &Element, _depth: usize) -> String {
             }
         }
     }
+}
+
+/// Texto (com formatação inline preservada) de cada `<th>`/`<td>` de
+/// uma `<tr>`, na ordem — usado só pelo case `"table"`. Escapa `|`
+/// literal na célula pra não quebrar a sintaxe da tabela markdown.
+fn table_cell_texts(tr: &Element) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Ok(cells) = tr.query_selector_all("th, td") {
+        for i in 0..cells.length() {
+            if let Some(node) = cells.item(i) {
+                if let Ok(el) = node.dyn_into::<Element>() {
+                    out.push(text_of(&el).replace('|', "\\|"));
+                }
+            }
+        }
+    }
+    out
 }
 
 fn text_of(node: &Element) -> String {
