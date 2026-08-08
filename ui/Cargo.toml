@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anotadinho-core = { path = "../crates/core" }
+base64 = "0.22"
 uuid = { version = "1.6", features = ["v4", "serde", "js"] }
 yew = { version = "0.21", features = ["csr"] }
 yew-router = "0.18"

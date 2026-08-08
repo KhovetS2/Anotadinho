@@ -250,6 +250,22 @@ pub fn handle_delete_asset(vault_path: String, asset_path: String) -> Result<(),
     vault.delete_asset(&asset_path).map_err(|e| e.to_string())
 }
 
+/// Handler de save_pasted_asset: decodifica base64 (dado que veio da
+/// área de transferência, sem arquivo de origem no disco) e grava em
+/// `assets/` com nome único (ciclo 118).
+pub fn handle_save_pasted_asset(
+    vault_path: String,
+    extension: String,
+    base64_data: String,
+) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64_data)
+        .map_err(|e| format!("base64 inválido: {}", e))?;
+    let vault = VaultIo::open(&vault_path);
+    vault.save_asset_bytes(&extension, &bytes).map_err(|e| e.to_string())
+}
+
 /// Handler de copy_to_assets: copia arquivo para assets/.
 pub fn handle_copy_to_assets(vault_path: String, source_path: String) -> Result<String, String> {
     let vault = VaultIo::open(&vault_path);

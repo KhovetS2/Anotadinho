@@ -428,6 +428,37 @@ impl VaultIo {
         Ok(())
     }
 
+    /// Grava bytes arbitrários em `assets/`, gerando um nome único
+    /// (`colado-N.ext`) — usado pelo paste de imagem no editor
+    /// (ciclo 118), onde não existe um arquivo de origem com nome
+    /// (o dado vem direto da área de transferência). `extension` sem
+    /// o ponto (ex: `"png"`).
+    pub fn save_asset_bytes(&self, extension: &str, bytes: &[u8]) -> Result<String> {
+        let dest_dir = self.root.join("assets");
+        std::fs::create_dir_all(&dest_dir)
+            .map_err(|e| anyhow::anyhow!("erro ao criar assets/: {}", e))?;
+        let ext = extension.trim_start_matches('.');
+        let mut n = 1u32;
+        loop {
+            let filename = format!("colado-{}.{}", n, ext);
+            let dest = dest_dir.join(&filename);
+            if !dest.exists() {
+                std::fs::write(&dest, bytes)
+                    .map_err(|e| anyhow::anyhow!("erro ao gravar {}: {}", filename, e))?;
+                let relative = dest
+                    .strip_prefix(&self.root)
+                    .unwrap_or(&dest)
+                    .to_string_lossy()
+                    .to_string();
+                return Ok(relative);
+            }
+            n += 1;
+            if n > 10_000 {
+                anyhow::bail!("não foi possível gerar nome único pro asset colado");
+            }
+        }
+    }
+
     /// Copia um arquivo externo para `assets/` e retorna o path relativo.
     pub fn copy_to_assets(&self, source_path: &str) -> Result<String> {
         let src = std::path::Path::new(source_path);
@@ -956,5 +987,30 @@ mod tests {
     fn create_page_from_template_rejects_missing_template() {
         let (_dir, io) = setup_vault();
         assert!(io.create_page_from_template("templates/nope.md", "X", None).is_err());
+    }
+
+    #[test]
+    fn save_asset_bytes_creates_assets_dir_and_writes_file() {
+        let (dir, io) = setup_vault();
+        let relative = io.save_asset_bytes("png", b"fake-png-bytes").unwrap();
+        assert_eq!(relative, "assets/colado-1.png");
+        let content = fs::read(dir.path().join(&relative)).unwrap();
+        assert_eq!(content, b"fake-png-bytes");
+    }
+
+    #[test]
+    fn save_asset_bytes_generates_unique_name_on_collision() {
+        let (_dir, io) = setup_vault();
+        let first = io.save_asset_bytes("png", b"a").unwrap();
+        let second = io.save_asset_bytes("png", b"b").unwrap();
+        assert_eq!(first, "assets/colado-1.png");
+        assert_eq!(second, "assets/colado-2.png");
+    }
+
+    #[test]
+    fn save_asset_bytes_strips_leading_dot_from_extension() {
+        let (_dir, io) = setup_vault();
+        let relative = io.save_asset_bytes(".jpg", b"x").unwrap();
+        assert_eq!(relative, "assets/colado-1.jpg");
     }
 }

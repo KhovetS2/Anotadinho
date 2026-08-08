@@ -1,5 +1,6 @@
 //! Editor WYSIWYG contenteditable + slash commands + markdown live formatting.
 
+use base64::Engine;
 use gloo_events::EventListener;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
@@ -1517,6 +1518,79 @@ pub fn editor(props: &EditorProps) -> Html {
     };
     let on_dragover = Callback::from(|e: DragEvent| { e.prevent_default(); });
 
+    // Colar (Ctrl+V) uma imagem da área de transferência (ciclo 118)
+    // — diferente do `on_drop` acima (que usa uma URL `blob:` só de
+    // sessão, perdida ao recarregar), grava de verdade em `assets/`
+    // via `save_pasted_asset` e insere um `<img>` apontando pro path
+    // relativo real, mesmo padrão já usado pelo item "__ASSET__" do
+    // menu `/`. Só intercepta (chama `prevent_default`) se achar uma
+    // imagem — paste de texto normal continua funcionando.
+    let on_paste = {
+        let vault_path = props.vault_path.clone();
+        let content_md = content_md.clone();
+        let editor_ref = editor_ref.clone();
+        let segment_refs = segment_refs.clone();
+        let mark_edited = mark_edited.clone();
+        let open_dialog = props.open_dialog.clone();
+        Callback::from(move |e: web_sys::Event| {
+            let cd = js_sys::Reflect::get(&e, &wasm_bindgen::JsValue::from_str("clipboardData")).ok();
+            let files = cd
+                .and_then(|v| js_sys::Reflect::get(&v, &wasm_bindgen::JsValue::from_str("files")).ok())
+                .and_then(|v| v.dyn_into::<web_sys::FileList>().ok());
+            let Some(files) = files else { return };
+            let mut image_file = None;
+            for i in 0..files.length() {
+                if let Some(file) = files.item(i) {
+                    if file.type_().starts_with("image/") {
+                        image_file = Some(file);
+                        break;
+                    }
+                }
+            }
+            let Some(file) = image_file else { return };
+            e.prevent_default();
+
+            let mime = file.type_();
+            let ext = mime.strip_prefix("image/").unwrap_or("png").to_string();
+            let vault_path = vault_path.clone();
+            let content_md = content_md.clone();
+            let editor_ref = editor_ref.clone();
+            let segment_refs = segment_refs.clone();
+            let mark_edited = mark_edited.clone();
+            let open_dialog = open_dialog.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let blob = gloo_file::Blob::from(file);
+                let Ok(bytes) = gloo_file::futures::read_as_bytes(&blob).await else {
+                    open_dialog.emit(PendingDialog::Alert {
+                        message: "Erro ao ler a imagem colada.".to_string(),
+                    });
+                    return;
+                };
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                match api::save_pasted_asset(&vault_path, &ext, &b64).await {
+                    Ok(relative) => {
+                        let html = format!(
+                            "<img src=\"{}\" alt=\"imagem colada\" style=\"max-width:100%;border-radius:8px;\">",
+                            relative.replace('"', "&quot;")
+                        );
+                        if let Some(el) = parse_single_element(&html) {
+                            if insert_element_at_cursor(&el, false) {
+                                let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                content_md.set(new_md.clone());
+                                mark_edited(new_md);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        open_dialog.emit(PendingDialog::Alert {
+                            message: format!("Erro ao salvar imagem colada: {}", e),
+                        });
+                    }
+                }
+            });
+        })
+    };
+
     // Clicar num wikilink já renderizado (`<a href="anotadinho://page/...">`,
     // ver `crate::wikilink`) navega pra página em vez de tentar abrir como
     // link externo. Resolve por título (case-insensitive); primeiro match
@@ -1674,7 +1748,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                     html! {
                                         <div class="editor__wysiwyg" {key} data-segment-index={i.to_string()} ref={node_ref} contenteditable="true"
                                             spellcheck="false" onkeydown={on_keydown.clone()} oninput={on_edit.clone()}
-                                            ondrop={on_drop.clone()} ondragover={on_dragover.clone()} />
+                                            ondrop={on_drop.clone()} ondragover={on_dragover.clone()} onpaste={on_paste.clone()} />
                                     }
                                 }
                                 DocSegment::Embed(data) => {
@@ -1728,7 +1802,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 } else {
                     <div class="editor__wysiwyg" key="plain" ref={editor_ref} contenteditable="true"
                         spellcheck="false" onkeydown={on_keydown} oninput={on_edit}
-                        ondrop={on_drop} ondragover={on_dragover} onclick={on_wysiwyg_click} />
+                        ondrop={on_drop} ondragover={on_dragover} onclick={on_wysiwyg_click} onpaste={on_paste} />
                 }
             </div>
             if *slash_open {

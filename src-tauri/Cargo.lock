@@ -96,6 +96,7 @@ dependencies = [
  "anotadinho-search",
  "anotadinho-vault",
  "anyhow",
+ "base64 0.22.1",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

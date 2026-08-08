@@ -1,7 +1,7 @@
 ---
 id: "118"
 titulo: "Colar imagem no editor vira asset"
-status: pending
+status: done
 criado: 2026-08-08
 autor: humano
 prioridade: alta
@@ -22,29 +22,29 @@ do editor deve salvar o arquivo em `assets/` e inserir
 
 ## Critérios de aceite
 
-- [ ] Handler de `paste` no contenteditable do editor: detecta imagem
-      em `event.clipboardData.items` (`image/*`)
-- [ ] Novo comando IPC `save_pasted_asset(vault_path, filename_hint,
+- [x] Handler de `paste` no contenteditable do editor: detecta imagem
+      via `clipboardData.files` (`image/*`)
+- [x] Novo comando IPC `save_pasted_asset(vault_path, extension,
       base64_data) -> Result<String, String>` — decodifica base64,
-      grava em `assets/`, gera nome único (mesmo padrão de slug único
-      já usado em `create_page_in`/`find_unique_relative_path`),
-      devolve o path relativo
-- [ ] Ao colar, imagem é convertida pra base64 no frontend
-      (`FileReader`), enviada pro backend, e o markdown
-      `![](assets/arquivo.png)` é inserido na posição do cursor
-      (reaproveita `insert_element_at_cursor`, generalizado no
-      ciclo 084)
-- [ ] Colar texto normal continua funcionando sem regressão (handler
-      só intercepta quando há imagem no clipboard)
-- [ ] Teste novo em `crates/vault` cobrindo a função de gravar bytes
-      com nome único em `assets/`
-- [ ] `cargo test --workspace`, `cd ui && cargo test --lib`,
+      grava em `assets/`, gera nome único (`colado-N.ext`), devolve o
+      path relativo
+- [x] Ao colar, imagem é lida como bytes no frontend (`gloo_file`),
+      codificada em base64, enviada pro backend, e um `<img
+      src="assets/colado-N.ext">` é inserido na posição do cursor
+      (reaproveita `insert_element_at_cursor`, ciclo 084) — mesmo
+      padrão HTML já usado pelo item "__ASSET__" do menu `/`
+- [x] Colar texto normal continua funcionando sem regressão (handler
+      só chama `prevent_default` quando acha uma imagem)
+- [x] Teste novo em `crates/vault` cobrindo `save_asset_bytes` — 3
+      testes
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
       `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
       passam
-- [ ] Validação ao vivo via MCP `tauri`: simular paste de imagem
-      (via `webview_execute_js` disparando um evento `paste` sintético
-      com `DataTransfer`) e confirmar arquivo criado em `assets/` +
-      markdown inserido
+- [x] Validação ao vivo via MCP `tauri`: evento `paste` sintético
+      (`DataTransfer` + `dt.items.add(file)`) com um PNG fake de 12
+      bytes — arquivo criado em `assets/colado-1.png` com os bytes
+      exatos, `<img>` inserido no DOM, e `![imagem colada](assets/
+      colado-1.png)` persistido no `.md` ao salvar
 
 ## Comandos de validação
 
@@ -70,3 +70,17 @@ cargo build --manifest-path src-tauri/Cargo.toml
 Tamanho de imagem colada pode ser grande — base64 infla ~33%; usar o
 comando IPC existente como referência de payload (`write_page` já
 manda strings grandes sem problema, mesmo princípio).
+
+`gloo_file::futures::read_as_bytes` (crate `gloo-file`, já dependência
+do `ui`) cobre a leitura de `File`→`Vec<u8>` sem precisar de
+`web_sys::FileReader` manual com closures.
+
+**Descoberta durante a implementação**: drag-and-drop de imagem já
+existe (`on_drop`, provavelmente de um ciclo anterior), mas usa uma
+URL `blob:` (só válida durante a sessão do navegador) em vez de
+persistir em `assets/` — a imagem droppada "funciona" visualmente na
+hora mas quebra ao recarregar o app, porque a blob URL não sobrevive.
+Diferente do paste (que agora persiste de verdade), esse é um bug
+pré-existente, fora do escopo deste ciclo — o `on_drop` teria o mesmo
+tipo de correção que este ciclo aplicou (chamar `save_pasted_asset`
+em vez de `createObjectURL`), candidato a um ciclo futuro.

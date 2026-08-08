@@ -13,7 +13,8 @@ use anotadinho_ipc::{
     handle_create_page_in_folder, handle_create_page_typed, handle_delete_asset, handle_delete_page,
     handle_export_folder, handle_git_log, handle_git_status, handle_list_assets, handle_list_assets_info,
     handle_list_folders, handle_list_pages, handle_list_templates, handle_move_page,
-    handle_open_today_journal, handle_ping, handle_read_page, handle_search_content, handle_write_page,
+    handle_open_today_journal, handle_ping, handle_read_page, handle_save_pasted_asset,
+    handle_search_content, handle_write_page,
     AssetInfo, PageMeta, PingArgs, PingResult, VaultInfo,
 };
 use anotadinho_vault::{GitFileEntry, GitLogEntry, VaultIo, VaultWatcher};
@@ -159,6 +160,11 @@ fn copy_to_assets(vault_path: String, source_path: String) -> Result<String, Str
 }
 
 #[tauri::command]
+fn save_pasted_asset(vault_path: String, extension: String, base64_data: String) -> Result<String, String> {
+    handle_save_pasted_asset(vault_path, extension, base64_data)
+}
+
+#[tauri::command]
 fn list_assets_info(vault_path: String) -> Result<Vec<AssetInfo>, String> {
     handle_list_assets_info(vault_path)
 }
@@ -217,6 +223,7 @@ fn main() {
             create_page_from_template,
             list_assets,
             copy_to_assets,
+            save_pasted_asset,
             list_assets_info,
             delete_asset,
             search_content,

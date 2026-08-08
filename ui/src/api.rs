@@ -316,6 +316,23 @@ pub async fn copy_to_assets(vault_path: &str, source_path: &str) -> Result<Strin
     result.as_string().ok_or_else(|| "path inválido".to_string())
 }
 
+/// Grava bytes (já em base64) em `assets/` com nome único — usado pelo
+/// paste de imagem no editor (ciclo 118), sem arquivo de origem no
+/// disco. `extension` sem o ponto (ex: `"png"`). Retorna o path
+/// relativo do asset criado.
+pub async fn save_pasted_asset(vault_path: &str, extension: &str, base64_data: &str) -> Result<String, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("extension"), &JsValue::from_str(extension))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("base64Data"), &JsValue::from_str(base64_data))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("save_pasted_asset", &args).await.map_err(|e| format!("{:?}", e))?;
+    result.as_string().ok_or_else(|| "path inválido".to_string())
+}
+
 /// Metadados de um arquivo em `assets/`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssetInfo {
