@@ -123,6 +123,53 @@ pub fn handle_delete_page(vault_path: String, page_path: String) -> Result<(), S
     vault.delete_page(&page_path).map_err(|e| e.to_string())
 }
 
+/// Handler de create_folder: cria pasta (subdiretório) no vault.
+pub fn handle_create_folder(vault_path: String, folder_path: String) -> Result<(), String> {
+    let vault = VaultIo::open(&vault_path);
+    vault.create_folder(&folder_path).map_err(|e| e.to_string())
+}
+
+/// Handler de list_folders: lista pastas (incluindo vazias) sob `pages/`.
+pub fn handle_list_folders(vault_path: String) -> Result<Vec<String>, String> {
+    let vault = VaultIo::open(&vault_path);
+    vault.list_folders().map_err(|e| e.to_string())
+}
+
+/// Handler de move_page: move/renomeia uma página pra organizá-la em pastas.
+pub fn handle_move_page(
+    vault_path: String,
+    from_path: String,
+    to_path: String,
+) -> Result<PageMeta, String> {
+    let vault = VaultIo::open(&vault_path);
+    let meta = vault
+        .move_page(&from_path, &to_path)
+        .map_err(|e| e.to_string())?;
+    Ok(PageMeta {
+        path: meta.path,
+        title: meta.title,
+        section: meta.section,
+    })
+}
+
+/// Handler de create_page_in_folder: cria página dentro de uma pasta.
+pub fn handle_create_page_in_folder(
+    vault_path: String,
+    folder_path: String,
+    title: String,
+    page_type: String,
+) -> Result<PageMeta, String> {
+    let vault = VaultIo::open(&vault_path);
+    let meta = vault
+        .create_page_in_folder(&folder_path, &title, &page_type)
+        .map_err(|e| e.to_string())?;
+    Ok(PageMeta {
+        path: meta.path,
+        title: meta.title,
+        section: meta.section,
+    })
+}
+
 /// Handler de list_assets: lista arquivos em assets/.
 pub fn handle_list_assets(vault_path: String) -> Result<Vec<String>, String> {
     let vault = VaultIo::open(&vault_path);

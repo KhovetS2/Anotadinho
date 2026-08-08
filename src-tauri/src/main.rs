@@ -9,10 +9,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use anotadinho_ipc::{
-    handle_copy_to_assets, handle_create_page, handle_create_page_typed, handle_delete_page,
-    handle_list_assets, handle_list_pages, handle_open_today_journal, handle_ping,
-    handle_read_page, handle_search_content, handle_write_page, PageMeta, PingArgs, PingResult,
-    VaultInfo,
+    handle_copy_to_assets, handle_create_folder, handle_create_page, handle_create_page_in_folder,
+    handle_create_page_typed, handle_delete_page, handle_list_assets, handle_list_folders,
+    handle_list_pages, handle_move_page, handle_open_today_journal, handle_ping, handle_read_page,
+    handle_search_content, handle_write_page, PageMeta, PingArgs, PingResult, VaultInfo,
 };
 use anotadinho_vault::{VaultIo, VaultWatcher};
 use tauri_plugin_dialog::DialogExt;
@@ -93,6 +93,31 @@ fn delete_page(vault_path: String, page_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn create_folder(vault_path: String, folder_path: String) -> Result<(), String> {
+    handle_create_folder(vault_path, folder_path)
+}
+
+#[tauri::command]
+fn list_folders(vault_path: String) -> Result<Vec<String>, String> {
+    handle_list_folders(vault_path)
+}
+
+#[tauri::command]
+fn move_page(vault_path: String, from_path: String, to_path: String) -> Result<PageMeta, String> {
+    handle_move_page(vault_path, from_path, to_path)
+}
+
+#[tauri::command]
+fn create_page_in_folder(
+    vault_path: String,
+    folder_path: String,
+    title: String,
+    page_type: String,
+) -> Result<PageMeta, String> {
+    handle_create_page_in_folder(vault_path, folder_path, title, page_type)
+}
+
+#[tauri::command]
 fn list_assets(vault_path: String) -> Result<Vec<String>, String> {
     handle_list_assets(vault_path)
 }
@@ -140,6 +165,10 @@ fn main() {
             create_page_with_type,
             open_today_journal,
             delete_page,
+            create_folder,
+            list_folders,
+            move_page,
+            create_page_in_folder,
             list_assets,
             copy_to_assets,
             search_content,

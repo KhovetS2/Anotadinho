@@ -148,6 +148,62 @@ pub async fn delete_page(vault_path: &str, page_path: &str) -> Result<(), String
     Ok(())
 }
 
+/// Cria uma pasta (subdiretório) sob `pages/`.
+pub async fn create_folder(vault_path: &str, folder_path: &str) -> Result<(), String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("folderPath"), &JsValue::from_str(folder_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    tauri_invoke("create_folder", &args).await.map_err(|e| format!("create_folder error: {:?}", e))?;
+    Ok(())
+}
+
+/// Lista pastas (incluindo vazias) sob `pages/`.
+pub async fn list_folders(vault_path: &str) -> Result<Vec<String>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("list_folders", &args).await.map_err(|e| format!("{:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
+/// Move (renomeia) uma página — usado pra organizar em pastas.
+pub async fn move_page(vault_path: &str, from_path: &str, to_path: &str) -> Result<PageMeta, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("fromPath"), &JsValue::from_str(from_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("toPath"), &JsValue::from_str(to_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("move_page", &args).await.map_err(|e| format!("move_page error: {:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
+/// Cria página dentro de uma pasta.
+pub async fn create_page_in_folder(
+    vault_path: &str, folder_path: &str, title: &str, page_type: &str,
+) -> Result<PageMeta, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("folderPath"), &JsValue::from_str(folder_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("title"), &JsValue::from_str(title))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("pageType"), &JsValue::from_str(page_type))
+        .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+    let result = tauri_invoke("create_page_in_folder", &args)
+        .await
+        .map_err(|e| format!("create_page_in_folder error: {:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
 /// Lista arquivos no diretório assets/.
 pub async fn list_assets(vault_path: &str) -> Result<Vec<String>, String> {
     let args = js_sys::Object::new();

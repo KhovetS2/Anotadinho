@@ -124,11 +124,35 @@ impl VaultIo {
 
     /// Cria nova página com tipo específico (md, kanban, calendar, table).
     pub fn create_page_with_type(&self, title: &str, page_type: &str) -> Result<PageMeta> {
+        self.create_page_in(None, title, page_type)
+    }
+
+    /// Cria nova página dentro de uma pasta (`folder_relative` é o path
+    /// relativo ao vault, ex: `"pages/trabalho"`).
+    pub fn create_page_in_folder(
+        &self,
+        folder_relative: &str,
+        title: &str,
+        page_type: &str,
+    ) -> Result<PageMeta> {
+        self.create_page_in(Some(folder_relative), title, page_type)
+    }
+
+    fn create_page_in(
+        &self,
+        folder_relative: Option<&str>,
+        title: &str,
+        page_type: &str,
+    ) -> Result<PageMeta> {
         let base_slug = slugify(title);
         let mut slug = base_slug.clone();
         let mut n = 2u32;
+        let dir_prefix = match folder_relative {
+            Some(f) => format!("{}/", f.trim_end_matches('/')),
+            None => "pages/".to_string(),
+        };
         loop {
-            let relative = format!("pages/{}.md", slug);
+            let relative = format!("{}{}.md", dir_prefix, slug);
             let full = self.root.join(&relative);
             if !full.exists() {
                 let type_line = if page_type != "md" {
@@ -154,6 +178,81 @@ impl VaultIo {
                 anyhow::bail!("não foi possível gerar slug único para {}", title);
             }
         }
+    }
+
+    /// Cria uma pasta (subdiretório) dentro do vault, geralmente sob
+    /// `pages/`. Idempotente — não falha se a pasta já existir.
+    pub fn create_folder(&self, relative_path: &str) -> Result<()> {
+        validate_relative_path(relative_path)?;
+        let full = self.root.join(relative_path);
+        if full.is_file() {
+            anyhow::bail!("já existe um arquivo com esse nome: {}", relative_path);
+        }
+        std::fs::create_dir_all(&full)
+            .map_err(|e| anyhow::anyhow!("erro ao criar pasta {}: {}", relative_path, e))?;
+        Ok(())
+    }
+
+    /// Lista todas as pastas (subdiretórios) sob `pages/`, incluindo
+    /// pastas vazias — necessário porque `list_pages` só enxerga
+    /// arquivos, então uma pasta recém-criada sem páginas dentro
+    /// desapareceria da árvore sem isso.
+    pub fn list_folders(&self) -> Result<Vec<String>> {
+        let dir = self.root.join("pages");
+        if !dir.is_dir() {
+            return Ok(Vec::new());
+        }
+        let mut folders = Vec::new();
+        for entry in WalkDir::new(&dir)
+            .max_depth(3)
+            .min_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.path().is_dir() {
+                let relative = entry
+                    .path()
+                    .strip_prefix(&self.root)
+                    .unwrap_or(entry.path())
+                    .to_string_lossy()
+                    .to_string();
+                folders.push(relative);
+            }
+        }
+        folders.sort();
+        Ok(folders)
+    }
+
+    /// Move (renomeia) uma página pra um novo path relativo — usado pra
+    /// organizar páginas em pastas. Recusa se o destino já existir.
+    pub fn move_page(&self, from_relative: &str, to_relative: &str) -> Result<PageMeta> {
+        let from_full = self.resolve_safe(from_relative)?;
+        validate_relative_path(to_relative)?;
+        let to_full = self.root.join(to_relative);
+        if to_full.exists() {
+            anyhow::bail!("já existe um arquivo em {}", to_relative);
+        }
+        if let Some(parent) = to_full.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| anyhow::anyhow!("erro ao criar dirs: {}", e))?;
+        }
+        std::fs::rename(&from_full, &to_full).map_err(|e| {
+            anyhow::anyhow!("erro ao mover {} -> {}: {}", from_relative, to_relative, e)
+        })?;
+        let section = if to_relative.starts_with("journals/") {
+            "journals"
+        } else {
+            "pages"
+        };
+        let title = Path::new(to_relative)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        Ok(PageMeta {
+            path: to_relative.to_string(),
+            title,
+            section: section.to_string(),
+        })
     }
 
     /// Lista arquivos no diretório `assets/` do vault.
@@ -253,14 +352,7 @@ impl VaultIo {
     /// Resolve path para escrita: valida que o path normalizado fica no vault
     /// mesmo se o arquivo ainda não existir.
     fn resolve_safe_for_write(&self, relative_path: &str) -> Result<PathBuf> {
-        if relative_path.is_empty()
-            || relative_path.contains('\0')
-            || Path::new(relative_path)
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
-            anyhow::bail!("path inválido: {}", relative_path);
-        }
+        validate_relative_path(relative_path)?;
         let joined = self.root.join(relative_path);
         let root_canonical = self
             .root
@@ -288,6 +380,21 @@ impl VaultIo {
             .ok_or_else(|| anyhow::anyhow!("path sem nome de arquivo"))?;
         Ok(parent_canonical.join(file_name))
     }
+}
+
+/// Valida que um path relativo não escapa do vault (sem `..`, vazio ou
+/// com byte nulo) — compartilhado entre escrita, criação de pasta e
+/// move.
+fn validate_relative_path(relative_path: &str) -> Result<()> {
+    if relative_path.is_empty()
+        || relative_path.contains('\0')
+        || Path::new(relative_path)
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        anyhow::bail!("path inválido: {}", relative_path);
+    }
+    Ok(())
 }
 
 /// Converte título em slug de arquivo seguro.
@@ -458,6 +565,81 @@ mod tests {
     fn delete_page_rejects_escape() {
         let (_dir, io) = setup_vault();
         assert!(io.delete_page("../secret.md").is_err());
+    }
+
+    #[test]
+    fn create_folder_makes_empty_dir() {
+        let (_dir, io) = setup_vault();
+        io.create_folder("pages/trabalho").unwrap();
+        assert!(io.list_folders().unwrap().contains(&"pages/trabalho".to_string()));
+    }
+
+    #[test]
+    fn create_folder_is_idempotent() {
+        let (_dir, io) = setup_vault();
+        io.create_folder("pages/trabalho").unwrap();
+        assert!(io.create_folder("pages/trabalho").is_ok());
+    }
+
+    #[test]
+    fn create_folder_rejects_escape() {
+        let (_dir, io) = setup_vault();
+        assert!(io.create_folder("../escape").is_err());
+    }
+
+    #[test]
+    fn create_folder_rejects_existing_file() {
+        let (_dir, io) = setup_vault();
+        assert!(io.create_folder("pages/alpha.md").is_err());
+    }
+
+    #[test]
+    fn list_folders_includes_folders_with_and_without_pages() {
+        let (_dir, io) = setup_vault();
+        io.create_folder("pages/vazia").unwrap();
+        io.write_page("pages/cheia/nota.md", "conteudo\n").unwrap();
+        let folders = io.list_folders().unwrap();
+        assert!(folders.contains(&"pages/vazia".to_string()));
+        assert!(folders.contains(&"pages/cheia".to_string()));
+    }
+
+    #[test]
+    fn list_pages_finds_files_inside_folders() {
+        let (_dir, io) = setup_vault();
+        io.write_page("pages/trabalho/tarefa.md", "# Tarefa\n").unwrap();
+        let pages = io.list_pages().unwrap();
+        let found = pages.iter().find(|p| p.path == "pages/trabalho/tarefa.md");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().title, "tarefa");
+    }
+
+    #[test]
+    fn create_page_in_folder_writes_nested_file() {
+        let (_dir, io) = setup_vault();
+        let meta = io.create_page_in_folder("pages/trabalho", "Minha Tarefa", "md").unwrap();
+        assert_eq!(meta.path, "pages/trabalho/minha-tarefa.md");
+        assert!(io.read_page(&meta.path).is_ok());
+    }
+
+    #[test]
+    fn move_page_renames_file() {
+        let (_dir, io) = setup_vault();
+        let meta = io.move_page("pages/alpha.md", "pages/trabalho/alpha.md").unwrap();
+        assert_eq!(meta.path, "pages/trabalho/alpha.md");
+        assert!(io.read_page("pages/trabalho/alpha.md").is_ok());
+        assert!(io.read_page("pages/alpha.md").is_err());
+    }
+
+    #[test]
+    fn move_page_rejects_existing_destination() {
+        let (_dir, io) = setup_vault();
+        assert!(io.move_page("pages/alpha.md", "pages/beta.md").is_err());
+    }
+
+    #[test]
+    fn move_page_rejects_escape() {
+        let (_dir, io) = setup_vault();
+        assert!(io.move_page("pages/alpha.md", "../escape.md").is_err());
     }
 
     #[test]
