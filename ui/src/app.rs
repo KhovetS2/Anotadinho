@@ -12,6 +12,7 @@ use crate::components::empty_state::EmptyState;
 use crate::components::header_bar::HeaderBar;
 use crate::components::kanban::Kanban;
 use crate::components::page_view::PageView;
+use crate::components::vim_settings_modal::VimSettingsModal;
 use crate::components::sidebar::Sidebar;
 use crate::components::tab_bar::TabBar;
 use crate::dialog::PendingDialog;
@@ -25,7 +26,24 @@ pub fn app() -> Html {
     let list_version = use_state(|| 0u32);
     let sidebar_collapsed = use_state(|| false);
     let open_tabs = use_state(Vec::<PageMeta>::new);
-    let vim_mode = use_state(|| false);
+    let vim_mode = use_state(state::load_vim_mode_enabled);
+    let vim_keymap = use_state(state::load_vim_keymap);
+    let vim_settings_open = use_state(|| false);
+    let toggle_vim_mode = {
+        let vim_mode = vim_mode.clone();
+        Callback::from(move |_: ()| {
+            let next = !*vim_mode;
+            state::save_vim_mode_enabled(next);
+            vim_mode.set(next);
+        })
+    };
+    let on_vim_keymap_change = {
+        let vim_keymap = vim_keymap.clone();
+        Callback::from(move |new_keymap: state::VimKeymap| {
+            state::save_vim_keymap(&new_keymap);
+            vim_keymap.set(new_keymap);
+        })
+    };
     let pending_dialog = use_state(|| None::<PendingDialog>);
     let palette_open = use_state(|| false);
     let theme_light = use_state(|| {
@@ -314,7 +332,6 @@ pub fn app() -> Html {
     let onkeydown = {
         let selected_page = selected_page.clone();
         let sidebar_collapsed = sidebar_collapsed.clone();
-        let vim_mode = vim_mode.clone();
         let open_tabs = open_tabs.clone();
         let palette_open = palette_open.clone();
         let new_page_action = new_page_action.clone();
@@ -333,12 +350,9 @@ pub fn app() -> Html {
                     e.prevent_default();
                     sidebar_collapsed.set(!*sidebar_collapsed);
                 }
-                // Vim mode toggle
                 (false, "Escape") => {
                     if selected_page.is_some() {
                         selected_page.set(None);
-                    } else {
-                        vim_mode.set(false);
                     }
                 }
                 // Tab switching
@@ -369,9 +383,15 @@ pub fn app() -> Html {
                 sidebar_collapsed={*sidebar_collapsed}
                 theme_light={*theme_light}
                 autosave_enabled={*autosave_enabled}
+                vim_mode_enabled={*vim_mode}
                 on_toggle_sidebar={toggle_sidebar}
                 on_toggle_theme={toggle_theme}
                 on_toggle_autosave={toggle_autosave}
+                on_toggle_vim_mode={toggle_vim_mode}
+                on_open_vim_settings={{
+                    let vim_settings_open = vim_settings_open.clone();
+                    Callback::from(move |_: ()| vim_settings_open.set(true))
+                }}
                 on_close_vault={on_close_vault}
                 on_open_vault={on_open_vault_shortcut}
             />
@@ -399,6 +419,8 @@ pub fn app() -> Html {
                                 on_page_selected={on_page_selected.clone()}
                                 open_dialog={open_dialog.clone()}
                                 autosave_enabled={*autosave_enabled}
+                                vim_mode_enabled={*vim_mode}
+                                vim_keymap={(*vim_keymap).clone()}
                             />
                         </div>
                     </div>
@@ -407,6 +429,16 @@ pub fn app() -> Html {
                 <EmptyState on_vault_selected={on_vault_selected} />
             }
             <DialogHost pending={(*pending_dialog).clone()} on_dismiss={dismiss_dialog} />
+            if *vim_settings_open {
+                <VimSettingsModal
+                    keymap={(*vim_keymap).clone()}
+                    on_change={on_vim_keymap_change}
+                    on_close={{
+                        let vim_settings_open = vim_settings_open.clone();
+                        Callback::from(move |_: ()| vim_settings_open.set(false))
+                    }}
+                />
+            }
             if *palette_open && vault_open {
                 <CommandPalette
                     vault_path={vault_path.as_ref().cloned().unwrap_or_default()}

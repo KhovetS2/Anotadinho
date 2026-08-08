@@ -15,3 +15,4 @@ pub mod sidebar;
 pub mod tab_bar;
 pub mod task_table;
 pub mod time_picker;
+pub mod vim_settings_modal;

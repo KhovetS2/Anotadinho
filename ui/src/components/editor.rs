@@ -30,6 +30,12 @@ pub struct EditorProps {
     /// de salvar sozinho enquanto o usuário ainda está na página.
     #[prop_or(true)]
     pub autosave_enabled: bool,
+    /// Se o vim mode (modal Normal/Insert) está ativado.
+    #[prop_or(false)]
+    pub vim_mode_enabled: bool,
+    /// Mapa de teclas do vim mode.
+    #[prop_or_default]
+    pub vim_keymap: crate::state::VimKeymap,
 }
 
 struct SlashItem {
@@ -78,6 +84,17 @@ pub fn editor(props: &EditorProps) -> Html {
     // edições feitas depois.
     let edited_ref = use_mut_ref(|| false);
     let pending_flush_ref = use_mut_ref(String::new);
+
+    // Vim mode: modo Normal (motions/comandos) vs Insert (digitação
+    // normal). Começa em Normal quando ativado — mesmo comportamento do
+    // vim de verdade (abrir um arquivo não te deixa digitando na hora).
+    // `vim_register` (yy/p) e `vim_pending` (confirmação de dd/yy — a
+    // tecla configurada precisa ser pressionada 2x seguidas) usam
+    // `use_mut_ref` por serem lidos/escritos de dentro do handler de
+    // teclado sem precisar disparar re-render a cada tecla motion.
+    let vim_insert = use_state(|| false);
+    let vim_register = use_mut_ref(String::new);
+    let vim_pending = use_mut_ref(|| None::<String>);
 
     let slash_open = use_state(|| false);
     let slash_text = use_state(String::new);
@@ -817,8 +834,102 @@ pub fn editor(props: &EditorProps) -> Html {
         let wikilink_idx = wikilink_idx.clone();
         let filtered_wikilink_len = filtered_wikilink.len();
         let select_wikilink = select_wikilink.clone();
+        let vim_mode_enabled = props.vim_mode_enabled;
+        let vim_keymap = props.vim_keymap.clone();
+        let vim_insert = vim_insert.clone();
+        let vim_register = vim_register.clone();
+        let vim_pending = vim_pending.clone();
+        let doc_exec_vim = doc_exec.clone();
+        let content_md_vim = content_md.clone();
+        let editor_ref_vim = editor_ref.clone();
+        let segment_refs_vim = segment_refs.clone();
+        let mark_edited_vim = mark_edited.clone();
         Callback::from(move |e: KeyboardEvent| {
             if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); do_save.emit(()); return; }
+
+            // Vim mode — modo Normal: toda tecla é comando, nada digita
+            // no texto. `stop_propagation` nas duas saídas (Normal e o
+            // Escape de Insert→Normal) pela mesma razão do menu `/`:
+            // sem isso, Escape borbulharia pro atalho global de
+            // `app.rs` que desseleciona a página inteira.
+            if vim_mode_enabled && !*vim_insert {
+                e.prevent_default();
+                e.stop_propagation();
+                let key = e.key();
+
+                if let Some(pending) = vim_pending.borrow_mut().take() {
+                    let matched = (pending == "delete_line" && key == vim_keymap.delete_line)
+                        || (pending == "yank_line" && key == vim_keymap.yank_line);
+                    if matched {
+                        if pending == "delete_line" {
+                            if vim_delete_line(&vim_register) {
+                                let new_md = recompute_markdown_from_dom(&content_md_vim, &editor_ref_vim, &segment_refs_vim);
+                                content_md_vim.set(new_md.clone());
+                                mark_edited_vim(new_md);
+                            }
+                        } else {
+                            vim_yank_line(&vim_register);
+                        }
+                        return;
+                    }
+                    // não confirmou o par — cai pro tratamento normal da
+                    // tecla atual abaixo (não perde o input do usuário)
+                }
+
+                if key == vim_keymap.delete_line {
+                    *vim_pending.borrow_mut() = Some("delete_line".to_string());
+                    return;
+                }
+                if key == vim_keymap.yank_line {
+                    *vim_pending.borrow_mut() = Some("yank_line".to_string());
+                    return;
+                }
+
+                if key == vim_keymap.left { vim_move("backward", "character"); }
+                else if key == vim_keymap.right { vim_move("forward", "character"); }
+                else if key == vim_keymap.down { vim_move("forward", "line"); }
+                else if key == vim_keymap.up { vim_move("backward", "line"); }
+                else if key == vim_keymap.word_forward { vim_move("forward", "word"); }
+                else if key == vim_keymap.word_backward { vim_move("backward", "word"); }
+                else if key == vim_keymap.line_start { vim_move("backward", "lineboundary"); }
+                else if key == vim_keymap.line_end { vim_move("forward", "lineboundary"); }
+                else if key == vim_keymap.doc_start { vim_move("backward", "documentboundary"); }
+                else if key == vim_keymap.doc_end { vim_move("forward", "documentboundary"); }
+                else if key == vim_keymap.insert_before { vim_insert.set(true); }
+                else if key == vim_keymap.insert_after { vim_move("forward", "character"); vim_insert.set(true); }
+                else if key == vim_keymap.open_below {
+                    if vim_open_line(false) {
+                        vim_insert.set(true);
+                        let new_md = recompute_markdown_from_dom(&content_md_vim, &editor_ref_vim, &segment_refs_vim);
+                        content_md_vim.set(new_md.clone());
+                        mark_edited_vim(new_md);
+                    }
+                }
+                else if key == vim_keymap.open_above {
+                    if vim_open_line(true) {
+                        vim_insert.set(true);
+                        let new_md = recompute_markdown_from_dom(&content_md_vim, &editor_ref_vim, &segment_refs_vim);
+                        content_md_vim.set(new_md.clone());
+                        mark_edited_vim(new_md);
+                    }
+                }
+                else if key == vim_keymap.delete_char { doc_exec_vim("forwardDelete", ""); }
+                else if key == vim_keymap.paste {
+                    if vim_paste_after(&vim_register) {
+                        let new_md = recompute_markdown_from_dom(&content_md_vim, &editor_ref_vim, &segment_refs_vim);
+                        content_md_vim.set(new_md.clone());
+                        mark_edited_vim(new_md);
+                    }
+                }
+                else if key == vim_keymap.undo { doc_exec_vim("undo", ""); }
+                return;
+            }
+            if vim_mode_enabled && *vim_insert && e.key() == "Escape" {
+                e.prevent_default();
+                e.stop_propagation();
+                vim_insert.set(false);
+                return;
+            }
 
             // "/" e o texto do filtro digitam normalmente no
             // contenteditable (não são mais interceptados aqui) — quem
@@ -1551,6 +1662,105 @@ fn parse_single_element(html: &str) -> Option<web_sys::Element> {
     let wrapper = doc.create_element("div").ok()?;
     wrapper.set_inner_html(html);
     wrapper.first_element_child()
+}
+
+/// Move/estende a seleção via `Selection.modify` — a mesma API nativa
+/// que o navegador usa pra Ctrl+seta/Shift+seta, generosa o bastante
+/// (granularidade `character`/`word`/`line`/`lineboundary`/
+/// `documentboundary`) pra implementar as motions do vim mode sem
+/// reescrever navegação de texto/palavra/linha na mão.
+fn vim_move(direction: &str, granularity: &str) {
+    if let Some(sel) = web_sys::window().and_then(|w| w.get_selection().ok()).flatten() {
+        let _ = sel.modify("move", direction, granularity);
+    }
+}
+
+/// Bloco (linha, no sentido do vim) onde o cursor está — item de lista,
+/// parágrafo, heading, citação. `dd`/`yy`/`p`/`o`/`O` operam nesse
+/// elemento inteiro. `None` se o cursor não estiver dentro de um desses
+/// (evita `dd` apagar o container inteiro do editor por engano).
+fn vim_current_block() -> Option<web_sys::Element> {
+    let window = web_sys::window()?;
+    let sel = window.get_selection().ok()??;
+    if sel.range_count() == 0 {
+        return None;
+    }
+    let range = sel.get_range_at(0).ok()?;
+    let node = range.start_container().ok()?;
+    let el = node.dyn_ref::<web_sys::Element>().cloned().or_else(|| node.parent_element())?;
+    el.closest("li, p, h1, h2, h3, h4, h5, h6, blockquote").ok().flatten()
+}
+
+/// `yy`: copia o texto da linha atual pro registrador, sem mutar nada.
+fn vim_yank_line(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
+    let Some(block) = vim_current_block() else { return false };
+    *register.borrow_mut() = block.text_content().unwrap_or_default();
+    true
+}
+
+/// `dd`: copia a linha pro registrador (igual `yy`) e remove ela do DOM.
+/// Mutação direta (não passa por `execCommand`), então quem chama
+/// precisa recalcular o markdown e chamar `mark_edited` depois.
+fn vim_delete_line(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
+    let Some(block) = vim_current_block() else { return false };
+    *register.borrow_mut() = block.text_content().unwrap_or_default();
+    block.remove();
+    true
+}
+
+/// Tag do elemento a criar quando abrindo/colando uma linha nova ao
+/// lado de `block` — `li` continua `li` (senão colar dentro de uma
+/// lista quebrava a lista, virando um `<p>` solto no meio dos itens);
+/// qualquer outro tipo (heading, citação, parágrafo) vira `p` normal,
+/// mesmo comportamento padrão de outros editores (abrir linha depois de
+/// um título não repete o título).
+fn sibling_line_tag(block: &web_sys::Element) -> &'static str {
+    if block.tag_name().to_lowercase() == "li" { "li" } else { "p" }
+}
+
+/// `p`: insere o conteúdo do registrador como uma linha nova logo depois
+/// da linha atual.
+fn vim_paste_after(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
+    let text = register.borrow().clone();
+    if text.is_empty() {
+        return false;
+    }
+    let Some(block) = vim_current_block() else { return false };
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return false };
+    let Ok(new_el) = doc.create_element(sibling_line_tag(&block)) else { return false };
+    new_el.set_text_content(Some(&text));
+    let Some(parent) = block.parent_node() else { return false };
+    let next = block.next_sibling();
+    parent.insert_before(&new_el, next.as_ref()).is_ok()
+}
+
+/// `o`/`O`: insere uma linha vazia abaixo (`before=false`)/acima
+/// (`before=true`) da linha atual e coloca o cursor nela — quem chama
+/// ainda precisa setar `vim_insert` pra `true`.
+fn vim_open_line(before: bool) -> bool {
+    let Some(block) = vim_current_block() else { return false };
+    let Some(window) = web_sys::window() else { return false };
+    let Some(doc) = window.document() else { return false };
+    let Ok(new_el) = doc.create_element(sibling_line_tag(&block)) else { return false };
+    new_el.set_inner_html("<br>");
+    let Some(parent) = block.parent_node() else { return false };
+    let inserted = if before {
+        parent.insert_before(&new_el, Some(block.unchecked_ref())).is_ok()
+    } else {
+        let next = block.next_sibling();
+        parent.insert_before(&new_el, next.as_ref()).is_ok()
+    };
+    if !inserted {
+        return false;
+    }
+    let Ok(range) = doc.create_range() else { return false };
+    if range.set_start(&new_el, 0).is_err() {
+        return false;
+    }
+    range.collapse_with_to_start(true);
+    let Some(sel) = window.get_selection().ok().flatten() else { return false };
+    sel.remove_all_ranges().ok();
+    sel.add_range(&range).is_ok()
 }
 
 fn recompute_markdown_from_dom(content_md: &str, editor_ref: &NodeRef, segment_refs: &[NodeRef]) -> String {

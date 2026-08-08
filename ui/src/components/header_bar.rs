@@ -11,9 +11,12 @@ pub struct HeaderBarProps {
     pub sidebar_collapsed: bool,
     pub theme_light: bool,
     pub autosave_enabled: bool,
+    pub vim_mode_enabled: bool,
     pub on_toggle_sidebar: Callback<()>,
     pub on_toggle_theme: Callback<()>,
     pub on_toggle_autosave: Callback<()>,
+    pub on_toggle_vim_mode: Callback<()>,
+    pub on_open_vim_settings: Callback<()>,
     pub on_close_vault: Callback<()>,
     pub on_open_vault: Callback<()>,
 }
@@ -114,6 +117,22 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                             }}>
                                 { if props.autosave_enabled { "✓ Salvamento automático" } else { "Salvamento automático" } }
                             </button>
+                            <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
+                                let menu_open = menu_open.clone();
+                                let on_toggle_vim_mode = props.on_toggle_vim_mode.clone();
+                                Callback::from(move |_| { menu_open.set(false); on_toggle_vim_mode.emit(()); })
+                            }}>
+                                { if props.vim_mode_enabled { "✓ Vim mode" } else { "Vim mode" } }
+                            </button>
+                            if props.vim_mode_enabled {
+                                <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
+                                    let menu_open = menu_open.clone();
+                                    let on_open_vim_settings = props.on_open_vim_settings.clone();
+                                    Callback::from(move |_| { menu_open.set(false); on_open_vim_settings.emit(()); })
+                                }}>
+                                    { "Atalhos do Vim mode..." }
+                                </button>
+                            }
                         </div>
                     }
                 </div>

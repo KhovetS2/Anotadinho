@@ -20,6 +20,12 @@ pub struct PageViewProps {
     /// segundos de inatividade — o usuário precisa clicar em "Salvar".
     #[prop_or(true)]
     pub autosave_enabled: bool,
+    /// Se o vim mode (modal Normal/Insert) está ativado.
+    #[prop_or(false)]
+    pub vim_mode_enabled: bool,
+    /// Mapa de teclas do vim mode.
+    #[prop_or_default]
+    pub vim_keymap: crate::state::VimKeymap,
 }
 
 #[function_component(PageView)]
@@ -90,6 +96,8 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 open_dialog={props.open_dialog.clone()}
                 on_page_selected={props.on_page_selected.clone()}
                 autosave_enabled={props.autosave_enabled}
+                vim_mode_enabled={props.vim_mode_enabled}
+                vim_keymap={props.vim_keymap.clone()}
             />
         },
     }
