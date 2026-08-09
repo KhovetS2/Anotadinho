@@ -184,9 +184,19 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
 
     let on_page_selected = props.on_page_selected.clone();
     let (pan_x, pan_y) = *pan;
+    // Escala ancorada em (400,400) via composição EXPLÍCITA de
+    // translate/scale/translate, em vez de `transform-origin` — o
+    // comportamento de `transform-origin` em elementos SVG depende de
+    // `transform-box` (`fill-box` vs `view-box`), cujo valor padrão
+    // difere entre motores de navegador; no WebKitGTK usado pelo Tauri
+    // isso fazia o ponto de ancoragem derivar a cada zoom/pan repetido,
+    // "espalhando" os nós numa espiral em vez de manter o círculo
+    // (bug reportado pelo usuário). Compor a translação/escala direto
+    // na lista de funções do `transform` é bem-especificado e igual em
+    // qualquer motor, sem depender de `transform-box`.
     let content_transform = format!(
-        "transform: translate({}px, {}px) scale({}); transform-origin: 400px 400px;",
-        pan_x, pan_y, *scale
+        "transform: translate({px}px, {py}px) translate(400px, 400px) scale({s}) translate(-400px, -400px);",
+        px = pan_x, py = pan_y, s = *scale
     );
 
     html! {
