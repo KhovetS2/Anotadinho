@@ -12,6 +12,16 @@ pub struct ModalProps {
     /// isso pra não ficar espremido nos 420px do diálogo simples.
     #[prop_or_default]
     pub wide: bool,
+    /// Incrementado por quem monta o `Modal` toda vez que o CONTEÚDO
+    /// troca sem o modal em si fechar/reabrir — ex: `DialogHost`
+    /// encadeando Select → Prompt (escolher template → digitar título)
+    /// mantém `open=true` o tempo todo, então o auto-foco (efeito
+    /// abaixo) precisa de outro gatilho pra saber que tem um novo
+    /// primeiro elemento focável pra focar (ciclo 129, achado durante
+    /// a auditoria final: sem isso, o segundo diálogo de uma cadeia
+    /// nascia sem foco nenhum, quebrando o que o ciclo 124 prometia).
+    #[prop_or_default]
+    pub focus_nonce: u32,
     #[prop_or_default]
     pub children: Children,
 }
@@ -37,7 +47,7 @@ pub fn modal(props: &ModalProps) -> Html {
     {
         let body_ref = body_ref.clone();
         let open = props.open;
-        use_effect_with(open, move |open| {
+        use_effect_with((open, props.focus_nonce), move |(open, _)| {
             if *open {
                 if let Some(body) = body_ref.cast::<web_sys::Element>() {
                     if let Ok(Some(first)) = body.query_selector(FOCUSABLE_SELECTOR) {

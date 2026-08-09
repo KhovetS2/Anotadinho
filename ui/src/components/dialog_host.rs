@@ -20,12 +20,22 @@ pub struct DialogHostProps {
 #[function_component(DialogHost)]
 pub fn dialog_host(props: &DialogHostProps) -> Html {
     let input_value = use_state(String::new);
+    // Ciclo 129: bumped a cada troca de `pending` — repassado ao `Modal`
+    // como `focus_nonce` pra reacionar o auto-foco (ciclo 124) mesmo
+    // quando um diálogo é substituído por outro sem passar por `None`
+    // (ex: Select → Prompt de um fluxo encadeado como "Nova página" com
+    // templates). Ver comentário em `modal.rs::ModalProps::focus_nonce`.
+    let dialog_nonce = use_state(|| 0u32);
 
     {
         let input_value = input_value.clone();
+        let dialog_nonce = dialog_nonce.clone();
         use_effect_with(props.pending.clone(), move |pending| {
             if let Some(PendingDialog::Prompt { default, .. }) = pending {
                 input_value.set(default.clone());
+            }
+            if pending.is_some() {
+                dialog_nonce.set(*dialog_nonce + 1);
             }
             || ()
         });
@@ -157,7 +167,7 @@ pub fn dialog_host(props: &DialogHostProps) -> Html {
     };
 
     html! {
-        <Modal {title} open={true} on_close={on_dismiss}>
+        <Modal {title} open={true} focus_nonce={*dialog_nonce} on_close={on_dismiss}>
             { body }
         </Modal>
     }

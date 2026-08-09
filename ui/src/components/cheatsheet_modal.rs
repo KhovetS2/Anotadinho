@@ -55,6 +55,27 @@ pub fn cheatsheet_modal(props: &CheatsheetModalProps) -> Html {
                         }) }
                     </ul>
                 </div>
+                <div class="cheatsheet__section">
+                    <h4 class="cheatsheet__heading">{ "Navegação (fixos, não remapeáveis)" }</h4>
+                    <ul class="cheatsheet__list">
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Mover foco" }</span>
+                            <kbd class="cheatsheet__key">{ "Tab / Shift+Tab" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Fechar modal, menu ou paleta aberta" }</span>
+                            <kbd class="cheatsheet__key">{ "Escape" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Navegar itens de um menu/paleta aberta" }</span>
+                            <kbd class="cheatsheet__key">{ "↑ / ↓" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Ativar item focado (nó do grafo, card, linha, chip)" }</span>
+                            <kbd class="cheatsheet__key">{ "Enter / Espaço" }</kbd>
+                        </li>
+                    </ul>
+                </div>
                 if props.vim_mode_enabled {
                     <div class="cheatsheet__section">
                         <h4 class="cheatsheet__heading">{ "Vim mode (modo Normal)" }</h4>
