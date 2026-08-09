@@ -2119,6 +2119,30 @@ fn vim_move(direction: &str, granularity: &str) {
     if let Some(sel) = web_sys::window().and_then(|w| w.get_selection().ok()).flatten() {
         let _ = sel.modify("move", direction, granularity);
     }
+    // `Selection.modify` move o caret mas, diferente do comportamento
+    // nativo de seta do navegador numa página comum, NÃO rola o
+    // container sozinho — reportado pelo usuário: navegar pra baixo no
+    // vim mode saía da área visível do editor sem o scroll acompanhar.
+    vim_scroll_caret_into_view();
+}
+
+/// Rola o ancestral do caret pra dentro da área visível — chamado
+/// depois de todo `vim_move`. Usa o elemento mais próximo do container
+/// da seleção (o nó do range pode ser um nó de texto, sem
+/// `scrollIntoView` próprio) com `block: "nearest"`, mesmo critério já
+/// usado pra manter o item destacado visível na sidebar/paleta (rola o
+/// mínimo pra reaparecer, sem centralizar à toa a cada tecla).
+fn vim_scroll_caret_into_view() {
+    let Some(sel) = web_sys::window().and_then(|w| w.get_selection().ok()).flatten() else { return };
+    if sel.range_count() == 0 {
+        return;
+    }
+    let Ok(range) = sel.get_range_at(0) else { return };
+    let Ok(node) = range.start_container() else { return };
+    let Some(el) = node.dyn_ref::<web_sys::Element>().cloned().or_else(|| node.parent_element()) else { return };
+    let opts = web_sys::ScrollIntoViewOptions::new();
+    opts.set_block(web_sys::ScrollLogicalPosition::Nearest);
+    el.scroll_into_view_with_scroll_into_view_options(&opts);
 }
 
 /// Bloco (linha, no sentido do vim) onde o cursor está — item de lista,
