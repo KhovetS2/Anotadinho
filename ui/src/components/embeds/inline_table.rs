@@ -333,12 +333,23 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                         ColumnKind::Date => {
                                             let is_open = *open_cell_menu == Some((ri, ci));
                                             let cell_value = cell.clone();
-                                            let toggle_open = {
+                                            // Ciclo 135: célula "chip" nunca teve
+                                            // suporte de teclado (só `onclick`
+                                            // num `<span>` não focável) —
+                                            // ação de ativar vira `Callback<()>`
+                                            // pra reaproveitar tanto no clique
+                                            // quanto no Enter/Espaço.
+                                            let toggle_activate = {
                                                 let open_cell_menu = open_cell_menu.clone();
-                                                Callback::from(move |_: MouseEvent| {
+                                                Callback::from(move |_: ()| {
                                                     open_cell_menu.set(if is_open { None } else { Some((ri, ci)) });
                                                 })
                                             };
+                                            let toggle_open = {
+                                                let toggle_activate = toggle_activate.clone();
+                                                Callback::from(move |_: MouseEvent| toggle_activate.emit(()))
+                                            };
+                                            let toggle_onkeydown = crate::keyboard_activate::activate_on_enter_or_space(toggle_activate);
                                             let on_pick = {
                                                 let data = props.data.clone();
                                                 let on_change = props.on_change.clone();
@@ -356,7 +367,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                             };
                                             html! {
                                                 <td class="task-table__td task-table__td--menu">
-                                                    <span class="task-table__date-chip" onclick={toggle_open}>
+                                                    <span class="task-table__date-chip" tabindex="0" onclick={toggle_open} onkeydown={toggle_onkeydown}>
                                                         if cell_value.is_empty() { { "+ data" } } else { { cell_value.clone() } }
                                                     </span>
                                                     if is_open {
@@ -400,14 +411,19 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                             let is_open = *open_cell_menu == Some((ri, ci));
                                             let cell_value = cell.clone();
                                             let linked = pages.iter().find(|p| p.path == cell_value).cloned();
-                                            let toggle_open = {
+                                            let toggle_activate = {
                                                 let open_cell_menu = open_cell_menu.clone();
                                                 let menu_filter = menu_filter.clone();
-                                                Callback::from(move |_: MouseEvent| {
+                                                Callback::from(move |_: ()| {
                                                     menu_filter.set(String::new());
                                                     open_cell_menu.set(if is_open { None } else { Some((ri, ci)) });
                                                 })
                                             };
+                                            let toggle_open = {
+                                                let toggle_activate = toggle_activate.clone();
+                                                Callback::from(move |_: MouseEvent| toggle_activate.emit(()))
+                                            };
+                                            let toggle_onkeydown = crate::keyboard_activate::activate_on_enter_or_space(toggle_activate);
                                             let open_page = {
                                                 let on_page_selected = props.on_page_selected.clone();
                                                 let cell_value = cell_value.clone();
@@ -425,9 +441,9 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                             html! {
                                                 <td class="task-table__td task-table__td--menu">
                                                     if cell_value.is_empty() {
-                                                        <button class="task-table__page-link-add" onclick={toggle_open}>{ "+ página" }</button>
+                                                        <button class="task-table__page-link-add" onclick={toggle_open} onkeydown={toggle_onkeydown}>{ "+ página" }</button>
                                                     } else {
-                                                        <span class="task-table__page-link" onclick={toggle_open}>
+                                                        <span class="task-table__page-link" tabindex="0" onclick={toggle_open} onkeydown={toggle_onkeydown}>
                                                             { format!("📄 {}", linked.as_ref().map(|p| p.title.as_str()).unwrap_or(cell_value.as_str())) }
                                                         </span>
                                                         <button class="task-table__page-link-open" onclick={open_page} title="Abrir página">{ "↗" }</button>
@@ -473,14 +489,19 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                         ColumnKind::MultiSelect { options } => {
                                             let is_open = *open_cell_menu == Some((ri, ci));
                                             let selected = split_tags(cell);
-                                            let toggle_open = {
+                                            let toggle_activate = {
                                                 let open_cell_menu = open_cell_menu.clone();
                                                 let menu_filter = menu_filter.clone();
-                                                Callback::from(move |_: MouseEvent| {
+                                                Callback::from(move |_: ()| {
                                                     menu_filter.set(String::new());
                                                     open_cell_menu.set(if is_open { None } else { Some((ri, ci)) });
                                                 })
                                             };
+                                            let toggle_open = {
+                                                let toggle_activate = toggle_activate.clone();
+                                                Callback::from(move |_: MouseEvent| toggle_activate.emit(()))
+                                            };
+                                            let toggle_onkeydown = crate::keyboard_activate::activate_on_enter_or_space(toggle_activate);
                                             let submit_new_tag = {
                                                 let data = props.data.clone();
                                                 let on_change = props.on_change.clone();
@@ -502,7 +523,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                             };
                                             html! {
                                                 <td class="task-table__td task-table__td--menu task-table__td--tags">
-                                                    <span class="task-table__tags" onclick={toggle_open}>
+                                                    <span class="task-table__tags" tabindex="0" onclick={toggle_open} onkeydown={toggle_onkeydown}>
                                                         { for selected.iter().map(|t| html! {
                                                             <span class={classes!("badge", badge_class(&options, t))}>{ t }</span>
                                                         }) }
@@ -573,15 +594,20 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                         ColumnKind::Select { options } => {
                                             let is_open = *open_cell_menu == Some((ri, ci));
                                             let cell_value = cell.clone();
-                                            let toggle_open = {
+                                            let toggle_activate = {
                                                 let open_cell_menu = open_cell_menu.clone();
-                                                Callback::from(move |_: MouseEvent| {
+                                                Callback::from(move |_: ()| {
                                                     open_cell_menu.set(if is_open { None } else { Some((ri, ci)) });
                                                 })
                                             };
+                                            let toggle_open = {
+                                                let toggle_activate = toggle_activate.clone();
+                                                Callback::from(move |_: MouseEvent| toggle_activate.emit(()))
+                                            };
+                                            let toggle_onkeydown = crate::keyboard_activate::activate_on_enter_or_space(toggle_activate);
                                             html! {
                                                 <td class="task-table__td task-table__td--menu">
-                                                    <span class={classes!("badge", badge_class(&options, &cell_value))} onclick={toggle_open}>
+                                                    <span class={classes!("badge", badge_class(&options, &cell_value))} tabindex="0" onclick={toggle_open} onkeydown={toggle_onkeydown}>
                                                         { if cell_value.is_empty() { "—".to_string() } else { cell_value.clone() } }
                                                     </span>
                                                     if is_open {

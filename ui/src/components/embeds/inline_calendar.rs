@@ -698,11 +698,20 @@ fn render_vault_month_grid(
                     };
                     let meta = entry.page_path.clone().map(|path| PageMeta { path, title: entry.title.clone(), section: "pages".to_string() });
                     let on_page_selected = on_page_selected.clone();
-                    let onclick = Callback::from(move |_: MouseEvent| {
-                        if let Some(meta) = meta.clone() { on_page_selected.emit(meta); }
-                    });
+                    let activate = {
+                        let on_page_selected = on_page_selected.clone();
+                        let meta = meta.clone();
+                        Callback::from(move |_: ()| {
+                            if let Some(meta) = meta.clone() { on_page_selected.emit(meta); }
+                        })
+                    };
+                    let onclick = {
+                        let activate = activate.clone();
+                        Callback::from(move |_: MouseEvent| activate.emit(()))
+                    };
+                    let onkeydown = crate::keyboard_activate::activate_on_enter_or_space(activate);
                     html! {
-                        <div class="calendar-grid__bar calendar-grid__bar--readonly" {style} {onclick} title={label.clone()}>
+                        <div class="calendar-grid__bar calendar-grid__bar--readonly" {style} tabindex="0" {onclick} {onkeydown} title={label.clone()}>
                             { label }
                         </div>
                     }
@@ -739,14 +748,23 @@ fn render_vault_agenda(entries: &[CalendarEntry], window_dates: &[String], on_pa
                         { for day_entries.iter().map(|entry| {
                             let meta = entry.page_path.clone().map(|path| PageMeta { path, title: entry.title.clone(), section: "pages".to_string() });
                             let on_page_selected = on_page_selected.clone();
-                            let onclick = Callback::from(move |_: MouseEvent| {
-                                if let Some(meta) = meta.clone() { on_page_selected.emit(meta); }
-                            });
+                            let activate = {
+                                let on_page_selected = on_page_selected.clone();
+                                let meta = meta.clone();
+                                Callback::from(move |_: ()| {
+                                    if let Some(meta) = meta.clone() { on_page_selected.emit(meta); }
+                                })
+                            };
+                            let onclick = {
+                                let activate = activate.clone();
+                                Callback::from(move |_: MouseEvent| activate.emit(()))
+                            };
+                            let onkeydown = crate::keyboard_activate::activate_on_enter_or_space(activate);
                             let label = match &entry.start_time {
                                 Some(t) => format!("{} · {}", t, entry.title),
                                 None => entry.title.clone(),
                             };
-                            html! { <div class="calendar-grid__vault-agenda-item" {onclick}>{ label }</div> }
+                            html! { <div class="calendar-grid__vault-agenda-item" tabindex="0" {onclick} {onkeydown}>{ label }</div> }
                         }) }
                         if day_entries.is_empty() {
                             <span class="calendar-grid__vault-agenda-empty">{ "—" }</span>
@@ -902,6 +920,14 @@ fn render_month_grid(
                     });
                     let editing_entry = editing_entry.clone();
                     let dragging_click = dragging.clone();
+                    // Ciclo 135: mesmo evento chega via mouse (mousedown+
+                    // mouseup no mesmo bloco, sem arrastar de verdade) ou
+                    // teclado agora — reaproveita `editing_entry.set` como
+                    // a mesma ação de "abrir detalhes".
+                    let onkeydown = crate::keyboard_activate::activate_on_enter_or_space({
+                        let editing_entry = editing_entry.clone();
+                        Callback::from(move |_: ()| editing_entry.set(Some(entry_idx)))
+                    });
                     let onmouseup = Callback::from(move |e: MouseEvent| {
                         e.stop_propagation();
                         if *dragging_click == Some(entry_idx) {
@@ -910,7 +936,7 @@ fn render_month_grid(
                         dragging_click.set(None);
                     });
                     html! {
-                        <div {class} {style} {onmousedown} {onmouseup} title={entry.title.clone()}>
+                        <div {class} {style} tabindex="0" {onmousedown} {onmouseup} {onkeydown} title={entry.title.clone()}>
                             { &entry.title }
                         </div>
                     }

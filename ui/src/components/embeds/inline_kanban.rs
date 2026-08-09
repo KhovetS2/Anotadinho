@@ -316,6 +316,16 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                                     };
                                     let stop_mousedown = Callback::from(|e: MouseEvent| e.stop_propagation());
 
+                                    // Ciclo 135: mesma ação de "abrir
+                                    // detalhes" que soltar o mouse no
+                                    // próprio card (sem arrastar) já
+                                    // dispara — cards inline nunca
+                                    // tinham NENHUM suporte de teclado.
+                                    let onkeydown = crate::keyboard_activate::activate_on_enter_or_space({
+                                        let editing_card = editing_card.clone();
+                                        Callback::from(move |_: ()| editing_card.set(Some(idx)))
+                                    });
+
                                     let card_class = if *dragging == Some(idx) {
                                         "kanban__card kanban__card--dragging"
                                     } else {
@@ -336,7 +346,7 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                                         if show_insertion {
                                             <div class="kanban__insertion-line" />
                                         }
-                                        <div class={card_class} {onmousedown} {onmouseup} {onmouseenter}>
+                                        <div class={card_class} tabindex="0" {onmousedown} {onmouseup} {onmouseenter} {onkeydown}>
                                             <div class="kanban__card-main">
                                                 <span class="kanban__card-title">{ &item.title }</span>
                                                 <span class="kanban__card-actions">
