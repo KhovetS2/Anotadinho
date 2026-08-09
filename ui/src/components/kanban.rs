@@ -94,11 +94,18 @@ pub fn kanban(props: &KanbanProps) -> Html {
                                     let path = card.path.clone();
                                     let title = card.title.clone();
                                     let meta = PageMeta { path: path.clone(), title: title.clone(), section: "pages".to_string() };
-                                    let on_page_selected = on_page_selected.clone();
+                                    let activate = {
+                                        let on_page_selected = on_page_selected.clone();
+                                        let meta = meta.clone();
+                                        Callback::from(move |_: ()| on_page_selected.emit(meta.clone()))
+                                    };
+                                    let onclick = {
+                                        let activate = activate.clone();
+                                        Callback::from(move |_: MouseEvent| activate.emit(()))
+                                    };
+                                    let onkeydown = crate::keyboard_activate::activate_on_enter_or_space(activate);
                                     html! {
-                                        <div class="kanban__card"
-                                            onclick={Callback::from(move |_| on_page_selected.emit(meta.clone()))}
-                                        >
+                                        <div class="kanban__card" tabindex="0" {onclick} {onkeydown}>
                                             <span class="kanban__card-title">{ &card.title }</span>
                                         </div>
                                     }

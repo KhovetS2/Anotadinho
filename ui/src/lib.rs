@@ -13,6 +13,7 @@ pub mod dialog;
 pub mod download;
 pub mod embed;
 pub mod html_to_md;
+pub mod keyboard_activate;
 pub mod markdown_render;
 pub mod menu_keyboard;
 pub mod state;

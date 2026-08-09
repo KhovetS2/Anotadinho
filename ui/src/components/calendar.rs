@@ -170,14 +170,23 @@ pub fn calendar(props: &CalendarProps) -> Html {
                 <div class="page-calendar__cell-items">
                     { for day_items.iter().map(|item| {
                         let meta = PageMeta { path: item.path.clone(), title: item.title.clone(), section: "pages".to_string() };
-                        let on_page_selected = on_page_selected.clone();
                         let label = match &item.time {
                             Some(t) => format!("{} {}", t, item.title),
                             None => item.title.clone(),
                         };
+                        let activate = {
+                            let on_page_selected = on_page_selected.clone();
+                            let meta = meta.clone();
+                            Callback::from(move |_: ()| on_page_selected.emit(meta.clone()))
+                        };
+                        let onclick = {
+                            let activate = activate.clone();
+                            Callback::from(move |_: MouseEvent| activate.emit(()))
+                        };
+                        let onkeydown = crate::keyboard_activate::activate_on_enter_or_space(activate);
                         html! {
                             <div class="page-calendar__cell-item" title={label.clone()}
-                                onclick={Callback::from(move |_| on_page_selected.emit(meta.clone()))}>
+                                tabindex="0" {onclick} {onkeydown}>
                                 { label }
                             </div>
                         }
@@ -204,12 +213,19 @@ pub fn calendar(props: &CalendarProps) -> Html {
                                     let path = item.path.clone();
                                     let title = item.title.clone();
                                     let meta = PageMeta { path: path.clone(), title: title.clone(), section: "pages".to_string() };
-                                    let on_page_selected = on_page_selected.clone();
                                     let time_label = item.time.clone();
+                                    let activate = {
+                                        let on_page_selected = on_page_selected.clone();
+                                        let meta = meta.clone();
+                                        Callback::from(move |_: ()| on_page_selected.emit(meta.clone()))
+                                    };
+                                    let onclick = {
+                                        let activate = activate.clone();
+                                        Callback::from(move |_: MouseEvent| activate.emit(()))
+                                    };
+                                    let onkeydown = crate::keyboard_activate::activate_on_enter_or_space(activate);
                                     html! {
-                                        <div class="calendar__item"
-                                            onclick={Callback::from(move |_| on_page_selected.emit(meta.clone()))}
-                                        >
+                                        <div class="calendar__item" tabindex="0" {onclick} {onkeydown}>
                                             if let Some(t) = time_label {
                                                 <span class="calendar__item-time">{ t }</span>
                                             }

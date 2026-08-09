@@ -83,18 +83,27 @@ pub fn task_table(props: &TaskTableProps) -> Html {
                 <table class="task-table__table">
                     <thead>
                         <tr>
-                            <th class="task-table__th" onclick={
+                            { {
                                 let sort_by = sort_by.clone();
-                                Callback::from(move |_| sort_by.set("title".to_string()))
-                            }>{"Título"}</th>
-                            <th class="task-table__th" onclick={
+                                let activate = Callback::from(move |_: ()| sort_by.set("title".to_string()));
+                                let onclick = { let activate = activate.clone(); Callback::from(move |_: MouseEvent| activate.emit(())) };
+                                let onkeydown = crate::keyboard_activate::activate_on_enter_or_space(activate);
+                                html! { <th class="task-table__th" tabindex="0" {onclick} {onkeydown}>{"Título"}</th> }
+                            } }
+                            { {
                                 let sort_by = sort_by.clone();
-                                Callback::from(move |_| sort_by.set("status".to_string()))
-                            }>{"Status"}</th>
-                            <th class="task-table__th" onclick={
+                                let activate = Callback::from(move |_: ()| sort_by.set("status".to_string()));
+                                let onclick = { let activate = activate.clone(); Callback::from(move |_: MouseEvent| activate.emit(())) };
+                                let onkeydown = crate::keyboard_activate::activate_on_enter_or_space(activate);
+                                html! { <th class="task-table__th" tabindex="0" {onclick} {onkeydown}>{"Status"}</th> }
+                            } }
+                            { {
                                 let sort_by = sort_by.clone();
-                                Callback::from(move |_| sort_by.set("priority".to_string()))
-                            }>{"Prioridade"}</th>
+                                let activate = Callback::from(move |_: ()| sort_by.set("priority".to_string()));
+                                let onclick = { let activate = activate.clone(); Callback::from(move |_: MouseEvent| activate.emit(())) };
+                                let onkeydown = crate::keyboard_activate::activate_on_enter_or_space(activate);
+                                html! { <th class="task-table__th" tabindex="0" {onclick} {onkeydown}>{"Prioridade"}</th> }
+                            } }
                         </tr>
                     </thead>
                     <tbody>
@@ -102,15 +111,24 @@ pub fn task_table(props: &TaskTableProps) -> Html {
                             let path = task.path.clone();
                             let title = task.title.clone();
                             let meta = PageMeta { path: path.clone(), title: title.clone(), section: "pages".to_string() };
-                            let on_page_selected = on_page_selected.clone();
                             let status_class = match task.status.as_str() {
                                 "done" | "concluido" => "badge badge--success",
                                 "doing" | "em-andamento" => "badge badge--info",
                                 _ => "badge badge--warning"
                             };
+                            let activate = {
+                                let on_page_selected = on_page_selected.clone();
+                                let meta = meta.clone();
+                                Callback::from(move |_: ()| on_page_selected.emit(meta.clone()))
+                            };
+                            let onclick = {
+                                let activate = activate.clone();
+                                Callback::from(move |_: MouseEvent| activate.emit(()))
+                            };
+                            let onkeydown = crate::keyboard_activate::activate_on_enter_or_space(activate);
                             html! {
                                 <tr class="task-table__row" style="cursor:pointer"
-                                    onclick={Callback::from(move |_| on_page_selected.emit(meta.clone()))}
+                                    tabindex="0" {onclick} {onkeydown}
                                 >
                                     <td class="task-table__td">{ &task.title }</td>
                                     <td class="task-table__td"><span class={status_class}>{ &task.status }</span></td>
