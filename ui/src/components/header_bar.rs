@@ -42,19 +42,31 @@ pub struct HeaderBarProps {
 pub fn header_bar(props: &HeaderBarProps) -> Html {
     let menu_open = use_state(|| false);
     let menu_ref = use_node_ref();
+    // Ref à parte pro CONTEÚDO do menu (não o wrapper, que também tem
+    // o botão "⚙" que abre/fecha) — mesma razão do popover de git
+    // logo abaixo.
+    let menu_content_ref = use_node_ref();
     let toggle_menu = { let m = menu_open.clone(); Callback::from(move |_| m.set(!*m)) };
 
     let git_popover_open = use_state(|| false);
     let git_popover_ref = use_node_ref();
+    // Ref à parte pro CONTEÚDO do popover (não o wrapper, que também
+    // contém o botão que abre/fecha) — sem isso, "focar o primeiro
+    // botão" acharia o próprio botão de abrir, não os itens de dentro.
+    let git_popover_content_ref = use_node_ref();
     let toggle_git_popover = { let p = git_popover_open.clone(); Callback::from(move |_| p.set(!*p)) };
 
-    // Mesmo padrão de fechar ao clicar fora/Escape do menu ⚙ acima.
+    // Mesmo padrão de fechar ao clicar fora/Escape do menu ⚙ acima —
+    // ganha foco automático no primeiro item + setas pra navegar
+    // (ciclo 125, mesma técnica em `crate::menu_keyboard`).
     {
         let git_popover_open = git_popover_open.clone();
         let git_popover_ref = git_popover_ref.clone();
+        let git_popover_content_ref = git_popover_content_ref.clone();
         use_effect_with(*git_popover_open, move |open| {
             let mut listeners = Vec::new();
             if *open {
+                crate::menu_keyboard::focus_first_item(&git_popover_content_ref);
                 let window = web_sys::window().expect("no global window");
                 let close_on_outside = {
                     let git_popover_open = git_popover_open.clone();
@@ -70,10 +82,20 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                 };
                 let close_on_escape = {
                     let git_popover_open = git_popover_open.clone();
+                    let git_popover_content_ref = git_popover_content_ref.clone();
                     EventListener::new(&window, "keydown", move |e| {
                         if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
-                            if e.key() == "Escape" {
-                                git_popover_open.set(false);
+                            match e.key().as_str() {
+                                "Escape" => git_popover_open.set(false),
+                                "ArrowDown" => {
+                                    e.prevent_default();
+                                    crate::menu_keyboard::move_item_focus(&git_popover_content_ref, 1);
+                                }
+                                "ArrowUp" => {
+                                    e.prevent_default();
+                                    crate::menu_keyboard::move_item_focus(&git_popover_content_ref, -1);
+                                }
+                                _ => {}
                             }
                         }
                     })
@@ -149,9 +171,11 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
     {
         let menu_open = menu_open.clone();
         let menu_ref = menu_ref.clone();
+        let menu_content_ref = menu_content_ref.clone();
         use_effect_with(*menu_open, move |open| {
             let mut listeners = Vec::new();
             if *open {
+                crate::menu_keyboard::focus_first_item(&menu_content_ref);
                 let window = web_sys::window().expect("no global window");
 
                 let close_on_outside = {
@@ -168,10 +192,20 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                 };
                 let close_on_escape = {
                     let menu_open = menu_open.clone();
+                    let menu_content_ref = menu_content_ref.clone();
                     EventListener::new(&window, "keydown", move |e| {
                         if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
-                            if e.key() == "Escape" {
-                                menu_open.set(false);
+                            match e.key().as_str() {
+                                "Escape" => menu_open.set(false),
+                                "ArrowDown" => {
+                                    e.prevent_default();
+                                    crate::menu_keyboard::move_item_focus(&menu_content_ref, 1);
+                                }
+                                "ArrowUp" => {
+                                    e.prevent_default();
+                                    crate::menu_keyboard::move_item_focus(&menu_content_ref, -1);
+                                }
+                                _ => {}
                             }
                         }
                     })
@@ -199,7 +233,7 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                             { format!("⎇ {}", files.len()) }
                         </button>
                         if *git_popover_open {
-                            <div class="git-status__popover">
+                            <div class="git-status__popover" ref={git_popover_content_ref}>
                                 if files.is_empty() {
                                     <p class="git-status__empty">{ "Sem mudanças" }</p>
                                 } else {
@@ -232,7 +266,7 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                 <div class="header-menu-wrapper" ref={menu_ref}>
                     <button class="btn btn--ghost btn--xs" onclick={toggle_menu}>{ "⚙" }</button>
                     if *menu_open {
-                        <div class="header-menu">
+                        <div class="header-menu" ref={menu_content_ref}>
                             <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
                                 let menu_open = menu_open.clone();
                                 let on_open_vault = props.on_open_vault.clone();
