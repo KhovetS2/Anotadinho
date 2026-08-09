@@ -236,10 +236,31 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
                         let meta = PageMeta { path: node.path.clone(), title: node.title.clone(), section: node.section.clone() };
                         let onclick = {
                             let on_page_selected = on_page_selected.clone();
+                            let meta = meta.clone();
                             Callback::from(move |_: MouseEvent| on_page_selected.emit(meta.clone()))
                         };
+                        // Ciclo 126: nós de um grafo SVG não são
+                        // focáveis/operáveis por teclado por padrão — só
+                        // `onclick` não alcança quem navega só com Tab.
+                        // `tabindex="0"` bota o nó na ordem de tab (na
+                        // ordem em que aparecem no círculo); Enter/Espaço
+                        // reaproveita o mesmo callback do clique.
+                        let onkeydown = {
+                            let on_page_selected = on_page_selected.clone();
+                            let meta = meta.clone();
+                            Callback::from(move |e: KeyboardEvent| {
+                                // `.key()` é o certo pra espaço (" ", literal) num
+                                // navegador de verdade; `.code() == "Space"` é
+                                // reforço pra ferramentas de automação/drivers que
+                                // mandam o nome do código em vez do caractere.
+                                if e.key() == "Enter" || e.key() == " " || e.code() == "Space" {
+                                    e.prevent_default();
+                                    on_page_selected.emit(meta.clone());
+                                }
+                            })
+                        };
                         html! {
-                            <g class="graph-view__node" {onclick}>
+                            <g class="graph-view__node" tabindex="0" {onclick} {onkeydown}>
                                 <circle cx={node.x.to_string()} cy={node.y.to_string()} r="8" />
                                 <text x={(node.x + 12.0).to_string()} y={(node.y + 4.0).to_string()}>{ &node.title }</text>
                             </g>

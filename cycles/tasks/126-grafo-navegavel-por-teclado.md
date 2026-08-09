@@ -1,7 +1,7 @@
 ---
 id: "126"
 titulo: "Grafo navegavel por teclado"
-status: pending
+status: done
 criado: 2026-08-09
 autor: humano
 prioridade: media
@@ -21,24 +21,25 @@ abrir uma página do grafo sem mouse.
 
 ## Critérios de aceite
 
-- [ ] Cada `<g class="graph-view__node">` ganha `tabindex="0"` — vira
+- [x] Cada `<g class="graph-view__node">` ganha `tabindex="0"` — vira
       alcançável via Tab, na ordem dos nós (mesma ordem do círculo,
       `2πi/n`)
-- [ ] Enter/Espaço com um nó focado ativa a navegação (mesmo callback
-      do `onclick` já existente)
-- [ ] Indicador de foco visível no nó (ciclo 123 cobre o caso genérico
-      via CSS, mas `outline` em elementos SVG tem suporte inconsistente
-      entre navegadores — se `:focus-visible` com `outline` não
-      aparecer direito no WebKitGTK, usar alternativa SVG-nativa: ex.
-      `.graph-view__node:focus-visible circle { stroke: var(--accent-blue);
-      stroke-width: 3; }`)
-- [ ] Setas do teclado (↑↓←→) movem o foco pro nó mais próximo nessa
-      direção (opcional/bom-ter — se a heurística de "mais próximo"
-      ficar complicada demais, Tab/Shift+Tab em ordem já é aceitável
-      pra v1; documentar a decisão tomada)
-- [ ] `cd ui && cargo test --lib`, `trunk build` passam
-- [ ] Validação ao vivo via MCP `tauri`: Tab até um nó do grafo,
-      confirma foco visível, Enter abre a página
+- [x] Enter/Espaço com um nó focado ativa a navegação (mesmo callback
+      do `onclick` já existente) — checa `.key()` ("Enter"/`" "`) E
+      `.code() == "Space"` como reforço (ver Notas)
+- [x] Indicador de foco visível no nó — `outline` trocado por `stroke`
+      no `<circle>` via `:focus-visible`, mais confiável dentro de SVG
+      (decisão já prevista neste critério, confirmada necessária)
+- [x] Setas do teclado (↑↓←→) pra mover o foco pro nó mais próximo:
+      NÃO implementado — Tab/Shift+Tab em ordem do círculo é
+      suficiente pra v1, conforme a flexibilidade prevista neste
+      próprio critério; heurística de "mais próximo" ficaria
+      desproporcional ao valor pro tamanho de vault atual
+- [x] `cd ui && cargo test --lib`, `trunk build` passam
+- [x] Validação ao vivo via MCP `tauri`: nó focado programaticamente
+      (mesma limitação de automação dos ciclos 123/124 pra Tab
+      nativo), Enter abriu a página ("missao"), Space (depois do
+      reforço `.code()`) abriu outra ("roadmap")
 
 ## Comandos de validação
 
@@ -60,4 +61,16 @@ cd ui && trunk build
 
 Depende do ciclo 123 (regra genérica de `:focus-visible`) já existir,
 pra decidir se precisa de CSS específico pro SVG ou se o genérico já
-resolve — testar primeiro antes de escrever CSS extra.
+resolve — testar primeiro antes de escrever CSS extra. Resultado:
+precisou de CSS específico mesmo (`stroke` no `<circle>` em vez de
+`outline` no `<g>`), como o critério já previa como possibilidade.
+
+**Quirk do driver MCP encontrado durante a validação** (não bug do
+app): `webview_keyboard press Space` manda `KeyboardEvent.key ===
+"Space"` (o nome do código), não `" "` (o caractere literal, que é o
+valor correto por spec pra `.key` num navegador de verdade). Meu
+handler original só checava `e.key() == " "`, então Space não
+disparava durante o teste — reforcei com `e.code() == "Space"`
+também (que É "Space" por spec, então cobre tanto navegador real
+quanto esse driver). Não muda o comportamento pra um usuário com
+teclado físico de verdade, só torna o handler mais tolerante.

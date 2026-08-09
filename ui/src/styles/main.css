@@ -1963,6 +1963,19 @@ body {
     fill: var(--accent-blue);
 }
 
+/* Foco visível (ciclo 126) — `outline` em elementos SVG tem suporte
+   inconsistente entre motores; usa `stroke` no círculo, que é sempre
+   confiável dentro de SVG. */
+.graph-view__node:focus-visible {
+    outline: none;
+}
+
+.graph-view__node:focus-visible circle {
+    stroke: var(--accent-blue);
+    stroke-width: 3;
+    r: 11;
+}
+
 /* Página type: tags */
 .tags-page {
     flex: 1;
