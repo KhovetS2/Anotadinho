@@ -83,3 +83,18 @@ columns:
 {{ /table }}
 
 Acima do embed você pode ter texto normal. Abaixo também.
+
+## PDF Embed
+
+Diferente dos blocos acima (`{{ type: "..." }}`, sintaxe de fence
+explícita), embed de PDF é automático: qualquer link markdown normal
+apontando pra um arquivo `.pdf` em `assets/` vira um frame com scroll
+interno sozinho, sem precisar de sintaxe especial — só um link comum:
+
+[Relatório de exemplo](assets/exemplo-relatorio.pdf)
+
+Clicar/scrollar dentro do frame acima navega dentro do PDF (zoom, busca
+e paginação do próprio visualizador do WebView), sem abrir outro
+programa. Ao salvar a página, o link markdown original é preservado
+tal qual — o frame é só uma forma de exibir, o arquivo `.md` continua
+guardando `[texto](caminho.pdf)`.

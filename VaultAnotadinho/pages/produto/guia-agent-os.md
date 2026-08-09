@@ -22,6 +22,7 @@ pages/
 │   ├── missao.md          "por que" o produto existe
 │   ├── roadmap.md          type: kanban — backlog/todo/doing/done
 │   ├── stack-tecnico.md    tecnologias escolhidas e por quê
+│   ├── grafo.md            type: graph — conexões via [[wikilinks]]
 │   └── guia-agent-os.md    esta página
 ├── specs/                 ← uma página por feature (via template "spec")
 ├── decisoes/               ← uma página por decisão (via template "decisão")
@@ -56,6 +57,9 @@ comandos de validação, riscos, não-objetivos. Ver
 **Padrões** (`pages/padroes/`) — como construir. Uma página por
 domínio (API, testes, nomenclatura, frontend...), criada via template
 "padrão de código". Ver [[Nomenclatura]] como exemplo.
+
+O [[Grafo do Vault]] (`type: graph`) mostra visualmente essas conexões
+— todas as páginas como nós, wikilinks como arestas.
 
 Decisões (`pages/decisoes/`) atravessam as 3 camadas — registram
 POR QUE uma escolha técnica ou de produto foi feita, geralmente
@@ -94,14 +98,17 @@ customizadas (`extra`, ciclo 098).
 
 ## Operando via CLI (`anotadinho-cli`)
 
-Pra um agente headless (sem a janela do Tauri aberta), ciclo 110:
+Pra um agente headless (sem a janela do Tauri aberta):
 
 ```bash
-# lista specs pendentes (grep no output, já que o CLI não filtra por status ainda)
-anotadinho-cli --vault VaultAnotadinho --json list-pages | jq '.[] | select(.path | startswith("pages/specs/"))'
+# lista specs em backlog (filtro nativo, ciclo 115)
+anotadinho-cli --vault VaultAnotadinho list-pages --folder pages/specs --status backlog
 
 # lê uma spec inteira (frontmatter + corpo)
 anotadinho-cli --vault VaultAnotadinho read pages/specs/exemplo-exportar-nota-em-pdf.md
+
+# muda o status de uma spec sem editar o .md na mão (ciclo 116)
+anotadinho-cli --vault VaultAnotadinho set-property pages/specs/minha-spec.md status in-progress
 
 # busca full-text em specs/decisões/padrões
 anotadinho-cli --vault VaultAnotadinho search "termo"
@@ -113,8 +120,5 @@ anotadinho-cli --vault VaultAnotadinho export --folder pages/specs
 anotadinho-cli --vault VaultAnotadinho new-from-template templates/spec.md "Minha feature nova"
 ```
 
-`anotadinho-cli` não tem (ainda) um filtro nativo por `status`/
-`priority` — hoje isso é feito lendo o frontmatter de cada página
-(`read` + parse do YAML) do lado de quem chama. Se isso virar um
-gargalo real de uso, é candidato a um ciclo futuro (`list-pages
---status in-progress`, por exemplo).
+O binário sai empacotado junto com a GUI a partir de `./scripts/build.sh`
+(ciclo 114) — não precisa de build separado pra ter os dois.
