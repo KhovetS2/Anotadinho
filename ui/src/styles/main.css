@@ -60,6 +60,26 @@
     padding: 0;
 }
 
+/* Foco visível global (ciclo 123) — `:focus-visible` (não `:focus`)
+   só aparece navegando por teclado, nunca em clique de mouse; a
+   maioria dos motores (incluindo WebKitGTK) já traz essa heurística
+   de fábrica. Antes deste ciclo não existia NENHUMA regra de foco
+   visível na aplicação inteira — Tab não mostrava onde o foco estava
+   em lugar nenhum. Seletor genérico o suficiente pra cobrir botões,
+   links, campos e qualquer elemento com `tabindex` sem precisar
+   listar classe por classe; componentes específicos podem sobrepor
+   com um indicador mais adequado ao contexto deles (ver
+   `.editor__wysiwyg`/`.task-table__*-input` mais abaixo). */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+}
+
 html,
 body {
     height: 100%;
@@ -939,6 +959,16 @@ body {
     font-size: 0.9375rem;
     line-height: 1.7;
     min-height: 0;
+}
+
+/* Sem outline grande (ciclo 123): é a área de edição principal, o
+   cursor de texto piscando já é o indicador de foco enquanto se
+   digita — um contorno grosso ao redor do painel inteiro a cada
+   tecla seria ruído visual. Mas ANTES de começar a digitar (ex: Tab
+   chegou até aqui vindo da sidebar), precisa de algum sinal — uma
+   sombra interna sutil no lugar do outline padrão. */
+.editor__wysiwyg:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--accent-blue);
 }
 
 /* Página com embeds inline (kanban/calendar/table): o corpo vira uma
@@ -2401,6 +2431,13 @@ body {
     outline: none;
 }
 
+/* Substitui o outline padrão (que ficaria torto numa célula sem
+   borda) por um realce de fundo sutil (ciclo 123). */
+.task-table__number-input:focus-visible {
+    background: var(--bg-elevated);
+    border-radius: var(--r-sm);
+}
+
 .task-table__text-input {
     background: transparent;
     border: none;
@@ -2423,6 +2460,12 @@ body {
 }
 .task-table__text-input:focus {
     outline: none;
+}
+
+/* Mesmo realce sutil do input numérico acima (ciclo 123). */
+.task-table__text-input:focus-visible {
+    background: var(--bg-elevated);
+    border-radius: var(--r-sm);
 }
 
 .task-table__date-chip {
