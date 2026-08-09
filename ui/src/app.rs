@@ -89,6 +89,61 @@ pub fn app() -> Html {
     };
     let global_keymap = use_state(state::load_global_keymap);
     let global_keymap_settings_open = use_state(|| false);
+    // Modo de navegação hierárquico por teclado (ciclo 133) —
+    // `nav_mode_enabled` é a capacidade (persistida, alternada via
+    // `toggle_nav_mode` no `GlobalKeymap`, mesmo padrão do vim mode);
+    // `nav_mode_active`/`nav_stack` são a SESSÃO de navegação em si,
+    // sempre transitórias — começam em `false`/vazia a cada boot,
+    // mesmo com a capacidade ligada (entra na primeira seta
+    // pressionada, não precisa persistir "estava navegando"). Pilha
+    // vazia = nível raiz (grupo `"root"` de `nav_mode.rs`); cada
+    // entrada é o id de um grupo (`data-nav-group`) em que o usuário
+    // desceu via Enter.
+    let nav_mode_enabled = use_state(state::load_nav_mode_enabled);
+    let toggle_nav_mode = {
+        let nav_mode_enabled = nav_mode_enabled.clone();
+        Callback::from(move |_: ()| {
+            let next = !*nav_mode_enabled;
+            state::save_nav_mode_enabled(next);
+            nav_mode_enabled.set(next);
+        })
+    };
+    let nav_mode_active = use_state(|| false);
+    let nav_stack = use_state(Vec::<String>::new);
+    // Destaque visual do GRUPO atual (não só do item focado — o
+    // usuário pediu especificamente pra saber "em qual wrapper está",
+    // e `:focus-visible` já cuida do item em si). Imperativo porque o
+    // elemento do grupo pode viver em qualquer componente filho
+    // (header/sidebar/tabbar) sem precisar passar `nav_stack` como
+    // prop pra cada um só pra isso — mesma filosofia de "consultar o
+    // DOM ao vivo" do resto do nav-mode.
+    {
+        let nav_mode_active = nav_mode_active.clone();
+        let nav_stack = nav_stack.clone();
+        use_effect_with((*nav_mode_active, (*nav_stack).clone()), move |(active, stack)| {
+            if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                if let Ok(stale) = doc.query_selector_all(".nav-mode__region-active") {
+                    for i in 0..stale.length() {
+                        if let Some(el) = stale.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) {
+                            let _ = el.class_list().remove_1("nav-mode__region-active");
+                        }
+                    }
+                }
+                if *active {
+                    if let Some(group_id) = stack.last() {
+                        if let Some(el) = doc
+                            .query_selector(&format!("[data-nav-group=\"{}\"]", group_id.replace('"', "")))
+                            .ok()
+                            .flatten()
+                        {
+                            let _ = el.class_list().add_1("nav-mode__region-active");
+                        }
+                    }
+                }
+            }
+            || {}
+        });
+    }
     let on_global_keymap_change = {
         let global_keymap = global_keymap.clone();
         Callback::from(move |new_keymap: state::GlobalKeymap| {
@@ -626,6 +681,10 @@ pub fn app() -> Html {
         let sidebar_activate_nav = sidebar_activate_nav.clone();
         let sidebar_activate_nav_nonce = sidebar_activate_nav_nonce.clone();
         let cheatsheet_open = cheatsheet_open.clone();
+        let nav_mode_enabled = nav_mode_enabled.clone();
+        let nav_mode_active = nav_mode_active.clone();
+        let nav_stack = nav_stack.clone();
+        let toggle_nav_mode = toggle_nav_mode.clone();
         Callback::from(move |e: KeyboardEvent| {
             let ctrl = e.ctrl_key() || e.meta_key();
 
@@ -633,6 +692,135 @@ pub fn app() -> Html {
                 e.prevent_default();
                 cheatsheet_open.set(true);
                 return;
+            }
+
+            // Modo de navegação hierárquico (ciclo 133) — vem ANTES do
+            // Escape genérico logo abaixo porque, com uma sessão
+            // ativa, Escape pertence ao nav-mode (sobe um nível ou sai
+            // de vez), não ao "desselecionar página" de sempre. Setas
+            // não usam Ctrl (igual Backspace/Enter aqui dentro), por
+            // isso esse bloco também precisa vir antes do
+            // `if !ctrl { return; }` logo abaixo.
+            if !ctrl {
+                let key = e.key();
+                if *nav_mode_active {
+                    let doc = web_sys::window().and_then(|w| w.document());
+                    match key.as_str() {
+                        "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft" => {
+                            e.prevent_default();
+                            if let Some(doc) = doc {
+                                let group_id = nav_stack.last().cloned().unwrap_or_else(|| "root".to_string());
+                                let items = crate::nav_mode::items_in_group(&doc, &group_id);
+                                if !items.is_empty() {
+                                    let active = doc.active_element();
+                                    let idx = crate::nav_mode::index_of(&items, active.as_ref());
+                                    let forward = matches!(key.as_str(), "ArrowDown" | "ArrowRight");
+                                    let next_idx = match idx {
+                                        Some(i) if forward => (i + 1) % items.len(),
+                                        Some(i) => (i + items.len() - 1) % items.len(),
+                                        None => 0,
+                                    };
+                                    crate::nav_mode::focus_item(&items[next_idx]);
+                                }
+                            }
+                            return;
+                        }
+                        "Enter" => {
+                            e.prevent_default();
+                            if let Some(doc) = doc {
+                                if let Some(active) = doc.active_element() {
+                                    if let Some(delegate) = crate::nav_mode::delegate_of(&active) {
+                                        // Entrega o teclado pra um sistema de
+                                        // navegação já existente (sidebar,
+                                        // ciclo 106; ou o Ctrl+L de sempre pro
+                                        // editor) — nav-mode sai da sessão em
+                                        // vez de tentar navegar dentro.
+                                        match delegate.as_str() {
+                                            "sidebar" => {
+                                                let mut nonce = sidebar_activate_nav_nonce.borrow_mut();
+                                                *nonce += 1;
+                                                sidebar_activate_nav.set(Some(*nonce));
+                                            }
+                                            "editor" => {
+                                                if let Some(el) = doc
+                                                    .query_selector(".editor__wysiwyg[contenteditable=\"true\"]")
+                                                    .ok()
+                                                    .flatten()
+                                                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+                                                {
+                                                    let _ = el.focus();
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                        nav_mode_active.set(false);
+                                        nav_stack.set(Vec::new());
+                                    } else if let Some(group_id) = crate::nav_mode::group_of(&active) {
+                                        // Desce um nível — vira o grupo atual.
+                                        let mut stack = (*nav_stack).clone();
+                                        stack.push(group_id.clone());
+                                        let items = crate::nav_mode::items_in_group(&doc, &group_id);
+                                        if let Some(first) = items.first() {
+                                            crate::nav_mode::focus_item(first);
+                                        }
+                                        nav_stack.set(stack);
+                                    } else if let Some(html_el) = active.dyn_ref::<web_sys::HtmlElement>() {
+                                        // Folha — mesma ação de um clique real.
+                                        html_el.click();
+                                    }
+                                }
+                            }
+                            return;
+                        }
+                        "Backspace" => {
+                            e.prevent_default();
+                            let mut stack = (*nav_stack).clone();
+                            stack.pop();
+                            let new_group = stack.last().cloned().unwrap_or_else(|| "root".to_string());
+                            nav_stack.set(stack);
+                            if let Some(doc) = doc {
+                                let items = crate::nav_mode::items_in_group(&doc, &new_group);
+                                if let Some(first) = items.first() {
+                                    crate::nav_mode::focus_item(first);
+                                }
+                            }
+                            return;
+                        }
+                        "Escape" => {
+                            e.prevent_default();
+                            if nav_stack.is_empty() {
+                                nav_mode_active.set(false);
+                            } else {
+                                nav_stack.set(Vec::new());
+                                if let Some(doc) = doc {
+                                    let items = crate::nav_mode::items_in_group(&doc, "root");
+                                    if let Some(first) = items.first() {
+                                        crate::nav_mode::focus_item(first);
+                                    }
+                                }
+                            }
+                            return;
+                        }
+                        _ => {}
+                    }
+                } else if *nav_mode_enabled
+                    && !is_text_input_target(&e)
+                    && matches!(key.as_str(), "ArrowDown" | "ArrowUp" | "ArrowLeft" | "ArrowRight")
+                {
+                    // Primeira seta com a capacidade ligada — inicia a
+                    // sessão direto na lista de regiões de topo, sem
+                    // precisar de uma tecla dedicada só pra "entrar".
+                    e.prevent_default();
+                    nav_mode_active.set(true);
+                    nav_stack.set(Vec::new());
+                    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                        let items = crate::nav_mode::items_in_group(&doc, "root");
+                        if let Some(first) = items.first() {
+                            crate::nav_mode::focus_item(first);
+                        }
+                    }
+                    return;
+                }
             }
 
             if e.key() == "Escape" {
@@ -707,6 +895,9 @@ pub fn app() -> Html {
             } else if matches(&km.toggle_vim_mode) {
                 e.prevent_default();
                 toggle_vim_mode.emit(());
+            } else if matches(&km.toggle_nav_mode) {
+                e.prevent_default();
+                toggle_nav_mode.emit(());
             } else if matches(&km.next_tab) {
                 e.prevent_default();
                 let tabs = (*open_tabs).clone();
@@ -790,6 +981,15 @@ pub fn app() -> Html {
                 on_close_vault={on_close_vault}
                 on_open_vault={on_open_vault_shortcut}
             />
+            if *nav_mode_active {
+                <span class="nav-mode-badge">
+                    { if nav_stack.is_empty() {
+                        "-- NAV: Regiões --".to_string()
+                    } else {
+                        format!("-- NAV: {} --", nav_stack.join(" > "))
+                    } }
+                </span>
+            }
             if vault_open {
                 <div class="app-layout">
                     <div class="app-body">
@@ -801,7 +1001,8 @@ pub fn app() -> Html {
                             open_dialog={open_dialog.clone()}
                             activate_nav_signal={*sidebar_activate_nav}
                         />
-                        <div class="app-main-panel">
+                        <div class="app-main-panel" tabindex="0"
+                            data-nav-item="editor" data-nav-parent="root" data-nav-delegate="editor">
                             <TabBar
                                 tabs={(*open_tabs).clone()}
                                 active_path={selected_page.as_ref().map(|p| p.path.clone())}

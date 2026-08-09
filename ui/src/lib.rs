@@ -16,6 +16,7 @@ pub mod html_to_md;
 pub mod keyboard_activate;
 pub mod markdown_render;
 pub mod menu_keyboard;
+pub mod nav_mode;
 pub mod state;
 pub mod wikilink;
 

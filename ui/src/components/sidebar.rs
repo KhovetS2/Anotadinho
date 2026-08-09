@@ -711,7 +711,8 @@ pub fn sidebar(props: &SidebarProps) -> Html {
     let has_results = !all_pages.is_empty() || filter.is_empty();
 
     html! {
-        <aside class={ if props.collapsed { "app-sidebar app-sidebar--collapsed" } else { "app-sidebar" } }>
+        <aside class={ if props.collapsed { "app-sidebar app-sidebar--collapsed" } else { "app-sidebar" } }
+            tabindex="0" data-nav-item="sidebar" data-nav-parent="root" data-nav-delegate="sidebar">
             if props.collapsed {
                 <div class="sidebar-collapsed" title="Expandir sidebar">
                     <span class="sidebar-collapsed__icon" title="Pages">{ "📄" }</span>

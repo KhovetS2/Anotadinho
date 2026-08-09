@@ -1457,6 +1457,34 @@ body {
     color: var(--success);
 }
 
+/* Modo de navegação hierárquico (ciclo 133) — badge de canto sempre
+   visível durante uma sessão ativa (independe de qual componente tem
+   foco no momento, por isso `position: fixed` em vez de viver dentro
+   de algum componente específico como o indicador do vim mode faz). */
+.nav-mode-badge {
+    position: fixed;
+    bottom: 12px;
+    right: 12px;
+    z-index: 80;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 0.6875rem;
+    padding: 4px 10px;
+    border-radius: var(--r-sm);
+    letter-spacing: 0.02em;
+    background: color-mix(in srgb, var(--accent-blue) 20%, transparent);
+    color: var(--accent-blue);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    pointer-events: none;
+}
+
+/* Destaque do CONTAINER do grupo atual — diferente de `:focus-visible`
+   (que já marca o item focado em si), isso marca o "wrapper" inteiro
+   em que a sessão está no momento, pedido explícito do usuário. */
+.nav-mode__region-active {
+    box-shadow: inset 0 0 0 2px var(--accent-blue);
+}
+
 /* Mermaid diagrams */
 .editor__wysiwyg .mermaid {
     background: var(--bg-surface);

@@ -218,9 +218,10 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
     }
 
     html! {
-        <header class="header-bar">
+        <header class="header-bar" tabindex="0" data-nav-item="header" data-nav-parent="root" data-nav-group="header">
             <div class="header-bar__left">
-                <button class="btn btn--ghost btn--xs" onclick={props.on_toggle_sidebar.reform(|_| ())}>
+                <button class="btn btn--ghost btn--xs" onclick={props.on_toggle_sidebar.reform(|_| ())}
+                    data-nav-item="header-sidebar-toggle" data-nav-parent="header">
                     { if props.sidebar_collapsed { "▶" } else { "◀" } }
                 </button>
                 <span class="header-bar__title">{ "Anotadinho" }</span>
@@ -229,7 +230,8 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                 }
                 if let Some(ref files) = props.git_files {
                     <div class="git-status-wrapper" ref={git_popover_ref}>
-                        <button class="btn btn--ghost btn--xs git-status__indicator" onclick={toggle_git_popover} title="Status do git">
+                        <button class="btn btn--ghost btn--xs git-status__indicator" onclick={toggle_git_popover} title="Status do git"
+                            data-nav-item="header-git" data-nav-parent="header">
                             { format!("⎇ {}", files.len()) }
                         </button>
                         if *git_popover_open {
@@ -260,11 +262,13 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                 }
             </div>
             <div class="header-bar__right">
-                <button class="btn btn--ghost btn--xs" onclick={props.on_toggle_theme.reform(|_| ())}>
+                <button class="btn btn--ghost btn--xs" onclick={props.on_toggle_theme.reform(|_| ())}
+                    data-nav-item="header-theme" data-nav-parent="header">
                     { if props.theme_light { "☀" } else { "🌙" } }
                 </button>
                 <div class="header-menu-wrapper" ref={menu_ref}>
-                    <button class="btn btn--ghost btn--xs" onclick={toggle_menu}>{ "⚙" }</button>
+                    <button class="btn btn--ghost btn--xs" onclick={toggle_menu}
+                        data-nav-item="header-menu" data-nav-parent="header">{ "⚙" }</button>
                     if *menu_open {
                         <div class="header-menu" ref={menu_content_ref}>
                             <button class="header-menu__item btn btn--ghost btn--sm" onclick={{

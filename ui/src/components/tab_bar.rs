@@ -23,7 +23,7 @@ pub fn tab_bar(props: &TabBarProps) -> Html {
     }
 
     html! {
-        <div class="tab-bar">
+        <div class="tab-bar" tabindex="0" data-nav-item="tabbar" data-nav-parent="root" data-nav-group="tabbar">
             { for props.tabs.iter().enumerate().map(|(i, tab)| {
                 let is_active = props.active_path.as_deref() == Some(tab.path.as_str());
                 let is_home = props.home_path.as_deref() == Some(tab.path.as_str());
@@ -39,10 +39,26 @@ pub fn tab_bar(props: &TabBarProps) -> Html {
                     Some(n) => format!("{} (Ctrl+{})", tab.title, n),
                     None => tab.title.clone(),
                 };
+                // Ciclo 133: a tab-bar nunca teve NENHUM suporte de
+                // teclado (nem tabindex) — reaproveita o mesmo helper
+                // já usado por kanban/calendário/tabela/tags (ciclo
+                // 127) pra Enter/Espaço equivalerem ao clique.
+                let activate = {
+                    let on_select = on_select.clone();
+                    let meta = meta.clone();
+                    Callback::from(move |_: ()| on_select.emit(meta.clone()))
+                };
+                let onclick = {
+                    let activate = activate.clone();
+                    Callback::from(move |_: MouseEvent| activate.emit(()))
+                };
+                let onkeydown = crate::keyboard_activate::activate_on_enter_or_space(activate);
+                let nav_item_id = format!("tab-{}", i);
                 html! {
                     <div {class}>
-                        <span class="tab-bar__tab-title" {title}
-                            onclick={Callback::from(move |_| on_select.emit(meta.clone()))}>
+                        <span class="tab-bar__tab-title" {title} tabindex="0"
+                            data-nav-item={nav_item_id} data-nav-parent="tabbar"
+                            {onclick} {onkeydown}>
                             if let Some(n) = shortcut_num {
                                 <span class="tab-bar__tab-num">{ n }</span>
                             }

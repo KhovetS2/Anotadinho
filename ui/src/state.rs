@@ -13,6 +13,7 @@ const KEY_HOME_PAGE_PREFIX: &str = "anotadinho.home_page::";
 const KEY_VIM_MODE_ENABLED: &str = "anotadinho.vim_mode_enabled";
 const KEY_VIM_KEYMAP: &str = "anotadinho.vim_keymap";
 const KEY_GLOBAL_KEYMAP: &str = "anotadinho.global_keymap";
+const KEY_NAV_MODE_ENABLED: &str = "anotadinho.nav_mode_enabled";
 
 /// Mapa de teclas do modo Normal do vim mode — cada ação tem UMA tecla
 /// configurável. `delete_line`/`yank_line` são especiais: pressionar a
@@ -155,6 +156,13 @@ pub struct GlobalKeymap {
     /// Mesma ideia de `focus_sidebar`, mas pro editor — comportamento
     /// completo é responsabilidade de ciclos futuros.
     pub focus_editor: String,
+    /// Liga/desliga a CAPACIDADE do modo de navegação hierárquico
+    /// (ciclo 133) — mesmo padrão de `toggle_vim_mode`. Enquanto
+    /// ligado, a primeira seta pressionada fora de um campo de texto
+    /// já inicia uma sessão de navegação (Enter/Backspace/Escape são
+    /// fixos dentro da sessão, não remapeáveis aqui — ver
+    /// `ui/src/nav_mode.rs`).
+    pub toggle_nav_mode: String,
 }
 
 impl Default for GlobalKeymap {
@@ -223,6 +231,10 @@ impl Default for GlobalKeymap {
             // (`<C-l>` → `<C-w><C-l>`) — no Anotadinho, sidebar fica à
             // esquerda e o editor à direita, mesma geometria mental.
             focus_editor: "l".into(),
+            // "r" = livre no alfabeto já quase todo ocupado (mnemônico
+            // fraco, tipo "roam"/"reach" — documentado pra não parecer
+            // acidental, mesma categoria de `view_assets`="u" acima).
+            toggle_nav_mode: "r".into(),
         }
     }
 }
@@ -248,6 +260,7 @@ impl GlobalKeymap {
             ("Alternar vim mode", &self.toggle_vim_mode),
             ("Focar sidebar", &self.focus_sidebar),
             ("Focar editor", &self.focus_editor),
+            ("Alternar modo de navegação", &self.toggle_nav_mode),
         ]
     }
 
@@ -272,6 +285,7 @@ impl GlobalKeymap {
             "Alternar vim mode" => self.toggle_vim_mode = key,
             "Focar sidebar" => self.focus_sidebar = key,
             "Focar editor" => self.focus_editor = key,
+            "Alternar modo de navegação" => self.toggle_nav_mode = key,
             _ => {}
         }
     }
@@ -395,6 +409,16 @@ pub fn load_vim_keymap() -> VimKeymap {
     gloo_storage::LocalStorage::get(KEY_VIM_KEYMAP).unwrap_or_default()
 }
 
+/// Salva se o modo de navegação hierárquico (ciclo 133) está ativado.
+pub fn save_nav_mode_enabled(enabled: bool) {
+    let _ = gloo_storage::LocalStorage::set(KEY_NAV_MODE_ENABLED, enabled);
+}
+
+/// Carrega se o modo de navegação está ativado (padrão: desativado).
+pub fn load_nav_mode_enabled() -> bool {
+    gloo_storage::LocalStorage::get(KEY_NAV_MODE_ENABLED).unwrap_or(false)
+}
+
 /// Salva o mapa de atalhos globais do app.
 pub fn save_global_keymap(keymap: &GlobalKeymap) {
     let _ = gloo_storage::LocalStorage::set(KEY_GLOBAL_KEYMAP, keymap);
@@ -437,6 +461,7 @@ mod tests {
         assert_eq!(km.toggle_vim_mode, "m");
         assert_eq!(km.focus_sidebar, "e");
         assert_eq!(km.focus_editor, "l");
+        assert_eq!(km.toggle_nav_mode, "r");
     }
 
     #[test]
@@ -470,8 +495,8 @@ mod tests {
     }
 
     #[test]
-    fn global_keymap_labeled_fields_has_seventeen_entries() {
+    fn global_keymap_labeled_fields_has_eighteen_entries() {
         let km = GlobalKeymap::default();
-        assert_eq!(km.labeled_fields().len(), 17);
+        assert_eq!(km.labeled_fields().len(), 18);
     }
 }
