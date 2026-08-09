@@ -28,11 +28,20 @@ pub enum PaletteAction {
     ViewAssets,
     ExportVault,
     ViewCheatsheet,
+    /// Cria uma página já nascendo com `type: <page_type>` no
+    /// frontmatter (ciclo 128) — pede só o título (mesmo
+    /// `PendingDialog::Prompt` de `NewPage`), sem passar pelo painel
+    /// de Propriedades pra trocar o tipo depois de criada.
+    NewPageOfType(&'static str),
 }
 
 const COMMANDS: &[(&str, PaletteAction)] = &[
     ("Nova página", PaletteAction::NewPage),
     ("Nova pasta", PaletteAction::NewFolder),
+    ("Nova página: Kanban", PaletteAction::NewPageOfType("kanban")),
+    ("Nova página: Calendário", PaletteAction::NewPageOfType("calendar")),
+    ("Nova página: Tabela de tarefas", PaletteAction::NewPageOfType("table")),
+    ("Nova página: Grafo de conexões", PaletteAction::NewPageOfType("graph")),
     ("Alternar tema", PaletteAction::ToggleTheme),
     ("Alternar sidebar", PaletteAction::ToggleSidebar),
     ("Ir pra Hoje (journal)", PaletteAction::Today),

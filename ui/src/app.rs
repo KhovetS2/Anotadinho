@@ -390,6 +390,36 @@ pub fn app() -> Html {
         });
     }
 
+    // Mesmo padrão de `prompt_title_and_create`, mas cria com um
+    // `page_type` fixo (kanban/calendar/table/graph) em vez de
+    // template — caminho separado porque as duas formas de "resolver
+    // qual conteúdo a página nasce com" (template markdown vs. tipo de
+    // frontmatter) não compartilham o `match` interno sem ficar mais
+    // confuso do que duas funções pequenas.
+    fn prompt_title_and_create_typed(
+        open_dialog: &Callback<PendingDialog>,
+        vault: String,
+        list_version: UseStateHandle<u32>,
+        on_page_selected: Callback<PageMeta>,
+        page_type: &'static str,
+    ) {
+        open_dialog.emit(PendingDialog::Prompt {
+            title: "Título da nova página".to_string(),
+            default: "Nova nota".to_string(),
+            on_submit: Callback::from(move |title: String| {
+                let vault = vault.clone();
+                let list_version = list_version.clone();
+                let on_page_selected = on_page_selected.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    if let Ok(meta) = api::create_page_with_type(&vault, &title, page_type).await {
+                        on_page_selected.emit(meta);
+                        list_version.set(*list_version + 1);
+                    }
+                });
+            }),
+        });
+    }
+
     let new_page_action = {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();
@@ -545,6 +575,10 @@ pub fn app() -> Html {
         let view_assets_action = view_assets_action.clone();
         let export_vault_action = export_vault_action.clone();
         let cheatsheet_open = cheatsheet_open.clone();
+        let vault_path = vault_path.clone();
+        let list_version = list_version.clone();
+        let on_page_selected = on_page_selected.clone();
+        let open_dialog = open_dialog.clone();
         Callback::from(move |action: PaletteAction| match action {
             PaletteAction::NewPage => new_page_action.emit(()),
             PaletteAction::NewFolder => new_folder_action.emit(()),
@@ -555,6 +589,16 @@ pub fn app() -> Html {
             PaletteAction::ViewAssets => view_assets_action.emit(()),
             PaletteAction::ExportVault => export_vault_action.emit(()),
             PaletteAction::ViewCheatsheet => cheatsheet_open.set(true),
+            PaletteAction::NewPageOfType(page_type) => {
+                let vault = (*vault_path).clone().unwrap_or_default();
+                prompt_title_and_create_typed(
+                    &open_dialog,
+                    vault,
+                    list_version.clone(),
+                    on_page_selected.clone(),
+                    page_type,
+                );
+            }
         })
     };
 
