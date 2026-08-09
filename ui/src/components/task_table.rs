@@ -72,7 +72,7 @@ pub fn task_table(props: &TaskTableProps) -> Html {
     let on_page_selected = props.on_page_selected.clone();
 
     html! {
-        <div class="task-table">
+        <div class="task-table" data-nav-content-root="true">
             <div class="task-table__header-row">
                 <h2>{"Tarefas"}</h2>
                 <span class="badge">{ tasks.len() }</span>

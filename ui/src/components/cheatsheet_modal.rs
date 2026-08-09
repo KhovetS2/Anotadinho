@@ -76,6 +76,31 @@ pub fn cheatsheet_modal(props: &CheatsheetModalProps) -> Html {
                         </li>
                     </ul>
                 </div>
+                <div class="cheatsheet__section">
+                    <h4 class="cheatsheet__heading">{ "Modo de navegação (ciclo 133-134, fixos)" }</h4>
+                    <ul class="cheatsheet__list">
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Iniciar sessão (com o modo ligado)" }</span>
+                            <kbd class="cheatsheet__key">{ "↑ ↓ ← →" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Mover entre itens do nível atual" }</span>
+                            <kbd class="cheatsheet__key">{ "↑ ↓ ← →" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Descer um nível / ativar item focado" }</span>
+                            <kbd class="cheatsheet__key">{ "Enter" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Subir um nível" }</span>
+                            <kbd class="cheatsheet__key">{ "Backspace" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Voltar pros wrappers principais / sair da sessão" }</span>
+                            <kbd class="cheatsheet__key">{ "Escape" }</kbd>
+                        </li>
+                    </ul>
+                </div>
                 if props.vim_mode_enabled {
                     <div class="cheatsheet__section">
                         <h4 class="cheatsheet__heading">{ "Vim mode (modo Normal)" }</h4>

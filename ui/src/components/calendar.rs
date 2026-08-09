@@ -303,7 +303,7 @@ pub fn calendar(props: &CalendarProps) -> Html {
     };
 
     html! {
-        <div class="calendar">
+        <div class="calendar" data-nav-content-root="true">
             <div class="calendar__header">
                 <h2>{"Calendário"}</h2>
                 if *view_mode != ViewMode::List {

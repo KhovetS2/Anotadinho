@@ -200,7 +200,7 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
     );
 
     html! {
-        <div class="graph-view">
+        <div class="graph-view" data-nav-content-root="true">
             <div class="graph-view__toolbar">
                 <p class="graph-view__hint">
                     { format!("{} páginas, {} conexões", nodes.len(), edges.len()) }

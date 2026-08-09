@@ -74,7 +74,7 @@ pub fn kanban(props: &KanbanProps) -> Html {
     let on_page_selected = props.on_page_selected.clone();
 
     html! {
-        <div class="kanban">
+        <div class="kanban" data-nav-content-root="true">
             <div class="kanban__board">
                 { for (*columns).iter().map(|col| {
                     let items: Vec<&Card> = cards.iter().filter(|c| c.column == *col).collect();

@@ -53,10 +53,18 @@ pub fn index_of(items: &[web_sys::Element], active: Option<&web_sys::Element>) -
 
 /// Foca um item e rola ele pra dentro da área visível (`Nearest` —
 /// mesmo critério já usado por sidebar/paleta/vim mode, rola o mínimo
-/// necessário em vez de centralizar à toa a cada tecla).
+/// necessário em vez de centralizar à toa a cada tecla). Tenta
+/// `HtmlElement` primeiro (a grande maioria) E `SvgElement` (nós do
+/// grafo, ciclo 126, são `<g>` — SVG e HTML são ramos SEPARADOS da
+/// hierarquia de elementos do DOM; `dyn_ref::<HtmlElement>()` falha
+/// silenciosamente pra SVG, então sem esse segundo braço o `.focus()`
+/// simplesmente não acontecia pros nós do grafo — achado ao vivo na
+/// validação deste ciclo).
 pub fn focus_item(el: &web_sys::Element) {
     if let Some(html_el) = el.dyn_ref::<web_sys::HtmlElement>() {
         let _ = html_el.focus();
+    } else if let Some(svg_el) = el.dyn_ref::<web_sys::SvgElement>() {
+        let _ = svg_el.focus();
     }
     let opts = web_sys::ScrollIntoViewOptions::new();
     opts.set_block(web_sys::ScrollLogicalPosition::Nearest);

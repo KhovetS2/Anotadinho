@@ -742,13 +742,30 @@ pub fn app() -> Html {
                                                 sidebar_activate_nav.set(Some(*nonce));
                                             }
                                             "editor" => {
-                                                if let Some(el) = doc
+                                                // Página de texto normal: foca o
+                                                // contenteditable (mesma query do
+                                                // Ctrl+L de sempre). Páginas
+                                                // tipadas (kanban/calendário/
+                                                // tabela/grafo, ciclo 134) não
+                                                // têm esse elemento — cai pro
+                                                // primeiro item focável dentro do
+                                                // conteúdo marcado
+                                                // `data-nav-content-root`
+                                                // (cada um já tem seu próprio
+                                                // Enter/Espaço dos ciclos
+                                                // 126/127, só precisa do foco
+                                                // inicial).
+                                                let target = doc
                                                     .query_selector(".editor__wysiwyg[contenteditable=\"true\"]")
                                                     .ok()
                                                     .flatten()
-                                                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
-                                                {
-                                                    let _ = el.focus();
+                                                    .or_else(|| {
+                                                        doc.query_selector("[data-nav-content-root] [tabindex=\"0\"]")
+                                                            .ok()
+                                                            .flatten()
+                                                    });
+                                                if let Some(el) = target {
+                                                    crate::nav_mode::focus_item(&el);
                                                 }
                                             }
                                             _ => {}
