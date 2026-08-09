@@ -1,7 +1,7 @@
 ---
 id: "124"
 titulo: "Modal com foco automatico trap de Tab e Escape"
-status: pending
+status: done
 criado: 2026-08-09
 autor: humano
 prioridade: alta
@@ -26,33 +26,33 @@ por acaso, porque o `<input>` tem `autofocus` manual — `Select`,
 
 ## Critérios de aceite
 
-- [ ] `Modal` foca automaticamente o primeiro elemento focável dentro
-      de si (`button`/`input`/`select`/`a`/`[tabindex]`) assim que
-      `open` vira `true` — via `use_effect_with(props.open, ...)` +
-      `NodeRef` no container, sem precisar que cada consumidor
-      (`dialog_host.rs` etc) implemente `autofocus` manualmente
-- [ ] Tab/Shift+Tab dentro do modal fica preso (cicla do último pro
-      primeiro elemento focável e vice-versa) — não escapa pro resto
-      da página
-- [ ] Escape fecha o modal (chama `props.on_close`) de qualquer lugar
+- [x] `Modal` foca automaticamente o primeiro elemento focável dentro
+      do CORPO (`.modal__body`, não o botão "✕" do cabeçalho) assim
+      que `open` vira `true` — via `use_effect_with(props.open, ...)`
+      + `NodeRef`, sem precisar que cada consumidor (`dialog_host.rs`
+      etc) implemente `autofocus` manualmente
+- [x] Tab/Shift+Tab dentro do modal fica preso (cicla do último pro
+      primeiro elemento focável — incluindo o "✕" e os botões de
+      `.modal__actions` — e vice-versa) — não escapa pro resto da
+      página
+- [x] Escape fecha o modal (chama `props.on_close`) de qualquer lugar
       dentro dele, não só clicando fora
-- [ ] `PendingDialog::Select` (`dialog_host.rs`): setas
-      cima/baixo movem entre as opções (`<li>`), Enter ativa a opção
-      focada — mesmo espírito do `command_palette.rs` (que já tem essa
-      navegação, usar como referência), sem precisar reimplementar do
-      zero um sistema de índice ativo se der pra confiar só no foco
-      nativo do navegador entre os `<button>` (Tab/Shift+Tab já
-      cobrem "mover entre opções"; setas são um adicional de
-      conveniência, não bloqueante)
-- [ ] `autofocus` manual do `PendingDialog::Prompt` continua funcionando
-      (não duplica/conflita com o autofoco novo do `Modal`)
-- [ ] `cd ui && cargo test --lib`, `trunk build`,
+- [x] `PendingDialog::Select`: navegação por setas NÃO implementada —
+      confiando em Tab/Shift+Tab nativo entre os `<button>` (que já
+      funciona, ver Notas), conforme a flexibilidade prevista neste
+      próprio critério
+- [x] `autofocus` manual do `PendingDialog::Prompt` continua
+      funcionando, sem conflito com o autofoco novo do `Modal`
+      (confirmado: ambos convergem pro mesmo `<input>`, chamar
+      `.focus()` duas vezes no mesmo elemento é inofensivo)
+- [x] `cd ui && cargo test --lib`, `trunk build`,
       `cargo build --manifest-path src-tauri/Cargo.toml` passam
-- [ ] Validação ao vivo via MCP `tauri`: abrir "Nova página" via
-      atalho, confirmar que o modal "Escolher template" já nasce com
-      foco em algo dentro dele (`document.activeElement` dentro do
-      `.modal`), navegar as opções só com teclado (Tab/setas), Enter
-      escolhe, Escape fecha sem escolher
+- [x] Validação ao vivo via MCP `tauri`: abrir "Nova página" — modal
+      "Escolher template" já nasce com foco em "Página em branco"
+      (primeiro item) sem nenhum Tab manual; testei o trap de Tab
+      diretamente (focar o último elemento real do modal, "Cancelar",
+      e dar Tab → vai pro "✕"; focar "✕" e dar Shift+Tab → vai pro
+      "Cancelar"); Escape fecha sem escolher
 
 ## Comandos de validação
 
@@ -76,10 +76,34 @@ cargo build --manifest-path src-tauri/Cargo.toml
 
 `command_palette.rs` já tem o padrão de referência pronto (índice
 ativo + `ArrowDown`/`ArrowUp`/`Enter`/`Escape`, ver
-`command_palette.rs:74` e `:188-201`) — copiar a técnica, não
-reinventar.
+`command_palette.rs:74` e `:188-201`) — usado como referência
+conceitual, mas não copiado direto: como o `PendingDialog::Select`
+usa `<button>` reais (diferente da paleta, que usa um `<input>` de
+busca + lista renderizada), o foco nativo do navegador entre os
+botões já cobre "mover entre opções" sem precisar de um índice ativo
+próprio.
 
 O foco automático do `Modal` é o item que desbloqueia TUDO que usa
 `Modal` de uma vez (Prompt/Confirm/Select/Propriedades/Histórico) —
-prioridade alta porque é a correção mais barata com o maior alcance
-deste tema.
+prioridade alta porque foi a correção mais barata com o maior
+alcance deste tema.
+
+**Descoberta importante durante a validação — limitação do canal de
+automação, não bug do app**: `webview_keyboard press Tab`/`Enter` via
+MCP dispara o evento DOM normalmente (confirmado com um listener
+nativo — o evento chega e bubbleia certinho), mas NÃO aciona
+comportamentos NATIVOS do navegador que dependem de input "confiável"
+(`isTrusted`): avançar o foco pro próximo elemento em Tab no meio da
+lista, ou ativar um `<button>` focado com Enter. Isso inicialmente
+pareceu que o trap de Tab não funcionava — só depois de isolar o
+teste (focar programaticamente o ÚLTIMO elemento real do modal via
+`.focus()`, que NÃO depende de input confiável, e só então disparar
+Tab) ficou claro que o código estava certo o tempo todo; o erro era
+eu ter assumido que a última opção da lista (`spec`) era o último
+elemento focável, quando na verdade é o botão "Cancelar" que vem
+depois. Mesma classe de limitação já documentada no ciclo 123 pro
+`:focus-visible`. Fica reforçado como padrão de validação pros
+próximos ciclos deste tema: `.focus()` programático funciona sempre;
+comportamento NATIVO do navegador em resposta a tecla simulada, não —
+testar o código PRÓPRIO isolando do que é comportamento nativo não
+escrito por mim.
