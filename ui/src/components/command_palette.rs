@@ -84,6 +84,10 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
     let pages = use_state(Vec::<PageMeta>::new);
     let content_results = use_state(Vec::<(String, String)>::new);
     let input_ref = use_node_ref();
+    // Ref do item ATIVO — mesmo padrão da sidebar (ciclo 106): um só
+    // `NodeRef`, reatribuído a cada render pro item que estiver
+    // destacado no momento (não um ref fixo por item da lista).
+    let active_item_ref = use_node_ref();
 
     {
         let vault_path = props.vault_path.clone();
@@ -130,6 +134,24 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
         use_effect_with((), move |_| {
             if let Some(el) = input_ref.cast::<HtmlInputElement>() {
                 let _ = el.focus();
+            }
+            || {}
+        });
+    }
+
+    // Rola o item destacado pra dentro da área visível ao navegar com
+    // ArrowUp/Down — sem isso, passar do fim da lista visível (ou dar
+    // wrap-around de volta pro topo) deixa o item ativo escondido fora
+    // do scroll, mesmo bug já corrigido na sidebar (ciclo 106) e no
+    // menu `/` do editor (ciclo 073/082) — reportado pelo usuário
+    // acontecendo aqui também.
+    {
+        let active_item_ref = active_item_ref.clone();
+        use_effect_with(*idx, move |_| {
+            if let Some(el) = active_item_ref.cast::<web_sys::Element>() {
+                let opts = web_sys::ScrollIntoViewOptions::new();
+                opts.set_block(web_sys::ScrollLogicalPosition::Nearest);
+                el.scroll_into_view_with_scroll_into_view_options(&opts);
             }
             || {}
         });
@@ -228,6 +250,7 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
                         { for items.iter().enumerate().map(|(i, item)| {
                             let is_active = i == *idx;
                             let class = if is_active { "command-palette__item command-palette__item--active" } else { "command-palette__item" };
+                            let node_ref = if is_active { active_item_ref.clone() } else { NodeRef::default() };
                             let sel = select_idx.clone();
                             let onmousedown = Callback::from(|e: MouseEvent| e.prevent_default());
                             let onclick = Callback::from(move |_| sel.emit(i));
@@ -244,19 +267,19 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
                                     { section_header }
                                     { match item {
                                         Item::Command(label, _) => html! {
-                                            <div {class} {onmousedown} {onclick}>
+                                            <div {class} ref={node_ref} {onmousedown} {onclick}>
                                                 <span class="command-palette__item-icon">{ "⚡" }</span>
                                                 <span class="command-palette__item-title">{ *label }</span>
                                             </div>
                                         },
                                         Item::Page(meta) => html! {
-                                            <div {class} {onmousedown} {onclick}>
+                                            <div {class} ref={node_ref} {onmousedown} {onclick}>
                                                 <span class="command-palette__item-icon">{ "📄" }</span>
                                                 <span class="command-palette__item-title">{ &meta.title }</span>
                                             </div>
                                         },
                                         Item::ContentResult(meta, excerpt) => html! {
-                                            <div {class} {onmousedown} {onclick}>
+                                            <div {class} ref={node_ref} {onmousedown} {onclick}>
                                                 <span class="command-palette__item-icon">{ "📄" }</span>
                                                 <div class="command-palette__item-result">
                                                     <span class="command-palette__item-title">{ &meta.title }</span>
