@@ -52,6 +52,7 @@ features = [
     "InputEvent",
     "KeyboardEvent",
     "MouseEvent",
+    "WheelEvent",
     "Node",
     "NodeList",
     "Storage",

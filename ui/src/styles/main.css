@@ -1854,16 +1854,52 @@ body {
     align-items: center;
 }
 
+.graph-view__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 800px;
+    gap: var(--sp-3);
+}
+
 .graph-view__hint {
     color: var(--text-muted);
     font-size: 0.8125rem;
     margin-bottom: var(--sp-2);
 }
 
+.graph-view__hint--muted {
+    width: 100%;
+    max-width: 800px;
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
+
+.graph-view__zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+}
+
+.graph-view__zoom-level {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    min-width: 3.5em;
+    text-align: center;
+}
+
 .graph-view__svg {
     width: 100%;
     max-width: 800px;
     height: auto;
+    cursor: grab;
+    overflow: hidden;
+    touch-action: none;
+}
+
+.graph-view__svg:active {
+    cursor: grabbing;
 }
 
 .graph-view__edge {

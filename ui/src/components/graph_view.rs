@@ -30,11 +30,75 @@ pub struct GraphViewProps {
     pub on_page_selected: Callback<PageMeta>,
 }
 
+/// Limites de zoom — abaixo de 0.25x os rótulos ficam ilegíveis, acima
+/// de 4x o grafo sai do viewport sem ganhar nada em troca.
+const MIN_SCALE: f64 = 0.25;
+const MAX_SCALE: f64 = 4.0;
+
 #[function_component(GraphView)]
 pub fn graph_view(props: &GraphViewProps) -> Html {
     let nodes = use_state(Vec::<Node>::new);
     let edges = use_state(Vec::<(usize, usize)>::new);
     let loading = use_state(|| true);
+
+    // Zoom (roda do mouse ou botões) + pan (arrastar). `scale`/`pan`
+    // viram um `transform` CSS no `<g>` que envolve nós e arestas —
+    // `translate` fica FORA do `scale` na composição CSS, então o
+    // delta do mouse em px de tela mapeia direto pro pan sem precisar
+    // dividir pela escala atual.
+    let scale = use_state(|| 1.0f64);
+    let pan = use_state(|| (0.0f64, 0.0f64));
+    let dragging = use_mut_ref(|| None::<(f64, f64)>);
+
+    let on_wheel = {
+        let scale = scale.clone();
+        Callback::from(move |e: WheelEvent| {
+            e.prevent_default();
+            let factor = if e.delta_y() > 0.0 { 0.9 } else { 1.1 };
+            scale.set((*scale * factor).clamp(MIN_SCALE, MAX_SCALE));
+        })
+    };
+    let on_mouse_down = {
+        let dragging = dragging.clone();
+        Callback::from(move |e: MouseEvent| {
+            *dragging.borrow_mut() = Some((e.client_x() as f64, e.client_y() as f64));
+        })
+    };
+    let on_mouse_move = {
+        let dragging = dragging.clone();
+        let pan = pan.clone();
+        Callback::from(move |e: MouseEvent| {
+            let mut d = dragging.borrow_mut();
+            if let Some((last_x, last_y)) = *d {
+                let (cx, cy) = (e.client_x() as f64, e.client_y() as f64);
+                let (px, py) = *pan;
+                pan.set((px + (cx - last_x), py + (cy - last_y)));
+                *d = Some((cx, cy));
+            }
+        })
+    };
+    let stop_dragging = {
+        let dragging = dragging.clone();
+        Callback::from(move |_: MouseEvent| {
+            *dragging.borrow_mut() = None;
+        })
+    };
+    let zoom_in = {
+        let scale = scale.clone();
+        Callback::from(move |_: MouseEvent| scale.set((*scale * 1.25).clamp(MIN_SCALE, MAX_SCALE)))
+    };
+    let zoom_out = {
+        let scale = scale.clone();
+        Callback::from(move |_: MouseEvent| scale.set((*scale / 1.25).clamp(MIN_SCALE, MAX_SCALE)))
+    };
+    let reset_view = {
+        let scale = scale.clone();
+        let pan = pan.clone();
+        Callback::from(move |_: MouseEvent| {
+            scale.set(1.0);
+            pan.set((0.0, 0.0));
+        })
+    };
 
     {
         let vault_path = props.vault_path.clone();
@@ -112,35 +176,59 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
     }
 
     let on_page_selected = props.on_page_selected.clone();
+    let (pan_x, pan_y) = *pan;
+    let content_transform = format!(
+        "transform: translate({}px, {}px) scale({}); transform-origin: 400px 400px;",
+        pan_x, pan_y, *scale
+    );
 
     html! {
         <div class="graph-view">
-            <p class="graph-view__hint">
-                { format!("{} páginas, {} conexões — clique num nó pra abrir a página", nodes.len(), edges.len()) }
+            <div class="graph-view__toolbar">
+                <p class="graph-view__hint">
+                    { format!("{} páginas, {} conexões", nodes.len(), edges.len()) }
+                </p>
+                <div class="graph-view__zoom-controls">
+                    <button class="btn btn--ghost btn--xs" onclick={zoom_out} title="Diminuir zoom">{ "−" }</button>
+                    <span class="graph-view__zoom-level">{ format!("{}%", (*scale * 100.0).round() as i64) }</span>
+                    <button class="btn btn--ghost btn--xs" onclick={zoom_in} title="Aumentar zoom">{ "+" }</button>
+                    <button class="btn btn--ghost btn--xs" onclick={reset_view} title="Resetar visualização">{ "Reset" }</button>
+                </div>
+            </div>
+            <p class="graph-view__hint graph-view__hint--muted">
+                { "Scroll pra zoom, arraste pra mover, clique num nó pra abrir a página" }
             </p>
-            <svg class="graph-view__svg" viewBox="0 0 800 800">
-                { for edges.iter().map(|&(i, j)| {
-                    let a = &nodes[i];
-                    let b = &nodes[j];
-                    html! {
-                        <line class="graph-view__edge"
-                            x1={a.x.to_string()} y1={a.y.to_string()}
-                            x2={b.x.to_string()} y2={b.y.to_string()} />
-                    }
-                }) }
-                { for nodes.iter().map(|node| {
-                    let meta = PageMeta { path: node.path.clone(), title: node.title.clone(), section: node.section.clone() };
-                    let onclick = {
-                        let on_page_selected = on_page_selected.clone();
-                        Callback::from(move |_: MouseEvent| on_page_selected.emit(meta.clone()))
-                    };
-                    html! {
-                        <g class="graph-view__node" {onclick}>
-                            <circle cx={node.x.to_string()} cy={node.y.to_string()} r="8" />
-                            <text x={(node.x + 12.0).to_string()} y={(node.y + 4.0).to_string()}>{ &node.title }</text>
-                        </g>
-                    }
-                }) }
+            <svg class="graph-view__svg" viewBox="0 0 800 800"
+                onwheel={on_wheel}
+                onmousedown={on_mouse_down}
+                onmousemove={on_mouse_move}
+                onmouseup={stop_dragging.clone()}
+                onmouseleave={stop_dragging}
+            >
+                <g style={content_transform}>
+                    { for edges.iter().map(|&(i, j)| {
+                        let a = &nodes[i];
+                        let b = &nodes[j];
+                        html! {
+                            <line class="graph-view__edge"
+                                x1={a.x.to_string()} y1={a.y.to_string()}
+                                x2={b.x.to_string()} y2={b.y.to_string()} />
+                        }
+                    }) }
+                    { for nodes.iter().map(|node| {
+                        let meta = PageMeta { path: node.path.clone(), title: node.title.clone(), section: node.section.clone() };
+                        let onclick = {
+                            let on_page_selected = on_page_selected.clone();
+                            Callback::from(move |_: MouseEvent| on_page_selected.emit(meta.clone()))
+                        };
+                        html! {
+                            <g class="graph-view__node" {onclick}>
+                                <circle cx={node.x.to_string()} cy={node.y.to_string()} r="8" />
+                                <text x={(node.x + 12.0).to_string()} y={(node.y + 4.0).to_string()}>{ &node.title }</text>
+                            </g>
+                        }
+                    }) }
+                </g>
             </svg>
         </div>
     }
