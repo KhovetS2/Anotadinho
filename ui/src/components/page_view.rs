@@ -9,6 +9,7 @@ use crate::components::graph_view::GraphView;
 use crate::components::kanban::Kanban;
 use crate::components::tags_page::TagsPage;
 use crate::components::task_table::TaskTable;
+use crate::components::typed_page_header::TypedPageHeader;
 use crate::dialog::PendingDialog;
 
 #[derive(Properties, PartialEq, Clone)]
@@ -46,6 +47,11 @@ pub struct PageViewProps {
 pub fn page_view(props: &PageViewProps) -> Html {
     let page_type = use_state(|| "md".to_string());
     let loading = use_state(|| false);
+    // Ciclo 130: incrementado pelo `TypedPageHeader` depois de uma
+    // troca de propriedades persistida — refaz a leitura do `type` da
+    // página (se o usuário mudar o tipo pelo painel, o roteamento
+    // abaixo precisa reagir sem esperar uma troca de página).
+    let reload_nonce = use_state(|| 0u32);
 
     {
         let page = props.page.clone();
@@ -53,7 +59,8 @@ pub fn page_view(props: &PageViewProps) -> Html {
         let loading = loading.clone();
         let vault_path = props.vault_path.clone();
 
-        use_effect_with(page.clone(), move |_| {
+        use_effect_with((page.clone(), *reload_nonce), move |(page, _)| {
+            let page = page.clone();
             if let Some(ref p) = page {
                 let vault_path = vault_path.clone();
                 let path = p.path.clone();
@@ -85,24 +92,61 @@ pub fn page_view(props: &PageViewProps) -> Html {
         return html! { <main class="editor"><p class="editor__status">{ "Carregando..." }</p></main> };
     }
 
+    // `expect` seguro: já retornamos acima se `props.page` for `None`.
+    let current_page = props.page.clone().expect("página presente, checado acima");
+    let on_properties_changed = {
+        let reload_nonce = reload_nonce.clone();
+        Callback::from(move |_: ()| reload_nonce.set(*reload_nonce + 1))
+    };
+    // Cabeçalho com acesso ao painel de Propriedades (ciclo 130) — os
+    // 6 tipos abaixo nunca renderizam `Editor` (único lugar que
+    // continha esse painel antes), então ganham esse cabeçalho
+    // compartilhado em vez de cada um reimplementar o próprio acesso.
+    let typed_header = html! {
+        <TypedPageHeader
+            vault_path={props.vault_path.clone()}
+            page={current_page.clone()}
+            open_dialog={props.open_dialog.clone()}
+            on_properties_changed={on_properties_changed}
+        />
+    };
+
     match (*page_type).as_str() {
         "kanban" => html! {
-            <Kanban vault_path={props.vault_path.clone()} page={props.page.clone()} on_page_selected={props.on_page_selected.clone()} />
+            <>
+                { typed_header }
+                <Kanban vault_path={props.vault_path.clone()} page={props.page.clone()} on_page_selected={props.on_page_selected.clone()} />
+            </>
         },
         "calendar" => html! {
-            <Calendar vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
+            <>
+                { typed_header }
+                <Calendar vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
+            </>
         },
         "table" => html! {
-            <TaskTable vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
+            <>
+                { typed_header }
+                <TaskTable vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
+            </>
         },
         "tags" => html! {
-            <TagsPage vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
+            <>
+                { typed_header }
+                <TagsPage vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
+            </>
         },
         "assets" => html! {
-            <AssetsPage vault_path={props.vault_path.clone()} open_dialog={props.open_dialog.clone()} />
+            <>
+                { typed_header }
+                <AssetsPage vault_path={props.vault_path.clone()} open_dialog={props.open_dialog.clone()} />
+            </>
         },
         "graph" => html! {
-            <GraphView vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
+            <>
+                { typed_header }
+                <GraphView vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
+            </>
         },
         // "landing" não tem componente próprio — é uma página normal
         // (mesmo Editor de sempre), só marcada como tal pra aparecer com

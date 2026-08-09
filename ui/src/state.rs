@@ -174,19 +174,55 @@ impl Default for GlobalKeymap {
             // de "uma tecla + Ctrl implícito" — Ctrl+Y é a convenção
             // alternativa de "refazer" mais comum (Word/VSCode/etc).
             redo: "y".into(),
-            // Ações novas (não tinham atalho de teclado nenhum antes) —
-            // sem tecla padrão, pra não arriscar colisão course escolhida
-            // às pressas; o usuário atribui a que quiser no modal.
-            new_folder: String::new(),
-            toggle_theme: String::new(),
-            today: String::new(),
-            view_tags: String::new(),
-            view_assets: String::new(),
-            close_tab: String::new(),
-            prev_tab: String::new(),
-            toggle_vim_mode: String::new(),
-            focus_sidebar: String::new(),
-            focus_editor: String::new(),
+            // Ciclo 130: as 10 ações abaixo nasceram sem tecla (ciclo
+            // 105 preferiu não arriscar uma colisão escolhida às
+            // pressas) — preenchidas agora com um mapeamento pensado
+            // pra quem já usa neovim no dia a dia (motivado pelo pedido
+            // do usuário; ver a config real dele — `harpoon.lua`,
+            // `neo-tree.lua`, `bufferline.lua`, `keymaps.lua` — usada
+            // como referência pras escolhas abaixo). Evita
+            // deliberadamente 'a'/'c'/'v'/'x' (select-all/copy/paste/
+            // cut nativos do editor de texto — colidiriam de verdade
+            // dentro do `contenteditable`, diferente de atalhos tipo
+            // Ctrl+N/Ctrl+F que só existem em CHROME de navegador, que
+            // o WebView do Tauri não tem).
+            //
+            // "f" = Folder — mesma inicial do rótulo em português
+            // ("nova pasta") e do conceito em si.
+            new_folder: "f".into(),
+            // "t" = Theme.
+            toggle_theme: "t".into(),
+            // "d" = Day — jornal/página do dia.
+            today: "d".into(),
+            // "g" = taG — mnemônico mais fraco (letras óbvias já
+            // ocupadas), mas livre e fácil de lembrar por associação.
+            view_tags: "g".into(),
+            // "u" = sem mnemônico forte disponível pra "Assets" nesse
+            // alfabeto já quase todo ocupado — só a letra livre que
+            // sobrou, documentado aqui pra não parecer acidental.
+            view_assets: "u".into(),
+            // "q" = mesmo "q" do `:q` do vim (fecha o buffer/janela
+            // atual) — a aba aqui é o equivalente mais próximo de um
+            // buffer.
+            close_tab: "q".into(),
+            // "h" = mesma semântica de "esquerda/voltar" do `h` de
+            // movimento do vim (par conceitual do `next_tab` = "w",
+            // não literalmente h/l porque "w" já era o padrão
+            // existente antes deste ciclo).
+            prev_tab: "h".into(),
+            // "m" = Modal (vim mode é edição modal).
+            toggle_vim_mode: "m".into(),
+            // "e" = Explorer — o `<C-n>` do neovim do usuário abre o
+            // Neo-tree (árvore de arquivos); "n" já está ocupado aqui
+            // por "Nova página", então usa o mnemônico em inglês do
+            // que a árvore DE FATO é (um "explorer" de arquivos) em
+            // vez da tecla literal dele.
+            focus_sidebar: "e".into(),
+            // "l" = tecla EXATA que o usuário já usa no próprio
+            // `keymaps.lua` pra "mover o foco pra janela da direita"
+            // (`<C-l>` → `<C-w><C-l>`) — no Anotadinho, sidebar fica à
+            // esquerda e o editor à direita, mesma geometria mental.
+            focus_editor: "l".into(),
         }
     }
 }
@@ -385,12 +421,35 @@ mod tests {
     }
 
     #[test]
-    fn global_keymap_default_leaves_new_actions_unbound() {
+    fn global_keymap_default_binds_neovim_inspired_shortcuts() {
+        // Ciclo 130: as ações que nasceram sem tecla (ciclo 105) agora
+        // têm um default pensado pra quem já usa neovim — ver
+        // comentários no `impl Default for GlobalKeymap` pra cada
+        // mnemônico.
         let km = GlobalKeymap::default();
-        assert_eq!(km.new_folder, "");
-        assert_eq!(km.close_tab, "");
-        assert_eq!(km.focus_sidebar, "");
-        assert_eq!(km.focus_editor, "");
+        assert_eq!(km.new_folder, "f");
+        assert_eq!(km.toggle_theme, "t");
+        assert_eq!(km.today, "d");
+        assert_eq!(km.view_tags, "g");
+        assert_eq!(km.view_assets, "u");
+        assert_eq!(km.close_tab, "q");
+        assert_eq!(km.prev_tab, "h");
+        assert_eq!(km.toggle_vim_mode, "m");
+        assert_eq!(km.focus_sidebar, "e");
+        assert_eq!(km.focus_editor, "l");
+    }
+
+    #[test]
+    fn global_keymap_default_has_no_duplicate_keys() {
+        // Cada tecla do default tem que ser única — uma colisão faria
+        // duas ações disparar juntas no mesmo Ctrl+tecla (o dispatcher
+        // em `app.rs::onkeydown` para no primeiro `match` que bater).
+        let km = GlobalKeymap::default();
+        let keys: Vec<&str> = km.labeled_fields().into_iter().map(|(_, k)| k).collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), keys.len(), "teclas default duplicadas: {:?}", keys);
     }
 
     #[test]

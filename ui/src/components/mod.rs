@@ -22,4 +22,5 @@ pub mod tab_bar;
 pub mod tags_page;
 pub mod task_table;
 pub mod time_picker;
+pub mod typed_page_header;
 pub mod vim_settings_modal;
