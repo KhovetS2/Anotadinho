@@ -62,6 +62,8 @@ dele como referência).
       (testado em página descartável); Ctrl+T/Ctrl+E/Ctrl+D
       confirmados funcionando com keymap limpo (sem uma customização
       antiga salva no localStorage por engano)
+- [x] Build Windows (`x86_64-pc-windows-gnu`) — binário `.exe` válido
+      gerado com sucesso, ver Notas
 
 ## Comandos de validação
 
@@ -136,9 +138,36 @@ aparecem lá automaticamente.
 
 ### Build Windows
 
-Investigado em paralelo (pedido do usuário) — máquina sem mingw-w64
-nem alvo Rust `x86_64-pc-windows-gnu`. Alvo Rust instalado (não precisa
-sudo). Toolchain mingw-w64 precisa de `sudo dnf install mingw64-gcc
-mingw64-gcc-c++ mingw64-winpthreads-static` — usuário está rodando.
-Build em si é o próximo passo depois que o toolchain estiver instalado
-(não coberto por este arquivo de task — ver próximo status/commit).
+Investigado e CONCLUÍDO nesse mesmo ciclo (pedido do usuário, em
+paralelo às duas tarefas acima). Máquina não tinha mingw-w64 nem o
+alvo Rust `x86_64-pc-windows-gnu` — usuário rodou
+`sudo dnf install mingw64-gcc mingw64-gcc-c++ mingw64-winpthreads-static`
+(único passo que precisava de root; o alvo Rust em si não precisa).
+
+`cargo tauri build --target x86_64-pc-windows-gnu` compilou com
+sucesso de primeira (contrário à expectativa inicial de fragilidade
+com WebView2/MSVC — o alvo `-gnu` funcionou sem drama nenhum pras
+dependências `windows-rs`/`webview2-com`). Único erro real: faltava
+`icons/icon.ico` (o vault só tinha PNGs) — gerado com
+`cargo tauri icon icons/icon.png`, que recriou o set padrão completo
+(Windows/macOS/Linux + Android/iOS). Removidos os assets de
+Android/iOS/Windows Store (`Square*Logo.png`/`StoreLogo.png`) por não
+serem usados por este projeto (só desktop); mantidos
+`icon.ico`/`icon.icns`/`128x128@2x.png`/`64x64.png`, adicionados ao
+`bundle.icon` do `tauri.conf.json`.
+
+Resultado: `anotadinho.exe` (33MB, PE32+ válido, confirmado via
+`file`) + `WebView2Loader.dll` (157KB, copiado automaticamente pelo
+build) + `anotadinho-cli.exe` (3.8MB, cross-compilado à parte via
+`cargo build --release --target x86_64-pc-windows-gnu -p
+anotadinho-cli`, mesmo padrão de `scripts/build.sh` de empacotar GUI +
+CLI juntos). `objdump -p` confirmou que o `.exe` não depende de
+`libgcc`/`libstdc++`/`libwinpthread` (mingw estaticamente linkado por
+padrão no alvo `-gnu` do Rust) — só DLLs padrão do Windows +
+`WebView2Loader.dll`.
+
+Empacotamento formal (instalador `.msi`/NSIS `setup.exe`) NÃO foi
+feito — faltava `makensis`/`msitools`, e o usuário confirmou que só
+queria testar se o build funcionava e ver o tamanho do executável, não
+precisa do instalador agora. Binários de teste (`dist-windows/`) foram
+removidos depois de confirmados — não fazem parte do repositório.
