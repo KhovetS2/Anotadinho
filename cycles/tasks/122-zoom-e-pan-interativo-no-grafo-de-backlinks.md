@@ -40,6 +40,10 @@ zoom (roda do mouse + botões) e pan (arrastar).
       (drag de (100,100) pra (150,130) moveu o `translate` exatamente
       50px/30px), reset conferido, clique em nó depois de zoom/pan
       continuou navegando certo
+- [x] Arrastar pra fazer pan não seleciona texto dos rótulos por baixo
+      do cursor — `preventDefault()` no `mousedown` + `user-select:
+      none`/`-webkit-user-select: none` no `.graph-view__svg` (achado
+      do usuário ao testar, corrigido no mesmo ciclo)
 
 ## Comandos de validação
 
@@ -81,3 +85,9 @@ de forma assíncrona (microtask), então o estado só aparece atualizado
 na PRÓXIMA chamada de `webview_execute_js`. Validações futuras de
 estado após clique devem sempre separar o clique da leitura em
 chamadas distintas.
+
+Seleção de texto durante o drag foi reportada pelo usuário depois da
+primeira entrega deste ciclo — corrigida na mesma sessão, sem virar
+ciclo separado (`preventDefault` no `mousedown` bloqueia o navegador
+de começar a seleção nativa; `user-select: none` no CSS é reforço
+defensivo pro caso do WebKitGTK se comportar diferente).

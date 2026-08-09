@@ -61,6 +61,13 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
     let on_mouse_down = {
         let dragging = dragging.clone();
         Callback::from(move |e: MouseEvent| {
+            // Sem isso, arrastar pra fazer pan também inicia seleção de
+            // texto nativa do navegador (rótulos dos nós são texto) —
+            // o cursor vira "I-beam" e solta uma seleção azul no meio
+            // do drag. `user-select: none` no CSS já ajuda, mas
+            // `preventDefault` no mousedown é o que realmente bloqueia
+            // o navegador de começar a seleção em primeiro lugar.
+            e.prevent_default();
             *dragging.borrow_mut() = Some((e.client_x() as f64, e.client_y() as f64));
         })
     };
