@@ -810,12 +810,24 @@ pub fn app() -> Html {
                     .is_some_and(|el| el.has_attribute("data-nav-item"));
                 if *nav_mode_active {
                     match key.as_str() {
-                        // Setas se AUTO-CURAM mesmo sem `focus_is_nav_tracked`
-                        // (ex: depois de um menu local fechar e deixar o foco
-                        // em `<body>`) — `index_of` já cai pro item 0 quando
-                        // o foco atual não é achado na lista, então só
-                        // apertar a seta de novo recupera a navegação.
+                        // Ciclo 140: agora TAMBÉM exige `focus_is_nav_tracked`
+                        // (antes só Enter/Backspace/Escape exigiam, setas se
+                        // "autocuravam" voltando pro item 0). Achado real: um
+                        // delegate (sidebar) desativa a sessão, mas se o
+                        // delegate alvo não isolar a própria seta (ver
+                        // `sidebar.rs::on_nav_keydown`, ciclo 140), o evento
+                        // ainda bolha até aqui — sem essa guarda, "autocurar"
+                        // significava REINICIAR uma sessão nova no meio da
+                        // navegação de outra coisa (bug reportado pelo
+                        // usuário: "volta pra navegação entre as maiores
+                        // sessões"). A recuperação de foco perdido em
+                        // `<body>` já é feita de forma mais geral pelo
+                        // polling do ciclo 138, então não precisa mais desse
+                        // autocuro aqui.
                         "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft" => {
+                            if !focus_is_nav_tracked {
+                                return;
+                            }
                             e.prevent_default();
                             if let Some(doc) = doc {
                                 let group_id = nav_stack.last().cloned().unwrap_or_else(|| "root".to_string());

@@ -249,15 +249,25 @@ pub fn sidebar(props: &SidebarProps) -> Html {
             let Some(ref active) = *nav_active else { return };
             let Some(idx) = flat_nav_keys.iter().position(|(k, ..)| k == active) else { return };
             let (key, is_folder, parent) = flat_nav_keys[idx].clone();
+            // `stop_propagation` em TODOS os ramos (ciclo 140 — antes só
+            // o Escape tinha, ver comentário dele abaixo) — sem isso,
+            // toda tecla aqui também borbulha até `.app-root`, que
+            // (com o nav-mode ligado) reage à MESMA seta como "primeira
+            // seta, inicia uma sessão nova" assim que o delegate pra
+            // sidebar desativa a sessão anterior — voltava pra
+            // navegação entre regiões no meio de navegar a sidebar,
+            // bug real reportado pelo usuário.
             match e.key().as_str() {
                 "ArrowDown" => {
                     e.prevent_default();
+                    e.stop_propagation();
                     if let Some((next_key, ..)) = flat_nav_keys.get(idx + 1) {
                         nav_active.set(Some(next_key.clone()));
                     }
                 }
                 "ArrowUp" => {
                     e.prevent_default();
+                    e.stop_propagation();
                     if idx > 0 {
                         if let Some((prev_key, ..)) = flat_nav_keys.get(idx - 1) {
                             nav_active.set(Some(prev_key.clone()));
@@ -266,6 +276,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 }
                 "ArrowRight" => {
                     e.prevent_default();
+                    e.stop_propagation();
                     if is_folder {
                         if collapsed_folders.contains(&key) {
                             let mut c = (*collapsed_folders).clone();
@@ -280,6 +291,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 }
                 "ArrowLeft" => {
                     e.prevent_default();
+                    e.stop_propagation();
                     if is_folder && !collapsed_folders.contains(&key) {
                         let mut c = (*collapsed_folders).clone();
                         c.insert(key.clone());
@@ -290,6 +302,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 }
                 "Enter" => {
                     e.prevent_default();
+                    e.stop_propagation();
                     if !is_folder {
                         if let Some(meta) = page_items_kd.iter().find(|p| p.path == key) {
                             selected_path.set(Some(key.clone()));
