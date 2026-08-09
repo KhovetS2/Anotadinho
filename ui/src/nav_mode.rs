@@ -92,6 +92,29 @@ fn escape_attr_value(value: &str) -> String {
     value.replace('"', "")
 }
 
+/// Cor do nível atual da sessão (ciclo 136, pedido do usuário) — um
+/// gradiente azul→roxo (as duas cores de destaque já usadas em outros
+/// lugares do app, ex. o logo) conforme a pilha fica mais funda, pra
+/// dar uma pista visual de profundidade além do texto do badge.
+/// `depth` é `nav_stack.len()` (0 = raiz, sem cor própria — o
+/// indicador só aparece quando HÁ um grupo atual). Nível 1 = azul
+/// puro, nível 5+ satura em roxo puro; os do meio interpolam via
+/// `color-mix()` do CSS (suportado pelo WebKitGTK do Tauri, já usado
+/// em outras regras deste app).
+pub fn depth_color_css(depth: usize) -> String {
+    let blue_pct = 100i64.saturating_sub(((depth.max(1) - 1) as i64) * 25).clamp(0, 100);
+    if blue_pct >= 100 {
+        return "var(--accent-blue)".to_string();
+    }
+    if blue_pct <= 0 {
+        return "var(--accent-purple)".to_string();
+    }
+    format!(
+        "color-mix(in srgb, var(--accent-blue) {}%, var(--accent-purple) {}%)",
+        blue_pct, 100 - blue_pct
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,5 +123,36 @@ mod tests {
     fn escape_attr_value_strips_double_quotes() {
         assert_eq!(escape_attr_value(r#"a"b"#), "ab");
         assert_eq!(escape_attr_value("plain"), "plain");
+    }
+
+    #[test]
+    fn depth_color_css_pure_blue_at_shallowest() {
+        assert_eq!(depth_color_css(1), "var(--accent-blue)");
+        // depth 0 não deveria acontecer na prática (nav-mode só marca
+        // profundidade quando HÁ pilha), mas trata como nível 1 em vez
+        // de estourar por causa do `.max(1)`.
+        assert_eq!(depth_color_css(0), "var(--accent-blue)");
+    }
+
+    #[test]
+    fn depth_color_css_saturates_purple_at_depth_five_and_beyond() {
+        assert_eq!(depth_color_css(5), "var(--accent-purple)");
+        assert_eq!(depth_color_css(9), "var(--accent-purple)");
+    }
+
+    #[test]
+    fn depth_color_css_interpolates_between() {
+        assert_eq!(
+            depth_color_css(2),
+            "color-mix(in srgb, var(--accent-blue) 75%, var(--accent-purple) 25%)"
+        );
+        assert_eq!(
+            depth_color_css(3),
+            "color-mix(in srgb, var(--accent-blue) 50%, var(--accent-purple) 50%)"
+        );
+        assert_eq!(
+            depth_color_css(4),
+            "color-mix(in srgb, var(--accent-blue) 25%, var(--accent-purple) 75%)"
+        );
     }
 }

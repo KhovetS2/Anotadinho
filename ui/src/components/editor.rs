@@ -511,11 +511,16 @@ pub fn editor(props: &EditorProps) -> Html {
     // o botão "⋯" que abre/fecha) — mesma razão dos menus da
     // `HeaderBar` (ciclo 125).
     let editor_menu_content_ref = use_node_ref();
+    // Devolve o foco pro botão "⋯" ao fechar via Escape (ciclo 136,
+    // mesmo tratamento da `HeaderBar` — evita o foco cair fora da
+    // árvore de qualquer coisa que dependa dele, ex: nav-mode).
+    let editor_menu_toggle_ref = use_node_ref();
     let toggle_editor_menu = { let m = editor_menu_open.clone(); Callback::from(move |_| m.set(!*m)) };
     {
         let editor_menu_open = editor_menu_open.clone();
         let editor_menu_ref = editor_menu_ref.clone();
         let editor_menu_content_ref = editor_menu_content_ref.clone();
+        let editor_menu_toggle_ref = editor_menu_toggle_ref.clone();
         use_effect_with(*editor_menu_open, move |open| {
             let mut listeners = Vec::new();
             if *open {
@@ -536,10 +541,16 @@ pub fn editor(props: &EditorProps) -> Html {
                 let close_on_escape = {
                     let editor_menu_open = editor_menu_open.clone();
                     let editor_menu_content_ref = editor_menu_content_ref.clone();
+                    let editor_menu_toggle_ref = editor_menu_toggle_ref.clone();
                     EventListener::new(&window, "keydown", move |e| {
                         if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
                             match e.key().as_str() {
-                                "Escape" => editor_menu_open.set(false),
+                                "Escape" => {
+                                    editor_menu_open.set(false);
+                                    if let Some(el) = editor_menu_toggle_ref.cast::<web_sys::HtmlElement>() {
+                                        let _ = el.focus();
+                                    }
+                                }
                                 "ArrowDown" => {
                                     e.prevent_default();
                                     crate::menu_keyboard::move_item_focus(&editor_menu_content_ref, 1);
@@ -1655,7 +1666,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     if *edited { <span class="editor__dirty">{ "não salvo" }</span> }
                     <button class="btn btn--primary btn--sm" onclick={do_save.reform(|_| ())} disabled={*saving || !*edited}>{ save_label }</button>
                     <div class="header-menu-wrapper" ref={editor_menu_ref}>
-                        <button class="btn btn--ghost btn--sm" onclick={toggle_editor_menu} title="Mais ações">{ "⋯" }</button>
+                        <button class="btn btn--ghost btn--sm" ref={editor_menu_toggle_ref} onclick={toggle_editor_menu} title="Mais ações">{ "⋯" }</button>
                         if *editor_menu_open {
                             <div class="header-menu" ref={editor_menu_content_ref}>
                                 <button class="header-menu__item btn btn--ghost btn--sm" onclick={{

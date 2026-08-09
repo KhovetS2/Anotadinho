@@ -124,8 +124,9 @@ pub fn app() -> Html {
             if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
                 if let Ok(stale) = doc.query_selector_all(".nav-mode__region-active") {
                     for i in 0..stale.length() {
-                        if let Some(el) = stale.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) {
+                        if let Some(el) = stale.item(i).and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok()) {
                             let _ = el.class_list().remove_1("nav-mode__region-active");
+                            let _ = el.style().remove_property("--nav-mode-depth-color");
                         }
                     }
                 }
@@ -135,8 +136,16 @@ pub fn app() -> Html {
                             .query_selector(&format!("[data-nav-group=\"{}\"]", group_id.replace('"', "")))
                             .ok()
                             .flatten()
+                            .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
                         {
                             let _ = el.class_list().add_1("nav-mode__region-active");
+                            // Ciclo 136: cor varia com a profundidade (azul→roxo)
+                            // pra dar uma pista visual de "quão fundo" a sessão
+                            // está, além do texto do badge.
+                            let _ = el.style().set_property(
+                                "--nav-mode-depth-color",
+                                &crate::nav_mode::depth_color_css(stack.len()),
+                            );
                         }
                     }
                 }
@@ -685,6 +694,9 @@ pub fn app() -> Html {
         let nav_mode_active = nav_mode_active.clone();
         let nav_stack = nav_stack.clone();
         let toggle_nav_mode = toggle_nav_mode.clone();
+        let pending_dialog = pending_dialog.clone();
+        let vim_settings_open = vim_settings_open.clone();
+        let global_keymap_settings_open = global_keymap_settings_open.clone();
         Callback::from(move |e: KeyboardEvent| {
             let ctrl = e.ctrl_key() || e.meta_key();
 
@@ -701,11 +713,41 @@ pub fn app() -> Html {
             // não usam Ctrl (igual Backspace/Enter aqui dentro), por
             // isso esse bloco também precisa vir antes do
             // `if !ctrl { return; }` logo abaixo.
-            if !ctrl {
+            //
+            // Suprimido por completo (ciclo 136) enquanto qualquer
+            // overlay estiver aberto — sem isso, Escape fechando um
+            // modal/menu/paleta TAMBÉM subia um nível (ou saía) do
+            // nav-mode na mesma tecla, já que os dois "ouvem" o mesmo
+            // Escape. Cada overlay continua dono do próprio teclado
+            // (Modal já trata Tab/Escape sozinho, paleta e cheatsheet
+            // idem) — aqui só evita o nav-mode competir por cima.
+            let any_overlay_open = pending_dialog.is_some()
+                || *palette_open
+                || *cheatsheet_open
+                || *vim_settings_open
+                || *global_keymap_settings_open;
+            if !ctrl && !any_overlay_open {
                 let key = e.key();
+                let doc = web_sys::window().and_then(|w| w.document());
+                // Menus dropdown "locais" (⚙ do header, popover de git,
+                // "⋯" do editor — ciclo 125) não são overlays do
+                // `app.rs`, então `any_overlay_open` não os vê. Sinal
+                // mais genérico: quando um deles abre, o auto-foco já
+                // move o `activeElement` pra DENTRO do menu (não é
+                // mais o item do nav-mode que tinha `data-nav-item`) —
+                // se o foco atual não é algo que o próprio nav-mode
+                // colocou lá, o teclado pertence a quem quer que tenha
+                // roubado o foco, não ao nav-mode.
+                let focus_is_nav_tracked = doc.as_ref()
+                    .and_then(|d| d.active_element())
+                    .is_some_and(|el| el.has_attribute("data-nav-item"));
                 if *nav_mode_active {
-                    let doc = web_sys::window().and_then(|w| w.document());
                     match key.as_str() {
+                        // Setas se AUTO-CURAM mesmo sem `focus_is_nav_tracked`
+                        // (ex: depois de um menu local fechar e deixar o foco
+                        // em `<body>`) — `index_of` já cai pro item 0 quando
+                        // o foco atual não é achado na lista, então só
+                        // apertar a seta de novo recupera a navegação.
                         "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft" => {
                             e.prevent_default();
                             if let Some(doc) = doc {
@@ -726,6 +768,13 @@ pub fn app() -> Html {
                             return;
                         }
                         "Enter" => {
+                            // Se o foco escapou pra algo que o nav-mode não
+                            // controla (menu local aberto, ou body depois
+                            // que ele fechou), esse Enter não é do nav-mode
+                            // — deixa passar sem `preventDefault`.
+                            if !focus_is_nav_tracked {
+                                return;
+                            }
                             e.prevent_default();
                             if let Some(doc) = doc {
                                 if let Some(active) = doc.active_element() {
@@ -790,6 +839,9 @@ pub fn app() -> Html {
                             return;
                         }
                         "Backspace" => {
+                            if !focus_is_nav_tracked {
+                                return;
+                            }
                             e.prevent_default();
                             let mut stack = (*nav_stack).clone();
                             stack.pop();
@@ -804,6 +856,14 @@ pub fn app() -> Html {
                             return;
                         }
                         "Escape" => {
+                            // O caso que este ciclo (136) corrige: um menu
+                            // local (⚙, popover de git, "⋯") já tem seu
+                            // próprio listener de Escape — sem essa guarda,
+                            // fechar o menu TAMBÉM subia um nível (ou saía)
+                            // do nav-mode na mesma tecla.
+                            if !focus_is_nav_tracked {
+                                return;
+                            }
                             e.prevent_default();
                             if nav_stack.is_empty() {
                                 nav_mode_active.set(false);
@@ -999,7 +1059,7 @@ pub fn app() -> Html {
                 on_open_vault={on_open_vault_shortcut}
             />
             if *nav_mode_active {
-                <span class="nav-mode-badge">
+                <span class="nav-mode-badge" style={format!("--nav-mode-depth-color: {};", crate::nav_mode::depth_color_css(nav_stack.len()))}>
                     { if nav_stack.is_empty() {
                         "-- NAV: Regiões --".to_string()
                     } else {
