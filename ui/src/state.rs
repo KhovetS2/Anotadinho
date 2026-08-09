@@ -231,10 +231,21 @@ impl Default for GlobalKeymap {
             // (`<C-l>` → `<C-w><C-l>`) — no Anotadinho, sidebar fica à
             // esquerda e o editor à direita, mesma geometria mental.
             focus_editor: "l".into(),
-            // "r" = livre no alfabeto já quase todo ocupado (mnemônico
-            // fraco, tipo "roam"/"reach" — documentado pra não parecer
-            // acidental, mesma categoria de `view_assets`="u" acima).
-            toggle_nav_mode: "r".into(),
+            // "j" — "r" (ciclo 133) foi trocado por causa de um bug
+            // real relatado pelo usuário: Ctrl+R não disparava o
+            // atalho, quase certamente porque o WebKitGTK (motor do
+            // Tauri no Linux) já reserva Ctrl+R pra "recarregar" a
+            // nível de engine, antes até de chegar no JS da página —
+            // diferente do Ctrl+N (testado nesta mesma sessão e
+            // confirmado inofensivo) porque "recarregar" é uma
+            // convenção de fato universal de qualquer coisa baseada
+            // em WebView/browser, não só chrome de navegador. "j" não
+            // tem convenção conhecida nesse nível nem colide com
+            // atalhos nativos de edição de texto (cut/copy/paste/
+            // select-all/bold/italic/underline — ver comentário do
+            // `new_folder` acima); conexão fraca com "j" = baixo no
+            // vim, ao menos soa como "mover/navegar".
+            toggle_nav_mode: "j".into(),
         }
     }
 }
@@ -461,7 +472,7 @@ mod tests {
         assert_eq!(km.toggle_vim_mode, "m");
         assert_eq!(km.focus_sidebar, "e");
         assert_eq!(km.focus_editor, "l");
-        assert_eq!(km.toggle_nav_mode, "r");
+        assert_eq!(km.toggle_nav_mode, "j");
     }
 
     #[test]

@@ -55,6 +55,46 @@ pub fn app() -> Html {
             || {}
         });
     }
+    // Rede de segurança geral (ciclo 138 — o MESMO bug do ciclo 137,
+    // mas acontecendo de novo toda vez que um overlay fecha, não só
+    // no boot). `Modal`/`CommandPalette`/`CheatsheetModal`/
+    // `VimSettingsModal`/`GlobalKeymapModal`/os modais locais de
+    // Propriedades e Histórico do editor desmontam o próprio conteúdo
+    // ao fechar (Escape, X, clique fora) sem devolver o foco pra
+    // lugar nenhum específico — quando o elemento QUE TINHA foco é
+    // removido do DOM, o navegador reseta o foco pro `<body>`. Como
+    // `<body>` é ancestral de `.app-root`, isso trava TODOS os
+    // atalhos globais de novo, do mesmo jeito que o boot travava.
+    //
+    // Tentei primeiro um listener de `focusout` na `window` (mais
+    // "elegante", só reage quando precisa) — não funcionou de forma
+    // confiável: quando o elemento focado é REMOVIDO do DOM (em vez
+    // de perder foco por Tab/clique normal), motores diferem em
+    // disparar `focusout` ou não, e o WebKitGTK usado aqui
+    // aparentemente não dispara nesse caso específico (confirmado ao
+    // vivo). Troquei por um polling leve — menos elegante, mas robusto
+    // contra QUALQUER jeito de um overlay futuro perder o foco sem
+    // precisar lembrar de tratar caso a caso (mesmo padrão de
+    // `gloo_timers::callback::Interval` já usado mais abaixo nesta
+    // função pra outra coisa).
+    {
+        let app_root_ref = app_root_ref.clone();
+        use_effect_with((), move |_| {
+            let interval = gloo_timers::callback::Interval::new(300, move || {
+                let fell_to_body = web_sys::window()
+                    .and_then(|w| w.document())
+                    .and_then(|d| d.active_element())
+                    .map(|el| el.tag_name().eq_ignore_ascii_case("body"))
+                    .unwrap_or(false);
+                if fell_to_body {
+                    if let Some(el) = app_root_ref.cast::<web_sys::HtmlElement>() {
+                        let _ = el.focus();
+                    }
+                }
+            });
+            move || drop(interval)
+        });
+    }
     let vault_path = use_state(|| state::load_vault_path());
     let vault_name = use_state(|| state::load_vault_name());
     let selected_page = use_state(|| None::<PageMeta>);
