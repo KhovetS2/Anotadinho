@@ -80,6 +80,18 @@ textarea:focus-visible,
     outline-offset: 2px;
 }
 
+/* `.app-root` tem `tabindex="0"` só pra capturar os atalhos globais
+   (ciclo 105) — inclusive um `.focus()` programático no mount (ciclo
+   137, corrige o bug de nenhum atalho global funcionar antes do
+   primeiro clique). WebKitGTK trata esse foco programático como
+   "visível", então sem essa regra o contorno azul de 2px envolvia a
+   JANELA INTEIRA do app ao abrir — `.app-root` não é um controle que
+   o usuário percebe como focável, então some daqui, mais específico
+   que a regra genérica `[tabindex]:focus-visible` acima. */
+.app-root:focus-visible {
+    outline: none;
+}
+
 html,
 body {
     height: 100%;

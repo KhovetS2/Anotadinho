@@ -35,6 +35,26 @@ fn is_text_input_target(e: &KeyboardEvent) -> bool {
 
 #[function_component(App)]
 pub fn app() -> Html {
+    // Foca `.app-root` uma vez, ao montar (ciclo 137 — bug real
+    // reportado pelo usuário). Sem isso, o foco do navegador começa
+    // em `<body>` até o usuário clicar em ALGO dentro do app — e
+    // como eventos de teclado só borbulham pra CIMA (nunca descem de
+    // volta pra dentro de um descendente), um Ctrl+tecla disparado
+    // com o foco ainda em `<body>` NUNCA alcança o `onkeydown` do
+    // `.app-root`, então NENHUM atalho global funciona (nav-mode,
+    // paleta, Ctrl+S, etc.) até o primeiro clique. `use_effect_with`
+    // com dependência `()` roda uma vez só, no mount deste componente
+    // raiz — que só monta uma vez por sessão do app.
+    let app_root_ref = use_node_ref();
+    {
+        let app_root_ref = app_root_ref.clone();
+        use_effect_with((), move |_| {
+            if let Some(el) = app_root_ref.cast::<web_sys::HtmlElement>() {
+                let _ = el.focus();
+            }
+            || {}
+        });
+    }
     let vault_path = use_state(|| state::load_vault_path());
     let vault_name = use_state(|| state::load_vault_name());
     let selected_page = use_state(|| None::<PageMeta>);
@@ -1028,7 +1048,7 @@ pub fn app() -> Html {
     let vault_open = vault_path.is_some();
 
     html! {
-        <div class="app-root" tabindex="0" {onkeydown}>
+        <div class="app-root" tabindex="0" ref={app_root_ref} {onkeydown}>
             <HeaderBar
                 vault_name={(*vault_name).clone()}
                 vault_path={(*vault_path).clone()}
