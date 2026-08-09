@@ -208,6 +208,13 @@ pub fn app() -> Html {
                             );
                         }
                     }
+                } else {
+                    // Sessão terminou (delegate ou Escape na raiz) —
+                    // limpa o indicador do ÚLTIMO item focado (ciclo
+                    // 139), que senão ficaria "preso" visualmente já
+                    // que ninguém mais chama `focus_item` pra
+                    // substituí-lo.
+                    crate::nav_mode::clear_item_highlight();
                 }
             }
             || {}

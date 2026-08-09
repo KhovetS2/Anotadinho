@@ -1502,6 +1502,20 @@ body {
     box-shadow: inset 0 0 0 2px var(--nav-mode-depth-color, var(--accent-blue));
 }
 
+/* Indicador do ITEM focado dentro da sessão (ciclo 139, pedido do
+   usuário) — o `:focus-visible` genérico (ciclo 123, só contorno com
+   offset) nem sempre chama atenção o bastante em itens grandes (ex: o
+   `<header>` inteiro é um item de nível raiz) ou clipados por um
+   ancestral com `overflow`. Fundo + borda interna são mais robustos
+   contra os dois casos. Cor herdada de `--nav-mode-depth-color`
+   (setada no `.nav-mode__region-active` mais próximo, cascateando
+   via herança normal de custom property do CSS — item na raiz, sem
+   ancestral com a variável setada, cai no fallback azul). */
+.nav-mode__item-active {
+    background-color: color-mix(in srgb, var(--nav-mode-depth-color, var(--accent-blue)) 18%, transparent);
+    box-shadow: inset 0 0 0 2px var(--nav-mode-depth-color, var(--accent-blue));
+}
+
 /* Mermaid diagrams */
 .editor__wysiwyg .mermaid {
     background: var(--bg-surface);

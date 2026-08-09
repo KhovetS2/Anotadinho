@@ -51,6 +51,9 @@ pub fn index_of(items: &[web_sys::Element], active: Option<&web_sys::Element>) -
     items.iter().position(|el| active.is_same_node(Some(el)))
 }
 
+/// Classe do indicador de item focado do nav-mode — ver `focus_item`.
+const ITEM_ACTIVE_CLASS: &str = "nav-mode__item-active";
+
 /// Foca um item e rola ele pra dentro da área visível (`Nearest` —
 /// mesmo critério já usado por sidebar/paleta/vim mode, rola o mínimo
 /// necessário em vez de centralizar à toa a cada tecla). Tenta
@@ -60,7 +63,27 @@ pub fn index_of(items: &[web_sys::Element], active: Option<&web_sys::Element>) -
 /// silenciosamente pra SVG, então sem esse segundo braço o `.focus()`
 /// simplesmente não acontecia pros nós do grafo — achado ao vivo na
 /// validação deste ciclo).
+///
+/// Também marca o item com `ITEM_ACTIVE_CLASS` (ciclo 139, pedido do
+/// usuário) — o `:focus-visible` genérico (ciclo 123, só contorno)
+/// nem sempre é visível o bastante em itens grandes/com pouco
+/// contraste de fundo (ex: o `<header>` inteiro como item de nível
+/// raiz); a classe soma um fundo + borda interna mais robustos contra
+/// isso, na mesma cor do nível atual (`--nav-mode-depth-color`,
+/// ciclo 136). Limpa a marca do item anterior antes — mesmo padrão de
+/// "consultar e substituir" já usado pro destaque de região.
 pub fn focus_item(el: &web_sys::Element) {
+    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+        if let Ok(stale) = doc.query_selector_all(&format!(".{}", ITEM_ACTIVE_CLASS)) {
+            for i in 0..stale.length() {
+                if let Some(stale_el) = stale.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) {
+                    let _ = stale_el.class_list().remove_1(ITEM_ACTIVE_CLASS);
+                }
+            }
+        }
+    }
+    let _ = el.class_list().add_1(ITEM_ACTIVE_CLASS);
+
     if let Some(html_el) = el.dyn_ref::<web_sys::HtmlElement>() {
         let _ = html_el.focus();
     } else if let Some(svg_el) = el.dyn_ref::<web_sys::SvgElement>() {
@@ -69,6 +92,22 @@ pub fn focus_item(el: &web_sys::Element) {
     let opts = web_sys::ScrollIntoViewOptions::new();
     opts.set_block(web_sys::ScrollLogicalPosition::Nearest);
     el.scroll_into_view_with_scroll_into_view_options(&opts);
+}
+
+/// Remove `ITEM_ACTIVE_CLASS` de qualquer elemento que a tenha — usado
+/// quando a sessão inteira do nav-mode termina (delegate ou saída via
+/// Escape), pra não deixar o indicador "preso" num item depois que o
+/// foco já foi pra outro lugar que `focus_item` não gerencia mais.
+pub fn clear_item_highlight() {
+    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+        if let Ok(stale) = doc.query_selector_all(&format!(".{}", ITEM_ACTIVE_CLASS)) {
+            for i in 0..stale.length() {
+                if let Some(stale_el) = stale.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) {
+                    let _ = stale_el.class_list().remove_1(ITEM_ACTIVE_CLASS);
+                }
+            }
+        }
+    }
 }
 
 /// Nome do sistema de navegação bespoke que deve assumir o teclado a
