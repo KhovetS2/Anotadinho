@@ -11,6 +11,7 @@ use wasm_bindgen::JsCast;
 use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
 
+use crate::components::icon::Icon;
 use crate::dialog::PendingDialog;
 
 /// Tipos de página reconhecidos por `page_view.rs` — o campo `type`
@@ -195,7 +196,7 @@ pub fn properties_panel(props: &PropertiesPanelProps) -> Html {
                         html! {
                             <span class="properties-panel__tag-chip">
                                 { tag }
-                                <button class="properties-panel__tag-remove" {onclick}>{ "✕" }</button>
+                                <button class="properties-panel__tag-remove" {onclick}><Icon name="x" /></button>
                             </span>
                         }
                     }) }
@@ -209,7 +210,7 @@ pub fn properties_panel(props: &PropertiesPanelProps) -> Html {
                     <div class="properties-panel__row">
                         <span class="properties-panel__key">{ key }</span>
                         <input class="properties-panel__input" type="text" value={value.clone()} {oninput} />
-                        <button class="properties-panel__remove" title="Remover propriedade" {onclick}>{ "✕" }</button>
+                        <button class="properties-panel__remove" title="Remover propriedade" {onclick}><Icon name="x" /></button>
                     </div>
                 }
             }) }

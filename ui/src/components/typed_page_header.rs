@@ -11,6 +11,7 @@ use anotadinho_core::Frontmatter;
 use yew::prelude::*;
 
 use crate::api::{self, PageMeta};
+use crate::components::icon::Icon;
 use crate::components::modal::Modal;
 use crate::components::properties_panel::PropertiesPanel;
 use crate::dialog::PendingDialog;
@@ -103,7 +104,7 @@ pub fn typed_page_header(props: &TypedPageHeaderProps) -> Html {
             <h2 class="editor__title">{ &props.page.title }</h2>
             <div class="editor__actions">
                 <button class="btn btn--ghost btn--sm" onclick={on_open} title="Propriedades">
-                    { "⚙ Propriedades" }
+                    <Icon name="settings" />{ " Propriedades" }
                 </button>
             </div>
             if *open {

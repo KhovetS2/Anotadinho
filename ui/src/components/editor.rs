@@ -8,6 +8,7 @@ use web_sys::KeyboardEvent;
 
 use crate::api::{self, PageMeta};
 use crate::components::embeds::InlineEmbed;
+use crate::components::icon::Icon;
 use crate::components::modal::Modal;
 use crate::components::properties_panel::PropertiesPanel;
 use crate::dialog::PendingDialog;
@@ -1686,7 +1687,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     if *edited { <span class="editor__dirty">{ "não salvo" }</span> }
                     <button class="btn btn--primary btn--sm" onclick={do_save.reform(|_| ())} disabled={*saving || !*edited}>{ save_label }</button>
                     <div class="header-menu-wrapper" ref={editor_menu_ref}>
-                        <button class="btn btn--ghost btn--sm" ref={editor_menu_toggle_ref} onclick={toggle_editor_menu} title="Mais ações">{ "⋯" }</button>
+                        <button class="btn btn--ghost btn--sm" ref={editor_menu_toggle_ref} onclick={toggle_editor_menu} title="Mais ações"><Icon name="more-horizontal" /></button>
                         if *editor_menu_open {
                             <div class="header-menu" ref={editor_menu_content_ref}>
                                 <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
@@ -1694,7 +1695,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                     let toggle_home = toggle_home.clone();
                                     Callback::from(move |e: MouseEvent| { editor_menu_open.set(false); toggle_home.emit(e); })
                                 }}>
-                                    { if is_home { "🏠 Remover como início" } else { "🏠 Definir como início" } }
+                                    <Icon name="home" />{ if is_home { " Remover como início" } else { " Definir como início" } }
                                 </button>
                                 <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
                                     let editor_menu_open = editor_menu_open.clone();
@@ -1708,14 +1709,14 @@ pub fn editor(props: &EditorProps) -> Html {
                                     let on_export = on_export.clone();
                                     Callback::from(move |e: MouseEvent| { editor_menu_open.set(false); on_export.emit(e); })
                                 }}>
-                                    { "⬇ Exportar HTML" }
+                                    <Icon name="download" />{ " Exportar HTML" }
                                 </button>
                                 <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
                                     let editor_menu_open = editor_menu_open.clone();
                                     let open_history = open_history.clone();
                                     Callback::from(move |e: MouseEvent| { editor_menu_open.set(false); open_history.emit(e); })
                                 }}>
-                                    { "🕐 Histórico" }
+                                    <Icon name="clock" />{ " Histórico" }
                                 </button>
                                 <div class="divider"></div>
                                 <button class="header-menu__item header-menu__item--danger btn btn--ghost btn--sm" onclick={{
@@ -1833,7 +1834,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                             <button class="embed-hover-wrapper__add-line embed-hover-wrapper__add-line--top"
                                                 onclick={insert_blank_line(i)} title="Adicionar linha acima">{ "+" }</button>
                                             <button class="embed-hover-wrapper__remove"
-                                                onclick={remove_embed(i)} title="Remover embed">{ "✕" }</button>
+                                                onclick={remove_embed(i)} title="Remover embed"><Icon name="x" /></button>
                                             <InlineEmbed
                                                 data={data.clone()}
                                                 vault_path={props.vault_path.clone()}
@@ -1906,7 +1907,7 @@ pub fn editor(props: &EditorProps) -> Html {
                             let node_ref = if is_active { wikilink_active_ref.clone() } else { NodeRef::default() };
                             html! {
                                 <div {class} ref={node_ref} {onmousedown} {onclick}>
-                                    <span class="wikilink-menu__item-icon">{ "📄" }</span>
+                                    <span class="wikilink-menu__item-icon"><Icon name="file-text" /></span>
                                     <span class="wikilink-menu__item-title">{ &page.title }</span>
                                 </div>
                             }
@@ -1917,7 +1918,7 @@ pub fn editor(props: &EditorProps) -> Html {
             if !backlinks.is_empty() {
                 <details class="editor__backlinks">
                     <summary class="editor__backlinks-summary">
-                        { format!("🔗 Backlinks ({})", backlinks.len()) }
+                        <Icon name="link" />{ format!(" Backlinks ({})", backlinks.len()) }
                     </summary>
                     <ul class="editor__backlinks-list">
                         { for backlinks.iter().map(|(path, excerpt)| {

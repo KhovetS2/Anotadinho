@@ -8,6 +8,7 @@ use web_sys::{HtmlInputElement, KeyboardEvent};
 use yew::prelude::*;
 
 use crate::api::{self, PageMeta};
+use crate::components::icon::Icon;
 use crate::components::sidebar::render_excerpt_highlight;
 
 /// Só busca conteúdo (via `SearchIndex` FTS5, ciclo 094) a partir desse
@@ -268,19 +269,19 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
                                     { match item {
                                         Item::Command(label, _) => html! {
                                             <div {class} ref={node_ref} {onmousedown} {onclick}>
-                                                <span class="command-palette__item-icon">{ "⚡" }</span>
+                                                <span class="command-palette__item-icon"><Icon name="zap" /></span>
                                                 <span class="command-palette__item-title">{ *label }</span>
                                             </div>
                                         },
                                         Item::Page(meta) => html! {
                                             <div {class} ref={node_ref} {onmousedown} {onclick}>
-                                                <span class="command-palette__item-icon">{ "📄" }</span>
+                                                <span class="command-palette__item-icon"><Icon name="file-text" /></span>
                                                 <span class="command-palette__item-title">{ &meta.title }</span>
                                             </div>
                                         },
                                         Item::ContentResult(meta, excerpt) => html! {
                                             <div {class} ref={node_ref} {onmousedown} {onclick}>
-                                                <span class="command-palette__item-icon">{ "📄" }</span>
+                                                <span class="command-palette__item-icon"><Icon name="file-text" /></span>
                                                 <div class="command-palette__item-result">
                                                     <span class="command-palette__item-title">{ &meta.title }</span>
                                                     <span class="command-palette__item-excerpt">{ render_excerpt_highlight(excerpt) }</span>
