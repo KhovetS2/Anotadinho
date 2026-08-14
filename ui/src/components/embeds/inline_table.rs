@@ -13,6 +13,7 @@ use yew::prelude::*;
 use crate::api::PageMeta;
 use crate::components::date_picker::DatePicker;
 use crate::components::embeds::ColumnSettingsModal;
+use crate::components::icon::Icon;
 use crate::dialog::PendingDialog;
 use crate::embed::{badge_class, ColumnKind, TableEmbedData};
 
@@ -236,8 +237,8 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                             html! {
                                 <th class="task-table__th">
                                     <span class="task-table__th-name">{ &col.name }</span>
-                                    <button class="task-table__th-action" onclick={open_settings} title="Configurar coluna">{ "⚙" }</button>
-                                    <button class="task-table__th-action" onclick={delete_col} title="Excluir coluna">{ "✕" }</button>
+                                    <button class="task-table__th-action" onclick={open_settings} title="Configurar coluna"><Icon name="settings" /></button>
+                                    <button class="task-table__th-action" onclick={delete_col} title="Excluir coluna"><Icon name="x" /></button>
                                 </th>
                             }
                         }) }
@@ -401,7 +402,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                             <button class="task-table__link-add" onclick={edit}>{ "+ url" }</button>
                                                         } else {
                                                             <a class="task-table__link" href={cell.clone()} target="_blank" rel="noopener noreferrer">{ cell.clone() }</a>
-                                                            <button class="task-table__link-edit" onclick={edit} title="Editar URL">{ "✎" }</button>
+                                                            <button class="task-table__link-edit" onclick={edit} title="Editar URL"><Icon name="edit" /></button>
                                                         }
                                                     </div>
                                                 </td>
@@ -444,9 +445,9 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                         <button class="task-table__page-link-add" onclick={toggle_open} onkeydown={toggle_onkeydown}>{ "+ página" }</button>
                                                     } else {
                                                         <span class="task-table__page-link" tabindex="0" onclick={toggle_open} onkeydown={toggle_onkeydown}>
-                                                            { format!("📄 {}", linked.as_ref().map(|p| p.title.as_str()).unwrap_or(cell_value.as_str())) }
+                                                            <Icon name="file-text" />{ format!(" {}", linked.as_ref().map(|p| p.title.as_str()).unwrap_or(cell_value.as_str())) }
                                                         </span>
-                                                        <button class="task-table__page-link-open" onclick={open_page} title="Abrir página">{ "↗" }</button>
+                                                        <button class="task-table__page-link-open" onclick={open_page} title="Abrir página"><Icon name="external-link" /></button>
                                                     }
                                                     if is_open {
                                                         <div class="table-select-menu">
@@ -557,7 +558,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                                 };
                                                                 html! {
                                                                     <div {class} onclick={toggle_tag}>
-                                                                        <span class="table-select-menu__check">{ if is_checked { "☑" } else { "☐" } }</span>
+                                                                        <span class="table-select-menu__check"><Icon name={if is_checked { "check-square" } else { "square" }} /></span>
                                                                         { opt }
                                                                     </div>
                                                                 }
@@ -675,7 +676,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                     }
                                 }) }
                                 <td class="task-table__td task-table__td--actions">
-                                    <button class="task-table__row-delete" onclick={delete_row} title="Excluir linha">{ "✕" }</button>
+                                    <button class="task-table__row-delete" onclick={delete_row} title="Excluir linha"><Icon name="x" /></button>
                                 </td>
                             </tr>
                         }

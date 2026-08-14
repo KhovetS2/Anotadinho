@@ -17,6 +17,7 @@ use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
 use crate::components::embeds::CardDetailModal;
+use crate::components::icon::Icon;
 use crate::dialog::PendingDialog;
 use crate::embed::{KanbanCard, KanbanEmbedData};
 
@@ -217,7 +218,7 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                             <div class="kanban__col-header">
                                 <span class="kanban__col-title" onclick={rename_column} title="Renomear coluna">{ col }</span>
                                 <span class="kanban__col-count">{ items.len() }</span>
-                                <button class="kanban__col-delete" onclick={delete_column} title="Excluir coluna">{ "✕" }</button>
+                                <button class="kanban__col-delete" onclick={delete_column} title="Excluir coluna"><Icon name="x" /></button>
                             </div>
                             <div class="kanban__col-body">
                                 { for items.into_iter().map(|(idx, item)| {
@@ -350,25 +351,26 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                                             <div class="kanban__card-main">
                                                 <span class="kanban__card-title">{ &item.title }</span>
                                                 <span class="kanban__card-actions">
-                                                    <button class="kanban__card-action" onmousedown={stop_mousedown.clone()} onclick={edit_card} title="Editar título">{ "✎" }</button>
-                                                    <button class="kanban__card-action" onmousedown={stop_mousedown} onclick={delete_card} title="Excluir">{ "✕" }</button>
+                                                    <button class="kanban__card-action" onmousedown={stop_mousedown.clone()} onclick={edit_card} title="Editar título"><Icon name="edit" /></button>
+                                                    <button class="kanban__card-action" onmousedown={stop_mousedown} onclick={delete_card} title="Excluir"><Icon name="x" /></button>
                                                 </span>
                                             </div>
                                             if has_extras {
                                                 <div class="kanban__card-meta">
                                                     if !item.checklist.is_empty() {
                                                         <span class="kanban__card-badge">
-                                                            { format!("☑ {}/{}", item.checklist.iter().filter(|c| c.done).count(), item.checklist.len()) }
+                                                            <Icon name="check-square" />
+                                                            { format!(" {}/{}", item.checklist.iter().filter(|c| c.done).count(), item.checklist.len()) }
                                                         </span>
                                                     }
                                                     if let Some(due) = &item.due {
-                                                        <span class="kanban__card-badge">{ format!("📅 {due}") }</span>
+                                                        <span class="kanban__card-badge"><Icon name="calendar" />{ format!(" {due}") }</span>
                                                     }
                                                     if !item.comments.is_empty() {
-                                                        <span class="kanban__card-badge">{ format!("💬 {}", item.comments.len()) }</span>
+                                                        <span class="kanban__card-badge"><Icon name="message-circle" />{ format!(" {}", item.comments.len()) }</span>
                                                     }
                                                     if !item.attachments.is_empty() {
-                                                        <span class="kanban__card-badge">{ format!("📎 {}", item.attachments.len()) }</span>
+                                                        <span class="kanban__card-badge"><Icon name="paperclip" />{ format!(" {}", item.attachments.len()) }</span>
                                                     }
                                                 </div>
                                             }

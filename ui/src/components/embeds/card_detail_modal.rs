@@ -7,6 +7,7 @@ use wasm_bindgen::JsCast;
 use web_sys::FocusEvent;
 use yew::prelude::*;
 
+use crate::components::icon::Icon;
 use crate::components::modal::Modal;
 use crate::dialog::PendingDialog;
 use crate::embed::{Attachment, ChecklistItem, KanbanCard};
@@ -223,7 +224,7 @@ pub fn card_detail_modal(props: &CardDetailModalProps) -> Html {
                             html! {
                                 <span class="badge badge--info card-modal__tag">
                                     { tag }
-                                    <button class="card-modal__tag-remove" onclick={remove}>{ "✕" }</button>
+                                    <button class="card-modal__tag-remove" onclick={remove}><Icon name="x" /></button>
                                 </span>
                             }
                         }) }
@@ -264,7 +265,7 @@ pub fn card_detail_modal(props: &CardDetailModalProps) -> Html {
                                 <div class="card-modal__checklist-item">
                                     <input class="checkbox" type="checkbox" checked={item.done} onclick={toggle} />
                                     <span class={item_class}>{ &item.text }</span>
-                                    <button class="card-modal__tag-remove" onclick={remove}>{ "✕" }</button>
+                                    <button class="card-modal__tag-remove" onclick={remove}><Icon name="x" /></button>
                                 </div>
                             }
                         }) }
@@ -303,7 +304,7 @@ pub fn card_detail_modal(props: &CardDetailModalProps) -> Html {
                         html! {
                             <div class="card-modal__attachment">
                                 <span class="card-modal__attachment-name">{ &a.name }</span>
-                                <button class="card-modal__tag-remove" onclick={remove}>{ "✕" }</button>
+                                <button class="card-modal__tag-remove" onclick={remove}><Icon name="x" /></button>
                             </div>
                         }
                     }) }

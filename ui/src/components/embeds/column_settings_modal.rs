@@ -7,6 +7,7 @@ use wasm_bindgen::JsCast;
 use web_sys::{FocusEvent, HtmlSelectElement};
 use yew::prelude::*;
 
+use crate::components::icon::Icon;
 use crate::components::modal::Modal;
 use crate::embed::{ColumnKind, TableColumn};
 
@@ -158,7 +159,7 @@ pub fn column_settings_modal(props: &ColumnSettingsModalProps) -> Html {
                                 html! {
                                     <span class="badge badge--info card-modal__tag">
                                         { opt }
-                                        <button class="card-modal__tag-remove" onclick={remove}>{ "✕" }</button>
+                                        <button class="card-modal__tag-remove" onclick={remove}><Icon name="x" /></button>
                                     </span>
                                 }
                             }) }

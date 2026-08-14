@@ -11,6 +11,7 @@ use std::f64::consts::PI;
 use yew::prelude::*;
 
 use crate::api::{self, PageMeta};
+use crate::components::icon::Icon;
 
 #[derive(Debug, Clone, PartialEq)]
 struct Node {
@@ -175,7 +176,7 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
         return html! {
             <div class="graph-view">
                 <div class="empty-state-card">
-                    <div class="empty-state-card__icon">{ "🕸" }</div>
+                    <div class="empty-state-card__icon"><Icon name="network" /></div>
                     <div class="empty-state-card__title">{ "Nenhuma página no vault ainda" }</div>
                 </div>
             </div>
