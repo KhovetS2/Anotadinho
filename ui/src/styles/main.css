@@ -3420,3 +3420,16 @@ body {
     line-height: 1.6;
     tab-size: 2;
 }
+
+/* Ícones SVG inline (ciclo 144) — substituem emoji/glifos de fonte
+   por não dependerem de fonte de emoji/símbolo instalada no SO.
+   `currentColor` herda a cor do texto do elemento pai (hover/tema
+   claro/escuro funcionam de graça); `1em` deixa do tamanho da fonte
+   ao redor por padrão. */
+.icon {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.125em;
+    flex-shrink: 0;
+}

@@ -12,6 +12,7 @@ pub mod empty_state;
 pub mod global_keymap_modal;
 pub mod graph_view;
 pub mod header_bar;
+pub mod icon;
 pub mod kanban;
 pub mod keymap_capture_modal;
 pub mod modal;
