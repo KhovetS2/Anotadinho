@@ -2,6 +2,7 @@
 
 use yew::prelude::*;
 use crate::api::PageMeta;
+use crate::components::icon::Icon;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct TabBarProps {
@@ -62,7 +63,11 @@ pub fn tab_bar(props: &TabBarProps) -> Html {
                             if let Some(n) = shortcut_num {
                                 <span class="tab-bar__tab-num">{ n }</span>
                             }
-                            if is_home { { "🏠" } } else { { &tab.title } }
+                            if is_home {
+                                <Icon name="home" />
+                            } else {
+                                { &tab.title }
+                            }
                         </span>
                         <button class="tab-bar__tab-close"
                             onclick={Callback::from(move |_| on_close.emit(i))}>

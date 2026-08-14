@@ -5,6 +5,7 @@ use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
 use crate::api::{self, GitFileEntry};
+use crate::components::icon::Icon;
 use crate::dialog::PendingDialog;
 
 #[derive(Properties, PartialEq, Clone)]
@@ -244,7 +245,7 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
             <div class="header-bar__left">
                 <button class="btn btn--ghost btn--xs" onclick={props.on_toggle_sidebar.reform(|_| ())}
                     data-nav-item="header-sidebar-toggle" data-nav-parent="header">
-                    { if props.sidebar_collapsed { "▶" } else { "◀" } }
+                    <Icon name={if props.sidebar_collapsed { "chevron-right" } else { "chevron-left" }} />
                 </button>
                 <span class="header-bar__title">{ "Anotadinho" }</span>
                 if let Some(ref name) = props.vault_name {
@@ -254,7 +255,7 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                     <div class="git-status-wrapper" ref={git_popover_ref}>
                         <button class="btn btn--ghost btn--xs git-status__indicator" ref={git_popover_toggle_ref} onclick={toggle_git_popover} title="Status do git"
                             data-nav-item="header-git" data-nav-parent="header">
-                            { format!("⎇ {}", files.len()) }
+                            <Icon name="git-branch" />{ format!(" {}", files.len()) }
                         </button>
                         if *git_popover_open {
                             <div class="git-status__popover" ref={git_popover_content_ref}>
@@ -286,11 +287,11 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
             <div class="header-bar__right">
                 <button class="btn btn--ghost btn--xs" onclick={props.on_toggle_theme.reform(|_| ())}
                     data-nav-item="header-theme" data-nav-parent="header">
-                    { if props.theme_light { "☀" } else { "🌙" } }
+                    <Icon name={if props.theme_light { "sun" } else { "moon" }} />
                 </button>
                 <div class="header-menu-wrapper" ref={menu_ref}>
                     <button class="btn btn--ghost btn--xs" ref={menu_toggle_ref} onclick={toggle_menu}
-                        data-nav-item="header-menu" data-nav-parent="header">{ "⚙" }</button>
+                        data-nav-item="header-menu" data-nav-parent="header"><Icon name="settings" /></button>
                     if *menu_open {
                         <div class="header-menu" ref={menu_content_ref}>
                             <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
@@ -315,21 +316,27 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                                 let on_toggle_theme = props.on_toggle_theme.clone();
                                 Callback::from(move |_| { menu_open.set(false); on_toggle_theme.emit(()); })
                             }}>
-                                { if props.theme_light { "🌙 Tema escuro" } else { "☀ Tema claro" } }
+                                if props.theme_light {
+                                    <Icon name="moon" />{ " Tema escuro" }
+                                } else {
+                                    <Icon name="sun" />{ " Tema claro" }
+                                }
                             </button>
                             <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
                                 let menu_open = menu_open.clone();
                                 let on_toggle_autosave = props.on_toggle_autosave.clone();
                                 Callback::from(move |_| { menu_open.set(false); on_toggle_autosave.emit(()); })
                             }}>
-                                { if props.autosave_enabled { "✓ Salvamento automático" } else { "Salvamento automático" } }
+                                if props.autosave_enabled { <Icon name="check" />{ " " } }
+                                { "Salvamento automático" }
                             </button>
                             <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
                                 let menu_open = menu_open.clone();
                                 let on_toggle_vim_mode = props.on_toggle_vim_mode.clone();
                                 Callback::from(move |_| { menu_open.set(false); on_toggle_vim_mode.emit(()); })
                             }}>
-                                { if props.vim_mode_enabled { "✓ Vim mode" } else { "Vim mode" } }
+                                if props.vim_mode_enabled { <Icon name="check" />{ " " } }
+                                { "Vim mode" }
                             </button>
                             if props.vim_mode_enabled {
                                 <button class="header-menu__item btn btn--ghost btn--sm" onclick={{

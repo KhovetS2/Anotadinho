@@ -16,6 +16,7 @@ use web_sys::{HtmlInputElement, KeyboardEvent};
 use yew::prelude::*;
 
 use crate::api::{self, PageMeta};
+use crate::components::icon::Icon;
 use crate::dialog::PendingDialog;
 
 /// Nó da árvore de pastas construída a partir de `PageMeta::path` +
@@ -728,9 +729,9 @@ pub fn sidebar(props: &SidebarProps) -> Html {
             tabindex="0" data-nav-item="sidebar" data-nav-parent="root" data-nav-delegate="sidebar">
             if props.collapsed {
                 <div class="sidebar-collapsed" title="Expandir sidebar">
-                    <span class="sidebar-collapsed__icon" title="Pages">{ "📄" }</span>
-                    <span class="sidebar-collapsed__icon" title="Journals">{ "📅" }</span>
-                    <span class="sidebar-collapsed__icon" title="Buscar">{ "🔍" }</span>
+                    <span class="sidebar-collapsed__icon" title="Pages"><Icon name="file-text" /></span>
+                    <span class="sidebar-collapsed__icon" title="Journals"><Icon name="calendar" /></span>
+                    <span class="sidebar-collapsed__icon" title="Buscar"><Icon name="search" /></span>
                 </div>
             } else {
             <div class="sidebar-search">
@@ -738,7 +739,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                     value={(*search).clone()} oninput={on_search_input} onkeydown={on_search_keydown} />
                 if !search.is_empty() {
                     <button class="sidebar-search__clear" onclick={clear_search} title="Limpar busca">
-                        { "✕" }
+                        <Icon name="x" />
                     </button>
                 }
             </div>
@@ -753,8 +754,8 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 <div class="sidebar-section" tabindex="0" ref={nav_container_ref} onkeydown={on_nav_keydown}>
                     <div class="sidebar-section__header">
                         <h3 class="sidebar-section__title">{ "Pages" }</h3>
-                        <button class="btn btn--ghost btn--xs" title="Nova página inicial (landing)" onclick={on_new_landing}>{ "🏠+" }</button>
-                        <button class="btn btn--ghost btn--xs" title="Nova pasta" onclick={on_new_folder}>{ "📁+" }</button>
+                        <button class="btn btn--ghost btn--xs" title="Nova página inicial (landing)" onclick={on_new_landing}><Icon name="home" />{ "+" }</button>
+                        <button class="btn btn--ghost btn--xs" title="Nova pasta" onclick={on_new_folder}><Icon name="folder" />{ "+" }</button>
                         <button class="btn btn--ghost btn--xs" title="Nova página" onclick={on_new_page}>{ "+" }</button>
                     </div>
                     if page_items.is_empty() {
@@ -790,7 +791,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                                 });
                                 html! {
                                     <li class="sidebar-item" {onclick}>
-                                        <span class="sidebar-item__icon">{ page_icon("search") }</span>
+                                        <span class="sidebar-item__icon"><Icon name={page_icon("search")} /></span>
                                         <div class="sidebar-item__result">
                                             <span class="sidebar-item__title">{ &title }</span>
                                             <span class="sidebar-item__excerpt">{ render_excerpt_highlight(&excerpt) }</span>
@@ -838,7 +839,7 @@ fn render_list(
                 });
                 html! {
                     <li {class} {onclick}>
-                        <span class="sidebar-item__icon">{ page_icon(&page.section) }</span>
+                        <span class="sidebar-item__icon"><Icon name={page_icon(&page.section)} /></span>
                         <span class="sidebar-item__title">{ &title }</span>
                     </li>
                 }
@@ -886,9 +887,9 @@ fn render_movable_list<F: Fn(String) -> Callback<MouseEvent>>(
                 let on_move = make_on_move(path.clone());
                 html! {
                     <li {class} ref={node_ref} {onclick}>
-                        <span class="sidebar-item__icon">{ page_icon(&page.section) }</span>
+                        <span class="sidebar-item__icon"><Icon name={page_icon(&page.section)} /></span>
                         <span class="sidebar-item__title">{ &title }</span>
-                        <button class="sidebar-item__move btn btn--ghost btn--xs" title="Mover pra pasta" onclick={on_move}>{ "📁" }</button>
+                        <button class="sidebar-item__move btn btn--ghost btn--xs" title="Mover pra pasta" onclick={on_move}><Icon name="folder" /></button>
                     </li>
                 }
             }) }
@@ -945,10 +946,10 @@ fn render_tree<
                 html! {
                     <details class="sidebar-folder" open={is_open} {ontoggle}>
                         <summary class={summary_class} ref={summary_ref}>
-                            <span class="sidebar-folder__icon">{ "📁" }</span>
+                            <span class="sidebar-folder__icon"><Icon name="folder" /></span>
                             <span class="sidebar-folder__name">{ name }</span>
                             <button class="btn btn--ghost btn--xs" title="Nova página nesta pasta" onclick={on_new}>{ "+" }</button>
-                            <button class="btn btn--ghost btn--xs" title="Exportar pasta" onclick={on_export}>{ "⬇" }</button>
+                            <button class="btn btn--ghost btn--xs" title="Exportar pasta" onclick={on_export}><Icon name="download" /></button>
                         </summary>
                         <div class="sidebar-folder__body">
                             { render_tree(sub, &full_path, selected_path, on_page_selected, make_on_move, make_on_new_page_in, make_on_export, collapsed_folders, nav_active, nav_item_ref) }
@@ -985,9 +986,9 @@ pub(crate) fn render_excerpt_highlight(excerpt: &str) -> Html {
 
 fn page_icon(section: &str) -> &'static str {
     match section {
-        "journals" => "📅",
-        "search" => "🔍",
-        _ => "📄",
+        "journals" => "calendar",
+        "search" => "search",
+        _ => "file-text",
     }
 }
 

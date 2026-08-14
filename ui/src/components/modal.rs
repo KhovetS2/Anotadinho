@@ -3,6 +3,8 @@
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
+use crate::components::icon::Icon;
+
 #[derive(Properties, PartialEq, Clone)]
 pub struct ModalProps {
     pub title: String,
@@ -126,7 +128,7 @@ pub fn modal(props: &ModalProps) -> Html {
                 <div class="modal__header">
                     <h3 class="modal__title">{ &props.title }</h3>
                     <button class="btn btn--ghost btn--xs" onclick={close.reform(|_| ())}>
-                        { "✕" }
+                        <Icon name="x" />
                     </button>
                 </div>
                 <div class="modal__body" ref={body_ref}>
