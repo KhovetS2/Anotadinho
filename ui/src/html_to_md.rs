@@ -24,29 +24,31 @@ fn walk(node: &Element, _depth: usize) -> String {
         "em" | "i" => format!("*{}*", text_of(node)),
         "u" => text_of(node),
         "s" | "del" | "strike" => format!("~~{}~~", text_of(node)),
-        "code" => {
-            let parent_tag = node.parent_element()
-                .map(|p| p.tag_name().to_lowercase())
-                .unwrap_or_default();
-            if parent_tag == "pre" {
-                format!("```\n{}\n```\n", text_of(node))
-            } else {
-                format!("`{}`", text_of(node))
-            }
-        }
+        "code" => format!("`{}`", text_of(node)),
         "pre" => {
             // Se o <pre> tem um único filho <code class="language-X">, a
             // fence sai com a linguagem preservada (```X). Sem isso, inserir
             // um embed via slash command (ver editor.rs) perderia a
             // linguagem no primeiro save e nunca viraria um embed de verdade.
-            let lang = node.query_selector("code[class*=\"language-\"]").ok().flatten()
+            let code_el = node.query_selector("code").ok().flatten();
+            let lang = code_el.as_ref()
                 .and_then(|code| code.get_attribute("class"))
                 .and_then(|class| {
                     class.split_whitespace()
                         .find_map(|c| c.strip_prefix("language-").map(|s| s.to_string()))
-                });
-            let lang = lang.unwrap_or_default();
-            format!("```{}\n{}\n```\n\n", lang, text_of(node))
+                })
+                .unwrap_or_default();
+            // Pega o texto CRU do <code> direto via `text_content` (não
+            // via `walk`/`text_of`) — descer pelo `walk` reentraria no
+            // ramo "code" acima, que já devolveria o texto envolto em
+            // ` ``` ` (fence), e este ramo envolveria de novo por cima,
+            // produzindo fences aninhadas quebradas a cada save (bug
+            // real: `Ctrl+Z` e reabrir a página "quebravam" todo bloco
+            // de código da página).
+            let text = code_el
+                .map(|el| el.text_content().unwrap_or_default())
+                .unwrap_or_else(|| node.text_content().unwrap_or_default());
+            format!("```{}\n{}\n```\n\n", lang, text.trim_end_matches('\n'))
         }
         "blockquote" => {
             let body = text_of(node);
@@ -54,11 +56,21 @@ fn walk(node: &Element, _depth: usize) -> String {
         }
         "li" => {
             let body = inline_children(node);
-            let kind = node.parent_element()
-                .map(|p| p.tag_name().to_lowercase())
-                .unwrap_or_default();
-            let marker = if kind == "ol" { "1." } else { "-" };
-            format!("{} {}\n", marker, body)
+            // Item de checklist: o ramo "input" abaixo já devolveu o
+            // marcador completo ("- [ ] "/"- [x] ") — prefixar outro
+            // marcador aqui (o "-"/"1." de baixo) duplicava o
+            // marcador ("- - [ ] texto", markdown quebrado). Combo
+            // lista+checkbox pedido pelo usuário cai nesse caso.
+            if let Some(rest) = body.strip_prefix("- [ ] ").or_else(|| body.strip_prefix("- [x] ")) {
+                let marker = &body[..6];
+                format!("{}{}\n", marker, rest.trim_start())
+            } else {
+                let kind = node.parent_element()
+                    .map(|p| p.tag_name().to_lowercase())
+                    .unwrap_or_default();
+                let marker = if kind == "ol" { "1." } else { "-" };
+                format!("{} {}\n", marker, body)
+            }
         }
         "ul" | "ol" => {
             let mut out = String::new();
@@ -161,7 +173,15 @@ fn walk(node: &Element, _depth: usize) -> String {
             let src = node.get_attribute("src").unwrap_or_default();
             format!("![{}]({})\n", alt, src)
         }
-        "input" => "- [ ] ".to_string(),
+        "input" => {
+            // `.checked()` (propriedade viva) — não `has_attribute("checked")`
+            // (atributo estático, nunca reflete o toggle que o usuário faz
+            // clicando no checkbox em runtime).
+            let checked = node.dyn_ref::<web_sys::HtmlInputElement>()
+                .map(|el| el.checked())
+                .unwrap_or(false);
+            if checked { "- [x] ".to_string() } else { "- [ ] ".to_string() }
+        }
         _ => {
             if child_count > 0 {
                 let mut out = String::new();

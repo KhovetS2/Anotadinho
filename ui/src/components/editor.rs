@@ -67,7 +67,7 @@ static SLASH_ITEMS: &[SlashItem] = &[
     SlashItem { label: "Título 2", desc: "Título médio", html: "<h2>Título</h2>" },
     SlashItem { label: "Título 3", desc: "Título pequeno", html: "<h3>Título</h3>" },
     SlashItem { label: "Lista", desc: "Lista com marcadores", html: "<ul><li>Item</li></ul>" },
-    SlashItem { label: "Checklist", desc: "Lista de tarefas", html: "<div><input type='checkbox'> Tarefa</div>" },
+    SlashItem { label: "Checklist", desc: "Lista de tarefas", html: "<ul><li><input type='checkbox'> Tarefa</li></ul>" },
     SlashItem { label: "Citação", desc: "Bloco de citação", html: "<blockquote>Citação</blockquote>" },
     SlashItem { label: "Código", desc: "Bloco de código", html: "<pre><code>código</code></pre>" },
     SlashItem { label: "Tabela", desc: "Tabela 3×2", html: "<table><tr><td>A</td><td>B</td><td>C</td></tr><tr><td></td><td></td><td></td></tr></table>" },
@@ -1630,9 +1630,29 @@ pub fn editor(props: &EditorProps) -> Html {
         let vault_path = props.vault_path.clone();
         let on_page_selected = props.on_page_selected.clone();
         let open_dialog = props.open_dialog.clone();
+        let content_md = content_md.clone();
+        let editor_ref = editor_ref.clone();
+        let segment_refs = segment_refs.clone();
+        let mark_edited = mark_edited.clone();
         Callback::from(move |e: MouseEvent| {
             let Some(target) = e.target() else { return };
             let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
+
+            // Toggle de checkbox de tarefa — clicar no <input> só dispara
+            // "click" no container, nunca "input" (que é quem chama
+            // `mark_edited` normalmente), então marcar/desmarcar nunca
+            // era persistido sem isso. No momento do "click", o navegador
+            // já aplicou o toggle nativo do checkbox (checked mudou antes
+            // do evento disparar), então já dá pra reler o DOM direto.
+            if el.tag_name().eq_ignore_ascii_case("input")
+                && el.get_attribute("type").as_deref() == Some("checkbox")
+            {
+                let md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                content_md.set(md.clone());
+                mark_edited(md);
+                return;
+            }
+
             let Ok(Some(anchor)) = el.closest("a") else { return };
             let Some(href) = anchor.get_attribute("href") else { return };
             let Some(encoded) = href.strip_prefix(crate::wikilink::SCHEME_PREFIX) else { return };
@@ -2329,42 +2349,72 @@ fn apply_block_shortcut(win: &web_sys::Window, doc: &web_sys::Document, e: &Keyb
     let offset = range.start_offset().unwrap_or(0) as usize;
     let text = container.text_content().unwrap_or_default();
     let prefix = &text[..offset.min(text.len())];
-    let is_newline = e.key() == "Enter";
+    let is_space = e.key() == " ";
 
-    if prefix.chars().all(|c| c == '#') && prefix.len() >= 1 && prefix.len() <= 6 {
+    if prefix.chars().all(|c| c == '#') && !prefix.is_empty() && prefix.len() <= 6 {
         let level = prefix.len();
-        if let Ok(mut r) = doc.create_range() {
-            r.set_start(&container, 0u32).ok();
-            r.set_end(&container, prefix.len() as u32).ok();
-            sel.remove_all_ranges().ok();
-            sel.add_range(&r).ok();
-        }
+        select_prefix(doc, &sel, &container, prefix.len());
         exec_cmd(doc, "delete", "");
         exec_cmd(doc, "formatBlock", &format!("h{}", level));
         e.prevent_default();
         return;
     }
 
-    if !is_newline { return; }
+    // Os atalhos abaixo disparam no espaço, não no Enter: o gatilho real
+    // é digitar o marcador ("-", ">", "1.") e seguir digitando o texto
+    // do item, igual ao heading acima — não "digitar o marcador e
+    // apertar Enter sem nada no meio" (o `prefix` no momento do Enter é
+    // a linha inteira já digitada, quase nunca bate com o literal
+    // esperado). No momento do `keydown` do espaço, o espaço em si AINDA
+    // não foi inserido no DOM, então o prefixo aqui não tem o espaço à
+    // direita (mesmo motivo do heading comparar só com "#", não "# ").
+    if !is_space { return; }
 
-    if prefix == "- " || prefix == "* " {
+    // Checkbox: "[]" ou "[ ]" — checado ANTES do "-"/"*" solto pra
+    // cobrir tanto o caso solto num parágrafo quanto o combo "digitar
+    // '- ' (vira lista) e depois '[] ' dentro do item" (lista +
+    // checkbox juntos, pedido explícito do usuário).
+    if prefix == "[]" || prefix == "[ ]" {
+        select_prefix(doc, &sel, &container, prefix.len());
+        exec_cmd(doc, "delete", "");
+        exec_cmd(doc, "insertHTML", "<input type=\"checkbox\">");
+        e.prevent_default();
+        return;
+    }
+
+    if prefix == "-" || prefix == "*" {
+        select_prefix(doc, &sel, &container, prefix.len());
         exec_cmd(doc, "delete", "");
         exec_cmd(doc, "insertUnorderedList", "");
         e.prevent_default();
         return;
     }
 
-    if prefix == "> " {
+    if prefix == ">" {
+        select_prefix(doc, &sel, &container, prefix.len());
         exec_cmd(doc, "delete", "");
         exec_cmd(doc, "formatBlock", "blockquote");
         e.prevent_default();
         return;
     }
 
-    if prefix.len() > 2 && prefix[..prefix.len()-1].chars().all(|c| c.is_ascii_digit() || c == '.') && prefix.ends_with(". ") {
+    if prefix.len() > 1 && prefix[..prefix.len()-1].chars().all(|c| c.is_ascii_digit()) && prefix.ends_with('.') {
+        select_prefix(doc, &sel, &container, prefix.len());
         exec_cmd(doc, "delete", "");
         exec_cmd(doc, "insertOrderedList", "");
         e.prevent_default();
+    }
+}
+
+/// Seleciona `[0, len)` do `container` de texto — usado pelos atalhos de
+/// bloco acima pra marcar o marcador digitado (`"#"`, `"-"`, `">"`,
+/// `"1."`) antes de apagá-lo com `exec_cmd(doc, "delete", "")`.
+fn select_prefix(doc: &web_sys::Document, sel: &web_sys::Selection, container: &web_sys::Node, len: usize) {
+    if let Ok(r) = doc.create_range() {
+        r.set_start(container, 0u32).ok();
+        r.set_end(container, len as u32).ok();
+        sel.remove_all_ranges().ok();
+        sel.add_range(&r).ok();
     }
 }
 
