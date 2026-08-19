@@ -8,6 +8,7 @@ mod event_detail_modal;
 mod inline_calendar;
 mod inline_callout;
 mod inline_columns;
+mod inline_gallery;
 mod inline_kanban;
 mod inline_table;
 mod markdown_field;
@@ -18,6 +19,7 @@ pub use event_detail_modal::EventDetailModal;
 pub use inline_calendar::InlineCalendar;
 pub use inline_callout::InlineCallout;
 pub use inline_columns::InlineColumns;
+pub use inline_gallery::InlineGallery;
 pub use inline_kanban::InlineKanban;
 pub use inline_table::InlineTable;
 pub use markdown_field::EmbedMarkdownField;
@@ -73,6 +75,13 @@ pub fn inline_embed(props: &InlineEmbedProps) -> Html {
             html! {
                 <InlineColumns data={d.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Columns(d)))}
                     open_dialog={props.open_dialog.clone()} />
+            }
+        }
+        EmbedData::Gallery(d) => {
+            let on_change = props.on_change.clone();
+            html! {
+                <InlineGallery data={d.clone()} vault_path={props.vault_path.clone()}
+                    on_change={Callback::from(move |d| on_change.emit(EmbedData::Gallery(d)))} />
             }
         }
         EmbedData::Table(d) => {

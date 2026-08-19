@@ -52,6 +52,8 @@ pub enum EmbedKind {
     Callout,
     /// `{{ type: "columns" }}` — painéis markdown lado a lado.
     Columns,
+    /// `{{ type: "gallery" }}` — grade de imagens do vault.
+    Gallery,
 }
 
 impl EmbedKind {
@@ -63,6 +65,7 @@ impl EmbedKind {
             "table" => Some(Self::Table),
             "callout" => Some(Self::Callout),
             "columns" => Some(Self::Columns),
+            "gallery" => Some(Self::Gallery),
             _ => None,
         }
     }
@@ -75,6 +78,7 @@ impl EmbedKind {
             Self::Table => "table",
             Self::Callout => "callout",
             Self::Columns => "columns",
+            Self::Gallery => "gallery",
         }
     }
 
@@ -82,7 +86,7 @@ impl EmbedKind {
     /// Ponto único de verdade: quem quiser listar embeds (menu do
     /// editor, documentação, CLI) itera isto em vez de repetir a lista.
     pub fn all() -> &'static [EmbedKind] {
-        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout, Self::Columns]
+        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout, Self::Columns, Self::Gallery]
     }
 
     /// Nome de exibição (menu `/`, títulos de UI).
@@ -93,6 +97,7 @@ impl EmbedKind {
             Self::Table => "Tabela de Tarefas",
             Self::Callout => "Destaque",
             Self::Columns => "Colunas",
+            Self::Gallery => "Galeria",
         }
     }
 
@@ -104,6 +109,7 @@ impl EmbedKind {
             Self::Table => "Tabela com colunas tipadas",
             Self::Callout => "Caixa colorida com título e corpo",
             Self::Columns => "Blocos de texto lado a lado",
+            Self::Gallery => "Grade de imagens do vault",
         }
     }
 
@@ -115,6 +121,7 @@ impl EmbedKind {
             Self::Table => "table",
             Self::Callout => "info",
             Self::Columns => "layout",
+            Self::Gallery => "image",
         }
     }
 
@@ -134,6 +141,9 @@ impl EmbedKind {
             Self::Table => "| Tarefa | Status | Prioridade |\n| ------ | ------ | ---------- |\n| Nova tarefa | todo | media |".to_string(),
             Self::Callout => "variant: info\ntitle: Nota\nbody: |\n  Escreva aqui.".to_string(),
             Self::Columns => "columns:\n- width: 1\n  body: |\n    Coluna da esquerda.\n- width: 1\n  body: |\n    Coluna da direita.".to_string(),
+            // Nasce vazia: o botão "adicionar do vault" é o caminho,
+            // e um item com path inventado só renderizaria placeholder.
+            Self::Gallery => "columns: 3\nsize: md\nitems: []".to_string(),
         }
     }
 }
@@ -251,6 +261,8 @@ pub enum EmbedData {
     Callout(CalloutEmbedData),
     /// Painéis lado a lado.
     Columns(ColumnsEmbedData),
+    /// Grade de imagens.
+    Gallery(GalleryEmbedData),
 }
 
 impl EmbedData {
@@ -262,6 +274,7 @@ impl EmbedData {
             EmbedKind::Table => EmbedData::Table(TableEmbedData::parse(raw)),
             EmbedKind::Callout => EmbedData::Callout(CalloutEmbedData::parse(raw)),
             EmbedKind::Columns => EmbedData::Columns(ColumnsEmbedData::parse(raw)),
+            EmbedKind::Gallery => EmbedData::Gallery(GalleryEmbedData::parse(raw)),
         }
     }
 
@@ -273,6 +286,7 @@ impl EmbedData {
             EmbedData::Table(_) => EmbedKind::Table,
             EmbedData::Callout(_) => EmbedKind::Callout,
             EmbedData::Columns(_) => EmbedKind::Columns,
+            EmbedData::Gallery(_) => EmbedKind::Gallery,
         }
     }
 
@@ -287,6 +301,7 @@ impl EmbedData {
             EmbedData::Table(d) => d.to_fence_body(),
             EmbedData::Callout(d) => d.to_fence_body(),
             EmbedData::Columns(d) => d.to_fence_body(),
+            EmbedData::Gallery(d) => d.to_fence_body(),
         };
         format!("{{{{ type: \"{name}\" }}}}\n{body}\n{{{{ /{name} }}}}\n")
     }
@@ -931,6 +946,128 @@ impl ColumnsEmbedData {
     }
 }
 
+/// Altura das miniaturas da galeria.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GallerySize {
+    /// Miniatura pequena (contato).
+    Sm,
+    /// Padrão.
+    #[default]
+    Md,
+    /// Grande (detalhe).
+    Lg,
+}
+
+impl GallerySize {
+    /// Todos os tamanhos, do menor pro maior.
+    pub fn all() -> &'static [GallerySize] {
+        &[Self::Sm, Self::Md, Self::Lg]
+    }
+
+    /// Nome no YAML e no modificador BEM.
+    pub fn slug(&self) -> &'static str {
+        match self {
+            Self::Sm => "sm",
+            Self::Md => "md",
+            Self::Lg => "lg",
+        }
+    }
+
+    /// Nome de exibição.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Sm => "P",
+            Self::Md => "M",
+            Self::Lg => "G",
+        }
+    }
+}
+
+/// Um item da galeria.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct GalleryItem {
+    /// Path relativo ao vault (`assets/foto.png`) ou URL externa.
+    pub path: String,
+    /// Legenda mostrada abaixo da miniatura.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub caption: String,
+}
+
+/// Dados de um embed gallery: grade de imagens com legenda.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GalleryEmbedData {
+    /// Quantas colunas na grade (1 a 6).
+    #[serde(default = "default_gallery_columns")]
+    pub columns: u8,
+    /// Altura das miniaturas.
+    #[serde(default)]
+    pub size: GallerySize,
+    /// Itens, na ordem em que aparecem.
+    #[serde(default)]
+    pub items: Vec<GalleryItem>,
+}
+
+fn default_gallery_columns() -> u8 {
+    3
+}
+
+impl Default for GalleryEmbedData {
+    fn default() -> Self {
+        Self { columns: 3, size: GallerySize::default(), items: Vec::new() }
+    }
+}
+
+impl GalleryEmbedData {
+    fn parse(raw: &str) -> Self {
+        let mut data: Self = serde_yaml::from_str(raw).unwrap_or_default();
+        data.columns = data.columns.clamp(1, 6);
+        data
+    }
+
+    fn to_fence_body(&self) -> String {
+        serde_yaml::to_string(self).unwrap_or_default()
+    }
+
+    /// Adiciona um item no fim.
+    pub fn add_item(&mut self, path: String) {
+        self.items.push(GalleryItem { path, caption: String::new() });
+    }
+
+    /// Remove o item `idx`.
+    pub fn remove_item(&mut self, idx: usize) {
+        if idx < self.items.len() {
+            self.items.remove(idx);
+        }
+    }
+
+    /// Troca a legenda do item `idx`.
+    pub fn set_caption(&mut self, idx: usize, caption: String) {
+        if let Some(item) = self.items.get_mut(idx) {
+            item.caption = caption;
+        }
+    }
+
+    /// Move o item `idx` uma posição pra esquerda (`-1`) ou direita
+    /// (`1`). Nas pontas não faz nada.
+    pub fn move_item(&mut self, idx: usize, delta: i8) {
+        let Some(target) = idx.checked_add_signed(delta as isize) else { return };
+        if idx < self.items.len() && target < self.items.len() {
+            self.items.swap(idx, target);
+        }
+    }
+
+    /// Soma `delta` ao número de colunas, entre 1 e 6.
+    pub fn adjust_columns(&mut self, delta: i8) {
+        self.columns = (self.columns as i16 + delta as i16).clamp(1, 6) as u8;
+    }
+
+    /// Troca o tamanho das miniaturas.
+    pub fn set_size(&mut self, size: GallerySize) {
+        self.size = size;
+    }
+}
+
 /// Tipo de uma coluna da tabela — controla como a célula é editada e
 /// renderizada. `Text` é o padrão (compatível com qualquer tabela markdown
 /// comum, sem preâmbulo de configuração nenhum).
@@ -1294,6 +1431,12 @@ mod tests {
                     assert_eq!(d.columns.len(), 2);
                     assert!(d.columns.iter().all(|p| !p.body.is_empty()));
                 }
+                // Galeria nasce VAZIA de propósito (ver `default_body`)
+                // — o conteúdo entra pelo picker de assets.
+                EmbedData::Gallery(d) => {
+                    assert_eq!(d.columns, 3);
+                    assert!(d.items.is_empty());
+                }
             }
         }
     }
@@ -1402,6 +1545,57 @@ mod tests {
     fn columns_com_painel_a_mais_no_arquivo_e_truncado() {
         let raw = "columns:\n- body: a\n- body: b\n- body: c\n- body: d\n- body: e\n";
         assert_eq!(ColumnsEmbedData::parse(raw).columns.len(), ColumnsEmbedData::MAX_COLUMNS);
+    }
+
+    #[test]
+    fn gallery_roundtrip_com_legenda_com_pontuacao() {
+        let data = GalleryEmbedData {
+            columns: 2,
+            size: GallerySize::Lg,
+            items: vec![
+                GalleryItem { path: "assets/a.png".into(), caption: "Antes: com dois pontos, vírgula".into() },
+                GalleryItem { path: "https://exemplo/b.png".into(), caption: String::new() },
+            ],
+        };
+        let text = EmbedData::Gallery(data.clone()).to_fence_text();
+        let segs = segment(&text);
+        let DocSegment::Embed(EmbedData::Gallery(back)) = &segs[0] else {
+            panic!("esperava embed gallery");
+        };
+        assert_eq!(back, &data);
+    }
+
+    #[test]
+    fn gallery_colunas_fora_do_intervalo_sao_normalizadas() {
+        assert_eq!(GalleryEmbedData::parse("columns: 0\nitems: []").columns, 1);
+        assert_eq!(GalleryEmbedData::parse("columns: 99\nitems: []").columns, 6);
+        assert_eq!(GalleryEmbedData::parse("items: []").columns, 3);
+    }
+
+    #[test]
+    fn gallery_move_item_nas_pontas_nao_faz_nada() {
+        let mut d = GalleryEmbedData {
+            items: vec![
+                GalleryItem { path: "a".into(), ..Default::default() },
+                GalleryItem { path: "b".into(), ..Default::default() },
+            ],
+            ..Default::default()
+        };
+        d.move_item(0, -1);
+        assert_eq!(d.items[0].path, "a");
+        d.move_item(1, 1);
+        assert_eq!(d.items[1].path, "b");
+        d.move_item(0, 1);
+        assert_eq!(d.items[0].path, "b");
+    }
+
+    #[test]
+    fn gallery_legenda_vazia_nao_e_serializada() {
+        let d = GalleryEmbedData {
+            items: vec![GalleryItem { path: "assets/a.png".into(), caption: String::new() }],
+            ..Default::default()
+        };
+        assert!(!d.to_fence_body().contains("caption"));
     }
 
     #[test]
