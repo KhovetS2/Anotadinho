@@ -215,3 +215,203 @@ fn new_from_template_creates_page_and_prints_path() {
     assert!(content.contains("title: Minha Spec"));
     assert!(content.contains("# Minha Spec"));
 }
+
+// ── embed (ciclo 157) ────────────────────────────────────────────────
+
+/// Vault com uma página que tem markdown ao redor de DOIS embeds — é o
+/// entorno que precisa sobreviver a toda escrita.
+fn setup_embed_vault() -> TempDir {
+    let dir = TempDir::new().expect("cria temp dir");
+    fs::create_dir_all(dir.path().join("pages")).unwrap();
+    fs::write(
+        dir.path().join("pages/painel.md"),
+        concat!(
+            "---\ntitle: Painel\n---\n",
+            "# Antes\n\n",
+            "Texto que não pode sumir.\n\n",
+            "{{ type: \"kanban\" }}\n",
+            "columns:\n- Backlog\n- Done\n",
+            "items:\n- title: Card 1\n  column: Backlog\n",
+            "{{ /kanban }}\n\n",
+            "Texto do meio.\n\n",
+            "{{ type: \"calendar\" }}\n",
+            "entries:\n- date: '2026-08-01'\n  title: Evento\n",
+            "{{ /calendar }}\n\n",
+            "Texto do fim.\n",
+        ),
+    )
+    .unwrap();
+    dir
+}
+
+fn cli(dir: &TempDir) -> Command {
+    let mut cmd = Command::cargo_bin("anotadinho-cli").unwrap();
+    cmd.args(["--vault", dir.path().to_str().unwrap()]);
+    cmd
+}
+
+#[test]
+fn embed_list_mostra_indice_tipo_e_resumo() {
+    let dir = setup_embed_vault();
+    cli(&dir)
+        .args(["embed", "list", "pages/painel.md"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("0\tkanban"))
+        .stdout(predicates::str::contains("1\tcalendar"))
+        .stdout(predicates::str::contains("1 card(s)"));
+}
+
+#[test]
+fn embed_get_devolve_o_conteudo_do_embed() {
+    let dir = setup_embed_vault();
+    cli(&dir)
+        .args(["embed", "get", "pages/painel.md", "1"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("title: Evento"));
+}
+
+#[test]
+fn embed_get_seguido_de_set_e_idempotente() {
+    // Regressão de formatação: o mesmo tipo de bug dos ciclos 076/078/111
+    // — se `set` normalizasse diferente do que `get` devolve, toda
+    // escrita de agente sujaria o `git diff` de graça (ou pior, cresceria
+    // o arquivo com uma linha em branco a cada rodada).
+    //
+    // A primeira escrita normaliza o arquivo (aspas de YAML, espaçamento
+    // do wrapper) — isso é esperado, qualquer escrita pelo app faz o
+    // mesmo. O que este teste garante é que da segunda em diante NADA
+    // muda.
+    let dir = setup_embed_vault();
+    let page = dir.path().join("pages/painel.md");
+
+    let roundtrip = |dir: &TempDir| {
+        let out = cli(dir)
+            .args(["embed", "get", "pages/painel.md", "0"])
+            .output()
+            .unwrap();
+        let tmp = dir.path().join("body.yaml");
+        fs::write(&tmp, out.stdout).unwrap();
+        cli(dir)
+            .args([
+                "embed", "set", "pages/painel.md", "0", "--file",
+                tmp.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+    };
+
+    roundtrip(&dir);
+    let normalized = fs::read_to_string(&page).unwrap();
+    roundtrip(&dir);
+    assert_eq!(fs::read_to_string(&page).unwrap(), normalized);
+    // E o entorno continua lá depois das duas rodadas.
+    assert!(normalized.contains("Texto que não pode sumir."));
+    assert!(normalized.contains("Texto do fim."));
+}
+
+#[test]
+fn embed_add_card_preserva_o_markdown_ao_redor() {
+    let dir = setup_embed_vault();
+    cli(&dir)
+        .args([
+            "embed", "add-card", "pages/painel.md", "0", "--column", "Done",
+            "--title", "Card do agente",
+        ])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join("pages/painel.md")).unwrap();
+    assert!(content.contains("Card do agente"));
+    assert!(content.contains("title: Painel"), "frontmatter sumiu");
+    assert!(content.contains("Texto que não pode sumir."));
+    assert!(content.contains("Texto do meio."));
+    assert!(content.contains("Texto do fim."));
+    assert!(content.contains("title: Evento"), "o outro embed foi afetado");
+}
+
+#[test]
+fn embed_add_event_no_calendario() {
+    let dir = setup_embed_vault();
+    cli(&dir)
+        .args([
+            "embed", "add-event", "pages/painel.md", "1", "--date", "2026-09-09",
+            "--title", "Reunião",
+        ])
+        .assert()
+        .success();
+    let content = fs::read_to_string(dir.path().join("pages/painel.md")).unwrap();
+    assert!(content.contains("2026-09-09"));
+    assert!(content.contains("Reunião"));
+}
+
+#[test]
+fn embed_add_card_em_tipo_errado_falha_sem_tocar_no_arquivo() {
+    let dir = setup_embed_vault();
+    let page = dir.path().join("pages/painel.md");
+    let before = fs::read_to_string(&page).unwrap();
+
+    cli(&dir)
+        .args([
+            "embed", "add-card", "pages/painel.md", "1", "--column", "Done",
+            "--title", "X",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("kanban"));
+
+    assert_eq!(fs::read_to_string(&page).unwrap(), before);
+}
+
+#[test]
+fn embed_add_card_em_coluna_inexistente_falha() {
+    let dir = setup_embed_vault();
+    cli(&dir)
+        .args([
+            "embed", "add-card", "pages/painel.md", "0", "--column", "Nope",
+            "--title", "X",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("não existe"));
+}
+
+#[test]
+fn embed_indice_fora_do_intervalo_falha_com_mensagem_clara() {
+    let dir = setup_embed_vault();
+    cli(&dir)
+        .args(["embed", "get", "pages/painel.md", "9"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("2 embed(s)"));
+}
+
+#[test]
+fn embed_add_row_valida_a_quantidade_de_colunas() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir_all(dir.path().join("pages")).unwrap();
+    fs::write(
+        dir.path().join("pages/tab.md"),
+        concat!(
+            "---\ntitle: Tab\n---\n",
+            "{{ type: \"table\" }}\n",
+            "| Tarefa | Status |\n| --- | --- |\n| API | done |\n",
+            "{{ /table }}\n",
+        ),
+    )
+    .unwrap();
+
+    cli(&dir)
+        .args(["embed", "add-row", "pages/tab.md", "0", "--values", "só um"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("2 coluna(s)"));
+
+    cli(&dir)
+        .args(["embed", "add-row", "pages/tab.md", "0", "--values", "UI, doing"])
+        .assert()
+        .success();
+    let content = fs::read_to_string(dir.path().join("pages/tab.md")).unwrap();
+    assert!(content.contains("| UI | doing |"));
+}

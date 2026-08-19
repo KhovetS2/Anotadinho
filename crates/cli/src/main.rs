@@ -6,11 +6,13 @@
 //! a janela do app aberta. Pensado pra um agente (Claude Code ou
 //! outro processo) conseguir consumir o vault programaticamente.
 
+use anotadinho_core::embed::{self, DocSegment, EmbedData, EmbedKind};
 use anotadinho_ipc::{
     handle_create_page_from_template, handle_export_folder, handle_list_pages,
     handle_list_templates, handle_read_page, handle_search_content, handle_write_page,
 };
 use clap::{Parser, Subcommand};
+use std::io::Read;
 
 #[derive(Parser)]
 #[command(
@@ -86,6 +88,80 @@ enum Command {
         key: String,
         /// Novo valor.
         value: String,
+    },
+    /// Lê e escreve os embeds inline (`{{ type: "..." }}`) de uma
+    /// página, sem montar YAML na mão (ciclo 157).
+    Embed {
+        #[command(subcommand)]
+        action: EmbedCommand,
+    },
+}
+
+/// Operações sobre os embeds de uma página. O índice é a POSIÇÃO ENTRE
+/// OS EMBEDS (0, 1, 2...), não entre os segmentos de texto — é o que
+/// `embed list` imprime.
+#[derive(Subcommand)]
+enum EmbedCommand {
+    /// Lista os embeds da página: índice, tipo e um resumo.
+    List {
+        /// Path relativo ao vault.
+        page_path: String,
+    },
+    /// Imprime o conteúdo de um embed (YAML pra quase todos os tipos,
+    /// tabela markdown pro tipo `table`).
+    Get {
+        /// Path relativo ao vault.
+        page_path: String,
+        /// Índice do embed na página.
+        index: usize,
+    },
+    /// Substitui o conteúdo de um embed pelo texto lido de `--file`
+    /// (ou do stdin). O texto passa pelo parser do tipo antes de ser
+    /// gravado — um agente nunca escreve direto no arquivo.
+    Set {
+        /// Path relativo ao vault.
+        page_path: String,
+        /// Índice do embed na página.
+        index: usize,
+        /// Arquivo com o conteúdo novo. Omitido = lê do stdin.
+        #[arg(long)]
+        file: Option<String>,
+    },
+    /// Adiciona um card num embed de kanban.
+    AddCard {
+        /// Path relativo ao vault.
+        page_path: String,
+        /// Índice do embed na página.
+        index: usize,
+        /// Coluna de destino.
+        #[arg(long)]
+        column: String,
+        /// Título do card.
+        #[arg(long)]
+        title: String,
+    },
+    /// Adiciona uma linha num embed de tabela.
+    AddRow {
+        /// Path relativo ao vault.
+        page_path: String,
+        /// Índice do embed na página.
+        index: usize,
+        /// Células separadas por vírgula, na ordem das colunas.
+        #[arg(long)]
+        values: String,
+    },
+    /// Adiciona um evento num embed de calendário.
+    AddEvent {
+        /// Path relativo ao vault.
+        page_path: String,
+        /// Índice do embed na página.
+        index: usize,
+        /// Data `YYYY-MM-DD`.
+        #[arg(long)]
+        date: String,
+        /// Título do evento.
+        #[arg(long)]
+        title: String,
     },
 }
 
@@ -174,8 +250,239 @@ fn run(cli: Cli) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
             handle_write_page(cli.vault, page_path, updated)?;
         }
+        Command::Embed { action } => {
+            let vault = cli.vault.clone();
+            let json = cli.json;
+            run_embed(&vault, json, action)?
+        }
     }
     Ok(())
+}
+
+/// Estado de uma página aberta pra mexer nos embeds: o frontmatter cru
+/// (preservado byte a byte) e os segmentos do corpo.
+struct PageDoc {
+    frontmatter: String,
+    segments: Vec<DocSegment>,
+}
+
+impl PageDoc {
+    fn load(vault: &str, page_path: &str) -> Result<Self, String> {
+        let content = handle_read_page(vault.to_string(), page_path.to_string())?;
+        let (frontmatter, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&content);
+        Ok(Self {
+            frontmatter: frontmatter.to_string(),
+            segments: embed::segment(body),
+        })
+    }
+
+    /// Índices (no vetor de segmentos) dos segmentos que são embed, na
+    /// ordem — o índice do usuário é a posição NESTA lista.
+    fn embed_positions(&self) -> Vec<usize> {
+        self.segments
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| matches!(s, DocSegment::Embed(_)))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn embed_at(&self, index: usize) -> Result<(usize, &EmbedData), String> {
+        let positions = self.embed_positions();
+        let pos = *positions.get(index).ok_or_else(|| {
+            format!(
+                "índice {index} fora do intervalo: a página tem {} embed(s)",
+                positions.len()
+            )
+        })?;
+        match &self.segments[pos] {
+            DocSegment::Embed(data) => Ok((pos, data)),
+            DocSegment::Markdown(_) => unreachable!("posição veio de embed_positions"),
+        }
+    }
+
+    /// Reescreve a página com os segmentos atuais, preservando o
+    /// frontmatter e todo markdown ao redor.
+    fn save(&self, vault: &str, page_path: &str) -> Result<(), String> {
+        let body = embed::join(&self.segments);
+        let content = if self.frontmatter.is_empty() {
+            body
+        } else {
+            format!("{}\n{}", self.frontmatter, body)
+        };
+        handle_write_page(vault.to_string(), page_path.to_string(), content)
+    }
+}
+
+/// Resumo de uma linha por embed, pra `embed list` dizer o que tem
+/// dentro sem despejar o conteúdo.
+fn embed_summary(data: &EmbedData) -> String {
+    match data {
+        EmbedData::Kanban(d) => format!("{} coluna(s), {} card(s)", d.columns.len(), d.items.len()),
+        EmbedData::Calendar(d) => format!("{} evento(s)", d.entries.len()),
+        EmbedData::Table(d) => format!("{} coluna(s), {} linha(s)", d.columns.len(), d.rows.len()),
+        EmbedData::Callout(d) => format!("{} — {}", d.variant.slug(), d.title),
+        EmbedData::Columns(d) => format!("{} painel(is)", d.columns.len()),
+        EmbedData::Gallery(d) => format!("{} imagem(ns)", d.items.len()),
+        EmbedData::Query(q) => format!(
+            "consulta em {}",
+            q.from.clone().unwrap_or_else(|| "todo o vault".to_string())
+        ),
+        EmbedData::Timeline(d) => format!("{} item(ns), escala {}", d.items.len(), d.scale.slug()),
+        EmbedData::Actions(d) => format!("{} botão(ões)", d.buttons.len()),
+    }
+}
+
+/// Conteúdo interno do embed, do jeito que está no arquivo: YAML pra
+/// quase todos os tipos, tabela markdown pro `table` (o formato dele
+/// nasceu como tabela markdown comum de propósito — ver `embed.rs`).
+fn embed_body(data: &EmbedData) -> String {
+    let text = data.to_fence_text();
+    // Recorta as linhas de abertura e fechamento do wrapper.
+    let mut lines: Vec<&str> = text.lines().collect();
+    if !lines.is_empty() {
+        lines.remove(0);
+    }
+    if !lines.is_empty() {
+        lines.pop();
+    }
+    let body = lines.join("\n");
+    if body.ends_with('\n') { body } else { format!("{body}\n") }
+}
+
+fn run_embed(vault: &str, json: bool, action: EmbedCommand) -> Result<(), String> {
+    match action {
+        EmbedCommand::List { page_path } => {
+            let doc = PageDoc::load(vault, &page_path)?;
+            let rows: Vec<serde_json::Value> = doc
+                .embed_positions()
+                .iter()
+                .enumerate()
+                .map(|(index, pos)| {
+                    let DocSegment::Embed(data) = &doc.segments[*pos] else {
+                        unreachable!()
+                    };
+                    serde_json::json!({
+                        "index": index,
+                        "type": data.kind().type_name(),
+                        "summary": embed_summary(data),
+                    })
+                })
+                .collect();
+            if json {
+                print_json(&rows)?;
+            } else {
+                for row in &rows {
+                    println!(
+                        "{}\t{}\t{}",
+                        row["index"], row["type"].as_str().unwrap_or(""), row["summary"].as_str().unwrap_or("")
+                    );
+                }
+            }
+        }
+        EmbedCommand::Get { page_path, index } => {
+            let doc = PageDoc::load(vault, &page_path)?;
+            let (_, data) = doc.embed_at(index)?;
+            let body = embed_body(data);
+            if json {
+                print_json(&serde_json::json!({
+                    "index": index,
+                    "type": data.kind().type_name(),
+                    "body": body,
+                }))?;
+            } else {
+                print!("{body}");
+            }
+        }
+        EmbedCommand::Set { page_path, index, file } => {
+            let mut doc = PageDoc::load(vault, &page_path)?;
+            let (pos, data) = doc.embed_at(index)?;
+            let kind = data.kind();
+            let raw = match &file {
+                Some(path) => std::fs::read_to_string(path)
+                    .map_err(|e| format!("erro ao ler {path}: {e}"))?,
+                None => {
+                    let mut buf = String::new();
+                    std::io::stdin()
+                        .read_to_string(&mut buf)
+                        .map_err(|e| format!("erro ao ler stdin: {e}"))?;
+                    buf
+                }
+            };
+            // Passa pelo parser do tipo: o que vai pro disco é sempre
+            // saída de `to_fence_text`, nunca texto colado direto.
+            doc.segments[pos] = DocSegment::Embed(EmbedData::parse(kind, &raw));
+            doc.save(vault, &page_path)?;
+        }
+        EmbedCommand::AddCard { page_path, index, column, title } => {
+            mutate_embed(vault, &page_path, index, |data| match data {
+                EmbedData::Kanban(d) => {
+                    if !d.columns.iter().any(|c| c == &column) {
+                        return Err(format!(
+                            "coluna \"{column}\" não existe nesse board (tem: {})",
+                            d.columns.join(", ")
+                        ));
+                    }
+                    d.add_card(column.clone(), title.clone());
+                    Ok(())
+                }
+                other => Err(wrong_kind("add-card", EmbedKind::Kanban, other.kind())),
+            })?;
+        }
+        EmbedCommand::AddRow { page_path, index, values } => {
+            mutate_embed(vault, &page_path, index, |data| match data {
+                EmbedData::Table(d) => {
+                    let cells: Vec<String> =
+                        values.split(',').map(|v| v.trim().to_string()).collect();
+                    if cells.len() != d.columns.len() {
+                        return Err(format!(
+                            "a tabela tem {} coluna(s), mas vieram {} valor(es)",
+                            d.columns.len(),
+                            cells.len()
+                        ));
+                    }
+                    d.rows.push(cells);
+                    Ok(())
+                }
+                other => Err(wrong_kind("add-row", EmbedKind::Table, other.kind())),
+            })?;
+        }
+        EmbedCommand::AddEvent { page_path, index, date, title } => {
+            mutate_embed(vault, &page_path, index, |data| match data {
+                EmbedData::Calendar(d) => {
+                    d.add_entry(date.clone(), title.clone());
+                    Ok(())
+                }
+                other => Err(wrong_kind("add-event", EmbedKind::Calendar, other.kind())),
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn wrong_kind(command: &str, expected: EmbedKind, found: EmbedKind) -> String {
+    format!(
+        "{command} só funciona em embed do tipo {}, mas o índice aponta pra um {}",
+        expected.type_name(),
+        found.type_name()
+    )
+}
+
+/// Carrega, aplica `f` no embed do índice e grava — só grava se `f`
+/// devolver `Ok`, pra um comando no tipo errado não tocar no arquivo.
+fn mutate_embed(
+    vault: &str,
+    page_path: &str,
+    index: usize,
+    f: impl FnOnce(&mut EmbedData) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut doc = PageDoc::load(vault, page_path)?;
+    let (pos, _) = doc.embed_at(index)?;
+    let DocSegment::Embed(data) = &mut doc.segments[pos] else {
+        unreachable!("posição veio de embed_at")
+    };
+    f(data)?;
+    doc.save(vault, page_path)
 }
 
 fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {
