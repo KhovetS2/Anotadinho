@@ -120,7 +120,11 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
             let loading = loading.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 loading.set(true);
-                let pages = api::list_pages(&vault_path).await.unwrap_or_default();
+                // Uma varredura só (ciclo 150): antes era `list_pages()`
+                // + um `read_page()` por página só pra achar os
+                // wikilinks — N+1 travessias WASM↔Tauri carregando o
+                // arquivo inteiro em cada uma.
+                let pages = api::scan_vault(&vault_path).await.unwrap_or_default();
                 let n = pages.len();
                 let cx = 400.0;
                 let cy = 400.0;
@@ -146,14 +150,12 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
                 let mut edge_list: Vec<(usize, usize)> = Vec::new();
                 let mut seen_pairs: HashSet<(usize, usize)> = HashSet::new();
                 for (i, p) in pages.iter().enumerate() {
-                    if let Ok(content) = api::read_page(&vault_path, &p.path).await {
-                        for title in crate::wikilink::extract_titles(&content) {
-                            if let Some(&j) = title_to_index.get(&title.to_lowercase()) {
-                                if j != i {
-                                    let pair = if i < j { (i, j) } else { (j, i) };
-                                    if seen_pairs.insert(pair) {
-                                        edge_list.push(pair);
-                                    }
+                    for title in &p.wikilinks {
+                        if let Some(&j) = title_to_index.get(&title.to_lowercase()) {
+                            if j != i {
+                                let pair = if i < j { (i, j) } else { (j, i) };
+                                if seen_pairs.insert(pair) {
+                                    edge_list.push(pair);
                                 }
                             }
                         }

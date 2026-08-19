@@ -16,9 +16,10 @@ use anotadinho_ipc::{
     handle_list_assets, handle_list_assets_info,
     handle_list_folders, handle_list_pages, handle_list_templates, handle_move_page,
     handle_open_today_journal, handle_ping, handle_read_page, handle_save_pasted_asset,
-    handle_search_content, handle_write_page,
+    handle_scan_vault, handle_search_content, handle_write_page,
     AssetInfo, PageMeta, PingArgs, PingResult, VaultInfo,
 };
+use anotadinho_core::PageIndexEntry;
 use anotadinho_vault::{GitFileEntry, GitLogEntry, VaultIo, VaultWatcher};
 use tauri_plugin_dialog::DialogExt;
 
@@ -61,6 +62,13 @@ fn get_vault_info(path: String) -> Result<VaultInfo, String> {
 #[tauri::command]
 fn list_pages(vault_path: String) -> Result<Vec<PageMeta>, String> {
     handle_list_pages(vault_path)
+}
+
+/// Varredura única do vault: metadados de todas as páginas numa
+/// chamada só (ciclo 150), no lugar de `list_pages` + N `read_page`.
+#[tauri::command]
+fn scan_vault(vault_path: String) -> Result<Vec<PageIndexEntry>, String> {
+    handle_scan_vault(vault_path)
 }
 
 #[tauri::command]
@@ -223,6 +231,7 @@ fn main() {
             ping,
             get_vault_info,
             list_pages,
+            scan_vault,
             read_page,
             write_page,
             create_page,

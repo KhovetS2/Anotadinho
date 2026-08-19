@@ -3,6 +3,7 @@
 //! Fornece funções async que chamam comandos Tauri via
 //! `window.__TAURI_INTERNALS__.invoke()`.
 
+pub use anotadinho_core::PageIndexEntry;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
@@ -117,6 +118,30 @@ pub async fn list_pages(vault_path: &str) -> Result<Vec<PageMeta>, String> {
     let pages: Vec<PageMeta> =
         serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))?;
     Ok(pages)
+}
+
+/// Varredura única do vault (ciclo 150): metadados de TODAS as páginas
+/// numa chamada só — frontmatter, properties `chave:: valor` do corpo,
+/// tags e alvos de wikilink.
+///
+/// Use isto no lugar de `list_pages()` + `read_page()` em laço sempre
+/// que a informação necessária for metadado: o laço faz uma travessia
+/// WASM↔Tauri por página, carregando o arquivo inteiro em cada uma.
+pub async fn scan_vault(vault_path: &str) -> Result<Vec<PageIndexEntry>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("vaultPath"),
+        &JsValue::from_str(vault_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    let args = JsValue::from(args);
+
+    let result = tauri_invoke("scan_vault", &args)
+        .await
+        .map_err(|e| format!("scan_vault error: {:?}", e))?;
+
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
 }
 
 /// Lê o conteúdo bruto de uma página.

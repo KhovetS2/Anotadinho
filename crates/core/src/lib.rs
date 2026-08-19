@@ -16,8 +16,11 @@ pub mod markdown;
 // precisa deles pra operar embeds sem passar por WASM.
 pub mod date_util;
 pub mod embed;
+pub mod index;
+pub mod links;
 
 pub use block::{Block, BlockId, BlockKind};
 pub use markdown::MarkdownCodec;
 pub use page::{Frontmatter, Page, PageId};
 pub use property::Property;
+pub use index::PageIndexEntry;

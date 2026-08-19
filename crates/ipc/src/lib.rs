@@ -5,6 +5,7 @@
 
 #![warn(missing_docs)]
 
+use anotadinho_core::PageIndexEntry;
 use anotadinho_search::SearchIndex;
 use anotadinho_vault::{GitFileEntry, GitLogEntry, VaultIo};
 use serde::{Deserialize, Serialize};
@@ -63,6 +64,28 @@ pub fn handle_list_pages(vault_path: String) -> Result<Vec<PageMeta>, String> {
             path: p.path,
             title: p.title,
             section: p.section,
+        })
+        .collect())
+}
+
+/// Handler de scan_vault: lê TODAS as páginas uma vez e devolve só os
+/// metadados (frontmatter + properties do corpo + tags + wikilinks).
+///
+/// Substitui o padrão N+1 que o frontend usava — `list_pages()` seguido
+/// de um `read_page()` por página, cada um atravessando a ponte com o
+/// arquivo inteiro. Página que não puder ser lida é pulada em silêncio:
+/// uma varredura do vault não deveria falhar inteira por causa de um
+/// arquivo com permissão errada.
+pub fn handle_scan_vault(vault_path: String) -> Result<Vec<PageIndexEntry>, String> {
+    let vault = VaultIo::open(&vault_path);
+    let pages = vault.list_pages().map_err(|e| e.to_string())?;
+    Ok(pages
+        .into_iter()
+        .filter_map(|p| {
+            let content = vault.read_page(&p.path).ok()?;
+            Some(PageIndexEntry::from_content(
+                &p.path, &p.title, &p.section, &content,
+            ))
         })
         .collect())
 }
@@ -370,5 +393,43 @@ mod tests {
         )
         .unwrap();
         assert!(url.starts_with("data:application/pdf;base64,"));
+    }
+
+    #[test]
+    fn handle_scan_vault_le_metadados_de_todas_as_paginas() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("pages/specs")).unwrap();
+        std::fs::create_dir_all(dir.path().join("journals")).unwrap();
+        std::fs::write(
+            dir.path().join("pages/specs/uma-spec.md"),
+            "---\ntitle: Uma Spec\ntags: [spec]\nstatus: backlog\n---\n\nliga em [[Missão]]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("journals/2026-08-19.md"),
+            "---\ntitle: Diário\n---\n\ndate:: 2026-08-19\n",
+        )
+        .unwrap();
+
+        let entries = handle_scan_vault(dir.path().to_string_lossy().to_string()).unwrap();
+        assert_eq!(entries.len(), 2);
+
+        let spec = entries.iter().find(|e| e.path.ends_with("uma-spec.md")).unwrap();
+        assert_eq!(spec.title, "Uma Spec");
+        assert_eq!(spec.section, "pages");
+        assert_eq!(spec.tags, vec!["spec"]);
+        assert_eq!(spec.field("status").as_deref(), Some("backlog"));
+        assert_eq!(spec.wikilinks, vec!["Missão"]);
+
+        let journal = entries.iter().find(|e| e.section == "journals").unwrap();
+        assert_eq!(journal.field("date").as_deref(), Some("2026-08-19"));
+    }
+
+    #[test]
+    fn handle_scan_vault_de_vault_vazio_devolve_lista_vazia() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        let entries = handle_scan_vault(dir.path().to_string_lossy().to_string()).unwrap();
+        assert!(entries.is_empty());
     }
 }
