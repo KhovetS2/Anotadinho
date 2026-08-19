@@ -248,10 +248,11 @@ pub fn handle_create_page_from_template(
     vault_path: String,
     template_path: String,
     title: String,
+    folder_path: Option<String>,
 ) -> Result<PageMeta, String> {
     let vault = VaultIo::open(&vault_path);
     let meta = vault
-        .create_page_from_template(&template_path, &title, None)
+        .create_page_from_template(&template_path, &title, folder_path.as_deref())
         .map_err(|e| e.to_string())?;
     Ok(PageMeta {
         path: meta.path,

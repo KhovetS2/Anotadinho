@@ -58,6 +58,8 @@ pub enum EmbedKind {
     Query,
     /// `{{ type: "timeline" }}` — cronograma de barras por intervalo.
     Timeline,
+    /// `{{ type: "actions" }}` — botões que operam o vault.
+    Actions,
 }
 
 impl EmbedKind {
@@ -72,6 +74,7 @@ impl EmbedKind {
             "gallery" => Some(Self::Gallery),
             "query" => Some(Self::Query),
             "timeline" => Some(Self::Timeline),
+            "actions" => Some(Self::Actions),
             _ => None,
         }
     }
@@ -87,6 +90,7 @@ impl EmbedKind {
             Self::Gallery => "gallery",
             Self::Query => "query",
             Self::Timeline => "timeline",
+            Self::Actions => "actions",
         }
     }
 
@@ -94,7 +98,7 @@ impl EmbedKind {
     /// Ponto único de verdade: quem quiser listar embeds (menu do
     /// editor, documentação, CLI) itera isto em vez de repetir a lista.
     pub fn all() -> &'static [EmbedKind] {
-        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout, Self::Columns, Self::Gallery, Self::Query, Self::Timeline]
+        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout, Self::Columns, Self::Gallery, Self::Query, Self::Timeline, Self::Actions]
     }
 
     /// Nome de exibição (menu `/`, títulos de UI).
@@ -108,6 +112,7 @@ impl EmbedKind {
             Self::Gallery => "Galeria",
             Self::Query => "Consulta",
             Self::Timeline => "Cronograma",
+            Self::Actions => "Ações",
         }
     }
 
@@ -122,6 +127,7 @@ impl EmbedKind {
             Self::Gallery => "Grade de imagens do vault",
             Self::Query => "Lista viva de páginas por filtro",
             Self::Timeline => "Barras por intervalo de datas (Gantt)",
+            Self::Actions => "Botões que criam e abrem páginas",
         }
     }
 
@@ -136,6 +142,7 @@ impl EmbedKind {
             Self::Gallery => "image",
             Self::Query => "search",
             Self::Timeline => "clock",
+            Self::Actions => "zap",
         }
     }
 
@@ -166,6 +173,7 @@ impl EmbedKind {
                 let end = crate::date_util::add_days(today, 6).unwrap_or_else(|| today.to_string());
                 format!("scale: month\nitems:\n- title: Nova etapa\n  start: '{today}'\n  end: '{end}'")
             }
+            Self::Actions => "layout: row\nbuttons:\n- label: Abrir página\n  action: open-page\n  path: ''".to_string(),
         }
     }
 }
@@ -289,6 +297,8 @@ pub enum EmbedData {
     Query(crate::query::Query),
     /// Cronograma de barras.
     Timeline(TimelineEmbedData),
+    /// Botões de ação.
+    Actions(ActionsEmbedData),
 }
 
 impl EmbedData {
@@ -303,6 +313,7 @@ impl EmbedData {
             EmbedKind::Gallery => EmbedData::Gallery(GalleryEmbedData::parse(raw)),
             EmbedKind::Query => EmbedData::Query(serde_yaml::from_str(raw).unwrap_or_default()),
             EmbedKind::Timeline => EmbedData::Timeline(TimelineEmbedData::parse(raw)),
+            EmbedKind::Actions => EmbedData::Actions(ActionsEmbedData::parse(raw)),
         }
     }
 
@@ -317,6 +328,7 @@ impl EmbedData {
             EmbedData::Gallery(_) => EmbedKind::Gallery,
             EmbedData::Query(_) => EmbedKind::Query,
             EmbedData::Timeline(_) => EmbedKind::Timeline,
+            EmbedData::Actions(_) => EmbedKind::Actions,
         }
     }
 
@@ -334,6 +346,7 @@ impl EmbedData {
             EmbedData::Gallery(d) => d.to_fence_body(),
             EmbedData::Query(q) => serde_yaml::to_string(q).unwrap_or_default(),
             EmbedData::Timeline(d) => d.to_fence_body(),
+            EmbedData::Actions(d) => d.to_fence_body(),
         };
         format!("{{{{ type: \"{name}\" }}}}\n{body}\n{{{{ /{name} }}}}\n")
     }
@@ -1310,6 +1323,164 @@ impl TimelineEmbedData {
     }
 }
 
+/// Disposição dos botões de ação.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ActionsLayout {
+    /// Em linha, quebrando conforme a largura.
+    #[default]
+    Row,
+    /// Em grade de cartões.
+    Grid,
+}
+
+/// O que um botão faz. Lista FECHADA de operações do próprio app —
+/// decisão de segurança, não de escopo: um `.md` que chegasse de
+/// terceiro (ou de um agente) não pode executar comando de shell nem
+/// chamar processo externo só por ser aberto.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionSpec {
+    /// Cria página a partir de um template, na pasta indicada.
+    NewFromTemplate {
+        /// Path do template (`templates/spec.md`).
+        template: String,
+        /// Pasta de destino (`pages/specs`); vazio = `pages/`.
+        folder: Option<String>,
+    },
+    /// Abre uma página existente.
+    OpenPage {
+        /// Path relativo ao vault.
+        path: String,
+    },
+    /// Grava um campo de frontmatter numa página.
+    SetProperty {
+        /// Página alvo.
+        path: String,
+        /// Campo.
+        field: String,
+        /// Valor.
+        value: String,
+    },
+    /// Abre a busca já preenchida.
+    RunSearch {
+        /// Termo.
+        query: String,
+    },
+    /// Nome de ação não reconhecido — arquivo escrito por versão futura
+    /// ou por um agente. Vira botão desabilitado com aviso, e o YAML é
+    /// preservado como veio.
+    Unknown(String),
+}
+
+/// Um botão do embed de ações.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct ActionButton {
+    /// Texto do botão.
+    pub label: String,
+    /// Ícone (nome em `components/icon.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// `primary` destaca; qualquer outro valor é o estilo fantasma.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+    /// Nome da ação (`new-from-template`, `open-page`, `set-property`,
+    /// `run-search`). Fica como texto e não como enum tagueado de
+    /// propósito: nome desconhecido não pode derrubar a
+    /// deserialização do botão inteiro.
+    pub action: String,
+    /// Template (ação `new-from-template`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
+    /// Pasta de destino (ação `new-from-template`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
+    /// Página alvo (`open-page`, `set-property`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Campo de frontmatter (`set-property`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    /// Valor do campo (`set-property`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// Termo (`run-search`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+}
+
+impl ActionButton {
+    /// Resolve os campos soltos na ação correspondente.
+    pub fn spec(&self) -> ActionSpec {
+        match self.action.trim() {
+            "new-from-template" => ActionSpec::NewFromTemplate {
+                template: self.template.clone().unwrap_or_default(),
+                folder: self.folder.clone().filter(|f| !f.trim().is_empty()),
+            },
+            "open-page" => ActionSpec::OpenPage { path: self.path.clone().unwrap_or_default() },
+            "set-property" => ActionSpec::SetProperty {
+                path: self.path.clone().unwrap_or_default(),
+                field: self.field.clone().unwrap_or_default(),
+                value: self.value.clone().unwrap_or_default(),
+            },
+            "run-search" => ActionSpec::RunSearch { query: self.query.clone().unwrap_or_default() },
+            other => ActionSpec::Unknown(other.to_string()),
+        }
+    }
+
+    /// Se o botão está configurado o bastante pra ser clicável.
+    pub fn is_runnable(&self) -> bool {
+        match self.spec() {
+            ActionSpec::NewFromTemplate { template, .. } => !template.trim().is_empty(),
+            ActionSpec::OpenPage { path } => !path.trim().is_empty(),
+            ActionSpec::SetProperty { path, field, .. } => {
+                !path.trim().is_empty() && !field.trim().is_empty()
+            }
+            ActionSpec::RunSearch { query } => !query.trim().is_empty(),
+            ActionSpec::Unknown(_) => false,
+        }
+    }
+}
+
+/// Dados de um embed actions: uma barra de botões que operam o vault.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct ActionsEmbedData {
+    /// Disposição.
+    #[serde(default)]
+    pub layout: ActionsLayout,
+    /// Botões, na ordem em que aparecem.
+    #[serde(default)]
+    pub buttons: Vec<ActionButton>,
+}
+
+impl ActionsEmbedData {
+    fn parse(raw: &str) -> Self {
+        serde_yaml::from_str(raw).unwrap_or_default()
+    }
+
+    fn to_fence_body(&self) -> String {
+        serde_yaml::to_string(self).unwrap_or_default()
+    }
+
+    /// Adiciona um botão.
+    pub fn add_button(&mut self, button: ActionButton) {
+        self.buttons.push(button);
+    }
+
+    /// Remove o botão `idx`.
+    pub fn remove_button(&mut self, idx: usize) {
+        if idx < self.buttons.len() {
+            self.buttons.remove(idx);
+        }
+    }
+
+    /// Substitui o botão `idx`.
+    pub fn update_button(&mut self, idx: usize, button: ActionButton) {
+        if let Some(slot) = self.buttons.get_mut(idx) {
+            *slot = button;
+        }
+    }
+}
+
 /// Tipo de uma coluna da tabela — controla como a célula é editada e
 /// renderizada. `Text` é o padrão (compatível com qualquer tabela markdown
 /// comum, sem preâmbulo de configuração nenhum).
@@ -1686,6 +1857,9 @@ mod tests {
                     assert_eq!(d.items.len(), 1);
                     assert_eq!(d.items[0].start.as_deref(), Some("2026-08-19"));
                 }
+                EmbedData::Actions(d) => {
+                    assert_eq!(d.buttons.len(), 1);
+                }
             }
         }
     }
@@ -1958,6 +2132,62 @@ mod tests {
         d.move_item(0, "2026-08-09".into());
         assert_eq!(d.items[0].start.as_deref(), Some("2026-08-09"));
         assert_eq!(d.items[0].end, None, "item de 1 dia não precisa de fim explícito");
+    }
+
+    #[test]
+    fn actions_roundtrip_com_todas_as_acoes() {
+        let data = ActionsEmbedData {
+            layout: ActionsLayout::Grid,
+            buttons: vec![
+                ActionButton {
+                    label: "Nova spec".into(),
+                    icon: Some("file-text".into()),
+                    variant: Some("primary".into()),
+                    action: "new-from-template".into(),
+                    template: Some("templates/spec.md".into()),
+                    folder: Some("pages/specs".into()),
+                    ..Default::default()
+                },
+                ActionButton { label: "Roadmap".into(), action: "open-page".into(), path: Some("pages/produto/roadmap.md".into()), ..Default::default() },
+                ActionButton { label: "Fechar".into(), action: "set-property".into(), path: Some("pages/specs/x.md".into()), field: Some("status".into()), value: Some("done".into()), ..Default::default() },
+                ActionButton { label: "Buscar".into(), action: "run-search".into(), query: Some("agent os".into()), ..Default::default() },
+            ],
+        };
+        let text = EmbedData::Actions(data.clone()).to_fence_text();
+        let segs = segment(&text);
+        let DocSegment::Embed(EmbedData::Actions(back)) = &segs[0] else {
+            panic!("esperava embed actions");
+        };
+        assert_eq!(back, &data);
+    }
+
+    #[test]
+    fn actions_resolve_cada_nome_na_acao_certa() {
+        let b = ActionButton { action: "open-page".into(), path: Some("pages/x.md".into()), ..Default::default() };
+        assert_eq!(b.spec(), ActionSpec::OpenPage { path: "pages/x.md".into() });
+        assert!(b.is_runnable());
+
+        let b = ActionButton { action: "set-property".into(), path: Some("p".into()), field: Some("status".into()), value: Some("done".into()), ..Default::default() };
+        assert_eq!(b.spec(), ActionSpec::SetProperty { path: "p".into(), field: "status".into(), value: "done".into() });
+    }
+
+    #[test]
+    fn actions_nome_desconhecido_vira_botao_desabilitado_sem_perder_o_yaml() {
+        // Um `.md` escrito por versão futura (ou por um agente) não pode
+        // derrubar o parse nem perder o que veio no arquivo.
+        let raw = "buttons:\n- label: Do futuro\n  action: rodar-foguete\n  path: pages/x.md\n";
+        let d = ActionsEmbedData::parse(raw);
+        assert_eq!(d.buttons.len(), 1);
+        assert_eq!(d.buttons[0].spec(), ActionSpec::Unknown("rodar-foguete".into()));
+        assert!(!d.buttons[0].is_runnable());
+        assert!(d.to_fence_body().contains("rodar-foguete"));
+        assert!(d.to_fence_body().contains("pages/x.md"));
+    }
+
+    #[test]
+    fn actions_botao_incompleto_nao_e_clicavel() {
+        let b = ActionButton { label: "Vazio".into(), action: "new-from-template".into(), ..Default::default() };
+        assert!(!b.is_runnable(), "sem template não há o que criar");
     }
 
     #[test]

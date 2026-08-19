@@ -243,6 +243,9 @@ pub fn app() -> Html {
     let cheatsheet_open = use_state(|| false);
     let pending_dialog = use_state(|| None::<PendingDialog>);
     let palette_open = use_state(|| false);
+    // Consulta com que a paleta abre. Só a ação `run-search` do embed de
+    // ações (ciclo 156) preenche isso; Ctrl+K continua abrindo vazia.
+    let palette_query = use_state(String::new);
     let theme_light = use_state(|| {
         web_sys::window().and_then(|w| w.local_storage().ok().flatten())
             .and_then(|s| s.get_item("anotadinho.theme").ok().flatten())
@@ -509,7 +512,7 @@ pub fn app() -> Html {
                 let template_path = template_path.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     let result = match template_path {
-                        Some(tpl) => api::create_page_from_template(&vault, &tpl, &title).await,
+                        Some(tpl) => api::create_page_from_template(&vault, &tpl, &title, None).await,
                         None => api::create_page(&vault, &title).await,
                     };
                     if let Ok(meta) = result {
@@ -742,6 +745,7 @@ pub fn app() -> Html {
         let selected_page = selected_page.clone();
         let open_tabs = open_tabs.clone();
         let palette_open = palette_open.clone();
+        let palette_query_kb = palette_query.clone();
         let new_page_action = new_page_action.clone();
         let new_folder_action = new_folder_action.clone();
         let toggle_theme = toggle_theme.clone();
@@ -1038,6 +1042,9 @@ pub fn app() -> Html {
                 view_assets_action.emit(());
             } else if matches(&km.open_palette) {
                 e.prevent_default();
+                // Limpa a consulta: sem isso, um Ctrl+K depois de uma
+                // ação `run-search` reabriria com o termo anterior.
+                palette_query_kb.set(String::new());
                 palette_open.set(true);
             } else if matches(&km.save) {
                 e.prevent_default();
@@ -1178,6 +1185,14 @@ pub fn app() -> Html {
                                 global_action={*global_editor_action}
                                 home_page={(*home_page).clone()}
                                 on_toggle_home={on_toggle_home.clone()}
+                                on_search={{
+                                    let palette_open = palette_open.clone();
+                                    let palette_query = palette_query.clone();
+                                    Callback::from(move |q: String| {
+                                        palette_query.set(q);
+                                        palette_open.set(true);
+                                    })
+                                }}
                             />
                         </div>
                     </div>
@@ -1226,6 +1241,7 @@ pub fn app() -> Html {
                     }}
                     on_page_selected={on_page_selected.clone()}
                     on_action={on_palette_action}
+                    initial_query={(*palette_query).clone()}
                 />
             }
         </div>

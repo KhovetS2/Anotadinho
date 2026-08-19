@@ -327,8 +327,11 @@ pub async fn list_templates(vault_path: &str) -> Result<Vec<PageMeta>, String> {
 }
 
 /// Cria página a partir de um template, substituindo `{{title}}`.
+/// `folder_path` escolhe a pasta de destino (`None` = `pages/`) — usado
+/// pelo embed de ações (ciclo 156) pra criar spec/decisão já na pasta
+/// certa do esquema de agent-os.
 pub async fn create_page_from_template(
-    vault_path: &str, template_path: &str, title: &str,
+    vault_path: &str, template_path: &str, title: &str, folder_path: Option<&str>,
 ) -> Result<PageMeta, String> {
     let args = js_sys::Object::new();
     js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
@@ -337,6 +340,10 @@ pub async fn create_page_from_template(
         .map_err(|e| format!("{:?}", e))?;
     js_sys::Reflect::set(&args, &JsValue::from_str("title"), &JsValue::from_str(title))
         .map_err(|e| format!("{:?}", e))?;
+    if let Some(folder) = folder_path {
+        js_sys::Reflect::set(&args, &JsValue::from_str("folderPath"), &JsValue::from_str(folder))
+            .map_err(|e| format!("{:?}", e))?;
+    }
     let args = JsValue::from(args);
     let result = tauri_invoke("create_page_from_template", &args)
         .await

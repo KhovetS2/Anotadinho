@@ -5,6 +5,7 @@
 mod card_detail_modal;
 mod column_settings_modal;
 mod event_detail_modal;
+mod inline_actions;
 mod inline_calendar;
 mod inline_callout;
 mod inline_columns;
@@ -19,6 +20,7 @@ mod query_settings_modal;
 pub use card_detail_modal::CardDetailModal;
 pub use column_settings_modal::ColumnSettingsModal;
 pub use event_detail_modal::EventDetailModal;
+pub use inline_actions::InlineActions;
 pub use inline_calendar::InlineCalendar;
 pub use inline_callout::InlineCallout;
 pub use inline_columns::InlineColumns;
@@ -51,6 +53,10 @@ pub struct InlineEmbedProps {
     /// Navega pra outra página do vault — usado pela célula de tipo
     /// Página da tabela, pra abrir a página vinculada.
     pub on_page_selected: Callback<PageMeta>,
+    /// Abre a paleta de comandos já preenchida (ação `run-search` do
+    /// embed de ações, ciclo 156).
+    #[prop_or_default]
+    pub on_search: Callback<String>,
 }
 
 /// Dispatcher: renderiza o componente certo pro tipo de `EmbedData`.
@@ -105,6 +111,16 @@ pub fn inline_embed(props: &InlineEmbedProps) -> Html {
                     on_change={Callback::from(move |d| on_change.emit(EmbedData::Timeline(d)))}
                     on_page_selected={props.on_page_selected.clone()}
                     open_dialog={props.open_dialog.clone()} />
+            }
+        }
+        EmbedData::Actions(d) => {
+            let on_change = props.on_change.clone();
+            html! {
+                <InlineActions data={d.clone()} vault_path={props.vault_path.clone()}
+                    on_change={Callback::from(move |d| on_change.emit(EmbedData::Actions(d)))}
+                    on_page_selected={props.on_page_selected.clone()}
+                    open_dialog={props.open_dialog.clone()}
+                    on_search={props.on_search.clone()} />
             }
         }
         EmbedData::Table(d) => {

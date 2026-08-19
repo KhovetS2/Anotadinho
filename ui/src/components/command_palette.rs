@@ -73,6 +73,10 @@ pub struct CommandPaletteProps {
     pub on_page_selected: Callback<PageMeta>,
     /// Disparado ao selecionar um comando nomeado.
     pub on_action: Callback<PaletteAction>,
+    /// Texto já preenchido ao abrir — usado pela ação `run-search` do
+    /// embed de ações (ciclo 156), que abre a paleta com a busca pronta.
+    #[prop_or_default]
+    pub initial_query: String,
 }
 
 /// Paleta de comandos — montada/desmontada pelo pai a cada abrir/fechar
@@ -80,7 +84,10 @@ pub struct CommandPaletteProps {
 /// limpo toda vez.
 #[function_component(CommandPalette)]
 pub fn command_palette(props: &CommandPaletteProps) -> Html {
-    let query = use_state(String::new);
+    let query = use_state({
+        let initial = props.initial_query.clone();
+        move || initial
+    });
     let idx = use_state(|| 0usize);
     let pages = use_state(Vec::<PageMeta>::new);
     let content_results = use_state(Vec::<(String, String)>::new);

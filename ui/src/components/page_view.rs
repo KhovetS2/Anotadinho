@@ -41,6 +41,11 @@ pub struct PageViewProps {
     /// Alterna a página `path` como inicial (define/remove).
     #[prop_or_default]
     pub on_toggle_home: Callback<String>,
+    /// Abre a paleta de comandos já preenchida — ação `run-search` do
+    /// embed de ações (ciclo 156). Repassado ao `Editor`, que repassa
+    /// aos embeds.
+    #[prop_or_default]
+    pub on_search: Callback<String>,
 }
 
 #[function_component(PageView)]
@@ -168,6 +173,7 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 global_action={props.global_action}
                 home_page={props.home_page.clone()}
                 on_toggle_home={props.on_toggle_home.clone()}
+                on_search={props.on_search.clone()}
             />
         },
     }

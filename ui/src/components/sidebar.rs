@@ -415,7 +415,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 let template_path = template_path.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     let result = match template_path {
-                        Some(tpl) => api::create_page_from_template(&vault_path, &tpl, &title).await,
+                        Some(tpl) => api::create_page_from_template(&vault_path, &tpl, &title, None).await,
                         None => api::create_page(&vault_path, &title).await,
                     };
                     match result {

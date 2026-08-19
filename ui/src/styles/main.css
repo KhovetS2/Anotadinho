@@ -4439,3 +4439,109 @@ body {
     border-color: var(--accent-blue);
     color: var(--accent-blue);
 }
+
+/* ── Actions: embed de botões (ciclo 156) ────────────────────────────
+   Barra (ou grade) de botões que operam o vault. Botão incompleto ou
+   com ação desconhecida fica desabilitado, mas visível — sumir com ele
+   esconderia do usuário que o YAML precisa de conserto. */
+.actions-embed {
+    display: flex;
+    gap: var(--sp-2);
+    margin: var(--sp-4) 0;
+}
+
+.actions-embed--row {
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.actions-embed--grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.actions-embed__slot {
+    position: relative;
+    display: inline-flex;
+}
+
+.actions-embed__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    width: 100%;
+    padding: var(--sp-2) var(--sp-4);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.actions-embed__btn:hover:not(:disabled) {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}
+
+.actions-embed__btn--primary {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: var(--bg-base);
+}
+
+.actions-embed__btn--primary:hover:not(:disabled) {
+    background: var(--accent-blue-hover);
+    border-color: var(--accent-blue-hover);
+    color: var(--bg-base);
+}
+
+.actions-embed__btn--disabled,
+.actions-embed__btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    border-style: dashed;
+}
+
+.actions-embed__btn:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+}
+
+.actions-embed__remove {
+    position: absolute;
+    top: calc(-1 * var(--sp-2));
+    right: calc(-1 * var(--sp-2));
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    font-size: 0.625rem;
+    cursor: pointer;
+}
+
+.actions-embed__slot:hover .actions-embed__remove,
+.actions-embed__slot:focus-within .actions-embed__remove {
+    display: inline-flex;
+}
+
+.actions-embed__remove:hover {
+    color: var(--error);
+    border-color: var(--error);
+}
+
+.actions-embed__empty {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    margin: 0;
+}

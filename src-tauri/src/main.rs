@@ -165,8 +165,9 @@ fn create_page_from_template(
     vault_path: String,
     template_path: String,
     title: String,
+    folder_path: Option<String>,
 ) -> Result<PageMeta, String> {
-    handle_create_page_from_template(vault_path, template_path, title)
+    handle_create_page_from_template(vault_path, template_path, title, folder_path)
 }
 
 #[tauri::command]

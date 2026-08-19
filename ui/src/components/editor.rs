@@ -55,6 +55,10 @@ pub struct EditorProps {
     /// Alterna a página atual como inicial (define/remove).
     #[prop_or_default]
     pub on_toggle_home: Callback<String>,
+    /// Abre a paleta de comandos já preenchida — repassado aos embeds
+    /// (ação `run-search` do embed de ações, ciclo 156).
+    #[prop_or_default]
+    pub on_search: Callback<String>,
 }
 
 /// Um item do menu `/`. `action` é ou HTML pra inserir no cursor, ou
@@ -1866,6 +1870,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                                 on_change={on_change}
                                                 open_dialog={props.open_dialog.clone()}
                                                 on_page_selected={props.on_page_selected.clone()}
+                                                on_search={props.on_search.clone()}
                                             />
                                             <button class="embed-hover-wrapper__add-line embed-hover-wrapper__add-line--bottom"
                                                 onclick={insert_blank_line(i + 1)} title="Adicionar linha abaixo">{ "+" }</button>

@@ -135,7 +135,8 @@ fn collect_embed_tags(body: &str) -> Vec<String> {
             | crate::embed::EmbedData::Columns(_)
             | crate::embed::EmbedData::Gallery(_)
             | crate::embed::EmbedData::Query(_)
-            | crate::embed::EmbedData::Timeline(_) => {}
+            | crate::embed::EmbedData::Timeline(_)
+            | crate::embed::EmbedData::Actions(_) => {}
         }
     }
     out.into_iter().collect()

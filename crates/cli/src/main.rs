@@ -165,7 +165,7 @@ fn run(cli: Cli) -> Result<(), String> {
             }
         }
         Command::NewFromTemplate { template_path, title } => {
-            let meta = handle_create_page_from_template(cli.vault, template_path, title)?;
+            let meta = handle_create_page_from_template(cli.vault, template_path, title, None)?;
             println!("{}", meta.path);
         }
         Command::SetProperty { page_path, key, value } => {
