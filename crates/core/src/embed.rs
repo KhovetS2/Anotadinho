@@ -48,6 +48,8 @@ pub enum EmbedKind {
     Calendar,
     /// `{{ type: "table" }}` — tabela com colunas tipadas.
     Table,
+    /// `{{ type: "callout" }}` — caixa de destaque com corpo markdown.
+    Callout,
 }
 
 impl EmbedKind {
@@ -57,6 +59,7 @@ impl EmbedKind {
             "kanban" => Some(Self::Kanban),
             "calendar" => Some(Self::Calendar),
             "table" => Some(Self::Table),
+            "callout" => Some(Self::Callout),
             _ => None,
         }
     }
@@ -67,6 +70,7 @@ impl EmbedKind {
             Self::Kanban => "kanban",
             Self::Calendar => "calendar",
             Self::Table => "table",
+            Self::Callout => "callout",
         }
     }
 
@@ -74,7 +78,7 @@ impl EmbedKind {
     /// Ponto único de verdade: quem quiser listar embeds (menu do
     /// editor, documentação, CLI) itera isto em vez de repetir a lista.
     pub fn all() -> &'static [EmbedKind] {
-        &[Self::Kanban, Self::Calendar, Self::Table]
+        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout]
     }
 
     /// Nome de exibição (menu `/`, títulos de UI).
@@ -83,6 +87,7 @@ impl EmbedKind {
             Self::Kanban => "Kanban",
             Self::Calendar => "Calendário",
             Self::Table => "Tabela de Tarefas",
+            Self::Callout => "Destaque",
         }
     }
 
@@ -92,6 +97,7 @@ impl EmbedKind {
             Self::Kanban => "Board com colunas e cards",
             Self::Calendar => "Eventos por data, mês/semana/dia",
             Self::Table => "Tabela com colunas tipadas",
+            Self::Callout => "Caixa colorida com título e corpo",
         }
     }
 
@@ -101,6 +107,7 @@ impl EmbedKind {
             Self::Kanban => "columns",
             Self::Calendar => "calendar",
             Self::Table => "table",
+            Self::Callout => "info",
         }
     }
 
@@ -118,6 +125,7 @@ impl EmbedKind {
             }
             Self::Calendar => format!("entries:\n- date: '{today}'\n  title: Novo evento"),
             Self::Table => "| Tarefa | Status | Prioridade |\n| ------ | ------ | ---------- |\n| Nova tarefa | todo | media |".to_string(),
+            Self::Callout => "variant: info\ntitle: Nota\nbody: |\n  Escreva aqui.".to_string(),
         }
     }
 }
@@ -231,6 +239,8 @@ pub enum EmbedData {
     Calendar(CalendarEmbedData),
     /// Tabela.
     Table(TableEmbedData),
+    /// Caixa de destaque.
+    Callout(CalloutEmbedData),
 }
 
 impl EmbedData {
@@ -240,6 +250,7 @@ impl EmbedData {
             EmbedKind::Kanban => EmbedData::Kanban(KanbanEmbedData::parse(raw)),
             EmbedKind::Calendar => EmbedData::Calendar(CalendarEmbedData::parse(raw)),
             EmbedKind::Table => EmbedData::Table(TableEmbedData::parse(raw)),
+            EmbedKind::Callout => EmbedData::Callout(CalloutEmbedData::parse(raw)),
         }
     }
 
@@ -249,6 +260,7 @@ impl EmbedData {
             EmbedData::Kanban(_) => EmbedKind::Kanban,
             EmbedData::Calendar(_) => EmbedKind::Calendar,
             EmbedData::Table(_) => EmbedKind::Table,
+            EmbedData::Callout(_) => EmbedKind::Callout,
         }
     }
 
@@ -261,6 +273,7 @@ impl EmbedData {
             EmbedData::Kanban(d) => d.to_fence_body(),
             EmbedData::Calendar(d) => d.to_fence_body(),
             EmbedData::Table(d) => d.to_fence_body(),
+            EmbedData::Callout(d) => d.to_fence_body(),
         };
         format!("{{{{ type: \"{name}\" }}}}\n{body}\n{{{{ /{name} }}}}\n")
     }
@@ -676,6 +689,137 @@ impl CalendarEmbedData {
     }
 }
 
+/// Variante visual do callout — define cor e ícone. Nomes escolhidos
+/// pelo PAPEL (o que a caixa comunica), não pela cor: a paleta pode
+/// mudar sem invalidar arquivo `.md` nenhum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CalloutVariant {
+    /// Contexto neutro.
+    #[default]
+    Info,
+    /// Algo concluído/validado.
+    Success,
+    /// Cuidado, mas não é erro.
+    Warning,
+    /// Erro, quebra, armadilha.
+    Error,
+    /// Sugestão, atalho, truque.
+    Tip,
+}
+
+impl CalloutVariant {
+    /// Todas as variantes, na ordem em que aparecem no seletor.
+    pub fn all() -> &'static [CalloutVariant] {
+        &[Self::Info, Self::Success, Self::Warning, Self::Error, Self::Tip]
+    }
+
+    /// Nome usado no YAML e no modificador BEM (`.callout--info`).
+    pub fn slug(&self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Success => "success",
+            Self::Warning => "warning",
+            Self::Error => "error",
+            Self::Tip => "tip",
+        }
+    }
+
+    /// Nome de exibição (seletor de variante).
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Info => "Info",
+            Self::Success => "Sucesso",
+            Self::Warning => "Atenção",
+            Self::Error => "Erro",
+            Self::Tip => "Dica",
+        }
+    }
+
+    /// Ícone (nome em `components/icon.rs`).
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Success => "check",
+            Self::Warning => "alert-triangle",
+            Self::Error => "alert-circle",
+            Self::Tip => "lightbulb",
+        }
+    }
+}
+
+/// Dados de um embed callout: uma caixa de destaque com título e corpo
+/// markdown.
+///
+/// O corpo guarda MARKDOWN, não HTML — é o que mantém o `.md` no disco
+/// legível e editável por fora (um agente via CLI, ou `git diff`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct CalloutEmbedData {
+    /// Cor/ícone da caixa.
+    #[serde(default, deserialize_with = "deserialize_variant_lenient")]
+    pub variant: CalloutVariant,
+    /// Título mostrado no cabeçalho. Pode ser vazio.
+    #[serde(default)]
+    pub title: String,
+    /// Se o corpo nasce recolhido.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub collapsed: bool,
+    /// Corpo em markdown.
+    #[serde(default)]
+    pub body: String,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// Aceita QUALQUER string em `variant:`, caindo no default quando o
+/// nome não é conhecido. Sem isso, um `variant: roxo` (versão futura,
+/// erro de digitação, ou um agente escrevendo pelo CLI) derruba a
+/// deserialização da struct INTEIRA — e o embed volta vazio, apagando
+/// título e corpo do usuário na primeira regravação.
+fn deserialize_variant_lenient<'de, D>(deserializer: D) -> Result<CalloutVariant, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = String::deserialize(deserializer)?;
+    Ok(CalloutVariant::all()
+        .iter()
+        .copied()
+        .find(|v| v.slug() == raw.trim().to_lowercase())
+        .unwrap_or_default())
+}
+
+impl CalloutEmbedData {
+    fn parse(raw: &str) -> Self {
+        serde_yaml::from_str(raw).unwrap_or_default()
+    }
+
+    fn to_fence_body(&self) -> String {
+        serde_yaml::to_string(self).unwrap_or_default()
+    }
+
+    /// Troca a variante.
+    pub fn set_variant(&mut self, variant: CalloutVariant) {
+        self.variant = variant;
+    }
+
+    /// Troca o título.
+    pub fn set_title(&mut self, title: String) {
+        self.title = title;
+    }
+
+    /// Troca o corpo markdown.
+    pub fn set_body(&mut self, body: String) {
+        self.body = body;
+    }
+
+    /// Recolhe/expande.
+    pub fn toggle_collapsed(&mut self) {
+        self.collapsed = !self.collapsed;
+    }
+}
+
 /// Tipo de uma coluna da tabela — controla como a célula é editada e
 /// renderizada. `Text` é o padrão (compatível com qualquer tabela markdown
 /// comum, sem preâmbulo de configuração nenhum).
@@ -1031,7 +1175,65 @@ mod tests {
                     assert!(!d.columns.is_empty());
                     assert!(!d.rows.is_empty());
                 }
+                EmbedData::Callout(d) => {
+                    assert!(!d.title.is_empty());
+                    assert!(!d.body.is_empty());
+                }
             }
+        }
+    }
+
+    #[test]
+    fn callout_roundtrip_com_corpo_multilinha() {
+        let data = CalloutEmbedData {
+            variant: CalloutVariant::Warning,
+            title: "Cuidado: leia antes".to_string(),
+            collapsed: true,
+            // `:` e `#` no corpo já quebraram serialização montada à mão
+            // (ciclo 064) — aqui o derive do serde escapa sozinho.
+            body: "Linha 1: com dois pontos\n\n## Título\n\n- item\n".to_string(),
+        };
+        let text = EmbedData::Callout(data.clone()).to_fence_text();
+        let segs = segment(&text);
+        assert_eq!(segs.len(), 1);
+        let DocSegment::Embed(EmbedData::Callout(back)) = &segs[0] else {
+            panic!("esperava embed callout, veio {:?}", segs[0]);
+        };
+        assert_eq!(back, &data);
+    }
+
+    #[test]
+    fn callout_vazio_parseia_com_defaults() {
+        let d = CalloutEmbedData::parse("");
+        assert_eq!(d.variant, CalloutVariant::Info);
+        assert!(d.title.is_empty());
+        assert!(d.body.is_empty());
+        assert!(!d.collapsed);
+    }
+
+    #[test]
+    fn callout_nao_serializa_collapsed_falso() {
+        let d = CalloutEmbedData { title: "T".into(), ..Default::default() };
+        let body = d.to_fence_body();
+        assert!(!body.contains("collapsed"), "collapsed: false polui o arquivo à toa: {body}");
+    }
+
+    #[test]
+    fn callout_variant_desconhecida_cai_no_default_sem_perder_o_resto() {
+        // Regressão: variante inválida NÃO pode derrubar a struct
+        // inteira — o embed voltaria vazio e a primeira regravação
+        // apagaria título e corpo do usuário.
+        let d = CalloutEmbedData::parse("variant: roxo\ntitle: T\nbody: corpo\n");
+        assert_eq!(d.variant, CalloutVariant::Info);
+        assert_eq!(d.title, "T");
+        assert_eq!(d.body, "corpo");
+    }
+
+    #[test]
+    fn callout_variant_slugs_batem_com_o_yaml() {
+        for v in CalloutVariant::all() {
+            let yaml = format!("variant: {}\n", v.slug());
+            assert_eq!(CalloutEmbedData::parse(&yaml).variant, *v);
         }
     }
 

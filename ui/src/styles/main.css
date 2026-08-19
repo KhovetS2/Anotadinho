@@ -3446,3 +3446,172 @@ body {
     vertical-align: -0.125em;
     flex-shrink: 0;
 }
+
+/* ── Callout: embed de destaque (ciclo 151) ──────────────────────────
+   Caixa colorida por variante, com título editável e corpo markdown.
+   A cor de cada variante sai de um token só (`--callout-accent`), que o
+   modificador BEM redefine — o resto das regras não sabe de cor
+   nenhuma. Fundos translúcidos por `color-mix`, nunca `rgba()` cravado
+   (a paleta já mudou uma vez e deixou rgba desatualizado pelo CSS). */
+.callout {
+    --callout-accent: var(--accent-blue);
+    border: 1px solid color-mix(in srgb, var(--callout-accent) 40%, transparent);
+    border-left: 3px solid var(--callout-accent);
+    border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--callout-accent) 8%, var(--bg-surface));
+    padding: var(--sp-3) var(--sp-4);
+    margin: var(--sp-4) 0;
+}
+
+.callout--info { --callout-accent: var(--accent-blue); }
+.callout--success { --callout-accent: var(--success); }
+.callout--warning { --callout-accent: var(--warning); }
+.callout--error { --callout-accent: var(--error); }
+.callout--tip { --callout-accent: var(--accent-purple); }
+
+.callout__header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+
+.callout__variant,
+.callout__collapse {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--callout-accent);
+    cursor: pointer;
+    padding: var(--sp-1);
+    border-radius: var(--r-sm);
+    font-size: 1rem;
+}
+
+.callout__collapse {
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+.callout__variant:hover,
+.callout__collapse:hover {
+    background: color-mix(in srgb, var(--callout-accent) 18%, transparent);
+}
+
+/* Título: `<input>` sem cara de campo até receber foco — dentro de uma
+   nota, uma caixa de formulário no meio do texto é ruído. */
+.callout__title {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    padding: var(--sp-1) var(--sp-2);
+    border-radius: var(--r-sm);
+}
+
+.callout__title:hover {
+    border-color: color-mix(in srgb, var(--callout-accent) 30%, transparent);
+}
+
+.callout__title:focus {
+    outline: none;
+    border-color: var(--callout-accent);
+    background: var(--bg-base);
+}
+
+.callout__variants {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-1);
+    margin-top: var(--sp-2);
+    padding: var(--sp-2);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+}
+
+.callout__variant-option {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    padding: var(--sp-1) var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.callout__variant-option--info { color: var(--accent-blue); }
+.callout__variant-option--success { color: var(--success); }
+.callout__variant-option--warning { color: var(--warning); }
+.callout__variant-option--error { color: var(--error); }
+.callout__variant-option--tip { color: var(--accent-purple); }
+
+.callout__variant-option:hover,
+.callout__variant-option--active {
+    border-color: currentColor;
+    background: color-mix(in srgb, currentColor 15%, var(--bg-surface));
+}
+
+.callout__body {
+    margin-top: var(--sp-2);
+}
+
+/* ── Campo de markdown dentro de um embed (ciclo 151) ─────────────────
+   Dois estados: `.embed-md` lendo (HTML renderizado), `.embed-md__input`
+   editando (textarea com o markdown cru). As duas medidas de fonte e
+   espaçamento batem, pra o texto não "pular" ao entrar/sair de edição. */
+.embed-md {
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    line-height: 1.6;
+    padding: var(--sp-2);
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    cursor: text;
+}
+
+.embed-md:hover {
+    border-color: var(--border);
+}
+
+.embed-md:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
+}
+
+.embed-md--empty {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.embed-md > :first-child { margin-top: 0; }
+.embed-md > :last-child { margin-bottom: 0; }
+
+.embed-md__input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    resize: none;
+    overflow: hidden;
+    min-height: 3.5rem;
+    color: var(--text-primary);
+    background: var(--bg-base);
+    border: 1px solid var(--accent-blue);
+    border-radius: var(--r-sm);
+    padding: var(--sp-2);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+}
+
+.embed-md__input:focus {
+    outline: none;
+}

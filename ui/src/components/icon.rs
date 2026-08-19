@@ -200,6 +200,33 @@ fn icon_body(name: &str) -> Html {
             <circle cx="8.5" cy="9.5" r="1.8"/>
             <polyline points="4,18 10,12 14,16 17,13 20,16"/>
         </> },
+        "chevron-down" => html! {
+            <polyline points="4,9 12,17 20,9"/>
+        },
+        // Variantes do callout (ciclo 151).
+        "info" => html! { <>
+            <circle cx="12" cy="12" r="9"/>
+            <line x1="12" y1="11" x2="12" y2="16"/>
+            <circle cx="12" cy="7.5" r="1.2" fill="currentColor" stroke="none"/>
+        </> },
+        "alert-triangle" => html! { <>
+            <path d="M12 4 L21 19 L3 19 Z"/>
+            <line x1="12" y1="10" x2="12" y2="14"/>
+            <circle cx="12" cy="16.5" r="1.1" fill="currentColor" stroke="none"/>
+        </> },
+        "alert-circle" => html! { <>
+            <circle cx="12" cy="12" r="9"/>
+            <line x1="12" y1="7.5" x2="12" y2="13"/>
+            <circle cx="12" cy="16.3" r="1.1" fill="currentColor" stroke="none"/>
+        </> },
+        // Lâmpada: bulbo (círculo) + base (duas linhas) — sem curva de
+        // vidro, que exigiria path preciso pra ficar reconhecível.
+        "lightbulb" => html! { <>
+            <circle cx="12" cy="9" r="5"/>
+            <line x1="9.5" y1="17" x2="14.5" y2="17"/>
+            <line x1="10.5" y1="20" x2="13.5" y2="20"/>
+            <line x1="12" y1="14" x2="12" y2="17"/>
+        </> },
         "columns" => html! { <>
             <rect x="3" y="4" width="5" height="16" rx="1"/>
             <rect x="9.5" y="4" width="5" height="16" rx="1"/>
