@@ -61,6 +61,57 @@ impl EmbedKind {
             Self::Table => "table",
         }
     }
+
+    /// Todos os tipos existentes, na ordem em que aparecem no menu `/`.
+    /// Ponto único de verdade: quem quiser listar embeds (menu do
+    /// editor, documentação, CLI) itera isto em vez de repetir a lista.
+    pub fn all() -> &'static [EmbedKind] {
+        &[Self::Kanban, Self::Calendar, Self::Table]
+    }
+
+    /// Nome de exibição (menu `/`, títulos de UI).
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Kanban => "Kanban",
+            Self::Calendar => "Calendário",
+            Self::Table => "Tabela de Tarefas",
+        }
+    }
+
+    /// Descrição curta de uma linha (menu `/`).
+    pub fn desc(&self) -> &'static str {
+        match self {
+            Self::Kanban => "Board com colunas e cards",
+            Self::Calendar => "Eventos por data, mês/semana/dia",
+            Self::Table => "Tabela com colunas tipadas",
+        }
+    }
+
+    /// Nome do ícone em `components/icon.rs`.
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::Kanban => "columns",
+            Self::Calendar => "calendar",
+            Self::Table => "table",
+        }
+    }
+
+    /// Conteúdo inicial de um embed recém-inserido (o miolo entre os
+    /// wrappers). `today` (`"YYYY-MM-DD"`) é recebido de fora em vez de
+    /// consultado aqui de propósito: mantém a função pura — o relógio é
+    /// `js_sys::Date` no WASM e `std::time` fora dele, e este código
+    /// precisa rodar nos dois lados (ciclo 149 move o módulo pro
+    /// `anotadinho-core`, alcançável pelo CLI).
+    pub fn default_body(&self, today: &str) -> String {
+        match self {
+            Self::Kanban => {
+                "columns:\n- Backlog\n- Todo\n- Done\nitems:\n- title: Novo card\n  column: Backlog"
+                    .to_string()
+            }
+            Self::Calendar => format!("entries:\n- date: '{today}'\n  title: Novo evento"),
+            Self::Table => "| Tarefa | Status | Prioridade |\n| ------ | ------ | ---------- |\n| Nova tarefa | todo | media |".to_string(),
+        }
+    }
 }
 
 /// Um trecho do corpo de uma página: markdown comum ou um embed já parseado.
@@ -1019,6 +1070,60 @@ fn yaml_scalar(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn all_kinds_round_trip_pelo_nome_do_tipo() {
+        for kind in EmbedKind::all() {
+            assert_eq!(EmbedKind::from_type_name(kind.type_name()), Some(*kind));
+        }
+    }
+
+    #[test]
+    fn all_kinds_tem_metadados_preenchidos() {
+        for kind in EmbedKind::all() {
+            assert!(!kind.label().is_empty(), "{} sem label", kind.type_name());
+            assert!(!kind.desc().is_empty(), "{} sem desc", kind.type_name());
+            assert!(!kind.icon().is_empty(), "{} sem icon", kind.type_name());
+        }
+    }
+
+    #[test]
+    fn default_body_de_todo_kind_parseia_em_dados_nao_vazios() {
+        for kind in EmbedKind::all() {
+            let body = kind.default_body("2026-08-19");
+            let data = EmbedData::parse(*kind, &body);
+            assert_eq!(data.kind(), *kind);
+            match &data {
+                EmbedData::Kanban(d) => {
+                    assert!(!d.columns.is_empty());
+                    assert!(!d.items.is_empty());
+                }
+                EmbedData::Calendar(d) => {
+                    assert_eq!(d.entries.len(), 1);
+                    assert_eq!(d.entries[0].date.as_deref(), Some("2026-08-19"));
+                }
+                EmbedData::Table(d) => {
+                    assert!(!d.columns.is_empty());
+                    assert!(!d.rows.is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn embed_com_default_body_sobrevive_a_segment_e_join() {
+        for kind in EmbedKind::all() {
+            let data = EmbedData::parse(*kind, &kind.default_body("2026-08-19"));
+            let body = format!("antes\n\n{}\ndepois\n", data.to_fence_text());
+            let segs = segment(&body);
+            assert!(
+                segs.iter().any(|s| matches!(s, DocSegment::Embed(e) if e.kind() == *kind)),
+                "{} nao voltou como embed",
+                kind.type_name()
+            );
+            assert_eq!(segment(&join(&segs)), segs);
+        }
+    }
 
     const EXEMPLOS_EMBEDS_BODY: &str = r#"# Exemplos de blocos embedados
 

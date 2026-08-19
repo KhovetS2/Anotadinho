@@ -57,29 +57,66 @@ pub struct EditorProps {
     pub on_toggle_home: Callback<String>,
 }
 
+/// Um item do menu `/`. `action` é ou HTML pra inserir no cursor, ou
+/// uma sentinela (`__IMG__`, `__MERMAID__`, `__ASSET__`) tratada à parte
+/// em `select_slash`, ou `__EMBED__:<type>` pros tipos de embed.
+#[derive(Clone, PartialEq)]
 struct SlashItem {
     label: &'static str,
     desc: &'static str,
-    html: &'static str,
+    icon: &'static str,
+    action: String,
 }
 
-static SLASH_ITEMS: &[SlashItem] = &[
-    SlashItem { label: "Título 1", desc: "Título grande", html: "<h1>Título</h1>" },
-    SlashItem { label: "Título 2", desc: "Título médio", html: "<h2>Título</h2>" },
-    SlashItem { label: "Título 3", desc: "Título pequeno", html: "<h3>Título</h3>" },
-    SlashItem { label: "Lista", desc: "Lista com marcadores", html: "<ul><li>Item</li></ul>" },
-    SlashItem { label: "Checklist", desc: "Lista de tarefas", html: "<ul><li><input type='checkbox'> Tarefa</li></ul>" },
-    SlashItem { label: "Citação", desc: "Bloco de citação", html: "<blockquote>Citação</blockquote>" },
-    SlashItem { label: "Código", desc: "Bloco de código", html: "<pre><code>código</code></pre>" },
-    SlashItem { label: "Tabela", desc: "Tabela 3×2", html: "<table><tr><td>A</td><td>B</td><td>C</td></tr><tr><td></td><td></td><td></td></tr></table>" },
-    SlashItem { label: "Linha", desc: "Divisor horizontal", html: "<hr>" },
-    SlashItem { label: "Imagem", desc: "URL ou arquivo de imagem", html: "__IMG__" },
-    SlashItem { label: "Diagrama", desc: "Mermaid (fluxograma)", html: "__MERMAID__" },
-    SlashItem { label: "Assets", desc: "Inserir arquivo do vault", html: "__ASSET__" },
-    SlashItem { label: "Kanban", desc: "Board kanban interativo", html: "__EMBED_KANBAN__" },
-    SlashItem { label: "Calendário", desc: "Lista de eventos por data", html: "__EMBED_CALENDAR__" },
-    SlashItem { label: "Tabela de Tarefas", desc: "Tabela com colunas tipadas (embed)", html: "__EMBED_TABLE__" },
+/// Prefixo da sentinela de embed. Um só braço em `select_slash` cobre
+/// todos os tipos — antes era uma sentinela hardcoded por tipo
+/// (`__EMBED_KANBAN__` etc) com o corpo YAML inicial cravado literal lá
+/// dentro, o que fazia cada embed novo tocar em 3 pontos do editor.
+const EMBED_PREFIX: &str = "__EMBED__:";
+
+static SLASH_BLOCKS: &[(&str, &str, &str, &str)] = &[
+    ("Título 1", "Título grande", "heading", "<h1>Título</h1>"),
+    ("Título 2", "Título médio", "heading", "<h2>Título</h2>"),
+    ("Título 3", "Título pequeno", "heading", "<h3>Título</h3>"),
+    ("Lista", "Lista com marcadores", "list", "<ul><li>Item</li></ul>"),
+    ("Checklist", "Lista de tarefas", "check-square", "<ul><li><input type='checkbox'> Tarefa</li></ul>"),
+    ("Citação", "Bloco de citação", "quote", "<blockquote>Citação</blockquote>"),
+    ("Código", "Bloco de código", "code", "<pre><code>código</code></pre>"),
+    ("Tabela", "Tabela 3×2", "table", "<table><tr><td>A</td><td>B</td><td>C</td></tr><tr><td></td><td></td><td></td></tr></table>"),
+    ("Linha", "Divisor horizontal", "minus", "<hr>"),
+    ("Imagem", "URL ou arquivo de imagem", "image", "__IMG__"),
+    ("Diagrama", "Mermaid (fluxograma)", "network", "__MERMAID__"),
+    ("Assets", "Inserir arquivo do vault", "paperclip", "__ASSET__"),
 ];
+
+/// Monta a lista do menu `/`: os blocos markdown fixos acima + um item
+/// por tipo de embed, gerado de `EmbedKind::all()`. Um embed novo
+/// aparece no menu sozinho, sem tocar neste arquivo.
+fn slash_items() -> Vec<SlashItem> {
+    let mut items: Vec<SlashItem> = SLASH_BLOCKS
+        .iter()
+        .map(|(label, desc, icon, action)| SlashItem {
+            label,
+            desc,
+            icon,
+            action: (*action).to_string(),
+        })
+        .collect();
+    items.extend(crate::embed::EmbedKind::all().iter().map(|kind| SlashItem {
+        label: kind.label(),
+        desc: kind.desc(),
+        icon: kind.icon(),
+        action: format!("{EMBED_PREFIX}{}", kind.type_name()),
+    }));
+    items
+}
+
+/// Data de hoje em `YYYY-MM-DD` — usada pelo corpo inicial do embed de
+/// calendário (`EmbedKind::default_body`).
+fn today_iso() -> String {
+    let d = js_sys::Date::new_0();
+    format!("{:04}-{:02}-{:02}", d.get_full_year(), d.get_month() + 1, d.get_date())
+}
 
 #[function_component(Editor)]
 pub fn editor(props: &EditorProps) -> Html {
@@ -251,7 +288,8 @@ pub fn editor(props: &EditorProps) -> Html {
         });
     }
 
-    let filtered: Vec<usize> = SLASH_ITEMS.iter().enumerate()
+    let all_slash_items = slash_items();
+    let filtered: Vec<usize> = all_slash_items.iter().enumerate()
         .filter(|(_, item)| {
             let q = slash_text.to_lowercase();
             q.is_empty() || item.label.to_lowercase().contains(&q) || item.desc.to_lowercase().contains(&q)
@@ -800,6 +838,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let slash_idx = slash_idx.clone();
         let exec_fn = doc_exec.clone();
         let items = filtered.clone();
+        let all_items = all_slash_items.clone();
         let vault_path = props.vault_path.clone();
         let open_dialog = props.open_dialog.clone();
         let content_md = content_md.clone();
@@ -822,8 +861,8 @@ pub fn editor(props: &EditorProps) -> Html {
                 delete_slash_context_and_collapse(&text_node, slash_pos, query.chars().count());
             }
             if let Some(&item_idx) = items.get(vi) {
-                let item = &SLASH_ITEMS[item_idx];
-                match item.html {
+                let Some(item) = all_items.get(item_idx) else { return };
+                match item.action.as_str() {
                     "__IMG__" => {
                         let vault_path = vault_path.clone();
                         let content_md = content_md.clone();
@@ -952,32 +991,18 @@ pub fn editor(props: &EditorProps) -> Html {
                     // disparar o `oninput`: o board/calendário/tabela de
                     // verdade (componente Yew interativo) já aparece no
                     // lugar do marcador imediatamente.
-                    "__EMBED_KANBAN__" => {
-                        let body = "columns:\n- Backlog\n- Todo\n- Done\nitems:\n- title: Novo card\n  column: Backlog";
-                        if insert_embed_marker_at_cursor("kanban", body) {
-                            let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
-                            content_md.set(new_md.clone());
-                            mark_edited(new_md);
-                        }
-                    }
-                    "__EMBED_CALENDAR__" => {
-                        let today = {
-                            let d = js_sys::Date::new_0();
-                            format!("{:04}-{:02}-{:02}", d.get_full_year(), d.get_month() + 1, d.get_date())
-                        };
-                        let body = format!("entries:\n- date: '{today}'\n  title: Novo evento");
-                        if insert_embed_marker_at_cursor("calendar", &body) {
-                            let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
-                            content_md.set(new_md.clone());
-                            mark_edited(new_md);
-                        }
-                    }
-                    "__EMBED_TABLE__" => {
-                        let body = "| Tarefa | Status | Prioridade |\n| ------ | ------ | ---------- |\n| Nova tarefa | todo | media |";
-                        if insert_embed_marker_at_cursor("table", body) {
-                            let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
-                            content_md.set(new_md.clone());
-                            mark_edited(new_md);
+                    // Um braço só pra TODO tipo de embed: o corpo
+                    // inicial vem de `EmbedKind::default_body`, então um
+                    // tipo novo não toca neste arquivo.
+                    action if action.starts_with(EMBED_PREFIX) => {
+                        let type_name = &action[EMBED_PREFIX.len()..];
+                        if let Some(kind) = crate::embed::EmbedKind::from_type_name(type_name) {
+                            let body = kind.default_body(&today_iso());
+                            if insert_embed_marker_at_cursor(kind.type_name(), &body) {
+                                let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                content_md.set(new_md.clone());
+                                mark_edited(new_md);
+                            }
                         }
                     }
                     other => {
@@ -1864,7 +1889,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     </div>
                     <div class="slash-menu__list">
                         { for filtered.iter().enumerate().map(|(vi, &item_idx)| {
-                            let item = &SLASH_ITEMS[item_idx];
+                            let item = &all_slash_items[item_idx];
                             let is_active = vi == *slash_idx;
                             let class = if is_active { "slash-menu__item slash-menu__item--active" } else { "slash-menu__item" };
                             let sel = select_slash.clone();
@@ -1879,6 +1904,7 @@ pub fn editor(props: &EditorProps) -> Html {
                             let node_ref = if is_active { slash_active_ref.clone() } else { NodeRef::default() };
                             html! {
                                 <div {class} ref={node_ref} {onmousedown} {onclick}>
+                                    <Icon name={item.icon} class="slash-menu__item-icon" />
                                     <span class="slash-menu__item-label">{ item.label }</span>
                                     <span class="slash-menu__item-desc">{ item.desc }</span>
                                 </div>

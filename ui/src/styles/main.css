@@ -1586,6 +1586,19 @@ body {
     background: var(--bg-elevated);
 }
 
+/* Ícone do item do menu `/` (ciclo 148) — cor apagada pra não competir
+   com o label, largura fixa pra os labels alinharem entre si. */
+.slash-menu__item-icon {
+    color: var(--text-muted);
+    flex: 0 0 auto;
+    font-size: 0.9375rem;
+}
+
+.slash-menu__item--active .slash-menu__item-icon,
+.slash-menu__item:hover .slash-menu__item-icon {
+    color: var(--accent-blue);
+}
+
 .slash-menu__item-label {
     color: var(--text-primary);
     font-weight: 500;
