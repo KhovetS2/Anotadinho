@@ -227,6 +227,12 @@ fn icon_body(name: &str) -> Html {
             <line x1="10.5" y1="20" x2="13.5" y2="20"/>
             <line x1="12" y1="14" x2="12" y2="17"/>
         </> },
+        // Painéis lado a lado com uma divisória — distingue do
+        // `columns` (3 colunas iguais) usado pelo kanban.
+        "layout" => html! { <>
+            <rect x="3" y="4" width="18" height="16" rx="2"/>
+            <line x1="11" y1="4" x2="11" y2="20"/>
+        </> },
         "columns" => html! { <>
             <rect x="3" y="4" width="5" height="16" rx="1"/>
             <rect x="9.5" y="4" width="5" height="16" rx="1"/>

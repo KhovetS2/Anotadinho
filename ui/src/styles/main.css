@@ -3615,3 +3615,98 @@ body {
 .embed-md__input:focus {
     outline: none;
 }
+
+/* ── Columns: embed de painéis lado a lado (ciclo 152) ───────────────
+   Grid com `fr` proporcional montado em runtime a partir das larguras
+   do YAML. A barrinha de controle de cada painel só aparece no hover
+   (ou com foco de teclado): dentro de uma nota, botões permanentes em
+   cada coluna competem com o texto. */
+.columns-embed {
+    margin: var(--sp-4) 0;
+}
+
+.columns-embed__grid {
+    display: grid;
+    gap: var(--sp-4);
+    align-items: start;
+}
+
+.columns-embed__pane {
+    min-width: 0;
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    padding: var(--sp-1);
+}
+
+.columns-embed__pane:hover,
+.columns-embed__pane:focus-within {
+    border-color: var(--border);
+}
+
+.columns-embed__pane-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+.columns-embed__pane:hover .columns-embed__pane-bar,
+.columns-embed__pane:focus-within .columns-embed__pane-bar {
+    opacity: 1;
+}
+
+.columns-embed__width {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    margin-right: auto;
+    padding-left: var(--sp-2);
+}
+
+.columns-embed__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: var(--sp-1);
+    border-radius: var(--r-sm);
+    font-size: 0.875rem;
+}
+
+.columns-embed__btn:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.columns-embed__btn--danger:hover {
+    color: var(--error);
+}
+
+.columns-embed__add {
+    margin-top: var(--sp-2);
+    padding: var(--sp-1) var(--sp-3);
+    border: 1px dashed var(--border);
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.columns-embed__add:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}
+
+/* Abaixo de 700px painéis lado a lado ficam estreitos demais pra texto
+   — empilha em coluna única, que é como o markdown seria sem o embed. */
+@media (max-width: 700px) {
+    .columns-embed__grid {
+        grid-template-columns: 1fr !important;
+    }
+}

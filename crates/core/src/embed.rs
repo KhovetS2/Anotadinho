@@ -50,6 +50,8 @@ pub enum EmbedKind {
     Table,
     /// `{{ type: "callout" }}` — caixa de destaque com corpo markdown.
     Callout,
+    /// `{{ type: "columns" }}` — painéis markdown lado a lado.
+    Columns,
 }
 
 impl EmbedKind {
@@ -60,6 +62,7 @@ impl EmbedKind {
             "calendar" => Some(Self::Calendar),
             "table" => Some(Self::Table),
             "callout" => Some(Self::Callout),
+            "columns" => Some(Self::Columns),
             _ => None,
         }
     }
@@ -71,6 +74,7 @@ impl EmbedKind {
             Self::Calendar => "calendar",
             Self::Table => "table",
             Self::Callout => "callout",
+            Self::Columns => "columns",
         }
     }
 
@@ -78,7 +82,7 @@ impl EmbedKind {
     /// Ponto único de verdade: quem quiser listar embeds (menu do
     /// editor, documentação, CLI) itera isto em vez de repetir a lista.
     pub fn all() -> &'static [EmbedKind] {
-        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout]
+        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout, Self::Columns]
     }
 
     /// Nome de exibição (menu `/`, títulos de UI).
@@ -88,6 +92,7 @@ impl EmbedKind {
             Self::Calendar => "Calendário",
             Self::Table => "Tabela de Tarefas",
             Self::Callout => "Destaque",
+            Self::Columns => "Colunas",
         }
     }
 
@@ -98,6 +103,7 @@ impl EmbedKind {
             Self::Calendar => "Eventos por data, mês/semana/dia",
             Self::Table => "Tabela com colunas tipadas",
             Self::Callout => "Caixa colorida com título e corpo",
+            Self::Columns => "Blocos de texto lado a lado",
         }
     }
 
@@ -108,6 +114,7 @@ impl EmbedKind {
             Self::Calendar => "calendar",
             Self::Table => "table",
             Self::Callout => "info",
+            Self::Columns => "layout",
         }
     }
 
@@ -126,6 +133,7 @@ impl EmbedKind {
             Self::Calendar => format!("entries:\n- date: '{today}'\n  title: Novo evento"),
             Self::Table => "| Tarefa | Status | Prioridade |\n| ------ | ------ | ---------- |\n| Nova tarefa | todo | media |".to_string(),
             Self::Callout => "variant: info\ntitle: Nota\nbody: |\n  Escreva aqui.".to_string(),
+            Self::Columns => "columns:\n- width: 1\n  body: |\n    Coluna da esquerda.\n- width: 1\n  body: |\n    Coluna da direita.".to_string(),
         }
     }
 }
@@ -241,6 +249,8 @@ pub enum EmbedData {
     Table(TableEmbedData),
     /// Caixa de destaque.
     Callout(CalloutEmbedData),
+    /// Painéis lado a lado.
+    Columns(ColumnsEmbedData),
 }
 
 impl EmbedData {
@@ -251,6 +261,7 @@ impl EmbedData {
             EmbedKind::Calendar => EmbedData::Calendar(CalendarEmbedData::parse(raw)),
             EmbedKind::Table => EmbedData::Table(TableEmbedData::parse(raw)),
             EmbedKind::Callout => EmbedData::Callout(CalloutEmbedData::parse(raw)),
+            EmbedKind::Columns => EmbedData::Columns(ColumnsEmbedData::parse(raw)),
         }
     }
 
@@ -261,6 +272,7 @@ impl EmbedData {
             EmbedData::Calendar(_) => EmbedKind::Calendar,
             EmbedData::Table(_) => EmbedKind::Table,
             EmbedData::Callout(_) => EmbedKind::Callout,
+            EmbedData::Columns(_) => EmbedKind::Columns,
         }
     }
 
@@ -274,6 +286,7 @@ impl EmbedData {
             EmbedData::Calendar(d) => d.to_fence_body(),
             EmbedData::Table(d) => d.to_fence_body(),
             EmbedData::Callout(d) => d.to_fence_body(),
+            EmbedData::Columns(d) => d.to_fence_body(),
         };
         format!("{{{{ type: \"{name}\" }}}}\n{body}\n{{{{ /{name} }}}}\n")
     }
@@ -820,6 +833,104 @@ impl CalloutEmbedData {
     }
 }
 
+/// Um painel do embed de colunas.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ColumnPane {
+    /// Largura relativa, em unidades de fração (`1fr`, `2fr`...).
+    /// Inteiro de propósito: mantém o YAML legível pro agente
+    /// (`width: 2`) e evita percentual que não fecha em 100.
+    #[serde(default = "default_pane_width")]
+    pub width: u8,
+    /// Conteúdo do painel, em markdown.
+    #[serde(default)]
+    pub body: String,
+}
+
+fn default_pane_width() -> u8 {
+    1
+}
+
+impl Default for ColumnPane {
+    fn default() -> Self {
+        Self { width: 1, body: String::new() }
+    }
+}
+
+/// Dados de um embed columns: painéis markdown lado a lado.
+///
+/// Existe porque markdown é linear — tudo empilha numa coluna só. Uma
+/// landing page ou painel (ciclo 160) precisa de conteúdo lado a lado
+/// sem sair do arquivo `.md`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct ColumnsEmbedData {
+    /// Painéis, da esquerda pra direita.
+    #[serde(default)]
+    pub columns: Vec<ColumnPane>,
+}
+
+impl ColumnsEmbedData {
+    /// Máximo de painéis. Acima disso cada um fica estreito demais pra
+    /// caber texto legível na largura de uma página.
+    pub const MAX_COLUMNS: usize = 4;
+
+    fn parse(raw: &str) -> Self {
+        let mut data: Self = serde_yaml::from_str(raw).unwrap_or_default();
+        // Sem painel nenhum não há o que renderizar (e o embed ficaria
+        // invisível, impossível de consertar pela interface).
+        if data.columns.is_empty() {
+            data.columns = vec![ColumnPane::default(), ColumnPane::default()];
+        }
+        data.columns.truncate(Self::MAX_COLUMNS);
+        for pane in &mut data.columns {
+            pane.width = pane.width.clamp(1, 6);
+        }
+        data
+    }
+
+    fn to_fence_body(&self) -> String {
+        serde_yaml::to_string(self).unwrap_or_default()
+    }
+
+    /// Adiciona um painel vazio no fim, respeitando `MAX_COLUMNS`.
+    pub fn add_column(&mut self) {
+        if self.columns.len() < Self::MAX_COLUMNS {
+            self.columns.push(ColumnPane::default());
+        }
+    }
+
+    /// Remove o painel `idx`. Nunca remove o último — um embed sem
+    /// painel some da tela sem deixar como desfazer.
+    pub fn remove_column(&mut self, idx: usize) {
+        if self.columns.len() > 1 && idx < self.columns.len() {
+            self.columns.remove(idx);
+        }
+    }
+
+    /// Troca o markdown do painel `idx`.
+    pub fn set_body(&mut self, idx: usize, body: String) {
+        if let Some(pane) = self.columns.get_mut(idx) {
+            pane.body = body;
+        }
+    }
+
+    /// Soma `delta` à largura do painel `idx`, limitando entre 1 e 6.
+    pub fn adjust_width(&mut self, idx: usize, delta: i8) {
+        if let Some(pane) = self.columns.get_mut(idx) {
+            pane.width = (pane.width as i16 + delta as i16).clamp(1, 6) as u8;
+        }
+    }
+
+    /// `grid-template-columns` correspondente às larguras (ex:
+    /// `"1fr 2fr"`).
+    pub fn grid_template(&self) -> String {
+        self.columns
+            .iter()
+            .map(|p| format!("{}fr", p.width))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
 /// Tipo de uma coluna da tabela — controla como a célula é editada e
 /// renderizada. `Text` é o padrão (compatível com qualquer tabela markdown
 /// comum, sem preâmbulo de configuração nenhum).
@@ -1179,6 +1290,10 @@ mod tests {
                     assert!(!d.title.is_empty());
                     assert!(!d.body.is_empty());
                 }
+                EmbedData::Columns(d) => {
+                    assert_eq!(d.columns.len(), 2);
+                    assert!(d.columns.iter().all(|p| !p.body.is_empty()));
+                }
             }
         }
     }
@@ -1235,6 +1350,58 @@ mod tests {
             let yaml = format!("variant: {}\n", v.slug());
             assert_eq!(CalloutEmbedData::parse(&yaml).variant, *v);
         }
+    }
+
+    #[test]
+    fn columns_roundtrip_com_larguras_assimetricas() {
+        let data = ColumnsEmbedData {
+            columns: vec![
+                ColumnPane { width: 2, body: "## Esquerda\n\ntexto: com dois pontos\n".into() },
+                ColumnPane { width: 1, body: "- direita\n".into() },
+            ],
+        };
+        let text = EmbedData::Columns(data.clone()).to_fence_text();
+        let segs = segment(&text);
+        let DocSegment::Embed(EmbedData::Columns(back)) = &segs[0] else {
+            panic!("esperava embed columns");
+        };
+        assert_eq!(back, &data);
+        assert_eq!(back.grid_template(), "2fr 1fr");
+    }
+
+    #[test]
+    fn columns_sem_paineis_cai_em_duas_colunas() {
+        let d = ColumnsEmbedData::parse("columns: []");
+        assert_eq!(d.columns.len(), 2);
+        assert_eq!(d.grid_template(), "1fr 1fr");
+    }
+
+    #[test]
+    fn columns_respeita_o_maximo_e_o_minimo() {
+        let mut d = ColumnsEmbedData::parse("");
+        for _ in 0..10 {
+            d.add_column();
+        }
+        assert_eq!(d.columns.len(), ColumnsEmbedData::MAX_COLUMNS);
+
+        let mut only_one = ColumnsEmbedData { columns: vec![ColumnPane::default()] };
+        only_one.remove_column(0);
+        assert_eq!(only_one.columns.len(), 1, "remover o último painel apagaria o embed da tela");
+    }
+
+    #[test]
+    fn columns_largura_fica_entre_um_e_seis() {
+        let mut d = ColumnsEmbedData::parse("");
+        d.adjust_width(0, -5);
+        assert_eq!(d.columns[0].width, 1);
+        d.adjust_width(0, 100);
+        assert_eq!(d.columns[0].width, 6);
+    }
+
+    #[test]
+    fn columns_com_painel_a_mais_no_arquivo_e_truncado() {
+        let raw = "columns:\n- body: a\n- body: b\n- body: c\n- body: d\n- body: e\n";
+        assert_eq!(ColumnsEmbedData::parse(raw).columns.len(), ColumnsEmbedData::MAX_COLUMNS);
     }
 
     #[test]
