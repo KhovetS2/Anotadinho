@@ -4227,3 +4227,215 @@ body {
     background: var(--accent-blue);
     color: var(--bg-base);
 }
+
+/* ── Timeline: embed de cronograma (ciclo 155) ───────────────────────
+   Barras posicionadas em % dentro de uma trilha que vale a janela
+   inteira (o cálculo é `bar_span`, no core, testado). Durante o
+   arraste, `user-select: none` no embed inteiro evita selecionar o
+   texto da página junto (bug do ciclo 068). */
+.timeline {
+    margin: var(--sp-4) 0;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--bg-surface);
+    padding: var(--sp-3);
+}
+
+.timeline--dragging {
+    user-select: none;
+    cursor: grabbing;
+}
+
+.timeline__bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--sp-3);
+}
+
+.timeline__range {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+}
+
+.timeline__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: var(--sp-1);
+    border-radius: var(--r-sm);
+}
+
+.timeline__btn--text {
+    font-size: 0.75rem;
+    padding: var(--sp-1) var(--sp-2);
+}
+
+.timeline__btn:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.timeline__scales {
+    display: inline-flex;
+    margin-left: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    overflow: hidden;
+}
+
+.timeline__scale {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: var(--sp-1) var(--sp-2);
+    font-size: 0.6875rem;
+}
+
+.timeline__scale:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.timeline__scale--active {
+    background: var(--accent-blue);
+    color: var(--bg-base);
+}
+
+.timeline__add {
+    padding: var(--sp-1) var(--sp-3);
+    border: 1px dashed var(--border);
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.timeline__add:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}
+
+.timeline__axis {
+    position: relative;
+    height: 1.25rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: var(--sp-2);
+}
+
+.timeline__tick {
+    position: absolute;
+    top: 0;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+
+.timeline__track {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    min-height: 2rem;
+}
+
+.timeline__today {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--accent-blue);
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.timeline__row {
+    position: relative;
+    height: 1.75rem;
+}
+
+.timeline__bar-item {
+    position: absolute;
+    top: 0;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    border-radius: var(--r-sm);
+    padding: 0 var(--sp-2);
+    cursor: grab;
+    overflow: hidden;
+    min-width: 1.5rem;
+}
+
+.timeline__bar-item:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
+}
+
+.timeline__label {
+    font-size: 0.75rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Alças de redimensionar: faixas de 6px nas bordas da barra. */
+.timeline__handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: ew-resize;
+}
+
+.timeline__handle--start { left: 0; }
+.timeline__handle--end { right: 0; }
+
+.timeline__empty {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    margin: var(--sp-2) 0;
+}
+
+.timeline__drawer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
+    padding-top: var(--sp-2);
+    border-top: 1px dashed var(--border);
+}
+
+.timeline__drawer-label {
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.timeline__drawer-item {
+    padding: var(--sp-1) var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.timeline__drawer-item:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+}

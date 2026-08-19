@@ -56,6 +56,8 @@ pub enum EmbedKind {
     Gallery,
     /// `{{ type: "query" }}` — consulta viva sobre o vault.
     Query,
+    /// `{{ type: "timeline" }}` — cronograma de barras por intervalo.
+    Timeline,
 }
 
 impl EmbedKind {
@@ -69,6 +71,7 @@ impl EmbedKind {
             "columns" => Some(Self::Columns),
             "gallery" => Some(Self::Gallery),
             "query" => Some(Self::Query),
+            "timeline" => Some(Self::Timeline),
             _ => None,
         }
     }
@@ -83,6 +86,7 @@ impl EmbedKind {
             Self::Columns => "columns",
             Self::Gallery => "gallery",
             Self::Query => "query",
+            Self::Timeline => "timeline",
         }
     }
 
@@ -90,7 +94,7 @@ impl EmbedKind {
     /// Ponto único de verdade: quem quiser listar embeds (menu do
     /// editor, documentação, CLI) itera isto em vez de repetir a lista.
     pub fn all() -> &'static [EmbedKind] {
-        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout, Self::Columns, Self::Gallery, Self::Query]
+        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout, Self::Columns, Self::Gallery, Self::Query, Self::Timeline]
     }
 
     /// Nome de exibição (menu `/`, títulos de UI).
@@ -103,6 +107,7 @@ impl EmbedKind {
             Self::Columns => "Colunas",
             Self::Gallery => "Galeria",
             Self::Query => "Consulta",
+            Self::Timeline => "Cronograma",
         }
     }
 
@@ -116,6 +121,7 @@ impl EmbedKind {
             Self::Columns => "Blocos de texto lado a lado",
             Self::Gallery => "Grade de imagens do vault",
             Self::Query => "Lista viva de páginas por filtro",
+            Self::Timeline => "Barras por intervalo de datas (Gantt)",
         }
     }
 
@@ -129,6 +135,7 @@ impl EmbedKind {
             Self::Columns => "layout",
             Self::Gallery => "image",
             Self::Query => "search",
+            Self::Timeline => "clock",
         }
     }
 
@@ -155,6 +162,10 @@ impl EmbedKind {
             // sempre tem resultado, então dá pra ver o embed funcionando
             // antes de configurar qualquer filtro.
             Self::Query => "view: list\nlimit: 10".to_string(),
+            Self::Timeline => {
+                let end = crate::date_util::add_days(today, 6).unwrap_or_else(|| today.to_string());
+                format!("scale: month\nitems:\n- title: Nova etapa\n  start: '{today}'\n  end: '{end}'")
+            }
         }
     }
 }
@@ -276,6 +287,8 @@ pub enum EmbedData {
     Gallery(GalleryEmbedData),
     /// Consulta viva — o YAML do embed É a consulta.
     Query(crate::query::Query),
+    /// Cronograma de barras.
+    Timeline(TimelineEmbedData),
 }
 
 impl EmbedData {
@@ -289,6 +302,7 @@ impl EmbedData {
             EmbedKind::Columns => EmbedData::Columns(ColumnsEmbedData::parse(raw)),
             EmbedKind::Gallery => EmbedData::Gallery(GalleryEmbedData::parse(raw)),
             EmbedKind::Query => EmbedData::Query(serde_yaml::from_str(raw).unwrap_or_default()),
+            EmbedKind::Timeline => EmbedData::Timeline(TimelineEmbedData::parse(raw)),
         }
     }
 
@@ -302,6 +316,7 @@ impl EmbedData {
             EmbedData::Columns(_) => EmbedKind::Columns,
             EmbedData::Gallery(_) => EmbedKind::Gallery,
             EmbedData::Query(_) => EmbedKind::Query,
+            EmbedData::Timeline(_) => EmbedKind::Timeline,
         }
     }
 
@@ -318,6 +333,7 @@ impl EmbedData {
             EmbedData::Columns(d) => d.to_fence_body(),
             EmbedData::Gallery(d) => d.to_fence_body(),
             EmbedData::Query(q) => serde_yaml::to_string(q).unwrap_or_default(),
+            EmbedData::Timeline(d) => d.to_fence_body(),
         };
         format!("{{{{ type: \"{name}\" }}}}\n{body}\n{{{{ /{name} }}}}\n")
     }
@@ -1084,6 +1100,216 @@ impl GalleryEmbedData {
     }
 }
 
+/// Escala do eixo de tempo do cronograma.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TimelineScale {
+    /// 7 dias.
+    Week,
+    /// ~5 semanas.
+    #[default]
+    Month,
+    /// ~13 semanas.
+    Quarter,
+}
+
+impl TimelineScale {
+    /// Todas as escalas, da menor pra maior.
+    pub fn all() -> &'static [TimelineScale] {
+        &[Self::Week, Self::Month, Self::Quarter]
+    }
+
+    /// Nome no YAML e no modificador BEM.
+    pub fn slug(&self) -> &'static str {
+        match self {
+            Self::Week => "week",
+            Self::Month => "month",
+            Self::Quarter => "quarter",
+        }
+    }
+
+    /// Nome de exibição.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Week => "Semana",
+            Self::Month => "Mês",
+            Self::Quarter => "Trimestre",
+        }
+    }
+
+    /// Quantos dias a janela cobre.
+    pub fn days(&self) -> i64 {
+        match self {
+            Self::Week => 7,
+            Self::Month => 35,
+            Self::Quarter => 91,
+        }
+    }
+}
+
+/// Fonte dos itens do cronograma. `Manual` guarda os itens no próprio
+/// wrapper; `Vault` monta a partir do frontmatter das páginas (somente
+/// leitura) — mesma divisão que o calendário inline já usa.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TimelineSource {
+    /// Itens do próprio embed.
+    #[default]
+    Manual,
+    /// Itens vindos do vault.
+    Vault,
+}
+
+fn is_manual_timeline(s: &TimelineSource) -> bool {
+    *s == TimelineSource::Manual
+}
+
+/// Uma barra do cronograma.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct TimelineItem {
+    /// Rótulo da barra.
+    pub title: String,
+    /// Início (`YYYY-MM-DD`). `None` = item sem data, fica na gaveta.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
+    /// Fim inclusivo. `None` = barra de 1 dia.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<String>,
+    /// Tags — a primeira dá a cor da barra (`badge_class`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// Página de origem, só em itens do modo Vault (nunca serializado).
+    #[serde(default, skip)]
+    pub page: Option<String>,
+}
+
+/// Dados de um embed timeline.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct TimelineEmbedData {
+    /// Escala do eixo.
+    #[serde(default)]
+    pub scale: TimelineScale,
+    /// De onde vêm os itens.
+    #[serde(default, skip_serializing_if = "is_manual_timeline")]
+    pub source: TimelineSource,
+    /// Itens (só no modo Manual).
+    #[serde(default)]
+    pub items: Vec<TimelineItem>,
+}
+
+/// Posição e largura de uma barra dentro da janela visível, em
+/// porcentagem — recortada nas bordas quando o intervalo passa da
+/// janela. `None` quando o item não aparece na janela (ou não tem
+/// início).
+///
+/// Função pura de propósito: é a única aritmética não trivial do
+/// cronograma, e é onde erro de um dia aparece.
+pub fn bar_span(
+    start: Option<&str>,
+    end: Option<&str>,
+    window_start: &str,
+    window_days: i64,
+) -> Option<(f64, f64)> {
+    let start = start?;
+    // Fim ausente = barra de 1 dia (o próprio início).
+    let end = end.unwrap_or(start);
+    let (from, to) = if crate::date_util::days_between(start, end).unwrap_or(0) < 0 {
+        // Intervalo invertido no arquivo: trata como 1 dia em vez de
+        // desenhar barra de largura negativa.
+        (start, start)
+    } else {
+        (start, end)
+    };
+
+    let offset = crate::date_util::days_between(window_start, from)?;
+    // `days_between` é exclusivo no fim; a barra inclui o dia final.
+    let length = crate::date_util::days_between(from, to)? + 1;
+
+    let visible_start = offset.max(0);
+    let visible_end = (offset + length).min(window_days);
+    if visible_end <= visible_start {
+        return None;
+    }
+
+    let pct = 100.0 / window_days as f64;
+    Some((visible_start as f64 * pct, (visible_end - visible_start) as f64 * pct))
+}
+
+impl TimelineEmbedData {
+    fn parse(raw: &str) -> Self {
+        serde_yaml::from_str(raw).unwrap_or_default()
+    }
+
+    fn to_fence_body(&self) -> String {
+        serde_yaml::to_string(self).unwrap_or_default()
+    }
+
+    /// Adiciona um item novo com intervalo.
+    pub fn add_item(&mut self, title: String, start: String, end: String) {
+        self.items.push(TimelineItem {
+            title,
+            start: Some(start),
+            end: Some(end),
+            ..Default::default()
+        });
+    }
+
+    /// Adiciona um item sem data — fica na gaveta até ser arrastado
+    /// pra grade.
+    pub fn add_unscheduled(&mut self, title: String) {
+        self.items.push(TimelineItem { title, ..Default::default() });
+    }
+
+    /// Remove o item `idx`.
+    pub fn remove_item(&mut self, idx: usize) {
+        if idx < self.items.len() {
+            self.items.remove(idx);
+        }
+    }
+
+    /// Substitui o item `idx` inteiro.
+    pub fn update_item(&mut self, idx: usize, item: TimelineItem) {
+        if let Some(slot) = self.items.get_mut(idx) {
+            *slot = item;
+        }
+    }
+
+    /// Desloca o item `idx` pra começar em `new_start`, preservando a
+    /// duração. Item que ainda não tinha data só ganha o início (é o
+    /// caminho de arrastar da gaveta pra grade).
+    pub fn move_item(&mut self, idx: usize, new_start: String) {
+        let Some(item) = self.items.get_mut(idx) else { return };
+        if let (Some(old_start), Some(end)) = (&item.start, &item.end) {
+            let duration = crate::date_util::days_between(old_start, end).unwrap_or(0);
+            if let Some(new_end) = crate::date_util::add_days(&new_start, duration) {
+                item.end = Some(new_end);
+            }
+        }
+        item.start = Some(new_start);
+    }
+
+    /// Redimensiona o item `idx` arrastando a borda inicial
+    /// (`is_start_edge`) ou final. Nunca inverte: a borda arrastada
+    /// para no dia da borda oposta.
+    pub fn resize_item(&mut self, idx: usize, is_start_edge: bool, new_date: String) {
+        let Some(item) = self.items.get_mut(idx) else { return };
+        let Some(start) = item.start.clone() else { return };
+        let end = item.end.clone().unwrap_or_else(|| start.clone());
+        if is_start_edge {
+            if crate::date_util::days_between(&new_date, &end).unwrap_or(0) >= 0 {
+                item.start = Some(new_date);
+            } else {
+                item.start = Some(end.clone());
+            }
+            item.end = Some(end);
+        } else if crate::date_util::days_between(&start, &new_date).unwrap_or(0) >= 0 {
+            item.end = Some(new_date);
+        } else {
+            item.end = Some(start);
+        }
+    }
+}
+
 /// Tipo de uma coluna da tabela — controla como a célula é editada e
 /// renderizada. `Text` é o padrão (compatível com qualquer tabela markdown
 /// comum, sem preâmbulo de configuração nenhum).
@@ -1456,6 +1682,10 @@ mod tests {
                 EmbedData::Query(q) => {
                     assert_eq!(q.limit, Some(10));
                 }
+                EmbedData::Timeline(d) => {
+                    assert_eq!(d.items.len(), 1);
+                    assert_eq!(d.items[0].start.as_deref(), Some("2026-08-19"));
+                }
             }
         }
     }
@@ -1634,6 +1864,100 @@ mod tests {
             panic!("esperava embed query");
         };
         assert_eq!(back, &q);
+    }
+
+    #[test]
+    fn timeline_roundtrip_com_tags_e_escala() {
+        let data = TimelineEmbedData {
+            scale: TimelineScale::Quarter,
+            source: TimelineSource::Manual,
+            items: vec![TimelineItem {
+                title: "Etapa: com dois pontos".into(),
+                start: Some("2026-08-01".into()),
+                end: Some("2026-08-20".into()),
+                tags: vec!["infra".into()],
+                page: None,
+            }],
+        };
+        let text = EmbedData::Timeline(data.clone()).to_fence_text();
+        let segs = segment(&text);
+        let DocSegment::Embed(EmbedData::Timeline(back)) = &segs[0] else {
+            panic!("esperava embed timeline");
+        };
+        assert_eq!(back, &data);
+    }
+
+    #[test]
+    fn bar_span_posiciona_e_dimensiona_dentro_da_janela() {
+        // Janela de 10 dias começando em 2026-08-01; barra do dia 1 ao 5
+        // = 5 dias inclusivos = 50%, começando em 0%.
+        let (off, len) = bar_span(Some("2026-08-01"), Some("2026-08-05"), "2026-08-01", 10).unwrap();
+        assert!((off - 0.0).abs() < 0.001);
+        assert!((len - 50.0).abs() < 0.001);
+
+        // Barra de 1 dia no meio: 1 dia = 10%.
+        let (off, len) = bar_span(Some("2026-08-06"), None, "2026-08-01", 10).unwrap();
+        assert!((off - 50.0).abs() < 0.001);
+        assert!((len - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn bar_span_recorta_nas_bordas_da_janela() {
+        // Começa antes da janela: recorta o começo.
+        let (off, len) = bar_span(Some("2026-07-25"), Some("2026-08-02"), "2026-08-01", 10).unwrap();
+        assert!((off - 0.0).abs() < 0.001);
+        assert!((len - 20.0).abs() < 0.001);
+
+        // Termina depois da janela: recorta o fim.
+        let (off, len) = bar_span(Some("2026-08-09"), Some("2026-08-30"), "2026-08-01", 10).unwrap();
+        assert!((off - 80.0).abs() < 0.001);
+        assert!((len - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn bar_span_fora_da_janela_ou_sem_inicio_e_none() {
+        assert!(bar_span(Some("2026-09-01"), None, "2026-08-01", 10).is_none());
+        assert!(bar_span(Some("2026-07-01"), Some("2026-07-05"), "2026-08-01", 10).is_none());
+        assert!(bar_span(None, Some("2026-08-02"), "2026-08-01", 10).is_none());
+    }
+
+    #[test]
+    fn bar_span_com_intervalo_invertido_vira_um_dia() {
+        let (_, len) = bar_span(Some("2026-08-05"), Some("2026-08-01"), "2026-08-01", 10).unwrap();
+        assert!((len - 10.0).abs() < 0.001, "intervalo invertido não pode virar barra negativa");
+    }
+
+    #[test]
+    fn timeline_move_preserva_duracao_e_resize_nao_inverte() {
+        let mut d = TimelineEmbedData {
+            items: vec![TimelineItem {
+                title: "X".into(),
+                start: Some("2026-08-01".into()),
+                end: Some("2026-08-05".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        d.move_item(0, "2026-08-10".into());
+        assert_eq!(d.items[0].start.as_deref(), Some("2026-08-10"));
+        assert_eq!(d.items[0].end.as_deref(), Some("2026-08-14"));
+
+        // Arrastar a borda inicial pra depois do fim para NO fim.
+        d.resize_item(0, true, "2026-08-20".into());
+        assert_eq!(d.items[0].start.as_deref(), Some("2026-08-14"));
+
+        // Arrastar a borda final pra antes do início para NO início.
+        d.resize_item(0, false, "2026-08-01".into());
+        assert_eq!(d.items[0].end.as_deref(), Some("2026-08-14"));
+    }
+
+    #[test]
+    fn timeline_item_sem_data_ganha_inicio_ao_ser_movido() {
+        let mut d = TimelineEmbedData::default();
+        d.add_unscheduled("Sem data".into());
+        d.move_item(0, "2026-08-09".into());
+        assert_eq!(d.items[0].start.as_deref(), Some("2026-08-09"));
+        assert_eq!(d.items[0].end, None, "item de 1 dia não precisa de fim explícito");
     }
 
     #[test]
