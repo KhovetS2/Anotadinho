@@ -1,7 +1,7 @@
 ---
 id: "149"
 titulo: "Move parsing de embed para anotadinho-core"
-status: pending
+status: done
 criado: 2026-08-19
 autor: humano
 prioridade: alta
@@ -25,21 +25,22 @@ pra `crates/core`, sem mudar comportamento nenhum.
 
 ## Critérios de aceite
 
-- [ ] `crates/core/src/embed.rs` (novo) recebe: `EmbedKind`,
+- [x] `crates/core/src/embed.rs` (novo) recebe: `EmbedKind`,
       `DocSegment`, `EmbedData`, `segment`, `join`, `BADGE_PALETTE`,
       `badge_class`, e todas as structs de dados (`KanbanCard`,
       `KanbanEmbedData`, `CalendarEntry`, `CalendarEmbedData`,
       `CalendarSource`, `ChecklistItem`, `Comment`, `Attachment`,
       `ColumnKind`, `TableColumn`, `TableEmbedData`) com seus `impl`
-- [ ] Os 49 testes migram junto, sem edição semântica (só o que o
-      caminho do módulo exigir)
-- [ ] `ui/src/embed.rs` fica só com o que depende de WASM
+- [x] Os 53 testes de embed migram junto, sem edição semântica (só o
+      caminho do `include_str!` e a troca de `anotadinho_core::` por
+      `crate::` dentro do próprio crate)
+- [x] `ui/src/embed.rs` fica só com o que depende de WASM
       (`scan_vault_calendar_entries`, que chama `crate::api`) e faz
       `pub use anotadinho_core::embed::*;` — nenhum arquivo da UI
       precisa mudar de import
-- [ ] `crates/core/src/lib.rs` exporta o módulo
-- [ ] Nada de `wasm-bindgen`/`web-sys`/`js-sys` entra em `core`
-- [ ] `cargo test -p anotadinho-core` passa com os testes migrados
+- [x] `crates/core/src/lib.rs` exporta o módulo
+- [x] Nada de `wasm-bindgen`/`web-sys`/`js-sys` entra em `core`
+- [x] `cargo test -p anotadinho-core` passa com os testes migrados
       contabilizados
 
 ## Comandos de validação
@@ -60,6 +61,16 @@ cargo build --manifest-path src-tauri/Cargo.toml
 - Mexer nos componentes Yew
 
 ## Notas
+
+`ui/src/date_util.rs` teve que ser dividido junto: `embed.rs` usa a
+aritmética de data dele (`days_between`, `add_days`, `parse_time`...).
+A parte pura (e os 9 testes) foi pro `crates/core/src/date_util.rs`; o
+que lê o RELÓGIO (`today`, `today_string`, `now_minutes`, todas via
+`js_sys::Date`) ficou na UI, que re-exporta o resto. Nenhum import
+mudou em nenhum componente.
+
+Contagem de testes: UI 88 → 26, core 29 → 91. Total 117 antes e
+depois — nada perdido, só mudou de lado.
 
 `core` já tem `serde_yaml` e `pulldown-cmark` no `Cargo.toml`, que são
 as duas dependências que `embed.rs` usa — a mudança não acrescenta
