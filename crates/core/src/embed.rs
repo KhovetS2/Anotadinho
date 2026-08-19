@@ -54,6 +54,8 @@ pub enum EmbedKind {
     Columns,
     /// `{{ type: "gallery" }}` — grade de imagens do vault.
     Gallery,
+    /// `{{ type: "query" }}` — consulta viva sobre o vault.
+    Query,
 }
 
 impl EmbedKind {
@@ -66,6 +68,7 @@ impl EmbedKind {
             "callout" => Some(Self::Callout),
             "columns" => Some(Self::Columns),
             "gallery" => Some(Self::Gallery),
+            "query" => Some(Self::Query),
             _ => None,
         }
     }
@@ -79,6 +82,7 @@ impl EmbedKind {
             Self::Callout => "callout",
             Self::Columns => "columns",
             Self::Gallery => "gallery",
+            Self::Query => "query",
         }
     }
 
@@ -86,7 +90,7 @@ impl EmbedKind {
     /// Ponto único de verdade: quem quiser listar embeds (menu do
     /// editor, documentação, CLI) itera isto em vez de repetir a lista.
     pub fn all() -> &'static [EmbedKind] {
-        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout, Self::Columns, Self::Gallery]
+        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout, Self::Columns, Self::Gallery, Self::Query]
     }
 
     /// Nome de exibição (menu `/`, títulos de UI).
@@ -98,6 +102,7 @@ impl EmbedKind {
             Self::Callout => "Destaque",
             Self::Columns => "Colunas",
             Self::Gallery => "Galeria",
+            Self::Query => "Consulta",
         }
     }
 
@@ -110,6 +115,7 @@ impl EmbedKind {
             Self::Callout => "Caixa colorida com título e corpo",
             Self::Columns => "Blocos de texto lado a lado",
             Self::Gallery => "Grade de imagens do vault",
+            Self::Query => "Lista viva de páginas por filtro",
         }
     }
 
@@ -122,6 +128,7 @@ impl EmbedKind {
             Self::Callout => "info",
             Self::Columns => "layout",
             Self::Gallery => "image",
+            Self::Query => "search",
         }
     }
 
@@ -144,6 +151,10 @@ impl EmbedKind {
             // Nasce vazia: o botão "adicionar do vault" é o caminho,
             // e um item com path inventado só renderizaria placeholder.
             Self::Gallery => "columns: 3\nsize: md\nitems: []".to_string(),
+            // Nasce mostrando o vault inteiro em lista: é o recorte que
+            // sempre tem resultado, então dá pra ver o embed funcionando
+            // antes de configurar qualquer filtro.
+            Self::Query => "view: list\nlimit: 10".to_string(),
         }
     }
 }
@@ -263,6 +274,8 @@ pub enum EmbedData {
     Columns(ColumnsEmbedData),
     /// Grade de imagens.
     Gallery(GalleryEmbedData),
+    /// Consulta viva — o YAML do embed É a consulta.
+    Query(crate::query::Query),
 }
 
 impl EmbedData {
@@ -275,6 +288,7 @@ impl EmbedData {
             EmbedKind::Callout => EmbedData::Callout(CalloutEmbedData::parse(raw)),
             EmbedKind::Columns => EmbedData::Columns(ColumnsEmbedData::parse(raw)),
             EmbedKind::Gallery => EmbedData::Gallery(GalleryEmbedData::parse(raw)),
+            EmbedKind::Query => EmbedData::Query(serde_yaml::from_str(raw).unwrap_or_default()),
         }
     }
 
@@ -287,6 +301,7 @@ impl EmbedData {
             EmbedData::Callout(_) => EmbedKind::Callout,
             EmbedData::Columns(_) => EmbedKind::Columns,
             EmbedData::Gallery(_) => EmbedKind::Gallery,
+            EmbedData::Query(_) => EmbedKind::Query,
         }
     }
 
@@ -302,6 +317,7 @@ impl EmbedData {
             EmbedData::Callout(d) => d.to_fence_body(),
             EmbedData::Columns(d) => d.to_fence_body(),
             EmbedData::Gallery(d) => d.to_fence_body(),
+            EmbedData::Query(q) => serde_yaml::to_string(q).unwrap_or_default(),
         };
         format!("{{{{ type: \"{name}\" }}}}\n{body}\n{{{{ /{name} }}}}\n")
     }
@@ -1437,6 +1453,9 @@ mod tests {
                     assert_eq!(d.columns, 3);
                     assert!(d.items.is_empty());
                 }
+                EmbedData::Query(q) => {
+                    assert_eq!(q.limit, Some(10));
+                }
             }
         }
     }
@@ -1596,6 +1615,25 @@ mod tests {
             ..Default::default()
         };
         assert!(!d.to_fence_body().contains("caption"));
+    }
+
+    #[test]
+    fn query_embed_roundtrip_pelo_wrapper() {
+        use crate::query::{Condition, Query, QueryOp, QueryView, Sort};
+        let q = Query {
+            from: Some("pages/specs".into()),
+            conditions: vec![Condition { field: "status".into(), op: QueryOp::Eq, value: "backlog".into() }],
+            sort: Some(Sort { field: "priority".into(), desc: true }),
+            view: QueryView::Table,
+            columns: vec!["status".into()],
+            ..Default::default()
+        };
+        let text = EmbedData::Query(q.clone()).to_fence_text();
+        let segs = segment(&text);
+        let DocSegment::Embed(EmbedData::Query(back)) = &segs[0] else {
+            panic!("esperava embed query");
+        };
+        assert_eq!(back, &q);
     }
 
     #[test]

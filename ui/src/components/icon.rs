@@ -203,6 +203,9 @@ fn icon_body(name: &str) -> Html {
         "chevron-down" => html! {
             <polyline points="4,9 12,17 20,9"/>
         },
+        "chevron-up" => html! {
+            <polyline points="4,15 12,7 20,15"/>
+        },
         // Variantes do callout (ciclo 151).
         "info" => html! { <>
             <circle cx="12" cy="12" r="9"/>

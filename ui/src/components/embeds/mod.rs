@@ -9,9 +9,11 @@ mod inline_calendar;
 mod inline_callout;
 mod inline_columns;
 mod inline_gallery;
+mod inline_query;
 mod inline_kanban;
 mod inline_table;
 mod markdown_field;
+mod query_settings_modal;
 
 pub use card_detail_modal::CardDetailModal;
 pub use column_settings_modal::ColumnSettingsModal;
@@ -20,9 +22,11 @@ pub use inline_calendar::InlineCalendar;
 pub use inline_callout::InlineCallout;
 pub use inline_columns::InlineColumns;
 pub use inline_gallery::InlineGallery;
+pub use inline_query::InlineQuery;
 pub use inline_kanban::InlineKanban;
 pub use inline_table::InlineTable;
 pub use markdown_field::EmbedMarkdownField;
+pub use query_settings_modal::QuerySettingsModal;
 
 use yew::prelude::*;
 
@@ -82,6 +86,14 @@ pub fn inline_embed(props: &InlineEmbedProps) -> Html {
             html! {
                 <InlineGallery data={d.clone()} vault_path={props.vault_path.clone()}
                     on_change={Callback::from(move |d| on_change.emit(EmbedData::Gallery(d)))} />
+            }
+        }
+        EmbedData::Query(q) => {
+            let on_change = props.on_change.clone();
+            html! {
+                <InlineQuery data={q.clone()} vault_path={props.vault_path.clone()}
+                    on_change={Callback::from(move |q| on_change.emit(EmbedData::Query(q)))}
+                    on_page_selected={props.on_page_selected.clone()} />
             }
         }
         EmbedData::Table(d) => {
