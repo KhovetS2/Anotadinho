@@ -435,3 +435,38 @@ cenarios.push({
     }
   },
 });
+
+// ── ciclo 169: agrupamento e agregados ───────────────────────────────
+
+cenarios.push({
+  nome: "consulta agrupada: cabeçalho por valor, contagem e recolher (169)",
+  async fn(bridge, ctx) {
+    ctx.escrever(
+      '---\ntitle: __uitest\n---\n{{ type: "query" }}\nfrom: pages\ngroup_by: type\naggregate:\n- op: count\nview: list\n{{ /query }}\n',
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelectorAll('.query-embed__grupo').length > 1", "os grupos aparecerem");
+
+    const grupos = await bridge.js(`[...document.querySelectorAll('.query-embed__grupo')].map(g => ({
+      nome: g.querySelector('.query-embed__grupo-nome')?.textContent,
+      total: g.querySelector('.query-embed__grupo-total')?.textContent,
+    }))`);
+    ctx.assert(grupos.length >= 2, `esperava mais de um grupo; veio ${JSON.stringify(grupos)}`);
+    ctx.assert(
+      grupos.every((g) => Number(g.total) > 0),
+      `todo grupo devia ter contagem: ${JSON.stringify(grupos)}`,
+    );
+
+    const linhasAntes = await bridge.js(`document.querySelectorAll('.query-embed__row').length`);
+    await bridge.js(`(() => { document.querySelector('.query-embed__grupo').click(); return true; })()`);
+    await PAUSA(600);
+    const linhasDepois = await bridge.js(`document.querySelectorAll('.query-embed__row').length`);
+    ctx.assert(linhasDepois < linhasAntes, "recolher o grupo devia esconder as linhas dele");
+
+    // O estado de recolhido é persistido no YAML do embed.
+    await bridge.js(SALVAR);
+    await PAUSA(800);
+    ctx.assert(ctx.ler().includes("collapsed:"), `o recolhido não foi pro disco:\n${ctx.ler()}`);
+  },
+});

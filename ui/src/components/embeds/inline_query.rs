@@ -242,10 +242,86 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
         }
     };
 
+    // Cabeçalho de grupo (ciclo 169): rótulo, contagem, agregados e o
+    // botão de recolher — o estado de recolhido mora no YAML, então o
+    // painel reabre do jeito que ficou.
+    let cabecalho_grupo = {
+        let data = props.data.clone();
+        let on_change = props.on_change.clone();
+        let nav_group = nav_group.clone();
+        move |grupo: &crate::query::Grupo<'_>| -> Html {
+            if data.group_by.is_none() && data.aggregate.is_empty() {
+                return html! {};
+            }
+            let valor = grupo.valor.clone();
+            let recolhido = data.recolhido(&valor);
+            let alternar: Callback<()> = {
+                let data = data.clone();
+                let on_change = on_change.clone();
+                let valor = valor.clone();
+                Callback::from(move |_| {
+                    let mut novo = data.clone();
+                    novo.alternar_recolhido(&valor);
+                    on_change.emit(novo);
+                })
+            };
+            html! {
+                <div class="query-embed__grupo" tabindex="0" role="button"
+                    data-nav-item="query-group" data-nav-parent={nav_group.clone()}
+                    onclick={alternar.reform(|_: MouseEvent| ())}
+                    onkeydown={crate::keyboard_activate::activate_on_enter_or_space(alternar.clone())}>
+                    if data.group_by.is_some() {
+                        <Icon name={if recolhido { "chevron-right" } else { "chevron-down" }} />
+                        <span class="query-embed__grupo-nome">{ grupo.rotulo.clone() }</span>
+                    }
+                    <span class="query-embed__grupo-total">{ format!("{}", grupo.itens.len()) }</span>
+                    { for grupo.agregados.iter().map(|(rotulo, valor)| html! {
+                        <span class="query-embed__chip">{ format!("{rotulo}: {valor}") }</span>
+                    }) }
+                </div>
+            }
+        }
+    };
+
+    let grupos = props.data.run_grouped(&entries);
+
     let body = if *loading {
         html! { <p class="query-embed__empty">{ "Consultando o vault..." }</p> }
     } else if results.is_empty() {
         html! { <p class="query-embed__empty">{ "Nenhuma página bate com esta consulta." }</p> }
+    } else if props.data.group_by.is_some() || !props.data.aggregate.is_empty() {
+        html! {
+            <div class="query-embed__grupos">
+                { for grupos.iter().map(|grupo| {
+                    let recolhido = props.data.recolhido(&grupo.valor);
+                    html! {
+                        <div class="query-embed__grupo-bloco">
+                            { cabecalho_grupo(grupo) }
+                            if !recolhido {
+                                <ul class="query-embed__list">
+                                    { for grupo.itens.iter().map(|entry| {
+                                        let activate = open_page(entry);
+                                        html! {
+                                            <li class="query-embed__row" tabindex="0" role="button"
+                                                data-nav-item="query-row" data-nav-parent={nav_group.clone()}
+                                                onclick={activate.reform(|_: MouseEvent| ())}
+                                                onkeydown={crate::keyboard_activate::activate_on_enter_or_space(activate.clone())}>
+                                                <span class="query-embed__title">{ entry.title.clone() }</span>
+                                                <span class="query-embed__meta">
+                                                    { for columns.iter().map(|c| celula(
+                                                        entry.path.clone(), c.clone(),
+                                                        entry.field(c).unwrap_or_default(), "query-embed__chip")) }
+                                                </span>
+                                            </li>
+                                        }
+                                    }) }
+                                </ul>
+                            }
+                        </div>
+                    }
+                }) }
+            </div>
+        }
     } else {
         match props.data.view {
             QueryView::List => html! {

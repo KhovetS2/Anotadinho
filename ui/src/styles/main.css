@@ -4637,3 +4637,47 @@ body {
     font-size: 0.75rem;
     border-bottom: 1px solid var(--border);
 }
+
+/* Grupos da consulta (ciclo 169) — "specs por status" numa visão só,
+   em vez de uma consulta por status. */
+.query-embed__grupo {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.query-embed__grupo:hover {
+    color: var(--text-primary);
+}
+
+.query-embed__grupo:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: -2px;
+}
+
+.query-embed__grupo-nome {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.query-embed__grupo-total {
+    background: var(--bg-surface);
+    border-radius: 999px;
+    padding: 0 var(--sp-2);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+}
+
+.query-embed__grupo .query-embed__chip {
+    margin-left: auto;
+}
+
+.query-embed__grupo .query-embed__chip ~ .query-embed__chip {
+    margin-left: 0;
+}

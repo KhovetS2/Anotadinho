@@ -7,7 +7,7 @@
 //! outro processo) conseguir consumir o vault programaticamente.
 
 use anotadinho_core::embed::{self, DocSegment, EmbedData, EmbedKind};
-use anotadinho_core::query::{Condition, Query, QueryOp, Sort};
+use anotadinho_core::query::{Aggregate, AggregateOp, Condition, Query, QueryOp, Sort};
 use anotadinho_ipc::{
     handle_create_page_from_template, handle_export_folder, handle_list_templates,
     handle_read_page, handle_read_page_versioned, handle_scan_vault, handle_search_content,
@@ -124,6 +124,13 @@ enum Command {
         /// Campos extras mostrados na saída legível (repetível).
         #[arg(long = "field")]
         fields: Vec<String>,
+        /// Agrupa os resultados por um campo (ciclo 169).
+        #[arg(long)]
+        group_by: Option<String>,
+        /// Agregado por grupo, repetível: `count`, `sum:campo`,
+        /// `avg:campo`, `min:campo`, `max:campo`.
+        #[arg(long = "aggregate")]
+        aggregates: Vec<String>,
         /// Roda a consulta declarada num embed `query` de uma página,
         /// em vez de montar a consulta pelos argumentos. Formato:
         /// `<page_path>:<índice do embed>`.
@@ -300,6 +307,8 @@ fn run(cli: Cli) -> Result<(), String> {
             desc,
             limit,
             fields,
+            group_by,
+            aggregates,
             from_embed,
         } => {
             let query = match &from_embed {
@@ -309,6 +318,10 @@ fn run(cli: Cli) -> Result<(), String> {
                     for raw in &conditions {
                         conds.push(parse_condition(raw)?);
                     }
+                    let mut aggs = Vec::new();
+                    for raw in &aggregates {
+                        aggs.push(parse_aggregate(raw)?);
+                    }
                     Query {
                         from,
                         tags,
@@ -316,11 +329,34 @@ fn run(cli: Cli) -> Result<(), String> {
                         sort: sort.map(|field| Sort { field, desc }),
                         limit,
                         columns: fields.clone(),
+                        group_by,
+                        aggregate: aggs,
                         ..Default::default()
                     }
                 }
             };
             let entries = handle_scan_vault(cli.vault.clone())?;
+            // Com agrupamento a saída legível ganha cabeçalho e rodapé
+            // por grupo; o `--json` continua sendo a lista achatada, que
+            // é o que um agente consome.
+            if query.group_by.is_some() || !query.aggregate.is_empty() {
+                if cli.json {
+                    print_json(&query.run(&entries))?;
+                } else {
+                    for grupo in query.run_grouped(&entries) {
+                        if !grupo.rotulo.is_empty() {
+                            println!("# {} ({})", grupo.rotulo, grupo.itens.len());
+                        }
+                        for entry in &grupo.itens {
+                            println!("{}\t{}", entry.path, entry.title);
+                        }
+                        for (rotulo, valor) in &grupo.agregados {
+                            println!("  {rotulo}: {valor}");
+                        }
+                    }
+                }
+                return Ok(());
+            }
             let results = query.run(&entries);
             if cli.json {
                 print_json(&results)?;
@@ -614,6 +650,25 @@ fn parse_condition(raw: &str) -> Result<Condition, String> {
     Err(format!(
         "condição inválida: \"{raw}\". Use campo=valor, campo!=valor, campo~valor, campo?, campo>valor ou campo<valor"
     ))
+}
+
+/// Parseia `count`, `sum:campo`, `avg:campo`, `min:campo`, `max:campo`.
+fn parse_aggregate(raw: &str) -> Result<Aggregate, String> {
+    let (nome, campo) = match raw.split_once(':') {
+        Some((n, c)) => (n.trim(), c.trim().to_string()),
+        None => (raw.trim(), String::new()),
+    };
+    let op = AggregateOp::all()
+        .iter()
+        .copied()
+        .find(|o| o.slug() == nome.to_lowercase())
+        .ok_or_else(|| {
+            format!("agregado inválido: \"{raw}\". Use count, sum:campo, avg:campo, min:campo ou max:campo")
+        })?;
+    if op != AggregateOp::Count && campo.is_empty() {
+        return Err(format!("{} precisa de um campo: {}:campo", op.slug(), op.slug()));
+    }
+    Ok(Aggregate { field: campo, op })
 }
 
 /// Lê a consulta declarada num embed `query`: `--from-embed

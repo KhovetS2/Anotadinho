@@ -168,6 +168,138 @@ pub struct Sort {
     pub desc: bool,
 }
 
+/// Operação de agregado sobre um campo do grupo (ciclo 169).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AggregateOp {
+    /// Quantas páginas (ignora o campo).
+    #[default]
+    Count,
+    /// Soma dos valores numéricos.
+    Sum,
+    /// Média dos valores numéricos.
+    Avg,
+    /// Menor valor (numérico se der, senão alfabético).
+    Min,
+    /// Maior valor, mesma regra do `Min`.
+    Max,
+}
+
+impl AggregateOp {
+    /// Todas as operações, na ordem do seletor.
+    pub fn all() -> &'static [AggregateOp] {
+        &[Self::Count, Self::Sum, Self::Avg, Self::Min, Self::Max]
+    }
+
+    /// Nome no YAML.
+    pub fn slug(&self) -> &'static str {
+        match self {
+            Self::Count => "count",
+            Self::Sum => "sum",
+            Self::Avg => "avg",
+            Self::Min => "min",
+            Self::Max => "max",
+        }
+    }
+
+    /// Rótulo curto mostrado no rodapé do grupo.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Count => "total",
+            Self::Sum => "soma",
+            Self::Avg => "média",
+            Self::Min => "mín",
+            Self::Max => "máx",
+        }
+    }
+}
+
+/// Um agregado declarado na consulta.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Aggregate {
+    /// Campo agregado (ignorado por `count`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub field: String,
+    /// Operação.
+    #[serde(default)]
+    pub op: AggregateOp,
+}
+
+impl Aggregate {
+    /// Calcula sobre as páginas do grupo. Valor não-numérico é IGNORADO
+    /// em `sum`/`avg` (somar texto daria lixo silencioso); `min`/`max`
+    /// caem pra comparação alfabética quando não são números.
+    pub fn calcular(&self, itens: &[&PageIndexEntry]) -> String {
+        if self.op == AggregateOp::Count {
+            return itens.len().to_string();
+        }
+        let valores: Vec<String> = itens
+            .iter()
+            .filter_map(|e| e.field(&self.field))
+            .filter(|v| !v.trim().is_empty())
+            .collect();
+        if valores.is_empty() {
+            return "—".to_string();
+        }
+        let numeros: Vec<f64> = valores.iter().filter_map(|v| v.trim().parse::<f64>().ok()).collect();
+        match self.op {
+            AggregateOp::Count => unreachable!("tratado acima"),
+            AggregateOp::Sum | AggregateOp::Avg => {
+                if numeros.is_empty() {
+                    return "—".to_string();
+                }
+                let soma: f64 = numeros.iter().sum();
+                let valor = if self.op == AggregateOp::Sum {
+                    soma
+                } else {
+                    soma / numeros.len() as f64
+                };
+                formatar_numero(valor)
+            }
+            AggregateOp::Min | AggregateOp::Max => {
+                if numeros.len() == valores.len() {
+                    let escolhido = if self.op == AggregateOp::Min {
+                        numeros.iter().cloned().fold(f64::INFINITY, f64::min)
+                    } else {
+                        numeros.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+                    };
+                    formatar_numero(escolhido)
+                } else {
+                    let mut ordenados = valores.clone();
+                    ordenados.sort();
+                    if self.op == AggregateOp::Min {
+                        ordenados.first().cloned().unwrap_or_default()
+                    } else {
+                        ordenados.last().cloned().unwrap_or_default()
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Número sem casa decimal à toa (`3` em vez de `3.0`).
+fn formatar_numero(v: f64) -> String {
+    if (v - v.round()).abs() < f64::EPSILON {
+        format!("{}", v.round() as i64)
+    } else {
+        format!("{v:.2}")
+    }
+}
+
+/// Um grupo de resultados (ciclo 169).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Grupo<'a> {
+    /// Valor do campo de agrupamento (vazio = grupo dos "sem campo").
+    pub valor: String,
+    /// Rótulo pronto pra exibir.
+    pub rotulo: String,
+    /// Páginas do grupo, já ordenadas e limitadas.
+    pub itens: Vec<&'a PageIndexEntry>,
+    /// Agregados calculados, na ordem declarada.
+    pub agregados: Vec<(String, String)>,
+}
+
 /// Um recorte do vault.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Query {
@@ -192,6 +324,17 @@ pub struct Query {
     /// Campos extras mostrados junto do título.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub columns: Vec<String>,
+    /// Agrupa os resultados por este campo (ciclo 169). Sem isso, uma
+    /// visão "por status" exigia uma consulta POR status.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_by: Option<String>,
+    /// Agregados mostrados no rodapé de cada grupo e no total.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aggregate: Vec<Aggregate>,
+    /// Grupos recolhidos — guardado no YAML pra o painel abrir do jeito
+    /// que ficou.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collapsed: Vec<String>,
 }
 
 impl Query {
@@ -227,6 +370,85 @@ impl Query {
             out.truncate(limit);
         }
         out
+    }
+
+    /// Roda a consulta e agrupa por `group_by` (ciclo 169).
+    ///
+    /// Ordem dos grupos: alfabética pelo valor, com o grupo dos SEM
+    /// CAMPO sempre no fim — mesma regra do `sort` (ausente não é o
+    /// menor, é ausente). Sem `group_by`, devolve um grupo só, sem
+    /// rótulo.
+    pub fn run_grouped<'a>(&self, entries: &'a [PageIndexEntry]) -> Vec<Grupo<'a>> {
+        let resultados = self.run(entries);
+        let Some(campo) = self.group_by.as_ref().filter(|c| !c.trim().is_empty()) else {
+            return vec![Grupo {
+                valor: String::new(),
+                rotulo: String::new(),
+                agregados: self.agregar(&resultados),
+                itens: resultados,
+            }];
+        };
+
+        let mut ordem: Vec<String> = Vec::new();
+        let mut por_valor: std::collections::BTreeMap<String, Vec<&PageIndexEntry>> = Default::default();
+        for entry in resultados {
+            let valor = entry
+                .field(campo)
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_default();
+            if !ordem.contains(&valor) {
+                ordem.push(valor.clone());
+            }
+            por_valor.entry(valor).or_default().push(entry);
+        }
+        ordem.sort();
+        // Sem valor vai pro fim.
+        ordem.sort_by_key(|v| v.is_empty());
+
+        ordem
+            .into_iter()
+            .map(|valor| {
+                let itens = por_valor.remove(&valor).unwrap_or_default();
+                Grupo {
+                    rotulo: if valor.is_empty() {
+                        format!("sem {campo}")
+                    } else {
+                        valor.clone()
+                    },
+                    agregados: self.agregar(&itens),
+                    valor,
+                    itens,
+                }
+            })
+            .collect()
+    }
+
+    /// Se o grupo está recolhido.
+    pub fn recolhido(&self, valor: &str) -> bool {
+        self.collapsed.iter().any(|c| c == valor)
+    }
+
+    /// Alterna o estado de recolhido de um grupo.
+    pub fn alternar_recolhido(&mut self, valor: &str) {
+        if let Some(pos) = self.collapsed.iter().position(|c| c == valor) {
+            self.collapsed.remove(pos);
+        } else {
+            self.collapsed.push(valor.to_string());
+        }
+    }
+
+    fn agregar(&self, itens: &[&PageIndexEntry]) -> Vec<(String, String)> {
+        self.aggregate
+            .iter()
+            .map(|a| {
+                let rotulo = if a.op == AggregateOp::Count || a.field.is_empty() {
+                    a.op.label().to_string()
+                } else {
+                    format!("{} {}", a.op.label(), a.field)
+                };
+                (rotulo, a.calcular(itens))
+            })
+            .collect()
     }
 
     /// Se a entrada passa por pasta, tags e condições.
@@ -412,10 +634,94 @@ mod tests {
             limit: Some(5),
             view: QueryView::Cards,
             columns: vec!["status".into(), "priority".into()],
+            group_by: Some("status".into()),
+            aggregate: vec![Aggregate { field: "peso".into(), op: AggregateOp::Sum }],
+            collapsed: vec!["done".into()],
         };
         let yaml = serde_yaml::to_string(&q).unwrap();
         let back: Query = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(back, q);
         assert!(yaml.contains("where:"), "o campo de condições sai como `where` no YAML: {yaml}");
+    }
+
+    #[test]
+    fn agrupa_por_campo_com_ausentes_no_fim() {
+        let all = sample();
+        let q = Query {
+            from: Some("pages/specs".into()),
+            group_by: Some("status".into()),
+            ..Default::default()
+        };
+        let grupos = q.run_grouped(&all);
+        let rotulos: Vec<&str> = grupos.iter().map(|g| g.rotulo.as_str()).collect();
+        assert_eq!(rotulos, vec!["backlog", "done", "sem status"]);
+        assert_eq!(grupos[2].itens.len(), 1, "a spec sem status é um grupo próprio");
+    }
+
+    #[test]
+    fn sem_group_by_devolve_um_grupo_so() {
+        let all = sample();
+        let grupos = Query::default().run_grouped(&all);
+        assert_eq!(grupos.len(), 1);
+        assert!(grupos[0].rotulo.is_empty());
+        assert_eq!(grupos[0].itens.len(), 4);
+    }
+
+    #[test]
+    fn agregados_contam_somam_e_tiram_media() {
+        let all = sample();
+        let q = Query {
+            from: Some("pages/specs".into()),
+            aggregate: vec![
+                Aggregate { field: String::new(), op: AggregateOp::Count },
+                Aggregate { field: "peso".into(), op: AggregateOp::Sum },
+                Aggregate { field: "peso".into(), op: AggregateOp::Avg },
+                Aggregate { field: "peso".into(), op: AggregateOp::Max },
+            ],
+            ..Default::default()
+        };
+        let grupos = q.run_grouped(&all);
+        let valores: Vec<&str> = grupos[0].agregados.iter().map(|(_, v)| v.as_str()).collect();
+        // 3 specs; pesos 3 e 10 (a terceira não tem peso).
+        assert_eq!(valores, vec!["3", "13", "6.50", "10"]);
+    }
+
+    #[test]
+    fn agregado_de_campo_nao_numerico_nao_inventa_soma() {
+        let all = sample();
+        let q = Query {
+            aggregate: vec![Aggregate { field: "status".into(), op: AggregateOp::Sum }],
+            ..Default::default()
+        };
+        assert_eq!(q.run_grouped(&all)[0].agregados[0].1, "—");
+    }
+
+    #[test]
+    fn min_e_max_caem_pra_alfabetico_quando_nao_sao_numeros() {
+        let all = sample();
+        let q = Query {
+            from: Some("pages/specs".into()),
+            aggregate: vec![
+                Aggregate { field: "status".into(), op: AggregateOp::Min },
+                Aggregate { field: "status".into(), op: AggregateOp::Max },
+            ],
+            ..Default::default()
+        };
+        let grupos = q.run_grouped(&all);
+        let vals: Vec<&str> = grupos[0].agregados.iter().map(|(_, v)| v.as_str()).collect();
+        assert_eq!(vals, vec!["backlog", "done"]);
+    }
+
+    #[test]
+    fn grupo_recolhido_roundtrip_no_yaml() {
+        let mut q = Query { group_by: Some("status".into()), ..Default::default() };
+        assert!(!q.recolhido("done"));
+        q.alternar_recolhido("done");
+        assert!(q.recolhido("done"));
+        let yaml = serde_yaml::to_string(&q).unwrap();
+        let volta: Query = serde_yaml::from_str(&yaml).unwrap();
+        assert!(volta.recolhido("done"));
+        q.alternar_recolhido("done");
+        assert!(!q.recolhido("done"));
     }
 }

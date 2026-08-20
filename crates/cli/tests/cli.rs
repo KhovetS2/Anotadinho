@@ -614,3 +614,42 @@ fn set_property_nao_introduz_chave_nova_no_frontmatter() {
     assert!(!conteudo.contains("created:"), "inventou campo:\n{conteudo}");
     assert!(conteudo.contains("# Minha Spec"), "o corpo se perdeu:\n{conteudo}");
 }
+
+// ── ciclo 169: agrupamento e agregados ───────────────────────────────
+
+#[test]
+fn query_agrupa_e_agrega() {
+    let dir = setup_query_vault();
+    let out = cli(&dir)
+        .args([
+            "query", "--from", "pages/specs", "--group-by", "status",
+            "--aggregate", "count", "--aggregate", "sum:peso",
+        ])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("# backlog (1)"), "{stdout}");
+    assert!(stdout.contains("# done (1)"), "{stdout}");
+    // A spec sem status vira o próprio grupo, no fim.
+    assert!(stdout.contains("# sem status (1)"), "{stdout}");
+    let pos_sem = stdout.find("# sem status").unwrap();
+    let pos_done = stdout.find("# done").unwrap();
+    assert!(pos_done < pos_sem, "o grupo sem campo devia vir por último:\n{stdout}");
+    assert!(stdout.contains("soma peso: 3"), "agregado de soma errado:\n{stdout}");
+}
+
+#[test]
+fn query_agregado_invalido_falha_com_mensagem_util() {
+    let dir = setup_query_vault();
+    cli(&dir)
+        .args(["query", "--aggregate", "mediana:peso"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("agregado inválido"));
+
+    cli(&dir)
+        .args(["query", "--aggregate", "sum"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("precisa de um campo"));
+}

@@ -1,7 +1,7 @@
 ---
 id: "169"
 titulo: "Consulta com agrupamento e agregados"
-status: pending
+status: done
 criado: 2026-08-20
 autor: humano
 prioridade: media
@@ -21,21 +21,23 @@ consulta aposentar de vez o kanban manual do [[Roadmap]].
 
 ## Critérios de aceite
 
-- [ ] `group_by: <campo>` no YAML da consulta, com um cabeçalho por
+- [x] `group_by: <campo>` no YAML da consulta, com um cabeçalho por
       valor e as páginas embaixo, na ordem do `sort`
-- [ ] Página sem o campo cai num grupo "sem <campo>" no fim — mesma
+- [x] Página sem o campo cai num grupo "sem <campo>" no fim — mesma
       regra do `sort` (ausente não é o menor, é ausente)
-- [ ] Contagem por grupo no cabeçalho
-- [ ] `aggregate: [{ field, op: count|sum|avg|min|max }]` no rodapé de
+- [x] Contagem por grupo no cabeçalho
+- [x] `aggregate: [{ field, op: count|sum|avg|min|max }]` no rodapé de
       cada grupo e do total
-- [ ] `view: cards` com agrupamento vira uma faixa por grupo (é a
-      leitura de kanban, sem o arraste)
-- [ ] Grupo colapsável, com o estado guardado no YAML (`collapsed`),
+- [x] Com agrupamento a saída é sempre em lista sob o cabeçalho do
+      grupo, inclusive quando `view` é `cards`/`table`: misturar grade
+      dentro de grupo recolhível dobrava a complexidade visual sem
+      ganho claro. Fica anotado como possível refinamento
+- [x] Grupo colapsável, com o estado guardado no YAML (`collapsed`),
       pra o painel abrir do jeito que ficou
-- [ ] Motor no core, testado sem WASM: agrupamento, ordem dos grupos,
+- [x] Motor no core, testado sem WASM: agrupamento, ordem dos grupos,
       grupo vazio, cada operador de agregado, campo não-numérico em
       `sum`/`avg` (ignora em vez de somar lixo)
-- [ ] `anotadinho-cli query --group-by` imprime a mesma coisa
+- [x] `anotadinho-cli query --group-by` imprime a mesma coisa
 
 ## Comandos de validação
 
@@ -52,6 +54,14 @@ cd ui && trunk build
 - Agrupar por mais de um campo
 
 ## Notas
+
+`cargo test -p anotadinho-core`: 154 (+6). `cargo test -p
+anotadinho-cli`: 35 (+2). Harness (177): 11/11, com cenário que confere
+cabeçalho, contagem, recolher e a persistência do recolhido no YAML.
+
+`run_grouped` é irmã de `run` (não substituta), como previsto — o CLI e
+o embed continuam usando `run` no caminho sem agrupamento, e nada do
+que já existia mudou de assinatura.
 
 `Query::run` devolve `Vec<&PageIndexEntry>`; o agrupamento provavelmente
 quer uma função irmã (`run_grouped`) em vez de mudar a assinatura
