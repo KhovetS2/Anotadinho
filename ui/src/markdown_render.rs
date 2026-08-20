@@ -38,7 +38,10 @@ fn marcar_ids_de_bloco(body: &str) -> String {
 }
 
 /// Troca `![[Alvo]]` por um marcador de bloco que o DOM resolve
-/// depois. Fora de fence de código.
+/// depois. Fora de fence de código E fora de código inline — sem isso,
+/// uma página que EXPLICA a sintaxe (escrevendo `` `![[Página]]` ``)
+/// via o próprio exemplo virar uma transclusão de uma página chamada
+/// "Página", que obviamente não existe.
 fn marcar_transclusoes(body: &str) -> String {
     let mut out = String::with_capacity(body.len());
     let mut in_fence = false;
@@ -53,30 +56,43 @@ fn marcar_transclusoes(body: &str) -> String {
             out.push_str(linha);
             continue;
         }
-        let mut resto = linha;
-        while let Some(pos) = resto.find("![[") {
-            let (antes, depois) = resto.split_at(pos);
-            out.push_str(antes);
-            let miolo = &depois[3..];
-            let Some(fim) = miolo.find("]]") else {
-                out.push_str(depois);
-                resto = "";
-                break;
-            };
-            let alvo = miolo[..fim].trim();
-            if alvo.is_empty() || alvo.contains('[') {
-                out.push_str(&depois[..fim + 5]);
-            } else {
-                // HTML cru no meio do markdown: o pulldown-cmark passa
-                // adiante, e o marcador chega inteiro no DOM.
-                out.push_str(&format!(
-                    "\n<div class=\"transclusao\" data-transclusao=\"{}\"></div>\n",
-                    alvo.replace('"', "&quot;")
-                ));
-            }
-            resto = &miolo[fim + 2..];
+        out.push_str(&marcar_linha(linha));
+    }
+    out
+}
+
+/// Converte os `![[...]]` de UMA linha, pulando os que estão dentro de
+/// crase (código inline).
+fn marcar_linha(linha: &str) -> String {
+    let mut out = String::with_capacity(linha.len());
+    let mut em_codigo = false;
+    let bytes = linha.as_bytes();
+    let mut i = 0;
+    while i < linha.len() {
+        if bytes[i] == b'`' {
+            em_codigo = !em_codigo;
+            out.push('`');
+            i += 1;
+            continue;
         }
-        out.push_str(resto);
+        if !em_codigo && linha[i..].starts_with("![[") {
+            if let Some(fim) = linha[i + 3..].find("]]") {
+                let alvo = linha[i + 3..i + 3 + fim].trim();
+                if !alvo.is_empty() && !alvo.contains('[') && !alvo.contains('`') {
+                    // HTML cru no meio do markdown: o pulldown-cmark
+                    // passa adiante, e o marcador chega inteiro no DOM.
+                    out.push_str(&format!(
+                        "\n<div class=\"transclusao\" data-transclusao=\"{}\"></div>\n",
+                        alvo.replace('"', "&quot;")
+                    ));
+                    i += 3 + fim + 2;
+                    continue;
+                }
+            }
+        }
+        let ch = linha[i..].chars().next().unwrap_or('\0');
+        out.push(ch);
+        i += ch.len_utf8();
     }
     out
 }
@@ -108,4 +124,47 @@ pub fn render(markdown: &str) -> String {
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
     html_output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transclusao_solta_vira_marcador() {
+        let html = marcar_transclusoes("antes\n![[Alvo]]\ndepois\n");
+        assert!(html.contains("data-transclusao=\"Alvo\""), "{html}");
+        assert!(html.contains("antes"));
+        assert!(html.contains("depois"));
+    }
+
+    #[test]
+    fn transclusao_dentro_de_codigo_inline_nao_e_convertida() {
+        // Regressão: a página que EXPLICA a sintaxe transcluía o próprio
+        // exemplo e mostrava "Página não existe ainda".
+        let entrada = "Use `![[Página]]` pra transcluir.\n";
+        let saida = marcar_transclusoes(entrada);
+        assert_eq!(saida, entrada, "código inline não pode virar transclusão");
+    }
+
+    #[test]
+    fn transclusao_dentro_de_fence_nao_e_convertida() {
+        let entrada = "```\n![[Alvo]]\n```\n";
+        assert_eq!(marcar_transclusoes(entrada), entrada);
+    }
+
+    #[test]
+    fn mistura_de_codigo_e_transclusao_na_mesma_linha() {
+        let saida = marcar_transclusoes("`![[Nao]]` mas ![[Sim]] vale\n");
+        assert!(saida.contains("`![[Nao]]`"), "o exemplo em código ficou intacto: {saida}");
+        assert!(saida.contains("data-transclusao=\"Sim\""), "a de fora foi convertida: {saida}");
+    }
+
+    #[test]
+    fn id_de_bloco_vira_marca_discreta() {
+        let saida = marcar_ids_de_bloco("uma linha ^abc123\noutra linha\n");
+        assert!(saida.contains("<span class=\"bloco-id\">^abc123</span>"), "{saida}");
+        assert!(saida.contains("outra linha"));
+        assert!(!saida.contains("linha ^abc123"), "o id cru não pode sobrar: {saida}");
+    }
 }
