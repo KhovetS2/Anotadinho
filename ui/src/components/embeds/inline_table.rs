@@ -203,7 +203,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
     });
 
     html! {
-        <div class="embed-table" data-nav-group={props.nav_group.clone()}>
+        <div class="embed-table" data-nav-group={props.nav_group.clone()} data-nav-item={props.nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
             <table class="task-table__table">
                 <thead>
                     <tr>

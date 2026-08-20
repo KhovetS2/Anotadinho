@@ -52,7 +52,7 @@ pub fn inline_columns(props: &InlineColumnsProps) -> Html {
     };
 
     html! {
-        <div class="columns-embed" data-nav-group={nav_group.clone()}>
+        <div class="columns-embed" data-nav-group={nav_group.clone()} data-nav-item={nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
             <div class="columns-embed__grid" style={format!("grid-template-columns: {};", props.data.grid_template())}>
                 { for props.data.columns.iter().enumerate().map(|(idx, pane)| {
                     let on_body = {

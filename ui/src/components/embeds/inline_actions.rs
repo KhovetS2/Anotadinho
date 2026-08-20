@@ -50,7 +50,7 @@ pub fn inline_actions(props: &InlineActionsProps) -> Html {
     html! {
         <div class={classes!("actions-embed", format!("actions-embed--{}",
             if props.data.layout == ActionsLayout::Grid { "grid" } else { "row" }))}
-            data-nav-group={nav_group.clone()}>
+            data-nav-group={nav_group.clone()} data-nav-item={nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
             { for props.data.buttons.iter().enumerate().map(|(idx, button)| {
                 let spec = button.spec();
                 let runnable = button.is_runnable();

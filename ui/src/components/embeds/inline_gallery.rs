@@ -130,7 +130,7 @@ pub fn inline_gallery(props: &InlineGalleryProps) -> Html {
     let size_slug = props.data.size.slug();
 
     html! {
-        <div class="gallery" data-nav-group={nav_group.clone()}>
+        <div class="gallery" data-nav-group={nav_group.clone()} data-nav-item={nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
             <div class="gallery__bar">
                 <span class="gallery__count">
                     { format!("{} {}", props.data.items.len(), if props.data.items.len() == 1 { "imagem" } else { "imagens" }) }

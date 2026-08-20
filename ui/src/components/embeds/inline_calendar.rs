@@ -573,7 +573,7 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
     let displayed_count = if is_vault { vault_entries.len() } else { props.data.entries.len() };
 
     html! {
-        <div class="calendar-grid" data-nav-group={props.nav_group.clone()}>
+        <div class="calendar-grid" data-nav-group={props.nav_group.clone()} data-nav-item={props.nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
             <div class="calendar-grid__header">
                 <button class="calendar-grid__nav-btn" onclick={go_prev} data-nav-item="cal-prev" data-nav-parent={props.nav_group.clone()}>{ "‹" }</button>
                 <span class="calendar-grid__month-label">{ header_label }</span>

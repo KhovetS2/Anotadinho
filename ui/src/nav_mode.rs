@@ -22,6 +22,17 @@
 
 use wasm_bindgen::JsCast;
 
+/// Grupo de navegação do CONTEÚDO da página (ciclo 174): cada
+/// parágrafo, título, lista, citação, bloco de código e cada embed é um
+/// item deste grupo. Antes disso o editor era um `data-nav-delegate` —
+/// entrar nele jogava o foco no texto e o motor de setas saía de cena,
+/// então não havia destaque de região nenhum lá dentro.
+pub const GRUPO_BLOCOS: &str = "editor-blocos";
+
+/// Marca que distingue um bloco de TEXTO (onde Enter entra em edição)
+/// de um bloco de EMBED (onde Enter desce pros controles).
+pub const ATTR_BLOCO_TEXTO: &str = "data-nav-block";
+
 /// Itens (`[data-nav-item]`) cujo `data-nav-parent` é exatamente
 /// `group_id` — os "irmãos" navegáveis por seta no nível atual, na
 /// ordem em que aparecem no documento.

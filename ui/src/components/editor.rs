@@ -62,6 +62,10 @@ pub struct EditorProps {
     /// Muda quando o watcher acusa alteração no vault (ciclo 173).
     #[prop_or_default]
     pub vault_version: u32,
+    /// Abre uma sessão de navegação no nível dos BLOCOS da página
+    /// (ciclo 174) — o editor pede isso quando o Escape sobe do texto.
+    #[prop_or_default]
+    pub on_enter_block_nav: Callback<()>,
 }
 
 /// Um item do menu `/`. `action` é ou HTML pra inserir no cursor, ou
@@ -474,6 +478,7 @@ pub fn editor(props: &EditorProps) -> Html {
                             if let Some(div) = segment_refs_eff.get(i).and_then(|r| r.cast::<web_sys::Element>()) {
                                 div.set_inner_html(&crate::markdown_render::render(text));
                                 upgrade_embedded_assets_at(&div, vault_path_eff.clone());
+                                marcar_blocos(&div);
                             }
                         }
                     }
@@ -489,6 +494,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     let html = crate::markdown_render::render(&full_snapshot_eff);
                     div.set_inner_html(&html);
                     upgrade_embedded_assets_at(&div, vault_path_eff.clone());
+                    marcar_blocos(&div);
                     let _div = div.clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
@@ -1218,6 +1224,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let content_md_vim = content_md.clone();
         let editor_ref_vim = editor_ref.clone();
         let segment_refs_vim = segment_refs.clone();
+        let on_enter_blocos = props.on_enter_block_nav.clone();
         let mark_edited_vim = mark_edited.clone();
         let do_undo = do_undo.clone();
         let do_redo = do_redo.clone();
@@ -1364,6 +1371,20 @@ pub fn editor(props: &EditorProps) -> Html {
                 e.stop_propagation();
                 vim_insert.set(false);
                 return;
+            }
+
+            // Escape com o cursor no texto SOBE pro nível de blocos
+            // (ciclo 174) em vez de desselecionar a página, que era o
+            // que o handler global fazia. Sem `stop_propagation` os dois
+            // aconteceriam na mesma tecla.
+            if e.key() == "Escape" {
+                if let Some(bloco) = bloco_do_cursor() {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    crate::nav_mode::focus_item(&bloco);
+                    on_enter_blocos.emit(());
+                    return;
+                }
             }
 
             // Markdown block + inline shortcuts on Space/Enter
@@ -2825,4 +2846,75 @@ fn init_mermaid_at(el: &web_sys::Element) {
             }
         }
     }
+}
+
+/// Marca cada filho de primeiro nível do contenteditable como um item de
+/// navegação (ciclo 174): é o que dá ao nav-mode algo pra destacar e
+/// percorrer DENTRO do editor.
+///
+/// Os blocos são derivados da renderização — nada é escrito no `.md`.
+/// Roda logo depois do `set_inner_html`, então pega exatamente os
+/// elementos que o markdown gerou (`<p>`, `<h1..h6>`, `<ul>`, `<ol>`,
+/// `<blockquote>`, `<pre>`, `<table>`, `<hr>`, imagem solta).
+fn marcar_blocos(container: &web_sys::Element) {
+    let filhos = container.children();
+    for i in 0..filhos.length() {
+        let Some(bloco) = filhos.item(i) else { continue };
+        let _ = bloco.set_attribute("data-nav-item", &format!("bloco-{i}"));
+        let _ = bloco.set_attribute("data-nav-parent", crate::nav_mode::GRUPO_BLOCOS);
+        let _ = bloco.set_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO, "texto");
+        // `tabindex` pra o foco poder pousar no bloco sem que ele vire
+        // um alvo de Tab (que continua andando pelos controles, não
+        // pelo texto).
+        let _ = bloco.set_attribute("tabindex", "-1");
+    }
+}
+
+/// Põe o cursor DENTRO do bloco indicado e devolve o foco ao
+/// contenteditable — o "entrar em inserção" do ciclo 174.
+pub fn entrar_no_bloco(bloco: &web_sys::Element) -> bool {
+    let Some(editavel) = bloco
+        .closest(".editor__wysiwyg[contenteditable=\"true\"]")
+        .ok()
+        .flatten()
+        .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+    else {
+        return false;
+    };
+    let _ = editavel.focus();
+    let Some(window) = web_sys::window() else { return false };
+    let Some(doc) = window.document() else { return false };
+    let Ok(range) = doc.create_range() else { return false };
+    let _ = range.select_node_contents(bloco);
+    range.collapse_with_to_start(false);
+    if let Some(sel) = window.get_selection().ok().flatten() {
+        let _ = sel.remove_all_ranges();
+        let _ = sel.add_range(&range);
+    }
+    true
+}
+
+/// Elemento de bloco (filho direto do contenteditable) que contém o
+/// cursor agora — o alvo pra onde o Escape devolve o foco no nível de
+/// blocos (ciclo 174).
+fn bloco_do_cursor() -> Option<web_sys::Element> {
+    let sel = web_sys::window()?.get_selection().ok()??;
+    let node = sel.anchor_node()?;
+    let el = node
+        .dyn_ref::<web_sys::Element>()
+        .cloned()
+        .or_else(|| node.parent_element())?;
+    let seletor = format!("[{}]", crate::nav_mode::ATTR_BLOCO_TEXTO);
+
+    if let Ok(Some(bloco)) = el.closest(&seletor) {
+        return Some(bloco);
+    }
+    // Cursor colapsado no PRÓPRIO contenteditable (acontece quando ele
+    // acabou de receber foco, antes de entrar num filho): o bloco é o
+    // filho na posição do offset — sem isso o Escape não achava bloco
+    // nenhum e caía no handler global, que fecha a página.
+    let container = el.closest(".editor__wysiwyg").ok().flatten()?;
+    let filhos = container.children();
+    let idx = sel.anchor_offset().min(filhos.length().saturating_sub(1));
+    filhos.item(idx).or_else(|| filhos.item(0))
 }

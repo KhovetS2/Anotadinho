@@ -96,7 +96,7 @@ pub fn inline_callout(props: &InlineCalloutProps) -> Html {
 
     html! {
         <div class={classes!("callout", format!("callout--{}", variant.slug()))}
-            data-nav-group={nav_group.clone()}>
+            data-nav-group={nav_group.clone()} data-nav-item={nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
             <div class="callout__header">
                 <button class="callout__variant" type="button"
                     title={format!("Variante: {}", variant.label())}

@@ -297,14 +297,24 @@ pub fn app() -> Html {
                 // demorar mais que os 3s do intervalo — só dispara a
                 // próxima checagem se a anterior já terminou.
                 let git_busy = std::rc::Rc::new(std::cell::RefCell::new(false));
+                // Contador FORA do handle de estado: `list_version` foi
+                // capturado quando o intervalo foi criado, então
+                // `*list_version + 1` devolve sempre o mesmo número —
+                // o watcher avisava UMA vez por sessão e depois nunca
+                // mais (mesmo modo de falha do `edited_ref` no editor).
+                // Achado pelo harness do ciclo 177, que testa a recarga
+                // automática do 173.
+                let tick = std::rc::Rc::new(std::cell::Cell::new(0u32));
                 let iv = gloo_timers::callback::Interval::new(3000, move || {
                     let path = path.clone();
                     let list_version = list_version.clone();
+                    let tick = tick.clone();
                     let git_files = git_files.clone();
                     let git_busy = git_busy.clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         if let Ok(true) = api::check_changes(&path).await {
-                            list_version.set(*list_version + 1);
+                            tick.set(tick.get().wrapping_add(1));
+                            list_version.set(tick.get());
                         }
                         if !*git_busy.borrow() {
                             *git_busy.borrow_mut() = true;
@@ -913,6 +923,14 @@ pub fn app() -> Html {
                                             crate::nav_mode::focus_item(first);
                                         }
                                         nav_stack.set(stack);
+                                    } else if active.has_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO) {
+                                        // Bloco de TEXTO (ciclo 174): Enter põe o
+                                        // cursor dentro dele e encerra a sessão —
+                                        // daqui pra frente é digitação normal.
+                                        crate::nav_mode::clear_item_highlight();
+                                        crate::components::editor::entrar_no_bloco(&active);
+                                        nav_mode_active.set(false);
+                                        nav_stack.set(Vec::new());
                                     } else if let Some(html_el) = active.dyn_ref::<web_sys::HtmlElement>() {
                                         // Folha — mesma ação de um clique real.
                                         html_el.click();
@@ -962,12 +980,19 @@ pub fn app() -> Html {
                             if nav_stack.is_empty() {
                                 nav_mode_active.set(false);
                             } else if nav_stack.last().is_some_and(|g| g.starts_with("embed-")) {
-                                // Mesma regra do Backspace: sai do embed
-                                // devolvendo o cursor pro texto.
-                                nav_stack.set(Vec::new());
-                                nav_mode_active.set(false);
+                                // Sai do embed pro nível dos BLOCOS
+                                // (ciclo 174), com o próprio embed
+                                // destacado — antes voltava direto pro
+                                // texto, o que perdia o lugar.
+                                let grupo = nav_stack.last().cloned().unwrap_or_default();
+                                nav_stack.set(vec![crate::nav_mode::GRUPO_BLOCOS.to_string()]);
                                 if let Some(doc) = doc {
-                                    focus_editor_text(&doc);
+                                    if let Ok(Some(el)) = doc.query_selector(&format!(
+                                        "[data-nav-item=\"{}\"]",
+                                        grupo.replace('"', "")
+                                    )) {
+                                        crate::nav_mode::focus_item(&el);
+                                    }
                                 }
                             } else {
                                 nav_stack.set(Vec::new());
@@ -1202,7 +1227,8 @@ pub fn app() -> Html {
                             activate_nav_signal={*sidebar_activate_nav}
                         />
                         <div class="app-main-panel" tabindex="0"
-                            data-nav-item="editor" data-nav-parent="root" data-nav-delegate="editor">
+                            data-nav-item="editor" data-nav-parent="root"
+                            data-nav-group="editor-blocos">
                             <TabBar
                                 tabs={(*open_tabs).clone()}
                                 active_path={selected_page.as_ref().map(|p| p.path.clone())}
@@ -1223,6 +1249,14 @@ pub fn app() -> Html {
                                 home_page={(*home_page).clone()}
                                 on_toggle_home={on_toggle_home.clone()}
                                 vault_version={*list_version}
+                                on_enter_block_nav={{
+                                    let nav_mode_active = nav_mode_active.clone();
+                                    let nav_stack = nav_stack.clone();
+                                    Callback::from(move |_: ()| {
+                                        nav_mode_active.set(true);
+                                        nav_stack.set(vec![crate::nav_mode::GRUPO_BLOCOS.to_string()]);
+                                    })
+                                }}
                                 on_search={{
                                     let palette_open = palette_open.clone();
                                     let palette_query = palette_query.clone();

@@ -15,6 +15,12 @@ async function recarregar(bridge) {
   await bridge.js("location.reload(); true");
   await PAUSA(1500);
   await esperar(bridge, "document.querySelectorAll('.sidebar, [class*=sidebar]').length > 0", "a UI recarregar");
+  // O arquivo que o teste acabou de escrever faz o watcher acusar
+  // mudança, e o editor recarrega a página aberta (ciclo 173). Se o
+  // cenário mexer no DOM antes disso, a recarga chega no meio e desfaz
+  // o que ele fez — foi assim que o cenário de blocos "falhou" na
+  // primeira execução, sem bug nenhum no produto.
+  await PAUSA(2500);
 }
 
 /// Põe o cursor no fim do primeiro contenteditable e digita.
@@ -235,13 +241,18 @@ export const cenarios = [
       const depois = await bridge.js(`document.activeElement?.getAttribute('data-nav-item')`);
       ctx.assert(depois && depois !== dentro.item, "a seta não andou pro próximo controle");
 
+      // Desde o ciclo 174, Escape sai do embed pro nível dos BLOCOS
+      // (com o próprio embed destacado), não direto pro texto — quem
+      // entrou pelo teclado continua no teclado, sem perder o lugar.
       await bridge.js(tecla("Escape"));
       await PAUSA(400);
       const saiu = await bridge.js(`({
-        editavel: document.activeElement?.getAttribute('contenteditable'),
+        grupo: document.activeElement?.getAttribute('data-nav-parent'),
+        embed: !!document.activeElement?.getAttribute('data-nav-group')?.startsWith('embed-'),
         pagina: !!document.querySelector('.callout'),
       })`);
-      ctx.assertEq(saiu.editavel, "true", "Escape devia devolver o foco pro texto do editor");
+      ctx.assertEq(saiu.grupo, "editor-blocos", "Escape devia voltar pro nível dos blocos");
+      ctx.assertEq(saiu.embed, true, "o embed de onde saímos devia ficar destacado");
       ctx.assertEq(saiu.pagina, true, "a página não podia fechar");
     },
   },
@@ -265,3 +276,68 @@ export const cenarios = [
     },
   },
 ];
+
+// ── ciclo 174: navegação por blocos ──────────────────────────────────
+
+cenarios.push({
+  nome: "blocos: setas andam pelo conteúdo, Enter edita texto e entra no embed (174)",
+  async fn(bridge, ctx) {
+    ctx.escrever(
+      '---\ntitle: __uitest\n---\n# Titulo\n\nParagrafo um.\n\n{{ type: "callout" }}\nvariant: info\ntitle: Nota\nbody: |\n  Corpo.\n{{ /callout }}\n\nParagrafo dois.\n',
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.callout')", "a página renderizar");
+
+    const blocos = await bridge.js(
+      `[...document.querySelectorAll('[data-nav-parent="editor-blocos"]')].map(e => e.tagName.toLowerCase())`,
+    );
+    ctx.assert(blocos.length >= 4, `esperava título, 2 parágrafos e o embed como blocos; veio ${blocos.join(", ")}`);
+
+    const tecla = (k, ctrl = false) => `(() => {
+      document.querySelector('.app-root').dispatchEvent(
+        new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, ctrlKey: ${ctrl}, bubbles: true }));
+      return true;
+    })()`;
+
+    // Entra no nível de blocos pelo Escape a partir do texto.
+    await bridge.js(`(() => {
+      const el = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
+      el.focus();
+      const r = document.createRange(); r.selectNodeContents(el); r.collapse(true);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(500);
+    const noBloco = await bridge.js(`({
+      destacado: !!document.querySelector('.nav-mode__item-active'),
+      item: document.activeElement?.getAttribute('data-nav-item'),
+      pagina: !!document.querySelector('.callout'),
+    })`);
+    ctx.assert(noBloco.destacado, "Escape no texto devia destacar o bloco (e não fechar a página)");
+    ctx.assertEq(noBloco.pagina, true, "a página não podia ser desselecionada");
+
+    // Anda até o embed e entra nele.
+    let achouEmbed = false;
+    for (let i = 0; i < 6 && !achouEmbed; i++) {
+      await bridge.js(tecla("ArrowDown"));
+      await PAUSA(200);
+      achouEmbed = await bridge.js(
+        `!!document.activeElement?.getAttribute('data-nav-group')?.startsWith('embed-')`,
+      );
+    }
+    ctx.assert(achouEmbed, "as setas não chegaram no bloco do embed");
+
+    await bridge.js(tecla("Enter"));
+    await PAUSA(400);
+    const dentro = await bridge.js(`document.activeElement?.getAttribute('data-nav-parent')`);
+    ctx.assert(dentro?.startsWith("embed-"), `Enter devia descer pros controles do embed (veio ${dentro})`);
+
+    // Escape volta pro nível de blocos, com o embed destacado.
+    await bridge.js(tecla("Escape"));
+    await PAUSA(400);
+    const voltou = await bridge.js(`document.activeElement?.getAttribute('data-nav-parent')`);
+    ctx.assertEq(voltou, "editor-blocos", "Escape devia voltar pro nível dos blocos");
+  },
+});

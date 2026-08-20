@@ -115,7 +115,7 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
     });
 
     html! {
-        <div class="kanban embed-kanban" data-nav-group={props.nav_group.clone()}>
+        <div class="kanban embed-kanban" data-nav-group={props.nav_group.clone()} data-nav-item={props.nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
             <div class="kanban__board" onmouseup={board_onmouseup}>
                 { for props.data.columns.iter().enumerate().map(|(col_idx, col)| {
                     let items: Vec<(usize, &KanbanCard)> = props.data.items

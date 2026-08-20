@@ -281,7 +281,7 @@ pub fn inline_timeline(props: &InlineTimelineProps) -> Html {
 
     html! {
         <div class={classes!("timeline", dragging.is_some().then_some("timeline--dragging"))}
-            data-nav-group={nav_group.clone()}>
+            data-nav-group={nav_group.clone()} data-nav-item={nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
             <div class="timeline__bar">
                 <button class="timeline__btn" type="button" title="Período anterior"
                     data-nav-item="timeline-prev" data-nav-parent={nav_group.clone()}

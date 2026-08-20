@@ -178,7 +178,7 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
     let describe = describe_query(&props.data);
 
     html! {
-        <div class="query-embed" data-nav-group={nav_group.clone()}>
+        <div class="query-embed" data-nav-group={nav_group.clone()} data-nav-item={nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
             <div class="query-embed__bar">
                 <Icon name="search" />
                 <span class="query-embed__desc">{ describe }</span>
