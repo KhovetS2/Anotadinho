@@ -33,6 +33,9 @@ pub struct InlineKanbanProps {
     pub on_change: Callback<KanbanEmbedData>,
     /// Abre o modal de diálogo do app.
     pub open_dialog: Callback<PendingDialog>,
+    /// Id do grupo de navegação por teclado (ciclo 165), gerado pelo
+    /// editor por segmento.
+    pub nav_group: String,
 }
 
 /// Board kanban inline.
@@ -112,7 +115,7 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
     });
 
     html! {
-        <div class="kanban embed-kanban">
+        <div class="kanban embed-kanban" data-nav-group={props.nav_group.clone()}>
             <div class="kanban__board" onmouseup={board_onmouseup}>
                 { for props.data.columns.iter().enumerate().map(|(col_idx, col)| {
                     let items: Vec<(usize, &KanbanCard)> = props.data.items
@@ -139,12 +142,16 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                         })
                     };
 
-                    let rename_column = {
+                    // Uma ação, dois gatilhos: clique e Enter/Espaço
+                    // (ciclo 165). `Callback<()>` é o formato que o
+                    // `keyboard_activate` espera; o clique adapta com
+                    // `reform`.
+                    let rename_column_kb: Callback<()> = {
                         let data = props.data.clone();
                         let on_change = props.on_change.clone();
                         let open_dialog = props.open_dialog.clone();
                         let current_name = col.clone();
-                        Callback::from(move |_: MouseEvent| {
+                        Callback::from(move |_: ()| {
                             let data = data.clone();
                             let on_change = on_change.clone();
                             open_dialog.emit(PendingDialog::Prompt {
@@ -216,9 +223,12 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                     html! {
                         <div class={column_class} onmouseup={column_onmouseup}>
                             <div class="kanban__col-header">
-                                <span class="kanban__col-title" onclick={rename_column} title="Renomear coluna">{ col }</span>
+                                <span class="kanban__col-title" tabindex="0" role="button" onclick={rename_column_kb.reform(|_: MouseEvent| ())} title="Renomear coluna"
+                                    data-nav-item="kanban-column" data-nav-parent={props.nav_group.clone()}
+                                    onkeydown={crate::keyboard_activate::activate_on_enter_or_space(rename_column_kb.clone())}>{ col }</span>
                                 <span class="kanban__col-count">{ items.len() }</span>
-                                <button class="kanban__col-delete" onclick={delete_column} title="Excluir coluna"><Icon name="x" /></button>
+                                <button class="kanban__col-delete" onclick={delete_column} title="Excluir coluna"
+                                    data-nav-item="kanban-column-delete" data-nav-parent={props.nav_group.clone()}><Icon name="x" /></button>
                             </div>
                             <div class="kanban__col-body">
                                 { for items.into_iter().map(|(idx, item)| {
@@ -351,8 +361,10 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                                             <div class="kanban__card-main">
                                                 <span class="kanban__card-title">{ &item.title }</span>
                                                 <span class="kanban__card-actions">
-                                                    <button class="kanban__card-action" onmousedown={stop_mousedown.clone()} onclick={edit_card} title="Editar título"><Icon name="edit" /></button>
-                                                    <button class="kanban__card-action" onmousedown={stop_mousedown} onclick={delete_card} title="Excluir"><Icon name="x" /></button>
+                                                    <button class="kanban__card-action" onmousedown={stop_mousedown.clone()} onclick={edit_card} title="Editar título"
+                                                        data-nav-item="kanban-card-edit" data-nav-parent={props.nav_group.clone()}><Icon name="edit" /></button>
+                                                    <button class="kanban__card-action" onmousedown={stop_mousedown} onclick={delete_card} title="Excluir"
+                                                        data-nav-item="kanban-card-delete" data-nav-parent={props.nav_group.clone()}><Icon name="x" /></button>
                                                 </span>
                                             </div>
                                             if has_extras {

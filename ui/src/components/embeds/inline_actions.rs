@@ -35,12 +35,17 @@ pub struct InlineActionsProps {
     pub open_dialog: Callback<PendingDialog>,
     /// Abre a paleta de comandos já preenchida.
     pub on_search: Callback<String>,
+    /// Id do grupo de navegação por teclado deste embed (ciclo 165).
+    /// Vem do editor e é ÚNICO por segmento — dois embeds do mesmo tipo
+    /// na mesma página não podem compartilhar grupo, senão as setas
+    /// andariam pelos controles dos dois de uma vez.
+    pub nav_group: String,
 }
 
 /// Barra de botões de ação.
 #[function_component(InlineActions)]
 pub fn inline_actions(props: &InlineActionsProps) -> Html {
-    let nav_group = "embed-actions".to_string();
+    let nav_group = props.nav_group.clone();
 
     html! {
         <div class={classes!("actions-embed", format!("actions-embed--{}",

@@ -22,6 +22,11 @@ pub struct InlineCalloutProps {
     /// Disparado quando variante, título, corpo ou estado de recolhido
     /// mudam.
     pub on_change: Callback<CalloutEmbedData>,
+    /// Id do grupo de navegação por teclado deste embed (ciclo 165).
+    /// Vem do editor e é ÚNICO por segmento — dois embeds do mesmo tipo
+    /// na mesma página não podem compartilhar grupo, senão as setas
+    /// andariam pelos controles dos dois de uma vez.
+    pub nav_group: String,
 }
 
 /// Caixa de destaque inline.
@@ -87,7 +92,7 @@ pub fn inline_callout(props: &InlineCalloutProps) -> Html {
     };
 
     let variant = props.data.variant;
-    let nav_group = "embed-callout".to_string();
+    let nav_group = props.nav_group.clone();
 
     html! {
         <div class={classes!("callout", format!("callout--{}", variant.slug()))}

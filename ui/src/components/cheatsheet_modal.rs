@@ -101,6 +101,27 @@ pub fn cheatsheet_modal(props: &CheatsheetModalProps) -> Html {
                         </li>
                     </ul>
                 </div>
+                <div class="cheatsheet__section">
+                    <h4 class="cheatsheet__heading">{ "Embeds inline (ciclo 165)" }</h4>
+                    <ul class="cheatsheet__list">
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Entrar no próximo embed da página" }</span>
+                            <kbd class="cheatsheet__key">{ format!("Ctrl+{}", props.global_keymap.next_embed) }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Entrar no embed anterior" }</span>
+                            <kbd class="cheatsheet__key">{ format!("Ctrl+{}", props.global_keymap.prev_embed) }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Andar pelos controles do embed" }</span>
+                            <kbd class="cheatsheet__key">{ "↑ ↓ ← →" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Voltar pro texto da página" }</span>
+                            <kbd class="cheatsheet__key">{ "Escape" }</kbd>
+                        </li>
+                    </ul>
+                </div>
                 if props.vim_mode_enabled {
                     <div class="cheatsheet__section">
                         <h4 class="cheatsheet__heading">{ "Vim mode (modo Normal)" }</h4>

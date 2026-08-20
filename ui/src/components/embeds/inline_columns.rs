@@ -27,12 +27,17 @@ pub struct InlineColumnsProps {
     /// Abre o modal de diálogo do app (confirmação ao remover painel
     /// com conteúdo).
     pub open_dialog: Callback<PendingDialog>,
+    /// Id do grupo de navegação por teclado deste embed (ciclo 165).
+    /// Vem do editor e é ÚNICO por segmento — dois embeds do mesmo tipo
+    /// na mesma página não podem compartilhar grupo, senão as setas
+    /// andariam pelos controles dos dois de uma vez.
+    pub nav_group: String,
 }
 
 /// Painéis markdown lado a lado.
 #[function_component(InlineColumns)]
 pub fn inline_columns(props: &InlineColumnsProps) -> Html {
-    let nav_group = "embed-columns".to_string();
+    let nav_group = props.nav_group.clone();
     let can_add = props.data.columns.len() < ColumnsEmbedData::MAX_COLUMNS;
     let can_remove = props.data.columns.len() > 1;
 

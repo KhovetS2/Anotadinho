@@ -32,6 +32,11 @@ pub struct InlineQueryProps {
     pub on_change: Callback<Query>,
     /// Abre a página clicada.
     pub on_page_selected: Callback<PageMeta>,
+    /// Id do grupo de navegação por teclado deste embed (ciclo 165).
+    /// Vem do editor e é ÚNICO por segmento — dois embeds do mesmo tipo
+    /// na mesma página não podem compartilhar grupo, senão as setas
+    /// andariam pelos controles dos dois de uma vez.
+    pub nav_group: String,
 }
 
 /// Consulta viva.
@@ -87,7 +92,7 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
         }
     };
 
-    let nav_group = "embed-query".to_string();
+    let nav_group = props.nav_group.clone();
     let columns = props.data.columns.clone();
 
     let body = if *loading {

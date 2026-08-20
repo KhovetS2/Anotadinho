@@ -1,7 +1,7 @@
 ---
 id: "165"
 titulo: "Nav-mode alcança os embeds inline"
-status: pending
+status: done
 criado: 2026-08-20
 autor: humano
 prioridade: alta
@@ -33,24 +33,27 @@ ciclo 135 cobriu as PÁGINAS tipadas (`kanban.rs`, `calendar.rs`,
 
 ## Critérios de aceite
 
-- [ ] Com o cursor no editor, uma tecla leva o foco pro próximo embed
+- [x] Com o cursor no editor, uma tecla leva o foco pro próximo embed
       da página e outra pro anterior (sem mouse, sem Tab às cegas
       atravessando todos os botões do embed anterior)
-- [ ] Com um embed focado, as setas andam pelos controles dele
+- [x] Com um embed focado, as setas andam pelos controles dele
       (reaproveitando `nav_mode::items_in_group` sobre os
       `data-nav-item`/`data-nav-parent` que os embeds novos já têm)
-- [ ] Enter/Espaço ativa o controle focado; Escape devolve o foco pro
+- [x] Enter/Espaço ativa o controle focado; Escape devolve o foco pro
       texto do editor, no segmento mais próximo do embed
-- [ ] O indicador visual do item focado (ciclo 139) aparece nos
+- [x] O indicador visual do item focado (ciclo 139) aparece nos
       controles do embed igual aparece no resto do app
-- [ ] Vale pros 9 tipos: os 3 embeds antigos (`inline_kanban`,
-      `inline_calendar`, `inline_table`) ganham os atributos de nav que
-      nunca tiveram
-- [ ] Escape dentro do embed NÃO desseleciona a página (depende da
+- [x] Vale pros 9 tipos: os 3 embeds antigos ganharam os atributos que
+      nunca tiveram — kanban (12 itens: colunas, excluir coluna, editar
+      e excluir card), calendário (5: navegação, hoje, criar evento com
+      e sem data) e tabela (5: nova coluna, nova linha, excluir linha).
+      Célula a célula da tabela e card a card do kanban ficam pra
+      quando o arraste por teclado entrar (task 167)
+- [x] Escape dentro do embed NÃO desseleciona a página (depende da
       task 161 estar resolvida, ou de resolver junto)
-- [ ] Cheatsheet (`cheatsheet_modal.rs`) e `GlobalKeymap` atualizados
+- [x] Cheatsheet (`cheatsheet_modal.rs`) e `GlobalKeymap` atualizados
       com as teclas novas, customizáveis como as demais (ciclo 105)
-- [ ] Validação ao vivo (MCP `tauri`): abrir `pages/produto/painel.md`
+- [x] Validação ao vivo (MCP `tauri`): abrir `pages/produto/painel.md`
       e operar callout → actions → query → timeline → columns **sem
       encostar no mouse**
 
@@ -73,6 +76,31 @@ cargo build --manifest-path src-tauri/Cargo.toml
   texto que os ciclos 133-140 estabeleceram
 
 ## Notas
+
+`cd ui && cargo test --lib`: 26. `cargo test --workspace`: 255.
+`trunk build` e `cargo build --manifest-path src-tauri/Cargo.toml`: OK.
+
+Achado que mudou o desenho no meio do caminho: **todo embed de um tipo
+usava o mesmo `data-nav-group`** (`"embed-callout"` cravado no
+componente). No `painel.md`, com 3 consultas, as setas andariam pelos
+controles das três de uma vez. O id passou a vir do EDITOR
+(`format!("embed-{i}")`, com `i` = índice do segmento) por prop, o que
+também dá identidade estável pro salto entre embeds.
+
+A entrada no embed reaproveita o motor inteiro do nav-mode: `Ctrl+.`
+foca o primeiro controle e empilha o grupo em `nav_stack`, e daí em
+diante setas/Enter/Backspace/Escape já funcionavam desde o ciclo 133.
+O que precisou de código novo foi só o salto (`adjacent_embed_group`,
+que usa `compare_document_position` pra respeitar onde o cursor está no
+texto) e a saída devolvendo o foco pro `contenteditable` em vez de pro
+topo do app.
+
+Validação ao vivo (MCP `tauri`): no `painel.md`, `Ctrl+.` entrou no
+callout, seta desceu pro título, `Ctrl+.` pulou pro embed de ações,
+Enter abriu o prompt de "Nova spec", Escape fechou só o modal, e Escape
+de novo devolveu o cursor pro texto. Em `exemplos-embeds.md` o mesmo
+percurso passou por kanban → calendário → tabela, com `Ctrl+,`
+voltando. O indicador de foco do ciclo 139 aparece nos controles.
 
 O trabalho de atributo já está feito nos 6 embeds novos — o que falta é
 o caminho de entrada e o loop de setas dentro do embed. Começar por

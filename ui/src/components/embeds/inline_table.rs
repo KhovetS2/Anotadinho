@@ -30,6 +30,9 @@ pub struct InlineTableProps {
     pub open_dialog: Callback<PendingDialog>,
     /// Navega pra outra página do vault (célula de tipo Página).
     pub on_page_selected: Callback<PageMeta>,
+    /// Id do grupo de navegação por teclado (ciclo 165), gerado pelo
+    /// editor por segmento.
+    pub nav_group: String,
 }
 
 fn split_tags(cell: &str) -> Vec<String> {
@@ -200,7 +203,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
     });
 
     html! {
-        <div class="embed-table">
+        <div class="embed-table" data-nav-group={props.nav_group.clone()}>
             <table class="task-table__table">
                 <thead>
                     <tr>
@@ -237,7 +240,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                             }
                         }) }
                         <th class="task-table__th task-table__th--add">
-                            <button class="task-table__add" onclick={add_column} title="Nova coluna">{ "+" }</button>
+                            <button class="task-table__add" onclick={add_column} title="Nova coluna" data-nav-item="table-add-column" data-nav-parent={props.nav_group.clone()}>{ "+" }</button>
                         </th>
                     </tr>
                 </thead>
@@ -670,14 +673,14 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                     }
                                 }) }
                                 <td class="task-table__td task-table__td--actions">
-                                    <button class="task-table__row-delete" onclick={delete_row} title="Excluir linha"><Icon name="x" /></button>
+                                    <button class="task-table__row-delete" onclick={delete_row} title="Excluir linha" data-nav-item="table-delete-row" data-nav-parent={props.nav_group.clone()}><Icon name="x" /></button>
                                 </td>
                             </tr>
                         }
                     }) }
                     <tr class="task-table__row task-table__row--add">
                         <td class="task-table__td" colspan={(n_cols + 1).to_string()}>
-                            <button class="task-table__add" onclick={add_row}>{ "+ linha" }</button>
+                            <button class="task-table__add" onclick={add_row} data-nav-item="table-add-row" data-nav-parent={props.nav_group.clone()}>{ "+ linha" }</button>
                         </td>
                     </tr>
                 </tbody>

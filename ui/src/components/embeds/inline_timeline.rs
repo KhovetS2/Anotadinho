@@ -51,6 +51,11 @@ pub struct InlineTimelineProps {
     pub on_page_selected: Callback<PageMeta>,
     /// Abre o modal de diálogo do app (criar/renomear item).
     pub open_dialog: Callback<crate::dialog::PendingDialog>,
+    /// Id do grupo de navegação por teclado deste embed (ciclo 165).
+    /// Vem do editor e é ÚNICO por segmento — dois embeds do mesmo tipo
+    /// na mesma página não podem compartilhar grupo, senão as setas
+    /// andariam pelos controles dos dois de uma vez.
+    pub nav_group: String,
 }
 
 /// Cronograma inline.
@@ -272,7 +277,7 @@ pub fn inline_timeline(props: &InlineTimelineProps) -> Html {
         .filter(|(_, i)| i.start.is_none())
         .collect();
 
-    let nav_group = "embed-timeline".to_string();
+    let nav_group = props.nav_group.clone();
 
     html! {
         <div class={classes!("timeline", dragging.is_some().then_some("timeline--dragging"))}

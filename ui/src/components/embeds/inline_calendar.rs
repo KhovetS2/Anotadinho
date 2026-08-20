@@ -38,6 +38,9 @@ pub struct InlineCalendarProps {
     /// evento (abre a página de origem em vez do `EventDetailModal`).
     #[prop_or_default]
     pub on_page_selected: Callback<PageMeta>,
+    /// Id do grupo de navegação por teclado (ciclo 165), gerado pelo
+    /// editor por segmento.
+    pub nav_group: String,
 }
 
 const WEEKDAY_LABELS: [&str; 7] = ["D", "S", "T", "Q", "Q", "S", "S"];
@@ -570,12 +573,12 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
     let displayed_count = if is_vault { vault_entries.len() } else { props.data.entries.len() };
 
     html! {
-        <div class="calendar-grid">
+        <div class="calendar-grid" data-nav-group={props.nav_group.clone()}>
             <div class="calendar-grid__header">
-                <button class="calendar-grid__nav-btn" onclick={go_prev}>{ "‹" }</button>
+                <button class="calendar-grid__nav-btn" onclick={go_prev} data-nav-item="cal-prev" data-nav-parent={props.nav_group.clone()}>{ "‹" }</button>
                 <span class="calendar-grid__month-label">{ header_label }</span>
-                <button class="calendar-grid__nav-btn" onclick={go_next}>{ "›" }</button>
-                <button class="calendar-grid__today-btn" onclick={go_today}>{ "Hoje" }</button>
+                <button class="calendar-grid__nav-btn" onclick={go_next} data-nav-item="cal-next" data-nav-parent={props.nav_group.clone()}>{ "›" }</button>
+                <button class="calendar-grid__today-btn" onclick={go_today} data-nav-item="cal-today" data-nav-parent={props.nav_group.clone()}>{ "Hoje" }</button>
                 <select class="calendar-grid__view-select" onchange={on_view_change}>
                     <option value="month" selected={*view_mode == ViewMode::Month}>{ "Mês" }</option>
                     <option value="week" selected={*view_mode == ViewMode::Week}>{ "Semana" }</option>
@@ -589,7 +592,7 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
                 <span class="calendar-grid__spacer" />
                 <span class="calendar-grid__count">{ displayed_count } {" eventos"}</span>
                 if !is_vault {
-                    <button class="calendar-grid__add-btn" onclick={add_event}>{ "+ evento" }</button>
+                    <button class="calendar-grid__add-btn" onclick={add_event} data-nav-item="cal-add" data-nav-parent={props.nav_group.clone()}>{ "+ evento" }</button>
                 }
             </div>
 
@@ -601,7 +604,7 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
                         { if *drawer_open { "▾" } else { "▸" } }
                         { format!(" Sem data ({})", unscheduled_idxs.len()) }
                     </button>
-                    <button class="calendar-grid__add-btn calendar-grid__add-btn--ghost" onclick={add_unscheduled_event}>{ "+ evento sem data" }</button>
+                    <button class="calendar-grid__add-btn calendar-grid__add-btn--ghost" onclick={add_unscheduled_event} data-nav-item="cal-add-unscheduled" data-nav-parent={props.nav_group.clone()}>{ "+ evento sem data" }</button>
                     if *drawer_open {
                         <div class="calendar-grid__drawer-list">
                             if unscheduled_idxs.is_empty() {

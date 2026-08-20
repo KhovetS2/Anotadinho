@@ -43,6 +43,11 @@ pub struct InlineGalleryProps {
     pub vault_path: String,
     /// Disparado quando itens, legenda, ordem, colunas ou tamanho mudam.
     pub on_change: Callback<GalleryEmbedData>,
+    /// Id do grupo de navegação por teclado deste embed (ciclo 165).
+    /// Vem do editor e é ÚNICO por segmento — dois embeds do mesmo tipo
+    /// na mesma página não podem compartilhar grupo, senão as setas
+    /// andariam pelos controles dos dois de uma vez.
+    pub nav_group: String,
 }
 
 /// Galeria inline.
@@ -121,7 +126,7 @@ pub fn inline_gallery(props: &InlineGalleryProps) -> Html {
         })
     };
 
-    let nav_group = "embed-gallery".to_string();
+    let nav_group = props.nav_group.clone();
     let size_slug = props.data.size.slug();
 
     html! {

@@ -57,6 +57,10 @@ pub struct InlineEmbedProps {
     /// embed de ações, ciclo 156).
     #[prop_or_default]
     pub on_search: Callback<String>,
+    /// Id do grupo de navegação por teclado (ciclo 165) — o editor
+    /// gera um por SEGMENTO, então dois embeds do mesmo tipo na mesma
+    /// página não compartilham grupo.
+    pub nav_group: String,
 }
 
 /// Dispatcher: renderiza o componente certo pro tipo de `EmbedData`.
@@ -66,40 +70,40 @@ pub fn inline_embed(props: &InlineEmbedProps) -> Html {
         EmbedData::Kanban(d) => {
             let on_change = props.on_change.clone();
             html! {
-                <InlineKanban data={d.clone()} vault_path={props.vault_path.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Kanban(d)))} open_dialog={props.open_dialog.clone()} />
+                <InlineKanban nav_group={props.nav_group.clone()} data={d.clone()} vault_path={props.vault_path.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Kanban(d)))} open_dialog={props.open_dialog.clone()} />
             }
         }
         EmbedData::Calendar(d) => {
             let on_change = props.on_change.clone();
             html! {
-                <InlineCalendar data={d.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Calendar(d)))} open_dialog={props.open_dialog.clone()}
+                <InlineCalendar nav_group={props.nav_group.clone()} data={d.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Calendar(d)))} open_dialog={props.open_dialog.clone()}
                     vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
             }
         }
         EmbedData::Callout(d) => {
             let on_change = props.on_change.clone();
             html! {
-                <InlineCallout data={d.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Callout(d)))} />
+                <InlineCallout nav_group={props.nav_group.clone()} data={d.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Callout(d)))} />
             }
         }
         EmbedData::Columns(d) => {
             let on_change = props.on_change.clone();
             html! {
-                <InlineColumns data={d.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Columns(d)))}
+                <InlineColumns nav_group={props.nav_group.clone()} data={d.clone()} on_change={Callback::from(move |d| on_change.emit(EmbedData::Columns(d)))}
                     open_dialog={props.open_dialog.clone()} />
             }
         }
         EmbedData::Gallery(d) => {
             let on_change = props.on_change.clone();
             html! {
-                <InlineGallery data={d.clone()} vault_path={props.vault_path.clone()}
+                <InlineGallery nav_group={props.nav_group.clone()} data={d.clone()} vault_path={props.vault_path.clone()}
                     on_change={Callback::from(move |d| on_change.emit(EmbedData::Gallery(d)))} />
             }
         }
         EmbedData::Query(q) => {
             let on_change = props.on_change.clone();
             html! {
-                <InlineQuery data={q.clone()} vault_path={props.vault_path.clone()}
+                <InlineQuery nav_group={props.nav_group.clone()} data={q.clone()} vault_path={props.vault_path.clone()}
                     on_change={Callback::from(move |q| on_change.emit(EmbedData::Query(q)))}
                     on_page_selected={props.on_page_selected.clone()} />
             }
@@ -107,7 +111,7 @@ pub fn inline_embed(props: &InlineEmbedProps) -> Html {
         EmbedData::Timeline(d) => {
             let on_change = props.on_change.clone();
             html! {
-                <InlineTimeline data={d.clone()} vault_path={props.vault_path.clone()}
+                <InlineTimeline nav_group={props.nav_group.clone()} data={d.clone()} vault_path={props.vault_path.clone()}
                     on_change={Callback::from(move |d| on_change.emit(EmbedData::Timeline(d)))}
                     on_page_selected={props.on_page_selected.clone()}
                     open_dialog={props.open_dialog.clone()} />
@@ -116,7 +120,7 @@ pub fn inline_embed(props: &InlineEmbedProps) -> Html {
         EmbedData::Actions(d) => {
             let on_change = props.on_change.clone();
             html! {
-                <InlineActions data={d.clone()} vault_path={props.vault_path.clone()}
+                <InlineActions nav_group={props.nav_group.clone()} data={d.clone()} vault_path={props.vault_path.clone()}
                     on_change={Callback::from(move |d| on_change.emit(EmbedData::Actions(d)))}
                     on_page_selected={props.on_page_selected.clone()}
                     open_dialog={props.open_dialog.clone()}
@@ -127,6 +131,7 @@ pub fn inline_embed(props: &InlineEmbedProps) -> Html {
             let on_change = props.on_change.clone();
             html! {
                 <InlineTable
+                    nav_group={props.nav_group.clone()}
                     data={d.clone()}
                     vault_path={props.vault_path.clone()}
                     on_change={Callback::from(move |d| on_change.emit(EmbedData::Table(d)))}

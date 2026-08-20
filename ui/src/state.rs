@@ -163,6 +163,13 @@ pub struct GlobalKeymap {
     /// fixos dentro da sessão, não remapeáveis aqui — ver
     /// `ui/src/nav_mode.rs`).
     pub toggle_nav_mode: String,
+    /// Salta o foco pro PRÓXIMO embed inline da página e abre uma
+    /// sessão de navegação dentro dele (ciclo 165) — é o caminho de
+    /// teclado pra alcançar kanban/consulta/cronograma sem Tab às
+    /// cegas por todos os botões do embed anterior.
+    pub next_embed: String,
+    /// Mesma coisa, pro embed anterior.
+    pub prev_embed: String,
 }
 
 impl Default for GlobalKeymap {
@@ -231,6 +238,12 @@ impl Default for GlobalKeymap {
             // (`<C-l>` → `<C-w><C-l>`) — no Anotadinho, sidebar fica à
             // esquerda e o editor à direita, mesma geometria mental.
             focus_editor: "l".into(),
+            // "." e "," = o par de "avançar/voltar" mais neutro que
+            // sobrou (o alfabeto já estava quase todo ocupado) e que
+            // não colide com edição de texto dentro do
+            // `contenteditable`, diferente de qualquer letra.
+            next_embed: ".".into(),
+            prev_embed: ",".into(),
             // "j" — "r" (ciclo 133) foi trocado por causa de um bug
             // real relatado pelo usuário: Ctrl+R não disparava o
             // atalho, quase certamente porque o WebKitGTK (motor do
@@ -272,6 +285,8 @@ impl GlobalKeymap {
             ("Focar sidebar", &self.focus_sidebar),
             ("Focar editor", &self.focus_editor),
             ("Alternar modo de navegação", &self.toggle_nav_mode),
+            ("Próximo embed", &self.next_embed),
+            ("Embed anterior", &self.prev_embed),
         ]
     }
 
@@ -297,6 +312,8 @@ impl GlobalKeymap {
             "Focar sidebar" => self.focus_sidebar = key,
             "Focar editor" => self.focus_editor = key,
             "Alternar modo de navegação" => self.toggle_nav_mode = key,
+            "Próximo embed" => self.next_embed = key,
+            "Embed anterior" => self.prev_embed = key,
             _ => {}
         }
     }
@@ -506,8 +523,20 @@ mod tests {
     }
 
     #[test]
-    fn global_keymap_labeled_fields_has_eighteen_entries() {
+    fn global_keymap_labeled_fields_cobre_todo_campo_configuravel() {
+        // Conta explícita (em vez de um número solto): cada ação que dá
+        // pra reconfigurar precisa aparecer no cheatsheet e no modal de
+        // atalhos, e os dois leem daqui. Se um campo novo entrar sem
+        // rótulo, ele fica invisível pro usuário — e este teste quebra.
         let km = GlobalKeymap::default();
-        assert_eq!(km.labeled_fields().len(), 18);
+        assert_eq!(km.labeled_fields().len(), 20);
+        for (label, _) in km.labeled_fields() {
+            let mut probe = GlobalKeymap::default();
+            probe.set_by_label(label, "§".into());
+            assert!(
+                probe.labeled_fields().iter().any(|(l, v)| *l == label && *v == "§"),
+                "rótulo {label} não tem par em set_by_label"
+            );
+        }
     }
 }

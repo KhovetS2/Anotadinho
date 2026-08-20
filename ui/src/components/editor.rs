@@ -1937,6 +1937,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                                     onclick={remove_embed(i)} title="Remover embed"><Icon name="x" /></button>
                                             </div>
                                             <InlineEmbed
+                                                nav_group={format!("embed-{i}")}
                                                 data={data.clone()}
                                                 vault_path={props.vault_path.clone()}
                                                 on_change={on_change}

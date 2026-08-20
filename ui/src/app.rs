@@ -927,10 +927,21 @@ pub fn app() -> Html {
                             }
                             e.prevent_default();
                             let mut stack = (*nav_stack).clone();
-                            stack.pop();
+                            let leaving = stack.pop();
                             let new_group = stack.last().cloned().unwrap_or_else(|| "root".to_string());
                             nav_stack.set(stack);
                             if let Some(doc) = doc {
+                                // Saindo de um embed: o foco volta pro
+                                // TEXTO do editor, não pro topo do app —
+                                // quem entrou num embed estava escrevendo
+                                // (ciclo 165).
+                                if leaving.as_deref().is_some_and(|g| g.starts_with("embed-"))
+                                    && new_group == "root"
+                                {
+                                    focus_editor_text(&doc);
+                                    nav_mode_active.set(false);
+                                    return;
+                                }
                                 let items = crate::nav_mode::items_in_group(&doc, &new_group);
                                 if let Some(first) = items.first() {
                                     crate::nav_mode::focus_item(first);
@@ -950,6 +961,14 @@ pub fn app() -> Html {
                             e.prevent_default();
                             if nav_stack.is_empty() {
                                 nav_mode_active.set(false);
+                            } else if nav_stack.last().is_some_and(|g| g.starts_with("embed-")) {
+                                // Mesma regra do Backspace: sai do embed
+                                // devolvendo o cursor pro texto.
+                                nav_stack.set(Vec::new());
+                                nav_mode_active.set(false);
+                                if let Some(doc) = doc {
+                                    focus_editor_text(&doc);
+                                }
                             } else {
                                 nav_stack.set(Vec::new());
                                 if let Some(doc) = doc {
@@ -1061,6 +1080,24 @@ pub fn app() -> Html {
             } else if matches(&km.toggle_nav_mode) {
                 e.prevent_default();
                 toggle_nav_mode.emit(());
+            } else if matches(&km.next_embed) || matches(&km.prev_embed) {
+                // Salta pro embed seguinte/anterior da página e ABRE uma
+                // sessão de nav-mode dentro dele (ciclo 165). Antes disso
+                // os embeds só eram alcançáveis por Tab, um botão por
+                // vez: o item de topo `editor` é um delegate, então o
+                // motor de navegação nunca descia neles.
+                e.prevent_default();
+                let forward = matches(&km.next_embed);
+                if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                    if let Some(group_id) = adjacent_embed_group(&doc, forward) {
+                        let items = crate::nav_mode::items_in_group(&doc, &group_id);
+                        if let Some(first) = items.first() {
+                            crate::nav_mode::focus_item(first);
+                            nav_mode_active.set(true);
+                            nav_stack.set(vec![group_id]);
+                        }
+                    }
+                }
             } else if matches(&km.next_tab) {
                 e.prevent_default();
                 let tabs = (*open_tabs).clone();
@@ -1245,5 +1282,77 @@ pub fn app() -> Html {
                 />
             }
         </div>
+    }
+}
+
+/// Id do grupo de nav-mode do embed seguinte (ou anterior) ao ponto
+/// onde o foco/cursor está agora — `None` se a página não tem embed
+/// nenhum.
+///
+/// Os embeds da página se anunciam com `data-nav-group="embed-<i>"`
+/// (o `<i>` é o índice do SEGMENTO, gerado pelo editor: dois embeds do
+/// mesmo tipo não podem cair no mesmo grupo). A ordem usada é a do
+/// documento, e a posição atual sai de `compare_document_position` —
+/// assim o salto respeita onde o cursor está no texto, não só qual
+/// botão foi focado por último.
+fn adjacent_embed_group(doc: &web_sys::Document, forward: bool) -> Option<String> {
+    const DOCUMENT_POSITION_FOLLOWING: u16 = 4;
+    let Ok(list) = doc.query_selector_all("[data-nav-group^=\"embed-\"]") else { return None };
+    let mut groups: Vec<web_sys::Element> = Vec::new();
+    for i in 0..list.length() {
+        if let Some(el) = list.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) {
+            groups.push(el);
+        }
+    }
+    if groups.is_empty() {
+        return None;
+    }
+
+    // Âncora: o elemento focado, ou o começo do documento se não houver.
+    let anchor = doc.active_element();
+    let index_of_anchor = anchor.as_ref().and_then(|a| {
+        groups.iter().position(|g| g.contains(Some(a)) || g.is_same_node(Some(a)))
+    });
+
+    let target = match index_of_anchor {
+        // Já está dentro de um embed: vai pro vizinho, com wrap-around.
+        Some(i) => {
+            if forward {
+                (i + 1) % groups.len()
+            } else {
+                (i + groups.len() - 1) % groups.len()
+            }
+        }
+        // Está no texto: pega o primeiro embed depois (ou o último
+        // antes) da posição do cursor no documento.
+        None => {
+            let after = anchor.as_ref().map(|a| {
+                groups
+                    .iter()
+                    .position(|g| a.compare_document_position(g) & DOCUMENT_POSITION_FOLLOWING != 0)
+            });
+            match (forward, after) {
+                (true, Some(Some(i))) => i,
+                (true, _) => 0,
+                (false, Some(Some(i))) if i > 0 => i - 1,
+                (false, Some(Some(_))) => groups.len() - 1,
+                (false, _) => groups.len() - 1,
+            }
+        }
+    };
+    groups.get(target).and_then(|el| el.get_attribute("data-nav-group"))
+}
+
+/// Devolve o foco pro texto do editor (o mesmo alvo do "focar editor"
+/// do keymap). Usado ao sair de um embed pelo teclado.
+fn focus_editor_text(doc: &web_sys::Document) {
+    crate::nav_mode::clear_item_highlight();
+    if let Some(el) = doc
+        .query_selector(".editor__wysiwyg[contenteditable=\"true\"]")
+        .ok()
+        .flatten()
+        .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+    {
+        let _ = el.focus();
     }
 }
