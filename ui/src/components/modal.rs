@@ -50,6 +50,23 @@ pub fn modal(props: &ModalProps) -> Html {
         let body_ref = body_ref.clone();
         let open = props.open;
         use_effect_with((open, props.focus_nonce), move |(open, _)| {
+            // Guarda quem estava focado ANTES de o modal roubar o foco,
+            // pra devolver na saída (ciclo 178).
+            //
+            // Sem isso, fechar o modal deixava o foco num `<div>` sem
+            // `data-nav-item`, e o nav-mode parava de responder às setas
+            // — o motor exige um item rastreado (guarda do ciclo 136).
+            // Quem abriu o modal pelo teclado ficava preso: o destaque
+            // continuava aceso no botão, mas nenhuma tecla andava.
+            let anterior = if *open {
+                web_sys::window()
+                    .and_then(|w| w.document())
+                    .and_then(|d| d.active_element())
+                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+            } else {
+                None
+            };
+
             if *open {
                 if let Some(body) = body_ref.cast::<web_sys::Element>() {
                     if let Ok(Some(first)) = body.query_selector(FOCUSABLE_SELECTOR) {
@@ -59,7 +76,21 @@ pub fn modal(props: &ModalProps) -> Html {
                     }
                 }
             }
-            || ()
+
+            move || {
+                // Só devolve se o elemento ainda existir na página: o
+                // modal pode ter sido fechado JUNTO com quem o abriu
+                // (ex: um botão que sumiu depois da ação).
+                if let Some(el) = anterior {
+                    let ainda_existe = web_sys::window()
+                        .and_then(|w| w.document())
+                        .map(|d| d.contains(Some(&el)))
+                        .unwrap_or(false);
+                    if ainda_existe {
+                        let _ = el.focus();
+                    }
+                }
+            }
         });
     }
 

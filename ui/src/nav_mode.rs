@@ -46,11 +46,27 @@ pub fn items_in_group(document: &web_sys::Document, group_id: &str) -> Vec<web_s
     for i in 0..list.length() {
         if let Some(node) = list.item(i) {
             if let Ok(el) = node.dyn_into::<web_sys::Element>() {
-                out.push(el);
+                if esta_visivel(&el) {
+                    out.push(el);
+                }
             }
         }
     }
     out
+}
+
+/// Se o elemento ocupa espaço na tela.
+///
+/// Item escondido com `display: none` (os controles que só aparecem no
+/// hover — configurar/remover botão, barra da galeria, toolbar do
+/// embed) continua casando com o seletor, mas `focus()` nele não faz
+/// nada: a navegação parava naquele índice e as setas ficavam mudas.
+///
+/// `opacity: 0` NÃO é filtrado de propósito: esses ficam visíveis assim
+/// que recebem foco (`:focus-within`), então são alvos legítimos.
+fn esta_visivel(el: &web_sys::Element) -> bool {
+    let rect = el.get_bounding_client_rect();
+    rect.width() > 0.0 || rect.height() > 0.0
 }
 
 /// Índice de `active` dentro de `items`, comparando por identidade de

@@ -639,3 +639,112 @@ cenarios.push({
     );
   },
 });
+
+// ── ciclo 178: destaque das regiões no nav-mode ──────────────────────
+
+cenarios.push({
+  nome: "nav-mode: as 4 regiões de topo mostram destaque visível (178)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\n\nconteudo\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+
+    // Entra no nav-mode pelo nível das regiões.
+    await bridge.js(`(() => {
+      const root = document.querySelector('.app-root');
+      root.focus();
+      root.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(500);
+
+    // Percorre as regiões e mede o destaque de cada uma. O editor era a
+    // que não mostrava nada: os filhos dele têm fundo opaco e cobriam o
+    // `background` e o `box-shadow: inset`.
+    const vistas = {};
+    for (let i = 0; i < 6; i++) {
+      const atual = await bridge.js(`(() => {
+        const el = document.querySelector('.nav-mode__item-active');
+        if (!el) return null;
+        const depois = getComputedStyle(el, '::after');
+        const propria = getComputedStyle(el);
+        return {
+          item: el.getAttribute('data-nav-item'),
+          raiz: el.getAttribute('data-nav-parent') === 'root',
+          overlay: parseFloat(depois.borderTopWidth) || 0,
+          sombra: propria.boxShadow !== 'none',
+        };
+      })()`);
+      if (atual?.item) vistas[atual.item] = atual;
+      await bridge.js(`(() => {
+        document.querySelector('.app-root')
+          .dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+        return true;
+      })()`);
+      await PAUSA(300);
+    }
+
+    for (const regiao of ["header", "sidebar", "tabbar", "editor"]) {
+      const v = vistas[regiao];
+      ctx.assert(v, `a região "${regiao}" não foi alcançada: ${Object.keys(vistas).join(", ")}`);
+      ctx.assert(
+        v.overlay > 0,
+        `a região "${regiao}" ficou sem destaque desenhado por cima (overlay=${v.overlay})`,
+      );
+    }
+  },
+});
+
+// ── ciclo 179: foco volta ao fechar o modal ──────────────────────────
+
+cenarios.push({
+  nome: "nav-mode: fechar modal devolve o foco e as setas voltam a andar (179)",
+  async fn(bridge, ctx) {
+    ctx.escrever(
+      '---\ntitle: __uitest\n---\n{{ type: "actions" }}\nlayout: row\nbuttons:\n- label: Abrir\n  action: open-page\n  path: pages/__uitest.md\n{{ /actions }}\n',
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.actions-embed__add')", "o embed renderizar");
+
+    const tecla = (k, ctrl = false) => `(() => {
+      document.querySelector('.app-root').dispatchEvent(
+        new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, ctrlKey: ${ctrl}, bubbles: true }));
+      return true;
+    })()`;
+
+    await bridge.js(`(() => { document.querySelector('.editor__wysiwyg')?.focus(); return true; })()`);
+    await bridge.js(tecla(".", true));
+    await PAUSA(500);
+
+    // Anda até o "+ ação" e abre o modal com Enter.
+    for (let i = 0; i < 10; i++) {
+      const atual = await bridge.js(`document.activeElement?.getAttribute('data-nav-item')`);
+      if (atual === "actions-add") break;
+      await bridge.js(tecla("ArrowRight"));
+      await PAUSA(200);
+    }
+    const antes = await bridge.js(`document.activeElement?.getAttribute('data-nav-item')`);
+    ctx.assertEq(antes, "actions-add", "não cheguei no botão de adicionar ação");
+
+    await bridge.js(tecla("Enter"));
+    await ctx.esperar(bridge, "document.querySelector('.modal-overlay')", "o modal abrir");
+
+    await bridge.js(`(() => {
+      document.querySelector('.modal-overlay .modal')
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(600);
+
+    // O bug: o foco caía num <div> sem data-nav-item e o nav-mode
+    // ficava mudo dali em diante.
+    const depois = await bridge.js(`document.activeElement?.getAttribute('data-nav-item')`);
+    ctx.assertEq(depois, "actions-add", "o foco não voltou pro botão que abriu o modal");
+
+    await bridge.js(tecla("ArrowLeft"));
+    await PAUSA(400);
+    const andou = await bridge.js(`document.activeElement?.getAttribute('data-nav-item')`);
+    ctx.assert(andou && andou !== "actions-add", `as setas não voltaram a andar (parou em ${andou})`);
+  },
+});
