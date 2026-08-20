@@ -121,6 +121,10 @@ pub fn cheatsheet_modal(props: &CheatsheetModalProps) -> Html {
                             <kbd class="cheatsheet__key">{ "Escape" }</kbd>
                         </li>
                         <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Novo bloco abaixo (abre o menu /)" }</span>
+                            <kbd class="cheatsheet__key">{ "n" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
                             <span class="cheatsheet__label">{ "Copiar referência do bloco focado" }</span>
                             <kbd class="cheatsheet__key">{ "c" }</kbd>
                         </li>

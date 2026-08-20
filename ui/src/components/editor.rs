@@ -1402,6 +1402,30 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
             }
 
+            // "n" com um BLOCO focado abre um bloco NOVO logo abaixo e
+            // já traz o menu `/` (ciclo 181): pelo teclado, criar
+            // conteúdo dependia de sair do nav-mode, achar o fim do
+            // texto e digitar — o mouse tinha o botão "+" de hover e o
+            // teclado não tinha equivalente.
+            //
+            // Não mexe no markdown: põe o cursor no fim do bloco, deixa
+            // o `contenteditable` criar o parágrafo (mesma coisa que
+            // apertar Enter) e digita "/" — daí o menu de sempre assume,
+            // com todos os 9 embeds e os blocos de markdown.
+            if e.key() == "n" && !e.ctrl_key() && !e.meta_key() && !e.alt_key() {
+                if let Some(bloco) = bloco_focado() {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    if entrar_no_bloco(&bloco) {
+                        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                            exec_cmd(&doc, "insertParagraph", "");
+                            exec_cmd(&doc, "insertText", "/");
+                        }
+                    }
+                    return;
+                }
+            }
+
             // Escape com o cursor no texto SOBE pro nível de blocos
             // (ciclo 174) em vez de desselecionar a página, que era o
             // que o handler global fazia. Sem `stop_propagation` os dois

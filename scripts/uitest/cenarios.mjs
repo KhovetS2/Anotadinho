@@ -823,3 +823,47 @@ cenarios.push({
     ctx.assert(["Maximizar", "Restaurar"].includes(icone), `título inesperado no botão: ${icone}`);
   },
 });
+
+// ── ciclo 181: novo bloco pelo teclado ───────────────────────────────
+
+cenarios.push({
+  nome: "blocos: 'n' abre bloco novo com o menu / pronto (181)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\nprimeira linha\n\nsegunda linha\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelectorAll('[data-nav-block]').length >= 2", "os blocos aparecerem");
+
+    // Foca o primeiro bloco (como o nav-mode faria) e pede um novo.
+    await bridge.js(`(() => {
+      const alvo = [...document.querySelectorAll('[data-nav-block]')].find(b => b.textContent.includes('primeira'));
+      alvo.focus();
+      alvo.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true }));
+      return true;
+    })()`);
+    await ctx.esperar(bridge, "document.querySelector('.slash-menu')", "o menu / abrir junto");
+
+    // O menu traz tudo que o `/` traz — inclusive os embeds.
+    const itens = await bridge.js(
+      `[...document.querySelectorAll('.slash-menu__item-label')].map(e => e.textContent)`,
+    );
+    ctx.assert(itens.includes("Kanban"), `o menu devia ter os embeds: ${itens.join(", ")}`);
+    ctx.assert(itens.includes("Título 1"), `o menu devia ter os blocos de markdown: ${itens.join(", ")}`);
+
+    // Escolher um item insere de verdade no bloco novo, sem tocar no
+    // que já existia.
+    await bridge.js(`(() => {
+      const item = [...document.querySelectorAll('.slash-menu__item')].find(i => i.textContent.includes('Destaque'));
+      item.click();
+      return true;
+    })()`);
+    await ctx.esperar(bridge, "document.querySelector('.callout')", "o embed escolhido aparecer");
+
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const disco = ctx.ler();
+    ctx.assert(disco.includes("primeira linha"), `o texto anterior se perdeu:\n${disco}`);
+    ctx.assert(disco.includes("segunda linha"), `o texto seguinte se perdeu:\n${disco}`);
+    ctx.assert(disco.includes('{{ type: "callout" }}'), `o embed novo não foi pro disco:\n${disco}`);
+  },
+});
