@@ -15,15 +15,39 @@ Inspirado em [Obsidian](https://obsidian.md/) (vinhetas, backlinks, pastas) e [L
 | Sync | Manual (pendrive / qualquer cópia) |
 | Build | Cargo workspace |
 
+## Embeds inline
+
+Qualquer página `.md` pode conter blocos interativos, escritos como
+`{{ type: "X" }} ... {{ /X }}` — sintaxe que não existe em CommonMark,
+então nunca colide com markdown normal. São 9 tipos, todos inseridos
+pelo menu `/` do editor:
+
+| Tipo | O que é |
+|---|---|
+| `kanban` | board com colunas, cards, checklist, anexos |
+| `calendar` | eventos por data, com visões de mês/semana/dia |
+| `table` | tabela com colunas tipadas (select, data, número, link de página...) |
+| `callout` | caixa de destaque colapsável |
+| `columns` | painéis de markdown lado a lado |
+| `gallery` | grade de imagens do vault com lightbox |
+| `query` | lista viva de páginas filtradas por pasta/tag/propriedade |
+| `timeline` | cronograma de barras por intervalo de datas |
+| `actions` | botões que criam páginas de template, abrem páginas, gravam propriedades |
+
+O conteúdo de cada um fica em YAML legível dentro do próprio `.md`, e o
+`anotadinho-cli` lê e escreve os mesmos blocos pelo terminal
+(`anotadinho-cli embed --help`).
+
 ## Estrutura
 
 ```
 Anotadinho/
 ├── crates/
-│   ├── core/         # block model, parser MD, properties, IDs
+│   ├── core/         # block model, parser MD, embeds, índice, consulta
 │   ├── vault/        # I/O de arquivos, watcher, locks
-│   ├── search/       # full-text + embeddings
-│   └── ipc/          # commands Tauri expostos pro Yew
+│   ├── search/       # full-text (FTS5)
+│   ├── ipc/          # commands Tauri expostos pro Yew
+│   └── cli/          # anotadinho-cli (acesso headless ao vault)
 ├── ui/               # Yew frontend (WASM)
 ├── src-tauri/        # entry Tauri
 ├── cycles/           # sistema de implementação cíclica

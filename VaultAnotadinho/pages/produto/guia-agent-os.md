@@ -19,6 +19,7 @@ tags:
 ```
 pages/
 ├── produto/              ← páginas FIXAS, uma de cada (não usam template)
+│   ├── painel.md          type: landing — o painel de controle (comece aqui)
 │   ├── missao.md          "por que" o produto existe
 │   ├── roadmap.md          type: kanban — backlog/todo/doing/done
 │   ├── stack-tecnico.md    tecnologias escolhidas e por quê
@@ -82,9 +83,38 @@ Todos esses campos são editáveis pelo painel de propriedades (botão
 "⋯" no editor) ou direto no `.md` — o painel não perde propriedades
 customizadas (`extra`, ciclo 098).
 
+## O Painel
+
+[[Painel]] (`type: landing`) é o ponto de entrada operável do esquema —
+uma página comum, montada com embeds inline, que dá pra abrir como
+página inicial do vault (menu "⋯" → "Definir como início"):
+
+| Bloco | O que faz |
+|---|---|
+| `callout` | orientação fixa, linkando este guia |
+| `actions` | botões que criam spec/decisão/padrão/sessão **já na pasta certa**, a partir dos templates |
+| `query` "Em andamento" | specs com `status: in-progress` |
+| `query` "Fila" | specs em `backlog`, ordenadas por `priority` |
+| `query` "Decisões" | decisões recentes, em cartões |
+| `timeline` | specs com `date::`/`start::` numa linha do tempo (modo vault, leitura) |
+| `columns` | referência rápida de status e do comando de terminal |
+
+As listas são **derivadas**: mudou o `status` no frontmatter (pelo
+painel de propriedades, pelo botão, ou por
+`anotadinho-cli set-property`), a spec troca de bloco sozinha na
+próxima abertura. Não existe nada pra manter na mão aqui — diferente do
+[[Roadmap]], que é ordenação INTENCIONAL e continua sendo movido por
+quem decide a prioridade.
+
+Um agente headless roda exatamente as mesmas consultas:
+
+```bash
+anotadinho-cli --vault VaultAnotadinho query --from-embed pages/produto/painel.md:2
+```
+
 ## Fluxo recomendado (humano ou agente)
 
-1. Checar [[Roadmap]] — qual spec está em `todo`/próxima da fila
+0. Abrir o [[Painel]] — o que está em andamento e o que está na fila
 2. Abrir a spec em `pages/specs/`, ler contexto + plano de tarefas
 3. Se precisar de uma decisão de arquitetura no meio do caminho,
    registrar em `pages/decisoes/` (template "decisão"), linkando de

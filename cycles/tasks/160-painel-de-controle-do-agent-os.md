@@ -1,7 +1,7 @@
 ---
 id: "160"
 titulo: "Painel de controle do agent-os"
-status: pending
+status: done
 criado: 2026-08-19
 autor: humano
 prioridade: alta
@@ -22,28 +22,32 @@ com conteúdo real, não fixture.
 
 ## Critérios de aceite
 
-- [ ] `VaultAnotadinho/pages/produto/painel.md` (novo, `type: landing`,
+- [x] `VaultAnotadinho/pages/produto/painel.md` (novo, `type: landing`,
       definida como página de início) contendo:
       - callout de orientação, linkando o [[Guia do Agent OS]]
       - `actions` com "Nova spec", "Nova decisão", "Novo padrão",
         "Sessão de hoje" (cada um apontando pro template e pasta
         corretos do esquema)
-      - `columns` com duas queries lado a lado: specs em
-        `in-progress` e specs em `backlog` ordenadas por prioridade
+      - as duas listas de spec (`in-progress` e `backlog` por
+        prioridade) como `query` EMPILHADAS, não dentro de `columns`:
+        embed dentro de embed não existe (não-objetivo declarado no
+        ciclo 152, a segmentação só roda no nível da página). O
+        `columns` do painel ficou com a referência rápida em texto
       - `query` de decisões recentes, view `cards`
       - `timeline` em `source: vault` mostrando as specs com data
-- [ ] `guia-agent-os.md` ganha uma seção "Painel" descrevendo a página
+- [x] `guia-agent-os.md` ganha uma seção "Painel" descrevendo a página
       e o que cada bloco faz, e o fluxo recomendado passa a começar
       pelo painel
-- [ ] `docs/design-system.md` documenta os componentes criados em
+- [x] `docs/design-system.md` documenta os componentes criados em
       151-156 (classes BEM, variantes, tokens usados)
-- [ ] `README.md` do repo menciona os tipos de embed disponíveis
-- [ ] Validação de ponta a ponta ao vivo (MCP `tauri`): clicar "Nova
+- [x] `README.md` do repo menciona os tipos de embed disponíveis
+- [x] Validação de ponta a ponta ao vivo (MCP `tauri`): clicar "Nova
       spec" cria a página pelo template → ela aparece sozinha na query
       de backlog → mudar `status` pra `in-progress` pelo painel de
-      propriedades a move pra outra coluna → a spec com data aparece
+      propriedades (ou pelo `anotadinho-cli set-property`) a move pra
+      outra lista → a spec com data aparece
       na timeline → nada disso exigiu editar markdown na mão
-- [ ] O mesmo recorte visto no painel sai igual no terminal via
+- [x] O mesmo recorte visto no painel sai igual no terminal via
       `anotadinho-cli query --from-embed pages/produto/painel.md <idx>`
 
 ## Comandos de validação
@@ -65,6 +69,31 @@ cargo build --manifest-path src-tauri/Cargo.toml
   entrega a página no vault de exemplo, não um gerador
 
 ## Notas
+
+`cargo test --workspace`: 255. `trunk build` e `cargo build
+--manifest-path src-tauri/Cargo.toml`: OK.
+
+"Definida como início" é estado LOCAL do usuário (`localStorage`,
+chave `anotadinho.home_page::<vault>` — ciclos 089/109), não conteúdo
+do vault: quem clonar o vault precisa marcar de novo pelo menu "⋯" →
+"Definir como início". Marcado ao vivo nesta validação.
+
+Validação de ponta a ponta (MCP `tauri` + CLI), na ordem do fluxo do
+guia:
+1. "Nova spec" no painel → pediu o título e criou
+   `pages/specs/fluxo-de-ponta-a-ponta.md` a partir do template, com
+   `{{title}}`/`{{date}}` resolvidos;
+2. a spec apareceu SOZINHA na lista "Fila" (que foi de 1 pra 2 páginas)
+   — nada foi movido à mão;
+3. `anotadinho-cli set-property ... status in-progress` no terminal →
+   ao reabrir o painel ela tinha migrado pra "Em andamento" (1 página)
+   e sumido da fila;
+4. apareceu também na `timeline` em modo vault (pega o `date` do
+   template);
+5. `anotadinho-cli query --from-embed pages/produto/painel.md:2`
+   devolveu exatamente a mesma linha que a página mostra.
+
+A spec de teste foi removida do vault no fim.
 
 Se algum embed da série não sobreviver ao uso real aqui, o conserto
 vira task nova (regra de isolamento do `cycles/README.md`), não um

@@ -159,11 +159,49 @@ pub async fn minha_funcao(param: &str) -> Result<MeuTipo, String> {
 }
 ```
 
+## Embeds inline
+
+Um embed é um bloco `{{ type: "X" }} ... {{ /X }}` dentro de uma página
+comum, renderizado como componente Yew de verdade. São 9 tipos:
+
+| Tipo | Classe raiz | Papel |
+|---|---|---|
+| `kanban` | `.kanban` | board com colunas e cards |
+| `calendar` | `.inline-calendar` | eventos por data (mês/semana/dia) |
+| `table` | `.task-table` | tabela com colunas tipadas |
+| `callout` | `.callout` / `.callout--{variant}` | destaque colapsável (info/success/warning/error/tip) |
+| `columns` | `.columns-embed` | até 4 painéis markdown lado a lado |
+| `gallery` | `.gallery` / `.gallery__grid--{size}` | grade de assets com lightbox |
+| `query` | `.query-embed` | consulta viva do vault (list/table/cards) |
+| `timeline` | `.timeline` | barras por intervalo de datas |
+| `actions` | `.actions-embed` | botões que operam o vault |
+
+Convenções que valem pros nove:
+
+- **Variante vira token, não cor cravada.** O `.callout` define
+  `--callout-accent` no bloco raiz e os modificadores só REDEFINEM esse
+  token; nenhuma outra regra sabe de cor.
+- **Translúcido é `color-mix`**, nunca `rgba()` (ver Cores).
+- **Controle aparece no hover/foco.** Barras de botão nascem com
+  `opacity: 0` e aparecem em `:hover` E `:focus-within` — sem o
+  segundo, quem navega por teclado nunca vê o controle.
+- **Texto editável é `<input>`/`<textarea>`, nunca `contenteditable`.**
+  Um nó de texto dentro de `contenteditable` re-renderizado pelo Yew
+  duplica (ciclo 076). Markdown editável usa o `EmbedMarkdownField`:
+  HTML renderizado na leitura, `<textarea>` com o markdown cru na
+  edição.
+- **Foco visível**: `:focus-visible { outline: 2px solid
+  var(--accent-blue) }` em tudo que é clicável.
+- **Teclado**: `data-nav-group` no bloco raiz, `data-nav-item` +
+  `data-nav-parent` nos controles (ciclo 135).
+
 ## Backend (crates)
 
-- **core**: modelos de dados puros (Block, Page, Property)
+- **core**: modelos puros (Block, Page, Property), embeds, índice do
+  vault, consulta e aritmética de data
 - **vault**: I/O de arquivos, watcher
 - **ipc**: handlers de comandos Tauri
-- **search**: busca full-text (futuro)
+- **search**: busca full-text (FTS5)
+- **cli**: `anotadinho-cli`, acesso headless ao vault
 
 Cada crate tem seus próprios testes em `#[cfg(test)] mod tests`.
