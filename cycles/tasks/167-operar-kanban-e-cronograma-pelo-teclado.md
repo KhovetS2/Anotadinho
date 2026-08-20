@@ -1,7 +1,7 @@
 ---
 id: "167"
 titulo: "Operar kanban e cronograma pelo teclado"
-status: pending
+status: done
 criado: 2026-08-20
 autor: humano
 prioridade: media
@@ -22,19 +22,20 @@ meia-verdade.
 
 ## Critérios de aceite
 
-- [ ] Card de kanban focado: setas ←/→ movem de coluna, ↑/↓ reordenam
-      dentro da coluna (as duas coisas já existem em
+- [x] Card de kanban focado: **Alt**+←/→ movem de coluna, Alt+↑/↓
+      reordenam dentro da coluna. Alt (e não seta pura) porque as setas
+      puras continuam navegando entre itens do nav-mode — mesma
+      convenção de "mover linha" de editor de código (as duas coisas já existem em
       `KanbanEmbedData::move_card`, que resolve troca de coluna e
       reordenação numa chamada)
-- [ ] Barra de cronograma focada: ←/→ deslocam por dia preservando a
-      duração (`TimelineEmbedData::move_item`); com Shift, redimensiona
-      a borda final (`resize_item`)
-- [ ] Item da gaveta "sem data" do cronograma: Enter agenda no início
-      do período visível (já é o comportamento do clique)
-- [ ] Cada tecla mostra o resultado na hora e grava pelo mesmo caminho
+- [x] Barra de cronograma focada: Alt+←/→ deslocam por dia preservando
+      a duração; Alt+Shift+←/→ esticam a ponta final
+- [x] Item da gaveta "sem data": Enter agenda no início do período
+      visível (já era o comportamento do clique, e o botão é focável)
+- [x] Cada tecla mostra o resultado na hora e grava pelo mesmo caminho
       do arraste (`on_change`), então undo (095) desfaz igual
-- [ ] O que a tecla faz aparece no cheatsheet, na seção do embed
-- [ ] Validação ao vivo: montar um board e um cronograma e reorganizar
+- [x] O que a tecla faz aparece no cheatsheet, na seção do embed
+- [x] Validação ao vivo: montar um board e um cronograma e reorganizar
       os dois inteiros sem mouse
 
 ## Comandos de validação
@@ -52,6 +53,14 @@ cargo build --manifest-path src-tauri/Cargo.toml
 - Atalho pra criar card/etapa (já tem botão, alcançável por 165)
 
 ## Notas
+
+`cargo test --workspace`: 260. Harness (177): 9/9, com cenário novo
+conferindo que Alt+→ muda o card de coluna E que isso chega no disco.
+
+Alt em vez de seta pura foi a decisão de desenho: seta pura continua
+navegando (nav-mode dos ciclos 165/174), e Alt+seta move — é a mesma
+convenção de "mover linha" do VS Code, e não rouba nenhuma tecla de
+navegação.
 
 A lógica de mutação toda já existe e é testada no core — este ciclo é
 ligar tecla nela, não reimplementar movimento.

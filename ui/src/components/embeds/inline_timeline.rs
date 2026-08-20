@@ -403,6 +403,39 @@ pub fn inline_timeline(props: &InlineTimelineProps) -> Html {
                                 tabindex="0" role="button"
                                 data-nav-item="timeline-item" data-nav-parent={nav_group.clone()}
                                 onmousedown={if is_manual { start_drag(DragMode::Move) } else { Callback::noop() }}
+                                onkeydown={{
+                                    // Alt+setas movem a barra por dia;
+                                    // com Shift, esticam a ponta final
+                                    // (ciclo 167). Sem Alt as setas
+                                    // continuam navegando entre itens.
+                                    let data = props.data.clone();
+                                    let on_change = props.on_change.clone();
+                                    let item = item.clone();
+                                    Callback::from(move |e: web_sys::KeyboardEvent| {
+                                        if !is_manual || !e.alt_key() {
+                                            return;
+                                        }
+                                        let delta = match e.key().as_str() {
+                                            "ArrowLeft" => -1,
+                                            "ArrowRight" => 1,
+                                            _ => return,
+                                        };
+                                        e.prevent_default();
+                                        e.stop_propagation();
+                                        let mut novo = data.clone();
+                                        if e.shift_key() {
+                                            let base = item.end.clone().or_else(|| item.start.clone());
+                                            if let Some(nova) = base.as_deref().and_then(|d| date_util::add_days(d, delta)) {
+                                                novo.resize_item(idx, false, nova);
+                                            }
+                                        } else if let Some(nova) =
+                                            item.start.as_deref().and_then(|d| date_util::add_days(d, delta))
+                                        {
+                                            novo.move_item(idx, nova);
+                                        }
+                                        on_change.emit(novo);
+                                    })
+                                }}
                                 onclick={on_open}>
                                 if is_manual {
                                     <span class="timeline__handle timeline__handle--start"

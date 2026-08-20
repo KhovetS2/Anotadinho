@@ -120,6 +120,14 @@ pub fn cheatsheet_modal(props: &CheatsheetModalProps) -> Html {
                             <span class="cheatsheet__label">{ "Voltar pro texto da página" }</span>
                             <kbd class="cheatsheet__key">{ "Escape" }</kbd>
                         </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Mover card do kanban / barra do cronograma" }</span>
+                            <kbd class="cheatsheet__key">{ "Alt+← ↑ ↓ →" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Esticar a ponta da barra do cronograma" }</span>
+                            <kbd class="cheatsheet__key">{ "Alt+Shift+← →" }</kbd>
+                        </li>
                     </ul>
                 </div>
                 if props.vim_mode_enabled {

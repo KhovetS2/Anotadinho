@@ -332,10 +332,76 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                                     // próprio card (sem arrastar) já
                                     // dispara — cards inline nunca
                                     // tinham NENHUM suporte de teclado.
-                                    let onkeydown = crate::keyboard_activate::activate_on_enter_or_space({
-                                        let editing_card = editing_card.clone();
-                                        Callback::from(move |_: ()| editing_card.set(Some(idx)))
-                                    });
+                                    // Enter/Espaço abrem o card; Alt+setas
+                                    // MOVEM (ciclo 167) — o arraste era a
+                                    // única forma de reorganizar o board, e
+                                    // arrastar não tem equivalente de
+                                    // teclado. Alt libera as setas puras pra
+                                    // continuarem navegando (nav-mode).
+                                    let onkeydown = {
+                                        let abrir = crate::keyboard_activate::activate_on_enter_or_space({
+                                            let editing_card = editing_card.clone();
+                                            Callback::from(move |_: ()| editing_card.set(Some(idx)))
+                                        });
+                                        let data = props.data.clone();
+                                        let on_change = props.on_change.clone();
+                                        let coluna_atual = col.clone();
+                                        Callback::from(move |e: KeyboardEvent| {
+                                            if !e.alt_key() {
+                                                abrir.emit(e);
+                                                return;
+                                            }
+                                            let colunas = data.columns.clone();
+                                            let pos_coluna = colunas.iter().position(|c| c == &coluna_atual);
+                                            let mut novo = data.clone();
+                                            match e.key().as_str() {
+                                                "ArrowLeft" | "ArrowRight" => {
+                                                    let Some(pos) = pos_coluna else { return };
+                                                    let destino = if e.key() == "ArrowLeft" {
+                                                        pos.checked_sub(1)
+                                                    } else if pos + 1 < colunas.len() {
+                                                        Some(pos + 1)
+                                                    } else {
+                                                        None
+                                                    };
+                                                    let Some(destino) = destino else { return };
+                                                    e.prevent_default();
+                                                    e.stop_propagation();
+                                                    novo.move_card(idx, colunas[destino].clone(), None);
+                                                    on_change.emit(novo);
+                                                }
+                                                "ArrowUp" | "ArrowDown" => {
+                                                    // Reordenar dentro da coluna: acha o
+                                                    // vizinho na MESMA coluna e insere
+                                                    // antes/depois dele.
+                                                    let irmaos: Vec<usize> = data
+                                                        .items
+                                                        .iter()
+                                                        .enumerate()
+                                                        .filter(|(_, it)| it.column == coluna_atual)
+                                                        .map(|(i, _)| i)
+                                                        .collect();
+                                                    let Some(pos) = irmaos.iter().position(|i| *i == idx) else { return };
+                                                    let alvo = if e.key() == "ArrowUp" {
+                                                        pos.checked_sub(1).map(|p| irmaos[p])
+                                                    } else {
+                                                        irmaos.get(pos + 1).copied()
+                                                    };
+                                                    let Some(alvo) = alvo else { return };
+                                                    e.prevent_default();
+                                                    e.stop_propagation();
+                                                    let antes = if e.key() == "ArrowUp" {
+                                                        Some(alvo)
+                                                    } else {
+                                                        irmaos.get(pos + 2).copied()
+                                                    };
+                                                    novo.move_card(idx, coluna_atual.clone(), antes);
+                                                    on_change.emit(novo);
+                                                }
+                                                _ => {}
+                                            }
+                                        })
+                                    };
 
                                     let card_class = if *dragging == Some(idx) {
                                         "kanban__card kanban__card--dragging"
@@ -357,7 +423,8 @@ pub fn inline_kanban(props: &InlineKanbanProps) -> Html {
                                         if show_insertion {
                                             <div class="kanban__insertion-line" />
                                         }
-                                        <div class={card_class} tabindex="0" {onmousedown} {onmouseup} {onmouseenter} {onkeydown}>
+                                        <div class={card_class} tabindex="0" {onmousedown} {onmouseup} {onmouseenter} {onkeydown}
+                                            data-nav-item="kanban-card" data-nav-parent={props.nav_group.clone()}>
                                             <div class="kanban__card-main">
                                                 <span class="kanban__card-title">{ &item.title }</span>
                                                 <span class="kanban__card-actions">

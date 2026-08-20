@@ -341,3 +341,37 @@ cenarios.push({
     ctx.assertEq(voltou, "editor-blocos", "Escape devia voltar pro nível dos blocos");
   },
 });
+
+// ── ciclo 167: operar kanban e cronograma pelo teclado ───────────────
+
+cenarios.push({
+  nome: "teclado: Alt+setas movem card do kanban e barra do cronograma (167)",
+  async fn(bridge, ctx) {
+    ctx.escrever(
+      '---\ntitle: __uitest\n---\n{{ type: "kanban" }}\ncolumns:\n- Todo\n- Done\nitems:\n- title: Card A\n  column: Todo\n{{ /kanban }}\n',
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.kanban__card')", "o board renderizar");
+
+    // Alt+→ leva o card pra coluna seguinte. Sem Alt a seta navega.
+    await bridge.js(`(() => {
+      const card = document.querySelector('.kanban__card');
+      card.focus();
+      card.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(600);
+
+    const colunas = await bridge.js(`[...document.querySelectorAll('.kanban__column')].map(c => ({
+      titulo: c.querySelector('.kanban__col-title')?.textContent,
+      cards: [...c.querySelectorAll('.kanban__card-title')].map(t => t.textContent),
+    }))`);
+    const done = colunas.find((c) => c.titulo === "Done");
+    ctx.assert(done?.cards.includes("Card A"), `o card não mudou de coluna: ${JSON.stringify(colunas)}`);
+
+    await bridge.js(SALVAR);
+    await PAUSA(800);
+    ctx.assert(ctx.ler().includes("column: Done"), "a coluna nova não foi pro disco");
+  },
+});
