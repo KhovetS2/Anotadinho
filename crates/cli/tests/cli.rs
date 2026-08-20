@@ -683,3 +683,116 @@ fn read_com_id_inexistente_falha() {
         .failure()
         .stderr(predicates::str::contains("não tem o bloco"));
 }
+
+// ── ciclo 189: validação semântica de embed ──────────────────────────
+
+/// Página com um cronograma válido, pra os testes partirem de um estado
+/// bom e checarem o que acontece ao TENTAR piorá-lo.
+fn vault_com_cronograma() -> tempfile::TempDir {
+    let dir = setup_vault();
+    fs::write(
+        dir.path().join("pages/crono.md"),
+        "---\ntitle: Crono\n---\n\n{{ type: \"timeline\" }}\nscale: month\nitems:\n- title: Etapa\n  start: '2026-08-03'\n  end: '2026-08-10'\n{{ /timeline }}\n",
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn check_nao_reclama_de_pagina_sa() {
+    let dir = vault_com_cronograma();
+    cli(&dir)
+        .args(["embed", "check", "pages/crono.md"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("nenhum problema"));
+}
+
+#[test]
+fn set_recusa_intervalo_invertido_e_nao_grava() {
+    let dir = vault_com_cronograma();
+    cli(&dir)
+        .args(["embed", "set", "pages/crono.md", "0"])
+        .write_stdin("scale: month\nitems:\n- title: Etapa\n  start: '2026-08-20'\n  end: '2026-08-03'\n")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("vem antes de start"));
+
+    // O arquivo tem que continuar exatamente como estava.
+    let disco = fs::read_to_string(dir.path().join("pages/crono.md")).unwrap();
+    assert!(disco.contains("start: '2026-08-03'"), "{disco}");
+    assert!(!disco.contains("2026-08-20"), "gravou mesmo recusando:\n{disco}");
+}
+
+#[test]
+fn forcar_grava_mesmo_com_erro() {
+    let dir = vault_com_cronograma();
+    cli(&dir)
+        .args(["embed", "--forcar", "set", "pages/crono.md", "0"])
+        .write_stdin("scale: month\nitems:\n- title: Etapa\n  start: '2026-08-20'\n  end: '2026-08-03'\n")
+        .assert()
+        .success()
+        .stderr(predicates::str::contains("vem antes de start"));
+
+    let disco = fs::read_to_string(dir.path().join("pages/crono.md")).unwrap();
+    assert!(disco.contains("2026-08-20"), "--forcar devia ter gravado:\n{disco}");
+}
+
+#[test]
+fn check_falha_no_que_ja_esta_no_disco() {
+    let dir = setup_vault();
+    fs::write(
+        dir.path().join("pages/ruim.md"),
+        "---\ntitle: Ruim\n---\n\n{{ type: \"actions\" }}\nbuttons:\n- label: X\n  action: rodar-shell\n{{ /actions }}\n",
+    )
+    .unwrap();
+    cli(&dir)
+        .args(["embed", "check", "pages/ruim.md"])
+        .assert()
+        .failure()
+        .stdout(predicates::str::contains("rodar-shell"));
+}
+
+/// Guarda de regressão da checagem que o próprio `add-row` já fazia
+/// antes do ciclo 189 — não é a validação nova que barra aqui. A regra
+/// nova de "número de células diferente do de colunas" só é alcançável
+/// por construção direta (o pulldown-cmark completa linha curta ao
+/// parsear), e está coberta em `core::embed`.
+#[test]
+fn add_row_com_numero_errado_de_valores_nao_grava() {
+    let dir = setup_vault();
+    fs::write(
+        dir.path().join("pages/tab.md"),
+        "---\ntitle: Tab\n---\n\n{{ type: \"table\" }}\ncolumns:\n- name: A\n- name: B\n---\n| A | B |\n| - | - |\n| 1 | 2 |\n{{ /table }}\n",
+    )
+    .unwrap();
+    let antes = fs::read_to_string(dir.path().join("pages/tab.md")).unwrap();
+
+    cli(&dir)
+        .args(["embed", "add-row", "pages/tab.md", "0", "--values", "so-uma"])
+        .assert()
+        .failure();
+
+    assert_eq!(
+        fs::read_to_string(dir.path().join("pages/tab.md")).unwrap(),
+        antes,
+        "arquivo mudou apesar da recusa"
+    );
+}
+
+#[test]
+fn aviso_nao_bloqueia_a_gravacao() {
+    let dir = setup_vault();
+    fs::write(
+        dir.path().join("pages/destaque.md"),
+        "---\ntitle: D\n---\n\n{{ type: \"callout\" }}\nvariant: info\ntitle: Tem titulo\nbody: |\n  corpo\n{{ /callout }}\n",
+    )
+    .unwrap();
+    // Callout sem título e sem corpo é AVISO, não erro.
+    cli(&dir)
+        .args(["embed", "set", "pages/destaque.md", "0"])
+        .write_stdin("variant: info\ntitle: ''\nbody: ''\n")
+        .assert()
+        .success()
+        .stderr(predicates::str::contains("aviso:"));
+}

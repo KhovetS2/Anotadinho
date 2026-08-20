@@ -2019,8 +2019,438 @@ fn primeira_linha(md: &str) -> String {
         .to_string()
 }
 
+/// Gravidade de um problema achado por `EmbedData::validate`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Severidade {
+    /// O embed vai parsear mas quebrar na renderização — não gravar.
+    Erro,
+    /// Suspeito, mas funciona. Só informa.
+    Aviso,
+}
+
+/// Um problema semântico num embed (ciclo 189).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Problema {
+    /// Grave o bastante pra recusar a gravação?
+    pub severidade: Severidade,
+    /// Onde, dentro do embed (`"item 2"`, `"coluna Status"`).
+    pub onde: String,
+    /// O que está errado, em uma frase.
+    pub mensagem: String,
+}
+
+impl Problema {
+    fn erro(onde: impl Into<String>, mensagem: impl Into<String>) -> Self {
+        Self { severidade: Severidade::Erro, onde: onde.into(), mensagem: mensagem.into() }
+    }
+    fn aviso(onde: impl Into<String>, mensagem: impl Into<String>) -> Self {
+        Self { severidade: Severidade::Aviso, onde: onde.into(), mensagem: mensagem.into() }
+    }
+}
+
+/// O que a validação precisa saber do MUNDO — sem isso, as regras que
+/// tocam disco (asset existe? template existe?) não teriam como rodar.
+///
+/// `None` no `vault` desliga só essas regras; o resto continua valendo.
+/// É o que deixa a validação utilizável na UI, que não tem acesso a
+/// sistema de arquivos.
+#[derive(Debug, Clone, Default)]
+pub struct ValidationCtx {
+    /// Raiz do vault, pra conferir caminhos.
+    pub vault: Option<std::path::PathBuf>,
+}
+
+impl ValidationCtx {
+    /// Contexto com acesso ao disco.
+    pub fn com_vault(raiz: impl Into<std::path::PathBuf>) -> Self {
+        Self { vault: Some(raiz.into()) }
+    }
+
+    /// `true` quando não dá pra conferir (sem vault) — a regra que
+    /// depende de disco fica em silêncio em vez de acusar falso
+    /// positivo.
+    fn existe(&self, rel: &str) -> bool {
+        match &self.vault {
+            Some(raiz) => raiz.join(rel).exists(),
+            None => true,
+        }
+    }
+}
+
+/// Ações de botão que o app sabe executar. Fechada de propósito — ver
+/// o comentário do embed `actions`.
+const ACOES_CONHECIDAS: &[&str] =
+    &["new-from-template", "open-page", "set-property", "run-search"];
+
+/// Compara duas datas `YYYY-MM-DD`. `None` se alguma não parseia.
+fn invertido(inicio: &str, fim: &str) -> Option<bool> {
+    let a = crate::date_util::parse_date(inicio)?;
+    let b = crate::date_util::parse_date(fim)?;
+    Some(b < a)
+}
+
+impl EmbedData {
+    /// Confere o que o serde NÃO confere (ciclo 189).
+    ///
+    /// O parser garante que os campos existem e têm o tipo certo. Ele
+    /// não sabe que uma coluna precisa existir no board, que `end` não
+    /// pode vir antes de `start`, ou que o asset apontado pela galeria
+    /// tem que estar no disco. Sem esta camada, um agente grava YAML
+    /// que parseia e quebra na renderização — e ninguém vê até alguém
+    /// abrir a página.
+    pub fn validate(&self, ctx: &ValidationCtx) -> Vec<Problema> {
+        let mut out = Vec::new();
+        match self {
+            Self::Kanban(d) => {
+                for (i, card) in d.items.iter().enumerate() {
+                    let onde = format!("card {} (\"{}\")", i + 1, card.title);
+                    if !d.columns.contains(&card.column) {
+                        out.push(Problema::erro(
+                            &onde,
+                            format!(
+                                "coluna \"{}\" não existe no board (as que existem: {})",
+                                card.column,
+                                d.columns.join(", ")
+                            ),
+                        ));
+                    }
+                    if card.title.trim().is_empty() {
+                        out.push(Problema::aviso(&onde, "card sem título"));
+                    }
+                    if let Some(due) = &card.due {
+                        if crate::date_util::parse_date(due).is_none() {
+                            out.push(Problema::erro(&onde, format!("data \"{due}\" não é YYYY-MM-DD")));
+                        }
+                    }
+                }
+            }
+            Self::Calendar(d) => {
+                for (i, e) in d.entries.iter().enumerate() {
+                    let onde = format!("evento {} (\"{}\")", i + 1, e.title);
+                    if let Some(data) = &e.date {
+                        if crate::date_util::parse_date(data).is_none() {
+                            out.push(Problema::erro(&onde, format!("data \"{data}\" não é YYYY-MM-DD")));
+                        }
+                        if let Some(fim) = &e.end_date {
+                            if invertido(data, fim) == Some(true) {
+                                out.push(Problema::erro(
+                                    &onde,
+                                    format!("end_date ({fim}) vem antes de date ({data})"),
+                                ));
+                            }
+                        }
+                    } else if e.end_date.is_some() {
+                        out.push(Problema::erro(&onde, "tem end_date mas não tem date"));
+                    }
+                }
+            }
+            Self::Table(d) => {
+                let n = d.columns.len();
+                for (i, linha) in d.rows.iter().enumerate() {
+                    let onde = format!("linha {}", i + 1);
+                    if linha.len() != n {
+                        out.push(Problema::erro(
+                            &onde,
+                            format!("tem {} células, mas a tabela tem {n} colunas", linha.len()),
+                        ));
+                        continue;
+                    }
+                    for (c, col) in d.columns.iter().enumerate() {
+                        let valor = linha[c].trim();
+                        if valor.is_empty() {
+                            continue;
+                        }
+                        match &col.kind {
+                            // `Select` é uma lista FECHADA — valor fora
+                            // dela não desenha badge nenhum.
+                            //
+                            // `MultiSelect` de propósito não entra aqui:
+                            // a lista dele cresce sozinha (digitar um
+                            // valor novo na célula cadastra a opção),
+                            // então valor "fora" é uso normal, não erro.
+                            ColumnKind::Select { options } if !options.is_empty() => {
+                                if !options.iter().any(|o| o == valor) {
+                                    out.push(Problema::erro(
+                                        &onde,
+                                        format!(
+                                            "coluna \"{}\": \"{valor}\" não está nas opções ({})",
+                                            col.name,
+                                            options.join(", ")
+                                        ),
+                                    ));
+                                }
+                            }
+                            ColumnKind::Date => {
+                                if crate::date_util::parse_date(valor).is_none() {
+                                    out.push(Problema::erro(
+                                        &onde,
+                                        format!("coluna \"{}\": \"{valor}\" não é YYYY-MM-DD", col.name),
+                                    ));
+                                }
+                            }
+                            ColumnKind::Number => {
+                                if valor.parse::<f64>().is_err() {
+                                    out.push(Problema::erro(
+                                        &onde,
+                                        format!("coluna \"{}\": \"{valor}\" não é número", col.name),
+                                    ));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Self::Timeline(d) => {
+                for (i, item) in d.items.iter().enumerate() {
+                    let onde = format!("item {} (\"{}\")", i + 1, item.title);
+                    match (&item.start, &item.end) {
+                        (Some(a), Some(b)) => {
+                            if crate::date_util::parse_date(a).is_none() {
+                                out.push(Problema::erro(&onde, format!("start \"{a}\" não é YYYY-MM-DD")));
+                            } else if crate::date_util::parse_date(b).is_none() {
+                                out.push(Problema::erro(&onde, format!("end \"{b}\" não é YYYY-MM-DD")));
+                            } else if invertido(a, b) == Some(true) {
+                                out.push(Problema::erro(&onde, format!("end ({b}) vem antes de start ({a})")));
+                            }
+                        }
+                        (None, Some(_)) => {
+                            out.push(Problema::erro(&onde, "tem end mas não tem start"));
+                        }
+                        (None, None) if d.source == TimelineSource::Manual => {
+                            out.push(Problema::aviso(&onde, "sem datas: a barra não tem onde ser desenhada"));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Self::Gallery(d) => {
+                for (i, item) in d.items.iter().enumerate() {
+                    let onde = format!("imagem {}", i + 1);
+                    if item.path.trim().is_empty() {
+                        out.push(Problema::erro(&onde, "sem path"));
+                    } else if !item.path.starts_with("http") && !ctx.existe(&item.path) {
+                        out.push(Problema::erro(&onde, format!("arquivo \"{}\" não existe no vault", item.path)));
+                    }
+                }
+                if d.columns == 0 {
+                    out.push(Problema::erro("galeria", "columns: 0 não desenha nada"));
+                }
+            }
+            Self::Actions(d) => {
+                for (i, b) in d.buttons.iter().enumerate() {
+                    let onde = format!("botão {} (\"{}\")", i + 1, b.label);
+                    if !ACOES_CONHECIDAS.contains(&b.action.as_str()) {
+                        out.push(Problema::erro(
+                            &onde,
+                            format!(
+                                "ação \"{}\" não existe (as que existem: {})",
+                                b.action,
+                                ACOES_CONHECIDAS.join(", ")
+                            ),
+                        ));
+                        continue;
+                    }
+                    match b.action.as_str() {
+                        "new-from-template" => match &b.template {
+                            None => out.push(Problema::erro(&onde, "new-from-template sem `template`")),
+                            Some(t) if !ctx.existe(t) => {
+                                out.push(Problema::erro(&onde, format!("template \"{t}\" não existe")))
+                            }
+                            _ => {}
+                        },
+                        "open-page" => match &b.path {
+                            None => out.push(Problema::erro(&onde, "open-page sem `path`")),
+                            Some(p) if !ctx.existe(p) => {
+                                out.push(Problema::aviso(&onde, format!("página \"{p}\" ainda não existe")))
+                            }
+                            _ => {}
+                        },
+                        "set-property" => {
+                            if b.field.is_none() {
+                                out.push(Problema::erro(&onde, "set-property sem `field`"));
+                            }
+                        }
+                        "run-search" => {
+                            if b.query.as_deref().unwrap_or("").trim().is_empty() {
+                                out.push(Problema::erro(&onde, "run-search sem `query`"));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Self::Columns(d) => {
+                if d.columns.is_empty() {
+                    out.push(Problema::erro("colunas", "nenhuma coluna"));
+                }
+                for (i, c) in d.columns.iter().enumerate() {
+                    if c.width == 0 {
+                        out.push(Problema::erro(format!("coluna {}", i + 1), "width: 0 não ocupa espaço nenhum"));
+                    }
+                }
+            }
+            Self::Callout(d) => {
+                if d.title.trim().is_empty() && d.body.trim().is_empty() {
+                    out.push(Problema::aviso("destaque", "sem título e sem corpo"));
+                }
+            }
+            Self::Query(_) => {}
+        }
+        out
+    }
+
+    /// `true` se há algum `Erro` (não conta `Aviso`).
+    pub fn tem_erro(problemas: &[Problema]) -> bool {
+        problemas.iter().any(|p| p.severidade == Severidade::Erro)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
+    // ── validate (ciclo 189) ──────────────────────────────────────
+
+    fn problemas(raw: &str, kind: EmbedKind) -> Vec<Problema> {
+        EmbedData::parse(kind, raw).validate(&ValidationCtx::default())
+    }
+
+    #[test]
+    fn kanban_recusa_card_em_coluna_inexistente() {
+        let p = problemas(
+            "columns:\n- Backlog\nitems:\n- title: X\n  column: Fantasma\n",
+            EmbedKind::Kanban,
+        );
+        assert!(EmbedData::tem_erro(&p), "{p:?}");
+        assert!(p[0].mensagem.contains("Fantasma"), "{p:?}");
+    }
+
+    #[test]
+    fn kanban_aceita_card_em_coluna_existente() {
+        let p = problemas(
+            "columns:\n- Backlog\nitems:\n- title: X\n  column: Backlog\n",
+            EmbedKind::Kanban,
+        );
+        assert!(p.is_empty(), "{p:?}");
+    }
+
+    #[test]
+    fn cronograma_recusa_intervalo_invertido() {
+        let p = problemas(
+            "items:\n- title: X\n  start: '2026-08-20'\n  end: '2026-08-03'\n",
+            EmbedKind::Timeline,
+        );
+        assert!(EmbedData::tem_erro(&p), "{p:?}");
+        assert!(p[0].mensagem.contains("antes"), "{p:?}");
+    }
+
+    #[test]
+    fn calendario_recusa_fim_antes_do_comeco() {
+        let p = problemas(
+            "entries:\n- date: '2026-08-20'\n  end_date: '2026-08-10'\n  title: X\n",
+            EmbedKind::Calendar,
+        );
+        assert!(EmbedData::tem_erro(&p), "{p:?}");
+    }
+
+    #[test]
+    fn tabela_recusa_numero_de_celulas_diferente() {
+        // Construído à mão de propósito: o pulldown-cmark COMPLETA a
+        // linha curta com células vazias, então por markdown esse estado
+        // nunca chega aqui. Ele chega por construção — `embed add-row`
+        // com um número de valores diferente do de colunas, por exemplo.
+        let data = EmbedData::Table(TableEmbedData {
+            columns: vec![
+                TableColumn { name: "A".into(), kind: ColumnKind::Text },
+                TableColumn { name: "B".into(), kind: ColumnKind::Text },
+            ],
+            rows: vec![vec!["so-uma".into()]],
+        });
+        let p = data.validate(&ValidationCtx::default());
+        assert!(EmbedData::tem_erro(&p), "{p:?}");
+        assert!(p[0].mensagem.contains("1 células"), "{p:?}");
+    }
+
+    #[test]
+    fn tabela_recusa_valor_fora_das_opcoes_de_select() {
+        let p = problemas(
+            "columns:\n- name: Status\n  type: select\n  options: [todo, done]\n---\n| Status |\n| - |\n| voando |\n",
+            EmbedKind::Table,
+        );
+        assert!(EmbedData::tem_erro(&p), "{p:?}");
+        assert!(p[0].mensagem.contains("voando"), "{p:?}");
+    }
+
+    #[test]
+    fn tabela_aceita_valor_novo_em_multiselect() {
+        // A lista de opções de multiselect cresce sozinha (digitar um
+        // valor novo na célula cadastra a opção), então valor "fora" é
+        // uso normal — não pode virar erro.
+        let p = problemas(
+            "columns:\n- name: Tags\n  type: multiselect\n  options: [bug]\n---\n| Tags |\n| - |\n| inedito |\n",
+            EmbedKind::Table,
+        );
+        assert!(p.is_empty(), "{p:?}");
+    }
+
+    #[test]
+    fn tabela_recusa_data_e_numero_malformados() {
+        let p = problemas(
+            "columns:\n- name: Prazo\n  type: date\n- name: Peso\n  type: number\n---\n| Prazo | Peso |\n| - | - |\n| ontem | muito |\n",
+            EmbedKind::Table,
+        );
+        assert_eq!(p.len(), 2, "{p:?}");
+        assert!(EmbedData::tem_erro(&p));
+    }
+
+    #[test]
+    fn acoes_recusam_acao_desconhecida() {
+        let p = problemas(
+            "buttons:\n- label: X\n  action: rodar-shell\n",
+            EmbedKind::Actions,
+        );
+        assert!(EmbedData::tem_erro(&p), "{p:?}");
+        assert!(p[0].mensagem.contains("rodar-shell"), "{p:?}");
+    }
+
+    #[test]
+    fn acoes_recusam_campo_obrigatorio_faltando() {
+        let p = problemas("buttons:\n- label: X\n  action: run-search\n", EmbedKind::Actions);
+        assert!(EmbedData::tem_erro(&p), "{p:?}");
+    }
+
+    #[test]
+    fn galeria_recusa_asset_ausente_so_com_vault() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let raw = "items:\n- path: assets/nao-existe.png\n";
+        let data = EmbedData::parse(EmbedKind::Gallery, raw);
+
+        // Sem vault a regra fica em silêncio — não dá pra conferir.
+        assert!(data.validate(&ValidationCtx::default()).is_empty());
+
+        let com = data.validate(&ValidationCtx::com_vault(dir.path()));
+        assert!(EmbedData::tem_erro(&com), "{com:?}");
+    }
+
+    #[test]
+    fn aviso_nao_conta_como_erro() {
+        let p = problemas("variant: info\ntitle: ''\nbody: ''\n", EmbedKind::Callout);
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert_eq!(p[0].severidade, Severidade::Aviso);
+        assert!(!EmbedData::tem_erro(&p));
+    }
+
+    #[test]
+    fn corpo_padrao_de_todo_tipo_e_valido() {
+        // Se o `default_body` de um tipo não passa na própria validação,
+        // inserir esse embed pelo menu `/` já nasce quebrado.
+        for kind in EmbedKind::all() {
+            let data = EmbedData::parse(*kind, &kind.default_body("2026-08-20"));
+            let p = data.validate(&ValidationCtx::default());
+            assert!(!EmbedData::tem_erro(&p), "{}: {p:?}", kind.type_name());
+        }
+    }
 
 
     // ── search_entries (ciclo 188) ────────────────────────────────

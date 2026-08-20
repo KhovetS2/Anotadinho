@@ -96,6 +96,10 @@ enum Command {
     /// Lê e escreve os embeds inline (`{{ type: "..." }}`) de uma
     /// página, sem montar YAML na mão (ciclo 157).
     Embed {
+        /// Grava mesmo com erro de validação (ciclo 189). Existe pra não
+        /// travar caso legítimo que as regras não previram.
+        #[arg(long, global = true)]
+        forcar: bool,
         #[command(subcommand)]
         action: EmbedCommand,
     },
@@ -208,6 +212,12 @@ enum EmbedCommand {
         /// Células separadas por vírgula, na ordem das colunas.
         #[arg(long)]
         values: String,
+    },
+    /// Confere os embeds da página sem gravar nada (ciclo 189): diz o
+    /// que já está no disco e não deveria estar.
+    Check {
+        /// Path relativo ao vault.
+        page_path: String,
     },
     /// Adiciona um evento num embed de calendário.
     AddEvent {
@@ -455,10 +465,10 @@ fn run(cli: Cli) -> Result<(), String> {
                 std::thread::sleep(std::time::Duration::from_millis(intervalo_ms));
             }
         }
-        Command::Embed { action } => {
+        Command::Embed { forcar, action } => {
             let vault = cli.vault.clone();
             let json = cli.json;
-            run_embed(&vault, json, action)?
+            run_embed(&vault, json, forcar, action)?
         }
     }
     Ok(())
@@ -566,7 +576,41 @@ fn embed_body(data: &EmbedData) -> String {
     if body.ends_with('\n') { body } else { format!("{body}\n") }
 }
 
-fn run_embed(vault: &str, json: bool, action: EmbedCommand) -> Result<(), String> {
+/// Confere um embed antes de gravar (ciclo 189).
+///
+/// Valida só o embed TOCADO, não a página inteira: um embed inválido
+/// pré-existente noutro ponto não pode travar uma edição que não tem
+/// nada a ver com ele.
+///
+/// `Erro` aborta com saída != 0 e nada é gravado; `Aviso` só imprime.
+/// `--forcar` deixa passar mesmo com erro.
+fn conferir_antes_de_gravar(
+    vault: &str,
+    data: &EmbedData,
+    forcar: bool,
+) -> Result<(), String> {
+    let ctx = embed::ValidationCtx::com_vault(vault);
+    let problemas = data.validate(&ctx);
+    if problemas.is_empty() {
+        return Ok(());
+    }
+    for p in &problemas {
+        let marca = match p.severidade {
+            embed::Severidade::Erro => "erro",
+            embed::Severidade::Aviso => "aviso",
+        };
+        eprintln!("{marca}: {} — {}", p.onde, p.mensagem);
+    }
+    if EmbedData::tem_erro(&problemas) && !forcar {
+        return Err(
+            "o embed tem erro de validação e nada foi gravado (use --forcar pra gravar assim mesmo)"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn run_embed(vault: &str, json: bool, forcar: bool, action: EmbedCommand) -> Result<(), String> {
     match action {
         EmbedCommand::List { page_path } => {
             let doc = PageDoc::load(vault, &page_path)?;
@@ -610,6 +654,47 @@ fn run_embed(vault: &str, json: bool, action: EmbedCommand) -> Result<(), String
                 print!("{body}");
             }
         }
+        EmbedCommand::Check { page_path } => {
+            let doc = PageDoc::load(vault, &page_path)?;
+            let ctx = embed::ValidationCtx::com_vault(vault);
+            let mut achados: Vec<serde_json::Value> = Vec::new();
+            let mut tem_erro = false;
+            for (index, pos) in doc.embed_positions().iter().enumerate() {
+                let DocSegment::Embed(data) = &doc.segments[*pos] else {
+                    unreachable!()
+                };
+                for p in data.validate(&ctx) {
+                    tem_erro |= p.severidade == embed::Severidade::Erro;
+                    achados.push(serde_json::json!({
+                        "index": index,
+                        "type": data.kind().type_name(),
+                        "severidade": p.severidade,
+                        "onde": p.onde,
+                        "mensagem": p.mensagem,
+                    }));
+                }
+            }
+            if json {
+                print_json(&achados)?;
+            } else if achados.is_empty() {
+                println!("nenhum problema em {page_path}");
+            } else {
+                for a in &achados {
+                    println!(
+                        "{}\t{}\t{}\t{} — {}",
+                        a["index"],
+                        a["type"].as_str().unwrap_or(""),
+                        a["severidade"].as_str().unwrap_or(""),
+                        a["onde"].as_str().unwrap_or(""),
+                        a["mensagem"].as_str().unwrap_or("")
+                    );
+                }
+            }
+            // Saída != 0 quando há erro: dá pra usar num hook de commit.
+            if tem_erro {
+                std::process::exit(1);
+            }
+        }
         EmbedCommand::Set { page_path, index, file } => {
             let mut doc = PageDoc::load(vault, &page_path)?;
             let (pos, data) = doc.embed_at(index)?;
@@ -627,11 +712,13 @@ fn run_embed(vault: &str, json: bool, action: EmbedCommand) -> Result<(), String
             };
             // Passa pelo parser do tipo: o que vai pro disco é sempre
             // saída de `to_fence_text`, nunca texto colado direto.
-            doc.segments[pos] = DocSegment::Embed(EmbedData::parse(kind, &raw));
+            let novo = EmbedData::parse(kind, &raw);
+            conferir_antes_de_gravar(vault, &novo, forcar)?;
+            doc.segments[pos] = DocSegment::Embed(novo);
             doc.save(vault, &page_path)?;
         }
         EmbedCommand::AddCard { page_path, index, column, title } => {
-            mutate_embed(vault, &page_path, index, |data| match data {
+            mutate_embed(vault, &page_path, index, forcar, |data| match data {
                 EmbedData::Kanban(d) => {
                     if !d.columns.iter().any(|c| c == &column) {
                         return Err(format!(
@@ -646,7 +733,7 @@ fn run_embed(vault: &str, json: bool, action: EmbedCommand) -> Result<(), String
             })?;
         }
         EmbedCommand::AddRow { page_path, index, values } => {
-            mutate_embed(vault, &page_path, index, |data| match data {
+            mutate_embed(vault, &page_path, index, forcar, |data| match data {
                 EmbedData::Table(d) => {
                     let cells: Vec<String> =
                         values.split(',').map(|v| v.trim().to_string()).collect();
@@ -664,7 +751,7 @@ fn run_embed(vault: &str, json: bool, action: EmbedCommand) -> Result<(), String
             })?;
         }
         EmbedCommand::AddEvent { page_path, index, date, title } => {
-            mutate_embed(vault, &page_path, index, |data| match data {
+            mutate_embed(vault, &page_path, index, forcar, |data| match data {
                 EmbedData::Calendar(d) => {
                     d.add_entry(date.clone(), title.clone());
                     Ok(())
@@ -690,6 +777,7 @@ fn mutate_embed(
     vault: &str,
     page_path: &str,
     index: usize,
+    forcar: bool,
     f: impl FnOnce(&mut EmbedData) -> Result<(), String>,
 ) -> Result<(), String> {
     let mut doc = PageDoc::load(vault, page_path)?;
@@ -698,6 +786,9 @@ fn mutate_embed(
         unreachable!("posição veio de embed_at")
     };
     f(data)?;
+    // Depois da mutação e ANTES do save: é o estado que iria pro disco
+    // que precisa ser conferido, não o que estava lá antes.
+    conferir_antes_de_gravar(vault, data, forcar)?;
     doc.save(vault, page_path)
 }
 
