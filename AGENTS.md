@@ -43,6 +43,17 @@ cargo build --manifest-path src-tauri/Cargo.toml
 cd ui && trunk build
 ```
 
+Ciclo que mexe em UI roda também o harness (ciclo 177) — os bugs de
+DOM não aparecem no `cargo test`:
+
+```bash
+./scripts/dev.sh              # num terminal, deixa o app de pé
+node scripts/uitest/run.mjs   # noutro; sai != 0 se algo quebrou
+```
+
+Regressão nova encontrada ao validar vira cenário em
+`scripts/uitest/cenarios.mjs`, junto do número do ciclo onde apareceu.
+
 ## Design system
 
 Ver `docs/design-system.md` para tokens, convenções BEM e templates.
