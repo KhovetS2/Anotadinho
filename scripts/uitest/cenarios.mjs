@@ -854,6 +854,14 @@ cenarios.push({
     })()`);
     await ctx.esperar(bridge, "document.querySelector('.slash-menu')", "o menu / abrir junto");
 
+    // Ciclo 185: idem pro bloco de texto — foi aqui que o retângulo azul
+    // apareceu preso na captura do usuário.
+    ctx.assertEq(
+      await bridge.js(`document.querySelectorAll('.nav-mode__item-active').length`),
+      0,
+      "o destaque do nav-mode devia ter saído ao entrar em digitação",
+    );
+
     // O menu traz tudo que o `/` traz — inclusive os embeds.
     const itens = await bridge.js(
       `[...document.querySelectorAll('.slash-menu__item-label')].map(e => e.textContent)`,
@@ -899,6 +907,14 @@ cenarios.push({
       return true;
     })()`);
     await ctx.esperar(bridge, "document.querySelector('.slash-menu')", "o menu / abrir a partir do embed");
+
+    // Ciclo 185: abrir o bloco novo ENCERRA a sessão de nav-mode — o
+    // destaque azul não pode ficar aceso no bloco de origem.
+    ctx.assertEq(
+      await bridge.js(`document.querySelectorAll('.nav-mode__item-active').length`),
+      0,
+      "o destaque do nav-mode devia ter saído ao entrar em digitação",
+    );
 
     // 2) Escape cancela: fecha o menu E não deixa o "/" no texto.
     await bridge.js(`(() => {

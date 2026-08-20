@@ -54,6 +54,7 @@ pub struct PageViewProps {
     /// Abre a navegação por blocos (ciclo 174) — repassado ao `Editor`.
     #[prop_or_default]
     pub on_enter_block_nav: Callback<()>,
+    pub on_leave_block_nav: Callback<()>,
 }
 
 #[function_component(PageView)]
@@ -184,6 +185,7 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 on_search={props.on_search.clone()}
                 vault_version={props.vault_version}
                 on_enter_block_nav={props.on_enter_block_nav.clone()}
+                on_leave_block_nav={props.on_leave_block_nav.clone()}
             />
         },
     }

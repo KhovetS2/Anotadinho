@@ -66,6 +66,9 @@ pub struct EditorProps {
     /// (ciclo 174) — o editor pede isso quando o Escape sobe do texto.
     #[prop_or_default]
     pub on_enter_block_nav: Callback<()>,
+    /// O inverso do `on_enter_block_nav`: encerra a sessão de nav-mode
+    /// porque o editor acabou de entrar em digitação (ciclo 185).
+    pub on_leave_block_nav: Callback<()>,
 }
 
 /// Um item do menu `/`. `action` é ou HTML pra inserir no cursor, ou
@@ -1228,6 +1231,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let editor_ref_vim = editor_ref.clone();
         let segment_refs_vim = segment_refs.clone();
         let on_enter_blocos = props.on_enter_block_nav.clone();
+        let on_sair_blocos = props.on_leave_block_nav.clone();
         let content_md_esc = content_md.clone();
         let editor_ref_esc = editor_ref.clone();
         let segment_refs_esc = segment_refs.clone();
@@ -1439,6 +1443,12 @@ pub fn editor(props: &EditorProps) -> Html {
                     e.prevent_default();
                     e.stop_propagation();
                     if entrar_no_bloco(&bloco) {
+                        // A sessão de nav-mode acaba aqui — daqui pra
+                        // frente é digitação (ciclo 185). Sem isso o
+                        // bloco de ORIGEM ficava com o destaque azul
+                        // aceso e as setas continuavam pulando de bloco
+                        // em vez de andar no texto.
+                        sair_do_nav_mode(&on_sair_blocos);
                         if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
                             exec_cmd(&doc, "insertParagraph", "");
                             exec_cmd(&doc, "insertText", "/");
@@ -1689,6 +1699,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let content_md = content_md.clone();
         let frontmatter_text = frontmatter_text.clone();
         let mark_edited = mark_edited.clone();
+        let on_sair_blocos = props.on_leave_block_nav.clone();
         Callback::from(move |e: KeyboardEvent| {
             if e.key() != "n" || e.ctrl_key() || e.meta_key() || e.alt_key() {
                 return;
@@ -1696,6 +1707,7 @@ pub fn editor(props: &EditorProps) -> Html {
             let Some(pos) = segmento_do_embed_focado() else { return };
             e.prevent_default();
             e.stop_propagation();
+            sair_do_nav_mode(&on_sair_blocos);
             inserir_segmento_e_abrir_menu(pos + 1, &content_md, &frontmatter_text, &mark_edited);
         })
     };
@@ -3256,6 +3268,20 @@ fn segmento_do_embed_focado() -> Option<usize> {
         .strip_prefix("embed-")?
         .parse()
         .ok()
+}
+
+/// Encerra a sessão de nav-mode porque o editor entrou em digitação
+/// (ciclo 185).
+///
+/// São duas coisas separadas e as DUAS precisam acontecer: apagar o
+/// destaque do item (mora no DOM, gerenciado por `nav_mode::focus_item`)
+/// e derrubar o estado em `app.rs` (que é quem decide se as setas andam
+/// entre blocos ou dentro do texto). Fazer só a primeira deixava as
+/// setas presas na navegação; só a segunda deixava o retângulo azul
+/// aceso no bloco de origem.
+fn sair_do_nav_mode(on_sair: &Callback<()>) {
+    crate::nav_mode::clear_item_highlight();
+    on_sair.emit(());
 }
 
 /// Insere um segmento de markdown vazio na posição `pos` e abre o menu

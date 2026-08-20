@@ -1271,6 +1271,14 @@ pub fn app() -> Html {
                                         nav_stack.set(vec![crate::nav_mode::GRUPO_BLOCOS.to_string()]);
                                     })
                                 }}
+                                on_leave_block_nav={{
+                                    let nav_mode_active = nav_mode_active.clone();
+                                    let nav_stack = nav_stack.clone();
+                                    Callback::from(move |_: ()| {
+                                        nav_mode_active.set(false);
+                                        nav_stack.set(Vec::new());
+                                    })
+                                }}
                                 on_search={{
                                     let palette_open = palette_open.clone();
                                     let palette_query = palette_query.clone();
