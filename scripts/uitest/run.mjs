@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { Bridge, esperar, abrirPagina } from "./bridge.mjs";
 import { cenarios } from "./cenarios.mjs";
+import { conferirSnapshots } from "./snapshot.mjs";
 
 const VAULT = process.env.ANOTADINHO_VAULT || "VaultAnotadinho";
 /// Página de rascunho dos testes — criada e apagada por eles, pra nunca
@@ -55,7 +56,7 @@ ctx.assert = assert;
 ctx.assertEq = assertEq;
 
 const filtro = process.argv[2];
-const selecionados = filtro
+let selecionados = filtro
   ? cenarios.filter((c) => c.nome.toLowerCase().includes(filtro.toLowerCase()))
   : cenarios;
 
@@ -85,6 +86,32 @@ for (const cenario of selecionados) {
   } finally {
     ctx.apagar();
   }
+}
+
+// Snapshot visual dos embeds (ciclo 187) — entra como um cenário a mais
+// pra `run.mjs` continuar sendo o comando único de "está tudo certo?".
+// `--sem-snapshot` pula (útil quando você está no meio de um redesenho e
+// ainda não quer regravar a baseline).
+if (!filtro && !process.argv.includes("--sem-snapshot")) {
+  const t0 = Date.now();
+  try {
+    const resultados = await conferirSnapshots(bridge);
+    const ruins = resultados.filter((r) => r.problemas.length);
+    if (ruins.length) {
+      throw new Error(
+        ruins
+          .map((r) => `${r.tipo}:\n    ${r.problemas.join("\n    ")}`)
+          .join("\n  "),
+      );
+    }
+    passaram++;
+    console.log(`  ✓ snapshot visual dos ${resultados.length} embeds (187) (${Date.now() - t0}ms)`);
+  } catch (e) {
+    falharam.push({ nome: "snapshot visual dos embeds (187)", erro: e.message });
+    console.log(`  ✗ snapshot visual dos embeds (187) (${Date.now() - t0}ms)`);
+    console.log(`      ${e.message.replace(/\n/g, "\n      ")}`);
+  }
+  selecionados.push({ nome: "snapshot visual dos embeds (187)" });
 }
 
 bridge.fechar();

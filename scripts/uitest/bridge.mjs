@@ -78,6 +78,34 @@ export class Bridge {
     });
   }
 
+  /// Comando cru do bridge — `js()` é açúcar em cima deste.
+  comando(command, args = {}) {
+    const id = String(this.#proximoId++);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.#pendentes.delete(id);
+        reject(new Error(`timeout de ${TIMEOUT_MS}ms no comando ${command}`));
+      }, TIMEOUT_MS);
+      this.#pendentes.set(id, {
+        resolve: (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+        reject: (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
+      });
+      this.#ws.send(JSON.stringify({ id, command, args }));
+    });
+  }
+
+  /// Fixa o tamanho da janela — a impressão digital do ciclo 187 tem
+  /// geometria dentro, então a largura precisa ser a mesma sempre.
+  redimensionar(width, height) {
+    return this.comando("resize_window", { width, height, logical: true });
+  }
+
   fechar() {
     this.#ws?.close();
   }

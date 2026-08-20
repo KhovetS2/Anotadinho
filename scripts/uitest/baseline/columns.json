@@ -1,0 +1,222 @@
+{
+  "columns-embed": {
+    "estilos": {
+      "background-color": "rgba(0, 0, 0, 0)",
+      "border-radius": "0px",
+      "border-top-color": "rgb(228, 232, 245)",
+      "border-top-width": "0px",
+      "color": "rgb(228, 232, 245)",
+      "display": "block",
+      "flex-direction": "row",
+      "font-size": "15px",
+      "font-weight": "400",
+      "gap": "normal",
+      "grid-template-columns": "none",
+      "margin-top": "16px",
+      "opacity": "1",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-top": "0px",
+      "text-align": "start"
+    },
+    "n": 1
+  },
+  "columns-embed__add": {
+    "estilos": {
+      "background-color": "rgba(0, 0, 0, 0)",
+      "border-radius": "4px",
+      "border-top-color": "rgb(61, 64, 79)",
+      "border-top-width": "1px",
+      "color": "rgb(152, 158, 183)",
+      "display": "inline-block",
+      "flex-direction": "row",
+      "font-size": "12px",
+      "font-weight": "400",
+      "gap": "normal",
+      "grid-template-columns": "none",
+      "margin-top": "8px",
+      "opacity": "1",
+      "overflow-x": "visible",
+      "padding-left": "12px",
+      "padding-top": "4px",
+      "text-align": "center"
+    },
+    "n": 1
+  },
+  "columns-embed__btn": {
+    "estilos": {
+      "background-color": "rgba(0, 0, 0, 0)",
+      "border-radius": "4px",
+      "border-top-color": "rgb(152, 158, 183)",
+      "border-top-width": "0px",
+      "color": "rgb(152, 158, 183)",
+      "display": "flex",
+      "flex-direction": "row",
+      "font-size": "14px",
+      "font-weight": "400",
+      "gap": "normal",
+      "grid-template-columns": "none",
+      "margin-top": "0px",
+      "opacity": "1",
+      "overflow-x": "visible",
+      "padding-left": "4px",
+      "padding-top": "4px",
+      "text-align": "center"
+    },
+    "n": 4
+  },
+  "columns-embed__btn.columns-embed__btn--danger": {
+    "estilos": {
+      "background-color": "rgba(0, 0, 0, 0)",
+      "border-radius": "4px",
+      "border-top-color": "rgb(152, 158, 183)",
+      "border-top-width": "0px",
+      "color": "rgb(152, 158, 183)",
+      "display": "flex",
+      "flex-direction": "row",
+      "font-size": "14px",
+      "font-weight": "400",
+      "gap": "normal",
+      "grid-template-columns": "none",
+      "margin-top": "0px",
+      "opacity": "1",
+      "overflow-x": "visible",
+      "padding-left": "4px",
+      "padding-top": "4px",
+      "text-align": "center"
+    },
+    "n": 2
+  },
+  "columns-embed__grid": {
+    "estilos": {
+      "background-color": "rgba(0, 0, 0, 0)",
+      "border-radius": "0px",
+      "border-top-color": "rgb(228, 232, 245)",
+      "border-top-width": "0px",
+      "color": "rgb(228, 232, 245)",
+      "display": "grid",
+      "flex-direction": "row",
+      "font-size": "15px",
+      "font-weight": "400",
+      "gap": "16px",
+      "grid-template-columns": "455.65625px 911.34375px",
+      "margin-top": "0px",
+      "opacity": "1",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-top": "0px",
+      "text-align": "start"
+    },
+    "n": 1
+  },
+  "columns-embed__pane": {
+    "estilos": {
+      "background-color": "rgba(0, 0, 0, 0)",
+      "border-radius": "8px",
+      "border-top-color": "rgba(0, 0, 0, 0)",
+      "border-top-width": "1px",
+      "color": "rgb(228, 232, 245)",
+      "display": "block",
+      "flex-direction": "row",
+      "font-size": "15px",
+      "font-weight": "400",
+      "gap": "normal",
+      "grid-template-columns": "none",
+      "margin-top": "0px",
+      "opacity": "1",
+      "overflow-x": "visible",
+      "padding-left": "4px",
+      "padding-top": "4px",
+      "text-align": "start"
+    },
+    "n": 2
+  },
+  "columns-embed__pane-bar": {
+    "estilos": {
+      "background-color": "rgba(0, 0, 0, 0)",
+      "border-radius": "0px",
+      "border-top-color": "rgb(228, 232, 245)",
+      "border-top-width": "0px",
+      "color": "rgb(228, 232, 245)",
+      "display": "flex",
+      "flex-direction": "row",
+      "font-size": "15px",
+      "font-weight": "400",
+      "gap": "4px",
+      "grid-template-columns": "none",
+      "margin-top": "0px",
+      "opacity": "0",
+      "overflow-x": "visible",
+      "padding-left": "0px",
+      "padding-top": "0px",
+      "text-align": "start"
+    },
+    "n": 2
+  },
+  "columns-embed__width": {
+    "estilos": {
+      "background-color": "rgba(0, 0, 0, 0)",
+      "border-radius": "0px",
+      "border-top-color": "rgb(152, 158, 183)",
+      "border-top-width": "0px",
+      "color": "rgb(152, 158, 183)",
+      "display": "block",
+      "flex-direction": "row",
+      "font-size": "11px",
+      "font-weight": "400",
+      "gap": "normal",
+      "grid-template-columns": "none",
+      "margin-top": "0px",
+      "opacity": "1",
+      "overflow-x": "visible",
+      "padding-left": "8px",
+      "padding-top": "0px",
+      "text-align": "start"
+    },
+    "n": 2
+  },
+  "embed-md": {
+    "estilos": {
+      "background-color": "rgba(0, 0, 0, 0)",
+      "border-radius": "4px",
+      "border-top-color": "rgba(0, 0, 0, 0)",
+      "border-top-width": "1px",
+      "color": "rgb(228, 232, 245)",
+      "display": "block",
+      "flex-direction": "row",
+      "font-size": "14px",
+      "font-weight": "400",
+      "gap": "normal",
+      "grid-template-columns": "none",
+      "margin-top": "0px",
+      "opacity": "1",
+      "overflow-x": "visible",
+      "padding-left": "8px",
+      "padding-top": "8px",
+      "text-align": "start"
+    },
+    "n": 2
+  },
+  "icon": {
+    "estilos": {
+      "background-color": "rgba(0, 0, 0, 0)",
+      "border-radius": "0px",
+      "border-top-color": "rgb(152, 158, 183)",
+      "border-top-width": "0px",
+      "color": "rgb(152, 158, 183)",
+      "display": "block",
+      "flex-direction": "row",
+      "font-size": "14px",
+      "font-weight": "400",
+      "gap": "normal",
+      "grid-template-columns": "none",
+      "margin-top": "0px",
+      "opacity": "1",
+      "overflow-x": "hidden",
+      "padding-left": "0px",
+      "padding-top": "0px",
+      "text-align": "center"
+    },
+    "n": 6
+  }
+}
