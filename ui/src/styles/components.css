@@ -842,3 +842,36 @@
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Alvo vindo da busca (ciclo 188): o embed que contém o registro
+   encontrado pisca por alguns segundos. É destaque de LEITURA — não
+   rouba o foco de quem continuou digitando na caixa de busca. */
+.busca-alvo {
+  animation: busca-alvo-pulso 2.6s ease-out;
+  border-radius: var(--r-md);
+}
+
+@keyframes busca-alvo-pulso {
+  0%, 55% {
+    box-shadow: 0 0 0 3px var(--accent-blue),
+                0 0 24px color-mix(in srgb, var(--accent-blue) 55%, transparent);
+    background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background: transparent;
+  }
+}
+
+/* Origem do resultado de busca ("Kanban · coluna Backlog") — diz o que
+   o trecho é, em vez de deixar a pessoa adivinhar por um pedaço de YAML. */
+.sidebar-item__origem,
+.command-palette__item-origem {
+  display: block;
+  /* Mesmo tamanho do `.sidebar-item__excerpt` logo abaixo — este é um
+     rótulo do resultado, não um título. */
+  font-size: 0.6875rem;
+  color: var(--accent-blue);
+  opacity: 0.85;
+  margin-bottom: 2px;
+}

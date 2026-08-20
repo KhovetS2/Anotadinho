@@ -534,7 +534,10 @@ pub async fn delete_asset(vault_path: &str, asset_path: &str) -> Result<(), Stri
 }
 
 /// Busca texto no conteúdo de todas as páginas.
-pub async fn search_content(vault_path: &str, query: &str) -> Result<Vec<(String, String)>, String> {
+pub async fn search_content(
+    vault_path: &str,
+    query: &str,
+) -> Result<Vec<anotadinho_core::embed::SearchHit>, String> {
     let args = js_sys::Object::new();
     js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
         .map_err(|e| format!("{:?}", e))?;

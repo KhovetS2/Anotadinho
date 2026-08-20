@@ -1000,3 +1000,58 @@ cenarios.push({
     );
   },
 });
+
+// ── ciclo 188: busca que enxerga dentro dos embeds ───────────────────
+
+cenarios.push({
+  nome: "busca: resultado de dentro de embed diz o tipo e leva até ele (188)",
+  async fn(bridge, ctx) {
+    ctx.escrever(
+      '---\ntitle: __uitest\n---\ntexto solto sem o termo\n\n' +
+        '{{ type: "kanban" }}\ncolumns:\n- Backlog\n- Feito\nitems:\n' +
+        '- title: Zarabatana singular\n  column: Feito\n{{ /kanban }}\n',
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.embed-kanban')", "o kanban renderizar");
+
+    // Busca pela sidebar por um termo que SÓ existe dentro do embed.
+    await bridge.js(`(() => {
+      const campo = document.querySelector('input[placeholder*="Buscar"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      campo.focus();
+      setter.call(campo, 'Zarabatana');
+      // InputEvent, e nao Event: o handler do Yew e Callback<InputEvent>
+      // e um Event simples nao chega nele.
+      campo.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      return true;
+    })()`);
+    await ctx.esperar(
+      bridge,
+      "document.querySelector('.sidebar-item__origem')",
+      "o resultado mostrar de que embed veio",
+    );
+
+    const origem = await bridge.js(`document.querySelector('.sidebar-item__origem').textContent`);
+    ctx.assert(
+      origem.includes("Kanban") && origem.includes("Feito"),
+      `a origem devia dizer o tipo e a coluna, veio: ${origem}`,
+    );
+
+    // Clicar leva até o embed e destaca.
+    await bridge.js(`(() => {
+      document.querySelector('.sidebar-item__origem').closest('.sidebar-item').click();
+      return true;
+    })()`);
+    await ctx.esperar(
+      bridge,
+      "document.querySelector('.busca-alvo')",
+      "o embed do resultado ser destacado",
+    );
+    ctx.assertEq(
+      await bridge.js(`document.querySelector('.busca-alvo').classList.contains('embed-kanban')`),
+      true,
+      "o destaque devia estar no kanban",
+    );
+  },
+});

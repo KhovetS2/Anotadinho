@@ -334,7 +334,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
     };
 
     // Content search results
-    let content_results = use_state(Vec::<(String, String)>::new);
+    let content_results = use_state(Vec::<anotadinho_core::embed::SearchHit>::new);
     let searching = use_state(|| false);
     {
         let vault_path = props.vault_path.clone();
@@ -722,7 +722,12 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         }
     };
 
-    let has_results = !all_pages.is_empty() || filter.is_empty();
+    // Os resultados de CONTEÚDO contam (ciclo 188). Sem isso a sidebar
+    // caía em "Nenhum resultado" sempre que nenhum TÍTULO casava — ou
+    // seja, exatamente no caso em que a busca por conteúdo é a única
+    // que tem algo a dizer, e a seção de resultados nunca chegava a ser
+    // renderizada.
+    let has_results = !all_pages.is_empty() || !content_results.is_empty() || filter.is_empty();
 
     html! {
         <aside class={ if props.collapsed { "app-sidebar app-sidebar--collapsed" } else { "app-sidebar" } }
@@ -777,23 +782,44 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                     <div class="sidebar-section">
                         <h3 class="sidebar-section__title">{ format!("Resultados ({})", content_results.len()) }</h3>
                         <ul class="sidebar-list">
-                            { for content_results.iter().map(|(path, excerpt)| {
-                                let path = path.clone();
-                                let excerpt = excerpt.clone();
+                            { for content_results.iter().map(|hit| {
+                                let path = hit.path.clone();
+                                let excerpt = hit.snippet.clone();
+                                let origem = hit.origem.clone();
+                                let ancora = hit.ancora.clone();
                                 let title = std::path::Path::new(&path).file_stem()
                                     .map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
                                 let page_meta = PageMeta { path: path.clone(), title: title.clone(), section: "pages".to_string() };
                                 let on_page_selected = props.on_page_selected.clone();
                                 let selected_path = selected_path.clone();
                                 let onclick = Callback::from(move |_| {
+                                    // Página DIFERENTE da aberta: guarda o
+                                    // alvo e quem revela é o editor, quando
+                                    // terminar de renderizar (ciclo 188) —
+                                    // a página nem começou a carregar neste
+                                    // instante.
+                                    //
+                                    // MESMA página já aberta: o editor não
+                                    // re-renderiza, então ninguém
+                                    // consumiria o alvo. Aqui a rolagem é
+                                    // feita direto.
+                                    let ja_aberta = selected_path.as_deref() == Some(path.as_str());
                                     selected_path.set(Some(path.clone()));
                                     on_page_selected.emit(page_meta.clone());
+                                    match (ja_aberta, ancora.clone()) {
+                                        (true, Some(a)) => crate::nav_mode::revelar_alvo_de_busca(&a),
+                                        (false, a) => crate::nav_mode::marcar_alvo_de_busca(a.as_deref()),
+                                        _ => {}
+                                    }
                                 });
                                 html! {
                                     <li class="sidebar-item" {onclick}>
                                         <span class="sidebar-item__icon"><Icon name={page_icon("search")} /></span>
                                         <div class="sidebar-item__result">
                                             <span class="sidebar-item__title">{ &title }</span>
+                                            if let Some(origem) = &origem {
+                                                <span class="sidebar-item__origem">{ origem }</span>
+                                            }
                                             <span class="sidebar-item__excerpt">{ render_excerpt_highlight(&excerpt) }</span>
                                         </div>
                                     </li>

@@ -58,7 +58,9 @@ enum Item {
     Page(PageMeta),
     /// Resultado de busca de CONTEÚDO (não só título) — página + trecho
     /// com o termo destacado, via `search_content` (ciclo 094 FTS5).
-    ContentResult(PageMeta, String),
+    /// Desde o ciclo 188 carrega junto o `SearchHit` inteiro, que pode
+    /// dizer de qual embed o trecho veio e apontar pra ele.
+    ContentResult(PageMeta, anotadinho_core::embed::SearchHit),
 }
 
 /// Props da `CommandPalette`.
@@ -90,7 +92,7 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
     });
     let idx = use_state(|| 0usize);
     let pages = use_state(Vec::<PageMeta>::new);
-    let content_results = use_state(Vec::<(String, String)>::new);
+    let content_results = use_state(Vec::<anotadinho_core::embed::SearchHit>::new);
     let input_ref = use_node_ref();
     // Ref do item ATIVO — mesmo padrão da sidebar (ciclo 106): um só
     // `NodeRef`, reatribuído a cada render pro item que estiver
@@ -178,15 +180,15 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
         v.extend(title_matches.iter().cloned().map(Item::Page));
         // Resultados de conteúdo: só páginas que NÃO já apareceram por
         // título (evita listar a mesma página duas vezes).
-        v.extend(content_results.iter().filter_map(|(path, excerpt)| {
-            if title_matches.iter().any(|p| &p.path == path) {
+        v.extend(content_results.iter().filter_map(|hit| {
+            if title_matches.iter().any(|p| p.path == hit.path) {
                 return None;
             }
-            let title = std::path::Path::new(path).file_stem()
+            let title = std::path::Path::new(&hit.path).file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
-            let meta = PageMeta { path: path.clone(), title, section: "pages".to_string() };
-            Some(Item::ContentResult(meta, excerpt.clone()))
+            let meta = PageMeta { path: hit.path.clone(), title, section: "pages".to_string() };
+            Some(Item::ContentResult(meta, hit.clone()))
         }));
         v
     };
@@ -206,7 +208,10 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
                 match item.clone() {
                     Item::Command(_, action) => on_action.emit(action),
                     Item::Page(meta) => on_page_selected.emit(meta),
-                    Item::ContentResult(meta, _) => on_page_selected.emit(meta),
+                    Item::ContentResult(meta, hit) => {
+                        crate::nav_mode::marcar_alvo_de_busca(hit.ancora.as_deref());
+                        on_page_selected.emit(meta);
+                    }
                 }
             }
             on_close.emit(());
@@ -288,12 +293,15 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
                                                 <span class="command-palette__item-title">{ &meta.title }</span>
                                             </div>
                                         },
-                                        Item::ContentResult(meta, excerpt) => html! {
+                                        Item::ContentResult(meta, hit) => html! {
                                             <div {class} ref={node_ref} {onmousedown} {onclick}>
                                                 <span class="command-palette__item-icon"><Icon name="file-text" /></span>
                                                 <div class="command-palette__item-result">
                                                     <span class="command-palette__item-title">{ &meta.title }</span>
-                                                    <span class="command-palette__item-excerpt">{ render_excerpt_highlight(excerpt) }</span>
+                                                    if let Some(origem) = &hit.origem {
+                                                        <span class="command-palette__item-origem">{ origem }</span>
+                                                    }
+                                                    <span class="command-palette__item-excerpt">{ render_excerpt_highlight(&hit.snippet) }</span>
                                                 </div>
                                             </div>
                                         },

@@ -401,22 +401,65 @@ pub fn handle_copy_to_assets(vault_path: String, source_path: String) -> Result<
 }
 
 /// Handler de search_content: busca texto no conteúdo das páginas.
+///
+/// Cada página entra no índice duas vezes por natureza (ciclo 188): o
+/// markdown solto como um documento, e cada REGISTRO de dentro dos
+/// embeds como um documento próprio. Sem isso, procurar "Tarefa 2"
+/// casava com a linha `- title: Tarefa 2` do YAML cru — abria a página
+/// certa, mas sem dizer que aquilo era um card nem em que coluna.
 pub fn handle_search_content(
     vault_path: String,
     query: String,
-) -> Result<Vec<(String, String)>, String> {
+) -> Result<Vec<anotadinho_core::embed::SearchHit>, String> {
     let vault = VaultIo::open(&vault_path);
     let pages = vault.list_pages().map_err(|e| e.to_string())?;
     let mut index = SearchIndex::new().map_err(|e| e.to_string())?;
     for page in &pages {
-        if let Ok(content) = vault.read_page(&page.path) {
-            index
-                .index_page(&page.path, &page.title, &content)
-                .map_err(|e| e.to_string())?;
+        let Ok(content) = vault.read_page(&page.path) else { continue };
+        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&content);
+        let segmentos = anotadinho_core::embed::segment(corpo);
+
+        // O markdown solto — sem o YAML dos embeds, que agora é indexado
+        // de forma estruturada. Deixar os dois faria cada card aparecer
+        // duas vezes na mesma busca.
+        let texto_solto: String = segmentos
+            .iter()
+            .filter_map(|seg| match seg {
+                anotadinho_core::embed::DocSegment::Markdown(md) => Some(md.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        index
+            .index_page(&page.path, &page.title, &texto_solto)
+            .map_err(|e| e.to_string())?;
+
+        for (i, seg) in segmentos.iter().enumerate() {
+            let anotadinho_core::embed::DocSegment::Embed(data) = seg else { continue };
+            for hit in data.search_entries() {
+                let origem = format!("{} · {}", hit.kind.label(), hit.contexto);
+                index
+                    .index_embed_entry(
+                        &page.path,
+                        &page.title,
+                        &hit.texto,
+                        &origem,
+                        &format!("{i}:{}", hit.indice),
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
         }
     }
     let results = index.search(&query, 20).map_err(|e| e.to_string())?;
-    Ok(results.into_iter().map(|r| (r.page_path, r.snippet)).collect())
+    Ok(results
+        .into_iter()
+        .map(|r| anotadinho_core::embed::SearchHit {
+            path: r.page_path,
+            snippet: r.snippet,
+            origem: r.origem,
+            ancora: r.ancora,
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -549,5 +592,65 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("pages")).unwrap();
         let entries = handle_scan_vault(dir.path().to_string_lossy().to_string()).unwrap();
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn busca_acha_card_de_embed_com_origem_e_ancora() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        std::fs::write(
+            dir.path().join("pages/board.md"),
+            "---\ntitle: Board\n---\n\ntexto solto\n\n{{ type: \"kanban\" }}\ncolumns:\n- Backlog\nitems:\n- title: Zarabatana\n  column: Backlog\n{{ /kanban }}\n",
+        )
+        .unwrap();
+
+        let r = handle_search_content(
+            dir.path().to_string_lossy().to_string(),
+            "Zarabatana".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(r.len(), 1, "devia achar UMA vez, não uma pelo YAML e outra pelo registro: {r:?}");
+        assert_eq!(r[0].path, "pages/board.md");
+        assert_eq!(r[0].origem.as_deref(), Some("Kanban · coluna Backlog"));
+        assert_eq!(r[0].ancora.as_deref(), Some("1:0"));
+    }
+
+    #[test]
+    fn busca_em_texto_solto_nao_ganha_origem() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        std::fs::write(
+            dir.path().join("pages/nota.md"),
+            "---\ntitle: Nota\n---\n\numa palavra rarissima aqui\n",
+        )
+        .unwrap();
+        let r = handle_search_content(
+            dir.path().to_string_lossy().to_string(),
+            "rarissima".to_string(),
+        )
+        .unwrap();
+        assert_eq!(r.len(), 1);
+        assert!(r[0].origem.is_none(), "texto solto não vem de embed nenhum");
+        assert!(r[0].ancora.is_none());
+    }
+
+    #[test]
+    fn nome_de_campo_do_yaml_nao_casa_mais() {
+        // O YAML cru saiu do índice: buscar "column" não pode achar
+        // todo board do vault.
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        std::fs::write(
+            dir.path().join("pages/board.md"),
+            "---\ntitle: Board\n---\n\n{{ type: \"kanban\" }}\ncolumns:\n- Backlog\nitems:\n- title: Um card\n  column: Backlog\n{{ /kanban }}\n",
+        )
+        .unwrap();
+        let r = handle_search_content(
+            dir.path().to_string_lossy().to_string(),
+            "column".to_string(),
+        )
+        .unwrap();
+        assert!(r.is_empty(), "nome de campo do YAML não é conteúdo: {r:?}");
     }
 }

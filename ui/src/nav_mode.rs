@@ -222,3 +222,53 @@ mod tests {
         );
     }
 }
+
+// ── alvo de busca (ciclo 188) ────────────────────────────────────────
+
+thread_local! {
+    /// Registro que a busca deixa pra o editor ler quando terminar de
+    /// renderizar a página.
+    ///
+    /// Um `thread_local` e não uma prop porque quem grava (sidebar,
+    /// paleta) e quem lê (editor) não têm relação de pai/filho, e o
+    /// valor precisa sobreviver ao intervalo entre o clique e o fim do
+    /// carregamento da página — que é assíncrono e passa por vários
+    /// re-renders. WASM é single-thread, então não há disputa aqui.
+    static ALVO_DE_BUSCA: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Guarda a âncora (`"<segmento>:<registro>"`) do resultado clicado.
+/// `None` limpa — resultado de texto solto não tem pra onde levar.
+pub fn marcar_alvo_de_busca(ancora: Option<&str>) {
+    ALVO_DE_BUSCA.with(|a| *a.borrow_mut() = ancora.map(str::to_string));
+}
+
+/// Consome o alvo pendente. Consumir (e não só ler) é de propósito: o
+/// destaque acontece UMA vez, não a cada re-render da mesma página.
+pub fn tomar_alvo_de_busca() -> Option<String> {
+    ALVO_DE_BUSCA.with(|a| a.borrow_mut().take())
+}
+
+/// Rola até o embed do alvo e o destaca por alguns segundos.
+///
+/// O destaque é uma classe com animação de CSS, não foco: a pessoa veio
+/// da busca pra LER, e roubar o foco atrapalharia quem continuou
+/// digitando na caixa de busca.
+pub fn revelar_alvo_de_busca(ancora: &str) {
+    let Some((seg, _registro)) = ancora.split_once(':') else { return };
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return };
+    let Ok(Some(el)) = doc.query_selector(&format!("[data-nav-group=\"embed-{seg}\"]")) else {
+        return;
+    };
+    let _ = el.class_list().add_1("busca-alvo");
+    let opts = web_sys::ScrollIntoViewOptions::new();
+    opts.set_block(web_sys::ScrollLogicalPosition::Center);
+    el.scroll_into_view_with_scroll_into_view_options(&opts);
+
+    let el = el.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        gloo_timers::future::sleep(std::time::Duration::from_millis(2600)).await;
+        let _ = el.class_list().remove_1("busca-alvo");
+    });
+}

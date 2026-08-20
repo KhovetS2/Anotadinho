@@ -504,6 +504,18 @@ pub fn editor(props: &EditorProps) -> Html {
                     });
                 }
                 init_highlight();
+
+                // Veio da busca com um alvo dentro de um embed (ciclo
+                // 188): rola até ele e destaca. Depois do
+                // `set_inner_html` mas com folga, porque os embeds são
+                // componentes Yew — eles não estão no DOM no instante
+                // em que este efeito roda.
+                if let Some(ancora) = crate::nav_mode::tomar_alvo_de_busca() {
+                    wasm_bindgen_futures::spawn_local(async move {
+                        gloo_timers::future::sleep(std::time::Duration::from_millis(260)).await;
+                        crate::nav_mode::revelar_alvo_de_busca(&ancora);
+                    });
+                }
             }
             || {}
         });
@@ -531,7 +543,8 @@ pub fn editor(props: &EditorProps) -> Html {
                         Ok(results) => {
                             let filtered: Vec<(String, String)> = results
                                 .into_iter()
-                                .filter(|(path, _)| path != &current_path)
+                                .filter(|hit| hit.path != current_path)
+                                .map(|hit| (hit.path, hit.snippet))
                                 .collect();
                             backlinks.set(filtered);
                         }

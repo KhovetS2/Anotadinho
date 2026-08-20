@@ -3409,3 +3409,23 @@ Acima do embed você pode ter texto normal. Abaixo também.
         assert_eq!(reparsed.items[0].column, "Doing");
     }
 }
+
+/// Um resultado de busca, já pronto pra mostrar (ciclo 188).
+///
+/// Mora no core porque é o contrato entre `crates/ipc` (quem monta) e a
+/// UI (quem desenha) — as duas dependem daqui, e nenhuma da outra.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SearchHit {
+    /// Página onde o resultado está.
+    pub path: String,
+    /// Trecho com o termo marcado por `**`.
+    pub snippet: String,
+    /// De onde veio, em texto pronto: `"card em Backlog"`, `"linha 2 de
+    /// tabela"`. `None` = texto solto da página.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origem: Option<String>,
+    /// `"<índice do segmento>:<índice do registro>"` — o bastante pra
+    /// rolar até o embed e destacá-lo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ancora: Option<String>,
+}

@@ -275,7 +275,10 @@ fn delete_asset(vault_path: String, asset_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn search_content(vault_path: String, query: String) -> Result<Vec<(String, String)>, String> {
+fn search_content(
+    vault_path: String,
+    query: String,
+) -> Result<Vec<anotadinho_core::embed::SearchHit>, String> {
     handle_search_content(vault_path, query)
 }
 

@@ -295,8 +295,14 @@ fn run(cli: Cli) -> Result<(), String> {
             if cli.json {
                 print_json(&results)?;
             } else {
-                for (path, snippet) in results {
-                    println!("{}\t{}", path, snippet);
+                for hit in results {
+                    // Resultado que veio de dentro de um embed diz o que
+                    // é ("Kanban · coluna Backlog") — no terminal o
+                    // agente vê a mesma coisa que a pessoa vê na janela.
+                    match hit.origem {
+                        Some(origem) => println!("{}\t[{}]\t{}", hit.path, origem, hit.snippet),
+                        None => println!("{}\t{}", hit.path, hit.snippet),
+                    }
                 }
             }
         }
