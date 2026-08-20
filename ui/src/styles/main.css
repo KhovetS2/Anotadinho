@@ -1568,6 +1568,34 @@ body {
     box-shadow: inset 0 0 0 2px var(--nav-mode-depth-color, var(--accent-blue));
 }
 
+/* Regiões de topo (header, sidebar, abas, editor) precisam de um
+   destaque DESENHADO POR CIMA (ciclo 178): elas são contêineres cujos
+   filhos têm fundo opaco e ocupam a caixa inteira, então tanto o
+   `background-color` quanto o `box-shadow: inset` acima ficam
+   escondidos atrás deles — o editor era a única região que não dava
+   sinal nenhum de estar selecionada.
+
+   O overlay é um `::after` (e não `outline`, que os filhos também
+   cobrem) restrito a `[data-nav-parent="root"]`: as quatro regiões são
+   contêineres de posição estática, então criar contexto de
+   posicionamento nelas é inofensivo. Item de dentro (card, barra do
+   cronograma) pode ser `position: absolute`, e aí mexer em `position`
+   quebraria o layout. */
+[data-nav-parent="root"].nav-mode__item-active {
+    position: relative;
+}
+
+[data-nav-parent="root"].nav-mode__item-active::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    pointer-events: none;
+    border: 2px solid var(--nav-mode-depth-color, var(--accent-blue));
+    border-radius: inherit;
+    background: color-mix(in srgb, var(--nav-mode-depth-color, var(--accent-blue)) 8%, transparent);
+}
+
 /* Mermaid diagrams */
 .editor__wysiwyg .mermaid {
     background: var(--bg-surface);
