@@ -233,7 +233,9 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
                 "ArrowDown" => { e.prevent_default(); if items_len > 0 { idx.set((*idx + 1) % items_len); } }
                 "ArrowUp" => { e.prevent_default(); if items_len > 0 { idx.set((*idx + items_len - 1) % items_len); } }
                 "Enter" => { e.prevent_default(); select_idx.emit(*idx); }
-                "Escape" => { e.prevent_default(); on_close.emit(()); }
+                // `stop_propagation`: o Escape chegava no handler global
+                // do `app.rs` e desselecionava a página junto (ciclo 161).
+                "Escape" => { e.prevent_default(); e.stop_propagation(); on_close.emit(()); }
                 _ => {}
             }
         })

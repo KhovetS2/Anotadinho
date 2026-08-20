@@ -97,12 +97,10 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                     EventListener::new(&window, "keydown", move |e| {
                         if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
                             match e.key().as_str() {
-                                "Escape" => {
-                                    git_popover_open.set(false);
-                                    if let Some(el) = git_popover_toggle_ref.cast::<web_sys::HtmlElement>() {
-                                        let _ = el.focus();
-                                    }
-                                }
+                                // Escape é tratado pelo `escape_consumer`
+                                // abaixo (ciclo 161) — aqui ele seguiria
+                                // até o `app.rs` e fecharia a página.
+                                "Escape" => {}
                                 "ArrowDown" => {
                                     e.prevent_default();
                                     crate::menu_keyboard::move_item_focus(&git_popover_content_ref, 1);
@@ -116,8 +114,19 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                         }
                     })
                 };
+                let escape = {
+                    let git_popover_open = git_popover_open.clone();
+                    let git_popover_toggle_ref = git_popover_toggle_ref.clone();
+                    crate::menu_keyboard::escape_consumer(move || {
+                        git_popover_open.set(false);
+                        if let Some(el) = git_popover_toggle_ref.cast::<web_sys::HtmlElement>() {
+                            let _ = el.focus();
+                        }
+                    })
+                };
                 listeners.push(close_on_outside);
                 listeners.push(close_on_escape);
+                listeners.push(escape);
             }
             move || drop(listeners)
         });
@@ -214,12 +223,10 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                     EventListener::new(&window, "keydown", move |e| {
                         if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
                             match e.key().as_str() {
-                                "Escape" => {
-                                    menu_open.set(false);
-                                    if let Some(el) = menu_toggle_ref.cast::<web_sys::HtmlElement>() {
-                                        let _ = el.focus();
-                                    }
-                                }
+                                // Escape é tratado pelo `escape_consumer`
+                                // abaixo (ciclo 161) — aqui ele seguiria
+                                // até o `app.rs` e fecharia a página.
+                                "Escape" => {}
                                 "ArrowDown" => {
                                     e.prevent_default();
                                     crate::menu_keyboard::move_item_focus(&menu_content_ref, 1);
@@ -233,8 +240,19 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                         }
                     })
                 };
+                let escape = {
+                    let menu_open = menu_open.clone();
+                    let menu_toggle_ref = menu_toggle_ref.clone();
+                    crate::menu_keyboard::escape_consumer(move || {
+                        menu_open.set(false);
+                        if let Some(el) = menu_toggle_ref.cast::<web_sys::HtmlElement>() {
+                            let _ = el.focus();
+                        }
+                    })
+                };
                 listeners.push(close_on_outside);
                 listeners.push(close_on_escape);
+                listeners.push(escape);
             }
             move || drop(listeners)
         });

@@ -1,7 +1,7 @@
 ---
 id: "161"
 titulo: "Escape em modal desseleciona a página aberta"
-status: pending
+status: done
 criado: 2026-08-19
 autor: agente
 prioridade: alta
@@ -28,17 +28,20 @@ Escape sem Ctrl.
 
 ## Critérios de aceite
 
-- [ ] `Modal` chama `e.stop_propagation()` no Escape (e no Tab, pelo
+- [x] `Modal` chama `e.stop_propagation()` no Escape (e no Tab, pelo
       mesmo motivo — o trap de foco não deveria disparar atalho global)
-- [ ] Com um modal aberto, Escape fecha SÓ o modal: a página continua
+- [x] Com um modal aberto, Escape fecha SÓ o modal: a página continua
       aberta e o editor continua no lugar
-- [ ] Sem modal aberto, Escape continua desselecionando a página
+- [x] Sem modal aberto, Escape continua desselecionando a página
       (comportamento existente, não é o alvo deste ciclo)
-- [ ] Auditar os outros modais/menus com Escape próprio pela mesma
-      falta de `stop_propagation`: `DialogHost`, painel de propriedades,
-      paleta de comandos, menu de slash, popup de wikilink, menus
-      dropdown (`menu_keyboard.rs`)
-- [ ] Validação ao vivo (MCP `tauri`): abrir o modal de configuração de
+- [x] Auditoria dos outros donos de Escape. Achado: o problema é MAIOR
+      que o modal — todo popup que fecha por listener de `window`
+      (seletor de data, de hora, popover de git, menu "⋯" do header e
+      do editor, menu de célula da tabela) deixava o Escape seguir pro
+      `app.rs`. Menu de slash, popup de wikilink e sidebar já
+      paravam a propagação (ciclos 073/082/140); paleta de comandos
+      não parava — corrigida
+- [x] Validação ao vivo (MCP `tauri`): abrir o modal de configuração de
       consulta, Escape, confirmar que a página segue aberta
 
 ## Comandos de validação
@@ -57,6 +60,24 @@ cargo build --manifest-path src-tauri/Cargo.toml
 - Refazer o trap de foco do ciclo 124
 
 ## Notas
+
+Duas correções, não uma:
+
+1. `Modal` (handler do Yew) ganhou `stop_propagation` no Escape e no
+   Tab.
+2. Popups que escutam `window` não conseguem parar nada — quando eles
+   rodam, o handler do `app.rs` já rodou. Ganharam
+   `menu_keyboard::escape_consumer`: listener na fase de CAPTURA da
+   `window`, que dispara ANTES do handler delegado do Yew e consome a
+   tecla. Efeito colateral bom: o popup mais interno ganha — um seletor
+   de data aberto DENTRO de um modal fecha só o seletor, sem levar o
+   modal junto (era o risco de simplesmente pôr `stop_propagation` no
+   `Modal`, e foi conferido ao vivo).
+
+Validação ao vivo (MCP `tauri`): modal de consulta, menu "⋯" do editor,
+paleta de comandos e seletor de data da tabela — todos fecham só a si
+mesmos, com a página continuando aberta. Sem nada aberto, Escape ainda
+desseleciona a página (comportamento existente, preservado).
 
 Achado durante a validação do ciclo 154, mas é anterior a ele — vale
 pra todo modal do app desde o ciclo 124. Virou task própria em vez de

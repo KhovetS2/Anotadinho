@@ -105,13 +105,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                 }));
 
                 let close_cell = open_cell_menu.clone();
-                listeners.push(EventListener::new(&window, "keydown", move |e| {
-                    if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
-                        if e.key() == "Escape" {
-                            close_cell.set(None);
-                        }
-                    }
-                }));
+                listeners.push(crate::menu_keyboard::escape_consumer(move || close_cell.set(None)));
             }
             move || drop(listeners)
         });

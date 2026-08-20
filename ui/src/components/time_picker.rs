@@ -48,14 +48,12 @@ pub fn time_picker(props: &TimePickerProps) -> Html {
                 }
             });
 
+            // Consome o Escape (ciclo 161): sem isso a tecla seguia até
+            // o handler global do `app.rs` e desselecionava a página —
+            // e, aberto DENTRO de um modal, o Escape fechava o modal
+            // inteiro em vez de só este seletor.
             let close_escape = on_close.clone();
-            let keydown = EventListener::new(&window, "keydown", move |e| {
-                if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
-                    if e.key() == "Escape" {
-                        close_escape.emit(());
-                    }
-                }
-            });
+            let keydown = crate::menu_keyboard::escape_consumer(move || close_escape.emit(()));
 
             move || {
                 drop(mousedown);

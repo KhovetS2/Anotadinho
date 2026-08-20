@@ -86,9 +86,19 @@ pub fn modal(props: &ModalProps) -> Html {
             match e.key().as_str() {
                 "Escape" => {
                     e.prevent_default();
+                    // Sem `stop_propagation` o Escape continuava subindo
+                    // até o handler global do `app.rs`, que desseleciona
+                    // a página aberta em qualquer Escape sem Ctrl:
+                    // fechar um modal fazia o editor sumir junto e virar
+                    // "Selecione uma página na sidebar", com a aba ainda
+                    // aberta (ciclo 161, achado ao validar o 154).
+                    e.stop_propagation();
                     close.emit(());
                 }
                 "Tab" => {
+                    // Mesma razão: o trap de foco é do modal, e Tab não
+                    // deveria acionar atalho nenhum de fora dele.
+                    e.stop_propagation();
                     let Some(container) = modal_ref.cast::<web_sys::Element>() else { return };
                     let Ok(list) = container.query_selector_all(FOCUSABLE_SELECTOR) else { return };
                     let len = list.length();

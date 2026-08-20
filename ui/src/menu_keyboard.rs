@@ -7,6 +7,7 @@
 //! tinha desde o ciclo 091: foco automático no primeiro item ao abrir,
 //! setas pra mover entre os itens.
 
+use gloo_events::{EventListener, EventListenerOptions};
 use wasm_bindgen::JsCast;
 
 /// Foca o primeiro `<button>` dentro do container referenciado — chamar
@@ -53,4 +54,41 @@ pub fn move_item_focus(container: &yew::NodeRef, direction: i32) {
             let _ = html_el.focus();
         }
     }
+}
+
+/// Listener de Escape que CONSOME a tecla: fecha o popup e não deixa
+/// ninguém mais ver o evento.
+///
+/// Existe por causa do bug do ciclo 161: `app.rs` desseleciona a página
+/// aberta em QUALQUER Escape sem Ctrl, então fechar um menu/popover
+/// fazia o editor sumir junto ("Selecione uma página na sidebar", com a
+/// aba ainda aberta). Quem abre um popup e trata Escape precisa
+/// consumir a tecla.
+///
+/// Roda na fase de CAPTURA na `window`, então dispara ANTES do handler
+/// delegado do Yew (que fica num elemento lá embaixo) — é isso que
+/// garante que o popup mais interno ganha: um seletor de data aberto
+/// DENTRO de um modal fecha só o seletor, sem levar o modal junto.
+///
+/// O `EventListener` devolvido tem que ser mantido vivo (guardar no
+/// cleanup do `use_effect_with`); ao ser dropado, o listener sai.
+pub fn escape_consumer<F: Fn() + 'static>(on_escape: F) -> EventListener {
+    let window = web_sys::window().expect("no global window");
+    EventListener::new_with_options(
+        &window,
+        "keydown",
+        EventListenerOptions {
+            phase: gloo_events::EventListenerPhase::Capture,
+            passive: false,
+        },
+        move |e| {
+            let Some(ke) = e.dyn_ref::<web_sys::KeyboardEvent>() else { return };
+            if ke.key() != "Escape" {
+                return;
+            }
+            e.stop_propagation();
+            e.prevent_default();
+            on_escape();
+        },
+    )
 }

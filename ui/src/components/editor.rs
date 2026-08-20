@@ -588,12 +588,10 @@ pub fn editor(props: &EditorProps) -> Html {
                     EventListener::new(&window, "keydown", move |e| {
                         if let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() {
                             match e.key().as_str() {
-                                "Escape" => {
-                                    editor_menu_open.set(false);
-                                    if let Some(el) = editor_menu_toggle_ref.cast::<web_sys::HtmlElement>() {
-                                        let _ = el.focus();
-                                    }
-                                }
+                                // Escape é tratado pelo `escape_consumer`
+                                // abaixo (ciclo 161) — aqui ele seguiria
+                                // até o `app.rs` e fecharia a página.
+                                "Escape" => {}
                                 "ArrowDown" => {
                                     e.prevent_default();
                                     crate::menu_keyboard::move_item_focus(&editor_menu_content_ref, 1);
@@ -607,8 +605,19 @@ pub fn editor(props: &EditorProps) -> Html {
                         }
                     })
                 };
+                let escape = {
+                    let editor_menu_open = editor_menu_open.clone();
+                    let editor_menu_toggle_ref = editor_menu_toggle_ref.clone();
+                    crate::menu_keyboard::escape_consumer(move || {
+                        editor_menu_open.set(false);
+                        if let Some(el) = editor_menu_toggle_ref.cast::<web_sys::HtmlElement>() {
+                            let _ = el.focus();
+                        }
+                    })
+                };
                 listeners.push(close_on_outside);
                 listeners.push(close_on_escape);
+                listeners.push(escape);
             }
             move || drop(listeners)
         });
