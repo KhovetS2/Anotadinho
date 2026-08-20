@@ -1831,8 +1831,304 @@ fn yaml_scalar(s: &str) -> String {
     }
 }
 
+/// Um registro pesquisável de dentro de um embed (ciclo 188).
+///
+/// Sem isso a busca via o YAML cru: procurar "Tarefa 2" achava a linha
+/// `- title: Tarefa 2` e abria a página, sem dizer que aquilo era um
+/// CARD, em que coluna ele estava, nem levar até ele.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EmbedHit {
+    /// Tipo do embed de onde o registro saiu.
+    pub kind: EmbedKind,
+    /// O que a pessoa provavelmente digitou pra achar — título do card,
+    /// primeira célula da linha, título do evento.
+    pub rotulo: String,
+    /// Onde ele está DENTRO do embed ("coluna Backlog", "12/08"). Vai
+    /// pro resultado da busca junto do tipo.
+    pub contexto: String,
+    /// Todo o texto do registro, incluindo o que não aparece no rótulo
+    /// (descrição, tags, checklist) — é isto que vai pro índice.
+    pub texto: String,
+    /// Posição do registro dentro do embed, pra o resultado poder
+    /// apontar pra ele.
+    pub indice: usize,
+}
+
+impl EmbedData {
+    /// Registros pesquisáveis deste embed.
+    ///
+    /// Um embed que não guarda REGISTROS (consulta, que é só a
+    /// definição de um filtro) devolve vazio: indexar a consulta em si
+    /// acharia a página pelo nome de um campo, o que não ajuda ninguém.
+    pub fn search_entries(&self) -> Vec<EmbedHit> {
+        let kind = self.kind();
+        match self {
+            Self::Kanban(d) => d
+                .items
+                .iter()
+                .enumerate()
+                .map(|(i, card)| {
+                    let mut texto = card.title.clone();
+                    if let Some(desc) = &card.description {
+                        texto.push(' ');
+                        texto.push_str(desc);
+                    }
+                    for t in &card.tags {
+                        texto.push(' ');
+                        texto.push_str(t);
+                    }
+                    for item in &card.checklist {
+                        texto.push(' ');
+                        texto.push_str(&item.text);
+                    }
+                    for c in &card.comments {
+                        texto.push(' ');
+                        texto.push_str(&c.text);
+                    }
+                    EmbedHit {
+                        kind,
+                        rotulo: card.title.clone(),
+                        contexto: format!("coluna {}", card.column),
+                        texto,
+                        indice: i,
+                    }
+                })
+                .collect(),
+            Self::Calendar(d) => d
+                .entries
+                .iter()
+                .enumerate()
+                .map(|(i, e)| {
+                    let mut texto = e.title.clone();
+                    for t in &e.tags {
+                        texto.push(' ');
+                        texto.push_str(t);
+                    }
+                    EmbedHit {
+                        kind,
+                        rotulo: e.title.clone(),
+                        contexto: e.date.clone().unwrap_or_else(|| "sem data".to_string()),
+                        texto,
+                        indice: i,
+                    }
+                })
+                .collect(),
+            Self::Table(d) => d
+                .rows
+                .iter()
+                .enumerate()
+                .map(|(i, linha)| EmbedHit {
+                    kind,
+                    rotulo: linha.first().cloned().unwrap_or_default(),
+                    contexto: format!("linha {}", i + 1),
+                    texto: linha.join(" "),
+                    indice: i,
+                })
+                .collect(),
+            Self::Callout(d) => vec![EmbedHit {
+                kind,
+                rotulo: d.title.clone(),
+                contexto: d.variant.label().to_string(),
+                texto: format!("{} {}", d.title, d.body),
+                indice: 0,
+            }],
+            Self::Columns(d) => d
+                .columns
+                .iter()
+                .enumerate()
+                .map(|(i, c)| EmbedHit {
+                    kind,
+                    rotulo: primeira_linha(&c.body),
+                    contexto: format!("coluna {}", i + 1),
+                    texto: c.body.clone(),
+                    indice: i,
+                })
+                .collect(),
+            Self::Gallery(d) => d
+                .items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| EmbedHit {
+                    kind,
+                    rotulo: if item.caption.is_empty() {
+                        item.path.clone()
+                    } else {
+                        item.caption.clone()
+                    },
+                    contexto: item.path.clone(),
+                    texto: format!("{} {}", item.caption, item.path),
+                    indice: i,
+                })
+                .collect(),
+            Self::Timeline(d) => d
+                .items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let mut texto = item.title.clone();
+                    for t in &item.tags {
+                        texto.push(' ');
+                        texto.push_str(t);
+                    }
+                    let contexto = match (&item.start, &item.end) {
+                        (Some(a), Some(b)) => format!("{a} a {b}"),
+                        (Some(a), None) => a.clone(),
+                        _ => "sem data".to_string(),
+                    };
+                    EmbedHit {
+                        kind,
+                        rotulo: item.title.clone(),
+                        contexto,
+                        texto,
+                        indice: i,
+                    }
+                })
+                .collect(),
+            Self::Actions(d) => d
+                .buttons
+                .iter()
+                .enumerate()
+                .map(|(i, b)| EmbedHit {
+                    kind,
+                    rotulo: b.label.clone(),
+                    contexto: b.action.clone(),
+                    texto: format!(
+                        "{} {} {}",
+                        b.label,
+                        b.action,
+                        b.path.clone().or_else(|| b.template.clone()).unwrap_or_default()
+                    ),
+                    indice: i,
+                })
+                .collect(),
+            // A consulta é um FILTRO, não um registro: indexá-la faria
+            // a página aparecer por causa do nome de um campo.
+            Self::Query(_) => Vec::new(),
+        }
+    }
+}
+
+/// Primeira linha não vazia de um markdown — o "título" de um painel de
+/// coluna, que não tem campo próprio pra isso.
+fn primeira_linha(md: &str) -> String {
+    md.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+        .trim_start_matches(['#', '-', '*', ' '])
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
+
+
+    // ── search_entries (ciclo 188) ────────────────────────────────
+
+    fn hits(raw: &str, kind: EmbedKind) -> Vec<EmbedHit> {
+        EmbedData::parse(kind, raw).search_entries()
+    }
+
+    #[test]
+    fn kanban_indexa_card_com_coluna_e_texto_escondido() {
+        let h = hits(
+            "columns:\n- Backlog\nitems:\n- title: Tarefa 2\n  column: Backlog\n  description: detalhe oculto\n  tags:\n  - urgente\n",
+            EmbedKind::Kanban,
+        );
+        assert_eq!(h.len(), 1);
+        assert_eq!(h[0].rotulo, "Tarefa 2");
+        assert_eq!(h[0].contexto, "coluna Backlog");
+        assert!(h[0].texto.contains("detalhe oculto"), "{}", h[0].texto);
+        assert!(h[0].texto.contains("urgente"), "{}", h[0].texto);
+    }
+
+    #[test]
+    fn tabela_indexa_linha_inteira_com_a_primeira_celula_de_rotulo() {
+        let h = hits(
+            "columns:\n- name: Tarefa\n- name: Status\n---\n| Tarefa | Status |\n| --- | --- |\n| API | done |\n",
+            EmbedKind::Table,
+        );
+        assert_eq!(h.len(), 1);
+        assert_eq!(h[0].rotulo, "API");
+        assert_eq!(h[0].contexto, "linha 1");
+        assert!(h[0].texto.contains("done"));
+    }
+
+    #[test]
+    fn calendario_usa_a_data_de_contexto() {
+        let h = hits(
+            "entries:\n- date: '2026-08-12'\n  title: Retrospectiva\n",
+            EmbedKind::Calendar,
+        );
+        assert_eq!(h[0].rotulo, "Retrospectiva");
+        assert_eq!(h[0].contexto, "2026-08-12");
+    }
+
+    #[test]
+    fn callout_indexa_titulo_e_corpo_juntos() {
+        let h = hits(
+            "variant: warning\ntitle: Atenção\nbody: |\n  o corpo tem contexto\n",
+            EmbedKind::Callout,
+        );
+        assert_eq!(h.len(), 1);
+        assert_eq!(h[0].rotulo, "Atenção");
+        assert!(h[0].texto.contains("o corpo tem contexto"));
+    }
+
+    #[test]
+    fn colunas_usam_a_primeira_linha_de_rotulo() {
+        let h = hits(
+            "columns:\n- width: 1\n  body: |\n    ## Esquerda\n    resto\n- width: 1\n  body: |\n    Direita\n",
+            EmbedKind::Columns,
+        );
+        assert_eq!(h.len(), 2);
+        assert_eq!(h[0].rotulo, "Esquerda");
+        assert_eq!(h[1].contexto, "coluna 2");
+    }
+
+    #[test]
+    fn galeria_cai_pro_path_quando_nao_tem_legenda() {
+        let h = hits(
+            "items:\n- path: assets/a.png\n  caption: Uma legenda\n- path: assets/b.png\n",
+            EmbedKind::Gallery,
+        );
+        assert_eq!(h[0].rotulo, "Uma legenda");
+        assert_eq!(h[1].rotulo, "assets/b.png");
+    }
+
+    #[test]
+    fn cronograma_monta_o_intervalo_de_contexto() {
+        let h = hits(
+            "items:\n- title: Etapa\n  start: '2026-08-03'\n  end: '2026-08-10'\n",
+            EmbedKind::Timeline,
+        );
+        assert_eq!(h[0].contexto, "2026-08-03 a 2026-08-10");
+    }
+
+    #[test]
+    fn acoes_indexam_rotulo_e_destino() {
+        let h = hits(
+            "buttons:\n- label: Nova spec\n  action: new-from-template\n  template: templates/spec.md\n",
+            EmbedKind::Actions,
+        );
+        assert_eq!(h[0].rotulo, "Nova spec");
+        assert!(h[0].texto.contains("templates/spec.md"));
+    }
+
+    #[test]
+    fn consulta_nao_gera_registro() {
+        // É um filtro, não um registro: indexar acharia a página pelo
+        // nome de um campo.
+        assert!(hits("from: pages/specs\nlimit: 5\n", EmbedKind::Query).is_empty());
+    }
+
+    #[test]
+    fn todo_tipo_responde_search_entries_sem_panico() {
+        for kind in EmbedKind::all() {
+            let data = EmbedData::parse(*kind, &kind.default_body("2026-08-20"));
+            let _ = data.search_entries();
+        }
+    }
     use super::*;
 
     #[test]

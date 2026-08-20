@@ -28,7 +28,13 @@ impl SearchIndex {
     /// Cria um índice novo, vazio, em memória.
     pub fn new() -> Result<Self> {
         let conn = Connection::open_in_memory().context("erro ao abrir SQLite em memória")?;
-        conn.execute_batch("CREATE VIRTUAL TABLE docs USING fts5(path, title, content);")
+        // `origem`/`ancora` são UNINDEXED: entram no resultado, mas não
+        // participam do casamento — sem isso, buscar "card" acharia
+        // todo card do vault (ciclo 188).
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE docs USING fts5(\
+             path, title, content, origem UNINDEXED, ancora UNINDEXED);",
+        )
             .context("erro ao criar tabela FTS5")?;
         Ok(Self { conn })
     }
@@ -37,10 +43,32 @@ impl SearchIndex {
     pub fn index_page(&mut self, path: &str, title: &str, content: &str) -> Result<()> {
         self.conn
             .execute(
-                "INSERT INTO docs (path, title, content) VALUES (?1, ?2, ?3)",
+                "INSERT INTO docs (path, title, content, origem, ancora) \
+                 VALUES (?1, ?2, ?3, NULL, NULL)",
                 params![path, title, content],
             )
             .context("erro ao indexar página")?;
+        Ok(())
+    }
+
+    /// Adiciona UM registro de dentro de um embed (ciclo 188): um card,
+    /// uma linha de tabela, um evento. Vira um documento próprio no
+    /// índice, então o resultado sabe dizer o que é e pra onde levar.
+    pub fn index_embed_entry(
+        &mut self,
+        path: &str,
+        title: &str,
+        texto: &str,
+        origem: &str,
+        ancora: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT INTO docs (path, title, content, origem, ancora) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![path, title, texto, origem, ancora],
+            )
+            .context("erro ao indexar registro de embed")?;
         Ok(())
     }
 
@@ -57,7 +85,7 @@ impl SearchIndex {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT path, snippet(docs, 2, '**', '**', '...', 10), bm25(docs) \
+                "SELECT path, snippet(docs, 2, '**', '**', '...', 10), bm25(docs), origem, ancora \
                  FROM docs WHERE docs MATCH ?1 ORDER BY bm25(docs) LIMIT ?2",
             )
             .context("erro ao preparar busca")?;
@@ -66,11 +94,15 @@ impl SearchIndex {
                 let path: String = row.get(0)?;
                 let snippet: String = row.get(1)?;
                 let bm25: f64 = row.get(2)?;
+                let origem: Option<String> = row.get(3)?;
+                let ancora: Option<String> = row.get(4)?;
                 Ok(SearchResult {
                     block_id: path.clone(),
                     page_path: path,
                     snippet,
                     score: -bm25 as f32,
+                    origem,
+                    ancora,
                 })
             })
             .context("erro ao executar busca")?;
