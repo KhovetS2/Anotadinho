@@ -803,12 +803,23 @@ cenarios.push({
     );
 
     // Maximizar e restaurar de verdade, pelo comando que o botão chama.
+    // O comando volta assim que PEDE ao gerenciador de janelas; o estado
+    // real só chega um quadro depois. Conferir na hora dá falso negativo
+    // intermitente — daí o polling curto.
     const ciclo = await bridge.js(`(async () => {
-      const inicio = await window.__TAURI_INTERNALS__.invoke('window_is_maximized', {});
+      const eh = () => window.__TAURI_INTERNALS__.invoke('window_is_maximized', {});
+      const aguardar = async (esperado) => {
+        for (let i = 0; i < 30; i++) {
+          if (await eh() === esperado) return esperado;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        return await eh();
+      };
+      const inicio = await eh();
       const depois = await window.__TAURI_INTERNALS__.invoke('window_toggle_maximize', {});
-      const conferido = await window.__TAURI_INTERNALS__.invoke('window_is_maximized', {});
+      const conferido = await aguardar(depois);
       await window.__TAURI_INTERNALS__.invoke('window_toggle_maximize', {});
-      const final = await window.__TAURI_INTERNALS__.invoke('window_is_maximized', {});
+      const final = await aguardar(inicio);
       return { inicio, depois, conferido, final };
     })()`);
     ctx.assertEq(ciclo.depois, !ciclo.inicio, "alternar devia inverter o estado");
@@ -865,5 +876,48 @@ cenarios.push({
     ctx.assert(disco.includes("primeira linha"), `o texto anterior se perdeu:\n${disco}`);
     ctx.assert(disco.includes("segunda linha"), `o texto seguinte se perdeu:\n${disco}`);
     ctx.assert(disco.includes('{{ type: "callout" }}'), `o embed novo não foi pro disco:\n${disco}`);
+  },
+});
+
+// ── ciclo 184: 'n' sobre embed e Escape cancelando ───────────────────
+
+cenarios.push({
+  nome: "blocos: 'n' funciona sobre embed e Escape cancela sem deixar '/' (184)",
+  async fn(bridge, ctx) {
+    ctx.escrever(
+      '---\ntitle: __uitest\n---\ntexto antes\n\n{{ type: "callout" }}\nvariant: info\ntitle: Nota\nbody: |\n  Corpo.\n{{ /callout }}\n',
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.callout')", "o embed renderizar");
+
+    // 1) 'n' com um controle do EMBED focado abre bloco novo depois dele.
+    await bridge.js(`(() => {
+      const alvo = document.querySelector('[data-nav-parent^="embed-"]');
+      alvo.focus();
+      alvo.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true }));
+      return true;
+    })()`);
+    await ctx.esperar(bridge, "document.querySelector('.slash-menu')", "o menu / abrir a partir do embed");
+
+    // 2) Escape cancela: fecha o menu E não deixa o "/" no texto.
+    await bridge.js(`(() => {
+      const alvo = document.activeElement.closest('.editor__wysiwyg') || document.querySelector('.editor__wysiwyg');
+      alvo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(700);
+    ctx.assertEq(
+      await bridge.js(`!!document.querySelector('.slash-menu')`),
+      false,
+      "o menu devia ter fechado",
+    );
+
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const disco = ctx.ler();
+    ctx.assert(!/^\/\s*$/m.test(disco), `sobrou um "/" solto no arquivo:\n${disco}`);
+    ctx.assert(disco.includes("texto antes"), `o texto se perdeu:\n${disco}`);
+    ctx.assert(disco.includes('{{ type: "callout" }}'), `o embed se perdeu:\n${disco}`);
   },
 });

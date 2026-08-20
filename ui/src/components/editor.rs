@@ -1228,6 +1228,11 @@ pub fn editor(props: &EditorProps) -> Html {
         let editor_ref_vim = editor_ref.clone();
         let segment_refs_vim = segment_refs.clone();
         let on_enter_blocos = props.on_enter_block_nav.clone();
+        let content_md_esc = content_md.clone();
+        let editor_ref_esc = editor_ref.clone();
+        let segment_refs_esc = segment_refs.clone();
+        let mark_edited_esc = mark_edited.clone();
+        let frontmatter_novo = frontmatter_text.clone();
         let content_md_ref_copia = content_md.clone();
         let frontmatter_copia = frontmatter_text.clone();
         let titulo_copia = page.title.clone();
@@ -1267,7 +1272,24 @@ pub fn editor(props: &EditorProps) -> Html {
             // tabela cru duplicado ao lado do embed de verdade.
             if *slash_open {
                 match e.key().as_str() {
-                    "Escape" => { e.stop_propagation(); slash_open.set(false); slash_text.set(String::new()); slash_idx.set(0); e.prevent_default(); }
+                    // Escape CANCELA: além de fechar o menu, apaga o
+                    // "/consulta" que foi digitado (ciclo 184). Antes
+                    // ficava um "/" solto no texto — sem graça quando
+                    // você digitou, e pior quando o menu veio do atalho
+                    // `n`, que também tinha criado um bloco pra ele.
+                    "Escape" => {
+                        e.stop_propagation();
+                        e.prevent_default();
+                        if let Some((no, pos, consulta)) = find_slash_context() {
+                            delete_slash_context_and_collapse(&no, pos, consulta.chars().count());
+                            let novo = recompute_markdown_from_dom(&content_md_esc, &editor_ref_esc, &segment_refs_esc);
+                            content_md_esc.set(novo.clone());
+                            mark_edited_esc(novo);
+                        }
+                        slash_open.set(false);
+                        slash_text.set(String::new());
+                        slash_idx.set(0);
+                    }
                     "ArrowDown" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + 1) % filtered_len); } }
                     "ArrowUp" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len); } }
                     "Enter" => { e.stop_propagation(); e.prevent_default(); select_slash.emit(*slash_idx); return; }
@@ -1655,6 +1677,29 @@ pub fn editor(props: &EditorProps) -> Html {
     // recriados a cada renderização (o array muda de tamanho ao
     // inserir), então um `NodeRef` capturado antes da inserção não
     // apontaria pro elemento novo depois.
+    // `n` com um EMBED focado (ciclo 184). Fica no CONTÊINER dos
+    // segmentos, não no `contenteditable`: os controles de um embed
+    // ficam fora de qualquer contenteditable, então a tecla nunca
+    // chegava no handler do editor — só o bloco de texto funcionava.
+    //
+    // Não dá pra pôr cursor "dentro" de um embed, então o bloco novo
+    // nasce como um segmento de markdown logo DEPOIS dele — o mesmo que
+    // o botão "+" de hover já faz com o mouse.
+    let on_segments_keydown = {
+        let content_md = content_md.clone();
+        let frontmatter_text = frontmatter_text.clone();
+        let mark_edited = mark_edited.clone();
+        Callback::from(move |e: KeyboardEvent| {
+            if e.key() != "n" || e.ctrl_key() || e.meta_key() || e.alt_key() {
+                return;
+            }
+            let Some(pos) = segmento_do_embed_focado() else { return };
+            e.prevent_default();
+            e.stop_propagation();
+            inserir_segmento_e_abrir_menu(pos + 1, &content_md, &frontmatter_text, &mark_edited);
+        })
+    };
+
     let insert_blank_line = {
         let content_md = content_md.clone();
         let frontmatter_text = frontmatter_text.clone();
@@ -2044,7 +2089,8 @@ pub fn editor(props: &EditorProps) -> Html {
                     // `Range`, imperativos, fora do rastreamento do VDOM)
                     // ficava "grudado" ali, aparecendo duplicado ao lado
                     // do conteúdo novo de verdade.
-                    <div class="editor__wysiwyg-segments" key="segments" onclick={on_wysiwyg_click.clone()}>
+                    <div class="editor__wysiwyg-segments" key="segments" onclick={on_wysiwyg_click.clone()}
+                        onkeydown={on_segments_keydown.clone()}>
                         { for segments.iter().enumerate().map(|(i, seg)| {
                             // `key` inclui o TIPO do segmento (`md`/`embed`), não
                             // só a posição: o caso que realmente quebrava era um
@@ -3192,4 +3238,71 @@ fn copiar_para_area_de_transferencia(texto: &str) {
         exec_cmd(&doc, "copy", "");
         let _ = body.remove_child(&area);
     }
+}
+
+/// Índice do SEGMENTO do embed que está focado agora — `None` quando o
+/// foco não está num embed.
+///
+/// O id do grupo é `embed-<índice do segmento>` (ciclo 165), então o
+/// número sai dali em vez de precisar de outro atributo.
+fn segmento_do_embed_focado() -> Option<usize> {
+    let ativo = web_sys::window()?.document()?.active_element()?;
+    let raiz = ativo
+        .closest("[data-nav-group^=\"embed-\"]")
+        .ok()
+        .flatten()
+        .or(Some(ativo))?;
+    raiz.get_attribute("data-nav-group")?
+        .strip_prefix("embed-")?
+        .parse()
+        .ok()
+}
+
+/// Insere um segmento de markdown vazio na posição `pos` e abre o menu
+/// `/` nele (ciclo 184).
+///
+/// Reconsulta o DOM pelo `data-segment-index` depois de um sleep curto
+/// em vez de guardar um `NodeRef`: os refs são recriados a cada
+/// renderização, e o elemento novo só existe depois dela — mesma razão
+/// documentada no `insert_blank_line`.
+fn inserir_segmento_e_abrir_menu(
+    pos: usize,
+    content_md: &UseStateHandle<String>,
+    frontmatter: &str,
+    mark_edited: &impl Fn(String),
+) {
+    let completo = (**content_md).clone();
+    let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&completo);
+    let mut segs = crate::embed::segment(corpo);
+    let pos = pos.min(segs.len());
+    segs.insert(pos, DocSegment::Markdown(crate::embed::BLANK_SEGMENT.to_string()));
+    let novo_corpo = crate::embed::join(&segs);
+    let novo = if frontmatter.is_empty() {
+        novo_corpo
+    } else {
+        format!("{}\n{}", frontmatter, novo_corpo)
+    };
+    content_md.set(novo.clone());
+    mark_edited(novo);
+
+    wasm_bindgen_futures::spawn_local(async move {
+        gloo_timers::future::sleep(std::time::Duration::from_millis(80)).await;
+        let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return };
+        let seletor = format!("[data-segment-index=\"{pos}\"]");
+        let Some(el) = doc.query_selector(&seletor).ok().flatten() else { return };
+        if let Ok(html_el) = el.clone().dyn_into::<web_sys::HtmlElement>() {
+            let _ = html_el.focus();
+        }
+        // Cursor no fim do segmento novo e menu aberto pelo caminho de
+        // sempre.
+        if let Ok(range) = doc.create_range() {
+            let _ = range.select_node_contents(&el);
+            range.collapse_with_to_start(false);
+            if let Some(sel) = web_sys::window().and_then(|w| w.get_selection().ok().flatten()) {
+                let _ = sel.remove_all_ranges();
+                let _ = sel.add_range(&range);
+            }
+        }
+        exec_cmd(&doc, "insertText", "/");
+    });
 }
