@@ -2595,7 +2595,21 @@ Acima do embed você pode ter texto normal. Abaixo também.
             .collect();
         assert_eq!(
             kinds,
-            vec![None, Some(EmbedKind::Kanban), None, Some(EmbedKind::Calendar), None, Some(EmbedKind::Table), None]
+            vec![
+                None,
+                Some(EmbedKind::Kanban),
+                None,
+                Some(EmbedKind::Calendar),
+                None,
+                Some(EmbedKind::Table),
+                None,
+                // Ciclo 183: a página de demo passou a cobrir também os
+                // dois embeds que faltavam nela.
+                Some(EmbedKind::Timeline),
+                None,
+                Some(EmbedKind::Actions),
+                None,
+            ]
         );
 
         let DocSegment::Embed(EmbedData::Kanban(kanban)) = &segments[1] else {

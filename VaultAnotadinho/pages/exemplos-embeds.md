@@ -7,7 +7,15 @@ tags: [demo, embed]
 
 Você pode usar blocos especiais dentro de qualquer página `.md`, delimitados
 por `{{ type: "..." }}` ... `{{ /... }}` (não usa fence de código markdown,
-pra não colidir com blocos de código de verdade):
+pra não colidir com blocos de código de verdade).
+
+São nove tipos, e esta página cobre os que guardam REGISTROS. Os
+outros têm páginas próprias:
+
+- [[Composição — destaque, colunas e galeria]] — montar a página
+- [[Consultas — listas que se mantêm sozinhas]] — recortes vivos do vault
+- [[Referências — wikilink, transclusão e bloco]] — apontar pra outra página
+- [[Painel]] — os embeds trabalhando juntos, com botões de ação
 
 ## Kanban Embed
 
@@ -98,3 +106,60 @@ e paginação do próprio visualizador do WebView), sem abrir outro
 programa. Ao salvar a página, o link markdown original é preservado
 tal qual — o frame é só uma forma de exibir, o arquivo `.md` continua
 guardando `[texto](caminho.pdf)`.
+
+## Cronograma (`timeline`)
+
+Barras por intervalo de datas, em escala de semana, mês ou trimestre.
+Arrastar move preservando a duração; a alça da borda estica só aquela
+ponta. Pelo teclado: `Alt+←/→` movem, `Alt+Shift+←/→` esticam.
+
+{{ type: "timeline" }}
+scale: month
+items:
+- title: Levantar requisitos
+  start: '2026-08-03'
+  end: '2026-08-10'
+  tags:
+  - infra
+- title: Implementar
+  start: '2026-08-11'
+  end: '2026-08-24'
+- title: Revisar e publicar
+  start: '2026-08-25'
+  end: '2026-08-31'
+  tags:
+  - urgente
+{{ /timeline }}
+
+Com `source: vault` no lugar dos `items`, ele lê as páginas do vault
+que tenham `start`/`date` no frontmatter — aí vira somente leitura, e
+clicar numa barra abre a página de origem.
+
+## Ações (`actions`)
+
+O único embed que ESCREVE. Os botões criam página a partir de template
+na pasta certa, abrem página, gravam propriedade ou abrem a busca — e o
+que cada um faz está declarado no YAML, legível por humano e por
+agente.
+
+{{ type: "actions" }}
+layout: row
+buttons:
+- label: Ver exemplos de consulta
+  icon: search
+  action: open-page
+  path: pages/exemplos/consultas.md
+- label: Abrir o painel
+  icon: home
+  action: open-page
+  path: pages/produto/painel.md
+- label: Nova nota de reunião
+  icon: file-text
+  variant: primary
+  action: new-from-template
+  template: templates/nota-de-reuniao.md
+{{ /actions }}
+
+A lista de ações é FECHADA de propósito: nada de rodar comando de
+shell. Um `.md` que chegasse de terceiro não pode executar nada só por
+ser aberto.
