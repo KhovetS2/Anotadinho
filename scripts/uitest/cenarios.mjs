@@ -375,3 +375,63 @@ cenarios.push({
     ctx.assert(ctx.ler().includes("column: Done"), "a coluna nova não foi pro disco");
   },
 });
+
+// ── ciclo 168: editar propriedade direto na consulta ─────────────────
+
+cenarios.push({
+  nome: "consulta: editar o campo na linha grava e some do recorte (168)",
+  async fn(bridge, ctx) {
+    // Uma spec de teste em backlog + uma consulta que só mostra backlog:
+    // ao mudar o status pela linha, a página tem que SAIR da lista.
+    const spec = "pages/__uitest-spec.md";
+    const { writeFileSync, unlinkSync, existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const specPath = join(ctx.vault, spec);
+    writeFileSync(specPath, "---\ntitle: Spec de teste\nstatus: backlog\n---\n# Spec\n");
+    try {
+      ctx.escrever(
+        '---\ntitle: __uitest\n---\n{{ type: "query" }}\nwhere:\n- field: status\n  op: eq\n  value: backlog\nview: list\ncolumns:\n- status\n{{ /query }}\n',
+      );
+      await recarregar(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await ctx.esperar(
+        bridge,
+        "document.body.textContent.includes('Spec de teste')",
+        "a spec aparecer no recorte",
+      );
+
+      await bridge.js(`(() => {
+        const linha = [...document.querySelectorAll('.query-embed__row')]
+          .find(r => r.textContent.includes('Spec de teste'));
+        linha.querySelector('.query-embed__editavel').click();
+        return true;
+      })()`);
+      await ctx.esperar(bridge, "document.querySelector('.query-embed__editar')", "o campo abrir");
+      await bridge.js(`(() => {
+        const inp = document.querySelector('.query-embed__editar');
+        const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        inp.focus();
+        set.call(inp, 'done');
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.blur();
+        return true;
+      })()`);
+
+      try {
+        await ctx.esperar(
+          bridge,
+          "![...document.querySelectorAll('.query-embed__row')].some(r => r.textContent.includes('Spec de teste'))",
+          "a spec sair do recorte depois de mudar o status",
+          12000,
+        );
+      } catch (e) {
+        const msg = await bridge.js(`document.querySelector('.query-embed__erro')?.textContent || null`);
+        throw new Error(msg ? `${e.message}\n  o embed reportou: ${msg}` : e.message);
+      }
+      const conteudo = (await import("node:fs")).readFileSync(specPath, "utf8");
+      ctx.assert(conteudo.includes("status: done"), `o status novo não foi pro disco:\n${conteudo}`);
+    } finally {
+      if (existsSync(specPath)) unlinkSync(specPath);
+    }
+  },
+});

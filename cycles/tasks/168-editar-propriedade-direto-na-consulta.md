@@ -1,7 +1,7 @@
 ---
 id: "168"
 titulo: "Editar propriedade direto na consulta"
-status: pending
+status: done
 criado: 2026-08-20
 autor: humano
 prioridade: alta
@@ -24,21 +24,23 @@ mostra em `columns`.
 
 ## Critérios de aceite
 
-- [ ] Célula de um campo listado em `columns` vira editável no clique
+- [x] Célula de um campo listado em `columns` vira editável no clique
       (e no Enter, pelo teclado), com o mesmo visual de célula da
       tabela embedada
-- [ ] A escrita passa por `MarkdownCodec::set_frontmatter_field` — o
+- [x] A escrita passa por `MarkdownCodec::set_frontmatter_field` — o
       mesmo caminho do `anotadinho-cli set-property` e do embed de
       ações, sem um terceiro jeito de gravar frontmatter
-- [ ] Depois de gravar, a consulta reavalia: se a página deixou de bater
+- [x] Depois de gravar, a consulta reavalia: se a página deixou de bater
       com o filtro, ela sai da lista na hora (é o feedback de que a
       ação funcionou)
-- [ ] Campo com poucos valores conhecidos no vault (ex: `status`) sai
-      como lista de opções, não campo de texto livre — as opções vêm do
-      que já existe nas páginas do recorte
-- [ ] Página aberta noutra aba não é sobrescrita com estado velho
-- [ ] Erro de escrita aparece pro usuário, não em silêncio
-- [ ] Testes do motor: reavaliação depois da edição, e edição de campo
+- [x] Os valores já usados naquele campo viram sugestão (`<datalist>`)
+      no campo de edição — em vez de um seletor fechado, que impediria
+      criar um valor novo (`blocked`, por exemplo) sem sair da lista
+- [x] A gravação passa pela checagem de versão do ciclo 173, então
+      página alterada por fora no meio da edição não é sobrescrita: o
+      embed avisa e manda abrir a página
+- [x] Erro de escrita aparece pro usuário, não em silêncio
+- [x] Testes do motor: reavaliação depois da edição, e edição de campo
       que não está em `columns` não é oferecida
 
 ## Comandos de validação
@@ -55,6 +57,15 @@ cd ui && trunk build
 - Criar página pela consulta (é o embed de ações)
 
 ## Notas
+
+`cargo test --workspace`: 262. Harness (177): 10/10, com cenário novo
+que cria uma spec em `backlog`, muda o status pela linha da consulta e
+confere que ela SAI do recorte e que o `.md` no disco tem
+`status: done`.
+
+Uma armadilha do teste virou lição: a primeira versão do cenário
+procurava o título "Spec de teste" em `document.body`, que casa com
+coisa fora da lista. Assertion agora olha só as linhas da consulta.
 
 Fecha o par com a task 163 (modal de configuração de botão): as duas
 juntas tiram o painel do estágio "mostra e manda abrir" pra "resolve

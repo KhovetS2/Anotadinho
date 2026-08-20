@@ -10,6 +10,8 @@
 //! Somente leitura de propósito: editar a página continua sendo na
 //! página. Escrita a partir de um painel é o embed `actions` (ciclo 156).
 
+use wasm_bindgen::JsCast;
+use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
 use crate::api::{self, PageIndexEntry, PageMeta};
@@ -45,6 +47,7 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
     let entries = use_state(Vec::<PageIndexEntry>::new);
     let loading = use_state(|| true);
     let settings_open = use_state(|| false);
+    let erro = use_state(|| None::<String>);
 
     // UMA varredura (ciclo 150) alimenta a consulta inteira — o filtro
     // roda em memória, então reconfigurar não custa I/O nenhum.
@@ -64,6 +67,75 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
     }
 
     let results = props.data.run(&entries);
+
+    // Edição de propriedade na própria linha (ciclo 168). Antes disso a
+    // consulta era só leitura: ver a spec em backlog e mudar o status
+    // exigia abrir a página, achar o painel de propriedades e voltar —
+    // "ver" e "agir" em lugares diferentes.
+    // `Some((path, campo))` = célula em edição.
+    let editando = use_state(|| None::<(String, String)>);
+
+    // Valores já usados em cada campo, no recorte atual — viram sugestão
+    // (`<datalist>`) em vez de o usuário ter que decorar
+    // `in-progress`/`in-review`.
+    let sugestoes = {
+        let mut mapa: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+        for campo in &props.data.columns {
+            let mut vistos: Vec<String> = Vec::new();
+            for e in entries.iter() {
+                if let Some(v) = e.field(campo).filter(|v| !v.trim().is_empty()) {
+                    if !vistos.contains(&v) {
+                        vistos.push(v);
+                    }
+                }
+            }
+            vistos.sort();
+            mapa.insert(campo.clone(), vistos);
+        }
+        mapa
+    };
+
+    // Grava o campo na página e recarrega a varredura: se a página
+    // deixou de bater com o filtro, ela SOME da lista na hora — que é o
+    // sinal de que a ação funcionou.
+    let gravar = {
+        let vault_path = props.vault_path.clone();
+        let entries = entries.clone();
+        let editando = editando.clone();
+        let erro = erro.clone();
+        Callback::from(move |(path, campo, valor): (String, String, String)| {
+            let vault_path = vault_path.clone();
+            let entries = entries.clone();
+            let editando = editando.clone();
+            let erro = erro.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                editando.set(None);
+                let atual = match api::read_page_versioned(&vault_path, &path).await {
+                    Ok(p) => p,
+                    Err(e) => return erro.set(Some(format!("não consegui ler {path}: {e}"))),
+                };
+                let novo = match anotadinho_core::MarkdownCodec::set_frontmatter_field(
+                    &atual.content,
+                    &campo,
+                    &valor,
+                ) {
+                    Ok(c) => c,
+                    Err(e) => return erro.set(Some(format!("não consegui gravar {campo}: {e}"))),
+                };
+                match api::write_page_checked(&vault_path, &path, &novo, atual.version.as_deref()).await {
+                    Ok(_) => {
+                        erro.set(None);
+                        // Reavalia o recorte com o vault atualizado.
+                        entries.set(api::scan_vault(&vault_path).await.unwrap_or_default());
+                    }
+                    Err(e) if e.contains(api::CONFLICT_PREFIX) => erro.set(Some(format!(
+                        "{path} mudou no disco enquanto você editava — abra a página pra resolver"
+                    ))),
+                    Err(e) => erro.set(Some(e)),
+                }
+            });
+        })
+    };
 
     // Campos oferecidos no modal: os fixos + toda chave de frontmatter/
     // property vista no vault, pra configurar sem precisar decorar nome.
@@ -95,6 +167,81 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
     let nav_group = props.nav_group.clone();
     let columns = props.data.columns.clone();
 
+    // Célula de um campo de `columns`: mostra o valor e, no clique/Enter,
+    // vira um `<input>` com sugestões dos valores já usados no recorte.
+    let celula = {
+        let editando = editando.clone();
+        let gravar = gravar.clone();
+        let sugestoes = sugestoes.clone();
+        let nav_group = nav_group.clone();
+        move |path: String, campo: String, valor: String, classe: &'static str| -> Html {
+            let em_edicao = editando.as_ref().is_some_and(|(p, c)| *p == path && *c == campo);
+            if em_edicao {
+                let commit = {
+                    let gravar = gravar.clone();
+                    let path = path.clone();
+                    let campo = campo.clone();
+                    let anterior = valor.clone();
+                    move |novo: String| {
+                        if novo != anterior {
+                            gravar.emit((path.clone(), campo.clone(), novo));
+                        }
+                    }
+                };
+                let onblur = {
+                    let commit = commit.clone();
+                    let editando = editando.clone();
+                    Callback::from(move |e: FocusEvent| {
+                        let Some(el) = e.target().and_then(|t| t.dyn_into::<HtmlInputElement>().ok()) else { return };
+                        editando.set(None);
+                        commit(el.value());
+                    })
+                };
+                let onkeydown = {
+                    let editando = editando.clone();
+                    Callback::from(move |e: web_sys::KeyboardEvent| {
+                        e.stop_propagation();
+                        if e.key() == "Enter" {
+                            if let Some(el) = e.target().and_then(|t| t.dyn_into::<HtmlInputElement>().ok()) {
+                                let _ = el.blur();
+                            }
+                        } else if e.key() == "Escape" {
+                            editando.set(None);
+                        }
+                    })
+                };
+                let lista_id = format!("sug-{}-{}", campo, path.replace(['/', '.'], "-"));
+                let opcoes = sugestoes.get(&campo).cloned().unwrap_or_default();
+                html! {
+                    <span class={classe}>
+                        <input class="query-embed__editar" type="text" value={valor}
+                            list={lista_id.clone()} autofocus=true {onblur} {onkeydown} />
+                        <datalist id={lista_id}>
+                            { for opcoes.into_iter().map(|o| html! { <option value={o} /> }) }
+                        </datalist>
+                    </span>
+                }
+            } else {
+                let abrir: Callback<()> = {
+                    let editando = editando.clone();
+                    let path = path.clone();
+                    let campo = campo.clone();
+                    Callback::from(move |_| editando.set(Some((path.clone(), campo.clone()))))
+                };
+                let rotulo = if valor.trim().is_empty() { "—".to_string() } else { valor };
+                html! {
+                    <span class={classes!(classe, "query-embed__editavel")} tabindex="0" role="button"
+                        title={format!("Editar {campo}")}
+                        data-nav-item="query-cell" data-nav-parent={nav_group.clone()}
+                        onclick={abrir.reform(|e: MouseEvent| { e.stop_propagation(); })}
+                        onkeydown={crate::keyboard_activate::activate_on_enter_or_space(abrir.clone())}>
+                        { rotulo }
+                    </span>
+                }
+            }
+        }
+    };
+
     let body = if *loading {
         html! { <p class="query-embed__empty">{ "Consultando o vault..." }</p> }
     } else if results.is_empty() {
@@ -112,11 +259,9 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                                 onkeydown={crate::keyboard_activate::activate_on_enter_or_space(activate.clone())}>
                                 <span class="query-embed__title">{ entry.title.clone() }</span>
                                 <span class="query-embed__meta">
-                                    { for columns.iter().filter_map(|c| {
-                                        entry.field(c).filter(|v| !v.is_empty()).map(|v| html! {
-                                            <span class="query-embed__chip">{ format!("{c}: {v}") }</span>
-                                        })
-                                    }) }
+                                    { for columns.iter().map(|c| celula(
+                                        entry.path.clone(), c.clone(),
+                                        entry.field(c).unwrap_or_default(), "query-embed__chip")) }
                                 </span>
                             </li>
                         }
@@ -141,7 +286,8 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                                     onkeydown={crate::keyboard_activate::activate_on_enter_or_space(activate.clone())}>
                                     <td class="query-embed__title">{ entry.title.clone() }</td>
                                     { for columns.iter().map(|c| html! {
-                                        <td>{ entry.field(c).unwrap_or_default() }</td>
+                                        <td>{ celula(entry.path.clone(), c.clone(),
+                                            entry.field(c).unwrap_or_default(), "query-embed__chip") }</td>
                                     }) }
                                 </tr>
                             }
@@ -194,6 +340,9 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                     <Icon name="settings" />
                 </button>
             </div>
+            if let Some(msg) = (*erro).clone() {
+                <p class="query-embed__erro">{ msg }</p>
+            }
             { body }
             if *settings_open {
                 <QuerySettingsModal

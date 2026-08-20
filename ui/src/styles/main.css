@@ -4597,3 +4597,43 @@ body {
     font-size: 0.8125rem;
     margin: 0;
 }
+
+/* Célula editável da consulta (ciclo 168) — "ver" e "agir" no mesmo
+   lugar: o chip vira campo no clique, sem sair da lista. */
+.query-embed__editavel {
+    cursor: text;
+    border: 1px solid transparent;
+}
+
+.query-embed__editavel:hover {
+    border-color: var(--border);
+}
+
+.query-embed__editavel:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
+}
+
+.query-embed__editar {
+    width: 8rem;
+    max-width: 100%;
+    padding: 0 var(--sp-1);
+    border: 1px solid var(--accent-blue);
+    border-radius: var(--r-sm);
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+}
+
+.query-embed__editar:focus {
+    outline: none;
+}
+
+.query-embed__erro {
+    margin: 0;
+    padding: var(--sp-2) var(--sp-3);
+    color: var(--error);
+    font-size: 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
