@@ -1045,18 +1045,38 @@ body {
 .embed-hover-wrapper__add-line--top {
     top: -11px;
 }
+
+/* Editor estreito: o "+" centralizado e a toolbar (ancorada à direita)
+   se encontram. Quem cede é o "+", que tem um gêmeo embaixo do embed —
+   a toolbar não tem substituto. */
+@media (max-width: 560px) {
+    .embed-hover-wrapper__add-line--top {
+        display: none;
+    }
+}
 .embed-hover-wrapper__add-line--bottom {
     bottom: -11px;
 }
 
 /* Toolbar do embed (ciclo 159): mover, duplicar e remover. Substitui o
    botão de remover solto que existia aqui desde o ciclo 083 — as quatro
-   ações agem no nível do segmento, então fazem sentido juntas. */
+   ações agem no nível do segmento, então fazem sentido juntas.
+
+   Fica NA LINHA DA BORDA superior, não dentro da caixa (ciclo 166):
+   quase todo embed tem a própria barra de controles no canto superior
+   direito, e a toolbar cobria justamente ela (no cronograma, o botão
+   "Trimestre"; na galeria, "+ imagem"; na consulta, o de configurar).
+   Mesma faixa onde o "+" de adicionar linha já vive — o alinhamento
+   deles é intencional. */
 .embed-hover-wrapper__toolbar {
     position: absolute;
-    top: var(--sp-2);
+    /* Inteira ACIMA do embed (não só centrada na borda): metade em cima
+       da borda ainda cobria a primeira linha de controles, que começa
+       logo depois do padding da caixa. */
+    bottom: 100%;
+    margin-bottom: var(--sp-1);
     right: var(--sp-2);
-    z-index: 3;
+    z-index: 4;
     display: flex;
     gap: var(--sp-1);
     padding: 2px;

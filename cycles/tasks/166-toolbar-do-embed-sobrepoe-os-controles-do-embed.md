@@ -1,7 +1,7 @@
 ---
 id: "166"
 titulo: "Toolbar do embed sobrepõe os controles do próprio embed"
-status: pending
+status: done
 criado: 2026-08-20
 autor: humano
 prioridade: alta
@@ -23,20 +23,25 @@ No cronograma ela cobre o botão "Trimestre"; na galeria cobre
 
 ## Critérios de aceite
 
-- [ ] A toolbar sai de cima do conteúdo do embed: passa a flutuar na
-      LINHA DA BORDA superior (mesma faixa onde já vive o "+" de
-      adicionar linha, que usa `top: -11px`), alinhada à direita
-- [ ] Nenhum controle dos 9 embeds fica coberto — conferir um a um:
+- [x] A toolbar sai de cima do conteúdo do embed: fica INTEIRA acima
+      da caixa (`bottom: 100%`), alinhada à direita. Centrar na borda
+      (`top: -14px`, a primeira tentativa) não bastou — metade dela
+      ainda cobria a primeira linha de controles, que começa logo
+      depois do padding da caixa
+- [x] Nenhum controle dos 9 embeds fica coberto — conferido por
+      geometria, comparando o retângulo da toolbar com o de TODO
+      controle focável de cada embed (0 sobreposições no `painel.md` e
+      no `exemplos-embeds.md`; antes eram 9):
       kanban (+ coluna), calendário (fonte/visões), tabela, callout
       (recolher), colunas, galeria (+ imagem), consulta (configurar),
       cronograma (escala/fonte), ações
-- [ ] A toolbar não colide com o "+" de adicionar linha (que é
+- [x] A toolbar não colide com o "+" de adicionar linha (que é
       centralizado) em largura de editor estreita — se colidir, o "+"
       cede
-- [ ] Continua aparecendo só em `:hover`/`:focus-within` do embed
-- [ ] Embed que é o PRIMEIRO segmento da página não fica com a toolbar
+- [x] Continua aparecendo só em `:hover`/`:focus-within` do embed
+- [x] Embed que é o PRIMEIRO segmento da página não fica com a toolbar
       cortada fora da área visível
-- [ ] Validação ao vivo (MCP `tauri`) no `painel.md`, que tem 5 tipos
+- [x] Validação ao vivo (MCP `tauri`) no `painel.md`, que tem 5 tipos
       de embed numa página só
 
 ## Comandos de validação
@@ -52,6 +57,19 @@ cargo build --manifest-path src-tauri/Cargo.toml
 - Mudar o que a toolbar faz (159 já definiu as 4 ações)
 
 ## Notas
+
+`cd ui && cargo test --lib`: 26. `trunk build` e `cargo build
+--manifest-path src-tauri/Cargo.toml`: OK.
+
+A conferência foi por medida, não a olho: um script no console compara
+o retângulo da toolbar com o de cada `button`/`input`/`[tabindex]` do
+embed. Antes: 9 sobreposições (título do callout, 3 botões de
+configurar consulta, "Trimestre" e "Vault" do cronograma, e os 3
+controles de coluna). Depois: zero, nas duas páginas de teste.
+
+Embed como PRIMEIRO segmento: a toolbar continua dentro da área
+visível (o editor tem padding no topo), conferido com uma página que
+começa com callout.
 
 Alternativa considerada e descartada: empurrar a barra interna de cada
 embed pra baixo quando o wrapper está em hover. Seria uma regra de CSS
