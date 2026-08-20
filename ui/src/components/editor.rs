@@ -1228,6 +1228,11 @@ pub fn editor(props: &EditorProps) -> Html {
         let editor_ref_vim = editor_ref.clone();
         let segment_refs_vim = segment_refs.clone();
         let on_enter_blocos = props.on_enter_block_nav.clone();
+        let content_md_ref_copia = content_md.clone();
+        let frontmatter_copia = frontmatter_text.clone();
+        let titulo_copia = page.title.clone();
+        let mark_edited_copia = mark_edited.clone();
+        let render_gen_copia = render_gen.clone();
         let mark_edited_vim = mark_edited.clone();
         let do_undo = do_undo.clone();
         let do_redo = do_redo.clone();
@@ -1374,6 +1379,27 @@ pub fn editor(props: &EditorProps) -> Html {
                 e.stop_propagation();
                 vim_insert.set(false);
                 return;
+            }
+
+            // "c" com um BLOCO focado (nav-mode, ciclo 174) copia a
+            // referência dele: grava um `^id` naquela linha — e só nela
+            // — e põe `![[Página^id]]` na área de transferência
+            // (ciclo 176). Só dispara quando o foco está NO BLOCO, não
+            // no texto: digitando, "c" é só a letra c.
+            if e.key() == "c" && !e.ctrl_key() && !e.meta_key() && !e.alt_key() {
+                if let Some(bloco) = bloco_focado() {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    copiar_referencia(
+                        &bloco,
+                        &content_md_ref_copia,
+                        &frontmatter_copia,
+                        &titulo_copia,
+                        &mark_edited_copia,
+                        &render_gen_copia,
+                    );
+                    return;
+                }
             }
 
             // Escape com o cursor no texto SOBE pro nível de blocos
@@ -2944,9 +2970,14 @@ fn upgrade_transclusions_at(el: &web_sys::Element, vault_path: String, pagina_at
         }
         let _ = alvo_el.set_attribute("data-transcluido", "1");
 
-        let (titulo, secao) = match alvo.split_once('#') {
-            Some((t, s)) => (t.trim().to_string(), Some(s.trim().to_string())),
-            None => (alvo.trim().to_string(), None),
+        // `Página#Seção` recorta um heading; `Página^bloco` recorta UMA
+        // linha, pelo id do ciclo 176.
+        let (titulo, secao, bloco) = if let Some((t, b)) = alvo.split_once('^') {
+            (t.trim().to_string(), None, Some(b.trim().to_string()))
+        } else if let Some((t, s)) = alvo.split_once('#') {
+            (t.trim().to_string(), Some(s.trim().to_string()), None)
+        } else {
+            (alvo.trim().to_string(), None, None)
         };
         let vault_path = vault_path.clone();
         let pagina_atual = pagina_atual.clone();
@@ -2990,6 +3021,26 @@ fn upgrade_transclusions_at(el: &web_sys::Element, vault_path: String, pagina_at
                 return;
             };
             let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+            if let Some(id) = &bloco {
+                match anotadinho_core::links::find_block(corpo, id) {
+                    Some(texto) => {
+                        alvo_el.set_inner_html(&format!(
+                            "<a class=\"transclusao__origem\" href=\"{}{}\">{} › ^{}</a><div class=\"transclusao__corpo\">{}</div>",
+                            crate::wikilink::SCHEME_PREFIX,
+                            crate::wikilink::encode_title(&pagina.title),
+                            escape_html(&pagina.title),
+                            escape_html(id),
+                            crate::markdown_render::render(texto)
+                        ));
+                    }
+                    None => alvo_el.set_inner_html(&format!(
+                        "<p class=\"transclusao__vazia\">A página <strong>{}</strong> não tem o bloco <strong>^{}</strong>.</p>",
+                        escape_html(&pagina.title),
+                        escape_html(id)
+                    )),
+                }
+                return;
+            }
             let corpo = match &secao {
                 Some(s) => match anotadinho_core::links::extract_section(corpo, s) {
                     Some(trecho) => trecho.to_string(),
@@ -3038,4 +3089,83 @@ fn upgrade_transclusions_at(el: &web_sys::Element, vault_path: String, pagina_at
 /// Escapa texto que vai pro HTML montado à mão aqui.
 fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+/// Bloco de texto atualmente FOCADO pelo nav-mode (ciclo 174) — `None`
+/// quando o foco está no texto (aí o cursor manda, não o bloco).
+fn bloco_focado() -> Option<web_sys::Element> {
+    let ativo = web_sys::window()?.document()?.active_element()?;
+    if ativo.has_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO) {
+        Some(ativo)
+    } else {
+        None
+    }
+}
+
+/// Grava o `^id` na linha do bloco (se ainda não tiver) e copia
+/// `![[Página^id]]`.
+///
+/// A linha é achada pelo TEXTO do bloco, não por posição: o índice do
+/// filho no DOM não corresponde a linha do markdown (um parágrafo pode
+/// ocupar várias linhas, uma lista ocupa uma por item). Se o texto não
+/// for encontrado, nada é gravado — melhor não fazer do que marcar a
+/// linha errada.
+fn copiar_referencia(
+    bloco: &web_sys::Element,
+    content_md: &UseStateHandle<String>,
+    frontmatter: &str,
+    titulo_pagina: &str,
+    mark_edited: &impl Fn(String),
+    render_gen: &UseStateHandle<u32>,
+) {
+    let texto = bloco.text_content().unwrap_or_default();
+    let primeira = texto.lines().next().unwrap_or("").trim().to_string();
+    if primeira.is_empty() {
+        return;
+    }
+    let completo = (**content_md).clone();
+    let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&completo);
+    let alvo = corpo
+        .lines()
+        .position(|l| anotadinho_core::links::strip_block_id(l).trim().contains(&primeira));
+    let Some(alvo) = alvo else { return };
+    let Some((novo_corpo, id)) = anotadinho_core::links::garantir_block_id(corpo, alvo) else {
+        return;
+    };
+
+    if novo_corpo != corpo {
+        let novo_completo = if frontmatter.is_empty() {
+            novo_corpo
+        } else {
+            format!("{}\n{}", frontmatter, novo_corpo)
+        };
+        content_md.set(novo_completo.clone());
+        mark_edited(novo_completo);
+        // Força reinjetar o HTML: o guard de render compara path e
+        // contagem de segmentos, que não mudaram — e sem reinjetar, o
+        // `^id` fica só no estado e some no próximo salvamento, que
+        // recompõe o markdown a partir do DOM.
+        render_gen.set(**render_gen + 1);
+    }
+    copiar_para_area_de_transferencia(&format!("![[{titulo_pagina}^{id}]]"));
+}
+
+/// Copia texto usando um `<textarea>` temporário + `execCommand`.
+///
+/// `navigator.clipboard` exigiria permissão e uma feature a mais do
+/// `web-sys`; este caminho usa o mesmo `execCommand` que o editor já
+/// usa e funciona no WebView do Tauri.
+fn copiar_para_area_de_transferencia(texto: &str) {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return };
+    let Ok(el) = doc.create_element("textarea") else { return };
+    let Ok(area) = el.dyn_into::<web_sys::HtmlTextAreaElement>() else { return };
+    area.set_value(texto);
+    let _ = area.style().set_property("position", "fixed");
+    let _ = area.style().set_property("opacity", "0");
+    if let Some(body) = doc.body() {
+        let _ = body.append_child(&area);
+        area.select();
+        exec_cmd(&doc, "copy", "");
+        let _ = body.remove_child(&area);
+    }
 }

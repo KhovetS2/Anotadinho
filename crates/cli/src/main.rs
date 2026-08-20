@@ -54,9 +54,11 @@ enum Command {
         #[arg(long)]
         priority: Option<String>,
     },
-    /// Imprime o conteúdo bruto (.md) de uma página.
+    /// Imprime o conteúdo bruto (.md) de uma página, ou de UM BLOCO
+    /// dela quando o path vem com `^id` (ciclo 176).
     Read {
-        /// Path relativo ao vault (ex: pages/minha-nota.md).
+        /// Path relativo ao vault (ex: pages/minha-nota.md) ou
+        /// `pages/minha-nota.md^abc123` pra um bloco só.
         page_path: String,
     },
     /// Busca full-text (FTS5) no conteúdo das páginas.
@@ -273,8 +275,20 @@ fn run(cli: Cli) -> Result<(), String> {
             }
         }
         Command::Read { page_path } => {
-            let content = handle_read_page(cli.vault, page_path)?;
-            print!("{}", content);
+            // `caminho^id` devolve só aquele bloco — é o que deixa um
+            // agente seguir uma referência `![[Página^id]]` sem baixar
+            // a página inteira.
+            if let Some((caminho, id)) = page_path.split_once('^') {
+                let content = handle_read_page(cli.vault, caminho.to_string())?;
+                let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&content);
+                match anotadinho_core::links::find_block(corpo, id) {
+                    Some(bloco) => println!("{bloco}"),
+                    None => return Err(format!("{caminho} não tem o bloco ^{id}")),
+                }
+            } else {
+                let content = handle_read_page(cli.vault, page_path)?;
+                print!("{}", content);
+            }
         }
         Command::Search { query } => {
             let results = handle_search_content(cli.vault, query)?;

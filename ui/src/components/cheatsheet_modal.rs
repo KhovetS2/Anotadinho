@@ -121,6 +121,10 @@ pub fn cheatsheet_modal(props: &CheatsheetModalProps) -> Html {
                             <kbd class="cheatsheet__key">{ "Escape" }</kbd>
                         </li>
                         <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Copiar referência do bloco focado" }</span>
+                            <kbd class="cheatsheet__key">{ "c" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
                             <span class="cheatsheet__label">{ "Mover card do kanban / barra do cronograma" }</span>
                             <kbd class="cheatsheet__key">{ "Alt+← ↑ ↓ →" }</kbd>
                         </li>

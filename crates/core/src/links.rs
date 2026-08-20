@@ -118,6 +118,114 @@ pub fn extract_section<'a>(body: &'a str, heading: &str) -> Option<&'a str> {
     inicio.map(|i| &body[i..])
 }
 
+/// Sufixo de identificação de bloco (ciclo 176): `^abc123` no fim da
+/// linha. Mesma convenção do Obsidian — a mais compatível com vault
+/// existente e a que menos atrapalha a leitura do `.md` fora do app.
+pub const PREFIXO_ID: char = '^';
+
+/// Id de bloco no fim da linha, se houver (`texto ^abc123` → `abc123`).
+///
+/// Aceita só `[a-z0-9-]` depois do `^`, pra não confundir com um `^`
+/// legítimo no meio do texto (potência, apontar pra cima etc).
+pub fn extract_block_id(linha: &str) -> Option<&str> {
+    let t = linha.trim_end();
+    let pos = t.rfind(PREFIXO_ID)?;
+    // Precisa ter espaço antes: `x^2` não é id de bloco.
+    if pos == 0 || !t[..pos].ends_with(char::is_whitespace) {
+        return None;
+    }
+    let id = &t[pos + 1..];
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        return None;
+    }
+    Some(id)
+}
+
+/// Texto do bloco sem o id — o que é mostrado pro leitor.
+pub fn strip_block_id(linha: &str) -> &str {
+    match extract_block_id(linha) {
+        Some(id) => linha[..linha.rfind(id).unwrap_or(linha.len()).saturating_sub(1)].trim_end(),
+        None => linha,
+    }
+}
+
+/// Acha o bloco de um id dentro do corpo, devolvendo a linha inteira
+/// (sem o id).
+pub fn find_block<'a>(body: &'a str, id: &str) -> Option<&'a str> {
+    body.lines()
+        .find(|l| extract_block_id(l) == Some(id))
+        .map(strip_block_id)
+}
+
+/// Gera um id curto e estável o bastante pro uso (6 chars base36) a
+/// partir do conteúdo da linha + um contador de desempate.
+///
+/// Não é aleatório de propósito: o mesmo bloco gera o mesmo id numa
+/// segunda tentativa, então referenciar duas vezes não polui o arquivo
+/// com ids diferentes.
+pub fn gerar_block_id(conteudo: &str, tentativa: u32) -> String {
+    // Hash FNV-1a: 30 linhas de dependência a menos que trazer um crate
+    // de hash só pra isso, e id de bloco não precisa de resistência
+    // criptográfica.
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in conteudo.as_bytes().iter().chain(tentativa.to_le_bytes().iter()) {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x1000_0000_01b3);
+    }
+    const ALFABETO: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut id = String::with_capacity(6);
+    for _ in 0..6 {
+        id.push(ALFABETO[(hash % ALFABETO.len() as u64) as usize] as char);
+        hash /= ALFABETO.len() as u64;
+    }
+    id
+}
+
+/// Garante que a linha `alvo` (índice 0-based entre as linhas do corpo)
+/// tenha um id, devolvendo `(corpo novo, id)`.
+///
+/// Se já tiver, devolve o corpo INTOCADO — este é o ponto central do
+/// ciclo 176: id só entra no bloco que alguém referenciou, e só uma vez.
+pub fn garantir_block_id(body: &str, alvo: usize) -> Option<(String, String)> {
+    let linhas: Vec<&str> = body.split_inclusive('\n').collect();
+    let linha = linhas.get(alvo)?;
+    let sem_quebra = linha.trim_end_matches('\n');
+    if let Some(id) = extract_block_id(sem_quebra) {
+        return Some((body.to_string(), id.to_string()));
+    }
+    if sem_quebra.trim().is_empty() {
+        return None;
+    }
+
+    // Desempata contra ids já usados no documento.
+    let usados: Vec<&str> = body.lines().filter_map(extract_block_id).collect();
+    let mut tentativa = 0;
+    let id = loop {
+        let candidato = gerar_block_id(sem_quebra, tentativa);
+        if !usados.contains(&candidato.as_str()) {
+            break candidato;
+        }
+        tentativa += 1;
+    };
+
+    let mut novo = String::with_capacity(body.len() + id.len() + 2);
+    for (i, l) in linhas.iter().enumerate() {
+        if i == alvo {
+            let sem = l.trim_end_matches('\n');
+            novo.push_str(sem);
+            novo.push(' ');
+            novo.push(PREFIXO_ID);
+            novo.push_str(&id);
+            if l.ends_with('\n') {
+                novo.push('\n');
+            }
+        } else {
+            novo.push_str(l);
+        }
+    }
+    Some((novo, id))
+}
+
 /// Varre uma linha atrás de `[[...]]`. Um par com `[` ou `]` no miolo é
 /// ignorado (markdown de link normal aninhado, `[[a](b)]`), mesma regra
 /// do parser da UI.
@@ -206,6 +314,59 @@ mod tests {
     #[test]
     fn secao_inexistente_devolve_none() {
         assert!(extract_section("# Um\ntexto\n", "Outro").is_none());
+    }
+
+    #[test]
+    fn le_id_de_bloco_no_fim_da_linha() {
+        assert_eq!(extract_block_id("texto qualquer ^abc123"), Some("abc123"));
+        assert_eq!(extract_block_id("texto qualquer ^abc123\n"), Some("abc123"));
+        assert_eq!(strip_block_id("texto qualquer ^abc123"), "texto qualquer");
+    }
+
+    #[test]
+    fn circunflexo_no_meio_do_texto_nao_e_id() {
+        assert_eq!(extract_block_id("x^2 é o quadrado"), None);
+        assert_eq!(extract_block_id("sem id nenhum"), None);
+        assert_eq!(extract_block_id("maiúsculas ^ABC"), None, "id é minúsculo");
+    }
+
+    #[test]
+    fn garantir_id_escreve_so_na_linha_pedida() {
+        let body = "primeira linha\nsegunda linha\nterceira linha\n";
+        let (novo, id) = garantir_block_id(body, 1).unwrap();
+        assert!(novo.contains(&format!("segunda linha ^{id}")), "{novo}");
+        assert!(novo.contains("primeira linha\n"), "outras linhas não podem ganhar id");
+        assert_eq!(novo.lines().filter(|l| extract_block_id(l).is_some()).count(), 1);
+    }
+
+    #[test]
+    fn garantir_id_e_idempotente() {
+        let body = "linha\n";
+        let (uma, id1) = garantir_block_id(body, 0).unwrap();
+        let (duas, id2) = garantir_block_id(&uma, 0).unwrap();
+        assert_eq!(id1, id2, "referenciar duas vezes não pode gerar id novo");
+        assert_eq!(uma, duas, "o arquivo não pode mudar na segunda vez");
+    }
+
+    #[test]
+    fn garantir_id_ignora_linha_vazia() {
+        assert!(garantir_block_id("texto\n\noutro\n", 1).is_none());
+    }
+
+    #[test]
+    fn ids_colidindo_no_mesmo_documento_sao_desempatados() {
+        // Duas linhas com o MESMO texto gerariam o mesmo hash.
+        let body = "igual\nigual\n";
+        let (um, id1) = garantir_block_id(body, 0).unwrap();
+        let (_dois, id2) = garantir_block_id(&um, 1).unwrap();
+        assert_ne!(id1, id2, "o segundo bloco precisa de id próprio");
+    }
+
+    #[test]
+    fn acha_bloco_pelo_id() {
+        let body = "um\ndois ^alvo1\ntres\n";
+        assert_eq!(find_block(body, "alvo1"), Some("dois"));
+        assert_eq!(find_block(body, "naoexiste"), None);
     }
 
     #[test]

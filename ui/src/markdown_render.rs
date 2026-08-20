@@ -17,6 +17,26 @@ use pulldown_cmark::{html, Options, Parser};
 /// é preenchida depois, no DOM — esta função é síncrona e não alcança o
 /// vault.
 
+/// Embrulha o `^id` do fim das linhas num `<span>` discreto.
+fn marcar_ids_de_bloco(body: &str) -> String {
+    body.split_inclusive('\n')
+        .map(|linha| {
+            let sem_quebra = linha.trim_end_matches('\n');
+            if let Some(id) = anotadinho_core::links::extract_block_id(sem_quebra) {
+                let limpo = anotadinho_core::links::strip_block_id(sem_quebra);
+                let marcado = format!("{limpo} <span class=\"bloco-id\">^{id}</span>");
+                if linha.ends_with('\n') {
+                    format!("{marcado}\n")
+                } else {
+                    marcado
+                }
+            } else {
+                linha.to_string()
+            }
+        })
+        .collect()
+}
+
 /// Troca `![[Alvo]]` por um marcador de bloco que o DOM resolve
 /// depois. Fora de fence de código.
 fn marcar_transclusoes(body: &str) -> String {
@@ -71,6 +91,11 @@ pub fn render(markdown: &str) -> String {
     // conteúdo real é carregado depois, no DOM, por
     // `upgrade_transclusions_at` — daqui não dá pra ler o vault.
     let body = marcar_transclusoes(body);
+    // Id de bloco (ciclo 176): fica no DOM, mas embrulhado num `<span>`
+    // que o CSS deixa discreto. Não dá pra ESCONDER de vez: o markdown
+    // é recomposto a partir do DOM na hora de salvar, então o que sai
+    // da renderização some do arquivo na próxima gravação.
+    let body = marcar_ids_de_bloco(&body);
     let body = crate::wikilink::linkify(&body);
 
     let mut options = Options::empty();

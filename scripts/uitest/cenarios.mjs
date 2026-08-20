@@ -577,3 +577,65 @@ cenarios.push({
     ctx.assert(disco.includes("action: open-page"), `a ação não foi pro disco:\n${disco}`);
   },
 });
+
+// ── ciclo 176: id de bloco sob demanda ───────────────────────────────
+
+cenarios.push({
+  nome: "bloco: copiar referência grava ^id só naquela linha (176)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\nprimeira linha\n\nsegunda linha\n\nterceira linha\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelectorAll('[data-nav-block]').length >= 3", "os blocos aparecerem");
+
+    // Foca o segundo bloco e pede a referência com "c".
+    await bridge.js(`(() => {
+      const blocos = [...document.querySelectorAll('[data-nav-block]')];
+      const alvo = blocos.find(b => b.textContent.includes('segunda linha'));
+      alvo.focus();
+      alvo.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(700);
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+
+    const disco = ctx.ler();
+    ctx.assert(disco && disco.trim().length > 0, `o arquivo ficou vazio depois de salvar: ${JSON.stringify(disco)}`);
+    const linhas = disco.split("\n");
+    const comId = linhas.filter((l) => /\s\^[a-z0-9-]+$/.test(l));
+    ctx.assertEq(comId.length, 1, `só a linha referenciada podia ganhar id:\n${disco}`);
+    ctx.assert(comId[0].includes("segunda linha"), `o id foi pra linha errada:\n${disco}`);
+
+    // O id é metadado: fica no DOM (senão sumiria do arquivo no próximo
+    // salvamento, que recompõe o markdown a partir dele), mas sempre
+    // dentro de `.bloco-id`, que o CSS deixa discreto — nunca solto no
+    // meio do texto.
+    const marcas = await bridge.js(`(() => {
+      const editor = document.querySelector('.editor__wysiwyg');
+      const dentroDeSpan = [...editor.querySelectorAll('.bloco-id')].map(s => s.textContent).join('');
+      const todoTexto = editor.textContent || '';
+      const forasoltos = todoTexto.split('^').length - 1 - (dentroDeSpan.split('^').length - 1);
+      return { emSpan: dentroDeSpan, soltos: forasoltos };
+    })()`);
+    ctx.assert(marcas.emSpan.includes("^"), "o id devia estar num .bloco-id");
+    ctx.assertEq(marcas.soltos, 0, "nenhum ^ pode ficar solto no texto");
+
+    // Pedir de novo não gera id novo (idempotente).
+    await bridge.js(`(() => {
+      const alvo = [...document.querySelectorAll('[data-nav-block]')].find(b => b.textContent.includes('segunda linha'));
+      alvo.focus();
+      alvo.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(700);
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const depois = ctx.ler();
+    ctx.assertEq(
+      depois.split("\n").filter((l) => /\s\^[a-z0-9-]+$/.test(l)).length,
+      1,
+      `pedir a referência duas vezes duplicou id:\n${depois}`,
+    );
+  },
+});

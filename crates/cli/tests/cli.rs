@@ -653,3 +653,33 @@ fn query_agregado_invalido_falha_com_mensagem_util() {
         .failure()
         .stderr(predicates::str::contains("precisa de um campo"));
 }
+
+// ── ciclo 176: id de bloco ───────────────────────────────────────────
+
+#[test]
+fn read_com_id_de_bloco_devolve_so_aquela_linha() {
+    let dir = setup_vault();
+    fs::write(
+        dir.path().join("pages/blocos.md"),
+        "---\ntitle: Blocos\n---\nprimeira linha\nsegunda linha ^alvo1\nterceira linha\n",
+    )
+    .unwrap();
+
+    cli(&dir)
+        .args(["read", "pages/blocos.md^alvo1"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("segunda linha"))
+        .stdout(predicates::str::contains("primeira linha").not())
+        .stdout(predicates::str::contains("^alvo1").not());
+}
+
+#[test]
+fn read_com_id_inexistente_falha() {
+    let dir = setup_vault();
+    cli(&dir)
+        .args(["read", "pages/alpha.md^naoexiste"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("não tem o bloco"));
+}

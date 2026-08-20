@@ -4744,3 +4744,18 @@ body {
     color: var(--accent-blue);
     border-color: var(--accent-blue);
 }
+
+/* Id de bloco (ciclo 176) — metadado, não texto da nota: some
+   visualmente sem sair do DOM (o markdown é recomposto a partir dele
+   na hora de salvar, então esconder de vez apagaria o id do arquivo). */
+.bloco-id {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.6875em;
+    opacity: 0.35;
+    user-select: none;
+}
+
+.bloco-id:hover {
+    opacity: 1;
+}
