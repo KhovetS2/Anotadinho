@@ -1143,3 +1143,42 @@ cenarios.push({
     );
   },
 });
+
+// ── ciclo 191: wikilink em código inline e clique por título ─────────
+
+cenarios.push({
+  nome: "wikilink: exemplo em código inline não vira link, e clique resolve por título do frontmatter (191)",
+  async fn(bridge, ctx) {
+    // `grafo.md` tem `title: Grafo do Vault` no frontmatter e nome de
+    // ARQUIVO diferente — era exatamente o caso que não abria.
+    ctx.escrever(
+      "---\ntitle: __uitest\n---\n\n" +
+        "A sintaxe `[[Página]]` cria um link.\n\n" +
+        "Este é de verdade: [[Grafo do Vault]]\n",
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg a')", "o link renderizar");
+
+    const texto = await bridge.js(`document.querySelector('.editor__wysiwyg').innerText`);
+    ctx.assert(
+      texto.includes("[[Página]]"),
+      `o exemplo em código inline devia continuar literal: ${texto}`,
+    );
+    ctx.assert(!texto.includes("anotadinho://"), `a URL interna vazou pra tela: ${texto}`);
+
+    const links = await bridge.js(
+      `[...document.querySelectorAll('.editor__wysiwyg a')].map(a => a.textContent)`,
+    );
+    ctx.assertEq(links.length, 1, `devia haver 1 link só, veio: ${links.join(" | ")}`);
+
+    // Clicar abre a página cujo TÍTULO casa, mesmo com nome de arquivo
+    // diferente.
+    await bridge.js(`(() => { document.querySelector('.editor__wysiwyg a').click(); return true; })()`);
+    await ctx.esperar(
+      bridge,
+      `(document.querySelector('.editor__title')||{}).textContent === 'Grafo do Vault'`,
+      "a página alvo abrir",
+    );
+  },
+});

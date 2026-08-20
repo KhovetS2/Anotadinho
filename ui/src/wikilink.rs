@@ -99,9 +99,17 @@ pub fn extract_titles(markdown: &str) -> Vec<String> {
 }
 
 fn extract_titles_line(line: &str, out: &mut Vec<String>) {
+    let mut em_codigo = false;
     let mut i = 0;
     while i < line.len() {
-        if line[i..].starts_with("[[") {
+        // Mesmo critério do `linkify_line`: sem isso o grafo ganhava
+        // uma aresta pra uma página "Página" que só existe no exemplo.
+        if line.as_bytes()[i] == b'`' {
+            em_codigo = !em_codigo;
+            i += 1;
+            continue;
+        }
+        if !em_codigo && line[i..].starts_with("[[") {
             if let Some(rel_end) = line[i + 2..].find("]]") {
                 let title = &line[i + 2..i + 2 + rel_end];
                 if !title.is_empty() && !title.contains('[') && !title.contains(']') {
@@ -118,9 +126,23 @@ fn extract_titles_line(line: &str, out: &mut Vec<String>) {
 
 fn linkify_line(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
+    let mut em_codigo = false;
     let mut i = 0;
     while i < line.len() {
-        if line[i..].starts_with("[[") {
+        // Código INLINE também é exemplo de sintaxe, não link (ciclo
+        // 191). O fence já era pulado; a crase não, então uma página que
+        // EXPLICA a sintaxe escrevendo `` `[[Página]]` `` via o próprio
+        // exemplo virar um link de verdade, e o leitor via a URL
+        // percent-encoded (`anotadinho://page/P%C3%A1gina`) no lugar do
+        // que devia ser mostrado. Mesmo tratamento que
+        // `markdown_render::marcar_linha` já fazia pra transclusão.
+        if line.as_bytes()[i] == b'`' {
+            em_codigo = !em_codigo;
+            out.push('`');
+            i += 1;
+            continue;
+        }
+        if !em_codigo && line[i..].starts_with("[[") {
             if let Some(rel_end) = line[i + 2..].find("]]") {
                 let title = &line[i + 2..i + 2 + rel_end];
                 if !title.is_empty() && !title.contains('[') && !title.contains(']') {
@@ -145,6 +167,28 @@ fn linkify_line(line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wikilink_em_codigo_inline_nao_vira_link() {
+        // Regressão do ciclo 191: a página que EXPLICA a sintaxe
+        // mostrava `anotadinho://page/P%C3%A1gina` em vez do exemplo.
+        let entrada = "## `[[Página]]` — link\n";
+        assert_eq!(linkify(entrada), entrada);
+    }
+
+    #[test]
+    fn wikilink_fora_do_codigo_na_mesma_linha_ainda_vira_link() {
+        let saida = linkify("`[[Nao]]` mas [[Sim]] vale\n");
+        assert!(saida.contains("`[[Nao]]`"), "o exemplo em código ficou intacto: {saida}");
+        assert!(saida.contains("](anotadinho://page/Sim)"), "o de fora virou link: {saida}");
+    }
+
+    #[test]
+    fn extract_titles_ignora_codigo_inline() {
+        // Senão o grafo ganha uma aresta pra uma página que só existe
+        // no exemplo de sintaxe.
+        assert_eq!(extract_titles("veja `[[Exemplo]]` e [[Real]]\n"), vec!["Real".to_string()]);
+    }
 
     #[test]
     fn encode_decode_roundtrip_basic() {

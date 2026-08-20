@@ -2029,16 +2029,40 @@ pub fn editor(props: &EditorProps) -> Html {
             let on_page_selected = on_page_selected.clone();
             let open_dialog = open_dialog.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                match api::list_pages(&vault_path).await {
-                    Ok(pages) => {
-                        match pages.into_iter().find(|p| p.title.eq_ignore_ascii_case(&title)) {
-                            Some(meta) => on_page_selected.emit(meta),
-                            None => open_dialog.emit(PendingDialog::Alert {
-                                message: format!("Página \"{}\" não encontrada.", title),
-                            }),
-                        }
-                    }
-                    Err(e) => web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e)),
+                // `scan_vault` e não `list_pages` (ciclo 191): o título
+                // que interessa é o do FRONTMATTER, e `list_pages`
+                // devolve o nome do ARQUIVO. Por isso `[[Grafo do
+                // Vault]]` não abria nada — grafo.md tem esse título no
+                // frontmatter, mas o nome do arquivo é "grafo". Só
+                // wikilink cujo alvo tem título igual ao nome do arquivo
+                // funcionava, o que fazia o bug parecer intermitente.
+                //
+                // É o mesmo motivo já documentado em
+                // `upgrade_transclusions_at`, que foi corrigido no 170;
+                // este caminho ficou pra trás.
+                let paginas = api::scan_vault(&vault_path).await.unwrap_or_default();
+                let achado = paginas
+                    .iter()
+                    .find(|p| p.title.eq_ignore_ascii_case(&title))
+                    // Cai pro nome do arquivo: página sem `title:` no
+                    // frontmatter continua alcançável por `[[nome-do-arquivo]]`.
+                    .or_else(|| {
+                        paginas.iter().find(|p| {
+                            std::path::Path::new(&p.path)
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .is_some_and(|s| s.eq_ignore_ascii_case(&title))
+                        })
+                    });
+                match achado {
+                    Some(entry) => on_page_selected.emit(PageMeta {
+                        path: entry.path.clone(),
+                        title: entry.title.clone(),
+                        section: entry.section.clone(),
+                    }),
+                    None => open_dialog.emit(PendingDialog::Alert {
+                        message: format!("Página \"{}\" não encontrada.", title),
+                    }),
                 }
             });
         })
