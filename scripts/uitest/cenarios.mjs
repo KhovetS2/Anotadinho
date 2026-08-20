@@ -748,3 +748,43 @@ cenarios.push({
     ctx.assert(andou && andou !== "actions-add", `as setas não voltaram a andar (parou em ${andou})`);
   },
 });
+
+// ── ciclo 180: barra de título própria ───────────────────────────────
+
+cenarios.push({
+  nome: "janela: controles próprios no header e faixas de resize (180)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\n\nconteudo\n");
+    await recarregar(bridge);
+
+    const chrome = await bridge.js(`({
+      controles: [...document.querySelectorAll('.window-controls__btn')].map(b => b.title),
+      faixas: document.querySelectorAll('.window-resize').length,
+      arrasto: !!document.querySelector('header[data-tauri-drag-region]'),
+    })`);
+    ctx.assertEq(chrome.controles.length, 3, `esperava minimizar/maximizar/fechar: ${chrome.controles}`);
+    ctx.assert(chrome.controles.includes("Fechar"), `faltou o botão de fechar: ${chrome.controles}`);
+    ctx.assertEq(chrome.faixas, 8, "faltam faixas de redimensionar (8 direções)");
+    ctx.assert(chrome.arrasto, "o header precisa ser área de arraste da janela");
+
+    // Maximizar e restaurar de verdade, pelo comando que o botão chama.
+    const ciclo = await bridge.js(`(async () => {
+      const inicio = await window.__TAURI_INTERNALS__.invoke('window_is_maximized', {});
+      const depois = await window.__TAURI_INTERNALS__.invoke('window_toggle_maximize', {});
+      const conferido = await window.__TAURI_INTERNALS__.invoke('window_is_maximized', {});
+      await window.__TAURI_INTERNALS__.invoke('window_toggle_maximize', {});
+      const final = await window.__TAURI_INTERNALS__.invoke('window_is_maximized', {});
+      return { inicio, depois, conferido, final };
+    })()`);
+    ctx.assertEq(ciclo.depois, !ciclo.inicio, "alternar devia inverter o estado");
+    ctx.assertEq(ciclo.conferido, ciclo.depois, "o estado devolvido tem que bater com o real");
+    ctx.assertEq(ciclo.final, ciclo.inicio, "a janela devia ter voltado como estava");
+
+    // O ícone do botão acompanha o estado.
+    const icone = await bridge.js(`(() => {
+      const b = [...document.querySelectorAll('.window-controls__btn')][1];
+      return b.title;
+    })()`);
+    ctx.assert(["Maximizar", "Restaurar"].includes(icone), `título inesperado no botão: ${icone}`);
+  },
+});

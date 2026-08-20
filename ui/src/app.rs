@@ -1177,6 +1177,20 @@ pub fn app() -> Html {
 
     html! {
         <div class="app-root" tabindex="0" ref={app_root_ref} {onkeydown}>
+            // Sem a decoração do sistema (ciclo 180) não existe borda
+            // pra pegar e redimensionar. Estas faixas invisíveis nas
+            // 8 direções devolvem isso: o `mousedown` entrega o arraste
+            // pro compositor, que assume dali em diante.
+            { for ["n", "s", "w", "e", "nw", "ne", "sw", "se"].iter().map(|dir| {
+                let dir = *dir;
+                let onmousedown = Callback::from(move |e: MouseEvent| {
+                    e.prevent_default();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        let _ = api::window_start_resize(dir).await;
+                    });
+                });
+                html! { <div class={classes!("window-resize", format!("window-resize--{dir}"))} {onmousedown} /> }
+            }) }
             <HeaderBar
                 vault_name={(*vault_name).clone()}
                 vault_path={(*vault_path).clone()}

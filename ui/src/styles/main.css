@@ -4787,3 +4787,69 @@ body {
 .bloco-id:hover {
     opacity: 1;
 }
+
+/* ── Controles da janela (ciclo 180) ─────────────────────────────────
+   A barra do sistema saiu (`decorations: false`) porque destoava da
+   identidade do app. Minimizar/maximizar/fechar viraram botões do
+   header, e o header inteiro é área de arraste da janela. */
+.window-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: var(--sp-2);
+    padding-left: var(--sp-2);
+    border-left: 1px solid var(--border);
+}
+
+.window-controls__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 24px;
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+
+.window-controls__btn:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+/* Fechar é a única ação destrutiva do trio — cor só no hover, pra não
+   virar um ponto vermelho permanente no canto. */
+.window-controls__btn--fechar:hover {
+    background: var(--error);
+    color: var(--bg-base);
+}
+
+.window-controls__btn:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: -2px;
+}
+
+/* Sem decoração do sistema não há borda pra pegar e redimensionar em
+   alguns gerenciadores de janela. Estas faixas invisíveis nas bordas
+   devolvem isso — o cursor muda e o arraste redimensiona. */
+.app-root {
+    --resize-borda: 4px;
+}
+
+.window-resize {
+    position: fixed;
+    z-index: 9999;
+}
+
+.window-resize--n { top: 0; left: 0; right: 0; height: var(--resize-borda); cursor: ns-resize; }
+.window-resize--s { bottom: 0; left: 0; right: 0; height: var(--resize-borda); cursor: ns-resize; }
+.window-resize--w { top: 0; bottom: 0; left: 0; width: var(--resize-borda); cursor: ew-resize; }
+.window-resize--e { top: 0; bottom: 0; right: 0; width: var(--resize-borda); cursor: ew-resize; }
+.window-resize--nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+.window-resize--ne { top: 0; right: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+.window-resize--sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+.window-resize--se { bottom: 0; right: 0; width: 12px; height: 12px; cursor: nwse-resize; }

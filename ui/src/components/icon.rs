@@ -216,6 +216,17 @@ fn icon_body(name: &str) -> Html {
             <rect x="9" y="9" width="11" height="11" rx="2"/>
             <path d="M5 15 L4 15 Q3 15 3 14 L3 5 Q3 3 5 3 L14 3 Q15 3 15 4 L15 5"/>
         </> },
+        // Controles da janela (ciclo 180).
+        "window-minimize" => html! {
+            <line x1="5" y1="12" x2="19" y2="12"/>
+        },
+        "window-maximize" => html! {
+            <rect x="5" y="5" width="14" height="14" rx="1"/>
+        },
+        "window-restore" => html! { <>
+            <rect x="4" y="8" width="12" height="12" rx="1"/>
+            <polyline points="8,8 8,4 20,4 20,16 16,16"/>
+        </> },
         "chevron-up" => html! {
             <polyline points="4,15 12,7 20,15"/>
         },

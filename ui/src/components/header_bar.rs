@@ -41,6 +41,23 @@ pub struct HeaderBarProps {
 
 #[function_component(HeaderBar)]
 pub fn header_bar(props: &HeaderBarProps) -> Html {
+    // Controles da janela (ciclo 180): a barra do sistema saiu
+    // (`decorations: false`), então minimizar/maximizar/fechar vivem
+    // aqui. O estado de maximizada é consultado na montagem porque o
+    // gerenciador de janelas pode abrir o app já maximizado.
+    let maximizada = use_state(|| false);
+    {
+        let maximizada = maximizada.clone();
+        use_effect_with((), move |_| {
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Ok(v) = crate::api::window_is_maximized().await {
+                    maximizada.set(v);
+                }
+            });
+            || ()
+        });
+    }
+
     let menu_open = use_state(|| false);
     let menu_ref = use_node_ref();
     // Ref à parte pro CONTEÚDO do menu (não o wrapper, que também tem
@@ -259,7 +276,13 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
     }
 
     html! {
-        <header class="header-bar" tabindex="0" data-nav-item="header" data-nav-parent="root" data-nav-group="header">
+        // `data-tauri-drag-region`: arrastar o header move a janela e
+        // duplo clique maximiza — o que a barra do sistema fazia antes
+        // (ciclo 180). Botões e campos DENTRO dele não herdam o
+        // comportamento: o Tauri só age quando o alvo do clique é o
+        // próprio elemento marcado.
+        <header class="header-bar" tabindex="0" data-tauri-drag-region="true"
+            data-nav-item="header" data-nav-parent="root" data-nav-group="header">
             <div class="header-bar__left">
                 <button class="btn btn--ghost btn--xs" onclick={props.on_toggle_sidebar.reform(|_| ())}
                     data-nav-item="header-sidebar-toggle" data-nav-parent="header">
@@ -381,6 +404,43 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                             </button>
                         </div>
                     }
+                </div>
+
+                <div class="window-controls">
+                    <button class="window-controls__btn" type="button" title="Minimizar"
+                        data-nav-item="window-minimize" data-nav-parent="header"
+                        onclick={Callback::from(|_| {
+                            wasm_bindgen_futures::spawn_local(async {
+                                let _ = crate::api::window_minimize().await;
+                            });
+                        })}>
+                        <Icon name="window-minimize" />
+                    </button>
+                    <button class="window-controls__btn" type="button"
+                        title={if *maximizada { "Restaurar" } else { "Maximizar" }}
+                        data-nav-item="window-maximize" data-nav-parent="header"
+                        onclick={{
+                            let maximizada = maximizada.clone();
+                            Callback::from(move |_| {
+                                let maximizada = maximizada.clone();
+                                wasm_bindgen_futures::spawn_local(async move {
+                                    if let Ok(nova) = crate::api::window_toggle_maximize().await {
+                                        maximizada.set(nova);
+                                    }
+                                });
+                            })
+                        }}>
+                        <Icon name={if *maximizada { "window-restore" } else { "window-maximize" }} />
+                    </button>
+                    <button class="window-controls__btn window-controls__btn--fechar" type="button" title="Fechar"
+                        data-nav-item="window-close" data-nav-parent="header"
+                        onclick={Callback::from(|_| {
+                            wasm_bindgen_futures::spawn_local(async {
+                                let _ = crate::api::window_close().await;
+                            });
+                        })}>
+                        <Icon name="x" />
+                    </button>
                 </div>
             </div>
         </header>

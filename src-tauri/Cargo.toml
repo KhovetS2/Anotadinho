@@ -17,6 +17,9 @@ anotadinho-core = { path = "../crates/core" }
 anotadinho-vault = { path = "../crates/vault" }
 anotadinho-search = { path = "../crates/search" }
 anotadinho-ipc = { path = "../crates/ipc" }
+# Só pelo `ResizeDirection` (ciclo 180): o `tauri` usa o tipo na
+# assinatura de `start_resize_dragging` mas não o reexporta.
+tauri-runtime = "2"
 tauri = { version = "2.0", features = [] }
 tauri-plugin-dialog = "2.0"
 tauri-plugin-mcp-bridge = "0.12"

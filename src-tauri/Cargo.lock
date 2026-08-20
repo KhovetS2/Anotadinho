@@ -68,6 +68,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-mcp-bridge",
+ "tauri-runtime",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

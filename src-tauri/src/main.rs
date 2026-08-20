@@ -41,6 +41,61 @@ fn check_changes(
     Ok(changed)
 }
 
+/// Controles da janela (ciclo 180). Com `decorations: false` a barra do
+/// sistema some, então minimizar/maximizar/fechar passam a ser botões do
+/// próprio header do Anotadinho.
+#[tauri::command]
+fn window_minimize(window: tauri::Window) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+/// Alterna maximizado/restaurado e devolve o estado NOVO — o botão
+/// precisa saber pra trocar o ícone.
+#[tauri::command]
+fn window_toggle_maximize(window: tauri::Window) -> Result<bool, String> {
+    let maximizada = window.is_maximized().map_err(|e| e.to_string())?;
+    if maximizada {
+        window.unmaximize().map_err(|e| e.to_string())?;
+    } else {
+        window.maximize().map_err(|e| e.to_string())?;
+    }
+    Ok(!maximizada)
+}
+
+#[tauri::command]
+fn window_close(window: tauri::Window) -> Result<(), String> {
+    window.close().map_err(|e| e.to_string())
+}
+
+/// Começa a redimensionar a janela pela borda indicada (ciclo 180).
+///
+/// Sem a decoração do sistema não existe borda de arraste no WM, então
+/// as faixas invisíveis do `.window-resize` no frontend chamam isso no
+/// `mousedown` e o próprio compositor assume o arraste dali em diante.
+#[tauri::command]
+fn window_start_resize(window: tauri::Window, direcao: String) -> Result<(), String> {
+    use tauri_runtime::ResizeDirection as D;
+    let direcao = match direcao.as_str() {
+        "n" => D::North,
+        "s" => D::South,
+        "w" => D::West,
+        "e" => D::East,
+        "nw" => D::NorthWest,
+        "ne" => D::NorthEast,
+        "sw" => D::SouthWest,
+        "se" => D::SouthEast,
+        outro => return Err(format!("direção desconhecida: {outro}")),
+    };
+    window.start_resize_dragging(direcao).map_err(|e| e.to_string())
+}
+
+/// Estado inicial do botão de maximizar (a janela pode abrir já
+/// maximizada pelo gerenciador de janelas).
+#[tauri::command]
+fn window_is_maximized(window: tauri::Window) -> Result<bool, String> {
+    window.is_maximized().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn ping(args: PingArgs) -> PingResult {
     handle_ping(args)
@@ -249,6 +304,11 @@ fn main() {
         .manage(AppWatchers(Mutex::new(HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             ping,
+            window_minimize,
+            window_toggle_maximize,
+            window_close,
+            window_is_maximized,
+            window_start_resize,
             get_vault_info,
             list_pages,
             scan_vault,

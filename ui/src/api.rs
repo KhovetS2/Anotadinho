@@ -170,6 +170,51 @@ pub async fn read_page(vault_path: &str, page_path: &str) -> Result<String, Stri
         .ok_or_else(|| "conteúdo retornado não é string".to_string())
 }
 
+/// Controles da janela (ciclo 180) — a barra de título é do próprio
+/// app, então minimizar/maximizar/fechar passam por aqui.
+pub async fn window_minimize() -> Result<(), String> {
+    tauri_invoke("window_minimize", &JsValue::from(js_sys::Object::new()))
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("{:?}", e))
+}
+
+/// Alterna maximizado e devolve o estado NOVO.
+pub async fn window_toggle_maximize() -> Result<bool, String> {
+    let r = tauri_invoke("window_toggle_maximize", &JsValue::from(js_sys::Object::new()))
+        .await
+        .map_err(|e| format!("{:?}", e))?;
+    Ok(r.as_bool().unwrap_or(false))
+}
+
+/// Fecha a janela.
+pub async fn window_close() -> Result<(), String> {
+    tauri_invoke("window_close", &JsValue::from(js_sys::Object::new()))
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("{:?}", e))
+}
+
+/// Começa a redimensionar pela borda indicada (`n`, `s`, `w`, `e`,
+/// `nw`, `ne`, `sw`, `se`).
+pub async fn window_start_resize(direcao: &str) -> Result<(), String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("direcao"), &JsValue::from_str(direcao))
+        .map_err(|e| format!("{:?}", e))?;
+    tauri_invoke("window_start_resize", &JsValue::from(args))
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("{:?}", e))
+}
+
+/// Se a janela está maximizada agora.
+pub async fn window_is_maximized() -> Result<bool, String> {
+    let r = tauri_invoke("window_is_maximized", &JsValue::from(js_sys::Object::new()))
+        .await
+        .map_err(|e| format!("{:?}", e))?;
+    Ok(r.as_bool().unwrap_or(false))
+}
+
 /// Conteúdo + marca de versão do arquivo (ciclo 173).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VersionedPage {
