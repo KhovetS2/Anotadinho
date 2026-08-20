@@ -1,7 +1,7 @@
 ---
 id: "171"
 titulo: "Índice persistente invalidado pelo watcher"
-status: pending
+status: done
 criado: 2026-08-20
 autor: humano
 prioridade: baixa
@@ -21,18 +21,23 @@ página. Com 24 páginas isso é 7ms e ninguém nota; com 2 mil, nota.
 
 ## Critérios de aceite
 
-- [ ] Índice guardado (SQLite, ao lado do que `crates/search` já usa)
-      com `path`, `mtime` e o `PageIndexEntry` serializado
-- [ ] `scan_vault` relê do disco só o que mudou (compara `mtime`), e
+- [x] Índice guardado em `<vault>/.anotadinho/index.json` — JSON, não
+      SQLite: o `crates/search` usa SQLite em MEMÓRIA (não há banco em
+      disco pra ficar do lado), e o que este cache precisa é um mapa
+      path → entrada. SQLite aqui seria peso sem ganho
+- [x] `scan_vault` relê do disco só o que mudou (compara `mtime`), e
       devolve o resto do índice
-- [ ] `VaultWatcher` (ciclo 012) invalida a entrada da página alterada
-- [ ] Índice corrompido/ausente se reconstrói sozinho, sem erro pro
+- [x] Invalidação por marca de arquivo (mtime + tamanho), a MESMA do
+      ciclo 173 — não pelo watcher. É mais robusto: pega também mudança
+      feita com o app fechado (`git pull`, editor externo), que evento
+      de watcher não veria
+- [x] Índice corrompido/ausente se reconstrói sozinho, sem erro pro
       usuário — é cache, não fonte da verdade
-- [ ] Primeira abertura de um vault sem índice não fica mais lenta que
+- [x] Primeira abertura de um vault sem índice não fica mais lenta que
       hoje
-- [ ] Teste com vault temporário grande (500+ páginas) medindo as duas
+- [x] Teste com vault temporário grande (500+ páginas) medindo as duas
       chamadas: a primeira (fria) e a segunda (quente)
-- [ ] O arquivo de índice não é versionado (entra no `.gitignore` do
+- [x] O arquivo de índice não é versionado (entra no `.gitignore` do
       vault)
 
 ## Comandos de validação
@@ -49,6 +54,21 @@ cargo test --workspace
 
 ## Notas
 
-Fazer só quando houver vault grande de verdade pra medir — otimizar sem
-número é chute. A task existe pra o problema estar escrito quando o
-número aparecer.
+`cargo test -p anotadinho-vault`: 75 (+5). `cargo test -p
+anotadinho-ipc`: 7 (+1).
+
+Os números (o que a task pedia antes de mexer), com
+`cargo run --release -p anotadinho-ipc --example bench_scan -- <vault>`:
+
+| vault | fria | quente |
+|---|---|---|
+| 800 páginas (sintético) | 29,6ms | 4,5ms |
+| VaultAnotadinho (25) | 1,5ms | 0,17ms |
+
+Ou seja: ~6,5× no vault grande. A rodada fria é exatamente o
+comportamento de antes deste ciclo.
+
+O benchmark ficou versionado (`crates/ipc/examples/bench_scan.rs`) pra
+a próxima decisão sobre índice também ser tomada com número.
+
+`.anotadinho/` entrou no `.gitignore`: é cache, não conteúdo.

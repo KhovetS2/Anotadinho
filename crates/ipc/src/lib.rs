@@ -79,15 +79,34 @@ pub fn handle_list_pages(vault_path: String) -> Result<Vec<PageMeta>, String> {
 pub fn handle_scan_vault(vault_path: String) -> Result<Vec<PageIndexEntry>, String> {
     let vault = VaultIo::open(&vault_path);
     let pages = vault.list_pages().map_err(|e| e.to_string())?;
-    Ok(pages
-        .into_iter()
-        .filter_map(|p| {
-            let content = vault.read_page(&p.path).ok()?;
-            Some(PageIndexEntry::from_content(
-                &p.path, &p.title, &p.section, &content,
-            ))
-        })
-        .collect())
+
+    // Cache em disco (ciclo 171): só relê e reparseia o que mudou desde
+    // a última varredura. Cache é conveniência — se falhar em qualquer
+    // ponto, a varredura completa acontece igual.
+    let mut cache = anotadinho_vault::IndexCache::carregar(vault.root());
+    let mut entradas = Vec::with_capacity(pages.len());
+    let mut paths = Vec::with_capacity(pages.len());
+
+    for p in pages {
+        paths.push(p.path.clone());
+        let versao = vault.page_version(&p.path);
+        if let Some(versao) = &versao {
+            if let Some(cacheada) = cache.obter(&p.path, versao) {
+                entradas.push(cacheada.clone());
+                continue;
+            }
+        }
+        let Ok(content) = vault.read_page(&p.path) else { continue };
+        let entry = PageIndexEntry::from_content(&p.path, &p.title, &p.section, &content);
+        if let Some(versao) = versao {
+            cache.guardar(&p.path, versao, entry.clone());
+        }
+        entradas.push(entry);
+    }
+
+    cache.manter_apenas(&paths);
+    cache.salvar();
+    Ok(entradas)
 }
 
 /// Handler de read_page: retorna o conteúdo Markdown bruto.
@@ -493,6 +512,35 @@ mod tests {
             atual.version
         )
         .is_ok());
+    }
+
+    #[test]
+    fn segunda_varredura_usa_o_cache_e_enxerga_mudanca() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        std::fs::write(dir.path().join("pages/a.md"), "---\ntitle: A\nstatus: backlog\n---\n").unwrap();
+        let vault = dir.path().to_string_lossy().to_string();
+
+        let primeira = handle_scan_vault(vault.clone()).unwrap();
+        assert_eq!(primeira.len(), 1);
+        assert!(
+            dir.path().join(".anotadinho/index.json").exists(),
+            "o cache devia ter sido gravado"
+        );
+
+        // Segunda varredura sem mudança: mesmo resultado.
+        let segunda = handle_scan_vault(vault.clone()).unwrap();
+        assert_eq!(segunda, primeira);
+
+        // Arquivo muda → o cache não pode devolver o valor velho.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::fs::write(dir.path().join("pages/a.md"), "---\ntitle: A\nstatus: done\n---\n").unwrap();
+        let terceira = handle_scan_vault(vault.clone()).unwrap();
+        assert_eq!(terceira[0].field("status").as_deref(), Some("done"));
+
+        // Página apagada some do resultado.
+        std::fs::remove_file(dir.path().join("pages/a.md")).unwrap();
+        assert!(handle_scan_vault(vault).unwrap().is_empty());
     }
 
     #[test]
