@@ -937,3 +937,66 @@ cenarios.push({
     ctx.assert(disco.includes('{{ type: "callout" }}'), `o embed se perdeu:\n${disco}`);
   },
 });
+
+// ── ciclo 186: desfazer que entende de blocos ────────────────────────
+
+cenarios.push({
+  nome: "desfazer: inserir embed logo depois de digitar volta um passo só (186)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\nlinha base\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg')", "o editor abrir");
+
+    // Digita e, SEM esperar a janela de agrupamento fechar, insere um
+    // embed. Era aqui que o estado pré-inserção sumia do histórico.
+    await bridge.js(`(() => {
+      const ed = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
+      ed.focus();
+      const r = document.createRange();
+      r.selectNodeContents(ed.lastElementChild || ed);
+      r.collapse(false);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      document.execCommand('insertText', false, ' editado');
+      return true;
+    })()`);
+    await PAUSA(200);
+
+    // Parágrafo novo + "/": o menu só abre com a barra no começo de uma
+    // linha, igual ao uso real.
+    await bridge.js(`(() => {
+      document.execCommand('insertParagraph', false);
+      document.execCommand('insertText', false, '/');
+      return true;
+    })()`);
+    await ctx.esperar(bridge, "document.querySelector('.slash-menu')", "o menu / abrir");
+    await bridge.js(`(() => {
+      const item = [...document.querySelectorAll('.slash-menu__item')].find(i => i.textContent.includes('Destaque'));
+      item.click();
+      return true;
+    })()`);
+    await ctx.esperar(bridge, "document.querySelector('.callout')", "o embed aparecer");
+
+    // Ctrl+Z: tem que tirar o embed e MANTER o texto digitado.
+    await bridge.js(`(() => {
+      document.querySelector('.editor__wysiwyg[contenteditable="true"]')
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(900);
+    ctx.assertEq(
+      await bridge.js(`!!document.querySelector('.callout')`),
+      false,
+      "o embed devia ter sumido com o desfazer",
+    );
+
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const disco = ctx.ler();
+    ctx.assert(!disco.includes('{{ type: "callout" }}'), `o embed voltou pro disco:\n${disco}`);
+    ctx.assert(
+      disco.includes("linha base editado"),
+      `desfazer comeu a digitação junto — devia ter voltado UM passo só:\n${disco}`,
+    );
+  },
+});

@@ -161,23 +161,22 @@ pub fn editor(props: &EditorProps) -> Html {
     let file_version_ref = use_mut_ref(|| None::<String>);
 
     // Undo/redo genérico: pilha de snapshots de markdown inteiro
-    // (cap. ~20), não um mecanismo por tipo de embed — cobre texto solto
-    // E qualquer mutação de embed (mover card, editar evento, etc) com
-    // uma implementação só, já que TODA mutação passa por `mark_edited`
-    // (ponto único desde o ciclo 074). `last_content_ref` guarda o
-    // último markdown que `mark_edited` viu — não é o mesmo que
-    // `content_md` (que nem sempre é atualizado em sync, ver
-    // `on_edit`), é a base de comparação certa pra decidir quando
-    // empilhar um novo snapshot (agrupa digitação rápida numa pausa só,
-    // em vez de um snapshot por tecla). `render_gen` força o Effect 2
+    // (`anotadinho_core::history::History`, ciclo 186), não um mecanismo
+    // por tipo de embed — cobre texto solto E qualquer mutação de embed
+    // (mover card, editar evento, etc) com uma implementação só, já que
+    // TODA mutação passa por `mark_edited` (ponto único desde o ciclo
+    // 074). O histórico guarda o último markdown que `mark_edited` viu —
+    // não é o mesmo que `content_md` (que nem sempre é atualizado em
+    // sync, ver `on_edit`). `render_gen` força o Effect 2
     // (abaixo) a reinjetar o HTML mesmo quando path/has_embeds/
     // segment_count não mudaram — sem isso, desfazer/refazer atualizava
     // `content_md` (embeds declarativos refletiam certo) mas os trechos
     // de markdown solto injetados via `set_inner_html` ficavam com o
     // texto antigo na tela.
-    let undo_stack = use_mut_ref(Vec::<String>::new);
-    let redo_stack = use_mut_ref(Vec::<String>::new);
-    let last_content_ref = use_mut_ref(String::new);
+    // Histórico de desfazer/refazer (ciclo 186): o tipo mora no core,
+    // testado fora do WASM. O que fica aqui é só a decisão de AGRUPAR,
+    // que depende de relógio.
+    let historico = use_mut_ref(|| anotadinho_core::history::History::new(String::new()));
     let last_snapshot_at = use_mut_ref(|| 0.0f64);
     let render_gen = use_state(|| 0u32);
 
@@ -359,17 +358,14 @@ pub fn editor(props: &EditorProps) -> Html {
         let edited = edited.clone();
         let edited_ref = edited_ref.clone();
         let pending_flush_ref = pending_flush_ref.clone();
-        let undo_stack = undo_stack.clone();
-        let redo_stack = redo_stack.clone();
-        let last_content_ref = last_content_ref.clone();
+        let historico = historico.clone();
         let file_version_ref = file_version_ref.clone();
 
         use_effect_with(page.clone(), move |page| {
             // Histórico de undo/redo é por página — trocar de página não
             // deveria deixar "desfazer" aplicar uma edição de outra
             // página bem diferente.
-            undo_stack.borrow_mut().clear();
-            redo_stack.borrow_mut().clear();
+            historico.borrow_mut().reiniciar(String::new());
             // Página que ESTE efeito está carregando — usada no cleanup
             // como identidade da página que está sendo deixada pra trás
             // (o cleanup roda antes do próximo efeito, ou seja, exatamente
@@ -387,7 +383,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 let edited = edited.clone();
                 let edited_ref = edited_ref.clone();
                 let pending_flush_ref = pending_flush_ref.clone();
-                let last_content_ref = last_content_ref.clone();
+                let historico_load = historico.clone();
                 let file_version_ref = file_version_ref.clone();
                 loading.set(true);
                 error.set(None);
@@ -398,7 +394,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     match api::read_page_versioned(&vault_path, &path).await {
                         Ok(page) => {
                             *file_version_ref.borrow_mut() = page.version;
-                            *last_content_ref.borrow_mut() = page.content.clone();
+                            historico_load.borrow_mut().reiniciar(page.content.clone());
                             content_md.set(page.content.clone());
                             saved_content.set(page.content);
                         }
@@ -682,7 +678,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let saved_content = saved_content.clone();
         let status = status.clone();
         let edited_ref = edited_ref.clone();
-        let last_content_ref = last_content_ref.clone();
+        let historico = historico.clone();
         let file_version_ref = file_version_ref.clone();
         let render_gen = render_gen.clone();
         use_effect_with(props.vault_version, move |version| {
@@ -702,7 +698,9 @@ pub fn editor(props: &EditorProps) -> Html {
                     return;
                 }
                 *file_version_ref.borrow_mut() = page.version;
-                *last_content_ref.borrow_mut() = page.content.clone();
+                // Recarga vinda do DISCO zera o histórico: desfazer
+                // depois dela regravaria o arquivo com o conteúdo velho.
+                historico.borrow_mut().reiniciar(page.content.clone());
                 content_md.set(page.content.clone());
                 saved_content.set(page.content);
                 // Força a reinjeção do HTML dos segmentos (o guard de
@@ -818,18 +816,16 @@ pub fn editor(props: &EditorProps) -> Html {
     // — sempre correto pra texto puro, já que a fonte de verdade ali é o
     // DOM, não `content_md`. Embeds chamam com o markdown que ELES já
     // calcularam (`new_full`), sem depender de `content_md` nenhuma.
-    let mark_edited = {
+    let mark_edited_com = {
         let e = edited.clone();
         let save_counter = save_counter.clone();
         let edited_ref = edited_ref.clone();
         let pending_flush_ref = pending_flush_ref.clone();
         let autosave_enabled = props.autosave_enabled;
         let persist = persist.clone();
-        let undo_stack = undo_stack.clone();
-        let redo_stack = redo_stack.clone();
-        let last_content_ref = last_content_ref.clone();
+        let historico = historico.clone();
         let last_snapshot_at = last_snapshot_at.clone();
-        move |md: String| {
+        move |md: String, estrutural: bool| {
             e.set(true);
             *edited_ref.borrow_mut() = true;
             // Mantém o flush de segurança sempre atualizado, independente
@@ -837,26 +833,17 @@ pub fn editor(props: &EditorProps) -> Html {
             // perder texto ao trocar de página rápido, não o timer de 3s.
             *pending_flush_ref.borrow_mut() = md.clone();
 
-            // Empilha o markdown ANTERIOR pro undo — só se já passou um
-            // tempinho desde o último snapshot (agrupa uma rajada de
-            // digitação numa pausa só num único passo de "desfazer", em
-            // vez de um passo por tecla). `last_content_ref` (não
-            // `content_md`) é a base porque `content_md` nem sempre é
-            // atualizado em sync com toda edição (ver `on_edit`).
+            // Agrupa uma rajada de digitação num passo só de "desfazer",
+            // em vez de um passo por tecla. Mutação ESTRUTURAL (inserir,
+            // remover, mover, duplicar segmento, mudar dados de embed)
+            // NUNCA agrupa: era esse o bug do ciclo 186 — inserir um
+            // embed logo depois de digitar caía dentro da janela de
+            // agrupamento, o estado pré-inserção sumia do histórico e
+            // Ctrl+Z pulava direto pra um estado bem mais antigo.
             let now = js_sys::Date::now();
-            let previous = last_content_ref.borrow().clone();
-            if previous != md {
-                let elapsed = now - *last_snapshot_at.borrow();
-                if elapsed > 800.0 {
-                    let mut stack = undo_stack.borrow_mut();
-                    stack.push(previous);
-                    if stack.len() > 20 {
-                        stack.remove(0);
-                    }
-                    redo_stack.borrow_mut().clear();
-                    *last_snapshot_at.borrow_mut() = now;
-                }
-                *last_content_ref.borrow_mut() = md.clone();
+            let agrupar = !estrutural && (now - *last_snapshot_at.borrow()) <= 800.0;
+            if historico.borrow_mut().registrar(md.clone(), agrupar) {
+                *last_snapshot_at.borrow_mut() = now;
             }
 
             if !autosave_enabled {
@@ -873,6 +860,18 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
             });
         }
+    };
+
+    // Digitação: pode agrupar. Este é o `mark_edited` de sempre, e é o
+    // que a maior parte do arquivo continua chamando.
+    let mark_edited = {
+        let f = mark_edited_com.clone();
+        move |md: String| f(md, false)
+    };
+    // Mutação estrutural: sempre vira um ponto de desfazer próprio.
+    let mark_edited_estrutural = {
+        let f = mark_edited_com.clone();
+        move |md: String| f(md, true)
     };
 
     // Painel de propriedades (ciclo 099): único lugar do editor que
@@ -908,17 +907,11 @@ pub fn editor(props: &EditorProps) -> Html {
     // restaurada, mesmo caminho do salvamento normal).
     let do_undo = {
         let content_md = content_md.clone();
-        let undo_stack = undo_stack.clone();
-        let redo_stack = redo_stack.clone();
-        let last_content_ref = last_content_ref.clone();
+        let historico = historico.clone();
         let render_gen = render_gen.clone();
         let persist = persist.clone();
         Callback::from(move |_: ()| {
-            let popped = undo_stack.borrow_mut().pop();
-            let Some(prev) = popped else { return };
-            let current = last_content_ref.borrow().clone();
-            redo_stack.borrow_mut().push(current);
-            *last_content_ref.borrow_mut() = prev.clone();
+            let Some(prev) = historico.borrow_mut().desfazer() else { return };
             content_md.set(prev.clone());
             render_gen.set(*render_gen + 1);
             persist(prev);
@@ -926,17 +919,11 @@ pub fn editor(props: &EditorProps) -> Html {
     };
     let do_redo = {
         let content_md = content_md.clone();
-        let undo_stack = undo_stack.clone();
-        let redo_stack = redo_stack.clone();
-        let last_content_ref = last_content_ref.clone();
+        let historico = historico.clone();
         let render_gen = render_gen.clone();
         let persist = persist.clone();
         Callback::from(move |_: ()| {
-            let popped = redo_stack.borrow_mut().pop();
-            let Some(next) = popped else { return };
-            let current = last_content_ref.borrow().clone();
-            undo_stack.borrow_mut().push(current);
-            *last_content_ref.borrow_mut() = next.clone();
+            let Some(next) = historico.borrow_mut().refazer() else { return };
             content_md.set(next.clone());
             render_gen.set(*render_gen + 1);
             persist(next);
@@ -976,7 +963,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let content_md = content_md.clone();
         let editor_ref = editor_ref.clone();
         let segment_refs = segment_refs.clone();
-        let mark_edited = mark_edited.clone();
+        let mark_edited_estrutural = mark_edited_estrutural.clone();
         // Recebe a posição na lista filtrada explicitamente (`vi`) em vez
         // de ler `*slash_idx` — o clique do mouse num item precisa
         // aplicar AQUELE item, não o que estava destacado por último via
@@ -1000,7 +987,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         let content_md = content_md.clone();
                         let editor_ref = editor_ref.clone();
                         let segment_refs = segment_refs.clone();
-                        let mark_edited = mark_edited.clone();
+                        let mark_edited_estrutural = mark_edited_estrutural.clone();
                         open_dialog.emit(PendingDialog::Prompt {
                             title: "Caminho da imagem ou URL".to_string(),
                             default: String::new(),
@@ -1008,14 +995,14 @@ pub fn editor(props: &EditorProps) -> Html {
                                 let content_md = content_md.clone();
                                 let editor_ref = editor_ref.clone();
                                 let segment_refs = segment_refs.clone();
-                                let mark_edited = mark_edited.clone();
+                                let mark_edited_estrutural = mark_edited_estrutural.clone();
                                 if path.starts_with("http") {
                                     let html = format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", path.replace('"', "&quot;"));
                                     if let Some(el) = parse_single_element(&html) {
                                         if insert_element_at_cursor(&el, false) {
                                             let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
                                             content_md.set(new_md.clone());
-                                            mark_edited(new_md);
+                                            mark_edited_estrutural(new_md);
                                         }
                                     }
                                 } else {
@@ -1027,7 +1014,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                                 if insert_element_at_cursor(&el, false) {
                                                     let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
                                                     content_md.set(new_md.clone());
-                                                    mark_edited(new_md);
+                                                    mark_edited_estrutural(new_md);
                                                 }
                                             }
                                         }
@@ -1040,7 +1027,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         let content_md = content_md.clone();
                         let editor_ref = editor_ref.clone();
                         let segment_refs = segment_refs.clone();
-                        let mark_edited = mark_edited.clone();
+                        let mark_edited_estrutural = mark_edited_estrutural.clone();
                         open_dialog.emit(PendingDialog::Prompt {
                             title: "Código Mermaid (ex: graph TD; A-->B)".to_string(),
                             default: String::new(),
@@ -1050,7 +1037,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                     if insert_element_at_cursor(&el, true) {
                                         let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
                                         content_md.set(new_md.clone());
-                                        mark_edited(new_md);
+                                        mark_edited_estrutural(new_md);
                                     }
                                 }
                                 wasm_bindgen_futures::spawn_local(async {
@@ -1074,7 +1061,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         let content_md = content_md.clone();
                         let editor_ref = editor_ref.clone();
                         let segment_refs = segment_refs.clone();
-                        let mark_edited = mark_edited.clone();
+                        let mark_edited_estrutural = mark_edited_estrutural.clone();
                         wasm_bindgen_futures::spawn_local(async move {
                             match crate::api::list_assets(&vp).await {
                                 Ok(assets) => {
@@ -1100,7 +1087,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                                     if insert_element_at_cursor(&el, false) {
                                                         let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
                                                         content_md.set(new_md.clone());
-                                                        mark_edited(new_md);
+                                                        mark_edited_estrutural(new_md);
                                                     }
                                                 }
                                             }),
@@ -1133,7 +1120,7 @@ pub fn editor(props: &EditorProps) -> Html {
                             if insert_embed_marker_at_cursor(kind.type_name(), &body) {
                                 let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
                                 content_md.set(new_md.clone());
-                                mark_edited(new_md);
+                                mark_edited_estrutural(new_md);
                             }
                         }
                     }
@@ -1152,7 +1139,7 @@ pub fn editor(props: &EditorProps) -> Html {
                             if insert_element_at_cursor(&el, true) {
                                 let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
                                 content_md.set(new_md.clone());
-                                mark_edited(new_md);
+                                mark_edited_estrutural(new_md);
                             }
                         } else {
                             exec_fn("insertHTML", other);
@@ -1187,7 +1174,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let content_md = content_md.clone();
         let editor_ref = editor_ref.clone();
         let segment_refs = segment_refs.clone();
-        let mark_edited = mark_edited.clone();
+        let mark_edited_estrutural = mark_edited_estrutural.clone();
         Callback::from(move |vi: usize| {
             if let Some((text_node, pos, query)) = find_wikilink_context() {
                 delete_range_and_collapse(&text_node, pos, 2 + query.chars().count() as u32);
@@ -1200,7 +1187,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         if insert_element_at_cursor(&el, false) {
                             let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
                             content_md.set(new_md.clone());
-                            mark_edited(new_md);
+                            mark_edited_estrutural(new_md);
                         }
                     }
                 }
@@ -1240,7 +1227,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let content_md_ref_copia = content_md.clone();
         let frontmatter_copia = frontmatter_text.clone();
         let titulo_copia = page.title.clone();
-        let mark_edited_copia = mark_edited.clone();
+        let mark_edited_copia = mark_edited_estrutural.clone();
         let render_gen_copia = render_gen.clone();
         let mark_edited_vim = mark_edited.clone();
         let do_undo = do_undo.clone();
@@ -1698,7 +1685,7 @@ pub fn editor(props: &EditorProps) -> Html {
     let on_segments_keydown = {
         let content_md = content_md.clone();
         let frontmatter_text = frontmatter_text.clone();
-        let mark_edited = mark_edited.clone();
+        let mark_edited_estrutural = mark_edited_estrutural.clone();
         let on_sair_blocos = props.on_leave_block_nav.clone();
         Callback::from(move |e: KeyboardEvent| {
             if e.key() != "n" || e.ctrl_key() || e.meta_key() || e.alt_key() {
@@ -1708,18 +1695,23 @@ pub fn editor(props: &EditorProps) -> Html {
             e.prevent_default();
             e.stop_propagation();
             sair_do_nav_mode(&on_sair_blocos);
-            inserir_segmento_e_abrir_menu(pos + 1, &content_md, &frontmatter_text, &mark_edited);
+            inserir_segmento_e_abrir_menu(
+                pos + 1,
+                &content_md,
+                &frontmatter_text,
+                &mark_edited_estrutural,
+            );
         })
     };
 
     let insert_blank_line = {
         let content_md = content_md.clone();
         let frontmatter_text = frontmatter_text.clone();
-        let mark_edited = mark_edited.clone();
+        let mark_edited_estrutural = mark_edited_estrutural.clone();
         move |pos: usize| {
             let content_md = content_md.clone();
             let frontmatter_text = frontmatter_text.clone();
-            let mark_edited = mark_edited.clone();
+            let mark_edited_estrutural = mark_edited_estrutural.clone();
             Callback::from(move |e: MouseEvent| {
                 e.stop_propagation();
                 let full = (*content_md).clone();
@@ -1735,7 +1727,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 let new_body = crate::embed::join(&segs);
                 let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
                 content_md.set(new_full.clone());
-                mark_edited(new_full);
+                mark_edited_estrutural(new_full);
 
                 wasm_bindgen_futures::spawn_local(async move {
                     gloo_timers::future::sleep(std::time::Duration::from_millis(60)).await;
@@ -1759,18 +1751,18 @@ pub fn editor(props: &EditorProps) -> Html {
     let remove_embed = {
         let content_md = content_md.clone();
         let frontmatter_text = frontmatter_text.clone();
-        let mark_edited = mark_edited.clone();
+        let mark_edited_estrutural = mark_edited_estrutural.clone();
         let open_dialog = props.open_dialog.clone();
         move |pos: usize| {
             let content_md = content_md.clone();
             let frontmatter_text = frontmatter_text.clone();
-            let mark_edited = mark_edited.clone();
+            let mark_edited_estrutural = mark_edited_estrutural.clone();
             let open_dialog = open_dialog.clone();
             Callback::from(move |e: MouseEvent| {
                 e.stop_propagation();
                 let content_md = content_md.clone();
                 let frontmatter_text = frontmatter_text.clone();
-                let mark_edited = mark_edited.clone();
+                let mark_edited_estrutural = mark_edited_estrutural.clone();
                 open_dialog.emit(PendingDialog::Confirm {
                     message: "Remover este embed da página? O conteúdo dele (cards, eventos ou linhas da tabela) será perdido.".to_string(),
                     confirm_label: "Remover".to_string(),
@@ -1784,7 +1776,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         let new_body = crate::embed::join(&segs);
                         let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
                         content_md.set(new_full.clone());
-                        mark_edited(new_full);
+                        mark_edited_estrutural(new_full);
                     }),
                 });
             })
@@ -1799,11 +1791,11 @@ pub fn editor(props: &EditorProps) -> Html {
     let reorder_embed = {
         let content_md = content_md.clone();
         let frontmatter_text = frontmatter_text.clone();
-        let mark_edited = mark_edited.clone();
+        let mark_edited_estrutural = mark_edited_estrutural.clone();
         move |pos: usize, delta: isize| {
             let content_md = content_md.clone();
             let frontmatter_text = frontmatter_text.clone();
-            let mark_edited = mark_edited.clone();
+            let mark_edited_estrutural = mark_edited_estrutural.clone();
             Callback::from(move |e: MouseEvent| {
                 e.stop_propagation();
                 let full = (*content_md).clone();
@@ -1815,7 +1807,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 let new_body = crate::embed::join(&segs);
                 let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
                 content_md.set(new_full.clone());
-                mark_edited(new_full);
+                mark_edited_estrutural(new_full);
             })
         }
     };
@@ -1823,11 +1815,11 @@ pub fn editor(props: &EditorProps) -> Html {
     let duplicate_embed = {
         let content_md = content_md.clone();
         let frontmatter_text = frontmatter_text.clone();
-        let mark_edited = mark_edited.clone();
+        let mark_edited_estrutural = mark_edited_estrutural.clone();
         move |pos: usize| {
             let content_md = content_md.clone();
             let frontmatter_text = frontmatter_text.clone();
-            let mark_edited = mark_edited.clone();
+            let mark_edited_estrutural = mark_edited_estrutural.clone();
             Callback::from(move |e: MouseEvent| {
                 e.stop_propagation();
                 let full = (*content_md).clone();
@@ -1839,7 +1831,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 let new_body = crate::embed::join(&segs);
                 let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
                 content_md.set(new_full.clone());
-                mark_edited(new_full);
+                mark_edited_estrutural(new_full);
             })
         }
     };
@@ -2134,7 +2126,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                 }
                                 DocSegment::Embed(data) => {
                                     let content_md = content_md.clone();
-                                    let mark_edited = mark_edited.clone();
+                                    let mark_edited_estrutural = mark_edited_estrutural.clone();
                                     let frontmatter_text = frontmatter_text.clone();
                                     let idx = i;
                                     let on_change = Callback::from(move |new_data: crate::embed::EmbedData| {
@@ -2151,7 +2143,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                             format!("{}\n{}", frontmatter_text, new_body)
                                         };
                                         content_md.set(new_full.clone());
-                                        mark_edited(new_full);
+                                        mark_edited_estrutural(new_full);
                                     });
                                     // Botões que só aparecem no hover da borda de
                                     // cima/baixo do embed — sem isso, um embed que

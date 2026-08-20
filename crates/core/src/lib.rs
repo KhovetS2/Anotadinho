@@ -16,6 +16,7 @@ pub mod markdown;
 // precisa deles pra operar embeds sem passar por WASM.
 pub mod date_util;
 pub mod embed;
+pub mod history;
 pub mod index;
 pub mod links;
 pub mod query;
