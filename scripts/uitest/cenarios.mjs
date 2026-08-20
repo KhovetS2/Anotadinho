@@ -1055,3 +1055,91 @@ cenarios.push({
     );
   },
 });
+
+// ── ciclo 190: aviso de mudança externa ──────────────────────────────
+
+/// Digita no fim do editor, deixando a página com edição pendente.
+const DIGITAR_NO_FIM = (texto) => `(() => {
+  const ed = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
+  ed.focus();
+  const r = document.createRange();
+  r.selectNodeContents(ed.lastElementChild || ed);
+  r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  document.execCommand('insertText', false, ${JSON.stringify(texto)});
+  return true;
+})()`;
+
+cenarios.push({
+  nome: "conflito: barra de decisão com edição pendente, e o diff mostra os dois lados (190)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\nlinha um\nlinha dois\nlinha tres\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg')", "o editor abrir");
+
+    await bridge.js(DIGITAR_NO_FIM(" MEU TEXTO"));
+    await ctx.esperar(bridge, "document.querySelector('.editor__dirty')", "a página ficar suja");
+
+    // Alguém escreve no arquivo por fora — é o que o CLI faz.
+    ctx.escrever("---\ntitle: __uitest\n---\nlinha um\nlinha dois DO DISCO\nlinha tres\n");
+    await ctx.esperar(bridge, "document.querySelector('.conflito')", "a barra de conflito aparecer", 12000);
+
+    const botoes = await bridge.js(
+      `[...document.querySelectorAll('.conflito button')].map(b => b.textContent)`,
+    );
+    ctx.assertEq(botoes.length, 3, `a barra devia ter 3 ações, veio: ${botoes.join(" | ")}`);
+
+    // O diff tem que mostrar OS DOIS lados — foi o bug achado na
+    // validação: comparando `content_md` o texto digitado não aparecia.
+    await bridge.js(`(() => { document.querySelector('.conflito button').click(); return true; })()`);
+    await ctx.esperar(bridge, "document.querySelector('.conflito__l')", "o diff abrir");
+    const linhas = await bridge.js(
+      `[...document.querySelectorAll('.conflito__l')].map(e => e.textContent)`,
+    );
+    ctx.assert(
+      linhas.some((l) => l.startsWith("-") && l.includes("MEU TEXTO")),
+      `o diff devia mostrar o que EU escrevi: ${linhas.join(" | ")}`,
+    );
+    ctx.assert(
+      linhas.some((l) => l.startsWith("+") && l.includes("DO DISCO")),
+      `o diff devia mostrar o que veio do disco: ${linhas.join(" | ")}`,
+    );
+
+    // Recarregar traz o disco e limpa o estado de edição.
+    await bridge.js(`(() => {
+      [...document.querySelectorAll('.conflito button')]
+        .find(b => b.textContent.includes('Recarregar')).click();
+      return true;
+    })()`);
+    await PAUSA(1200);
+    ctx.assertEq(await bridge.js(`!!document.querySelector('.conflito')`), false, "a barra devia sumir");
+    ctx.assertEq(await bridge.js(`!!document.querySelector('.editor__dirty')`), false, "não devia sobrar edição pendente");
+    const texto = await bridge.js(`document.querySelector('.editor__wysiwyg').innerText`);
+    ctx.assert(texto.includes("DO DISCO"), `devia ter trazido o disco: ${texto}`);
+    ctx.assert(!texto.includes("MEU TEXTO"), `devia ter descartado o meu: ${texto}`);
+  },
+});
+
+cenarios.push({
+  nome: "conflito: sem edição pendente recarrega sozinho, sem barra (190)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\nantes\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg')", "o editor abrir");
+
+    ctx.escrever("---\ntitle: __uitest\n---\ndepois, vindo de fora\n");
+    await ctx.esperar(
+      bridge,
+      "document.querySelector('.editor__wysiwyg').innerText.includes('vindo de fora')",
+      "a página recarregar sozinha",
+      12000,
+    );
+    ctx.assertEq(
+      await bridge.js(`!!document.querySelector('.conflito')`),
+      false,
+      "sem edição pendente não deve pedir decisão nenhuma",
+    );
+  },
+});

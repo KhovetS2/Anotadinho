@@ -15,6 +15,19 @@ use crate::dialog::PendingDialog;
 use crate::embed::DocSegment;
 use crate::state;
 
+/// Conteúdo que chegou do disco enquanto havia edição local pendente
+/// (ciclo 190).
+///
+/// Guardar o CONTEÚDO (e não só um aviso) é o que permite mostrar a
+/// diferença e recarregar sem ir ao disco de novo — entre o aviso e a
+/// decisão o arquivo pode ter mudado outra vez, e recarregar algo
+/// diferente do que foi mostrado seria pior que não mostrar nada.
+#[derive(Clone, PartialEq)]
+struct ConflitoExterno {
+    conteudo: String,
+    versao: Option<String>,
+}
+
 #[derive(Properties, PartialEq, Clone)]
 pub struct EditorProps {
     pub vault_path: String,
@@ -173,6 +186,17 @@ pub fn editor(props: &EditorProps) -> Html {
     // `content_md` (embeds declarativos refletiam certo) mas os trechos
     // de markdown solto injetados via `set_inner_html` ficavam com o
     // texto antigo na tela.
+    // Conflito com o disco (ciclo 190): guarda o conteúdo que chegou de
+    // fora enquanto havia edição local pendente. `Some` = a barra de
+    // decisão está na tela.
+    let conflito = use_state(|| None::<ConflitoExterno>);
+    // Texto local no momento em que a diferença foi aberta. Recalculado
+    // do DOM e não lido de `content_md`: a fonte de verdade do texto
+    // digitado é o DOM (`content_md` só é atualizado em algumas
+    // transições), e um comparativo que não mostra o que a PESSOA
+    // escreveu é pior que nenhum.
+    let conflito_meu_texto = use_state(String::new);
+
     // Histórico de desfazer/refazer (ciclo 186): o tipo mora no core,
     // testado fora do WASM. O que fica aqui é só a decisão de AGRUPAR,
     // que depende de relógio.
@@ -694,6 +718,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let historico = historico.clone();
         let file_version_ref = file_version_ref.clone();
         let render_gen = render_gen.clone();
+        let conflito = conflito.clone();
         use_effect_with(props.vault_version, move |version| {
             if *version == 0 || page_path.is_empty() {
                 return;
@@ -707,7 +732,14 @@ pub fn editor(props: &EditorProps) -> Html {
                     return;
                 }
                 if *edited_ref.borrow() {
-                    status.set(Some("Mudou no disco — salve pra escolher o que fica".to_string()));
+                    // Não toca em nada: sobrescrever o que a pessoa está
+                    // digitando seria trocar um problema por outro. Só
+                    // levanta a barra de decisão (ciclo 190) — antes
+                    // aqui havia só um aviso de texto, sem saída.
+                    conflito.set(Some(ConflitoExterno {
+                        conteudo: page.content.clone(),
+                        versao: page.version.clone(),
+                    }));
                     return;
                 }
                 *file_version_ref.borrow_mut() = page.version;
@@ -2012,6 +2044,72 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
+    // ── ações da barra de conflito (ciclo 190) ────────────────────
+
+    // Recarrega com o conteúdo QUE FOI MOSTRADO no aviso, não relendo o
+    // disco: entre o aviso e o clique o arquivo pode ter mudado de novo,
+    // e trazer algo diferente do que a pessoa viu seria pior que nada.
+    let conflito_recarregar = {
+        let conflito = conflito.clone();
+        let conflito_meu_texto = conflito_meu_texto.clone();
+        let content_md = content_md.clone();
+        let saved_content = saved_content.clone();
+        let historico = historico.clone();
+        let file_version_ref = file_version_ref.clone();
+        let render_gen = render_gen.clone();
+        let edited = edited.clone();
+        let edited_ref = edited_ref.clone();
+        let status = status.clone();
+        Callback::from(move |_: MouseEvent| {
+            let Some(c) = (*conflito).clone() else { return };
+            *file_version_ref.borrow_mut() = c.versao.clone();
+            // Recarga do disco zera o histórico: desfazer depois dela
+            // regravaria o arquivo com o conteúdo velho.
+            historico.borrow_mut().reiniciar(c.conteudo.clone());
+            content_md.set(c.conteudo.clone());
+            saved_content.set(c.conteudo);
+            edited.set(false);
+            *edited_ref.borrow_mut() = false;
+            render_gen.set(*render_gen + 1);
+            status.set(Some("Recarregado do disco".to_string()));
+            conflito_meu_texto.set(String::new());
+            conflito.set(None);
+        })
+    };
+
+    // Fica com o texto local. O `file_version_ref` passa a ser o da
+    // versão de fora, então o `write_page_checked` do próximo salvamento
+    // aceita gravar por cima — que é exatamente o que "manter o meu"
+    // quer dizer.
+    let conflito_manter = {
+        let conflito = conflito.clone();
+        let conflito_meu_texto = conflito_meu_texto.clone();
+        let file_version_ref = file_version_ref.clone();
+        let status = status.clone();
+        Callback::from(move |_: MouseEvent| {
+            let Some(c) = (*conflito).clone() else { return };
+            *file_version_ref.borrow_mut() = c.versao;
+            status.set(Some("Mantido o seu — salve pra gravar por cima".to_string()));
+            conflito_meu_texto.set(String::new());
+            conflito.set(None);
+        })
+    };
+
+    let conflito_ver_diff = {
+        let conflito_meu_texto = conflito_meu_texto.clone();
+        let content_md = content_md.clone();
+        let editor_ref = editor_ref.clone();
+        let segment_refs = segment_refs.clone();
+        Callback::from(move |_: MouseEvent| {
+            if conflito_meu_texto.is_empty() {
+                conflito_meu_texto
+                    .set(recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs));
+            } else {
+                conflito_meu_texto.set(String::new());
+            }
+        })
+    };
+
     html! {
         <main class="editor">
             <header class="editor__header">
@@ -2065,6 +2163,29 @@ pub fn editor(props: &EditorProps) -> Html {
                     </div>
                 </div>
             </header>
+            if let Some(c) = &*conflito {
+                <div class="conflito" role="alert">
+                    <div class="conflito__linha">
+                        <Icon name="alert-triangle" />
+                        <span class="conflito__texto">
+                            { "Esta página mudou no disco enquanto você editava." }
+                        </span>
+                        <button class="btn btn--ghost btn--sm" onclick={conflito_ver_diff.clone()}>
+                            { if conflito_meu_texto.is_empty() { "Ver a diferença" } else { "Esconder a diferença" } }
+                        </button>
+                        <button class="btn btn--ghost btn--sm" onclick={conflito_manter.clone()}>
+                            { "Manter o meu" }
+                        </button>
+                        <button class="btn btn--sm" onclick={conflito_recarregar.clone()}
+                            title="Descarta o que você escreveu e traz o conteúdo do disco">
+                            { "Recarregar (perde o que você escreveu)" }
+                        </button>
+                    </div>
+                    if !conflito_meu_texto.is_empty() {
+                        { render_diff(&conflito_meu_texto, &c.conteudo) }
+                    }
+                </div>
+            }
             if *properties_modal_open {
                 <Modal title={"Propriedades".to_string()} open={true} on_close={{
                     let properties_modal_open = properties_modal_open.clone();
@@ -3336,4 +3457,41 @@ fn inserir_segmento_e_abrir_menu(
         }
         exec_cmd(&doc, "insertText", "/");
     });
+}
+
+/// Desenha o comparativo entre o texto local e o que está no disco
+/// (ciclo 190).
+///
+/// Só as linhas que MUDARAM, mais uma de contexto em volta: uma página
+/// grande com uma linha alterada não deve virar uma parede de texto
+/// idêntico onde a mudança se perde.
+fn render_diff(local: &str, disco: &str) -> Html {
+    let linhas = anotadinho_core::diff::diff_linhas(local, disco);
+    let (removidas, adicionadas) = anotadinho_core::diff::contar(&linhas);
+
+    let relevante: Vec<bool> = (0..linhas.len())
+        .map(|i| {
+            let ini = i.saturating_sub(1);
+            let fim = (i + 2).min(linhas.len());
+            linhas[ini..fim].iter().any(|l| l.mudou())
+        })
+        .collect();
+
+    html! {
+        <div class="conflito__diff">
+            <p class="conflito__resumo">
+                { format!("{removidas} linha(s) sua(s) · {adicionadas} do disco") }
+            </p>
+            <pre class="conflito__pre">
+                { for linhas.iter().enumerate().filter(|(i, _)| relevante[*i]).map(|(_, l)| {
+                    let (classe, marca) = match l {
+                        anotadinho_core::diff::LinhaDiff::Igual { .. } => ("conflito__l", " "),
+                        anotadinho_core::diff::LinhaDiff::Removida { .. } => ("conflito__l conflito__l--meu", "-"),
+                        anotadinho_core::diff::LinhaDiff::Adicionada { .. } => ("conflito__l conflito__l--disco", "+"),
+                    };
+                    html! { <div class={classe}>{ format!("{marca}{}", l.texto()) }</div> }
+                }) }
+            </pre>
+        </div>
+    }
 }

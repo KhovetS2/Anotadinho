@@ -1,7 +1,7 @@
 ---
 id: "190"
 titulo: "Aviso de mudança externa na página aberta"
-status: pending
+status: done
 criado: 2026-08-20
 autor: humano
 prioridade: alta
@@ -22,18 +22,18 @@ existe.
 
 ## Critérios de aceite
 
-- [ ] O editor observa `VaultEvent` e compara com a `page_version` da
-      leitura da página aberta.
-- [ ] Mudança externa SEM edição local pendente: recarrega sozinho e
-      mostra um aviso discreto e temporário.
-- [ ] Mudança externa COM edição local pendente: barra fixa com
-      "Recarregar (perde o que você escreveu)" / "Manter o meu" /
-      "Ver a diferença".
-- [ ] "Ver a diferença" abre um modal com o comparativo linha a linha.
-- [ ] Salvar por cima continua passando por `write_page_checked` — a
-      barra é aviso, não substitui a rede de segurança.
-- [ ] Cenário de harness: escrever no arquivo por fora com edição
-      pendente faz a barra aparecer; sem edição pendente, recarrega.
+- [x] O editor compara a `page_version` da leitura com a do disco (já
+      existia desde o ciclo 173; este ciclo troca o aviso sem saída pela
+      barra de decisão).
+- [x] Mudança externa SEM edição local pendente: recarrega sozinho e
+      mostra "Recarregado do disco".
+- [x] Mudança externa COM edição local pendente: barra fixa com
+      "Ver a diferença" / "Manter o meu" /
+      "Recarregar (perde o que você escreveu)".
+- [x] "Ver a diferença" abre o comparativo linha a linha embutido na
+      própria barra (não em modal — ver notas).
+- [x] Salvar por cima continua passando por `write_page_checked`.
+- [x] Dois cenários de harness: com e sem edição pendente.
 
 ## Comandos de validação
 
@@ -55,6 +55,24 @@ node scripts/uitest/run.mjs
 Diff linha a linha no core (`crates/core/src/diff.rs`, LCS simples), pra
 ser testável fora do WASM e reaproveitável pelo CLI depois.
 
-O watcher já emite eventos desde o ciclo 157; o que falta é o editor
-escutar. Atenção ao bug recorrente: handle de `use_state` capturado em
-efeito/timer congela no valor de criação — usar `use_mut_ref`.
+**Ficou embutido na barra, não em modal.** Um modal precisa ser fechado
+antes de decidir, e a decisão é justamente sobre o que o comparativo
+mostra — ter os dois na tela ao mesmo tempo é o ponto.
+
+**Bug achado na validação ao vivo:** o comparativo lia `content_md`, e
+com isso NÃO mostrava o texto que a pessoa tinha acabado de digitar. A
+fonte de verdade do texto local é o DOM (`content_md` só é atualizado em
+algumas transições), então o lado "meu" passou a ser recalculado por
+`recompute_markdown_from_dom` no momento em que a diferença é aberta. O
+cenário de harness trava exatamente isso.
+
+Duas decisões sobre estado:
+- O conteúdo de fora é GUARDADO no aviso, não relido do disco na hora do
+  clique: entre uma coisa e outra o arquivo pode mudar de novo, e trazer
+  algo diferente do que foi mostrado seria pior que não mostrar nada.
+- "Manter o meu" adota a `file_version` de fora, e é isso que faz o
+  `write_page_checked` do próximo salvamento aceitar gravar por cima —
+  sem bloco de conflito no arquivo.
+
+Só o diff mais uma linha de contexto em volta é desenhado: uma página
+grande com uma linha alterada não pode virar parede de texto idêntico.
