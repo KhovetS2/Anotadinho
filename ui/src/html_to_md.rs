@@ -86,11 +86,31 @@ fn walk(node: &Element, _depth: usize) -> String {
         "a" => {
             let text = text_of(node);
             let href = node.get_attribute("href").unwrap_or_default();
-            if href.starts_with(crate::wikilink::SCHEME_PREFIX) {
-                // Serializa de volta pra sintaxe `[[Título]]` — usa o
-                // texto visível (não o href), pra sobreviver se o
-                // usuário editar o texto do link direto no editor.
-                format!("[[{}]]", text)
+            if let Some(encoded) = href.strip_prefix(crate::wikilink::SCHEME_PREFIX) {
+                // Reconstrói o `[[...]]` original (ciclo 192).
+                //
+                // Antes usava só o texto visível, o que apagava o ALVO
+                // de um link com alias: `[[grafo.md|Grafo do Vault]]`
+                // era gravado como `[[Grafo do Vault]]` no próximo save.
+                // O href guarda o miolo cru, então dá pra devolver
+                // exatamente o que estava escrito — e ainda honrar uma
+                // edição do texto visível, que é por que a versão antiga
+                // lia o texto em primeiro lugar.
+                let bruto = crate::wikilink::decode_title(encoded);
+                let (alvo, alias) = anotadinho_core::links::split_wikilink(&bruto);
+                match alias {
+                    // Texto intocado: devolve igualzinho.
+                    Some(ref a) if *a == text => format!("[[{}]]", bruto),
+                    // Texto editado no editor: mantém o alvo, adota o texto novo.
+                    Some(_) => format!(
+                        "[[{}|{}]]",
+                        anotadinho_core::links::escapar_barra(&alvo),
+                        text
+                    ),
+                    None if text == alvo => format!("[[{}]]", bruto),
+                    // Sem alias e texto trocado: comportamento de sempre.
+                    None => format!("[[{}]]", text),
+                }
             } else if href.is_empty() {
                 text
             } else {

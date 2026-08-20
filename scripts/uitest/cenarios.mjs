@@ -1182,3 +1182,91 @@ cenarios.push({
     );
   },
 });
+
+// ── ciclo 192: alias e barra literal no wikilink ─────────────────────
+
+cenarios.push({
+  nome: "wikilink: alias mostra o texto, aponta pro alvo e sobrevive à gravação (192)",
+  async fn(bridge, ctx) {
+    ctx.escrever(
+      "---\ntitle: __uitest\n---\n\n" +
+        "com alias: [[pages/produto/grafo.md|o grafo do vault]]\n\n" +
+        "sem alias: [[Missão]]\n",
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg a')", "os links renderizarem");
+
+    const links = await bridge.js(
+      `[...document.querySelectorAll('.editor__wysiwyg a')].map(a => a.textContent)`,
+    );
+    ctx.assertEq(links[0], "o grafo do vault", `o texto devia ser o alias, veio: ${links[0]}`);
+    ctx.assertEq(links[1], "Missão", `sem alias o texto é o alvo, veio: ${links[1]}`);
+
+    // Gravar NÃO pode perder o alvo — era o que acontecia antes: a
+    // reconstrução usava só o texto visível e sobrava [[o grafo do vault]].
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const disco = ctx.ler();
+    ctx.assert(
+      disco.includes("[[pages/produto/grafo.md|o grafo do vault]]"),
+      `o alias não sobreviveu à gravação:\n${disco}`,
+    );
+    ctx.assert(disco.includes("[[Missão]]"), `o link sem alias mudou:\n${disco}`);
+
+    // E clicar leva pro alvo, não pro texto.
+    await bridge.js(`(() => { document.querySelector('.editor__wysiwyg a').click(); return true; })()`);
+    await ctx.esperar(
+      bridge,
+      `(document.querySelector('.editor__title')||{}).textContent === 'Grafo do Vault'`,
+      "o alvo do alias abrir",
+    );
+  },
+});
+
+cenarios.push({
+  nome: "wikilink: arquivo com barra no nome abre escapado e também sem escape (192)",
+  async fn(bridge, ctx) {
+    // `|` é nome de arquivo válido no POSIX — este é o guardrail.
+    const estranho = `${ctx.vault}/pages/com|barra.md`;
+    const fs = await import("node:fs");
+    fs.writeFileSync(estranho, "---\ntitle: Com Barra\n---\nsou o arquivo esquisito\n");
+    try {
+      ctx.escrever(
+        "---\ntitle: __uitest\n---\n\n" +
+          "escapado: [[com\\|barra]]\n\n" +
+          "sem escape: [[com|barra]]\n",
+      );
+      await recarregar(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg a')", "os links renderizarem");
+
+      const textos = await bridge.js(
+        `[...document.querySelectorAll('.editor__wysiwyg a')].map(a => a.textContent)`,
+      );
+      ctx.assertEq(textos[0], "com|barra", `escapado devia exibir o nome inteiro, veio: ${textos[0]}`);
+      ctx.assertEq(textos[1], "barra", `sem escape a barra vira alias, veio: ${textos[1]}`);
+
+      // O escapado abre.
+      await bridge.js(`(() => { document.querySelectorAll('.editor__wysiwyg a')[0].click(); return true; })()`);
+      await ctx.esperar(
+        bridge,
+        `(document.querySelector('.editor__title')||{}).textContent === 'Com Barra'`,
+        "o alvo escapado abrir",
+      );
+
+      // E o SEM escape também, pela rede de segurança: o alvo "com" não
+      // existe, então a string inteira é tentada antes de desistir.
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg a')", "voltar pra página de teste");
+      await bridge.js(`(() => { document.querySelectorAll('.editor__wysiwyg a')[1].click(); return true; })()`);
+      await ctx.esperar(
+        bridge,
+        `(document.querySelector('.editor__title')||{}).textContent === 'Com Barra'`,
+        "a rede de segurança abrir o arquivo mesmo sem escape",
+      );
+    } finally {
+      fs.rmSync(estranho, { force: true });
+    }
+  },
+});

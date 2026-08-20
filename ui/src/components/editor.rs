@@ -1226,7 +1226,12 @@ pub fn editor(props: &EditorProps) -> Html {
             }
             if let Some(&page_idx) = items.get(vi) {
                 if let Some(page) = pages.get(page_idx) {
-                    let href = format!("{}{}", crate::wikilink::SCHEME_PREFIX, crate::wikilink::encode_title(&page.title));
+                    // `escapar_barra` (ciclo 192): título com `|` viraria
+                    // alias na próxima leitura, apontando pro lugar
+                    // errado. Quem gera o wikilink escapa; a pessoa nunca
+                    // digita isso na mão.
+                    let bruto = anotadinho_core::links::escapar_barra(&page.title);
+                    let href = format!("{}{}", crate::wikilink::SCHEME_PREFIX, crate::wikilink::encode_title(&bruto));
                     let html = format!("<a href=\"{}\">{}</a>", href, page.title.replace('<', "&lt;").replace('>', "&gt;"));
                     if let Some(el) = parse_single_element(&html) {
                         if insert_element_at_cursor(&el, false) {
@@ -2024,7 +2029,9 @@ pub fn editor(props: &EditorProps) -> Html {
             let Some(href) = anchor.get_attribute("href") else { return };
             let Some(encoded) = href.strip_prefix(crate::wikilink::SCHEME_PREFIX) else { return };
             e.prevent_default();
-            let title = crate::wikilink::decode_title(encoded);
+            // O href leva o miolo CRU do `[[...]]`; o alvo sai dele.
+            let bruto_do_link = crate::wikilink::decode_title(encoded);
+            let (title, _alias) = anotadinho_core::links::split_wikilink(&bruto_do_link);
             let vault_path = vault_path.clone();
             let on_page_selected = on_page_selected.clone();
             let open_dialog = open_dialog.clone();
@@ -2041,19 +2048,20 @@ pub fn editor(props: &EditorProps) -> Html {
                 // `upgrade_transclusions_at`, que foi corrigido no 170;
                 // este caminho ficou pra trás.
                 let paginas = api::scan_vault(&vault_path).await.unwrap_or_default();
-                let achado = paginas
-                    .iter()
-                    .find(|p| p.title.eq_ignore_ascii_case(&title))
-                    // Cai pro nome do arquivo: página sem `title:` no
-                    // frontmatter continua alcançável por `[[nome-do-arquivo]]`.
-                    .or_else(|| {
-                        paginas.iter().find(|p| {
-                            std::path::Path::new(&p.path)
-                                .file_stem()
-                                .and_then(|s| s.to_str())
-                                .is_some_and(|s| s.eq_ignore_ascii_case(&title))
-                        })
-                    });
+                let achado = resolver_alvo(&paginas, &title).or_else(|| {
+                    // Rede de segurança do ciclo 192: `|` é nome de
+                    // arquivo válido no POSIX. Se alguém escreveu
+                    // `[[estranho|nome]]` sem escapar a barra, o alvo
+                    // acima virou "estranho" e não resolveu — antes de
+                    // desistir, tenta a string INTEIRA como alvo.
+                    //
+                    // Custa uma busca a mais só no caminho do erro, e é
+                    // o que evita "página não encontrada" num arquivo
+                    // que existe.
+                    Some(bruto_do_link.as_str())
+                        .filter(|b| *b != title)
+                        .and_then(|b| resolver_alvo(&paginas, b))
+                });
                 match achado {
                     Some(entry) => on_page_selected.emit(PageMeta {
                         path: entry.path.clone(),
@@ -3518,4 +3526,37 @@ fn render_diff(local: &str, disco: &str) -> Html {
             </pre>
         </div>
     }
+}
+
+/// Acha a página que um alvo de wikilink aponta (ciclo 192).
+///
+/// A ordem importa e vai do mais específico pro mais tolerante:
+/// caminho exato resolve sem ambiguidade nenhuma, título do frontmatter
+/// é o jeito natural de escrever, e o nome do arquivo é o que sobra pra
+/// página sem `title:`.
+fn resolver_alvo<'a>(
+    paginas: &'a [anotadinho_core::PageIndexEntry],
+    alvo: &str,
+) -> Option<&'a anotadinho_core::PageIndexEntry> {
+    let alvo = alvo.trim();
+    paginas
+        .iter()
+        .find(|p| p.path.eq_ignore_ascii_case(alvo))
+        .or_else(|| {
+            // `pages/produto/grafo` (sem `.md`) também vale.
+            paginas.iter().find(|p| {
+                p.path
+                    .strip_suffix(".md")
+                    .is_some_and(|sem| sem.eq_ignore_ascii_case(alvo))
+            })
+        })
+        .or_else(|| paginas.iter().find(|p| p.title.eq_ignore_ascii_case(alvo)))
+        .or_else(|| {
+            paginas.iter().find(|p| {
+                std::path::Path::new(&p.path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| s.eq_ignore_ascii_case(alvo))
+            })
+        })
 }

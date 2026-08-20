@@ -111,9 +111,11 @@ fn extract_titles_line(line: &str, out: &mut Vec<String>) {
         }
         if !em_codigo && line[i..].starts_with("[[") {
             if let Some(rel_end) = line[i + 2..].find("]]") {
-                let title = &line[i + 2..i + 2 + rel_end];
-                if !title.is_empty() && !title.contains('[') && !title.contains(']') {
-                    out.push(title.to_string());
+                let bruto = &line[i + 2..i + 2 + rel_end];
+                if !bruto.is_empty() && !bruto.contains('[') && !bruto.contains(']') {
+                    // O grafo liga pelo ALVO; o alias é só o que se lê.
+                    let (alvo, _) = anotadinho_core::links::split_wikilink(bruto);
+                    out.push(alvo);
                     i = i + 2 + rel_end + 2;
                     continue;
                 }
@@ -144,13 +146,24 @@ fn linkify_line(line: &str) -> String {
         }
         if !em_codigo && line[i..].starts_with("[[") {
             if let Some(rel_end) = line[i + 2..].find("]]") {
-                let title = &line[i + 2..i + 2 + rel_end];
-                if !title.is_empty() && !title.contains('[') && !title.contains(']') {
+                let bruto = &line[i + 2..i + 2 + rel_end];
+                if !bruto.is_empty() && !bruto.contains('[') && !bruto.contains(']') {
+                    // `[[alvo|texto]]` (ciclo 192): o texto exibido é o
+                    // alias; o href leva o ALVO. `\|` no alvo é uma barra
+                    // literal — `|` é nome de arquivo válido no POSIX.
+                    let (alvo, alias) = anotadinho_core::links::split_wikilink(bruto);
+                    let texto = alias.as_deref().unwrap_or(&alvo);
                     out.push('[');
-                    out.push_str(title);
+                    out.push_str(texto);
                     out.push_str("](");
                     out.push_str(SCHEME_PREFIX);
-                    out.push_str(&encode_title(title));
+                    // O href leva o miolo CRU (alvo + alias + escapes),
+                    // não só o alvo: é o que permite ao `html_to_md`
+                    // reconstruir o `[[...]]` original ao salvar. Se
+                    // levasse só o alvo, o alias se perderia; se levasse
+                    // só o texto visível, o alvo é que se perdia — que
+                    // era o comportamento antes do ciclo 192.
+                    out.push_str(&encode_title(bruto));
                     out.push(')');
                     i = i + 2 + rel_end + 2;
                     continue;
@@ -167,6 +180,40 @@ fn linkify_line(line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── alias e barra literal (ciclo 192) ─────────────────────────
+
+    #[test]
+    fn alias_vira_o_texto_e_o_href_leva_o_alvo() {
+        let saida = linkify("veja [[pages/produto/grafo.md|Grafo do Vault]]\n");
+        assert!(saida.contains("[Grafo do Vault]("), "o texto é o alias: {saida}");
+        assert!(
+            saida.contains("pages%2Fproduto%2Fgrafo.md%7CGrafo%20do%20Vault"),
+            "o href leva o miolo cru, pra o save reconstruir igual: {saida}"
+        );
+    }
+
+    #[test]
+    fn sem_alias_o_texto_continua_sendo_o_alvo() {
+        let saida = linkify("veja [[Missão]]\n");
+        assert!(saida.contains("[Missão](anotadinho://page/Miss%C3%A3o)"), "{saida}");
+    }
+
+    #[test]
+    fn barra_escapada_nao_vira_alias() {
+        // Arquivo `estranho|nome.md`, legal no POSIX.
+        let saida = linkify(r"veja [[estranho\|nome]] fim" .to_string().as_str());
+        assert!(saida.contains("[estranho|nome]("), "o texto é o nome inteiro: {saida}");
+        assert!(saida.contains("estranho%5C%7Cnome"), "o escape é preservado no href: {saida}");
+    }
+
+    #[test]
+    fn extract_titles_devolve_o_alvo_e_nao_o_alias() {
+        assert_eq!(
+            extract_titles("[[pages/produto/grafo.md|Grafo do Vault]]\n"),
+            vec!["pages/produto/grafo.md".to_string()]
+        );
+    }
 
     #[test]
     fn wikilink_em_codigo_inline_nao_vira_link() {

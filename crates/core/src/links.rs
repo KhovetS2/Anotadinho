@@ -30,6 +30,54 @@ pub fn extract_wikilink_raw(markdown: &str) -> Vec<String> {
     out
 }
 
+/// Parte o miolo de um `[[...]]` em (alvo, texto exibido).
+///
+/// O separador é a barra vertical, e `\|` escapa uma barra LITERAL —
+/// `|` é caractere válido em nome de arquivo no POSIX (só o Windows
+/// proíbe), então um vault criado no Linux pode ter
+/// `estranho|nome.md` de verdade. Sem o escape não haveria como
+/// referenciar esse arquivo (ciclo 192).
+///
+/// Só a PRIMEIRA barra não escapada separa: `[[a|b|c]]` vira alvo `a`
+/// com texto `b|c`, e não um terceiro campo — texto exibido pode conter
+/// barra sem precisar escapar.
+pub fn split_wikilink(raw: &str) -> (String, Option<String>) {
+    let bytes = raw.as_bytes();
+    let mut alvo = String::with_capacity(raw.len());
+    let mut i = 0;
+    while i < raw.len() {
+        if bytes[i] == b'\\' && i + 1 < raw.len() && bytes[i + 1] == b'|' {
+            alvo.push('|');
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'|' {
+            let texto = desescapar_barra(&raw[i + 1..]);
+            let texto = texto.trim().to_string();
+            return (
+                alvo.trim().to_string(),
+                if texto.is_empty() { None } else { Some(texto) },
+            );
+        }
+        let ch = raw[i..].chars().next().unwrap_or('\0');
+        alvo.push(ch);
+        i += ch.len_utf8();
+    }
+    (alvo.trim().to_string(), None)
+}
+
+/// Troca `\|` por `|`.
+fn desescapar_barra(s: &str) -> String {
+    s.replace("\\|", "|")
+}
+
+/// Escapa as barras de um alvo pra ele poder ser escrito dentro de
+/// `[[...]]` sem virar alias. Usado por quem GERA wikilink (autocompletar,
+/// "copiar referência").
+pub fn escapar_barra(alvo: &str) -> String {
+    alvo.replace('|', "\\|")
+}
+
 /// Alvos únicos, com alias (`[[Página|texto]]`) e âncora
 /// (`[[Página#seção]]`) recortados — o que sobra é o nome da página
 /// referenciada, que é o que o grafo e a varredura precisam pra casar
@@ -37,15 +85,8 @@ pub fn extract_wikilink_raw(markdown: &str) -> Vec<String> {
 pub fn extract_wikilink_targets(markdown: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for raw in extract_wikilink_raw(markdown) {
-        let target = raw
-            .split('|')
-            .next()
-            .unwrap_or("")
-            .split('#')
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let (alvo, _) = split_wikilink(&raw);
+        let target = alvo.split('#').next().unwrap_or("").trim().to_string();
         if !target.is_empty() && !out.contains(&target) {
             out.push(target);
         }
@@ -250,6 +291,62 @@ fn extract_line(line: &str, out: &mut Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── alias e barra literal (ciclo 192) ─────────────────────────
+
+    #[test]
+    fn split_sem_barra_nao_tem_alias() {
+        assert_eq!(split_wikilink("Grafo do Vault"), ("Grafo do Vault".into(), None));
+    }
+
+    #[test]
+    fn split_separa_alvo_e_texto() {
+        assert_eq!(
+            split_wikilink("pages/produto/grafo.md|Grafo do Vault"),
+            ("pages/produto/grafo.md".into(), Some("Grafo do Vault".into()))
+        );
+    }
+
+    #[test]
+    fn barra_escapada_faz_parte_do_alvo() {
+        // Arquivo chamado `estranho|nome` — legal no POSIX.
+        assert_eq!(split_wikilink(r"estranho\|nome"), ("estranho|nome".into(), None));
+    }
+
+    #[test]
+    fn so_a_primeira_barra_separa() {
+        assert_eq!(
+            split_wikilink("alvo|texto|com|barra"),
+            ("alvo".into(), Some("texto|com|barra".into()))
+        );
+    }
+
+    #[test]
+    fn alvo_escapado_com_alias_depois() {
+        assert_eq!(
+            split_wikilink(r"estranho\|nome|o esquisito"),
+            ("estranho|nome".into(), Some("o esquisito".into()))
+        );
+    }
+
+    #[test]
+    fn alias_vazio_e_tratado_como_ausente() {
+        assert_eq!(split_wikilink("Alvo|"), ("Alvo".into(), None));
+        assert_eq!(split_wikilink("Alvo|   "), ("Alvo".into(), None));
+    }
+
+    #[test]
+    fn escapar_e_desfazer_round_trip() {
+        let nome = "estranho|nome";
+        let (volta, _) = split_wikilink(&escapar_barra(nome));
+        assert_eq!(volta, nome);
+    }
+
+    #[test]
+    fn alvos_extraidos_ignoram_o_alias() {
+        let alvos = extract_wikilink_targets("veja [[Grafo do Vault|o grafo]] e [[Missão]]\n");
+        assert_eq!(alvos, vec!["Grafo do Vault".to_string(), "Missão".to_string()]);
+    }
 
     #[test]
     fn raw_encontra_varios_links_na_ordem() {
