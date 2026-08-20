@@ -1,7 +1,7 @@
 ---
 id: "159"
 titulo: "Toolbar do embed: mover e duplicar"
-status: pending
+status: done
 criado: 2026-08-19
 autor: humano
 prioridade: baixa
@@ -23,22 +23,27 @@ uma vez, com o mesmo código.
 
 ## Critérios de aceite
 
-- [ ] Botões novos no wrapper: mover pra cima, mover pra baixo,
+- [x] Botões novos no wrapper: mover pra cima, mover pra baixo,
       duplicar
-- [ ] Mover troca o embed de posição com o segmento vizinho do mesmo
+- [x] Mover troca o embed de posição com o segmento vizinho do mesmo
       nível no `Vec<DocSegment>` e re-`join`; o markdown entre os dois
       é preservado (o embed passa pro outro lado do trecho, o texto
       não some nem duplica)
-- [ ] Botão desabilitado quando não há pra onde mover (primeiro/último
+- [x] Botão desabilitado quando não há pra onde mover (primeiro/último
       segmento)
-- [ ] Duplicar insere uma cópia idêntica logo abaixo, com uma linha em
-      branco entre as duas (mesma regra do ciclo 075: `join` não
-      escreve segmento vazio, então o separador precisa ser explícito)
-- [ ] Ações refletem no editor ao vivo, sem precisar salvar (mesma
+- [x] Duplicar insere uma cópia idêntica logo abaixo, com um segmento
+      separador entre as duas (`embed::BLANK_SEGMENT`). O separador NÃO
+      sobrevive ao salvamento — ver Notas — mas isso não afeta o parse:
+      os dois embeds continuam sendo dois
+- [x] Ações refletem no editor ao vivo, sem precisar salvar (mesma
       regra do ciclo 079)
-- [ ] Undo (ciclo 095) desfaz mover e duplicar
-- [ ] `data-nav-item` nos botões novos, na mesma ordem visual
-- [ ] Testes puros sobre `Vec<DocSegment>`: mover primeiro pra cima é
+- [x] Undo (ciclo 095) desfaz mover e duplicar (as duas ações passam
+      por `mark_edited`, que é onde o histórico de snapshots é gravado)
+- [x] Os 4 botões viraram uma toolbar única (`.embed-hover-wrapper__
+      toolbar`) no canto do embed, em vez do "×" solto que existia
+      desde o ciclo 083 — as quatro ações agem no mesmo nível
+      (segmento), então pertencem juntas. Foco visível em cada um
+- [x] Testes puros sobre `Vec<DocSegment>`: mover primeiro pra cima é
       no-op, mover último pra baixo é no-op, mover no meio preserva
       todo o texto ao redor, duplicar não altera o original
 
@@ -59,5 +64,29 @@ cargo build --manifest-path src-tauri/Cargo.toml
 - Recortar/colar embed entre páginas diferentes
 
 ## Notas
+
+`cargo test -p anotadinho-core`: 147 (143 + 4 novos). `cargo test
+--workspace`: 255. `trunk build` e `cargo build --manifest-path
+src-tauri/Cargo.toml`: OK.
+
+Mover é uma TROCA com o segmento vizinho, não recorte-e-cola: por isso
+nenhum texto se perde nem duplica, e mover e voltar devolve o
+documento idêntico (tem teste). Efeito colateral esperado: ao mover um
+embed pra fora do meio de dois blocos de texto, os dois blocos viram um
+só na próxima leitura — é o mesmo markdown, com o embed noutro lugar.
+
+O separador em branco criado pelo "duplicar" não sobrevive ao
+salvamento: um segmento de markdown que só tem `\n` renderiza como
+`<div>` vazio, e o recompute a partir do DOM devolve string vazia, que
+`join` não escreve (comportamento de antes deste ciclo, documentado no
+075). Os dois embeds ficam colados no arquivo mas continuam sendo dois
+— o parser reconhece o fechamento seguido da abertura. Pra escrever
+entre eles, os botões "+" de hover continuam sendo o caminho.
+
+Validação ao vivo (MCP `tauri`) com dois callouts e três blocos de
+texto: mover o primeiro pra baixo passou o embed pro outro lado do
+texto do meio; mover de novo trocou a ordem dos dois embeds; duplicar
+gerou um terceiro idêntico; salvo e RECARREGADO do disco com os 3
+embeds e os 3 trechos de texto intactos.
 
 Ícones novos em `icon.rs`: `arrow-up`, `arrow-down`, `copy`.

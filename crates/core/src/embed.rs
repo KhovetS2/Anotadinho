@@ -277,6 +277,40 @@ pub fn join(segments: &[DocSegment]) -> String {
     out
 }
 
+/// Separador mínimo entre dois embeds vizinhos.
+///
+/// Não pode ser string vazia: `join` não escreve NADA (nem quebra de
+/// linha) pra um `Markdown("")`, então ao serializar e reparsear o
+/// segmento em branco sumiria e os dois embeds ficariam colados, sem
+/// nada entre eles pro parser reconhecer como segmentos distintos.
+pub const BLANK_SEGMENT: &str = "\n";
+
+/// Troca o segmento em `pos` de lugar com o vizinho (`delta` = -1 pra
+/// cima, 1 pra baixo). Devolve `false` — sem mexer em nada — quando não
+/// há pra onde ir.
+///
+/// É uma TROCA, não um recorte-e-cola: o markdown vizinho passa pro
+/// outro lado do embed em vez de ser reescrito, então nenhum texto se
+/// perde nem se duplica.
+pub fn move_segment(segments: &mut [DocSegment], pos: usize, delta: isize) -> bool {
+    let Some(target) = pos.checked_add_signed(delta) else { return false };
+    if pos >= segments.len() || target >= segments.len() {
+        return false;
+    }
+    segments.swap(pos, target);
+    true
+}
+
+/// Duplica o segmento em `pos`, inserindo a cópia logo abaixo com um
+/// separador entre as duas (ver `BLANK_SEGMENT`). Devolve `false` se o
+/// índice não existe.
+pub fn duplicate_segment(segments: &mut Vec<DocSegment>, pos: usize) -> bool {
+    let Some(copy) = segments.get(pos).cloned() else { return false };
+    segments.insert(pos + 1, DocSegment::Markdown(BLANK_SEGMENT.to_string()));
+    segments.insert(pos + 2, copy);
+    true
+}
+
 /// Dados estruturados de um embed já parseado, com o tipo carregado nele
 /// mesmo (`EmbedData::kind()`).
 #[derive(Debug, Clone, PartialEq)]
@@ -2188,6 +2222,68 @@ mod tests {
     fn actions_botao_incompleto_nao_e_clicavel() {
         let b = ActionButton { label: "Vazio".into(), action: "new-from-template".into(), ..Default::default() };
         assert!(!b.is_runnable(), "sem template não há o que criar");
+    }
+
+    fn tres_segmentos() -> Vec<DocSegment> {
+        segment(concat!(
+            "antes\n\n",
+            "{{ type: \"kanban\" }}\ncolumns:\n- Todo\n{{ /kanban }}\n",
+            "depois\n",
+        ))
+    }
+
+    #[test]
+    fn move_segment_troca_com_o_vizinho_preservando_todo_o_texto() {
+        let original = tres_segmentos();
+        assert_eq!(original.len(), 3);
+
+        let mut segs = original.clone();
+        assert!(move_segment(&mut segs, 1, -1));
+        // O embed foi pro começo e o texto "antes" continua no documento.
+        assert!(matches!(segs[0], DocSegment::Embed(_)));
+        let joined = join(&segs);
+        assert!(joined.contains("antes"));
+        assert!(joined.contains("depois"));
+        assert_eq!(joined.matches("antes").count(), 1, "texto duplicado ao mover");
+
+        // Voltar deixa exatamente como estava.
+        assert!(move_segment(&mut segs, 0, 1));
+        assert_eq!(segs, original);
+    }
+
+    #[test]
+    fn move_segment_nas_pontas_e_no_op() {
+        let mut segs = tres_segmentos();
+        let antes = segs.clone();
+        assert!(!move_segment(&mut segs, 0, -1));
+        assert!(!move_segment(&mut segs, 2, 1));
+        assert!(!move_segment(&mut segs, 9, 1));
+        assert_eq!(segs, antes);
+    }
+
+    #[test]
+    fn duplicate_segment_copia_sem_alterar_o_original() {
+        let mut segs = tres_segmentos();
+        assert!(duplicate_segment(&mut segs, 1));
+        assert_eq!(segs.len(), 5);
+
+        // Os dois embeds sobrevivem a um round-trip pelo texto — é aí que
+        // um separador ausente faria os dois colarem e virarem um só.
+        let reparsed = segment(&join(&segs));
+        let embeds: Vec<&DocSegment> = reparsed
+            .iter()
+            .filter(|s| matches!(s, DocSegment::Embed(_)))
+            .collect();
+        assert_eq!(embeds.len(), 2);
+        assert_eq!(embeds[0], embeds[1]);
+    }
+
+    #[test]
+    fn duplicate_segment_com_indice_inexistente_e_no_op() {
+        let mut segs = tres_segmentos();
+        let antes = segs.clone();
+        assert!(!duplicate_segment(&mut segs, 9));
+        assert_eq!(segs, antes);
     }
 
     #[test]

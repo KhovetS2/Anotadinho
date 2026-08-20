@@ -1544,6 +1544,59 @@ pub fn editor(props: &EditorProps) -> Html {
         }
     };
 
+    // Move o embed uma posição pra cima/baixo trocando de lugar com o
+    // segmento vizinho, e duplica o embed logo abaixo. Agem no nível do
+    // `DocSegment`, então valem pros 9 tipos de embed com o mesmo
+    // código (ciclo 159). A aritmética em si mora no core, testada:
+    // `embed::move_segment` / `embed::duplicate_segment`.
+    let reorder_embed = {
+        let content_md = content_md.clone();
+        let frontmatter_text = frontmatter_text.clone();
+        let mark_edited = mark_edited.clone();
+        move |pos: usize, delta: isize| {
+            let content_md = content_md.clone();
+            let frontmatter_text = frontmatter_text.clone();
+            let mark_edited = mark_edited.clone();
+            Callback::from(move |e: MouseEvent| {
+                e.stop_propagation();
+                let full = (*content_md).clone();
+                let (_, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&full);
+                let mut segs = crate::embed::segment(body);
+                if !crate::embed::move_segment(&mut segs, pos, delta) {
+                    return;
+                }
+                let new_body = crate::embed::join(&segs);
+                let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
+                content_md.set(new_full.clone());
+                mark_edited(new_full);
+            })
+        }
+    };
+
+    let duplicate_embed = {
+        let content_md = content_md.clone();
+        let frontmatter_text = frontmatter_text.clone();
+        let mark_edited = mark_edited.clone();
+        move |pos: usize| {
+            let content_md = content_md.clone();
+            let frontmatter_text = frontmatter_text.clone();
+            let mark_edited = mark_edited.clone();
+            Callback::from(move |e: MouseEvent| {
+                e.stop_propagation();
+                let full = (*content_md).clone();
+                let (_, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&full);
+                let mut segs = crate::embed::segment(body);
+                if !crate::embed::duplicate_segment(&mut segs, pos) {
+                    return;
+                }
+                let new_body = crate::embed::join(&segs);
+                let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
+                content_md.set(new_full.clone());
+                mark_edited(new_full);
+            })
+        }
+    };
+
     let on_drop = {
         let vault_path = props.vault_path.clone();
         Callback::from(move |e: DragEvent| {
@@ -1862,8 +1915,18 @@ pub fn editor(props: &EditorProps) -> Html {
                                         <div class="embed-hover-wrapper" {key}>
                                             <button class="embed-hover-wrapper__add-line embed-hover-wrapper__add-line--top"
                                                 onclick={insert_blank_line(i)} title="Adicionar linha acima">{ "+" }</button>
-                                            <button class="embed-hover-wrapper__remove"
-                                                onclick={remove_embed(i)} title="Remover embed"><Icon name="x" /></button>
+                                            <div class="embed-hover-wrapper__toolbar">
+                                                <button class="embed-hover-wrapper__btn"
+                                                    disabled={i == 0}
+                                                    onclick={reorder_embed(i, -1)} title="Mover pra cima"><Icon name="arrow-up" /></button>
+                                                <button class="embed-hover-wrapper__btn"
+                                                    disabled={i + 1 >= segments.len()}
+                                                    onclick={reorder_embed(i, 1)} title="Mover pra baixo"><Icon name="arrow-down" /></button>
+                                                <button class="embed-hover-wrapper__btn"
+                                                    onclick={duplicate_embed(i)} title="Duplicar embed"><Icon name="copy" /></button>
+                                                <button class="embed-hover-wrapper__btn embed-hover-wrapper__btn--danger"
+                                                    onclick={remove_embed(i)} title="Remover embed"><Icon name="x" /></button>
+                                            </div>
                                             <InlineEmbed
                                                 data={data.clone()}
                                                 vault_path={props.vault_path.clone()}

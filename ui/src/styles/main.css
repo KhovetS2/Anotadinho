@@ -1049,30 +1049,62 @@ body {
     bottom: -11px;
 }
 
-.embed-hover-wrapper__remove {
+/* Toolbar do embed (ciclo 159): mover, duplicar e remover. Substitui o
+   botão de remover solto que existia aqui desde o ciclo 083 — as quatro
+   ações agem no nível do segmento, então fazem sentido juntas. */
+.embed-hover-wrapper__toolbar {
     position: absolute;
     top: var(--sp-2);
     right: var(--sp-2);
     z-index: 3;
+    display: flex;
+    gap: var(--sp-1);
+    padding: 2px;
+    border-radius: var(--r-md);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    opacity: 0;
+    transition: opacity 0.1s ease;
+}
+
+.embed-hover-wrapper:hover .embed-hover-wrapper__toolbar,
+.embed-hover-wrapper:focus-within .embed-hover-wrapper__toolbar {
+    opacity: 1;
+}
+
+.embed-hover-wrapper__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 22px;
     height: 22px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--bg-elevated);
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
     color: var(--text-muted);
     font-size: 0.75rem;
     line-height: 1;
     cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.1s ease;
 }
-.embed-hover-wrapper:hover .embed-hover-wrapper__remove {
-    opacity: 1;
-}
-.embed-hover-wrapper__remove:hover {
+
+.embed-hover-wrapper__btn:hover:not(:disabled) {
     color: var(--text-primary);
-    border-color: var(--error);
+    background: var(--bg-surface);
+}
+
+.embed-hover-wrapper__btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.embed-hover-wrapper__btn--danger:hover:not(:disabled) {
+    color: var(--bg-base);
     background: var(--error);
+}
+
+.embed-hover-wrapper__btn:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
 }
 
 .editor__wysiwyg h1 {

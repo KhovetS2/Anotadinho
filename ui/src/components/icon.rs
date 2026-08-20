@@ -203,6 +203,19 @@ fn icon_body(name: &str) -> Html {
         "chevron-down" => html! {
             <polyline points="4,9 12,17 20,9"/>
         },
+        // Toolbar do embed (ciclo 159).
+        "arrow-up" => html! { <>
+            <line x1="12" y1="20" x2="12" y2="5"/>
+            <polyline points="6,11 12,5 18,11"/>
+        </> },
+        "arrow-down" => html! { <>
+            <line x1="12" y1="4" x2="12" y2="19"/>
+            <polyline points="6,13 12,19 18,13"/>
+        </> },
+        "copy" => html! { <>
+            <rect x="9" y="9" width="11" height="11" rx="2"/>
+            <path d="M5 15 L4 15 Q3 15 3 14 L3 5 Q3 3 5 3 L14 3 Q15 3 15 4 L15 5"/>
+        </> },
         "chevron-up" => html! {
             <polyline points="4,15 12,7 20,15"/>
         },
