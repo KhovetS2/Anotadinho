@@ -1270,3 +1270,79 @@ cenarios.push({
     }
   },
 });
+
+// ── ciclo 175: manipular bloco pelo teclado ──────────────────────────
+
+/// Entra no modo de navegação de blocos com o primeiro bloco focado.
+const FOCAR_PRIMEIRO_BLOCO = `(() => {
+  const ed = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
+  ed.focus();
+  const b = ed.children[0];
+  const r = document.createRange();
+  r.selectNodeContents(b); r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  ed.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  return true;
+})()`;
+
+const TECLA_NO_BLOCO = (key, alt = false) => `(() => {
+  const alvo = document.querySelector('.nav-mode__item-active') || document.activeElement;
+  alvo.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, altKey: ${alt}, bubbles: true }));
+  return true;
+})()`;
+
+cenarios.push({
+  nome: "blocos: mover, duplicar e apagar pelo teclado (175)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\nalfa\n\nbeta\n\ngama\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg')", "o editor abrir");
+
+    const linhas = () =>
+      bridge.js(`[...document.querySelectorAll('[data-nav-block]')].map(e => e.textContent.trim())`);
+
+    await bridge.js(FOCAR_PRIMEIRO_BLOCO);
+    await ctx.esperar(bridge, "document.querySelector('.nav-mode__item-active')", "o bloco ficar destacado");
+    ctx.assertEq((await linhas()).join(","), "alfa,beta,gama", "estado inicial");
+
+    // Desce o primeiro: alfa vai pro meio.
+    await bridge.js(TECLA_NO_BLOCO("ArrowDown", true));
+    await PAUSA(400);
+    ctx.assertEq((await linhas()).join(","), "beta,alfa,gama", "Alt+↓ devia trocar com o de baixo");
+
+    // Sobe de volta.
+    await bridge.js(TECLA_NO_BLOCO("K"));
+    await PAUSA(400);
+    ctx.assertEq((await linhas()).join(","), "alfa,beta,gama", "K devia devolver pro topo");
+
+    // Duplica.
+    await bridge.js(TECLA_NO_BLOCO("y"));
+    await PAUSA(400);
+    ctx.assertEq((await linhas()).join(","), "alfa,alfa,beta,gama", "y devia duplicar logo abaixo");
+
+    // Apaga a cópia (o foco ficou nela).
+    await bridge.js(TECLA_NO_BLOCO("d"));
+    await PAUSA(400);
+    ctx.assertEq((await linhas()).join(","), "alfa,beta,gama", "d devia apagar o bloco focado");
+
+    // E o foco continua num bloco, pra dar pra encadear.
+    ctx.assertEq(
+      await bridge.js(`!!document.querySelector('.nav-mode__item-active')`),
+      true,
+      "o foco não pode se perder depois de apagar",
+    );
+
+    // O disco tem que refletir a ordem final.
+    await bridge.js(TECLA_NO_BLOCO("ArrowDown", true));
+    await PAUSA(400);
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const disco = ctx.ler();
+    const corpo = disco.split("---")[2].trim();
+    ctx.assert(
+      corpo.startsWith("beta"),
+      `a reordenação não chegou no arquivo:\n${corpo}`,
+    );
+  },
+});

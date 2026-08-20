@@ -1,7 +1,7 @@
 ---
 id: "175"
 titulo: "Edição estruturada por bloco"
-status: pending
+status: parcial
 criado: 2026-08-20
 autor: humano
 prioridade: media
@@ -33,8 +33,9 @@ bug do editor (076, 078, 079, 082, 111, 141-143).
 - [ ] Seleção e cópia atravessando blocos preservam o markdown (colar
       em outro editor tem que sair legível)
 - [ ] Colar vários parágrafos cria vários blocos
-- [ ] Mover bloco pra cima/baixo por atalho (a mesma ação que a toolbar
-      de embed já tem, agora pra qualquer bloco)
+- [x] Mover bloco pra cima/baixo por atalho (a mesma ação que a toolbar
+      de embed já tem, agora pra qualquer bloco) — **feito**, mais
+      duplicar (`y`) e apagar (`d`)
 - [ ] Desfazer/refazer (ciclo 095) continua funcionando bloco a bloco
 - [ ] Atalhos de formatação por prefixo (`#`, `-`, `>`, `[]` — ciclos
       142/143) continuam disparando dentro do bloco
@@ -66,3 +67,28 @@ necessária — e ela é a que mais pode quebrar coisa que funciona.
 Recomendação forte: entrar aqui só com o harness de teste de UI de pé
 (ver proposta de roadmap), porque os modos de falha desta mudança são
 todos de comportamento de DOM.
+
+
+## Estado: PARCIAL (ciclo 175a)
+
+Entregue a manipulação de bloco pelo teclado, que era o item de valor
+direto da lista: `Alt+↑`/`K` sobe, `Alt+↓`/`J` desce, `y` duplica, `d`
+apaga, com o foco preservado pra encadear as ações.
+
+**A reescrita arquitetural (um `contenteditable` por bloco) NÃO foi
+feita, de propósito.** Motivos, na ordem em que pesam:
+
+1. Ela não é necessária pro que foi pedido. A manipulação por teclado
+   funciona movendo o NÓ no DOM e recompondo o markdown a partir dele —
+   o mesmo caminho que toda edição já usa. O bloco já é um filho de
+   primeiro nível marcado por `marcar_blocos` desde o 174.
+2. Os critérios que sobram (Enter divide, Backspace funde, colar cria
+   vários blocos, seleção atravessando blocos) mexem em DIGITAÇÃO, que
+   é o caminho mais usado do app e a origem de quase todo bug do editor
+   (076, 078, 079, 082, 111, 141-143). A própria task já dizia isso.
+3. O ganho concreto sobre o estado atual é reordenar com o mouse e
+   dobrar bloco — nenhum dos dois foi pedido.
+
+Se for pra fazer, o pré-requisito continua valendo e agora existe: o
+harness. Vale escrever os cenários de digitação ANTES de mexer, pra a
+reescrita ter rede.

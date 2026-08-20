@@ -1273,6 +1273,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let editor_ref_esc = editor_ref.clone();
         let segment_refs_esc = segment_refs.clone();
         let mark_edited_esc = mark_edited.clone();
+        let mark_edited_bloco = mark_edited_estrutural.clone();
         let frontmatter_novo = frontmatter_text.clone();
         let content_md_ref_copia = content_md.clone();
         let frontmatter_copia = frontmatter_text.clone();
@@ -1475,6 +1476,38 @@ pub fn editor(props: &EditorProps) -> Html {
             // o `contenteditable` criar o parágrafo (mesma coisa que
             // apertar Enter) e digita "/" — daí o menu de sempre assume,
             // com todos os 9 embeds e os blocos de markdown.
+            // Manipular o bloco focado no modo de navegação (ciclo 175):
+            // mover, duplicar e apagar SEM sair pro mouse.
+            //
+            // Age no DOM e recompõe o markdown a partir dele — o mesmo
+            // caminho que toda edição de texto já usa. Não precisa de um
+            // `contenteditable` por bloco (ver a nota da task): o bloco
+            // já é um filho de primeiro nível marcado por
+            // `marcar_blocos`, e mover um nó é operação de DOM.
+            if !e.ctrl_key() && !e.meta_key() {
+                let acao = match (e.key().as_str(), e.alt_key()) {
+                    ("ArrowUp", true) | ("K", false) => Some(AcaoBloco::Subir),
+                    ("ArrowDown", true) | ("J", false) => Some(AcaoBloco::Descer),
+                    ("d", false) => Some(AcaoBloco::Apagar),
+                    ("y", false) => Some(AcaoBloco::Duplicar),
+                    _ => None,
+                };
+                if let (Some(acao), Some(bloco)) = (acao, bloco_focado()) {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    if aplicar_acao_de_bloco(&bloco, acao) {
+                        let novo = recompute_markdown_from_dom(
+                            &content_md_esc,
+                            &editor_ref_esc,
+                            &segment_refs_esc,
+                        );
+                        content_md_esc.set(novo.clone());
+                        mark_edited_bloco(novo);
+                    }
+                    return;
+                }
+            }
+
             if e.key() == "n" && !e.ctrl_key() && !e.meta_key() && !e.alt_key() {
                 if let Some(bloco) = bloco_focado() {
                     e.prevent_default();
@@ -3559,4 +3592,67 @@ fn resolver_alvo<'a>(
                     .is_some_and(|s| s.eq_ignore_ascii_case(alvo))
             })
         })
+}
+
+/// O que fazer com o bloco focado no modo de navegação (ciclo 175).
+#[derive(Clone, Copy, PartialEq)]
+enum AcaoBloco {
+    Subir,
+    Descer,
+    Duplicar,
+    Apagar,
+}
+
+/// Aplica a ação no DOM e devolve `true` se algo mudou.
+///
+/// Mexe no DOM, não no `Vec<DocSegment>`: um bloco de texto não é um
+/// segmento, é um filho de primeiro nível DENTRO de um segmento de
+/// markdown, e o markdown é recomposto a partir do DOM na gravação
+/// (`recompute_markdown_from_dom`). Fazer no nível do markdown exigiria
+/// mapear bloco → intervalo de linhas, que é justamente o que o ciclo
+/// 176 evitou não escrevendo id nenhum no arquivo.
+///
+/// O foco é mantido no bloco (ou no vizinho, quando ele é apagado) pra
+/// dar pra encadear as ações — subir um bloco três posições é `K K K`,
+/// não `K`, achar de novo, `K`.
+fn aplicar_acao_de_bloco(bloco: &web_sys::Element, acao: AcaoBloco) -> bool {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return false };
+    let Some(pai) = bloco.parent_element() else { return false };
+
+    match acao {
+        AcaoBloco::Subir => {
+            let Some(anterior) = bloco.previous_element_sibling() else { return false };
+            let _ = pai.insert_before(bloco, Some(&anterior));
+        }
+        AcaoBloco::Descer => {
+            let Some(proximo) = bloco.next_element_sibling() else { return false };
+            // Insere DEPOIS do próximo: `insert_before(proximo.next)`.
+            let depois = proximo.next_element_sibling();
+            let _ = pai.insert_before(bloco, depois.as_ref().map(|e| e.unchecked_ref()));
+        }
+        AcaoBloco::Duplicar => {
+            let Ok(copia) = bloco.clone_node_with_deep(true) else { return false };
+            let _ = pai.insert_before(&copia, bloco.next_element_sibling().as_ref().map(|e| e.unchecked_ref()));
+        }
+        AcaoBloco::Apagar => {
+            // Vizinho pra onde o foco vai: o de baixo, ou o de cima se
+            // era o último. Sem isso o foco cai no `<body>` e as setas
+            // param de andar.
+            let vizinho = bloco
+                .next_element_sibling()
+                .or_else(|| bloco.previous_element_sibling());
+            let _ = pai.remove_child(bloco);
+            if let Some(v) = vizinho {
+                crate::nav_mode::focus_item(&v);
+            }
+            let _ = doc;
+            return true;
+        }
+    }
+
+    // Os blocos foram reordenados: os `data-nav-item` precisam voltar a
+    // bater com a posição, senão a navegação pula na ordem antiga.
+    marcar_blocos(&pai);
+    crate::nav_mode::focus_item(bloco);
+    true
 }
