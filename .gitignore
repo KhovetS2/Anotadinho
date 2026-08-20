@@ -32,3 +32,6 @@ cycles/run-logs/
 # Env
 .env
 .env.local
+
+# Cache do indice do vault (ciclo 171) — e cache, nao fonte da verdade
+.anotadinho/
