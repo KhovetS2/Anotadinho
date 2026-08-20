@@ -598,3 +598,19 @@ fn list_pages_e_query_concordam_no_mesmo_filtro() {
     assert_eq!(list_paths, query_paths);
     assert_eq!(list_paths, vec!["pages/specs/a.md"]);
 }
+
+// ── ciclo 162: frontmatter sem campo nulo ────────────────────────────
+
+#[test]
+fn set_property_nao_introduz_chave_nova_no_frontmatter() {
+    let dir = setup_vault();
+    cli(&dir)
+        .args(["set-property", "pages/specs/minha-spec.md", "status", "done"])
+        .assert()
+        .success();
+    let conteudo = fs::read_to_string(dir.path().join("pages/specs/minha-spec.md")).unwrap();
+    assert!(conteudo.contains("status: done"), "{conteudo}");
+    assert!(!conteudo.contains("null"), "gravou campo nulo:\n{conteudo}");
+    assert!(!conteudo.contains("created:"), "inventou campo:\n{conteudo}");
+    assert!(conteudo.contains("# Minha Spec"), "o corpo se perdeu:\n{conteudo}");
+}

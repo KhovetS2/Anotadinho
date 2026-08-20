@@ -1,7 +1,7 @@
 ---
 id: "162"
 titulo: "Frontmatter reserializado ganha campos nulos"
-status: pending
+status: done
 criado: 2026-08-19
 autor: agente
 prioridade: media
@@ -39,19 +39,19 @@ como campo presente com valor vazio.
 
 ## Critérios de aceite
 
-- [ ] `Frontmatter` ganha `#[serde(skip_serializing_if =
+- [x] `Frontmatter` ganha `#[serde(skip_serializing_if =
       "Option::is_none")]` em `title`, `created`, `updated` e
       `page_type`
-- [ ] `tags` vazio também não é escrito (`Vec::is_empty`)
-- [ ] Teste em `crates/core`: `set_frontmatter_field` numa página que
+- [x] `tags` vazio também não é escrito (`Vec::is_empty`)
+- [x] Teste em `crates/core`: `set_frontmatter_field` numa página que
       só tem `title` e `status` devolve frontmatter com só esses dois
       campos + o alterado — nenhum `null`
-- [ ] Teste no CLI (`crates/cli/tests/cli.rs`): `set-property` não
+- [x] Teste no CLI (`crates/cli/tests/cli.rs`): `set-property` não
       introduz chave nova além da alterada
-- [ ] Conferir o painel de propriedades (`typed_page_header.rs`), que
+- [x] Conferir o painel de propriedades (`typed_page_header.rs`), que
       usa o mesmo `serde_yaml::to_string(&Frontmatter)` — deve parar de
       escrever nulos também
-- [ ] Rodar em cima de uma página real do vault e comparar o `git diff`
+- [x] Rodar em cima de uma página real do vault e comparar o `git diff`
 
 ## Comandos de validação
 
@@ -69,6 +69,20 @@ cd ui && trunk build
   próxima escrita, depois deste conserto
 
 ## Notas
+
+`cargo test -p anotadinho-core`: 148 (+1). `cargo test -p
+anotadinho-cli`: 33 (+1).
+
+Conferido num arquivo real do vault (`pages/specs/exemplo-exportar-
+nota-em-pdf.md`): depois do conserto, o `git diff` de um `set-property`
+não tem mais nenhum `null` nem campo inventado.
+
+**Fica um resíduo conhecido**: o caminho tipado reordena o frontmatter
+(campos `extra` saem em ordem alfabética, depois dos tipados), então o
+diff mostra as linhas movendo de lugar mesmo quando só um valor mudou.
+Some quem quiser resolver isso vai precisar de edição em nível de
+linha em vez de round-trip tipado — é outro ciclo, e o incômodo é
+bem menor que o dos nulos.
 
 Achado na validação do ciclo 156 (ação `set-property` do embed de
 ações), mas é anterior: vale pra todo caminho tipado desde o ciclo

@@ -554,4 +554,21 @@ mod tests {
         assert_eq!(fm.extra.get("status").and_then(|v| v.as_str()), Some("done"));
         assert_eq!(body, "# Sem frontmatter\n\ncorpo\n");
     }
+
+    #[test]
+    fn set_frontmatter_field_nao_inventa_campo_nulo() {
+        // Ciclo 162: `Option` sem `skip_serializing_if` escrevia
+        // `created: null`/`updated: null`/`type: null` em toda página
+        // que passasse pelo caminho tipado (o `set-property` do CLI e a
+        // ação `set-property` do embed de ações). Sujava o arquivo, o
+        // `git diff` e o índice de consulta.
+        let original = "---\ntitle: Minha Spec\nstatus: backlog\n---\n# Corpo\n";
+        let novo = MarkdownCodec::set_frontmatter_field(original, "status", "done").unwrap();
+        assert!(novo.contains("status: done"), "{novo}");
+        assert!(novo.contains("title: Minha Spec"), "{novo}");
+        assert!(!novo.contains("null"), "frontmatter ganhou campo nulo:\n{novo}");
+        assert!(!novo.contains("created:"), "campo que não existia foi inventado:\n{novo}");
+        assert!(!novo.contains("tags:"), "lista vazia não deveria ser escrita:\n{novo}");
+        assert!(novo.contains("# Corpo"), "o corpo se perdeu:\n{novo}");
+    }
 }

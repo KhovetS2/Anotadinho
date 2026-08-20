@@ -28,18 +28,21 @@ impl std::fmt::Display for PageId {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Frontmatter {
     /// Título da página.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     /// Tags (lista).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     /// Data de criação. Formato livre (o vault usa `YYYY-MM-DD` sem horário,
     /// que não é um `DateTime` RFC3339 válido) — mantido como string pra não
     /// quebrar o parse de frontmatter de páginas reais do vault.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<String>,
     /// Data de última atualização. Mesmo formato livre de `created`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated: Option<String>,
     /// Tipo de página: "md" (default), "kanban", "calendar", "table".
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub page_type: Option<String>,
     /// Qualquer propriedade YAML além das reconhecidas acima — ex:
     /// `status:: doing`, `owner:: elis`, `spec-id:: 42`. Sem isso,
