@@ -197,5 +197,23 @@ página. Uma escrita re-serializa todos os embeds daquela página (não só
 o alterado), então o primeiro `git diff` costuma vir maior do que a
 mudança em si.
 
+### Reagir a mudanças (ciclo 172)
+
+`watch` fica aberto e emite uma linha JSON por mudança — é o que
+substitui ficar consultando o vault de tempos em tempos:
+
+```bash
+# uma linha por página alterada, com o valor novo de `status`
+anotadinho-cli --vault VaultAnotadinho watch --folder pages/specs --property status
+
+# reagir a spec que virou in-progress
+anotadinho-cli --vault VaultAnotadinho watch --property status \
+  | while read -r linha; do
+      echo "$linha" | grep -q '"status":"in-progress"' && echo "puxar essa spec"
+    done
+```
+
+Ctrl+C encerra (código 130, a convenção do shell pra SIGINT).
+
 O binário sai empacotado junto com a GUI a partir de `./scripts/build.sh`
 (ciclo 114) — não precisa de build separado pra ter os dois.

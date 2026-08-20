@@ -97,6 +97,21 @@ enum Command {
         #[command(subcommand)]
         action: EmbedCommand,
     },
+    /// Fica observando o vault e imprime uma linha JSON por mudança
+    /// (ciclo 172) — pra um agente REAGIR em vez de ficar consultando
+    /// de tempos em tempos.
+    Watch {
+        /// Só eventos de páginas sob este prefixo (ex: pages/specs).
+        #[arg(long)]
+        folder: Option<String>,
+        /// Além do evento, lê a página alterada e emite o valor deste
+        /// campo do frontmatter (ex: `status`).
+        #[arg(long = "property")]
+        property: Option<String>,
+        /// Intervalo de checagem em milissegundos.
+        #[arg(long, default_value = "500")]
+        intervalo_ms: u64,
+    },
     /// Executa uma consulta sobre o vault — o MESMO motor do embed
     /// `{{ type: "query" }}` (ciclo 158), pra o agente ver no terminal
     /// exatamente o recorte que o humano vê na página.
@@ -373,6 +388,51 @@ fn run(cli: Cli) -> Result<(), String> {
                         println!("{}\t{}\t{}", entry.path, entry.title, extra.join("\t"));
                     }
                 }
+            }
+        }
+        Command::Watch { folder, property, intervalo_ms } => {
+            let vault = anotadinho_vault::VaultIo::open(&cli.vault);
+            let watcher = anotadinho_vault::VaultWatcher::start(vault.root().to_path_buf())
+                .map_err(|e| e.to_string())?;
+            // Ctrl+C encerra pelo SIGINT padrão (código 130, a
+            // convenção do shell). Converter pra 0 exigiria uma
+            // dependência só pra isso — e 130 é o que qualquer
+            // `while read` já entende como "o produtor parou".
+            loop {
+                for evento in watcher.drain_events() {
+                    if let Some(prefixo) = &folder {
+                        if !evento.path.starts_with(prefixo.as_str()) {
+                            continue;
+                        }
+                    }
+                    let mut linha = serde_json::json!({
+                        "path": evento.path,
+                        "kind": evento.kind,
+                        "ts": agora_unix(),
+                    });
+                    if let Some(campo) = &property {
+                        // Lê o valor NOVO do campo — é o que fecha o
+                        // caso "rode algo quando a spec virar
+                        // in-progress" sem o agente reler o arquivo.
+                        if evento.kind != "deleted" {
+                            if let Ok(conteudo) =
+                                handle_read_page(cli.vault.clone(), evento.path.clone())
+                            {
+                                let entry = anotadinho_core::PageIndexEntry::from_content(
+                                    &evento.path,
+                                    "",
+                                    "",
+                                    &conteudo,
+                                );
+                                linha[campo.as_str()] = serde_json::json!(entry.field(campo));
+                            }
+                        }
+                    }
+                    println!("{linha}");
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                }
+                std::thread::sleep(std::time::Duration::from_millis(intervalo_ms));
             }
         }
         Command::Embed { action } => {
@@ -690,6 +750,17 @@ fn query_from_embed(vault: &str, spec: &str) -> Result<Query, String> {
             other.kind().type_name()
         )),
     }
+}
+
+/// Instante atual em segundos desde a época (unix). Formato cru de
+/// propósito: é o que um agente compara sem parsear data, e evita puxar
+/// `chrono` só pra formatar uma linha de log.
+fn agora_unix() -> String {
+    let agora = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{agora}")
 }
 
 fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {

@@ -13,4 +13,4 @@ pub mod watcher;
 pub use git_status::{git_log, git_status, GitFileEntry, GitLogEntry};
 pub use git_sync::{git_commit_and_push, git_pull};
 pub use io::{VaultIo, CONFLICT_PREFIX};
-pub use watcher::VaultWatcher;
+pub use watcher::{VaultEvent, VaultWatcher};

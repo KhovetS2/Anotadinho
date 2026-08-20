@@ -38,6 +38,7 @@ version = "0.1.0"
 dependencies = [
  "anotadinho-core",
  "anotadinho-ipc",
+ "anotadinho-vault",
  "assert_cmd",
  "clap",
  "predicates",

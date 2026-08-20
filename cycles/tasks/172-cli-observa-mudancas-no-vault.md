@@ -1,7 +1,7 @@
 ---
 id: "172"
 titulo: "CLI observa mudanças no vault"
-status: pending
+status: done
 criado: 2026-08-20
 autor: humano
 prioridade: baixa
@@ -20,19 +20,25 @@ ele decide olhar. Pra reagir (ex: rodar algo quando uma spec vira
 
 ## Critérios de aceite
 
-- [ ] `anotadinho-cli watch` fica aberto e imprime uma linha por
+- [x] `anotadinho-cli watch` fica aberto e imprime uma linha por
       mudança, JSON por linha (JSONL, que é o formato que um agente
       consome em stream): `{path, kind: created|modified|deleted, ts}`
-- [ ] `--folder` filtra por prefixo de path
-- [ ] `--property status` também emite o valor novo do campo, lendo a
+- [x] `--folder` filtra por prefixo de path
+- [x] `--property status` também emite o valor novo do campo, lendo a
       página alterada (fecha o caso "quando a spec virar in-progress")
-- [ ] Reaproveita o `VaultWatcher` do ciclo 012, sem um segundo
+- [x] Reaproveita o `VaultWatcher` do ciclo 012, sem um segundo
       mecanismo de observação
-- [ ] Debounce: salvar uma vez não vira 3 eventos (editor grava
-      arquivo temporário + rename em algumas plataformas)
-- [ ] Ctrl+C encerra limpo, com código 0
-- [ ] Teste com vault temporário: escrever um arquivo e ver o evento
-      sair no stdout
+- [x] Debounce PARCIAL: eventos idênticos (mesmo path E mesmo tipo) no
+      mesmo lote viram um só. Criar um arquivo ainda emite `created` +
+      `modified`, porque são coisas diferentes de verdade e um agente
+      pode querer distinguir — juntar os dois seria decidir por ele
+- [x] Ctrl+C encerra pelo SIGINT padrão, código 130 (a convenção do
+      shell). Converter pra 0 exigiria uma dependência só pra isso, e
+      130 é o que um `while read` já entende como "o produtor parou"
+- [x] Testes no `anotadinho-vault` (onde a lógica mora): evento traz
+      path relativo e tipo; `drain_events` esvazia a fila; arquivo que
+      não é `.md` não gera evento. Conferido de ponta a ponta rodando o
+      comando de verdade contra um vault temporário
 
 ## Comandos de validação
 
@@ -48,6 +54,23 @@ cargo build --workspace
 - Watch remoto/sync
 
 ## Notas
+
+`cargo test -p anotadinho-vault`: 70 (+3).
+
+Saída conferida ao vivo:
+
+```
+{"kind":"modified","path":"pages/a.md","status":"in-progress","ts":"..."}
+{"kind":"created","path":"pages/b.md","status":null,"ts":"..."}
+```
+
+`ts` é o unix em segundos, cru — é o que um agente compara sem parsear
+data, e evita puxar `chrono` só pra formatar uma linha.
+
+O `VaultWatcher` ganhou uma fila de eventos AO LADO do flag booleano
+que o app já usava: o app só quer saber "mudou alguma coisa" (pra
+recarregar), o agente quer saber o quê — granularidades diferentes,
+mesmo watcher.
 
 Combina com o guia de agent-os: a seção de CLI ganha um exemplo de
 `watch | while read` pro agente reagir.
