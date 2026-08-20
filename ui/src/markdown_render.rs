@@ -12,11 +12,66 @@ use pulldown_cmark::{html, Options, Parser};
 /// aqui, por `crate::embed::segment` — o que sobra pra esta função é
 /// sempre markdown "de verdade", então fences ` ```kanban ``` ` viram
 /// blocos de código normais, sem tratamento especial.
+///
+/// Transclusão (`![[Página]]`, ciclo 170) vira um marcador vazio aqui e
+/// é preenchida depois, no DOM — esta função é síncrona e não alcança o
+/// vault.
+
+/// Troca `![[Alvo]]` por um marcador de bloco que o DOM resolve
+/// depois. Fora de fence de código.
+fn marcar_transclusoes(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut in_fence = false;
+    for linha in body.split_inclusive('\n') {
+        let t = linha.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            in_fence = !in_fence;
+            out.push_str(linha);
+            continue;
+        }
+        if in_fence || !linha.contains("![[") {
+            out.push_str(linha);
+            continue;
+        }
+        let mut resto = linha;
+        while let Some(pos) = resto.find("![[") {
+            let (antes, depois) = resto.split_at(pos);
+            out.push_str(antes);
+            let miolo = &depois[3..];
+            let Some(fim) = miolo.find("]]") else {
+                out.push_str(depois);
+                resto = "";
+                break;
+            };
+            let alvo = miolo[..fim].trim();
+            if alvo.is_empty() || alvo.contains('[') {
+                out.push_str(&depois[..fim + 5]);
+            } else {
+                // HTML cru no meio do markdown: o pulldown-cmark passa
+                // adiante, e o marcador chega inteiro no DOM.
+                out.push_str(&format!(
+                    "\n<div class=\"transclusao\" data-transclusao=\"{}\"></div>\n",
+                    alvo.replace('"', "&quot;")
+                ));
+            }
+            resto = &miolo[fim + 2..];
+        }
+        out.push_str(resto);
+    }
+    out
+}
+
+/// Converte Markdown em HTML (ver doc do módulo acima).
 pub fn render(markdown: &str) -> String {
     let body = anotadinho_core::MarkdownCodec::split_frontmatter(markdown)
         .map(|(_, body)| body)
         .unwrap_or(markdown);
-    let body = crate::wikilink::linkify(body);
+    // Transclusão (ciclo 170): vira um marcador ANTES do linkify, senão
+    // o `[[..]]` de dentro viraria link e o `!` ficaria solto. O
+    // conteúdo real é carregado depois, no DOM, por
+    // `upgrade_transclusions_at` — daqui não dá pra ler o vault.
+    let body = marcar_transclusoes(body);
+    let body = crate::wikilink::linkify(&body);
 
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);

@@ -470,6 +470,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     && (last.0 != current_path || last.1 != has_embeds_eff || last.2 != segment_count || last.3 != render_gen_val)
             };
             if should_render {
+                let caminho_para_transclusao = current_path.clone();
                 *last_rendered.borrow_mut() = (current_path, has_embeds_eff, segment_count, render_gen_val);
 
                 if has_embeds_eff {
@@ -478,6 +479,7 @@ pub fn editor(props: &EditorProps) -> Html {
                             if let Some(div) = segment_refs_eff.get(i).and_then(|r| r.cast::<web_sys::Element>()) {
                                 div.set_inner_html(&crate::markdown_render::render(text));
                                 upgrade_embedded_assets_at(&div, vault_path_eff.clone());
+                                upgrade_transclusions_at(&div, vault_path_eff.clone(), caminho_para_transclusao.clone());
                                 marcar_blocos(&div);
                             }
                         }
@@ -494,6 +496,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     let html = crate::markdown_render::render(&full_snapshot_eff);
                     div.set_inner_html(&html);
                     upgrade_embedded_assets_at(&div, vault_path_eff.clone());
+                    upgrade_transclusions_at(&div, vault_path_eff.clone(), caminho_para_transclusao.clone());
                     marcar_blocos(&div);
                     let _div = div.clone();
                     wasm_bindgen_futures::spawn_local(async move {
@@ -2917,4 +2920,122 @@ fn bloco_do_cursor() -> Option<web_sys::Element> {
     let filhos = container.children();
     let idx = sel.anchor_offset().min(filhos.length().saturating_sub(1));
     filhos.item(idx).or_else(|| filhos.item(0))
+}
+
+/// Preenche os marcadores de transclusão (`![[Página]]`, ciclo 170) com
+/// o conteúdo real da página alvo.
+///
+/// Roda depois do `set_inner_html`, uma busca por marcador. O conteúdo
+/// entra RENDERIZADO mas somente leitura — editar continua sendo na
+/// página de origem, que é onde o texto de verdade mora.
+///
+/// Ciclo (A inclui B que inclui A) para no primeiro nível: o conteúdo
+/// transcluído NÃO é varrido de novo por marcadores, então nada se
+/// aninha infinitamente. Auto-referência é barrada explicitamente,
+/// porque é o erro mais fácil de cometer.
+fn upgrade_transclusions_at(el: &web_sys::Element, vault_path: String, pagina_atual: String) {
+    let Ok(marcadores) = el.query_selector_all("[data-transclusao]") else { return };
+    for i in 0..marcadores.length() {
+        let Some(node) = marcadores.item(i) else { continue };
+        let Ok(alvo_el) = node.dyn_into::<web_sys::Element>() else { continue };
+        let Some(alvo) = alvo_el.get_attribute("data-transclusao") else { continue };
+        if alvo_el.has_attribute("data-transcluido") {
+            continue;
+        }
+        let _ = alvo_el.set_attribute("data-transcluido", "1");
+
+        let (titulo, secao) = match alvo.split_once('#') {
+            Some((t, s)) => (t.trim().to_string(), Some(s.trim().to_string())),
+            None => (alvo.trim().to_string(), None),
+        };
+        let vault_path = vault_path.clone();
+        let pagina_atual = pagina_atual.clone();
+        let alvo_el = alvo_el.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            // `scan_vault` (e não `list_pages`) porque o título que
+            // interessa é o do FRONTMATTER — `list_pages` devolve o nome
+            // do arquivo, então `![[Guia do Agent OS]]` nunca casaria
+            // com `guia-agent-os.md`.
+            let paginas = crate::api::scan_vault(&vault_path).await.unwrap_or_default();
+            let encontrada = paginas
+                .iter()
+                .find(|p| p.title.eq_ignore_ascii_case(&titulo))
+                .or_else(|| paginas.iter().find(|p| p.path == titulo))
+                .or_else(|| {
+                    paginas.iter().find(|p| {
+                        std::path::Path::new(&p.path)
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().eq_ignore_ascii_case(&titulo))
+                            .unwrap_or(false)
+                    })
+                });
+            let Some(pagina) = encontrada else {
+                alvo_el.set_inner_html(&format!(
+                    "<p class=\"transclusao__vazia\">Página <strong>{}</strong> não existe ainda.</p>",
+                    escape_html(&titulo)
+                ));
+                return;
+            };
+            if pagina.path == pagina_atual {
+                alvo_el.set_inner_html(
+                    "<p class=\"transclusao__vazia\">Uma página não pode transcluir ela mesma.</p>",
+                );
+                return;
+            }
+            let Ok(conteudo) = crate::api::read_page(&vault_path, &pagina.path).await else {
+                alvo_el.set_inner_html(&format!(
+                    "<p class=\"transclusao__vazia\">Não consegui ler {}.</p>",
+                    escape_html(&pagina.path)
+                ));
+                return;
+            };
+            let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+            let corpo = match &secao {
+                Some(s) => match anotadinho_core::links::extract_section(corpo, s) {
+                    Some(trecho) => trecho.to_string(),
+                    None => {
+                        alvo_el.set_inner_html(&format!(
+                            "<p class=\"transclusao__vazia\">A página <strong>{}</strong> não tem a seção <strong>{}</strong>.</p>",
+                            escape_html(&pagina.title),
+                            escape_html(s)
+                        ));
+                        return;
+                    }
+                },
+                None => corpo.to_string(),
+            };
+
+            // Embed dentro de página transcluída: o conteúdo entra como
+            // HTML, então um kanban viraria YAML solto no meio do texto.
+            // Vira um aviso com link pra origem — ver Notas da task 170.
+            let segmentos = crate::embed::segment(&corpo);
+            let mut html = String::new();
+            for seg in &segmentos {
+                match seg {
+                    crate::embed::DocSegment::Markdown(texto) => {
+                        html.push_str(&crate::markdown_render::render(texto));
+                    }
+                    crate::embed::DocSegment::Embed(dados) => {
+                        html.push_str(&format!(
+                            "<p class=\"transclusao__embed\">Bloco <strong>{}</strong> — abra a página pra usar.</p>",
+                            dados.kind().type_name()
+                        ));
+                    }
+                }
+            }
+            let cabecalho = format!(
+                "<a class=\"transclusao__origem\" href=\"{}{}\">{}{}</a>",
+                crate::wikilink::SCHEME_PREFIX,
+                crate::wikilink::encode_title(&pagina.title),
+                escape_html(&pagina.title),
+                secao.as_deref().map(|s| format!(" › {}", escape_html(s))).unwrap_or_default()
+            );
+            alvo_el.set_inner_html(&format!("{cabecalho}<div class=\"transclusao__corpo\">{html}</div>"));
+        });
+    }
+}
+
+/// Escapa texto que vai pro HTML montado à mão aqui.
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }

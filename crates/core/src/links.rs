@@ -53,6 +53,71 @@ pub fn extract_wikilink_targets(markdown: &str) -> Vec<String> {
     out
 }
 
+/// Alvos de TRANSCLUSÃO (`![[Página]]`), únicos, com alias/âncora
+/// preservados no formato `Página#Seção` (ciclo 170) — diferente do
+/// wikilink, aqui a âncora importa: ela escolhe QUE PEDAÇO da página
+/// entra.
+pub fn extract_transclusion_targets(markdown: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut in_fence = false;
+    for line in markdown.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        let mut i = 0;
+        while let Some(pos) = line[i..].find("![[") {
+            let inicio = i + pos + 3;
+            let Some(fim_rel) = line[inicio..].find("]]") else { break };
+            let alvo = line[inicio..inicio + fim_rel].trim().to_string();
+            if !alvo.is_empty() && !alvo.contains('[') && !out.contains(&alvo) {
+                out.push(alvo);
+            }
+            i = inicio + fim_rel + 2;
+        }
+    }
+    out
+}
+
+/// Recorta a seção de um corpo markdown a partir do título dela, até o
+/// próximo heading de nível igual ou superior (ciclo 170).
+///
+/// `None` se não existir heading com esse texto.
+pub fn extract_section<'a>(body: &'a str, heading: &str) -> Option<&'a str> {
+    let alvo = heading.trim().to_lowercase();
+    let mut inicio: Option<usize> = None;
+    let mut nivel = 0usize;
+    let mut pos = 0usize;
+    for linha in body.split_inclusive('\n') {
+        let comeco = pos;
+        pos += linha.len();
+        let t = linha.trim();
+        if !t.starts_with('#') {
+            continue;
+        }
+        let n = t.chars().take_while(|c| *c == '#').count();
+        let texto = t[n..].trim().to_lowercase();
+        match inicio {
+            None => {
+                if texto == alvo {
+                    inicio = Some(comeco);
+                    nivel = n;
+                }
+            }
+            Some(i) => {
+                if n <= nivel {
+                    return Some(&body[i..comeco]);
+                }
+            }
+        }
+    }
+    inicio.map(|i| &body[i..])
+}
+
 /// Varre uma linha atrás de `[[...]]`. Um par com `[` ou `]` no miolo é
 /// ignorado (markdown de link normal aninhado, `[[a](b)]`), mesma regra
 /// do parser da UI.
@@ -107,6 +172,40 @@ mod tests {
     fn targets_vazio_sem_link() {
         assert!(extract_wikilink_targets("nada aqui [ ] [x]").is_empty());
         assert!(extract_wikilink_targets("[[]]").is_empty());
+    }
+
+    #[test]
+    fn transclusao_e_reconhecida_e_separada_do_wikilink() {
+        let md = "texto [[Link normal]]\n\n![[Missão]]\n![[Guia#Fluxo]]\n";
+        assert_eq!(
+            extract_transclusion_targets(md),
+            vec!["Missão", "Guia#Fluxo"],
+            "só o `![[..]]` conta como transclusão"
+        );
+        // O wikilink comum continua sendo visto como link (o `!` faz
+        // parte do texto anterior, não some da varredura de links).
+        assert!(extract_wikilink_targets(md).contains(&"Link normal".to_string()));
+    }
+
+    #[test]
+    fn transclusao_dentro_de_fence_e_ignorada() {
+        let md = "![[Vale]]\n```\n![[NaoVale]]\n```\n";
+        assert_eq!(extract_transclusion_targets(md), vec!["Vale"]);
+    }
+
+    #[test]
+    fn extrai_secao_ate_o_proximo_heading_do_mesmo_nivel() {
+        let body = "# Um\ntexto um\n\n## Dois\ntexto dois\n\n### Tres\ntexto tres\n\n## Quatro\ntexto quatro\n";
+        let dois = extract_section(body, "Dois").unwrap();
+        assert!(dois.contains("texto dois"));
+        assert!(dois.contains("texto tres"), "sub-seção faz parte da seção");
+        assert!(!dois.contains("texto quatro"), "parou no próximo heading do mesmo nível");
+        assert!(!dois.contains("texto um"));
+    }
+
+    #[test]
+    fn secao_inexistente_devolve_none() {
+        assert!(extract_section("# Um\ntexto\n", "Outro").is_none());
     }
 
     #[test]

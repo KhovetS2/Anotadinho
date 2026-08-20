@@ -4681,3 +4681,36 @@ body {
 .query-embed__grupo .query-embed__chip ~ .query-embed__chip {
     margin-left: 0;
 }
+
+/* Transclusão (ciclo 170) — conteúdo de outra página embutido aqui,
+   somente leitura. A borda à esquerda e o cabeçalho discreto deixam
+   claro que aquilo NÃO mora nesta página. */
+.transclusao {
+    margin: var(--sp-4) 0;
+    padding-left: var(--sp-3);
+    border-left: 2px solid var(--accent-purple);
+}
+
+.transclusao__origem {
+    display: inline-block;
+    margin-bottom: var(--sp-1);
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+    text-decoration: none;
+}
+
+.transclusao__origem:hover {
+    color: var(--accent-blue);
+    text-decoration: underline;
+}
+
+.transclusao__corpo > :first-child { margin-top: 0; }
+.transclusao__corpo > :last-child { margin-bottom: 0; }
+
+.transclusao__vazia,
+.transclusao__embed {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-style: italic;
+    margin: 0;
+}

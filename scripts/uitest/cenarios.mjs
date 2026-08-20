@@ -470,3 +470,50 @@ cenarios.push({
     ctx.assert(ctx.ler().includes("collapsed:"), `o recolhido não foi pro disco:\n${ctx.ler()}`);
   },
 });
+
+// ── ciclo 170: transclusão ───────────────────────────────────────────
+
+cenarios.push({
+  nome: "transclusão: embute a página alvo, a seção pedida e barra o ciclo (170)",
+  async fn(bridge, ctx) {
+    const { writeFileSync, unlinkSync, existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const alvo = join(ctx.vault, "pages/__uitest-alvo.md");
+    writeFileSync(
+      alvo,
+      "---\ntitle: Alvo de teste\n---\n# Um\ntexto do um\n\n## Dois\ntexto do dois\n\n## Tres\ntexto do tres\n",
+    );
+    try {
+      ctx.escrever(
+        "---\ntitle: __uitest\n---\nantes\n\n![[Alvo de teste]]\n\n![[Alvo de teste#Dois]]\n\n![[__uitest]]\n\n![[Nao Existe]]\n",
+      );
+      await recarregar(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await ctx.esperar(
+        bridge,
+        "document.querySelectorAll('.transclusao__corpo, .transclusao__vazia').length >= 4",
+        "as transclusões resolverem",
+      );
+
+      const blocos = await bridge.js(`[...document.querySelectorAll('.transclusao')].map(t => ({
+        origem: t.querySelector('.transclusao__origem')?.textContent || null,
+        texto: (t.textContent || '').trim().slice(0, 80),
+      }))`);
+
+      ctx.assert(blocos[0].texto.includes("texto do um"), `a página inteira não entrou: ${JSON.stringify(blocos[0])}`);
+      ctx.assert(blocos[0].texto.includes("texto do dois"), "faltou o resto da página");
+
+      ctx.assert(blocos[1].texto.includes("texto do dois"), `a seção não entrou: ${JSON.stringify(blocos[1])}`);
+      ctx.assert(!blocos[1].texto.includes("texto do tres"), "a seção pegou conteúdo além dela");
+      ctx.assert(blocos[1].origem?.includes("Dois"), "o cabeçalho devia dizer qual seção");
+
+      ctx.assert(blocos[2].texto.includes("não pode transcluir ela mesma"), "auto-transclusão devia ser barrada");
+      ctx.assert(blocos[3].texto.includes("não existe ainda"), "alvo inexistente devia avisar");
+
+      // O `.md` não muda por transcluir.
+      ctx.assert(ctx.ler().includes("![[Alvo de teste]]"), "o markdown original foi alterado");
+    } finally {
+      if (existsSync(alvo)) unlinkSync(alvo);
+    }
+  },
+});

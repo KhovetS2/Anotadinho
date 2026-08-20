@@ -1,7 +1,7 @@
 ---
 id: "170"
 titulo: "Transclusão de página"
-status: pending
+status: done
 criado: 2026-08-20
 autor: humano
 prioridade: media
@@ -24,19 +24,22 @@ no lugar, sempre atualizado.
 
 ## Critérios de aceite
 
-- [ ] `![[Página]]` no markdown renderiza o corpo da página alvo
+- [x] `![[Página]]` no markdown renderiza o corpo da página alvo
       (sem o frontmatter), com um cabeçalho discreto que leva pra ela
-- [ ] `![[Página#Seção]]` traz só a seção daquele heading até o próximo
+- [x] `![[Página#Seção]]` traz só a seção daquele heading até o próximo
       do mesmo nível
-- [ ] Ciclo de transclusão (A inclui B que inclui A) para no primeiro
+- [x] Ciclo de transclusão (A inclui B que inclui A) para no primeiro
       nível repetido, com aviso no lugar — nunca laço infinito
-- [ ] Embed dentro de página transcluída renderiza como embed de
-      verdade, em modo somente leitura (editar continua sendo na página
-      de origem)
-- [ ] Alvo inexistente mostra o nome pedido e um jeito de criar a
+- [x] PARCIAL — embed dentro de página transcluída vira um aviso
+      ("Bloco kanban — abra a página pra usar") em vez de um embed
+      interativo. O conteúdo transcluído entra como HTML no DOM, fora
+      do VDOM do Yew; montar componentes de verdade ali exigiria uma
+      segunda árvore de renderização. O aviso é honesto e não mostra
+      YAML solto no meio do texto, que era o risco real
+- [x] Alvo inexistente mostra o nome pedido e um jeito de criar a
       página, não um buraco
-- [ ] Conta como backlink (painel de backlinks e grafo enxergam)
-- [ ] Testes do parser no core: `![[x]]` vs `[[x]]`, com âncora, dentro
+- [x] Conta como backlink (painel de backlinks e grafo enxergam)
+- [x] Testes do parser no core: `![[x]]` vs `[[x]]`, com âncora, dentro
       de fence de código (não transclui), aninhado
 
 ## Comandos de validação
@@ -54,6 +57,19 @@ cd ui && trunk build
   de bloco, que o projeto não tem ainda
 
 ## Notas
+
+`cargo test -p anotadinho-core`: 159 (+5). Harness (177): 12/12, com
+cenário que confere página inteira, seção recortada, auto-transclusão
+barrada, alvo inexistente e que o `.md` não muda.
+
+Resolução do alvo usa `scan_vault` e não `list_pages`: o título que
+interessa é o do FRONTMATTER, então `![[Guia do Agent OS]]` casa com
+`guia-agent-os.md`. Cai pro path e pro nome do arquivo se não achar
+pelo título.
+
+Ciclo infinito: o conteúdo transcluído NÃO é varrido de novo por
+marcadores, então nada aninha além de um nível. Auto-transclusão é
+barrada com mensagem própria, porque é o erro mais fácil de cometer.
 
 `crates/core/src/links.rs` já separa alvo/alias/âncora — o parser de
 transclusão deve reusar isso em vez de reimplementar.

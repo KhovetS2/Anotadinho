@@ -91,7 +91,19 @@ impl PageIndexEntry {
             page_type: frontmatter.effective_type().to_string(),
             tags: frontmatter.tags.clone(),
             properties,
-            wikilinks: crate::links::extract_wikilink_targets(body),
+            wikilinks: {
+                // Transclusão também é referência (ciclo 170): o grafo e
+                // o painel de backlinks precisam enxergar `![[X]]` igual
+                // enxergam `[[X]]`.
+                let mut alvos = crate::links::extract_wikilink_targets(body);
+                for t in crate::links::extract_transclusion_targets(body) {
+                    let alvo = t.split('#').next().unwrap_or("").trim().to_string();
+                    if !alvo.is_empty() && !alvos.contains(&alvo) {
+                        alvos.push(alvo);
+                    }
+                }
+                alvos
+            },
             embed_tags: collect_embed_tags(body),
         }
     }
@@ -227,6 +239,17 @@ mod tests {
         );
         let e = PageIndexEntry::from_content("pages/t.md", "t", "pages", content);
         assert_eq!(e.embed_tags, vec!["reuniao", "urgente"]);
+    }
+
+    #[test]
+    fn transclusao_conta_como_referencia() {
+        let e = PageIndexEntry::from_content(
+            "pages/p.md",
+            "p",
+            "pages",
+            "---\ntitle: P\n---\n\n![[Missão]]\n![[Guia#Fluxo]]\n",
+        );
+        assert_eq!(e.wikilinks, vec!["Missão", "Guia"]);
     }
 
     #[test]
