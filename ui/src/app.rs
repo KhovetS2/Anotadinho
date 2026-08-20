@@ -1222,6 +1222,7 @@ pub fn app() -> Html {
                                 global_action={*global_editor_action}
                                 home_page={(*home_page).clone()}
                                 on_toggle_home={on_toggle_home.clone()}
+                                vault_version={*list_version}
                                 on_search={{
                                     let palette_open = palette_open.clone();
                                     let palette_query = palette_query.clone();

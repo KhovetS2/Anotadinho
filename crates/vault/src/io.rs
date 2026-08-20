@@ -7,6 +7,11 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+
+/// Prefixo da mensagem de erro de conflito de escrita (ciclo 173) — o
+/// frontend e o CLI reconhecem por ele pra dar o tratamento certo em vez
+/// de mostrar "erro ao gravar" genérico.
+pub const CONFLICT_PREFIX: &str = "CONFLITO: ";
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
@@ -103,6 +108,67 @@ impl VaultIo {
         let content = std::fs::read_to_string(&full)
             .map_err(|e| anyhow::anyhow!("erro ao ler {}: {}", relative_path, e))?;
         Ok(content)
+    }
+
+    /// Marca de versão do arquivo: `<mtime em nanos>-<tamanho>`.
+    ///
+    /// Serve pra detectar que alguém ESCREVEU por fora entre a leitura e
+    /// a gravação (ciclo 173) — o `anotadinho-cli`, um agente, o
+    /// `git pull` do ciclo 119, ou outro editor. Não é hash do conteúdo
+    /// de propósito: hash de arquivo grande custa a cada save, e mtime +
+    /// tamanho já pega qualquer escrita real de editor (que reescreve o
+    /// arquivo inteiro).
+    ///
+    /// `None` quando o arquivo não existe — que é o caso legítimo de
+    /// "criando agora".
+    pub fn page_version(&self, relative_path: &str) -> Option<String> {
+        let full = self.root.join(relative_path);
+        let meta = std::fs::metadata(&full).ok()?;
+        let mtime = meta
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_nanos();
+        Some(format!("{}-{}", mtime, meta.len()))
+    }
+
+    /// Lê a página junto da marca de versão dela — o par que o chamador
+    /// devolve depois em `write_page_checked`.
+    pub fn read_page_versioned(&self, relative_path: &str) -> Result<(String, Option<String>)> {
+        let content = self.read_page(relative_path)?;
+        Ok((content, self.page_version(relative_path)))
+    }
+
+    /// Grava só se o arquivo no disco ainda estiver na versão
+    /// `expected`. `None` em `expected` = gravação incondicional (o
+    /// comportamento de sempre, pra quem cria arquivo novo ou não tem
+    /// versão pra comparar).
+    ///
+    /// Devolve `Err` com a marca CONFLICT_PREFIX quando a versão não
+    /// bate — o chamador reconhece esse caso e oferece recarregar ou
+    /// sobrescrever, em vez de decidir sozinho (ciclo 173: antes disso
+    /// era `fs::write` puro, e o que o agente escrevia sumia no autosave
+    /// seguinte, em silêncio).
+    pub fn write_page_checked(
+        &self,
+        relative_path: &str,
+        content: &str,
+        expected: Option<&str>,
+    ) -> Result<String> {
+        if let Some(expected) = expected {
+            if let Some(current) = self.page_version(relative_path) {
+                if current != expected {
+                    return Err(anyhow::anyhow!(
+                        "{}{} mudou no disco desde que foi aberta",
+                        CONFLICT_PREFIX,
+                        relative_path
+                    ));
+                }
+            }
+        }
+        self.write_page(relative_path, content)?;
+        Ok(self.page_version(relative_path).unwrap_or_default())
     }
 
     /// Lê os bytes brutos de um arquivo do vault (ex: `assets/x.png`)
@@ -678,6 +744,62 @@ mod tests {
     fn read_page_rejects_escape() {
         let (_dir, io) = setup_vault();
         assert!(io.read_page("../etc/passwd").is_err());
+    }
+
+    #[test]
+    fn write_checked_recusa_quando_o_arquivo_mudou_por_fora() {
+        // O caso que motivou o ciclo 173: o agente escreve pelo CLI
+        // enquanto a página está aberta, e o autosave do editor
+        // sobrescrevia em silêncio.
+        let (_dir, io) = setup_vault();
+        let (_content, version) = io.read_page_versioned("pages/alpha.md").unwrap();
+
+        // Alguém de fora grava. `sleep` porque mtime de alguns
+        // filesystems tem resolução grossa demais pra duas escritas
+        // seguidas no mesmo instante.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        io.write_page("pages/alpha.md", "escrito por outro processo\n").unwrap();
+
+        let err = io
+            .write_page_checked("pages/alpha.md", "do editor\n", version.as_deref())
+            .unwrap_err()
+            .to_string();
+        assert!(err.starts_with(CONFLICT_PREFIX), "erro devia ser de conflito: {err}");
+        assert_eq!(
+            io.read_page("pages/alpha.md").unwrap(),
+            "escrito por outro processo\n",
+            "o conteúdo do outro processo não pode ser perdido"
+        );
+    }
+
+    #[test]
+    fn write_checked_grava_quando_a_versao_confere() {
+        let (_dir, io) = setup_vault();
+        let (_content, version) = io.read_page_versioned("pages/alpha.md").unwrap();
+        let nova = io
+            .write_page_checked("pages/alpha.md", "editado\n", version.as_deref())
+            .unwrap();
+        assert_eq!(io.read_page("pages/alpha.md").unwrap(), "editado\n");
+        assert_ne!(Some(nova), version, "a versão devolvida é a de DEPOIS da gravação");
+    }
+
+    #[test]
+    fn write_checked_sem_versao_esperada_grava_incondicional() {
+        // Criar arquivo novo não tem versão anterior pra comparar.
+        let (_dir, io) = setup_vault();
+        io.write_page_checked("pages/nova.md", "conteúdo\n", None).unwrap();
+        assert_eq!(io.read_page("pages/nova.md").unwrap(), "conteúdo\n");
+    }
+
+    #[test]
+    fn duas_escritas_com_a_mesma_versao_de_origem_so_deixam_a_primeira_passar() {
+        let (_dir, io) = setup_vault();
+        let (_c, version) = io.read_page_versioned("pages/alpha.md").unwrap();
+        io.write_page_checked("pages/alpha.md", "primeira\n", version.as_deref()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let segunda = io.write_page_checked("pages/alpha.md", "segunda\n", version.as_deref());
+        assert!(segunda.is_err());
+        assert_eq!(io.read_page("pages/alpha.md").unwrap(), "primeira\n");
     }
 
     #[test]

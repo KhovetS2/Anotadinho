@@ -10,7 +10,8 @@ use anotadinho_core::embed::{self, DocSegment, EmbedData, EmbedKind};
 use anotadinho_core::query::{Condition, Query, QueryOp, Sort};
 use anotadinho_ipc::{
     handle_create_page_from_template, handle_export_folder, handle_list_templates,
-    handle_read_page, handle_scan_vault, handle_search_content, handle_write_page,
+    handle_read_page, handle_read_page_versioned, handle_scan_vault, handle_search_content,
+    handle_write_page_checked,
 };
 use clap::{Parser, Subcommand};
 use std::io::Read;
@@ -282,10 +283,14 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("{}", meta.path);
         }
         Command::SetProperty { page_path, key, value } => {
-            let content = handle_read_page(cli.vault.clone(), page_path.clone())?;
-            let updated = anotadinho_core::MarkdownCodec::set_frontmatter_field(&content, &key, &value)
-                .map_err(|e| e.to_string())?;
-            handle_write_page(cli.vault, page_path, updated)?;
+            // Lê com versão e devolve ela na gravação (ciclo 173): se o
+            // app (ou outro agente) escreveu entre a leitura e a
+            // escrita, falha em vez de passar por cima.
+            let page = handle_read_page_versioned(cli.vault.clone(), page_path.clone())?;
+            let updated =
+                anotadinho_core::MarkdownCodec::set_frontmatter_field(&page.content, &key, &value)
+                    .map_err(|e| e.to_string())?;
+            handle_write_page_checked(cli.vault, page_path, updated, page.version)?;
         }
         Command::Query {
             from,
@@ -348,15 +353,20 @@ fn run(cli: Cli) -> Result<(), String> {
 struct PageDoc {
     frontmatter: String,
     segments: Vec<DocSegment>,
+    /// Versão do arquivo no momento da leitura (ciclo 173) — devolvida
+    /// na gravação pra recusar escrita se alguém mexeu no meio.
+    version: Option<String>,
 }
 
 impl PageDoc {
     fn load(vault: &str, page_path: &str) -> Result<Self, String> {
-        let content = handle_read_page(vault.to_string(), page_path.to_string())?;
-        let (frontmatter, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&content);
+        let page = handle_read_page_versioned(vault.to_string(), page_path.to_string())?;
+        let (frontmatter, body) =
+            anotadinho_core::MarkdownCodec::split_frontmatter_text(&page.content);
         Ok(Self {
             frontmatter: frontmatter.to_string(),
             segments: embed::segment(body),
+            version: page.version,
         })
     }
 
@@ -394,7 +404,13 @@ impl PageDoc {
         } else {
             format!("{}\n{}", self.frontmatter, body)
         };
-        handle_write_page(vault.to_string(), page_path.to_string(), content)
+        handle_write_page_checked(
+            vault.to_string(),
+            page_path.to_string(),
+            content,
+            self.version.clone(),
+        )
+        .map(|_| ())
     }
 }
 

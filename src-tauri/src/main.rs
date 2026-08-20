@@ -16,7 +16,8 @@ use anotadinho_ipc::{
     handle_list_assets, handle_list_assets_info,
     handle_list_folders, handle_list_pages, handle_list_templates, handle_move_page,
     handle_open_today_journal, handle_ping, handle_read_page, handle_save_pasted_asset,
-    handle_scan_vault, handle_search_content, handle_write_page,
+    handle_read_page_versioned, handle_scan_vault, handle_search_content, handle_write_page,
+    handle_write_page_checked, VersionedPage,
     AssetInfo, PageMeta, PingArgs, PingResult, VaultInfo,
 };
 use anotadinho_core::PageIndexEntry;
@@ -74,6 +75,24 @@ fn scan_vault(vault_path: String) -> Result<Vec<PageIndexEntry>, String> {
 #[tauri::command]
 fn read_page(vault_path: String, page_path: String) -> Result<String, String> {
     handle_read_page(vault_path, page_path)
+}
+
+/// Leitura com marca de versão (ciclo 173) — o editor guarda a marca e
+/// devolve ela ao salvar, pra escrita concorrente não passar batida.
+#[tauri::command]
+fn read_page_versioned(vault_path: String, page_path: String) -> Result<VersionedPage, String> {
+    handle_read_page_versioned(vault_path, page_path)
+}
+
+/// Gravação condicionada à versão lida. Devolve a versão nova.
+#[tauri::command]
+fn write_page_checked(
+    vault_path: String,
+    page_path: String,
+    content: String,
+    expected_version: Option<String>,
+) -> Result<String, String> {
+    handle_write_page_checked(vault_path, page_path, content, expected_version)
 }
 
 #[tauri::command]
@@ -234,7 +253,9 @@ fn main() {
             list_pages,
             scan_vault,
             read_page,
+            read_page_versioned,
             write_page,
+            write_page_checked,
             create_page,
             create_page_with_type,
             open_today_journal,

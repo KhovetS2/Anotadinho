@@ -170,6 +170,58 @@ pub async fn read_page(vault_path: &str, page_path: &str) -> Result<String, Stri
         .ok_or_else(|| "conteúdo retornado não é string".to_string())
 }
 
+/// Conteúdo + marca de versão do arquivo (ciclo 173).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VersionedPage {
+    /// Markdown cru.
+    pub content: String,
+    /// Marca de versão (`None` = arquivo não existe).
+    pub version: Option<String>,
+}
+
+/// Lê a página junto da marca de versão — usar sempre que o conteúdo
+/// lido vá ser EDITADO e regravado depois.
+pub async fn read_page_versioned(vault_path: &str, page_path: &str) -> Result<VersionedPage, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("pagePath"), &JsValue::from_str(page_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let result = tauri_invoke("read_page_versioned", &JsValue::from(args))
+        .await
+        .map_err(|e| format!("read_page_versioned error: {:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+}
+
+/// Grava só se o arquivo ainda estiver na versão `expected_version`.
+/// Devolve a versão nova; erro começando com `CONFLITO: ` quando alguém
+/// escreveu por fora desde a leitura.
+pub async fn write_page_checked(
+    vault_path: &str,
+    page_path: &str,
+    content: &str,
+    expected_version: Option<&str>,
+) -> Result<String, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("pagePath"), &JsValue::from_str(page_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("content"), &JsValue::from_str(content))
+        .map_err(|e| format!("{:?}", e))?;
+    if let Some(v) = expected_version {
+        js_sys::Reflect::set(&args, &JsValue::from_str("expectedVersion"), &JsValue::from_str(v))
+            .map_err(|e| format!("{:?}", e))?;
+    }
+    let result = tauri_invoke("write_page_checked", &JsValue::from(args))
+        .await
+        .map_err(|e| format!("{:?}", e))?;
+    result.as_string().ok_or_else(|| "versão retornada não é string".to_string())
+}
+
+/// Prefixo do erro de conflito de escrita — o editor reconhece por ele.
+pub const CONFLICT_PREFIX: &str = "CONFLITO: ";
+
 /// Exclui uma página do vault.
 pub async fn delete_page(vault_path: &str, page_path: &str) -> Result<(), String> {
     let args = js_sys::Object::new();

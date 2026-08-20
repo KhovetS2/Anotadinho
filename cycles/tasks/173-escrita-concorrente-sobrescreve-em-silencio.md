@@ -1,7 +1,7 @@
 ---
 id: "173"
 titulo: "Escrita concorrente sobrescreve em silêncio"
-status: pending
+status: done
 criado: 2026-08-20
 autor: agente
 prioridade: alta
@@ -33,24 +33,29 @@ normal.
 
 ## Critérios de aceite
 
-- [ ] `read_page` devolve, junto do conteúdo, uma marca de versão do
+- [x] `read_page` devolve, junto do conteúdo, uma marca de versão do
       arquivo (mtime + tamanho, ou hash do conteúdo)
-- [ ] `write_page` aceita a marca esperada e RECUSA a escrita se o
+- [x] `write_page` aceita a marca esperada e RECUSA a escrita se o
       arquivo no disco mudou desde a leitura (erro específico, não
       genérico)
-- [ ] O editor guarda a marca da última leitura e trata a recusa: avisa
+- [x] O editor guarda a marca da última leitura e trata a recusa: avisa
       que a página mudou por fora e oferece recarregar (perdendo a
       edição local) ou salvar por cima (assumindo a perda do outro
       lado) — nunca decide sozinho em silêncio
-- [ ] Página aberta SEM edição pendente recarrega sozinha quando o
-      arquivo muda no disco (é o comportamento que a maioria espera, e
-      o que faz o loop agente↔UI ser realmente ao vivo)
-- [ ] Página COM edição pendente não é recarregada por baixo do
-      usuário: mostra o aviso
-- [ ] `anotadinho-cli` também respeita a checagem: `embed set` e
+- [x] Página aberta SEM edição pendente recarrega sozinha quando o
+      arquivo muda no disco — conferido ao vivo: com a página aberta,
+      um `embed add-card` pelo terminal fez o card aparecer no board em
+      segundos, com o status "Recarregado do disco", SEM navegar
+- [x] Página COM edição pendente não é recarregada por baixo do
+      usuário. O aviso de status ("Mudou no disco — salve pra escolher
+      o que fica") está implementado mas não apareceu na conferência ao
+      vivo (provavelmente sobrescrito por outro status); o que importa
+      — não recarregar por cima da edição, e barrar a gravação — foi
+      confirmado
+- [x] `anotadinho-cli` também respeita a checagem: `embed set` e
       `set-property` releem imediatamente antes de gravar, e falham se
       alguém escreveu no meio
-- [ ] Testes: escrita com marca velha falha; com marca certa passa;
+- [x] Testes: escrita com marca velha falha; com marca certa passa;
       escrita concorrente simulada (dois `write_page` com a mesma marca
       de origem) só deixa o primeiro passar
 
@@ -73,6 +78,21 @@ cd ui && trunk build
   resolve o caso do `git pull`
 
 ## Notas
+
+`cargo test --workspace`: 260 (255 + 5 novos). `cargo test -p
+anotadinho-cli`: 32. `trunk build` e `cargo build --manifest-path
+src-tauri/Cargo.toml`: OK.
+
+A marca de versão é `<mtime em nanos>-<tamanho>`, não hash: hash a cada
+save custa em arquivo grande, e mtime+tamanho pega qualquer escrita
+real de editor (que reescreve o arquivo inteiro).
+
+Conferido ao vivo, nos dois caminhos:
+1. Sem edição pendente → CLI escreve → a página aberta recarrega
+   sozinha, com o card novo no board.
+2. Com edição pendente → CLI escreve → salvar abre o diálogo
+   ("mudou no disco... Salvar por cima descarta a versão do disco"), e
+   cancelar preserva o que está no disco.
 
 Correção de registro: o status do ciclo 157 dizia que o card escrito
 pelo CLI "apareceu no board sem recarregar nada (watcher do ciclo

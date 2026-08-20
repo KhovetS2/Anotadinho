@@ -96,6 +96,44 @@ pub fn handle_read_page(vault_path: String, page_path: String) -> Result<String,
     vault.read_page(&page_path).map_err(|e| e.to_string())
 }
 
+/// Conteúdo de uma página junto da marca de versão do arquivo
+/// (ciclo 173) — o par que o frontend guarda pra detectar escrita
+/// concorrente na hora de salvar.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionedPage {
+    /// Markdown cru.
+    pub content: String,
+    /// Marca de versão (`None` = arquivo não existe).
+    pub version: Option<String>,
+}
+
+/// Handler de read_page_versioned: conteúdo + versão numa leitura só.
+pub fn handle_read_page_versioned(
+    vault_path: String,
+    page_path: String,
+) -> Result<VersionedPage, String> {
+    let vault = VaultIo::open(&vault_path);
+    let (content, version) = vault.read_page_versioned(&page_path).map_err(|e| e.to_string())?;
+    Ok(VersionedPage { content, version })
+}
+
+/// Handler de write_page_checked: grava só se o arquivo ainda estiver
+/// na versão `expected_version`. Devolve a versão nova.
+///
+/// `expected_version` vazio/ausente = gravação incondicional (mesmo
+/// comportamento de `handle_write_page`, pra criar arquivo novo).
+pub fn handle_write_page_checked(
+    vault_path: String,
+    page_path: String,
+    content: String,
+    expected_version: Option<String>,
+) -> Result<String, String> {
+    let vault = VaultIo::open(&vault_path);
+    vault
+        .write_page_checked(&page_path, &content, expected_version.as_deref())
+        .map_err(|e| e.to_string())
+}
+
 /// Handler de write_page: grava conteúdo Markdown no disco.
 pub fn handle_write_page(
     vault_path: String,
@@ -424,6 +462,37 @@ mod tests {
 
         let journal = entries.iter().find(|e| e.section == "journals").unwrap();
         assert_eq!(journal.field("date").as_deref(), Some("2026-08-19"));
+    }
+
+    #[test]
+    fn write_checked_via_ipc_recusa_versao_velha() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        std::fs::write(dir.path().join("pages/a.md"), "original\n").unwrap();
+        let vault = dir.path().to_string_lossy().to_string();
+
+        let page = handle_read_page_versioned(vault.clone(), "pages/a.md".into()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        handle_write_page(vault.clone(), "pages/a.md".into(), "de fora\n".into()).unwrap();
+
+        let err = handle_write_page_checked(
+            vault.clone(),
+            "pages/a.md".into(),
+            "do editor\n".into(),
+            page.version.clone(),
+        )
+        .unwrap_err();
+        assert!(err.contains("CONFLITO"), "{err}");
+
+        // Com a versão atual, passa.
+        let atual = handle_read_page_versioned(vault.clone(), "pages/a.md".into()).unwrap();
+        assert!(handle_write_page_checked(
+            vault,
+            "pages/a.md".into(),
+            "do editor\n".into(),
+            atual.version
+        )
+        .is_ok());
     }
 
     #[test]

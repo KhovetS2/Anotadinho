@@ -59,6 +59,9 @@ pub struct EditorProps {
     /// (ação `run-search` do embed de ações, ciclo 156).
     #[prop_or_default]
     pub on_search: Callback<String>,
+    /// Muda quando o watcher acusa alteração no vault (ciclo 173).
+    #[prop_or_default]
+    pub vault_version: u32,
 }
 
 /// Um item do menu `/`. `action` é ou HTML pra inserir no cursor, ou
@@ -144,6 +147,11 @@ pub fn editor(props: &EditorProps) -> Html {
     // edições feitas depois.
     let edited_ref = use_mut_ref(|| false);
     let pending_flush_ref = use_mut_ref(String::new);
+    // Marca de versão do arquivo lido (ciclo 173). Fica num `use_mut_ref`
+    // e não num `use_state` porque quem lê é o `persist`, chamado de
+    // dentro de efeitos/timers que capturariam um handle congelado —
+    // mesmo motivo do `edited_ref` aqui em cima.
+    let file_version_ref = use_mut_ref(|| None::<String>);
 
     // Undo/redo genérico: pilha de snapshots de markdown inteiro
     // (cap. ~20), não um mecanismo por tipo de embed — cobre texto solto
@@ -347,6 +355,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let undo_stack = undo_stack.clone();
         let redo_stack = redo_stack.clone();
         let last_content_ref = last_content_ref.clone();
+        let file_version_ref = file_version_ref.clone();
 
         use_effect_with(page.clone(), move |page| {
             // Histórico de undo/redo é por página — trocar de página não
@@ -372,17 +381,19 @@ pub fn editor(props: &EditorProps) -> Html {
                 let edited_ref = edited_ref.clone();
                 let pending_flush_ref = pending_flush_ref.clone();
                 let last_content_ref = last_content_ref.clone();
+                let file_version_ref = file_version_ref.clone();
                 loading.set(true);
                 error.set(None);
                 edited.set(false);
                 *edited_ref.borrow_mut() = false;
                 pending_flush_ref.borrow_mut().clear();
                 wasm_bindgen_futures::spawn_local(async move {
-                    match api::read_page(&vault_path, &path).await {
-                        Ok(text) => {
-                            *last_content_ref.borrow_mut() = text.clone();
-                            content_md.set(text.clone());
-                            saved_content.set(text);
+                    match api::read_page_versioned(&vault_path, &path).await {
+                        Ok(page) => {
+                            *file_version_ref.borrow_mut() = page.version;
+                            *last_content_ref.borrow_mut() = page.content.clone();
+                            content_md.set(page.content.clone());
+                            saved_content.set(page.content);
                         }
                         Err(e) => { error.set(Some(e)); }
                     }
@@ -647,6 +658,49 @@ pub fn editor(props: &EditorProps) -> Html {
     // só aparece na PRÓXIMA renderização) seria perdida silenciosamente.
     // Passando `md` como valor isso não acontece: o autosave sempre grava
     // exatamente o que foi calculado no momento da edição.
+    // Arquivo mudou no disco (ciclo 173). Sem edição pendente,
+    // recarrega sozinho — é o que faz o loop agente↔UI ser ao vivo de
+    // verdade: o `anotadinho-cli` escreve e a página aberta acompanha.
+    // COM edição pendente, não toca em nada e só avisa: sobrescrever o
+    // que a pessoa está digitando seria trocar um problema por outro.
+    {
+        let vault_path = props.vault_path.clone();
+        let page_path = page.path.clone();
+        let content_md = content_md.clone();
+        let saved_content = saved_content.clone();
+        let status = status.clone();
+        let edited_ref = edited_ref.clone();
+        let last_content_ref = last_content_ref.clone();
+        let file_version_ref = file_version_ref.clone();
+        let render_gen = render_gen.clone();
+        use_effect_with(props.vault_version, move |version| {
+            if *version == 0 || page_path.is_empty() {
+                return;
+            }
+            wasm_bindgen_futures::spawn_local(async move {
+                let Ok(page) = api::read_page_versioned(&vault_path, &page_path).await else {
+                    return;
+                };
+                let known = file_version_ref.borrow().clone();
+                if page.version == known || page.version.is_none() {
+                    return;
+                }
+                if *edited_ref.borrow() {
+                    status.set(Some("Mudou no disco — salve pra escolher o que fica".to_string()));
+                    return;
+                }
+                *file_version_ref.borrow_mut() = page.version;
+                *last_content_ref.borrow_mut() = page.content.clone();
+                content_md.set(page.content.clone());
+                saved_content.set(page.content);
+                // Força a reinjeção do HTML dos segmentos (o guard de
+                // render compara path/contagem, que podem não mudar).
+                render_gen.set(*render_gen + 1);
+                status.set(Some("Recarregado do disco".to_string()));
+            });
+        });
+    }
+
     let persist = {
         let content_md = content_md.clone(); let saved_content = saved_content.clone();
         let saving = saving.clone(); let error = error.clone(); let status = status.clone();
@@ -654,6 +708,8 @@ pub fn editor(props: &EditorProps) -> Html {
         let edited = edited.clone();
         let edited_ref = edited_ref.clone();
         let pending_flush_ref = pending_flush_ref.clone();
+        let file_version_ref = file_version_ref.clone();
+        let open_dialog = props.open_dialog.clone();
         move |md: String| {
             let saved_content = saved_content.clone(); let saving = saving.clone();
             let error = error.clone(); let status = status.clone();
@@ -661,13 +717,64 @@ pub fn editor(props: &EditorProps) -> Html {
             let content_md = content_md.clone(); let edited = edited.clone();
             let edited_ref = edited_ref.clone();
             let pending_flush_ref = pending_flush_ref.clone();
+            let file_version_ref = file_version_ref.clone();
+            let open_dialog = open_dialog.clone();
             saving.set(true); error.set(None);
             wasm_bindgen_futures::spawn_local(async move {
-                match api::write_page(&vault_path, &page_path, &md).await {
-                    Ok(()) => {
+                let expected = file_version_ref.borrow().clone();
+                match api::write_page_checked(&vault_path, &page_path, &md, expected.as_deref()).await {
+                    Ok(new_version) => {
+                        *file_version_ref.borrow_mut() = Some(new_version);
                         content_md.set(md.clone()); saved_content.set(md); edited.set(false);
                         *edited_ref.borrow_mut() = false; pending_flush_ref.borrow_mut().clear();
                         status.set(Some("Salvo".to_string()));
+                    }
+                    // Conflito (ciclo 173): alguém escreveu no arquivo
+                    // depois que abrimos — o CLI, um agente, um git pull.
+                    // Antes disso a gravação passava por cima em silêncio.
+                    // Quem decide é o usuário; o padrão (fechar o diálogo)
+                    // é NÃO gravar, que preserva o trabalho do outro lado.
+                    Err(e) if e.contains(api::CONFLICT_PREFIX) => {
+                        saving.set(false);
+                        let vault_path2 = vault_path.clone();
+                        let page_path2 = page_path.clone();
+                        let content_md2 = content_md.clone();
+                        let saved_content2 = saved_content.clone();
+                        let edited2 = edited.clone();
+                        let edited_ref2 = edited_ref.clone();
+                        let file_version_ref2 = file_version_ref.clone();
+                        let status2 = status.clone();
+                        let error2 = error.clone();
+                        open_dialog.emit(PendingDialog::Confirm {
+                            message: format!(
+                                "\"{page_path}\" mudou no disco depois que você abriu (outro app, o anotadinho-cli ou um git pull).\n\nSalvar por cima descarta a versão do disco. Cancelar mantém o que está no disco e recarrega a página."
+                            ),
+                            confirm_label: "Salvar por cima".to_string(),
+                            on_confirm: Callback::from(move |_| {
+                                let (vault_path, page_path, md) = (vault_path2.clone(), page_path2.clone(), md.clone());
+                                let content_md = content_md2.clone();
+                                let saved_content = saved_content2.clone();
+                                let edited = edited2.clone();
+                                let edited_ref = edited_ref2.clone();
+                                let file_version_ref = file_version_ref2.clone();
+                                let status = status2.clone();
+                                let error = error2.clone();
+                                wasm_bindgen_futures::spawn_local(async move {
+                                    match api::write_page_checked(&vault_path, &page_path, &md, None).await {
+                                        Ok(v) => {
+                                            *file_version_ref.borrow_mut() = Some(v);
+                                            content_md.set(md.clone());
+                                            saved_content.set(md);
+                                            edited.set(false);
+                                            *edited_ref.borrow_mut() = false;
+                                            status.set(Some("Salvo por cima".to_string()));
+                                        }
+                                        Err(e) => error.set(Some(e)),
+                                    }
+                                });
+                            }),
+                        });
+                        return;
                     }
                     Err(e) => { error.set(Some(e)); }
                 }
