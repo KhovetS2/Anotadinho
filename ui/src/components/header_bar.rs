@@ -283,14 +283,21 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
         // próprio elemento marcado.
         <header class="header-bar" tabindex="0" data-tauri-drag-region="true"
             data-nav-item="header" data-nav-parent="root" data-nav-group="header">
-            <div class="header-bar__left">
+            // Os contêineres de cada lado também arrastam: o vão entre
+            // os botões deles cai neles, não no `<header>`.
+            <div class="header-bar__left" data-tauri-drag-region="true">
                 <button class="btn btn--ghost btn--xs" onclick={props.on_toggle_sidebar.reform(|_| ())}
                     data-nav-item="header-sidebar-toggle" data-nav-parent="header">
                     <Icon name={if props.sidebar_collapsed { "chevron-right" } else { "chevron-left" }} />
                 </button>
-                <span class="header-bar__title">{ "Anotadinho" }</span>
+                // O nome e o vault também arrastam (ciclo 180): o
+                // `data-tauri-drag-region` só age quando o alvo do
+                // clique É o elemento marcado, então sem isso só o
+                // vão entre os dois lados do header arrastaria — pouco
+                // e nada óbvio.
+                <span class="header-bar__title" data-tauri-drag-region="true">{ "Anotadinho" }</span>
                 if let Some(ref name) = props.vault_name {
-                    <span class="header-bar__vault">{ name }</span>
+                    <span class="header-bar__vault" data-tauri-drag-region="true">{ name }</span>
                 }
                 if let Some(ref files) = props.git_files {
                     <div class="git-status-wrapper" ref={git_popover_ref}>
@@ -325,7 +332,7 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                     </div>
                 }
             </div>
-            <div class="header-bar__right">
+            <div class="header-bar__right" data-tauri-drag-region="true">
                 <button class="btn btn--ghost btn--xs" onclick={props.on_toggle_theme.reform(|_| ())}
                     data-nav-item="header-theme" data-nav-parent="header">
                     <Icon name={if props.theme_light { "sun" } else { "moon" }} />

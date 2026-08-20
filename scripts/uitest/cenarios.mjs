@@ -767,6 +767,41 @@ cenarios.push({
     ctx.assertEq(chrome.faixas, 8, "faltam faixas de redimensionar (8 direções)");
     ctx.assert(chrome.arrasto, "o header precisa ser área de arraste da janela");
 
+    // A permissão é o que realmente faz o arraste funcionar: o conjunto
+    // `core:default` do Tauri 2 NÃO inclui `allow-start-dragging`, então
+    // o atributo existia e o arraste era negado em silêncio.
+    const permissao = await bridge.js(`(async () => {
+      try {
+        await window.__TAURI_INTERNALS__.invoke('plugin:window|start_dragging', {});
+        return { permitido: true };
+      } catch (e) {
+        return { permitido: false, erro: String(e) };
+      }
+    })()`);
+    ctx.assert(
+      permissao.permitido,
+      `start_dragging está bloqueado — falta a permissão na capability: ${permissao.erro}`,
+    );
+
+    // O arraste tem que pegar na maior parte do header, não só num vão
+    // entre dois botões.
+    const cobertura = await bridge.js(`(() => {
+      const h = document.querySelector('.header-bar');
+      const r = h.getBoundingClientRect();
+      const y = Math.round(r.top + r.height / 2);
+      let arrastaveis = 0, total = 0;
+      for (let frac = 0.02; frac < 1; frac += 0.04) {
+        const el = document.elementFromPoint(Math.round(r.left + r.width * frac), y);
+        total++;
+        if (el && el.hasAttribute && el.hasAttribute('data-tauri-drag-region')) arrastaveis++;
+      }
+      return { arrastaveis, total };
+    })()`);
+    ctx.assert(
+      cobertura.arrastaveis / cobertura.total > 0.5,
+      `pouca área de arraste no header: ${cobertura.arrastaveis}/${cobertura.total}`,
+    );
+
     // Maximizar e restaurar de verdade, pelo comando que o botão chama.
     const ciclo = await bridge.js(`(async () => {
       const inicio = await window.__TAURI_INTERNALS__.invoke('window_is_maximized', {});
