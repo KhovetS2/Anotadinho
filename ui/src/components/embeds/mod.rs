@@ -5,6 +5,7 @@
 mod card_detail_modal;
 mod column_settings_modal;
 mod event_detail_modal;
+mod action_button_modal;
 mod inline_actions;
 mod inline_calendar;
 mod inline_callout;
@@ -20,6 +21,7 @@ mod query_settings_modal;
 pub use card_detail_modal::CardDetailModal;
 pub use column_settings_modal::ColumnSettingsModal;
 pub use event_detail_modal::EventDetailModal;
+pub use action_button_modal::ActionButtonModal;
 pub use inline_actions::InlineActions;
 pub use inline_calendar::InlineCalendar;
 pub use inline_callout::InlineCallout;

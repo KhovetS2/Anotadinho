@@ -1,7 +1,7 @@
 ---
 id: "163"
 titulo: "Modal de configuração de botão do embed de ações"
-status: pending
+status: done
 criado: 2026-08-19
 autor: agente
 prioridade: media
@@ -22,23 +22,24 @@ só os campos que aquela ação usa.
 
 ## Critérios de aceite
 
-- [ ] Botão "+ ação" no embed abre um modal (padrão
+- [x] Botão "+ ação" no embed abre um modal (padrão
       `embeds/query_settings_modal.rs`)
-- [ ] Seletor de ação (`new-from-template`, `open-page`,
+- [x] Seletor de ação (`new-from-template`, `open-page`,
       `set-property`, `run-search`) que mostra só os campos daquela
       ação — hoje são 6 campos possíveis, e mostrar todos sempre é o
       que tornou a interface inviável no ciclo 156
-- [ ] `new-from-template`: seletor de template lendo
+- [x] `new-from-template`: seletor de template lendo
       `api::list_templates` e de pasta lendo `api::list_folders`
-- [ ] `open-page`/`set-property`: seletor de página lendo
+- [x] `open-page`/`set-property`: seletor de página lendo
       `api::list_pages`
-- [ ] Clicar num botão existente com Alt (ou um lápis no hover) reabre
-      o modal pra editar aquele botão
-- [ ] Label, ícone (lista dos nomes de `icon.rs`) e variante
+- [x] Ícone de engrenagem no hover do botão reabre o modal com aquele
+      botão carregado (não Alt+clique: um modificador escondido não se
+      descobre sozinho)
+- [x] Label, ícone (lista dos nomes de `icon.rs`) e variante
       (primário/fantasma) configuráveis
-- [ ] Botão com ação desconhecida (escrita por versão futura) continua
+- [x] Botão com ação desconhecida (escrita por versão futura) continua
       desabilitado e NÃO perde o YAML ao ser editado pelo modal
-- [ ] Round-trip: configurar pelo modal e reabrir a página traz a
+- [x] Round-trip: configurar pelo modal e reabrir a página traz a
       mesma configuração
 
 ## Comandos de validação
@@ -58,6 +59,14 @@ cargo build --manifest-path src-tauri/Cargo.toml
 - Reordenar botões por arraste
 
 ## Notas
+
+Harness (177): 13/13, com cenário que abre o modal, confere que SÓ os
+campos da ação escolhida aparecem, cria o botão e verifica que ele
+chega no `.md`.
+
+O modal grava a cada campo alterado (sem "aplicar"), igual ao de
+consulta do ciclo 154 — some um passo e mantém o embed sempre
+espelhando o que está na tela.
 
 Separado do ciclo 156 porque lá o embed já ficou utilizável e o ciclo
 160 (painel) consome o YAML direto. Escopo declarado explicitamente

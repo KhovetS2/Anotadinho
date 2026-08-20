@@ -517,3 +517,63 @@ cenarios.push({
     }
   },
 });
+
+// ── ciclo 163: configurar botão de ação pela interface ───────────────
+
+cenarios.push({
+  nome: "ações: configurar botão pelo modal grava no YAML (163)",
+  async fn(bridge, ctx) {
+    ctx.escrever(
+      '---\ntitle: __uitest\n---\n{{ type: "actions" }}\nlayout: row\nbuttons: []\n{{ /actions }}\n',
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.actions-embed__add')", "o embed de ações renderizar");
+
+    await bridge.js(`(() => { document.querySelector('.actions-embed__add').click(); return true; })()`);
+    await ctx.esperar(bridge, "document.querySelector('.query-settings')", "o modal abrir");
+
+    // Só os campos da ação escolhida aparecem: `open-page` não mostra
+    // template/pasta/campo/valor.
+    const rotulos = await bridge.js(
+      `[...document.querySelectorAll('.query-settings__label')].map(l => l.textContent)`,
+    );
+    ctx.assert(rotulos.includes("Página"), `faltou o campo da ação escolhida: ${rotulos.join(", ")}`);
+    ctx.assert(!rotulos.includes("Template"), `campo de outra ação apareceu: ${rotulos.join(", ")}`);
+
+    await bridge.js(`(() => {
+      const label = document.querySelector('.query-settings__input');
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      set.call(label, 'Ir pro alvo');
+      label.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(500);
+    await bridge.js(`(() => {
+      const sel = [...document.querySelectorAll('.query-settings__select')].pop();
+      const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+      set.call(sel, sel.options[1].value);
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(600);
+
+    await bridge.js(`(() => {
+      document.querySelector('.modal-overlay .modal')
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(500);
+
+    const botoes = await bridge.js(
+      `[...document.querySelectorAll('.actions-embed__btn')].map(b => b.textContent.trim())`,
+    );
+    ctx.assert(botoes.some((b) => b.includes("Ir pro alvo")), `o botão não foi criado: ${botoes.join(", ")}`);
+
+    await bridge.js(SALVAR);
+    await PAUSA(800);
+    const disco = ctx.ler();
+    ctx.assert(disco.includes("Ir pro alvo"), `o botão não foi pro disco:\n${disco}`);
+    ctx.assert(disco.includes("action: open-page"), `a ação não foi pro disco:\n${disco}`);
+  },
+});

@@ -16,9 +16,10 @@
 use yew::prelude::*;
 
 use crate::api::{self, PageMeta};
+use crate::components::embeds::ActionButtonModal;
 use crate::components::icon::Icon;
 use crate::dialog::PendingDialog;
-use crate::embed::{ActionSpec, ActionsEmbedData, ActionsLayout};
+use crate::embed::{ActionButton, ActionSpec, ActionsEmbedData, ActionsLayout};
 
 /// Props do `InlineActions`.
 #[derive(Properties, PartialEq, Clone)]
@@ -46,6 +47,14 @@ pub struct InlineActionsProps {
 #[function_component(InlineActions)]
 pub fn inline_actions(props: &InlineActionsProps) -> Html {
     let nav_group = props.nav_group.clone();
+    // `Some(idx)` = botão em configuração; `idx == len` = botão novo
+    // ainda não adicionado (ciclo 163).
+    let configurando = use_state(|| None::<usize>);
+    let rascunho = use_state(|| ActionButton {
+        label: "Novo botão".to_string(),
+        action: "open-page".to_string(),
+        ..Default::default()
+    });
 
     html! {
         <div class={classes!("actions-embed", format!("actions-embed--{}",
@@ -113,6 +122,20 @@ pub fn inline_actions(props: &InlineActionsProps) -> Html {
                             }
                             { button.label.clone() }
                         </button>
+                        <button class="actions-embed__config" type="button" title="Configurar botão"
+                            data-nav-item="actions-config" data-nav-parent={nav_group.clone()}
+                            onclick={{
+                                let configurando = configurando.clone();
+                                let rascunho = rascunho.clone();
+                                let atual = button.clone();
+                                Callback::from(move |e: MouseEvent| {
+                                    e.stop_propagation();
+                                    rascunho.set(atual.clone());
+                                    configurando.set(Some(idx));
+                                })
+                            }}>
+                            <Icon name="settings" />
+                        </button>
                         <button class="actions-embed__remove" type="button" title="Remover botão"
                             data-nav-item="actions-remove" data-nav-parent={nav_group.clone()}
                             onclick={on_remove}>
@@ -121,10 +144,45 @@ pub fn inline_actions(props: &InlineActionsProps) -> Html {
                     </span>
                 }
             }) }
-            if props.data.buttons.is_empty() {
-                <p class="actions-embed__empty">
-                    { "Nenhum botão. Edite o YAML do embed pra adicionar (ver guia do Agent OS)." }
-                </p>
+            <button class="actions-embed__add" type="button" title="Adicionar botão"
+                data-nav-item="actions-add" data-nav-parent={nav_group.clone()}
+                onclick={{
+                    let configurando = configurando.clone();
+                    let rascunho = rascunho.clone();
+                    let total = props.data.buttons.len();
+                    Callback::from(move |_| {
+                        rascunho.set(ActionButton {
+                            label: "Novo botão".to_string(),
+                            action: "open-page".to_string(),
+                            ..Default::default()
+                        });
+                        configurando.set(Some(total));
+                    })
+                }}>{ "+ ação" }</button>
+            if let Some(idx) = *configurando {
+                <ActionButtonModal
+                    button={(*rascunho).clone()}
+                    vault_path={props.vault_path.clone()}
+                    on_change={{
+                        let rascunho = rascunho.clone();
+                        let data = props.data.clone();
+                        let on_change = props.on_change.clone();
+                        Callback::from(move |b: ActionButton| {
+                            rascunho.set(b.clone());
+                            let mut novo = data.clone();
+                            if idx < novo.buttons.len() {
+                                novo.update_button(idx, b);
+                            } else {
+                                novo.add_button(b);
+                            }
+                            on_change.emit(novo);
+                        })
+                    }}
+                    on_close={{
+                        let configurando = configurando.clone();
+                        Callback::from(move |_| configurando.set(None))
+                    }}
+                />
             }
         </div>
     }
