@@ -90,8 +90,13 @@ qualquer edição pelo app; vale saber antes de olhar o primeiro `git
 diff`.
 
 Validação ao vivo: `embed add-card pages/exemplos-embeds.md 0 --column
-Todo` com o app aberto — o card apareceu na coluna Todo do board sem
-recarregar nada (watcher do ciclo 012). Loop agente↔UI fechado.
+Todo` com o app aberto e, ao ABRIR a página, o card estava lá na coluna
+Todo.
+
+Correção (2026-08-20): a redação original dizia "sem recarregar nada
+(watcher do ciclo 012)" — errado. Quem releu o arquivo foi o clique na
+página; o watcher não recarrega página aberta, e `write_page` nem
+compara versão antes de gravar. Ver task 173.
 
 O teste de "get | set sem alteração => arquivo idêntico" é o que
 protege contra regressão silenciosa de formatação — o mesmo tipo de
