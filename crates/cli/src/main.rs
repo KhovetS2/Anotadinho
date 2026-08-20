@@ -7,9 +7,10 @@
 //! outro processo) conseguir consumir o vault programaticamente.
 
 use anotadinho_core::embed::{self, DocSegment, EmbedData, EmbedKind};
+use anotadinho_core::query::{Condition, Query, QueryOp, Sort};
 use anotadinho_ipc::{
-    handle_create_page_from_template, handle_export_folder, handle_list_pages,
-    handle_list_templates, handle_read_page, handle_search_content, handle_write_page,
+    handle_create_page_from_template, handle_export_folder, handle_list_templates,
+    handle_read_page, handle_scan_vault, handle_search_content, handle_write_page,
 };
 use clap::{Parser, Subcommand};
 use std::io::Read;
@@ -95,6 +96,39 @@ enum Command {
         #[command(subcommand)]
         action: EmbedCommand,
     },
+    /// Executa uma consulta sobre o vault — o MESMO motor do embed
+    /// `{{ type: "query" }}` (ciclo 158), pra o agente ver no terminal
+    /// exatamente o recorte que o humano vê na página.
+    Query {
+        /// Prefixo de pasta (ex: pages/specs). Omitido = vault inteiro.
+        #[arg(long)]
+        from: Option<String>,
+        /// Filtra por tag — repetível, todas precisam bater (AND).
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+        /// Condição sobre um campo, repetível. Formatos: `campo=valor`
+        /// (é), `campo!=valor` (não é), `campo~valor` (contém),
+        /// `campo?` (existe), `campo>valor` e `campo<valor`.
+        #[arg(long = "where")]
+        conditions: Vec<String>,
+        /// Campo pelo qual ordenar.
+        #[arg(long)]
+        sort: Option<String>,
+        /// Ordena decrescente (só com `--sort`).
+        #[arg(long)]
+        desc: bool,
+        /// Máximo de resultados.
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Campos extras mostrados na saída legível (repetível).
+        #[arg(long = "field")]
+        fields: Vec<String>,
+        /// Roda a consulta declarada num embed `query` de uma página,
+        /// em vez de montar a consulta pelos argumentos. Formato:
+        /// `<page_path>:<índice do embed>`.
+        #[arg(long)]
+        from_embed: Option<String>,
+    },
 }
 
 /// Operações sobre os embeds de uma página. O índice é a POSIÇÃO ENTRE
@@ -176,34 +210,37 @@ fn main() {
 fn run(cli: Cli) -> Result<(), String> {
     match cli.command {
         Command::ListPages { folder, tags, status, priority } => {
-            let mut pages = handle_list_pages(cli.vault.clone())?;
-            if let Some(prefix) = &folder {
-                pages.retain(|p| p.path.starts_with(prefix.as_str()));
+            // Mesmo motor do embed de consulta e do subcomando `query`
+            // (ciclo 158): antes esta função tinha o filtro próprio dela,
+            // lendo página por página — duas implementações do mesmo
+            // conceito, que divergiriam na primeira mudança.
+            let mut conditions = Vec::new();
+            if let Some(value) = status {
+                conditions.push(Condition { field: "status".into(), op: QueryOp::Eq, value });
             }
-            if !tags.is_empty() || status.is_some() || priority.is_some() {
-                let mut filtered = Vec::new();
-                for p in pages {
-                    let content = handle_read_page(cli.vault.clone(), p.path.clone())?;
-                    let fm = anotadinho_core::MarkdownCodec::split_frontmatter(&content)
-                        .map(|(fm, _)| fm)
-                        .unwrap_or_default();
-                    if !tags.iter().all(|t| fm.tags.contains(t)) {
-                        continue;
-                    }
-                    if let Some(want) = &status {
-                        if frontmatter_extra_str(&fm, "status") != Some(want.as_str()) {
-                            continue;
-                        }
-                    }
-                    if let Some(want) = &priority {
-                        if frontmatter_extra_str(&fm, "priority") != Some(want.as_str()) {
-                            continue;
-                        }
-                    }
-                    filtered.push(p);
-                }
-                pages = filtered;
+            if let Some(value) = priority {
+                conditions.push(Condition { field: "priority".into(), op: QueryOp::Eq, value });
             }
+            let query = Query { from: folder, tags, conditions, ..Default::default() };
+            let entries = handle_scan_vault(cli.vault.clone())?;
+            let pages: Vec<anotadinho_ipc::PageMeta> = query
+                .run(&entries)
+                .into_iter()
+                .map(|e| anotadinho_ipc::PageMeta {
+                    // Título = nome do arquivo, NÃO o `title` do
+                    // frontmatter: é o que `list-pages` sempre imprimiu,
+                    // e trocar isso quebraria script de agente que já
+                    // usa a saída. (`PageIndexEntry::title` prefere o
+                    // frontmatter, que é o certo pra consulta — daí a
+                    // diferença entre `list-pages` e `query`.)
+                    title: std::path::Path::new(&e.path)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| e.title.clone()),
+                    path: e.path.clone(),
+                    section: e.section.clone(),
+                })
+                .collect();
             if cli.json {
                 print_json(&pages)?;
             } else {
@@ -249,6 +286,53 @@ fn run(cli: Cli) -> Result<(), String> {
             let updated = anotadinho_core::MarkdownCodec::set_frontmatter_field(&content, &key, &value)
                 .map_err(|e| e.to_string())?;
             handle_write_page(cli.vault, page_path, updated)?;
+        }
+        Command::Query {
+            from,
+            tags,
+            conditions,
+            sort,
+            desc,
+            limit,
+            fields,
+            from_embed,
+        } => {
+            let query = match &from_embed {
+                Some(spec) => query_from_embed(&cli.vault, spec)?,
+                None => {
+                    let mut conds = Vec::new();
+                    for raw in &conditions {
+                        conds.push(parse_condition(raw)?);
+                    }
+                    Query {
+                        from,
+                        tags,
+                        conditions: conds,
+                        sort: sort.map(|field| Sort { field, desc }),
+                        limit,
+                        columns: fields.clone(),
+                        ..Default::default()
+                    }
+                }
+            };
+            let entries = handle_scan_vault(cli.vault.clone())?;
+            let results = query.run(&entries);
+            if cli.json {
+                print_json(&results)?;
+            } else {
+                let columns = if query.columns.is_empty() { &fields } else { &query.columns };
+                for entry in results {
+                    let extra: Vec<String> = columns
+                        .iter()
+                        .map(|c| entry.field(c).unwrap_or_default())
+                        .collect();
+                    if extra.is_empty() {
+                        println!("{}\t{}", entry.path, entry.title);
+                    } else {
+                        println!("{}\t{}\t{}", entry.path, entry.title, extra.join("\t"));
+                    }
+                }
+            }
         }
         Command::Embed { action } => {
             let vault = cli.vault.clone();
@@ -485,14 +569,60 @@ fn mutate_embed(
     doc.save(vault, page_path)
 }
 
+/// Parseia `campo=valor` / `campo!=valor` / `campo~valor` / `campo?` /
+/// `campo>valor` / `campo<valor` numa `Condition`.
+///
+/// A ordem de teste importa: `!=` tem que vir antes de `=`, senão
+/// `status!=done` viraria o campo `status!` igual a `done`.
+fn parse_condition(raw: &str) -> Result<Condition, String> {
+    let raw = raw.trim();
+    if let Some(field) = raw.strip_suffix('?') {
+        return Ok(Condition {
+            field: field.trim().to_string(),
+            op: QueryOp::Exists,
+            value: String::new(),
+        });
+    }
+    for op in [QueryOp::Neq, QueryOp::Eq, QueryOp::Contains, QueryOp::Gt, QueryOp::Lt] {
+        if let Some((field, value)) = raw.split_once(op.symbol()) {
+            if field.trim().is_empty() {
+                break;
+            }
+            return Ok(Condition {
+                field: field.trim().to_string(),
+                op,
+                value: value.trim().to_string(),
+            });
+        }
+    }
+    Err(format!(
+        "condição inválida: \"{raw}\". Use campo=valor, campo!=valor, campo~valor, campo?, campo>valor ou campo<valor"
+    ))
+}
+
+/// Lê a consulta declarada num embed `query`: `--from-embed
+/// pages/painel.md:0`.
+fn query_from_embed(vault: &str, spec: &str) -> Result<Query, String> {
+    let (page_path, index) = spec.rsplit_once(':').ok_or_else(|| {
+        format!("--from-embed espera <page_path>:<índice>, veio \"{spec}\"")
+    })?;
+    let index: usize = index
+        .trim()
+        .parse()
+        .map_err(|_| format!("índice inválido em --from-embed: \"{index}\""))?;
+    let doc = PageDoc::load(vault, page_path)?;
+    let (_, data) = doc.embed_at(index)?;
+    match data {
+        EmbedData::Query(q) => Ok(q.clone()),
+        other => Err(format!(
+            "o embed {index} de {page_path} é do tipo {}, não query",
+            other.kind().type_name()
+        )),
+    }
+}
+
 fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {
     println!("{}", serde_json::to_string_pretty(value).map_err(|e| e.to_string())?);
     Ok(())
 }
 
-/// Lê um campo string de `Frontmatter.extra` (ex: `status`/`priority`,
-/// campos livres que não têm um lugar tipado na struct — ver
-/// `crates/core/src/page.rs`).
-fn frontmatter_extra_str<'a>(fm: &'a anotadinho_core::Frontmatter, key: &str) -> Option<&'a str> {
-    fm.extra.get(key).and_then(|v| v.as_str())
-}

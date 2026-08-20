@@ -120,5 +120,52 @@ anotadinho-cli --vault VaultAnotadinho export --folder pages/specs
 anotadinho-cli --vault VaultAnotadinho new-from-template templates/spec.md "Minha feature nova"
 ```
 
+### Consultas (ciclo 158)
+
+`query` é o MESMO motor do embed `{{ type: "query" }}` — o recorte que
+você vê no terminal é literalmente o que o humano vê na página.
+
+```bash
+# specs que ainda não estão prontas, por prioridade
+anotadinho-cli --vault VaultAnotadinho query \
+  --from pages/specs --where 'status!=done' --sort priority --field status
+
+# combina condições (AND): =, !=, ~ (contém), ? (existe), > e <
+anotadinho-cli --vault VaultAnotadinho query --tag spec --where 'priority?' --json
+
+# roda a consulta que já está declarada num embed de uma página
+anotadinho-cli --vault VaultAnotadinho query --from-embed pages/produto/painel.md:0
+```
+
+> `!=` casa também com página que NÃO TEM o campo — uma spec sem
+> `status` é justamente trabalho não classificado, e sumir com ela do
+> recorte seria o pior erro possível aqui.
+
+### Embeds (ciclo 157)
+
+Mexer num board/tabela/calendário sem reescrever o `.md` na mão (e sem
+montar YAML por concatenação, que já corrompeu arquivo no ciclo 064):
+
+```bash
+# o que tem de embed nesta página?
+anotadinho-cli --vault VaultAnotadinho embed list pages/produto/painel.md
+
+# lê o conteúdo do embed 0 (YAML; tabela markdown no tipo `table`)
+anotadinho-cli --vault VaultAnotadinho embed get pages/produto/roadmap.md 0
+
+# grava de volta (do stdin ou de --file); passa pelo parser antes de escrever
+anotadinho-cli --vault VaultAnotadinho embed set pages/produto/painel.md 0 --file novo.yaml
+
+# atalhos
+anotadinho-cli --vault VaultAnotadinho embed add-card pages/x.md 0 --column Todo --title "Nova tarefa"
+anotadinho-cli --vault VaultAnotadinho embed add-row pages/x.md 1 --values "API, done, alta"
+anotadinho-cli --vault VaultAnotadinho embed add-event pages/x.md 2 --date 2026-09-01 --title "Revisão"
+```
+
+Com o app aberto, a mudança aparece na hora — o watcher recarrega a
+página. Uma escrita re-serializa todos os embeds daquela página (não só
+o alterado), então o primeiro `git diff` costuma vir maior do que a
+mudança em si.
+
 O binário sai empacotado junto com a GUI a partir de `./scripts/build.sh`
 (ciclo 114) — não precisa de build separado pra ter os dois.

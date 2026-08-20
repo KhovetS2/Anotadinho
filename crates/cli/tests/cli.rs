@@ -7,6 +7,7 @@
 use std::fs;
 
 use assert_cmd::Command;
+use predicates::prelude::PredicateBooleanExt;
 use tempfile::TempDir;
 
 fn setup_vault() -> TempDir {
@@ -414,4 +415,186 @@ fn embed_add_row_valida_a_quantidade_de_colunas() {
         .success();
     let content = fs::read_to_string(dir.path().join("pages/tab.md")).unwrap();
     assert!(content.contains("| UI | doing |"));
+}
+
+// ── query (ciclo 158) ────────────────────────────────────────────────
+
+/// Vault com specs em estados diferentes + uma página com um embed de
+/// consulta declarado, pro `--from-embed`.
+fn setup_query_vault() -> TempDir {
+    let dir = TempDir::new().expect("cria temp dir");
+    fs::create_dir_all(dir.path().join("pages/specs")).unwrap();
+    fs::create_dir_all(dir.path().join("pages/produto")).unwrap();
+    fs::write(
+        dir.path().join("pages/specs/a.md"),
+        "---\ntitle: Spec A\nstatus: backlog\npriority: alta\npeso: 3\ntags:\n- spec\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("pages/specs/b.md"),
+        "---\ntitle: Spec B\nstatus: done\npriority: baixa\npeso: 10\ntags:\n- spec\n- api\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("pages/specs/c.md"),
+        "---\ntitle: Spec C\ntags:\n- spec\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("pages/produto/painel.md"),
+        concat!(
+            "---\ntitle: Painel\n---\n",
+            "{{ type: \"query\" }}\n",
+            "from: pages/specs\nwhere:\n- field: status\n  op: eq\n  value: backlog\n",
+            "{{ /query }}\n",
+        ),
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn query_filtra_por_pasta_e_condicao() {
+    let dir = setup_query_vault();
+    cli(&dir)
+        .args(["query", "--from", "pages/specs", "--where", "status=backlog"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("pages/specs/a.md"))
+        .stdout(predicates::str::contains("pages/specs/b.md").not());
+}
+
+#[test]
+fn query_neq_inclui_pagina_sem_o_campo() {
+    // O trabalho não classificado (spec sem `status`) é justamente o que
+    // não pode sumir de "o que ainda não está pronto".
+    let dir = setup_query_vault();
+    cli(&dir)
+        .args(["query", "--from", "pages/specs", "--where", "status!=done"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("pages/specs/a.md"))
+        .stdout(predicates::str::contains("pages/specs/c.md"))
+        .stdout(predicates::str::contains("pages/specs/b.md").not());
+}
+
+#[test]
+fn query_operadores_de_existencia_contem_e_numerico() {
+    let dir = setup_query_vault();
+    cli(&dir)
+        .args(["query", "--where", "priority?"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("pages/specs/c.md").not());
+
+    cli(&dir)
+        .args(["query", "--where", "title~spec b"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("pages/specs/b.md"));
+
+    // Alfabeticamente "10" < "5"; numericamente 10 > 5.
+    cli(&dir)
+        .args(["query", "--where", "peso>5"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("pages/specs/b.md"))
+        .stdout(predicates::str::contains("pages/specs/a.md").not());
+}
+
+#[test]
+fn query_ordena_e_limita() {
+    let dir = setup_query_vault();
+    let out = cli(&dir)
+        .args(["query", "--from", "pages/specs", "--sort", "peso", "--desc", "--limit", "1"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(stdout.lines().count(), 1);
+    assert!(stdout.contains("pages/specs/b.md"), "esperava o maior peso primeiro: {stdout}");
+}
+
+#[test]
+fn query_tag_em_and() {
+    let dir = setup_query_vault();
+    let out = cli(&dir)
+        .args(["query", "--tag", "spec", "--tag", "api"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(stdout.lines().count(), 1);
+    assert!(stdout.contains("pages/specs/b.md"));
+}
+
+#[test]
+fn query_condicao_malformada_falha_com_mensagem_util() {
+    let dir = setup_query_vault();
+    cli(&dir)
+        .args(["query", "--where", "status"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("condição inválida"));
+}
+
+#[test]
+fn query_from_embed_roda_a_consulta_declarada_na_pagina() {
+    // O agente executa exatamente a view que o humano configurou.
+    let dir = setup_query_vault();
+    cli(&dir)
+        .args(["query", "--from-embed", "pages/produto/painel.md:0"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("pages/specs/a.md"))
+        .stdout(predicates::str::contains("pages/specs/b.md").not());
+}
+
+#[test]
+fn query_from_embed_em_tipo_errado_falha() {
+    let dir = setup_embed_vault();
+    cli(&dir)
+        .args(["query", "--from-embed", "pages/painel.md:0"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("kanban"));
+}
+
+#[test]
+fn query_json_usa_o_schema_do_indice() {
+    let dir = setup_query_vault();
+    let out = cli(&dir)
+        .args(["--json", "query", "--from", "pages/specs", "--where", "status=backlog"])
+        .output()
+        .unwrap();
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(parsed.is_array());
+    assert_eq!(parsed[0]["path"], "pages/specs/a.md");
+    assert_eq!(parsed[0]["title"], "Spec A");
+    assert_eq!(parsed[0]["properties"]["priority"], "alta");
+}
+
+#[test]
+fn list_pages_e_query_concordam_no_mesmo_filtro() {
+    // Paridade: `list-pages --status` passou a delegar pro mesmo motor
+    // (ciclo 158) — se divergir, uma das duas está mentindo pro agente.
+    let dir = setup_query_vault();
+    let list = cli(&dir)
+        .args(["list-pages", "--folder", "pages/specs", "--status", "backlog"])
+        .output()
+        .unwrap();
+    let query = cli(&dir)
+        .args(["query", "--from", "pages/specs", "--where", "status=backlog"])
+        .output()
+        .unwrap();
+    let list_paths: Vec<&str> = String::from_utf8_lossy(&list.stdout)
+        .lines()
+        .filter_map(|l| l.split('\t').nth(2))
+        .map(|s| Box::leak(s.to_string().into_boxed_str()) as &str)
+        .collect();
+    let query_paths: Vec<&str> = String::from_utf8_lossy(&query.stdout)
+        .lines()
+        .filter_map(|l| l.split('\t').next())
+        .map(|s| Box::leak(s.to_string().into_boxed_str()) as &str)
+        .collect();
+    assert_eq!(list_paths, query_paths);
+    assert_eq!(list_paths, vec!["pages/specs/a.md"]);
 }

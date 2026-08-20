@@ -1,7 +1,7 @@
 ---
 id: "158"
 titulo: "CLI query: mesmo motor do embed no terminal"
-status: pending
+status: done
 criado: 2026-08-19
 autor: humano
 prioridade: media
@@ -23,23 +23,23 @@ implementações divergem na primeira mudança.
 
 ## Critérios de aceite
 
-- [ ] `anotadinho-cli query --from pages/specs --where status=backlog
+- [x] `anotadinho-cli query --from pages/specs --where status=backlog
       --where priority!=baixa --tag spec --sort priority --desc
       --limit 10 --json`
-- [ ] `--where` repetível, aceitando `campo=valor` (eq), `campo!=valor`
+- [x] `--where` repetível, aceitando `campo=valor` (eq), `campo!=valor`
       (neq), `campo~valor` (contains), `campo?` (exists),
       `campo>valor` / `campo<valor`
-- [ ] Saída JSON com o MESMO schema do que o embed consome
+- [x] Saída JSON com o MESMO schema do que o embed consome
       (`PageIndexEntry`), pra um agente conseguir correlacionar
-- [ ] Saída legível (sem `--json`) em colunas: path, título e os
+- [x] Saída legível (sem `--json`) em colunas: path, título e os
       campos citados nas condições/ordenação
-- [ ] `--from-embed <page> <idx>`: roda a consulta declarada num embed
-      `query` de uma página — o agente executa exatamente a view que o
-      humano configurou na interface
-- [ ] `list-pages --tag/--status/--priority/--folder` (ciclo 115)
+- [x] `--from-embed <page>:<idx>` (dois-pontos, não espaço — clap não
+      aceita um argumento longo com dois valores): roda a consulta
+      declarada num embed `query` de uma página
+- [x] `list-pages --tag/--status/--priority/--folder` (ciclo 115)
       passa a delegar pro mesmo motor, sem duplicar filtro; o
       comportamento e os testes existentes do CLI continuam passando
-- [ ] Testes em `crates/cli/tests/cli.rs` com vault temporário: cada
+- [x] Testes em `crates/cli/tests/cli.rs` com vault temporário: cada
       operador, ordenação, limite, `--from-embed` e paridade entre
       `list-pages --status X` e `query --where status=X`
 
@@ -60,6 +60,21 @@ cargo build --manifest-path src-tauri/Cargo.toml
   filtra metadado
 
 ## Notas
+
+`cargo test -p anotadinho-cli`: 32 (22 + 10 novos). `cargo test
+--workspace`: 251. `trunk build` e `cargo build --manifest-path
+src-tauri/Cargo.toml`: OK.
+
+`list-pages` delegou o filtro pro motor, mas continua imprimindo o NOME
+DO ARQUIVO como título (e não o `title` do frontmatter, que é o que
+`PageIndexEntry` prefere): a saída dele é contrato de script de agente,
+e o teste `list_pages_json_emits_valid_json` pegou a mudança na hora.
+`query` usa o título do frontmatter, que é o certo pra consulta — a
+diferença está comentada no código.
+
+Efeito colateral bom da delegação: `--status`/`--priority` do
+`list-pages` agora enxergam também property de corpo (`status:: x`),
+não só frontmatter YAML.
 
 Atualizar a seção "Operando via CLI" do
 `VaultAnotadinho/pages/produto/guia-agent-os.md` com os exemplos novos
