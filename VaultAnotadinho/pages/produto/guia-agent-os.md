@@ -161,10 +161,10 @@ anotadinho-cli --vault VaultAnotadinho query \
   --from pages/specs --where 'status!=done' --sort priority --field status
 
 # combina condições (AND): =, !=, ~ (contém), ? (existe), > e <
-anotadinho-cli --vault VaultAnotadinho query --tag spec --where 'priority?' --json
+anotadinho-cli --vault VaultAnotadinho --json query --tag spec --where 'priority?'
 
 # roda a consulta que já está declarada num embed de uma página
-anotadinho-cli --vault VaultAnotadinho query --from-embed pages/produto/painel.md:0
+anotadinho-cli --vault VaultAnotadinho query --from-embed pages/produto/painel.md:2
 ```
 
 > `!=` casa também com página que NÃO TEM o campo — uma spec sem
@@ -180,8 +180,11 @@ montar YAML por concatenação, que já corrompeu arquivo no ciclo 064):
 # o que tem de embed nesta página?
 anotadinho-cli --vault VaultAnotadinho embed list pages/produto/painel.md
 
-# lê o conteúdo do embed 0 (YAML; tabela markdown no tipo `table`)
-anotadinho-cli --vault VaultAnotadinho embed get pages/produto/roadmap.md 0
+# lê o conteúdo de um embed (YAML; tabela markdown no tipo `table`).
+# Cuidado: `pages/produto/roadmap.md` NÃO serve de exemplo aqui — o
+# kanban dele é `type: kanban` no frontmatter, ou seja, um TIPO DE
+# PÁGINA, não um embed. `embed list` nele devolve vazio.
+anotadinho-cli --vault VaultAnotadinho embed get pages/exemplos-embeds.md 0
 
 # grava de volta (do stdin ou de --file); passa pelo parser antes de escrever
 anotadinho-cli --vault VaultAnotadinho embed set pages/produto/painel.md 0 --file novo.yaml

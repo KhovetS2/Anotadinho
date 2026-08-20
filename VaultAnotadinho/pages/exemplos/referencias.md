@@ -31,6 +31,11 @@ Pra citar uma frase específica sem arrastar a seção inteira. O id nasce
 sob demanda: com o bloco focado no modo de navegação, `c` grava um
 `^id` naquela linha — **e só nela** — e copia a referência pronta.
 
+Esse "só nela" é literal e vale planejar: a marca é por LINHA do
+arquivo, não por parágrafo. Uma frase quebrada em três linhas no `.md`
+referenciada pelo id da última traz só aquele pedaço. Por isso a linha
+citada abaixo é uma linha só na origem.
+
 O bloco abaixo vem da página de consultas, que marcou aquela linha com
 `^neq`:
 

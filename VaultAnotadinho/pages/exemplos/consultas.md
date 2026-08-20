@@ -79,6 +79,8 @@ view: list
 | `op: exists` | campo presente e não vazio |
 | `op: gt` / `lt` | maior/menor; numérico quando os dois lados são número |
 
-> `neq` incluir quem não tem o campo é decisão consciente: "specs que
-> não estão em `done`" precisa mostrar a spec sem `status`, que é
-> justamente o trabalho não classificado. ^neq
+> `neq` casa TAMBÉM com quem não tem o campo: "specs que não estão em `done`" precisa mostrar a spec sem `status`, que é justamente o trabalho não classificado. ^neq
+
+A citação acima é uma linha só de propósito: id de bloco marca UMA
+linha, então uma referência a `^neq` quebrada em três linhas traria só
+o último pedaço da frase.

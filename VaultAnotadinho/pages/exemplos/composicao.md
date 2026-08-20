@@ -18,15 +18,18 @@ title: Para que serve
 body: |
   Contexto que o leitor precisa antes de continuar — sem virar mais um
   parágrafo perdido no meio do texto.
+
 {{ /callout }}
 
 {{ type: "callout" }}
 variant: warning
 title: Cuidado conhecido
 body: |
-  Editar o `.md` por fora com o app aberto é seguro desde o ciclo 173:
-  a página recarrega sozinha, e se você tiver edição pendente o app
-  pergunta em vez de escolher por você.
+  Editar o `.md` por fora com o app aberto é seguro: sem edição
+  pendente a página recarrega sozinha (ciclo 173); com edição pendente
+  aparece uma barra pra você ver a diferença e escolher entre manter o
+  seu e recarregar (ciclo 190).
+
 {{ /callout }}
 
 {{ type: "callout" }}
@@ -35,6 +38,7 @@ title: Atalho
 body: |
   No modo de navegação, `n` com um bloco focado abre um bloco novo
   já com o menu `/` — dá pra montar a página inteira sem mouse.
+
 {{ /callout }}
 
 ## Colunas (`columns`)
@@ -58,6 +62,7 @@ columns:
 
     Se um painel ficar apertado, use os botões `‹` e `›` pra mudar a
     proporção em vez de encolher o texto.
+
 {{ /columns }}
 
 ## Galeria (`gallery`)
@@ -67,7 +72,7 @@ Mudam de tamanho (P/M/G) e de número de colunas pela própria barra.
 
 {{ type: "gallery" }}
 columns: 3
-size: md
+size: lg
 items:
 - path: assets/exemplo-grafo.png
   caption: 'Grafo: conexões entre páginas'
@@ -75,4 +80,5 @@ items:
   caption: 'Fluxo: da spec ao commit'
 - path: assets/exemplo-quadro.png
   caption: 'Quadro: o que está em andamento'
+
 {{ /gallery }}

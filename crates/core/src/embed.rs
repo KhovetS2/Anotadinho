@@ -685,7 +685,23 @@ pub struct CalendarEmbedData {
 
 impl CalendarEmbedData {
     fn parse(raw: &str) -> Self {
-        serde_yaml::from_str(raw).unwrap_or_default()
+        let mut data: Self = serde_yaml::from_str(raw).unwrap_or_default();
+        // Migra o `tag:` singular antigo pra `tags` AQUI, na leitura.
+        //
+        // Antes a migração era prometida pra "primeira edição do evento",
+        // mas `legacy_tag` é `skip_serializing`: bastava abrir a página e
+        // salvar — sem tocar no evento — pra tag sumir do arquivo, porque
+        // ela era descartada na escrita sem nunca ter sido movida. Fazendo
+        // na leitura, todo caminho de gravação já encontra o valor no
+        // lugar certo.
+        for e in &mut data.entries {
+            if let Some(t) = e.legacy_tag.take() {
+                if e.tags.is_empty() {
+                    e.tags.push(t);
+                }
+            }
+        }
+        data
     }
 
     fn to_fence_body(&self) -> String {
@@ -2310,6 +2326,41 @@ impl EmbedData {
 #[cfg(test)]
 mod tests {
 
+    #[test]
+    fn tag_singular_antiga_migra_na_leitura_e_sobrevive_ao_round_trip() {
+        // Regressão achada auditando o vault de exemplo: abrir e salvar
+        // uma página com `tag:` apagava a tag do arquivo. O campo é
+        // `skip_serializing` (migração), mas nada migrava — ele era só
+        // descartado na escrita.
+        let data = EmbedData::parse(
+            EmbedKind::Calendar,
+            "entries:\n- date: '2026-08-06'\n  title: Revisão\n  tag: urgente\n",
+        );
+        let EmbedData::Calendar(cal) = &data else { panic!("esperava calendar") };
+        assert_eq!(cal.entries[0].tags, vec!["urgente".to_string()]);
+        assert_eq!(cal.entries[0].all_tags(), vec!["urgente".to_string()]);
+
+        let texto = data.to_fence_text();
+        assert!(texto.contains("urgente"), "a tag sumiu na serialização:\n{texto}");
+
+        // E continua lá depois de um ciclo completo de ida e volta.
+        let corpo: String = texto.lines().skip(1).take_while(|l| !l.starts_with("{{ /")).collect::<Vec<_>>().join("\n");
+        let EmbedData::Calendar(de_volta) = EmbedData::parse(EmbedKind::Calendar, &corpo) else {
+            panic!("esperava calendar")
+        };
+        assert_eq!(de_volta.entries[0].all_tags(), vec!["urgente".to_string()]);
+    }
+
+    #[test]
+    fn tags_novas_tem_precedencia_sobre_a_antiga() {
+        let data = EmbedData::parse(
+            EmbedKind::Calendar,
+            "entries:\n- title: X\n  tag: velha\n  tags:\n  - nova\n",
+        );
+        let EmbedData::Calendar(cal) = &data else { panic!() };
+        assert_eq!(cal.entries[0].tags, vec!["nova".to_string()]);
+    }
+
     // ── validate (ciclo 189) ──────────────────────────────────────
 
     fn problemas(raw: &str, kind: EmbedKind) -> Vec<Problema> {
@@ -3478,13 +3529,19 @@ Acima do embed você pode ter texto normal. Abaixo também.
     }
 
     #[test]
-    fn calendar_entry_legacy_single_tag_still_parses_via_all_tags() {
+    fn calendar_entry_legacy_single_tag_migra_na_leitura() {
         // Formato antigo (uma tag só, chave `tag:` singular) continua
-        // parseando — `all_tags()` incorpora ele automaticamente.
+        // parseando, e agora MIGRA pra `tags` já na leitura.
+        //
+        // Este teste cravava o contrário (`tags` vazio, `legacy_tag`
+        // preenchido) e por isso não pegou a perda de dado: como
+        // `legacy_tag` é `skip_serializing`, deixar o valor lá e não
+        // migrar significava que abrir e salvar a página apagava a tag
+        // do arquivo.
         let data = CalendarEmbedData::parse("entries:\n- date: '2026-08-06'\n  title: Revisão\n  tag: urgente\n");
         assert_eq!(data.entries[0].all_tags(), vec!["urgente".to_string()]);
-        assert_eq!(data.entries[0].tags, Vec::<String>::new());
-        assert_eq!(data.entries[0].legacy_tag.as_deref(), Some("urgente"));
+        assert_eq!(data.entries[0].tags, vec!["urgente".to_string()]);
+        assert_eq!(data.entries[0].legacy_tag, None, "o campo antigo é consumido na migração");
     }
 
     #[test]
