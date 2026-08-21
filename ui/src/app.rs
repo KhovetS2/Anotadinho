@@ -1220,15 +1220,9 @@ pub fn app() -> Html {
                 on_close_vault={on_close_vault}
                 on_open_vault={on_open_vault_shortcut}
             />
-            if *nav_mode_active {
-                <span class="nav-mode-badge" style={format!("--nav-mode-depth-color: {};", crate::nav_mode::depth_color_css(nav_stack.len()))}>
-                    { if nav_stack.is_empty() {
-                        "-- NAV: Regiões --".to_string()
-                    } else {
-                        format!("-- NAV: {} --", nav_stack.join(" > "))
-                    } }
-                </span>
-            }
+            // O balão flutuante de nav-mode saiu no ciclo 195: a barra de
+            // modo do rodapé (ciclo 194) diz a mesma coisa sem cobrir
+            // conteúdo nem competir com o que a pessoa está lendo.
             if vault_open {
                 <div class="app-layout">
                     <div class="app-body">

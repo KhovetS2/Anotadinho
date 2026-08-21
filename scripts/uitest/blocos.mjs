@@ -1,0 +1,321 @@
+// Matriz completa de BLOCOS (ciclo 195).
+//
+// Por que um arquivo só pra isto: os bugs desta área nunca estiveram
+// dentro de um modo — estiveram na TRANSIÇÃO entre eles. `d` apagando
+// bloco enquanto se digitava, Enter editando sem sair da navegação,
+// foco perdido depois de apagar. Testar cada modo isolado não pega
+// nenhum desses.
+//
+// Por isso quase todo cenário aqui termina checando DUAS coisas:
+// o efeito pedido, e que o MODO na barra bate com o comportamento.
+//
+// Organização:
+//   1. navegação   — entrar, andar, sair
+//   2. movimentação — subir, descer, limites
+//   3. adição      — n, Shift+Enter, duplicar
+//   4. edição      — digitar, quebrar linha, fundir
+//   5. misto       — as transições, que é onde dói
+
+import { esperar } from "./bridge.mjs";
+
+const PAUSA = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export const blocos = [];
+
+/// Estado observável: o que a barra diz e como estão os blocos.
+const ESTADO = `(() => ({
+  modo: (document.querySelector('.editor__modo') || {}).textContent || null,
+  blocos: [...document.querySelectorAll('.editor__bloco')].map(b => b.textContent.trim()),
+  focado: document.activeElement ? document.activeElement.textContent.trim().slice(0, 30) : null,
+  destacado: (document.querySelector('.nav-mode__item-active') || {}).textContent || null,
+  menuAberto: !!document.querySelector('.slash-menu'),
+}))()`;
+
+/// Escape a partir do texto — o caminho real pro modo de navegação.
+const IR_PRA_NAVEGACAO = (texto) => `(() => {
+  const alvo = [...document.querySelectorAll('.editor__bloco')]
+    .find(b => b.textContent.includes(${JSON.stringify("§ALVO§")}));
+  if (!alvo) return false;
+  alvo.focus();
+  const r = document.createRange();
+  r.selectNodeContents(alvo); r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  alvo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  return true;
+})()`.replace("§ALVO§", texto);
+
+/// Tecla no alvo do momento (o destacado pelo nav-mode, ou o focado).
+const TECLA = (key, extra = {}) => `(() => {
+  const alvo = document.querySelector('.nav-mode__item-active')
+    || document.activeElement.closest('.editor__bloco')
+    || document.activeElement;
+  alvo.dispatchEvent(new KeyboardEvent('keydown', Object.assign(
+    { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }, ${JSON.stringify(extra)})));
+  return true;
+})()`;
+
+const ESCREVER = (t) => `(() => { document.execCommand('insertText', false, ${JSON.stringify(t)}); return true; })()`;
+
+const CURSOR_NO_FIM_DO_BLOCO = (texto) => `(() => {
+  const alvo = [...document.querySelectorAll('.editor__bloco')]
+    .find(b => b.textContent.includes(${JSON.stringify("§ALVO§")}));
+  alvo.focus();
+  const r = document.createRange();
+  r.selectNodeContents(alvo); r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  return true;
+})()`.replace("§ALVO§", texto);
+
+const SALVAR = `(() => {
+  const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith('Salvar'));
+  if (b) b.click();
+  return !!b;
+})()`;
+
+function corpo(texto) {
+  if (!texto) return "";
+  const m = texto.match(/^---\n[\s\S]*?\n---\n?([\s\S]*)$/);
+  return (m ? m[1] : texto).trim();
+}
+
+/// Monta um cenário com a página `inicial` já aberta.
+function bloco(nome, inicial, fn) {
+  blocos.push({
+    nome: `blocos: ${nome} (195)`,
+    async fn(bridge, ctx) {
+      ctx.escrever(`---\ntitle: __uitest\n---\n${inicial}`);
+      await bridge.js("location.reload(); true");
+      await PAUSA(1500);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await esperar(bridge, "document.querySelector('.editor__bloco')", "os blocos aparecerem");
+      await PAUSA(2200);
+      await fn(bridge, ctx, {
+        estado: () => bridge.js(ESTADO),
+        salvarELer: async () => {
+          await bridge.js(SALVAR);
+          await PAUSA(1000);
+          return corpo(ctx.ler());
+        },
+      });
+    },
+  });
+}
+
+const TRES = "alfa\n\nbeta\n\ngama\n";
+
+// ── 1. navegação ────────────────────────────────────────────────────
+
+bloco("Escape entra em navegação e Enter volta pra edição", TRES, async (b, ctx, h) => {
+  ctx.assertEq((await h.estado()).modo, "EDIÇÃO", "começa em edição");
+
+  await b.js(IR_PRA_NAVEGACAO("beta"));
+  await PAUSA(500);
+  ctx.assertEq((await h.estado()).modo, "NAVEGAÇÃO", "Escape devia entrar em navegação");
+
+  await b.js(TECLA("Enter"));
+  await PAUSA(600);
+  const dep = await h.estado();
+  ctx.assertEq(dep.modo, "EDIÇÃO", "Enter devia VOLTAR pra edição");
+  ctx.assertEq(dep.destacado, null, "o destaque de navegação não pode sobrar");
+});
+
+bloco("setas andam entre blocos em navegação", TRES, async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("alfa"));
+  await PAUSA(500);
+  await b.js(TECLA("ArrowDown"));
+  await PAUSA(400);
+  ctx.assert(
+    ((await h.estado()).destacado || "").includes("beta"),
+    "a seta devia ter movido pro bloco de baixo",
+  );
+});
+
+// ── 2. movimentação ─────────────────────────────────────────────────
+
+for (const [nome, tecla, extra, esperado] of [
+  ["Alt+↓ desce o bloco", "ArrowDown", { altKey: true }, "beta,alfa,gama"],
+  ["J desce o bloco", "J", {}, "beta,alfa,gama"],
+]) {
+  bloco(nome, TRES, async (b, ctx, h) => {
+    await b.js(IR_PRA_NAVEGACAO("alfa"));
+    await PAUSA(500);
+    await b.js(TECLA(tecla, extra));
+    await PAUSA(600);
+    ctx.assertEq((await h.estado()).blocos.join(","), esperado, nome);
+  });
+}
+
+bloco("K sobe o bloco e a ordem chega ao arquivo", TRES, async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("gama"));
+  await PAUSA(500);
+  await b.js(TECLA("K"));
+  await PAUSA(600);
+  ctx.assertEq((await h.estado()).blocos.join(","), "alfa,gama,beta", "K devia subir");
+  const md = await h.salvarELer();
+  ctx.assert(/alfa[\s\S]*gama[\s\S]*beta/.test(md), `a ordem não chegou no disco:\n${md}`);
+});
+
+bloco("mover no limite não faz nada e não perde o foco", TRES, async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("alfa"));
+  await PAUSA(500);
+  await b.js(TECLA("K")); // já é o primeiro
+  await PAUSA(500);
+  const est = await h.estado();
+  ctx.assertEq(est.blocos.join(","), "alfa,beta,gama", "nada devia mudar");
+  ctx.assertEq(est.modo, "NAVEGAÇÃO", "continua navegando");
+  ctx.assert(est.destacado !== null, "o foco não pode se perder no limite");
+});
+
+// ── 3. adição ───────────────────────────────────────────────────────
+
+bloco("n em navegação abre bloco novo com o menu /", TRES, async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("beta"));
+  await PAUSA(500);
+  await b.js(TECLA("n"));
+  await esperar(b, "document.querySelector('.slash-menu')", "o menu / abrir");
+  ctx.assertEq((await h.estado()).modo, "EDIÇÃO", "criar bloco entra em edição");
+});
+
+bloco("y duplica o bloco logo abaixo", TRES, async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("beta"));
+  await PAUSA(500);
+  await b.js(TECLA("y"));
+  await PAUSA(600);
+  ctx.assertEq((await h.estado()).blocos.join(","), "alfa,beta,beta,gama", "y devia duplicar");
+});
+
+bloco("Shift+Enter em edição cria bloco", TRES, async (b, ctx, h) => {
+  await b.js(CURSOR_NO_FIM_DO_BLOCO("gama"));
+  await b.js(TECLA("Enter", { shiftKey: true }));
+  await PAUSA(500);
+  await b.js(ESCREVER("delta"));
+  await PAUSA(300);
+  const est = await h.estado();
+  ctx.assertEq(est.blocos.length, 4, "devia haver 4 blocos");
+  ctx.assertEq(est.modo, "EDIÇÃO", "continua editando");
+});
+
+// ── 4. edição ───────────────────────────────────────────────────────
+
+bloco("Enter quebra linha sem criar bloco", TRES, async (b, ctx, h) => {
+  await b.js(CURSOR_NO_FIM_DO_BLOCO("beta"));
+  await b.js(TECLA("Enter"));
+  await PAUSA(400);
+  await b.js(ESCREVER("mesma caixa"));
+  await PAUSA(300);
+  const est = await h.estado();
+  ctx.assertEq(est.blocos.length, 3, "Enter não pode criar bloco");
+  ctx.assert(
+    est.blocos.some((t) => t.includes("beta") && t.includes("mesma caixa")),
+    `as duas linhas deviam estar no MESMO bloco: ${JSON.stringify(est.blocos)}`,
+  );
+});
+
+bloco("Backspace no início funde com o anterior", TRES, async (b, ctx, h) => {
+  await b.js(`(() => {
+    const alvo = [...document.querySelectorAll('.editor__bloco')].find(x => x.textContent.includes('beta'));
+    alvo.focus();
+    const r = document.createRange();
+    r.selectNodeContents(alvo); r.collapse(true);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    return true;
+  })()`);
+  await b.js(TECLA("Backspace"));
+  await PAUSA(500);
+  ctx.assertEq((await h.estado()).blocos.join(","), "alfabeta,gama", "deviam ter fundido");
+});
+
+// ── 5. misto: as transições ─────────────────────────────────────────
+
+bloco("apagar bloco em navegação e CONTINUAR navegando", TRES, async (b, ctx, h) => {
+  // O bug: depois do `d` o re-render trocava os nós do DOM, o foco caía
+  // no <body> e nem seta nem Escape respondiam mais.
+  await b.js(IR_PRA_NAVEGACAO("beta"));
+  await PAUSA(500);
+  await b.js(TECLA("d"));
+  await PAUSA(800);
+
+  const dep = await h.estado();
+  ctx.assertEq(dep.blocos.join(","), "alfa,gama", "beta devia ter sumido");
+  ctx.assertEq(dep.modo, "NAVEGAÇÃO", "continua em navegação");
+  ctx.assert(dep.destacado !== null, "tem que sobrar um bloco destacado");
+
+  // E a navegação ainda responde.
+  await b.js(TECLA("ArrowUp"));
+  await PAUSA(400);
+  ctx.assert((await h.estado()).destacado !== null, "as setas pararam de responder depois do d");
+
+  // E dá pra sair.
+  await b.js(TECLA("Enter"));
+  await PAUSA(600);
+  ctx.assertEq((await h.estado()).modo, "EDIÇÃO", "não consegui sair do modo depois de apagar");
+});
+
+bloco("apagar o ÚLTIMO bloco não deixa o foco no vazio", "único\n", async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("único"));
+  await PAUSA(500);
+  await b.js(TECLA("d"));
+  await PAUSA(800);
+  const dep = await h.estado();
+  ctx.assertEq(dep.modo, "NAVEGAÇÃO", "o modo não pode se perder");
+  ctx.assert(dep.blocos.length >= 1, "tem que sobrar um bloco vazio pra digitar");
+});
+
+bloco("navegar, entrar, digitar e voltar preserva tudo", TRES, async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("alfa"));
+  await PAUSA(500);
+  await b.js(TECLA("ArrowDown"));
+  await PAUSA(400);
+  await b.js(TECLA("Enter"));
+  await PAUSA(600);
+  ctx.assertEq((await h.estado()).modo, "EDIÇÃO", "Enter devia entrar em edição");
+
+  await b.js(ESCREVER(" editado"));
+  await PAUSA(300);
+
+  await b.js(TECLA("Escape"));
+  await PAUSA(600);
+  ctx.assertEq((await h.estado()).modo, "NAVEGAÇÃO", "Escape devia voltar pra navegação");
+
+  const md = await h.salvarELer();
+  ctx.assert(md.includes("editado"), `a edição se perdeu:\n${md}`);
+  for (const t of ["alfa", "gama"]) {
+    ctx.assert(md.includes(t), `"${t}" se perdeu:\n${md}`);
+  }
+});
+
+bloco("mover em navegação, entrar e editar mantém a ordem nova", TRES, async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("gama"));
+  await PAUSA(500);
+  await b.js(TECLA("K"));
+  await PAUSA(600);
+  await b.js(TECLA("Enter"));
+  await PAUSA(600);
+  await b.js(ESCREVER("!"));
+  await PAUSA(300);
+
+  const md = await h.salvarELer();
+  ctx.assert(/alfa[\s\S]*gama[\s\S]*beta/.test(md), `a ordem se perdeu ao editar:\n${md}`);
+  ctx.assert(md.includes("gama!"), `a edição foi pro bloco errado:\n${md}`);
+});
+
+bloco("bloco vazio no meio da página não recebe o convite", TRES, async (b, ctx, h) => {
+  // Sem hover do mouse, um bloco vazio no meio de uma página escrita
+  // não pode mostrar instrução nenhuma.
+  await b.js(CURSOR_NO_FIM_DO_BLOCO("beta"));
+  await b.js(TECLA("Enter", { shiftKey: true }));
+  await PAUSA(600);
+  const temConvite = await b.js(`(() => {
+    const vazio = [...document.querySelectorAll('.editor__bloco')].find(x => !x.textContent.trim());
+    return vazio ? vazio.classList.contains('editor__bloco--convite') : 'sem bloco vazio';
+  })()`);
+  ctx.assertEq(temConvite, false, "bloco vazio no meio da página não é convite");
+});
+
+bloco("página vazia recebe o convite no único bloco", "\n", async (b, ctx, h) => {
+  const temConvite = await b.js(`(() => {
+    const bs = [...document.querySelectorAll('.editor__bloco')];
+    return bs.length === 1 && bs[0].classList.contains('editor__bloco--convite');
+  })()`);
+  ctx.assertEq(temConvite, true, "página em branco devia convidar a escrever");
+});

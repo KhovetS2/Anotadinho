@@ -1509,7 +1509,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 if let (Some(acao), Some(bloco)) = (acao, bloco_focado()) {
                     e.prevent_default();
                     e.stop_propagation();
-                    if aplicar_acao_de_bloco(&bloco, acao) {
+                    if let Some(indice) = aplicar_acao_de_bloco(&bloco, acao) {
                         let novo = recompute_markdown_from_dom(
                             &content_md_esc,
                             &editor_ref_esc,
@@ -1517,6 +1517,13 @@ pub fn editor(props: &EditorProps) -> Html {
                         );
                         content_md_esc.set(novo.clone());
                         mark_edited_bloco(novo);
+                        // O re-render troca os nós do DOM, então o
+                        // `focus_item` feito lá dentro morre junto e o
+                        // foco cai no `<body>` — daí "apaguei um bloco e
+                        // não consigo mais navegar nem sair com Esc"
+                        // (ciclo 195). Reancora depois que o DOM novo
+                        // existe.
+                        refocar_bloco_apos_render(indice);
                     }
                     return;
                 }
@@ -1572,7 +1579,14 @@ pub fn editor(props: &EditorProps) -> Html {
             // de código o Enter nativo insere a quebra dentro do código,
             // e o Shift+Enter FECHA o bloco e abre um parágrafo depois,
             // que é a única saída de um `<pre>` que termina a página.
-            if !e.ctrl_key() && !e.meta_key() {
+            // `!em_navegacao` (ciclo 195): em navegação o Enter significa
+            // ENTRAR no bloco, e quem trata isso é o `app.rs`. Sem esta
+            // guarda o handler daqui fazia quebra de linha e dava
+            // `stop_propagation`, então o Enter nunca chegava lá — a
+            // pessoa passava a editar SEM sair do modo de navegação, com
+            // a barra ainda dizendo NAVEGAÇÃO e as setas ainda pulando
+            // de bloco. Era o "dois editores ao mesmo tempo".
+            if !em_navegacao && !e.ctrl_key() && !e.meta_key() {
                 if let Some(bloco) = bloco_do_cursor() {
                     let tag = bloco.tag_name().to_lowercase();
                     let lista_ou_tabela = matches!(tag.as_str(), "ul" | "ol" | "table");
@@ -3281,11 +3295,14 @@ fn marcar_blocos(container: &web_sys::Element) {
         // reescrever a serialização junto.
         let _ = bloco.set_attribute("contenteditable", "true");
         let _ = bloco.class_list().add_1("editor__bloco");
+        let _ = bloco.class_list().remove_1(CLASSE_CONVITE);
         // `tabindex` pra o foco poder pousar no bloco sem que ele vire
         // um alvo de Tab (que continua andando pelos controles, não
         // pelo texto).
         let _ = bloco.set_attribute("tabindex", "-1");
     }
+
+    marcar_convite();
 }
 
 /// Põe o cursor DENTRO do bloco indicado e devolve o foco ao
@@ -3725,7 +3742,13 @@ enum AcaoBloco {
     Apagar,
 }
 
-/// Aplica a ação no DOM e devolve `true` se algo mudou.
+/// Aplica a ação no DOM e devolve o ÍNDICE pra onde o foco deve ir
+/// depois do re-render — `None` quando nada mudou.
+///
+/// Devolver o índice (e não `true`) é o que corrige o foco depois de
+/// mover: quem chama capturava a posição ANTES da ação, e ao subir um
+/// bloco a posição nova é outra — o foco pousava no vizinho que tomou o
+/// lugar antigo, e a digitação seguinte ia pro bloco errado (ciclo 195).
 ///
 /// Mexe no DOM, não no `Vec<DocSegment>`: um bloco de texto não é um
 /// segmento, é um filho de primeiro nível DENTRO de um segmento de
@@ -3737,23 +3760,23 @@ enum AcaoBloco {
 /// O foco é mantido no bloco (ou no vizinho, quando ele é apagado) pra
 /// dar pra encadear as ações — subir um bloco três posições é `K K K`,
 /// não `K`, achar de novo, `K`.
-fn aplicar_acao_de_bloco(bloco: &web_sys::Element, acao: AcaoBloco) -> bool {
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return false };
-    let Some(pai) = bloco.parent_element() else { return false };
+fn aplicar_acao_de_bloco(bloco: &web_sys::Element, acao: AcaoBloco) -> Option<usize> {
+    let doc = web_sys::window().and_then(|w| w.document())?;
+    let pai = bloco.parent_element()?;
 
     match acao {
         AcaoBloco::Subir => {
-            let Some(anterior) = bloco.previous_element_sibling() else { return false };
+            let anterior = bloco.previous_element_sibling()?;
             let _ = pai.insert_before(bloco, Some(&anterior));
         }
         AcaoBloco::Descer => {
-            let Some(proximo) = bloco.next_element_sibling() else { return false };
+            let proximo = bloco.next_element_sibling()?;
             // Insere DEPOIS do próximo: `insert_before(proximo.next)`.
             let depois = proximo.next_element_sibling();
             let _ = pai.insert_before(bloco, depois.as_ref().map(|e| e.unchecked_ref()));
         }
         AcaoBloco::Duplicar => {
-            let Ok(copia) = bloco.clone_node_with_deep(true) else { return false };
+            let copia = bloco.clone_node_with_deep(true).ok()?;
             let _ = pai.insert_before(&copia, bloco.next_element_sibling().as_ref().map(|e| e.unchecked_ref()));
         }
         AcaoBloco::Apagar => {
@@ -3764,11 +3787,17 @@ fn aplicar_acao_de_bloco(bloco: &web_sys::Element, acao: AcaoBloco) -> bool {
                 .next_element_sibling()
                 .or_else(|| bloco.previous_element_sibling());
             let _ = pai.remove_child(bloco);
-            if let Some(v) = vizinho {
-                crate::nav_mode::focus_item(&v);
-            }
+            let indice = match &vizinho {
+                Some(v) => {
+                    crate::nav_mode::focus_item(v);
+                    indice_do_bloco(v)
+                }
+                // Apagou o único bloco: `marcar_blocos` cria um vazio no
+                // lugar, e o foco vai pra ele.
+                None => 0,
+            };
             let _ = doc;
-            return true;
+            return Some(indice);
         }
     }
 
@@ -3776,7 +3805,8 @@ fn aplicar_acao_de_bloco(bloco: &web_sys::Element, acao: AcaoBloco) -> bool {
     // bater com a posição, senão a navegação pula na ordem antiga.
     marcar_blocos(&pai);
     crate::nav_mode::focus_item(bloco);
-    true
+    // Índice DEPOIS da mutação — o DOM já está na ordem nova aqui.
+    Some(indice_do_bloco(bloco))
 }
 
 /// Enter num bloco: divide no cursor, ou cria um bloco vazio depois
@@ -3996,5 +4026,77 @@ impl Modo {
             Self::VimNormal => "Modo normal do vim",
             Self::Edicao => "Teclas são TEXTO neste modo",
         }
+    }
+}
+
+/// Posição do bloco entre os irmãos — o que sobrevive a um re-render,
+/// já que os nós em si não sobrevivem.
+fn indice_do_bloco(bloco: &web_sys::Element) -> usize {
+    let mut i = 0;
+    let mut atual = bloco.previous_element_sibling();
+    while let Some(el) = atual {
+        i += 1;
+        atual = el.previous_element_sibling();
+    }
+    i
+}
+
+/// Devolve o foco (e o destaque do nav-mode) a um bloco depois que o
+/// re-render substituiu o DOM (ciclo 195).
+///
+/// Se o índice não existir mais — apagou o último bloco — pousa no
+/// último que existe. O importante é NUNCA deixar o foco no `<body>`:
+/// dali as setas e o Escape do nav-mode não têm em quê se ancorar, e o
+/// modo fica preso sem saída.
+fn refocar_bloco_apos_render(indice: usize) {
+    wasm_bindgen_futures::spawn_local(async move {
+        gloo_timers::future::sleep(std::time::Duration::from_millis(80)).await;
+        let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return };
+        let Ok(blocos) = doc.query_selector_all(&format!("[{}]", crate::nav_mode::ATTR_BLOCO_TEXTO))
+        else {
+            return;
+        };
+        if blocos.length() == 0 {
+            return;
+        }
+        let alvo = indice.min(blocos.length() as usize - 1);
+        if let Some(el) = blocos
+            .item(alvo as u32)
+            .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        {
+            crate::nav_mode::focus_item(&el);
+        }
+    });
+}
+
+/// Classe do bloco que mostra o convite "Digite ou use / para inserir".
+const CLASSE_CONVITE: &str = "editor__bloco--convite";
+
+/// Marca o convite quando a PÁGINA tem um bloco só, e ele está vazio.
+///
+/// Precisa ser decidido aqui e não no CSS: `:only-child` conta filhos do
+/// SEGMENTO, e uma página com embeds tem vários segmentos — cada um com
+/// seu bloco de texto. Pela regra do CSS, um parágrafo vazio no meio da
+/// página satisfazia `:only-child` do seu próprio segmento e a mensagem
+/// aparecia no meio da escrita (ciclo 195).
+fn marcar_convite() {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return };
+    let Ok(blocos) = doc.query_selector_all(&format!("[{}]", crate::nav_mode::ATTR_BLOCO_TEXTO))
+    else {
+        return;
+    };
+    for i in 0..blocos.length() {
+        if let Some(el) = blocos.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) {
+            let _ = el.class_list().remove_1(CLASSE_CONVITE);
+        }
+    }
+    if blocos.length() != 1 {
+        return;
+    }
+    let Some(unico) = blocos.item(0).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) else {
+        return;
+    };
+    if unico.text_content().unwrap_or_default().trim().is_empty() {
+        let _ = unico.class_list().add_1(CLASSE_CONVITE);
     }
 }

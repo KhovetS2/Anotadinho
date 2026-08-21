@@ -961,13 +961,19 @@
   border-left-color: var(--accent-blue);
 }
 
-/* Dica em bloco vazio (ciclo 194).
-   Regra: a página VAZIA mostra sempre — é o único convite que existe
-   numa nota em branco. Bloco vazio no meio de uma página já escrita só
-   mostra no hover, senão a nota fica poluída de instruções. */
-.editor__wysiwyg > .editor__bloco:only-child:has(> br:only-child)::before,
+/* Dica em bloco vazio (ciclos 194 e 195).
+
+   Dois gatilhos, e só estes dois:
+   - `--convite`: a PÁGINA tem um bloco só e ele está vazio. Quem decide
+     é o Rust (`marcar_convite`), porque `:only-child` conta filhos do
+     SEGMENTO — numa página com embeds isso dava falso positivo e a
+     mensagem aparecia no meio da escrita.
+   - `:hover` do mouse num bloco vazio. Não vale foco: quem está
+     digitando não precisa da instrução, e todo bloco recém-criado passa
+     por "vazio e focado". */
+.editor__bloco--convite::before,
 .editor__bloco:hover:has(> br:only-child)::before,
-.editor__bloco:empty:hover::before {
+.editor__bloco:hover:empty::before {
   content: "Digite ou use / para inserir";
   color: var(--text-muted);
   opacity: 0.45;
