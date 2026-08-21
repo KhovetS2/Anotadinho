@@ -67,6 +67,14 @@ const CURSOR_NO_FIM_DO_BLOCO = (texto) => `(() => {
 })()`.replace("§ALVO§", texto);
 
 const SALVAR = `(() => {
+  // Trava de segurança (ciclo 197): só grava na página de RASCUNHO.
+  // Um cenário que navegou pra uma página real e chamou Salvar
+  // reescrevia o arquivo do usuário — aconteceu com
+  // \`pages/exemplos/composicao.md\`, que voltou normalizado.
+  const titulo = (document.querySelector('.editor__title') || {}).textContent || '';
+  if (!titulo.includes('__uitest')) {
+    throw new Error('Salvar bloqueado: a página aberta é "' + titulo + '", não a de teste');
+  }
   const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith('Salvar'));
   if (b) b.click();
   return !!b;
@@ -79,9 +87,11 @@ function corpo(texto) {
 }
 
 /// Monta um cenário com a página `inicial` já aberta.
-function bloco(nome, inicial, fn) {
+function bloco(nome, inicial, fn, ciclo = 195) {
   blocos.push({
-    nome: `blocos: ${nome} (195)`,
+    // O ciclo vem do parâmetro: cenário novo escrito num ciclo posterior
+    // não pode ficar rotulado com o número de quem criou o arquivo.
+    nome: `blocos: ${nome} (${ciclo})`,
     async fn(bridge, ctx) {
       ctx.escrever(`---\ntitle: __uitest\n---\n${inicial}`);
       await bridge.js("location.reload(); true");
@@ -319,3 +329,56 @@ bloco("página vazia recebe o convite no único bloco", "\n", async (b, ctx, h) 
   })()`);
   ctx.assertEq(temConvite, true, "página em branco devia convidar a escrever");
 });
+
+// ── ciclo 197: tecla comum em navegação, e âncora perdida ────────────
+
+bloco("tecla comum em navegação NÃO vira texto", TRES, async (b, ctx, h) => {
+  // O espelho do bug do 194: lá comando virava ação durante a digitação,
+  // aqui letra vira texto durante a navegação.
+  await b.js(IR_PRA_NAVEGACAO("beta"));
+  await PAUSA(500);
+  ctx.assertEq((await h.estado()).modo, "NAVEGAÇÃO", "precisa estar navegando");
+
+  for (const ch of "xpto") {
+    await b.js(TECLA(ch));
+  }
+  await PAUSA(600);
+
+  const est = await h.estado();
+  ctx.assertEq(est.blocos.join(","), "alfa,beta,gama", "nada podia ter mudado");
+  ctx.assertEq(est.modo, "NAVEGAÇÃO", "continua navegando");
+
+  const md = await h.salvarELer();
+  ctx.assert(!md.includes("xpto"), `as letras entraram como texto:\n${md}`);
+}, 197);
+
+bloco("setas voltam a andar depois do foco cair no genérico", TRES, async (b, ctx, h) => {
+  // Reproduz o efeito de fechar um overlay: o foco vai pro `.app-root` e
+  // o nav-mode fica sem item. Antes disso travar as setas de vez, ele
+  // reancora no grupo atual (ciclo 197).
+  await b.js(IR_PRA_NAVEGACAO("beta"));
+  await PAUSA(500);
+
+  await b.js(`(() => {
+    const raiz = document.querySelector('.app-root');
+    raiz.focus();
+    return true;
+  })()`);
+  await PAUSA(400);
+  ctx.assertEq(
+    await b.js(`!!document.querySelector('[data-nav-item]:focus')`),
+    false,
+    "o teste precisa começar com o foco perdido",
+  );
+
+  await b.js(`(() => {
+    document.querySelector('.app-root').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    return true;
+  })()`);
+  await PAUSA(600);
+  ctx.assert(
+    (await h.estado()).destacado !== null,
+    "a seta devia ter reancorado a navegação em vez de não fazer nada",
+  );
+}, 197);

@@ -53,6 +53,14 @@ const ENTRAR_EM_NAVEGACAO = (textoDoBloco) => `(() => {
 })()`.replace("__ALVO__", textoDoBloco);
 
 const SALVAR = `(() => {
+  // Trava de segurança (ciclo 197): só grava na página de RASCUNHO.
+  // Um cenário que navegou pra uma página real e chamou Salvar
+  // reescrevia o arquivo do usuário — aconteceu com
+  // \`pages/exemplos/composicao.md\`, que voltou normalizado.
+  const titulo = (document.querySelector('.editor__title') || {}).textContent || '';
+  if (!titulo.includes('__uitest')) {
+    throw new Error('Salvar bloqueado: a página aberta é "' + titulo + '", não a de teste');
+  }
   const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith('Salvar'));
   if (b) b.click();
   return !!b;

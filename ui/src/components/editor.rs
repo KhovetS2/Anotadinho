@@ -1549,6 +1549,26 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
             }
 
+            // Em NAVEGAÇÃO, tecla imprimível que não é comando não pode
+            // virar texto (ciclo 197). Fica DEPOIS de todos os comandos de bloco, senão
+            // engoliria `d`, `n`, `y`, `K` e `J` antes deles agirem. O bloco continua `contenteditable`
+            // e focado, então sem esta guarda qualquer letra solta era
+            // inserida no meio do texto — a mesma classe do bug do 194,
+            // só que na direção contrária.
+            //
+            // Só teclas de UM caractere: setas, Enter, Escape, Backspace
+            // e afins têm nome longo e seguem pro tratamento normal.
+            if em_navegacao
+                && !e.ctrl_key()
+                && !e.meta_key()
+                && !e.alt_key()
+                && e.key().chars().count() == 1
+            {
+                e.prevent_default();
+                return;
+            }
+
+
             // Escape com o cursor no texto SOBE pro nível de blocos
             // (ciclo 174) em vez de desselecionar a página, que era o
             // que o handler global fazia. Sem `stop_propagation` os dois

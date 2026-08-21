@@ -272,3 +272,49 @@ pub fn revelar_alvo_de_busca(ancora: &str) {
         let _ = el.class_list().remove_1("busca-alvo");
     });
 }
+
+/// Reancora a navegação quando o foco caiu num lugar genérico
+/// (ciclo 197).
+///
+/// O caso real: abrir a paleta e escolher uma página desmonta o overlay
+/// e o foco vai parar no `<body>`; a rede de segurança do ciclo 138
+/// devolve pro `.app-root`, o que faz os atalhos globais voltarem — mas
+/// o nav-mode fica sem item, e as setas param de andar porque não há
+/// `data-nav-item` focado.
+///
+/// A regra é a que o usuário sugeriu: perdeu a referência micro, cai
+/// pra uma mais macro em vez de ficar sem nenhuma.
+///
+/// Só age quando o foco NÃO pertence a ninguém (`<body>`, `.app-root`,
+/// ou nada). Se o foco está num campo, num menu ou num delegate, ele é
+/// de quem está lá — foi por confundir esses dois casos que o autocuro
+/// das setas foi removido no ciclo 140.
+pub fn reancorar_se_perdido(doc: &web_sys::Document, grupo: &str) -> bool {
+    let ativo = doc.active_element();
+    let perdido = match &ativo {
+        None => true,
+        Some(el) => {
+            let tag = el.tag_name().to_lowercase();
+            tag == "body" || el.class_list().contains("app-root")
+        }
+    };
+    if !perdido {
+        return false;
+    }
+    let itens = items_in_group(doc, grupo);
+    match itens.first() {
+        Some(primeiro) => {
+            focus_item(primeiro);
+            true
+        }
+        // Grupo sumiu junto (a página mudou): tenta a raiz, que é o
+        // nível mais macro que sempre existe.
+        None => match items_in_group(doc, "root").first() {
+            Some(raiz) => {
+                focus_item(raiz);
+                true
+            }
+            None => false,
+        },
+    }
+}

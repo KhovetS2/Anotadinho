@@ -840,6 +840,18 @@ pub fn app() -> Html {
                         // autocuro aqui.
                         "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft" => {
                             if !focus_is_nav_tracked {
+                                // Antes de desistir, tenta reancorar
+                                // (ciclo 197) — mas SÓ se o foco não for
+                                // de ninguém. Com o foco num campo ou
+                                // num delegate, a seta é deles.
+                                let reancorou = doc.as_ref().is_some_and(|d| {
+                                    let grupo = nav_stack.last().cloned().unwrap_or_else(|| "root".to_string());
+                                    crate::nav_mode::reancorar_se_perdido(d, &grupo)
+                                });
+                                if !reancorou {
+                                    return;
+                                }
+                                e.prevent_default();
                                 return;
                             }
                             e.prevent_default();

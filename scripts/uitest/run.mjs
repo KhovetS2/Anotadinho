@@ -75,6 +75,32 @@ try {
   process.exit(2);
 }
 
+// Normaliza as configurações persistidas antes de rodar (ciclo 197).
+//
+// Elas moram no `localStorage` e sobrevivem entre sessões, então um
+// clique perdido ou uma tecla de atalho apertada durante uma depuração
+// desliga o nav-mode e a suíte inteira passa a falhar por um motivo que
+// não está no código. Aconteceu de verdade: `nav_mode_enabled` ficou
+// `false` e três cenários quebraram sem nenhuma mudança relacionada.
+try {
+  const mudou = await bridge.js(`(() => {
+    const antes = {
+      nav: localStorage.getItem('anotadinho.nav_mode_enabled'),
+      vim: localStorage.getItem('anotadinho.vim_mode_enabled'),
+    };
+    localStorage.setItem('anotadinho.nav_mode_enabled', 'true');
+    localStorage.setItem('anotadinho.vim_mode_enabled', 'false');
+    return antes.nav !== 'true' || antes.vim === 'true';
+  })()`);
+  if (mudou) {
+    console.log("  ↻ configurações normalizadas (nav-mode ligado, vim desligado)");
+    await bridge.js("location.reload(); true");
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+} catch (e) {
+  console.log(`  ! não consegui normalizar as configurações: ${e.message}`);
+}
+
 let passaram = 0;
 const falharam = [];
 const inicio = Date.now();
