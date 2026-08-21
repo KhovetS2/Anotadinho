@@ -35,6 +35,23 @@ const DIGITAR = (texto) => `(() => {
   return true;
 })()`;
 
+
+/// Entra de verdade no modo de NAVEGAÇÃO a partir de um bloco.
+///
+/// Focar o bloco não basta desde o ciclo 194: focar é o que digitar faz,
+/// e os atalhos de bloco passaram a exigir o modo — que vive no estado
+/// do `app.rs`. O Escape a partir do texto é o caminho real.
+const ENTRAR_EM_NAVEGACAO = (textoDoBloco) => `(() => {
+  const alvo = [...document.querySelectorAll('[data-nav-block]')]
+    .find(b => b.textContent.includes(${JSON.stringify("__ALVO__")}));
+  alvo.focus();
+  const r = document.createRange();
+  r.selectNodeContents(alvo); r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  alvo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  return true;
+})()`.replace("__ALVO__", textoDoBloco);
+
 const SALVAR = `(() => {
   const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith('Salvar'));
   if (b) b.click();
@@ -588,12 +605,12 @@ cenarios.push({
     await ctx.abrirPagina(bridge, ctx.nomePagina);
     await ctx.esperar(bridge, "document.querySelectorAll('[data-nav-block]').length >= 3", "os blocos aparecerem");
 
-    // Foca o segundo bloco e pede a referência com "c".
+    // Entra em navegação no segundo bloco e pede a referência com "c".
+    await bridge.js(ENTRAR_EM_NAVEGACAO("segunda linha"));
+    await ctx.esperar(bridge, "document.querySelector('.editor__modo--navegacao')", "o modo virar NAVEGAÇÃO");
     await bridge.js(`(() => {
-      const blocos = [...document.querySelectorAll('[data-nav-block]')];
-      const alvo = blocos.find(b => b.textContent.includes('segunda linha'));
-      alvo.focus();
-      alvo.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true }));
+      const alvo = document.querySelector('.nav-mode__item-active') || document.activeElement;
+      alvo.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }));
       return true;
     })()`);
     await PAUSA(700);
@@ -845,11 +862,12 @@ cenarios.push({
     await ctx.abrirPagina(bridge, ctx.nomePagina);
     await ctx.esperar(bridge, "document.querySelectorAll('[data-nav-block]').length >= 2", "os blocos aparecerem");
 
-    // Foca o primeiro bloco (como o nav-mode faria) e pede um novo.
+    // Entra no modo de navegação e pede um bloco novo.
+    await bridge.js(ENTRAR_EM_NAVEGACAO("primeira"));
+    await ctx.esperar(bridge, "document.querySelector('.editor__modo--navegacao')", "o modo virar NAVEGAÇÃO");
     await bridge.js(`(() => {
-      const alvo = [...document.querySelectorAll('[data-nav-block]')].find(b => b.textContent.includes('primeira'));
-      alvo.focus();
-      alvo.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true }));
+      const alvo = document.querySelector('.nav-mode__item-active') || document.activeElement;
+      alvo.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true, cancelable: true }));
       return true;
     })()`);
     await ctx.esperar(bridge, "document.querySelector('.slash-menu')", "o menu / abrir junto");

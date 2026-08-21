@@ -938,40 +938,63 @@
   color: var(--text-primary);
 }
 
-/* Bloco como unidade VISÍVEL (ciclo 175).
-   Cada bloco é seu próprio `contenteditable`. O destaque é discreto por
-   padrão e aparece no hover/foco: o objetivo é dar um ALVO — pra inserir
-   conteúdo num ponto específico, mover, ou saber onde o cursor está —
-   sem transformar a página num formulário cheio de caixas. */
+/* Bloco como unidade VISÍVEL (ciclos 175 e 194).
+   O realce é de BORDA, não de fundo: fundo colorido no bloco em foco
+   passava a impressão de que a nota ficaria assim o tempo todo, o que
+   não é a intenção — o bloco precisa de um alvo discreto, não de um
+   destaque permanente. */
 .editor__bloco {
   position: relative;
   padding: 0.1rem 0.5rem;
   margin-left: -0.5rem;
   border-radius: var(--r-sm);
   border-left: 2px solid transparent;
-  transition: background 120ms ease, border-color 120ms ease;
+  transition: border-color 120ms ease;
 }
 
 .editor__bloco:hover {
-  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  border-left-color: color-mix(in srgb, var(--text-muted) 45%, transparent);
 }
 
 .editor__bloco:focus {
   outline: none;
   border-left-color: var(--accent-blue);
-  background: color-mix(in srgb, var(--accent-blue) 6%, transparent);
 }
 
-/* Bloco vazio ganha uma dica — sem isso ele é uma faixa em branco sem
-   affordance nenhuma, e a pessoa não sabe que pode digitar ali. */
-.editor__bloco:empty::before,
-.editor__bloco:has(> br:only-child)::before {
+/* Dica em bloco vazio (ciclo 194).
+   Regra: a página VAZIA mostra sempre — é o único convite que existe
+   numa nota em branco. Bloco vazio no meio de uma página já escrita só
+   mostra no hover, senão a nota fica poluída de instruções. */
+.editor__wysiwyg > .editor__bloco:only-child:has(> br:only-child)::before,
+.editor__bloco:hover:has(> br:only-child)::before,
+.editor__bloco:empty:hover::before {
   content: "Digite ou use / para inserir";
   color: var(--text-muted);
-  opacity: 0.5;
+  opacity: 0.45;
   pointer-events: none;
 }
 
-.editor__bloco:focus:has(> br:only-child)::before {
-  opacity: 0.35;
+/* Indicador de modo na barra de baixo (ciclo 194). */
+.editor__modo {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--r-sm);
+}
+
+.editor__modo--edicao {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+
+.editor__modo--navegacao {
+  color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+}
+
+.editor__modo--normal {
+  color: var(--accent-purple);
+  background: color-mix(in srgb, var(--accent-purple) 16%, transparent);
 }

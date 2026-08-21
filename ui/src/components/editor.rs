@@ -50,6 +50,10 @@ pub struct EditorProps {
     /// Se o vim mode (modal Normal/Insert) está ativado.
     #[prop_or(false)]
     pub vim_mode_enabled: bool,
+    /// `true` enquanto a sessão de navegação por blocos está ativa
+    /// (ciclo 194). Os atalhos de bloco (`d`, `y`, `n`, `K`, `J`, `c`)
+    /// SÓ valem aqui — em digitação eles são letras comuns.
+    pub nav_mode_active: bool,
     /// Mapa de teclas do vim mode.
     #[prop_or_default]
     pub vim_keymap: crate::state::VimKeymap,
@@ -1269,6 +1273,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let segment_refs_vim = segment_refs.clone();
         let on_enter_blocos = props.on_enter_block_nav.clone();
         let on_sair_blocos = props.on_leave_block_nav.clone();
+        let em_navegacao = props.nav_mode_active;
         let content_md_esc = content_md.clone();
         let editor_ref_esc = editor_ref.clone();
         let segment_refs_esc = segment_refs.clone();
@@ -1450,7 +1455,7 @@ pub fn editor(props: &EditorProps) -> Html {
             // — e põe `![[Página^id]]` na área de transferência
             // (ciclo 176). Só dispara quando o foco está NO BLOCO, não
             // no texto: digitando, "c" é só a letra c.
-            if e.key() == "c" && !e.ctrl_key() && !e.meta_key() && !e.alt_key() {
+            if em_navegacao && e.key() == "c" && !e.ctrl_key() && !e.meta_key() && !e.alt_key() {
                 if let Some(bloco) = bloco_focado() {
                     e.prevent_default();
                     e.stop_propagation();
@@ -1484,7 +1489,16 @@ pub fn editor(props: &EditorProps) -> Html {
             // `contenteditable` por bloco (ver a nota da task): o bloco
             // já é um filho de primeiro nível marcado por
             // `marcar_blocos`, e mover um nó é operação de DOM.
-            if !e.ctrl_key() && !e.meta_key() {
+            // Atalhos de BLOCO só no modo de navegação (ciclo 194).
+            //
+            // Sem esta guarda, digitar a letra `d` no meio de uma frase
+            // apagava o bloco inteiro — e digitar depressa apagava um
+            // bloco por `d` digitado. Antes do ciclo 175 isso não
+            // acontecia por acidente: o elemento focado durante a
+            // digitação era o CONTÊINER, então `bloco_focado()` devolvia
+            // `None`. Quando o `contenteditable` desceu pro bloco, essa
+            // distinção sumiu — e ela nunca deveria ter sido implícita.
+            if em_navegacao && !e.ctrl_key() && !e.meta_key() {
                 let acao = match (e.key().as_str(), e.alt_key()) {
                     ("ArrowUp", true) | ("K", false) => Some(AcaoBloco::Subir),
                     ("ArrowDown", true) | ("J", false) => Some(AcaoBloco::Descer),
@@ -1508,7 +1522,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
             }
 
-            if e.key() == "n" && !e.ctrl_key() && !e.meta_key() && !e.alt_key() {
+            if em_navegacao && e.key() == "n" && !e.ctrl_key() && !e.meta_key() && !e.alt_key() {
                 if let Some(bloco) = bloco_focado() {
                     e.prevent_default();
                     e.stop_propagation();
@@ -1542,42 +1556,60 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
             }
 
-            // Enter e Backspace agem ENTRE blocos (ciclo 175).
+            // Enter e Backspace (ciclos 175 e 194).
             //
-            // Sem isto o navegador criaria um `<div>` DENTRO do bloco —
-            // que serializaria como texto solto no meio de um parágrafo,
-            // e não como parágrafo novo. Lista e bloco de código ficam
-            // de fora: neles o Enter dentro do bloco é o certo (item
-            // novo, linha nova de código).
-            if (e.key() == "Enter" || e.key() == "Backspace")
-                && !e.shift_key()
-                && !e.ctrl_key()
-                && !e.meta_key()
-            {
+            // A divisão de responsabilidade, pedida pelo usuário:
+            //   Enter        — quebra de LINHA dentro do bloco
+            //   Shift+Enter  — bloco NOVO
+            //   Backspace no início — funde com o anterior
+            //
+            // Antes o Enter criava bloco, o que tirava da pessoa a
+            // quebra de linha simples: não havia como escrever duas
+            // linhas dentro do mesmo parágrafo.
+            //
+            // Em lista e tabela o Enter sem shift continua nativo (item
+            // novo, célula nova) — ali "linha" JÁ é a unidade. Em bloco
+            // de código o Enter nativo insere a quebra dentro do código,
+            // e o Shift+Enter FECHA o bloco e abre um parágrafo depois,
+            // que é a única saída de um `<pre>` que termina a página.
+            if !e.ctrl_key() && !e.meta_key() {
                 if let Some(bloco) = bloco_do_cursor() {
                     let tag = bloco.tag_name().to_lowercase();
-                    let dentro_manda = matches!(tag.as_str(), "ul" | "ol" | "pre" | "table");
-                    if !dentro_manda {
-                        let tratou = if e.key() == "Enter" {
-                            dividir_bloco(&bloco)
+                    let lista_ou_tabela = matches!(tag.as_str(), "ul" | "ol" | "table");
+                    let codigo = tag == "pre";
+
+                    let tratou = if e.key() == "Enter" && e.shift_key() {
+                        if codigo {
+                            bloco_novo_depois(&bloco)
                         } else {
-                            fundir_com_anterior(&bloco)
-                        };
-                        if tratou {
-                            e.prevent_default();
-                            e.stop_propagation();
-                            if let Some(pai) = bloco.parent_element() {
-                                marcar_blocos(&pai);
-                            }
-                            let novo = recompute_markdown_from_dom(
-                                &content_md_esc,
-                                &editor_ref_esc,
-                                &segment_refs_esc,
-                            );
-                            content_md_esc.set(novo.clone());
-                            mark_edited_bloco(novo);
-                            return;
+                            dividir_bloco(&bloco)
                         }
+                    } else if e.key() == "Enter" && !lista_ou_tabela && !codigo {
+                        quebra_de_linha()
+                    } else if e.key() == "Backspace"
+                        && !e.shift_key()
+                        && !lista_ou_tabela
+                        && !codigo
+                    {
+                        fundir_com_anterior(&bloco)
+                    } else {
+                        false
+                    };
+
+                    if tratou {
+                        e.prevent_default();
+                        e.stop_propagation();
+                        if let Some(pai) = bloco.parent_element() {
+                            marcar_blocos(&pai);
+                        }
+                        let novo = recompute_markdown_from_dom(
+                            &content_md_esc,
+                            &editor_ref_esc,
+                            &segment_refs_esc,
+                        );
+                        content_md_esc.set(novo.clone());
+                        mark_edited_bloco(novo);
+                        return;
                     }
                 }
             }
@@ -2215,6 +2247,8 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
+    let modo = Modo::atual(props.nav_mode_active, props.vim_mode_enabled, *vim_insert);
+
     html! {
         <main class="editor">
             <header class="editor__header">
@@ -2430,7 +2464,13 @@ pub fn editor(props: &EditorProps) -> Html {
                         }) }
                     </div>
                 } else {
-                    <div class="editor__wysiwyg" key="plain" ref={editor_ref} contenteditable="true"
+                    // Caminho da página SEM embed. Também
+                    // `contenteditable="false"` (ciclo 194): a reescrita do
+                    // 175 só trocou o caminho com embeds, e aqui ficaram
+                    // dois editáveis aninhados — contêiner E bloco. Era o
+                    // que fazia o Enter num bloco vazio criar parágrafo no
+                    // lugar errado e o bloco de origem crescer junto.
+                    <div class="editor__wysiwyg" key="plain" ref={editor_ref} contenteditable="false"
                         spellcheck="false" onkeydown={on_keydown} oninput={on_edit}
                         ondrop={on_drop} ondragover={on_dragover} onclick={on_wysiwyg_click} onpaste={on_paste} />
                 }
@@ -2520,13 +2560,21 @@ pub fn editor(props: &EditorProps) -> Html {
                 </details>
             }
             <div class="editor__statusbar">
+                // Indicador de MODO, no espírito do vim (ciclo 194): a
+                // pessoa precisa saber quais teclas estão sendo
+                // capturadas. O bug que motivou isto foi digitar `d` no
+                // meio de uma frase e ver um bloco sumir — sem nada na
+                // tela dizendo que `d` era um comando naquele momento.
+                <span class={classes!("editor__modo", modo.classe())} title={modo.dica()}>
+                    { modo.rotulo() }
+                </span>
                 <span>{ format!("{} palavras · {} caracteres", word_count, char_count) }</span>
                 if props.vim_mode_enabled {
                     <span class={ if *vim_insert { "editor__vim-mode editor__vim-mode--insert" } else { "editor__vim-mode editor__vim-mode--normal" } }>
                         { if *vim_insert { "-- INSERT --" } else { "-- NORMAL --" } }
                     </span>
                 }
-                <span class="editor__statusbar-hint">{ "Digite / ou use # - > * para formatar" }</span>
+                <span class="editor__statusbar-hint">{ modo.atalhos() }</span>
             </div>
         </main>
     }
@@ -3855,4 +3903,98 @@ fn primeiro_texto(el: &web_sys::Element) -> Option<web_sys::Node> {
         }
     }
     None
+}
+
+/// Quebra de linha DENTRO do bloco (ciclo 194) — o Enter sem shift.
+fn quebra_de_linha() -> bool {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return false };
+    exec_cmd(&doc, "insertLineBreak", "");
+    true
+}
+
+/// Cria um parágrafo vazio DEPOIS do bloco e põe o cursor nele.
+///
+/// É a saída de um bloco de código (Shift+Enter num `<pre>`): dividir um
+/// `<pre>` daria dois blocos de código, e o que se quer é sair dele.
+fn bloco_novo_depois(bloco: &web_sys::Element) -> bool {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return false };
+    let Some(pai) = bloco.parent_element() else { return false };
+    let Ok(novo) = doc.create_element("p") else { return false };
+    if let Ok(br) = doc.create_element("br") {
+        let _ = novo.append_child(&br);
+    }
+    let _ = novo.set_attribute("contenteditable", "true");
+    let _ = pai.insert_before(&novo, bloco.next_sibling().as_ref());
+    if let Some(html) = novo.dyn_ref::<web_sys::HtmlElement>() {
+        let _ = html.focus();
+    }
+    if let (Ok(r), Some(sel)) = (
+        doc.create_range(),
+        web_sys::window().and_then(|w| w.get_selection().ok().flatten()),
+    ) {
+        let _ = r.select_node_contents(&novo);
+        r.collapse_with_to_start(true);
+        let _ = sel.remove_all_ranges();
+        let _ = sel.add_range(&r);
+    }
+    true
+}
+
+/// Modo da aplicação (ciclo 194).
+///
+/// Existe pra a pessoa SABER quais teclas estão sendo capturadas, e pra
+/// o código ter um lugar único onde essa pergunta é respondida. A ordem
+/// de precedência importa: navegação vence os outros porque é ela que
+/// sequestra letras comuns.
+///
+/// Modo novo entra aqui e ganha rótulo, cor e lista de atalhos de graça.
+#[derive(Clone, Copy, PartialEq)]
+enum Modo {
+    Navegacao,
+    VimNormal,
+    Edicao,
+}
+
+impl Modo {
+    fn atual(nav: bool, vim_ligado: bool, vim_insert: bool) -> Self {
+        if nav {
+            Self::Navegacao
+        } else if vim_ligado && !vim_insert {
+            Self::VimNormal
+        } else {
+            Self::Edicao
+        }
+    }
+
+    fn rotulo(&self) -> &'static str {
+        match self {
+            Self::Navegacao => "NAVEGAÇÃO",
+            Self::VimNormal => "NORMAL",
+            Self::Edicao => "EDIÇÃO",
+        }
+    }
+
+    fn classe(&self) -> &'static str {
+        match self {
+            Self::Navegacao => "editor__modo--navegacao",
+            Self::VimNormal => "editor__modo--normal",
+            Self::Edicao => "editor__modo--edicao",
+        }
+    }
+
+    fn atalhos(&self) -> &'static str {
+        match self {
+            Self::Navegacao => "setas movem · Enter entra · n novo · d apaga · y duplica · K/J move",
+            Self::VimNormal => "h j k l movem · i insere",
+            Self::Edicao => "Enter quebra linha · Shift+Enter novo bloco · / insere · Esc navega",
+        }
+    }
+
+    fn dica(&self) -> &'static str {
+        match self {
+            Self::Navegacao => "Teclas são COMANDOS neste modo",
+            Self::VimNormal => "Modo normal do vim",
+            Self::Edicao => "Teclas são TEXTO neste modo",
+        }
+    }
 }

@@ -55,6 +55,7 @@ pub struct PageViewProps {
     #[prop_or_default]
     pub on_enter_block_nav: Callback<()>,
     pub on_leave_block_nav: Callback<()>,
+    pub nav_mode_active: bool,
 }
 
 #[function_component(PageView)]
@@ -186,6 +187,7 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 vault_version={props.vault_version}
                 on_enter_block_nav={props.on_enter_block_nav.clone()}
                 on_leave_block_nav={props.on_leave_block_nav.clone()}
+                nav_mode_active={props.nav_mode_active}
             />
         },
     }

@@ -144,10 +144,17 @@ fn walk(node: &Element, _depth: usize) -> String {
                 format!("{{{{ type: \"{kind}\" }}}}\n{body}\n{{{{ /{kind} }}}}\n\n")
             } else {
                 let inner = inline_children(node);
+                // `trim_end`: bloco vazio é `<p><br></p>`, que vira só a
+                // quebra dura — e uma quebra no FIM do parágrafo não
+                // significa nada, então não vai pro arquivo.
+                let inner = inner.trim_end().to_string();
                 if inner.is_empty() { "\n".to_string() } else { format!("{}\n\n", inner) }
             }
         }
-        "br" => "\n".to_string(),
+        // Quebra DURA (dois espaços + `\n`): um `\n` sozinho é quebra
+        // SUAVE em markdown e some ao reabrir a página — a linha que a
+        // pessoa quebrou com Enter voltaria colada na anterior (ciclo 194).
+        "br" => "  \n".to_string(),
         "hr" => "---\n".to_string(),
         "table" => {
             // Não recursa via `walk` pros filhos (tr/td/th cairiam no

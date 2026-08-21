@@ -1263,6 +1263,7 @@ pub fn app() -> Html {
                                 home_page={(*home_page).clone()}
                                 on_toggle_home={on_toggle_home.clone()}
                                 vault_version={*list_version}
+                                nav_mode_active={*nav_mode_active}
                                 on_enter_block_nav={{
                                     let nav_mode_active = nav_mode_active.clone();
                                     let nav_stack = nav_stack.clone();

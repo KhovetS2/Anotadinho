@@ -111,12 +111,16 @@ caso(
   (md, ctx) => ctx.assertEq(md, "primeira linha e mais isto", "o texto digitado"),
 );
 
+// MUDANÇA DE COMPORTAMENTO, ciclo 194: quem cria bloco é Shift+Enter.
+// O Enter sozinho passou a quebrar linha DENTRO do bloco — antes não
+// havia como escrever duas linhas no mesmo parágrafo.
 caso(
-  "Enter no fim cria um parágrafo novo",
+  "Shift+Enter no fim cria um parágrafo novo",
   "alfa\n",
   async (b) => {
     await b.js(IR_PRO_FIM);
-    await b.js(ENTER);
+    await b.js(TECLA("Enter", { shiftKey: true }));
+    await PAUSA(400);
     await b.js(ESCREVER("beta"));
     await PAUSA(300);
   },
@@ -124,12 +128,12 @@ caso(
 );
 
 caso(
-  "Enter no meio divide o parágrafo",
+  "Shift+Enter no meio divide o parágrafo",
   "alfabeto\n",
   async (b) => {
     await b.js(IR_PRO_MEIO(0, 4));
-    await b.js(ENTER);
-    await PAUSA(300);
+    await b.js(TECLA("Enter", { shiftKey: true }));
+    await PAUSA(400);
   },
   (md, ctx) => ctx.assertEq(md, "alfa\n\nbeto", "dividido no cursor"),
 );
@@ -314,5 +318,92 @@ digitacao.push({
 
     const depois = ctx.ler();
     ctx.assertEq(corpo(depois), corpo(original), "o markdown mudou sozinho");
+  },
+});
+
+// ── ciclo 194: comando que NÃO pode disparar no modo de edição ───────
+//
+// Esta seção é o inverso das outras: em vez de checar que algo funciona,
+// checa que algo NÃO acontece. O bug que a motivou apagou conteúdo do
+// usuário — digitar uma sequência aleatória com `d` no meio removia um
+// bloco por letra, porque os atalhos de bloco não olhavam o modo.
+
+/// Digita cada caractere como tecla + texto, do jeito que o teclado faz.
+const DIGITAR_TECLA_A_TECLA = (texto) => `(() => {
+  const alvo = document.activeElement.closest('.editor__bloco') || document.activeElement;
+  for (const ch of ${JSON.stringify(texto)}) {
+    alvo.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }));
+    document.execCommand('insertText', false, ch);
+  }
+  return true;
+})()`;
+
+digitacao.push({
+  nome: "digitação: letras de comando (d, n, y, K, J, c) são TEXTO no modo edição (194)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\nalfa\n\nbeta\n\ngama\n");
+    await bridge.js("location.reload(); true");
+    await PAUSA(1500);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await esperar(bridge, "document.querySelector('.editor__bloco')", "os blocos aparecerem");
+    await PAUSA(2200);
+
+    const nBlocos = () => bridge.js(`document.querySelectorAll('.editor__bloco').length`);
+    ctx.assertEq(await nBlocos(), 3, "três blocos no início");
+
+    await bridge.js(IR_PRO_MEIO(1, 4));
+    await bridge.js(DIGITAR_TECLA_A_TECLA("dnyKJc"));
+    await PAUSA(600);
+
+    ctx.assertEq(await nBlocos(), 3, "nenhum bloco pode ter sido criado nem apagado");
+    ctx.assertEq(
+      await bridge.js(`!!document.querySelector('.slash-menu')`),
+      false,
+      "o `n` não pode abrir o menu / no modo edição",
+    );
+
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const md = corpo(ctx.ler());
+    ctx.assert(md.includes("dnyKJc"), `as letras deviam ter virado texto:\n${md}`);
+    for (const t of ["alfa", "gama"]) {
+      ctx.assert(md.includes(t), `"${t}" foi apagado:\n${md}`);
+    }
+  },
+});
+
+digitacao.push({
+  nome: "digitação: Enter quebra linha e Shift+Enter cria bloco (194)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\nlinha\n");
+    await bridge.js("location.reload(); true");
+    await PAUSA(1500);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco aparecer");
+    await PAUSA(2200);
+
+    const nBlocos = () => bridge.js(`document.querySelectorAll('.editor__bloco').length`);
+
+    await bridge.js(IR_PRO_FIM);
+    await bridge.js(TECLA("Enter"));
+    await PAUSA(400);
+    await bridge.js(ESCREVER("mesma caixa"));
+    await PAUSA(300);
+    ctx.assertEq(await nBlocos(), 1, "Enter não pode criar bloco");
+
+    await bridge.js(TECLA("Enter", { shiftKey: true }));
+    await PAUSA(400);
+    await bridge.js(ESCREVER("caixa nova"));
+    await PAUSA(300);
+    ctx.assertEq(await nBlocos(), 2, "Shift+Enter devia ter criado um bloco");
+
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const md = corpo(ctx.ler());
+    ctx.assert(
+      /linha {2}\nmesma caixa/.test(md),
+      `a quebra de linha devia ter virado quebra dura:\n${JSON.stringify(md)}`,
+    );
+    ctx.assert(md.includes("\n\ncaixa nova"), `o bloco novo devia ser um parágrafo à parte:\n${md}`);
   },
 });
