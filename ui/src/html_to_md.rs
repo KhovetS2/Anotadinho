@@ -14,12 +14,17 @@ fn walk(node: &Element, _depth: usize) -> String {
     let child_count = children.length();
 
     match tag.as_str() {
-        "h1" => format!("# {}\n", text_of(node)),
-        "h2" => format!("## {}\n", text_of(node)),
-        "h3" => format!("### {}\n", text_of(node)),
-        "h4" => format!("#### {}\n", text_of(node)),
-        "h5" => format!("##### {}\n", text_of(node)),
-        "h6" => format!("###### {}\n", text_of(node)),
+        // Dois `\n`: heading é bloco e precisa de linha em branco depois,
+        // igual ao `<p>`. Antes emitia um só e a linha em branco vinha,
+        // por acidente, do espaço de formatação que o `inline_children`
+        // deixava passar — quando esse espaço parou de ser conteúdo
+        // (ciclo 193), o heading grudou no parágrafo seguinte.
+        "h1" => format!("# {}\n\n", text_of(node)),
+        "h2" => format!("## {}\n\n", text_of(node)),
+        "h3" => format!("### {}\n\n", text_of(node)),
+        "h4" => format!("#### {}\n\n", text_of(node)),
+        "h5" => format!("##### {}\n\n", text_of(node)),
+        "h6" => format!("###### {}\n\n", text_of(node)),
         "strong" | "b" => format!("**{}**", text_of(node)),
         "em" | "i" => format!("*{}*", text_of(node)),
         "u" => text_of(node),
@@ -247,7 +252,21 @@ fn inline_children(node: &Element) -> String {
     for i in 0..children.length() {
         if let Some(child) = children.item(i) {
             match child.node_type() {
-                3 => out.push_str(&child.text_content().unwrap_or_default()),
+                3 => {
+                    let t = child.text_content().unwrap_or_default();
+                    // Espaço em branco de FORMATAÇÃO (o `\n` que o
+                    // `set_inner_html` deixa entre dois blocos) não é
+                    // conteúdo: incluí-lo somava uma linha em branco a
+                    // cada gravação, então abrir e salvar sem editar
+                    // nada já mudava o arquivo (ciclo 193).
+                    //
+                    // Espaço entre PALAVRAS nunca tem quebra de linha,
+                    // por isso o `contains('\n')` distingue os dois sem
+                    // precisar saber se o pai é bloco ou inline.
+                    if !(t.trim().is_empty() && t.contains('\n')) {
+                        out.push_str(&t);
+                    }
+                }
                 _ => {
                     if let Ok(el) = child.dyn_into::<Element>() {
                         out.push_str(&walk(&el, 0));

@@ -123,7 +123,20 @@ pub fn render(markdown: &str) -> String {
     let parser = Parser::new_ext(&body, options);
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
-    html_output
+    habilitar_checkboxes(&html_output)
+}
+
+/// Tira o `disabled` dos checkboxes de lista de tarefas (ciclo 193).
+///
+/// O pulldown-cmark emite `<input disabled="" type="checkbox"`, que é o
+/// certo pra renderizar markdown num site — mas aqui é um EDITOR, e um
+/// input desabilitado não responde a clique. O resultado é que
+/// `- [ ] tarefa` escrito em markdown era somente leitura, enquanto o
+/// checkbox inserido pelo menu `/` (que nasce sem `disabled`) funcionava
+/// — a mesma coisa na tela com comportamentos diferentes.
+fn habilitar_checkboxes(html: &str) -> String {
+    html.replace("<input disabled=\"\" type=\"checkbox\"", "<input type=\"checkbox\"")
+        .replace("<input disabled type=\"checkbox\"", "<input type=\"checkbox\"")
 }
 
 #[cfg(test)]
@@ -158,6 +171,15 @@ mod tests {
         let saida = marcar_transclusoes("`![[Nao]]` mas ![[Sim]] vale\n");
         assert!(saida.contains("`![[Nao]]`"), "o exemplo em código ficou intacto: {saida}");
         assert!(saida.contains("data-transclusao=\"Sim\""), "a de fora foi convertida: {saida}");
+    }
+
+    #[test]
+    fn checkbox_de_tarefa_nao_sai_desabilitado() {
+        // Regressão do ciclo 193: `- [ ] x` escrito em markdown vinha
+        // `disabled` e não dava pra marcar no editor.
+        let html = render("---\ntitle: T\n---\n- [ ] tarefa\n- [x] pronta\n");
+        assert!(html.contains("type=\"checkbox\""), "{html}");
+        assert!(!html.contains("disabled"), "sobrou disabled:\n{html}");
     }
 
     #[test]

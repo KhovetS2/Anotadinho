@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { Bridge, esperar, abrirPagina } from "./bridge.mjs";
 import { cenarios } from "./cenarios.mjs";
+import { digitacao } from "./digitacao.mjs";
 import { conferirSnapshots } from "./snapshot.mjs";
 
 const VAULT = process.env.ANOTADINHO_VAULT || "VaultAnotadinho";
@@ -55,10 +56,14 @@ function assertEq(atual, esperado, msg) {
 ctx.assert = assert;
 ctx.assertEq = assertEq;
 
+// A bateria de digitação (ciclo 193) entra junto: é rede de segurança
+// permanente, não um cenário pontual.
+const todos = [...cenarios, ...digitacao];
+
 const filtro = process.argv[2];
 let selecionados = filtro
-  ? cenarios.filter((c) => c.nome.toLowerCase().includes(filtro.toLowerCase()))
-  : cenarios;
+  ? todos.filter((c) => c.nome.toLowerCase().includes(filtro.toLowerCase()))
+  : todos;
 
 let bridge;
 try {
