@@ -898,7 +898,7 @@ pub fn app() -> Html {
                                                 // 126/127, só precisa do foco
                                                 // inicial).
                                                 let target = doc
-                                                    .query_selector(".editor__wysiwyg[contenteditable=\"true\"]")
+                                                    .query_selector(".editor__bloco[contenteditable=\"true\"]")
                                                     .ok()
                                                     .flatten()
                                                     .or_else(|| {
@@ -1163,7 +1163,7 @@ pub fn app() -> Html {
             } else if matches(&km.focus_editor) {
                 e.prevent_default();
                 if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-                    if let Some(el) = doc.query_selector(".editor__wysiwyg[contenteditable=\"true\"]").ok().flatten()
+                    if let Some(el) = doc.query_selector(".editor__bloco[contenteditable=\"true\"]").ok().flatten()
                         .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
                     {
                         let _ = el.focus();
@@ -1405,7 +1405,7 @@ fn adjacent_embed_group(doc: &web_sys::Document, forward: bool) -> Option<String
 fn focus_editor_text(doc: &web_sys::Document) {
     crate::nav_mode::clear_item_highlight();
     if let Some(el) = doc
-        .query_selector(".editor__wysiwyg[contenteditable=\"true\"]")
+        .query_selector(".editor__bloco[contenteditable=\"true\"]")
         .ok()
         .flatten()
         .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())

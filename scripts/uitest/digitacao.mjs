@@ -26,9 +26,9 @@ function corpo(texto) {
 
 /// Põe o cursor no fim do último bloco e devolve o editor.
 const IR_PRO_FIM = `(() => {
-  const ed = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
-  ed.focus();
-  const alvo = ed.lastElementChild || ed;
+  const seg = document.querySelector('.editor__wysiwyg');
+  const alvo = seg.lastElementChild || seg;
+  alvo.focus();
   const r = document.createRange();
   r.selectNodeContents(alvo); r.collapse(false);
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);
@@ -37,9 +37,9 @@ const IR_PRO_FIM = `(() => {
 
 /// Cursor no começo do bloco de índice `i`.
 const IR_PRO_COMECO_DO_BLOCO = (i) => `(() => {
-  const ed = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
-  ed.focus();
-  const b = ed.children[${i}];
+  const seg = document.querySelector('.editor__wysiwyg');
+  const b = seg.children[${i}];
+  b.focus();
   const r = document.createRange();
   r.selectNodeContents(b); r.collapse(true);
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);
@@ -48,9 +48,9 @@ const IR_PRO_COMECO_DO_BLOCO = (i) => `(() => {
 
 /// Cursor DENTRO do bloco `i`, depois de `n` caracteres.
 const IR_PRO_MEIO = (i, n) => `(() => {
-  const ed = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
-  ed.focus();
-  const b = ed.children[${i}];
+  const seg = document.querySelector('.editor__wysiwyg');
+  const b = seg.children[${i}];
+  b.focus();
   const walker = document.createTreeWalker(b, NodeFilter.SHOW_TEXT);
   const t = walker.nextNode();
   const r = document.createRange();
@@ -61,7 +61,7 @@ const IR_PRO_MEIO = (i, n) => `(() => {
 
 const ESCREVER = (t) => `(() => { document.execCommand('insertText', false, ${JSON.stringify(t)}); return true; })()`;
 const TECLA = (key, extra = {}) => `(() => {
-  const ed = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
+  const ed = document.activeElement.closest('.editor__bloco') || document.querySelector('.editor__wysiwyg');
   ed.dispatchEvent(new KeyboardEvent('keydown', Object.assign({ key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }, ${JSON.stringify(extra)})));
   return true;
 })()`;
@@ -139,9 +139,12 @@ caso(
   "alfa\n\nbeta\n",
   async (b) => {
     await b.js(IR_PRO_COMECO_DO_BLOCO(1));
+    // Só a tecla: desde o ciclo 175 o editor trata o Backspace no
+    // início do bloco. Antes ele dependia da edição nativa, que um
+    // KeyboardEvent sintético não dispara — daí o `execCommand('delete')`
+    // que existia aqui e que agora apagaria um caractere a mais.
     await b.js(TECLA("Backspace"));
-    await b.js(`(() => { document.execCommand('delete', false); return true; })()`);
-    await PAUSA(300);
+    await PAUSA(400);
   },
   (md, ctx) => ctx.assertEq(md, "alfabeta", "fundidos num só"),
 );

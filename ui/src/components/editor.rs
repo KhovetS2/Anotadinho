@@ -1542,6 +1542,46 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
             }
 
+            // Enter e Backspace agem ENTRE blocos (ciclo 175).
+            //
+            // Sem isto o navegador criaria um `<div>` DENTRO do bloco —
+            // que serializaria como texto solto no meio de um parágrafo,
+            // e não como parágrafo novo. Lista e bloco de código ficam
+            // de fora: neles o Enter dentro do bloco é o certo (item
+            // novo, linha nova de código).
+            if (e.key() == "Enter" || e.key() == "Backspace")
+                && !e.shift_key()
+                && !e.ctrl_key()
+                && !e.meta_key()
+            {
+                if let Some(bloco) = bloco_do_cursor() {
+                    let tag = bloco.tag_name().to_lowercase();
+                    let dentro_manda = matches!(tag.as_str(), "ul" | "ol" | "pre" | "table");
+                    if !dentro_manda {
+                        let tratou = if e.key() == "Enter" {
+                            dividir_bloco(&bloco)
+                        } else {
+                            fundir_com_anterior(&bloco)
+                        };
+                        if tratou {
+                            e.prevent_default();
+                            e.stop_propagation();
+                            if let Some(pai) = bloco.parent_element() {
+                                marcar_blocos(&pai);
+                            }
+                            let novo = recompute_markdown_from_dom(
+                                &content_md_esc,
+                                &editor_ref_esc,
+                                &segment_refs_esc,
+                            );
+                            content_md_esc.set(novo.clone());
+                            mark_edited_bloco(novo);
+                            return;
+                        }
+                    }
+                }
+            }
+
             // Markdown block + inline shortcuts on Space/Enter
             if e.key() == " " || e.key() == "Enter" {
                 if let Some(window) = web_sys::window() {
@@ -2318,7 +2358,13 @@ pub fn editor(props: &EditorProps) -> Html {
                                 DocSegment::Markdown(_) => {
                                     let node_ref = segment_refs[i].clone();
                                     html! {
-                                        <div class="editor__wysiwyg" {key} data-segment-index={i.to_string()} ref={node_ref} contenteditable="true"
+                                        // Ciclo 175: o contêiner NÃO é mais
+                                        // editável — cada bloco dentro dele é
+                                        // (ver `marcar_blocos`). Os handlers
+                                        // ficam aqui mesmo: eventos borbulham
+                                        // do bloco, então um handler só continua
+                                        // servindo pra todos.
+                                        <div class="editor__wysiwyg" {key} data-segment-index={i.to_string()} ref={node_ref} contenteditable="false"
                                             spellcheck="false" onkeydown={on_keydown.clone()} oninput={on_edit.clone()}
                                             ondrop={on_drop.clone()} ondragover={on_dragover.clone()} onpaste={on_paste.clone()} />
                                     }
@@ -3159,12 +3205,34 @@ fn init_mermaid_at(el: &web_sys::Element) {
 /// elementos que o markdown gerou (`<p>`, `<h1..h6>`, `<ul>`, `<ol>`,
 /// `<blockquote>`, `<pre>`, `<table>`, `<hr>`, imagem solta).
 fn marcar_blocos(container: &web_sys::Element) {
+    // Segmento sem bloco nenhum não teria onde receber cursor desde que
+    // o `contenteditable` desceu pro bloco (ciclo 175) — uma página nova
+    // ficava literalmente impossível de digitar. Um parágrafo vazio é o
+    // mínimo pra existir um alvo.
+    if container.children().length() == 0 {
+        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+            if let Ok(p) = doc.create_element("p") {
+                if let Ok(br) = doc.create_element("br") {
+                    let _ = p.append_child(&br);
+                }
+                let _ = container.append_child(&p);
+            }
+        }
+    }
+
     let filhos = container.children();
     for i in 0..filhos.length() {
         let Some(bloco) = filhos.item(i) else { continue };
         let _ = bloco.set_attribute("data-nav-item", &format!("bloco-{i}"));
         let _ = bloco.set_attribute("data-nav-parent", crate::nav_mode::GRUPO_BLOCOS);
         let _ = bloco.set_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO, "texto");
+        // Cada bloco é seu próprio `contenteditable` (ciclo 175). A TAG
+        // continua sendo a original (`<p>`, `<h1>`, `<ul>`, `<pre>`...),
+        // então `html_to_md` não muda uma linha e o markdown gerado
+        // continua idêntico — foi o que permitiu fazer esta troca sem
+        // reescrever a serialização junto.
+        let _ = bloco.set_attribute("contenteditable", "true");
+        let _ = bloco.class_list().add_1("editor__bloco");
         // `tabindex` pra o foco poder pousar no bloco sem que ele vire
         // um alvo de Tab (que continua andando pelos controles, não
         // pelo texto).
@@ -3175,12 +3243,9 @@ fn marcar_blocos(container: &web_sys::Element) {
 /// Põe o cursor DENTRO do bloco indicado e devolve o foco ao
 /// contenteditable — o "entrar em inserção" do ciclo 174.
 pub fn entrar_no_bloco(bloco: &web_sys::Element) -> bool {
-    let Some(editavel) = bloco
-        .closest(".editor__wysiwyg[contenteditable=\"true\"]")
-        .ok()
-        .flatten()
-        .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
-    else {
+    // O próprio bloco é o editável desde o ciclo 175 — antes o foco ia
+    // pro contêiner do segmento e o cursor era posicionado por range.
+    let Some(editavel) = bloco.dyn_ref::<web_sys::HtmlElement>() else {
         return false;
     };
     let _ = editavel.focus();
@@ -3506,7 +3571,16 @@ fn inserir_segmento_e_abrir_menu(
         gloo_timers::future::sleep(std::time::Duration::from_millis(80)).await;
         let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return };
         let seletor = format!("[data-segment-index=\"{pos}\"]");
-        let Some(el) = doc.query_selector(&seletor).ok().flatten() else { return };
+        let Some(segmento) = doc.query_selector(&seletor).ok().flatten() else { return };
+        // O foco vai no BLOCO, não no segmento: desde o ciclo 175 o
+        // contêiner do segmento é `contenteditable="false"`, então focar
+        // nele não põe cursor em lugar nenhum e o "/" digitado logo
+        // abaixo se perdia.
+        let el = segmento
+            .query_selector(".editor__bloco")
+            .ok()
+            .flatten()
+            .unwrap_or(segmento);
         if let Ok(html_el) = el.clone().dyn_into::<web_sys::HtmlElement>() {
             let _ = html_el.focus();
         }
@@ -3655,4 +3729,130 @@ fn aplicar_acao_de_bloco(bloco: &web_sys::Element, acao: AcaoBloco) -> bool {
     marcar_blocos(&pai);
     crate::nav_mode::focus_item(bloco);
     true
+}
+
+/// Enter num bloco: divide no cursor, ou cria um bloco vazio depois
+/// quando o cursor está no fim (ciclo 175).
+///
+/// Devolve `false` quando não há o que fazer, pra o handler deixar o
+/// comportamento nativo seguir.
+fn dividir_bloco(bloco: &web_sys::Element) -> bool {
+    let Some(win) = web_sys::window() else { return false };
+    let Some(doc) = win.document() else { return false };
+    let Some(pai) = bloco.parent_element() else { return false };
+    let Some(sel) = win.get_selection().ok().flatten() else { return false };
+    let Ok(range) = sel.get_range_at(0) else { return false };
+
+    // O que fica DEPOIS do cursor vira o bloco novo. `extract_contents`
+    // já remove essa parte do bloco atual, então não dá pra duplicar
+    // conteúdo por engano.
+    let Ok(resto) = doc.create_range() else { return false };
+    let _ = resto.select_node_contents(bloco);
+    let (Ok(fim_c), Ok(fim_o)) = (range.end_container(), range.end_offset()) else {
+        return false;
+    };
+    if resto.set_start(&fim_c, fim_o).is_err() {
+        return false;
+    }
+    let Ok(fragmento) = resto.extract_contents() else { return false };
+
+    // Bloco novo com a MESMA tag: dividir um `<h2>` no meio dá dois
+    // headings, que é o que se espera. Menos o caso do fim de um
+    // heading, onde o natural é começar a escrever texto comum.
+    let tag = bloco.tag_name().to_lowercase();
+    let vazio = fragmento
+        .text_content()
+        .map(|t| t.trim().is_empty())
+        .unwrap_or(true);
+    let tag_nova = if vazio && tag.starts_with('h') { "p" } else { &tag };
+    let Ok(novo) = doc.create_element(tag_nova) else { return false };
+    let _ = novo.append_child(&fragmento);
+    if novo.text_content().unwrap_or_default().is_empty() {
+        // Bloco sem nada não recebe cursor no WebKit; o `<br>` é o
+        // truque de sempre pra ele ter altura e ser clicável.
+        if let Ok(br) = doc.create_element("br") {
+            let _ = novo.append_child(&br);
+        }
+    }
+    let _ = pai.insert_before(&novo, bloco.next_sibling().as_ref());
+
+    if let Some(html) = novo.dyn_ref::<web_sys::HtmlElement>() {
+        let _ = html.set_attribute("contenteditable", "true");
+        let _ = html.focus();
+    }
+    if let Ok(r) = doc.create_range() {
+        let _ = r.select_node_contents(&novo);
+        r.collapse_with_to_start(true);
+        let _ = sel.remove_all_ranges();
+        let _ = sel.add_range(&r);
+    }
+    true
+}
+
+/// Backspace no INÍCIO de um bloco: funde com o anterior (ciclo 175).
+///
+/// Fora do início devolve `false` — apagar caractere é trabalho do
+/// navegador, e reimplementar isso seria trocar código testado por
+/// código novo sem ganho.
+fn fundir_com_anterior(bloco: &web_sys::Element) -> bool {
+    let Some(win) = web_sys::window() else { return false };
+    let Some(sel) = win.get_selection().ok().flatten() else { return false };
+    let Ok(range) = sel.get_range_at(0) else { return false };
+    if !range.collapsed() {
+        return false;
+    }
+    // Só age se o cursor estiver colado no começo do bloco.
+    let Some(doc) = win.document() else { return false };
+    let Ok(ate_aqui) = doc.create_range() else { return false };
+    let _ = ate_aqui.select_node_contents(bloco);
+    let Ok(fim_c) = range.start_container() else { return false };
+    let Ok(fim_o) = range.start_offset() else { return false };
+    if ate_aqui.set_end(&fim_c, fim_o).is_err() {
+        return false;
+    }
+    if !ate_aqui.to_string().as_string().unwrap_or_default().is_empty() {
+        return false;
+    }
+
+    let Some(anterior) = bloco.previous_element_sibling() else {
+        // Primeiro bloco do segmento: não faz nada, como manda a task.
+        return false;
+    };
+
+    // Cursor na junta ANTES de mover o conteúdo, senão ele acaba no fim
+    // do texto que veio junto.
+    let comprimento = anterior.text_content().unwrap_or_default().len() as u32;
+    let _ = anterior.insert_adjacent_html("beforeend", &bloco.inner_html());
+    if let Some(pai) = bloco.parent_element() {
+        let _ = pai.remove_child(bloco);
+    }
+    if let Some(html) = anterior.dyn_ref::<web_sys::HtmlElement>() {
+        let _ = html.focus();
+    }
+    if let (Ok(r), Some(no)) = (doc.create_range(), primeiro_texto(&anterior)) {
+        let offset = comprimento.min(no.text_content().unwrap_or_default().len() as u32);
+        if r.set_start(&no, offset).is_ok() {
+            r.collapse_with_to_start(true);
+            let _ = sel.remove_all_ranges();
+            let _ = sel.add_range(&r);
+        }
+    }
+    true
+}
+
+/// Primeiro nó de texto de um elemento — onde pousar o cursor.
+fn primeiro_texto(el: &web_sys::Element) -> Option<web_sys::Node> {
+    let filhos = el.child_nodes();
+    for i in 0..filhos.length() {
+        let no = filhos.item(i)?;
+        if no.node_type() == 3 {
+            return Some(no);
+        }
+        if let Some(el_filho) = no.dyn_ref::<web_sys::Element>() {
+            if let Some(achado) = primeiro_texto(el_filho) {
+                return Some(achado);
+            }
+        }
+    }
+    None
 }

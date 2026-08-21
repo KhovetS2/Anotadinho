@@ -937,3 +937,41 @@
   background: color-mix(in srgb, var(--success) 16%, transparent);
   color: var(--text-primary);
 }
+
+/* Bloco como unidade VISÍVEL (ciclo 175).
+   Cada bloco é seu próprio `contenteditable`. O destaque é discreto por
+   padrão e aparece no hover/foco: o objetivo é dar um ALVO — pra inserir
+   conteúdo num ponto específico, mover, ou saber onde o cursor está —
+   sem transformar a página num formulário cheio de caixas. */
+.editor__bloco {
+  position: relative;
+  padding: 0.1rem 0.5rem;
+  margin-left: -0.5rem;
+  border-radius: var(--r-sm);
+  border-left: 2px solid transparent;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.editor__bloco:hover {
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+.editor__bloco:focus {
+  outline: none;
+  border-left-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 6%, transparent);
+}
+
+/* Bloco vazio ganha uma dica — sem isso ele é uma faixa em branco sem
+   affordance nenhuma, e a pessoa não sabe que pode digitar ali. */
+.editor__bloco:empty::before,
+.editor__bloco:has(> br:only-child)::before {
+  content: "Digite ou use / para inserir";
+  color: var(--text-muted);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.editor__bloco:focus:has(> br:only-child)::before {
+  opacity: 0.35;
+}

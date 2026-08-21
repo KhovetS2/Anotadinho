@@ -321,7 +321,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                     e.stop_propagation();
                     nav_active.set(None);
                     if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-                        let target = doc.query_selector(".editor__wysiwyg[contenteditable=\"true\"]").ok().flatten()
+                        let target = doc.query_selector(".editor__bloco[contenteditable=\"true\"]").ok().flatten()
                             .or_else(|| doc.query_selector(".app-root").ok().flatten());
                         if let Some(el) = target.and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok()) {
                             let _ = el.focus();

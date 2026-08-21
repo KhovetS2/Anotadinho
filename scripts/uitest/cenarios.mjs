@@ -25,7 +25,7 @@ async function recarregar(bridge) {
 
 /// Põe o cursor no fim do primeiro contenteditable e digita.
 const DIGITAR = (texto) => `(() => {
-  const el = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
+  const el = document.querySelector('.editor__bloco[contenteditable="true"]');
   if (!el) return false;
   el.focus();
   const r = document.createRange();
@@ -302,7 +302,7 @@ cenarios.push({
 
     // Entra no nível de blocos pelo Escape a partir do texto.
     await bridge.js(`(() => {
-      const el = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
+      const el = document.querySelector('.editor__bloco[contenteditable="true"]');
       el.focus();
       const r = document.createRange(); r.selectNodeContents(el); r.collapse(true);
       const s = getSelection(); s.removeAllRanges(); s.addRange(r);
@@ -951,10 +951,11 @@ cenarios.push({
     // Digita e, SEM esperar a janela de agrupamento fechar, insere um
     // embed. Era aqui que o estado pré-inserção sumia do histórico.
     await bridge.js(`(() => {
-      const ed = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
+      const seg = document.querySelector('.editor__wysiwyg');
+      const ed = seg.lastElementChild || seg;
       ed.focus();
       const r = document.createRange();
-      r.selectNodeContents(ed.lastElementChild || ed);
+      r.selectNodeContents(ed);
       r.collapse(false);
       const s = getSelection(); s.removeAllRanges(); s.addRange(r);
       document.execCommand('insertText', false, ' editado');
@@ -979,7 +980,7 @@ cenarios.push({
 
     // Ctrl+Z: tem que tirar o embed e MANTER o texto digitado.
     await bridge.js(`(() => {
-      document.querySelector('.editor__wysiwyg[contenteditable="true"]')
+      document.querySelector('.editor__bloco[contenteditable="true"]')
         .dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
       return true;
     })()`);
@@ -1060,10 +1061,11 @@ cenarios.push({
 
 /// Digita no fim do editor, deixando a página com edição pendente.
 const DIGITAR_NO_FIM = (texto) => `(() => {
-  const ed = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
+  const seg = document.querySelector('.editor__wysiwyg');
+  const ed = seg.lastElementChild || seg;
   ed.focus();
   const r = document.createRange();
-  r.selectNodeContents(ed.lastElementChild || ed);
+  r.selectNodeContents(ed);
   r.collapse(false);
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);
   document.execCommand('insertText', false, ${JSON.stringify(texto)});
@@ -1275,9 +1277,10 @@ cenarios.push({
 
 /// Entra no modo de navegação de blocos com o primeiro bloco focado.
 const FOCAR_PRIMEIRO_BLOCO = `(() => {
-  const ed = document.querySelector('.editor__wysiwyg[contenteditable="true"]');
-  ed.focus();
-  const b = ed.children[0];
+  const seg = document.querySelector('.editor__wysiwyg');
+  const b = seg.children[0];
+  b.focus();
+  const ed = b;
   const r = document.createRange();
   r.selectNodeContents(b); r.collapse(false);
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);

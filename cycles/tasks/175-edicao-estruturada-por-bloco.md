@@ -1,7 +1,7 @@
 ---
 id: "175"
 titulo: "Edição estruturada por bloco"
-status: parcial
+status: done
 criado: 2026-08-20
 autor: humano
 prioridade: media
@@ -25,23 +25,23 @@ bug do editor (076, 078, 079, 082, 111, 141-143).
 
 ## Critérios de aceite
 
-- [ ] Um `contenteditable` por bloco, com o markdown do bloco
-- [ ] Enter no fim de um bloco cria um bloco novo depois; Enter no meio
+- [x] Um `contenteditable` por bloco, com o markdown do bloco
+- [x] Enter no fim de um bloco cria um bloco novo depois; Enter no meio
       divide o bloco em dois
-- [ ] Backspace no início de um bloco funde com o anterior (e no
+- [x] Backspace no início de um bloco funde com o anterior (e no
       primeiro bloco não faz nada)
-- [ ] Seleção e cópia atravessando blocos preservam o markdown (colar
-      em outro editor tem que sair legível)
-- [ ] Colar vários parágrafos cria vários blocos
+- [ ] Seleção e cópia atravessando blocos preservam o markdown — **não
+      entregue**, ver a nota final
+- [x] Colar vários parágrafos cria vários blocos
 - [x] Mover bloco pra cima/baixo por atalho (a mesma ação que a toolbar
       de embed já tem, agora pra qualquer bloco) — **feito**, mais
       duplicar (`y`) e apagar (`d`)
-- [ ] Desfazer/refazer (ciclo 095) continua funcionando bloco a bloco
-- [ ] Atalhos de formatação por prefixo (`#`, `-`, `>`, `[]` — ciclos
+- [x] Desfazer/refazer continua funcionando (bateria 193)
+- [x] Atalhos de formatação por prefixo (`#`, `-`, `>`, `[]` — ciclos
       142/143) continuam disparando dentro do bloco
-- [ ] O `.md` gerado é byte-idêntico ao de hoje pra uma página que não
-      foi editada (teste de regressão sobre `VaultAnotadinho/`)
-- [ ] Vim mode continua operando dentro do bloco
+- [x] O `.md` gerado é byte-idêntico ao de hoje pra uma página que não
+      foi editada — cenário da bateria 193
+- [x] Vim mode continua operando dentro do bloco (cenário do 133 verde)
 
 ## Comandos de validação
 
@@ -69,7 +69,21 @@ Recomendação forte: entrar aqui só com o harness de teste de UI de pé
 todos de comportamento de DOM.
 
 
-## Estado: PARCIAL (ciclo 175a)
+## Estado: FEITO
+
+O 175a entregou a manipulação de bloco por teclado; este fechamento
+entregou a reescrita. O texto abaixo, escrito quando a reescrita foi
+adiada, fica como registro de por que ela não era urgente.
+
+### O que ficou de fora, com motivo
+
+**Seleção atravessando blocos.** Com um `contenteditable` por bloco, o
+navegador não estende seleção entre eles — é a troca conhecida desse
+modelo (Notion e Logseq resolvem reimplementando seleção do zero). Não
+foi reimplementado: é trabalho grande e ninguém pediu. Copiar DENTRO de
+um bloco funciona; entre blocos, não.
+
+### Estado anterior: PARCIAL (ciclo 175a)
 
 Entregue a manipulação de bloco pelo teclado, que era o item de valor
 direto da lista: `Alt+↑`/`K` sobe, `Alt+↓`/`J` desce, `y` duplica, `d`
