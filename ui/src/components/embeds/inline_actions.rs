@@ -266,15 +266,32 @@ fn run_action(
             });
         }
         ActionSpec::OpenPage { path } => {
-            let title = std::path::Path::new(path)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.clone());
-            let section = if path.starts_with("journals/") { "journals" } else { "pages" };
-            on_page_selected.emit(PageMeta {
-                path: path.clone(),
-                title,
-                section: section.to_string(),
+            // Título vem do FRONTMATTER, não do nome do arquivo (ciclo
+            // 196): `missao.md` tem `title: Missão`, e usar o nome do
+            // arquivo fazia a mesma página aparecer com nome diferente
+            // conforme o caminho por onde se chegou nela — botão de ação
+            // mostrava "missao", wikilink mostrava "Missão".
+            let path = path.clone();
+            let vault_path = vault_path.to_string();
+            let on_page_selected = on_page_selected.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let paginas = api::scan_vault(&vault_path).await.unwrap_or_default();
+                let achado = paginas.iter().find(|p| p.path == path);
+                let title = achado
+                    .map(|p| p.title.clone())
+                    .filter(|t| !t.trim().is_empty())
+                    .unwrap_or_else(|| {
+                        std::path::Path::new(&path)
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_else(|| path.clone())
+                    });
+                let section = achado
+                    .map(|p| p.section.clone())
+                    .unwrap_or_else(|| {
+                        if path.starts_with("journals/") { "journals".to_string() } else { "pages".to_string() }
+                    });
+                on_page_selected.emit(PageMeta { path, title, section });
             });
         }
         ActionSpec::SetProperty { path, field, value } => {
