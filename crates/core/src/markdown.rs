@@ -572,3 +572,88 @@ mod tests {
         assert!(novo.contains("# Corpo"), "o corpo se perdeu:\n{novo}");
     }
 }
+
+/// Escapa um valor pra caber num campo escalar de frontmatter YAML.
+///
+/// O caso que motivou isto (ciclo 206): um título com `: ` no meio —
+/// `"Ciclo 006 — MarkdownCodec: parse e serialize"` — é YAML inválido, e
+/// o parser descarta o frontmatter INTEIRO em silêncio. A página perdia
+/// título, tipo e tags de uma vez, e só se percebia quando ela sumia de
+/// uma consulta.
+///
+/// Aspas duplas resolvem, mas só valem a pena quando precisam: aspas em
+/// tudo tornariam o arquivo pior de ler à mão, e o vault é feito pra ser
+/// editado fora do app.
+pub fn escapar_escalar_yaml(valor: &str) -> String {
+    let v = valor.trim();
+    let precisa = v.is_empty()
+        || v.contains(": ")
+        || v.ends_with(':')
+        || v.contains(" #")
+        || v.starts_with(['&', '*', '!', '|', '>', '%', '@', '`', '"', '\'', '[', '{', '-', '?'])
+        // Valor que PARECE outro tipo vira outro tipo: `title: true`
+        // viraria booleano, `title: 2026-01-01` viraria data.
+        || matches!(v.to_lowercase().as_str(), "true" | "false" | "null" | "yes" | "no" | "on" | "off" | "~")
+        || v.parse::<f64>().is_ok();
+    if !precisa {
+        return v.to_string();
+    }
+    format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+#[cfg(test)]
+mod testes_escalar {
+    use super::escapar_escalar_yaml;
+
+    #[test]
+    fn texto_simples_fica_sem_aspas() {
+        // O vault é editado à mão: aspas em tudo pioraria a leitura.
+        assert_eq!(escapar_escalar_yaml("Uma nota comum"), "Uma nota comum");
+        assert_eq!(escapar_escalar_yaml("Ciclo 006 — MarkdownCodec"), "Ciclo 006 — MarkdownCodec");
+    }
+
+    #[test]
+    fn dois_pontos_no_meio_ganha_aspas() {
+        // Era o bug: quebrava o frontmatter inteiro em silêncio.
+        assert_eq!(
+            escapar_escalar_yaml("MarkdownCodec: parse e serialize"),
+            "\"MarkdownCodec: parse e serialize\""
+        );
+    }
+
+    #[test]
+    fn valor_que_parece_outro_tipo_ganha_aspas() {
+        assert_eq!(escapar_escalar_yaml("true"), "\"true\"");
+        assert_eq!(escapar_escalar_yaml("42"), "\"42\"");
+        assert_eq!(escapar_escalar_yaml("no"), "\"no\"");
+    }
+
+    #[test]
+    fn aspas_internas_sao_escapadas() {
+        assert_eq!(escapar_escalar_yaml(r#"diz "oi": tudo"#), r#""diz \"oi\": tudo""#);
+    }
+
+    #[test]
+    fn vazio_e_inicio_perigoso_ganham_aspas() {
+        assert_eq!(escapar_escalar_yaml(""), "\"\"");
+        assert_eq!(escapar_escalar_yaml("- item"), "\"- item\"");
+        assert_eq!(escapar_escalar_yaml("*ref"), "\"*ref\"");
+    }
+
+    #[test]
+    fn round_trip_pelo_parser_de_verdade() {
+        // A prova que importa: o serde_yaml volta a ler o que geramos.
+        for titulo in [
+            "MarkdownCodec: parse e serialize",
+            "Uma nota comum",
+            "true",
+            r#"com "aspas" dentro"#,
+            "- começa com hífen",
+        ] {
+            let doc = format!("title: {}\n", escapar_escalar_yaml(titulo));
+            let v: serde_yaml::Value = serde_yaml::from_str(&doc)
+                .unwrap_or_else(|e| panic!("não parseou {titulo:?}: {e}"));
+            assert_eq!(v["title"].as_str(), Some(titulo), "round-trip falhou pra {titulo:?}");
+        }
+    }
+}

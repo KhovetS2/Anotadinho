@@ -271,6 +271,17 @@ mod tests {
     }
 
     #[test]
+    fn titulo_com_dois_pontos_nao_quebra_o_frontmatter() {
+        // Uma resposta do agente começando com "Exportar: em CSV" gerava
+        // uma página cujo frontmatter inteiro era descartado em silêncio.
+        let md = montar_pagina(Artefato::Spec, "Exportar: em CSV", "corpo", None, "2026-08-22");
+        let fm = crate::MarkdownCodec::split_frontmatter(&md)
+            .map(|(fm, _)| fm)
+            .expect("o frontmatter tem que parsear");
+        assert_eq!(fm.title.as_deref(), Some("Exportar: em CSV"));
+    }
+
+    #[test]
     fn pagina_montada_nasce_em_rascunho_com_fluxo_embutido() {
         let md = montar_pagina(Artefato::Spec, "Exportar PDF", "corpo aqui", None, "2026-08-22");
         assert!(md.starts_with("---\n"), "{md}");
@@ -352,7 +363,12 @@ pub fn montar_pagina(
     hoje: &str,
 ) -> String {
     let mut fm = String::from("---\n");
-    fm.push_str(&format!("title: {}\n", titulo.trim()));
+    // Escapado: título com `: ` no meio é YAML inválido e derruba o
+    // frontmatter inteiro (ciclo 206).
+    fm.push_str(&format!(
+        "title: {}\n",
+        crate::markdown::escapar_escalar_yaml(titulo)
+    ));
     fm.push_str(&format!("type: {}\n", artefato.slug()));
     fm.push_str(&format!("date: {hoje}\n"));
     // `status` espelha a etapa: é o campo que as consultas filtram.

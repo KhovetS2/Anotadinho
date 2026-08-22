@@ -581,3 +581,62 @@ fluxo.push({
     ctx.assert(/Fantasma/.test(r.erro), `a validação do 189 não rodou: ${r.erro}`);
   },
 });
+
+// ── ciclo 206: o histórico dentro do vault ───────────────────────────
+
+fluxo.push({
+  nome: "vault: as páginas de ciclo são consultáveis e têm fluxo (206)",
+  async fn(bridge, ctx) {
+    // O que isto protege: a migração gerou frontmatter com título
+    // contendo `: `, que é YAML inválido e derruba a página inteira em
+    // SILÊNCIO — ela some da consulta sem erro nenhum. Um cenário que
+    // conta as páginas pega isso; olhar uma amostra, não.
+    await recarregarEstavel(bridge);
+    const r = await bridge.js(`(async () => {
+      const paginas = await window.__TAURI_INTERNALS__.invoke('scan_vault', {
+        vaultPath: '/home/elis/Anotadinho/VaultAnotadinho',
+      });
+      const ciclos = paginas.filter(p => p.path.startsWith('pages/ciclos/'));
+      return {
+        total: ciclos.length,
+        comStatus: ciclos.filter(p => (p.properties || {}).status === 'concluida').length,
+        semTitulo: ciclos.filter(p => !p.title || /^\\d{3}-/.test(p.title)).map(p => p.path).slice(0, 3),
+      };
+    })()`);
+
+    ctx.assert(r.total > 100, `esperava o histórico migrado, veio ${r.total} páginas`);
+    ctx.assertEq(
+      r.comStatus,
+      r.total,
+      `${r.total - r.comStatus} ciclo(s) sem status legível — frontmatter quebrado`,
+    );
+    ctx.assertEq(
+      r.semTitulo.length,
+      0,
+      `ciclo(s) caíram pro nome do arquivo (frontmatter não parseou): ${r.semTitulo.join(", ")}`,
+    );
+  },
+});
+
+fluxo.push({
+  nome: "vault: a página de ciclos mostra as consultas populadas (206)",
+  async fn(bridge, ctx) {
+    await recarregarEstavel(bridge);
+    await bridge.js(`(() => {
+      const alvo = [...document.querySelectorAll('.sidebar-item__title')]
+        .find(e => e.textContent.trim() === 'ciclos');
+      if (alvo) alvo.click();
+      return !!alvo;
+    })()`);
+    await esperar(bridge, "document.querySelector('.query-embed')", "as consultas renderizarem", 15000);
+    await PAUSA(1500);
+
+    const vazias = await bridge.js(
+      `[...document.querySelectorAll('.query-embed')].filter(e => /0 páginas/.test(e.textContent)).length`,
+    );
+    const total = await bridge.js(`document.querySelectorAll('.query-embed').length`);
+    ctx.assert(total >= 3, `esperava as 3 consultas do painel, veio ${total}`);
+    // "Em execução" pode estar legitimamente vazia; as outras duas não.
+    ctx.assert(vazias <= 1, `${vazias} consultas vazias na página de ciclos`);
+  },
+});

@@ -1,41 +1,81 @@
 ---
-title: Sistema de Ciclos
-tags: [docs, processo]
-created: 2026-08-04
+title: Ciclos
+type: landing
+tags: [processo, docs]
 ---
+# Ciclos
 
-# Sistema de Ciclos
+O Anotadinho evolui por **ciclos**: uma feature por vez, com task escrita
+antes, validação rodada depois e um registro do que aconteceu.
 
-O Anotadinho evolui por **ciclos**, não por commits avulsos.
+O histórico inteiro vive no vault desde o ciclo 206 — cada ciclo é uma
+página em `pages/ciclos/`, com o mesmo `status` que as consultas abaixo
+filtram. Antes disso ele só existia em `cycles/`, que o produto não
+enxergava.
 
-## Ciclos concluídos
+{{ type: "callout" }}
+variant: tip
+title: Como acompanhar
+body: |
+  As listas abaixo se atualizam sozinhas. Para achar um ciclo específico,
+  a busca acha pelo texto da task — inclusive dentro dos embeds, desde o
+  ciclo 188.
+{{ /callout }}
 
-| Ciclo | Feature | Status |
-|---|---|---|
-| 001 | Bootstrap Tauri + Yew com tema dark | ✅ done |
-| 002 | Vault picker (dialog nativo de seleção de pasta) | ✅ done |
-| 003 | Sidebar com lista de páginas (Pages + Journals) | ✅ done |
+## Em execução
 
-## Próximos ciclos
+{{ type: "query" }}
+from: pages/ciclos
+where:
+- field: status
+  op: eq
+  value: em-execucao
+sort:
+  field: ciclo
+  desc: true
+view: list
+columns:
+- ciclo
+{{ /query }}
 
-- 004: Editor Markdown básico
-- 005: Salvamento automático
-- 006: Parser de blocos e properties
-- 009: Watcher de arquivos (notify)
-- 011: Busca full-text (FTS5)
+## Últimos concluídos
 
-## Garantias
+{{ type: "query" }}
+from: pages/ciclos
+where:
+- field: status
+  op: eq
+  value: concluida
+sort:
+  field: ciclo
+  desc: true
+limit: 12
+view: table
+columns:
+- ciclo
+- prioridade
+- date
+{{ /query }}
 
-1. **Isolamento**: cada task em área bem definida
-2. **Não-regressão**: `cargo test` roda TODOS os testes
-3. **Histórico**: status files em `cycles/status/`
-4. **Dependências**: task tem campo `depende_de`
+## Por prioridade
 
-## Comandos
+{{ type: "query" }}
+from: pages/ciclos
+group_by: prioridade
+aggregate:
+- op: count
+view: list
+{{ /query }}
 
-```bash
-./cycles/orchestrator.sh run      # próxima task pendente
-./cycles/orchestrator.sh list     # lista todas as tasks
-./cycles/orchestrator.sh status   # status geral
-./cycles/orchestrator.sh history  # histórico completo
-```
+## O processo
+
+Cada ciclo passa por: task escrita → implementação → validação
+(`cargo test --workspace`, `trunk build`, build do Tauri e o harness de
+UI) → registro do resultado → commit `feat({id}):`.
+
+Regressão achada durante a validação vira cenário no harness, com o
+número do ciclo onde apareceu. É por isso que a suíte cresceu de zero
+para mais de cem cenários sem ninguém ter parado pra "escrever testes".
+
+Ver também: [[Guia do Agent OS]], [[Capacidades de agente]],
+[[Arquitetura]].

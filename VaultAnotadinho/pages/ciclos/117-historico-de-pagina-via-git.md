@@ -1,0 +1,118 @@
+---
+title: Ciclo 117 — Historico de pagina via git
+type: ciclo
+ciclo: "117"
+status: concluida
+date: 2026-08-08
+prioridade: media
+depende_de: ["103"]
+tags:
+- ciclo
+---
+
+# Ciclo 117 — Historico de pagina via git
+
+{{ type: "fluxo" }}
+artefato: execucao
+etapa: concluida
+{{ /fluxo }}
+
+# Histórico de página via git
+
+## Objetivo
+
+`crates/vault/src/git_status.rs` (ciclo 103) já lê `git status`. Como
+o vault normalmente é uma pasta versionada, dá pra mostrar o
+histórico real de commits que tocaram uma página — bem mais robusto
+que o undo em memória (ciclo 095, perdido ao recarregar). Novo painel
+no editor ("⋯" → "Histórico") lista os commits que tocaram o arquivo
+atual.
+
+## Critérios de aceite
+
+- [x] `crates/vault/src/git_status.rs` ganha `git_log(vault_root,
+      relative_path) -> Option<Vec<GitLogEntry>>` (hash curto, data,
+      mensagem), via `git -C <root> log --follow --pretty=format:...`;
+      `None` se não for um repo git (mesmo padrão de `git_status`)
+- [x] Handler IPC + comando Tauri novos, expostos em `ui/src/api.rs`
+- [x] Painel "Histórico" no menu "⋯" do editor, lista os commits (mais
+      recente primeiro)
+- [x] Vault sem git: item do menu continua visível (opção B do
+      critério — "ou mostra estado vazio claro"), mostra mensagem
+      clara ao abrir em vez de sumir do menu
+- [x] Teste em `crates/vault` cobrindo `git_log` num fixture de repo
+      git real (`tempfile` + `git init` + commits, mesmo padrão dos
+      testes de `git_status.rs`) — 3 testes novos
+- [x] `cargo test --workspace`, `cd ui && cargo test --lib`,
+      `trunk build`, `cargo build --manifest-path src-tauri/Cargo.toml`
+      passam
+
+## Comandos de validação
+
+```bash
+cargo test --workspace
+cd ui && cargo test --lib
+cd ui && trunk build
+cargo build --manifest-path src-tauri/Cargo.toml
+```
+
+## Não-objetivos
+
+- Diff visual entre versões (mostrar o conteúdo de um commit
+  específico) — v1 é só a lista de commits com hash/data/mensagem;
+  ver o conteúdo antigo fica pra outro ciclo (o usuário pode sempre
+  usar `git show <hash>:<path>` fora do app enquanto isso)
+- Reverter/restaurar uma versão antiga pela UI — só visualização
+
+## Notas
+
+Mesmo padrão de `git_status()` — shell out pro `git` do sistema via
+`std::process::Command`, sem dependência de lib git nova
+(`git2`/`gix`). Painel reaproveita o padrão visual do popover de git
+status do `header_bar.rs` (ciclo 103), mas aparece como modal (mesmo
+mecanismo do painel de Propriedades, ciclo 109) em vez de popover.
+
+Validado ao vivo via MCP `tauri`: abri `pages/sobre.md` (tem 1 commit
+real no histórico do repo), cliquei "⋯" → "🕐 Histórico", modal
+mostrou hash/data/mensagem do commit correto — conferido contra
+`git log --oneline -- VaultAnotadinho/pages/sobre.md` direto no
+shell, bateu exatamente.
+
+Processo de dev precisou reiniciar (`crates/vault`/`ipc`/`src-tauri`
+mudaram — hot-reload do `trunk serve` só cobre o frontend WASM, já
+documentado em ciclos anteriores).
+
+## Resultado
+
+# Ciclo 117 - done
+
+## Resumo
+
+Novo painel "Histórico" no menu "⋯" do editor: lista os commits git
+que tocaram a página atual (hash, data, mensagem), via
+`git log --follow`. Mais robusto que o undo em memória (ciclo 095,
+perdido ao recarregar) pra vaults versionados.
+
+## Arquivos criados/modificados
+
+- `crates/vault/src/git_status.rs` — `git_log`/`GitLogEntry`, 3 testes
+- `crates/vault/src/lib.rs` — re-exporta os novos símbolos
+- `crates/ipc/src/lib.rs` — `handle_git_log`
+- `src-tauri/src/main.rs` — comando Tauri `git_log`
+- `ui/src/api.rs` — `git_log`/`GitLogEntry`
+- `ui/src/components/editor.rs` — item "🕐 Histórico" no menu "⋯" +
+  modal
+- `ui/src/styles/main.css` — `.git-history-*`
+
+## Testes
+
+`cargo test --workspace`: 104. `cd ui && cargo test --lib`: 75. Total 179.
+`trunk build` + `cargo build --manifest-path src-tauri/Cargo.toml`: OK.
+
+Validação ao vivo via MCP `tauri` (processo de dev reiniciado):
+histórico de `pages/sobre.md` bateu exatamente com `git log --oneline
+-- ...` rodado direto no shell.
+
+## Notas
+
+Próximo: paste de imagem no editor (118).

@@ -112,6 +112,18 @@ Um agente headless roda exatamente as mesmas consultas:
 anotadinho-cli --vault VaultAnotadinho query --from-embed pages/produto/painel.md:2
 ```
 
+## Trabalhar COM um modelo dentro do app
+
+Desde os ciclos 201–205 o vault não é só o lugar onde o trabalho é
+anotado — é onde ele acontece. Uma página `type: conversa` abre um
+painel pra pedir spec, pedir proposta ou tirar dúvida sobre a página
+aberta; a resposta vira artefato com um clique, e qualquer escrita do
+agente passa por revisão.
+
+Os detalhes, os limites e como configurar o modelo estão em
+[[Capacidades de agente]]. O histórico de como isto foi construído está
+em [[Ciclos]].
+
 ## Fluxo recomendado (humano ou agente)
 
 0. Abrir o [[Painel]] — o que está em andamento e o que está na fila
