@@ -14,6 +14,8 @@ use anotadinho_ipc::{
     handle_read_page_versioned, handle_recusar_proposta, handle_scan_vault, handle_search_content,
     handle_write_page_checked,
 };
+mod mcp;
+
 use clap::{Parser, Subcommand};
 use std::io::Read;
 
@@ -132,6 +134,12 @@ enum Command {
         /// Id da proposta.
         id: String,
     },
+    /// Sobe um servidor MCP por stdio expondo o vault (ciclo 205).
+    ///
+    /// Só a leitura é direta: a única escrita é `propor`, que passa pela
+    /// revisão humana. Um agente conectado aqui não consegue gravar
+    /// página nenhuma sozinho.
+    Mcp,
     /// Fica observando o vault e imprime uma linha JSON por mudança
     /// (ciclo 172) — pra um agente REAGIR em vez de ficar consultando
     /// de tempos em tempos.
@@ -533,6 +541,9 @@ fn run(cli: Cli) -> Result<(), String> {
             let id = handle_propor(cli.vault, proposta)?;
             println!("{id}");
         }
+        Command::Mcp => {
+            mcp::servir(cli.vault)?;
+        }
         Command::Propostas => {
             let lista = handle_listar_propostas(cli.vault)?;
             if cli.json {
@@ -888,7 +899,7 @@ fn mutate_embed(
 ///
 /// A ordem de teste importa: `!=` tem que vir antes de `=`, senão
 /// `status!=done` viraria o campo `status!` igual a `done`.
-fn parse_condition(raw: &str) -> Result<Condition, String> {
+pub(crate) fn parse_condition(raw: &str) -> Result<Condition, String> {
     let raw = raw.trim();
     if let Some(field) = raw.strip_suffix('?') {
         return Ok(Condition {
@@ -972,7 +983,7 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {
 
 /// `"YYYY-MM-DD HH:MM"` sem dependência de crate de data — o formato só
 /// precisa ser legível e ordenável.
-fn agora_legivel() -> String {
+pub(crate) fn agora_legivel() -> String {
     let segundos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())

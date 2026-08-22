@@ -796,3 +796,138 @@ fn aviso_nao_bloqueia_a_gravacao() {
         .success()
         .stderr(predicates::str::contains("aviso:"));
 }
+
+// ── ciclo 205: servidor MCP ──────────────────────────────────────────
+
+/// Manda linhas JSON-RPC no stdin do servidor e devolve as respostas.
+fn mcp(dir: &tempfile::TempDir, pedidos: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    let entrada = pedidos
+        .iter()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let saida = cli(dir).arg("mcp").write_stdin(entrada).output().unwrap();
+    String::from_utf8_lossy(&saida.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).expect("resposta não é JSON"))
+        .collect()
+}
+
+#[test]
+fn mcp_responde_o_handshake() {
+    let dir = setup_vault();
+    let r = mcp(&dir, &[serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize"})]);
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0]["result"]["serverInfo"]["name"], "anotadinho");
+    assert!(r[0]["result"]["capabilities"]["tools"].is_object());
+}
+
+#[test]
+fn mcp_lista_as_ferramentas_e_a_unica_escrita_e_propor() {
+    // A garantia do ciclo: um agente conectado aqui NÃO consegue gravar
+    // página. Se alguém acrescentar uma ferramenta de escrita direta,
+    // este teste reprova.
+    let dir = setup_vault();
+    let r = mcp(&dir, &[serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})]);
+    let nomes: Vec<String> = r[0]["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    assert!(nomes.contains(&"propor".to_string()));
+    for proibida in ["escrever", "escrever_pagina", "write_page", "apagar", "deletar"] {
+        assert!(
+            !nomes.contains(&proibida.to_string()),
+            "ferramenta de escrita direta exposta: {proibida}"
+        );
+    }
+}
+
+#[test]
+fn mcp_le_uma_pagina() {
+    let dir = setup_vault();
+    let r = mcp(
+        &dir,
+        &[serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{"name":"ler_pagina","arguments":{"path":"pages/alpha.md"}}})],
+    );
+    let texto = r[0]["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(texto.contains("---"), "{texto}");
+}
+
+#[test]
+fn mcp_propor_nao_escreve_a_pagina() {
+    let dir = setup_vault();
+    let r = mcp(
+        &dir,
+        &[serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{"name":"propor","arguments":{
+                "path":"pages/vinda-do-mcp.md",
+                "conteudo":"---\ntitle: X\n---\ncorpo\n",
+                "motivo":"teste"}}})],
+    );
+    let texto = r[0]["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(texto.contains("NÃO foi escrita"), "{texto}");
+    assert!(
+        !dir.path().join("pages/vinda-do-mcp.md").exists(),
+        "o MCP escreveu a página sem revisão"
+    );
+    assert!(dir.path().join(".anotadinho/propostas").exists());
+}
+
+#[test]
+fn mcp_propor_fora_do_vault_e_recusado() {
+    let dir = setup_vault();
+    let r = mcp(
+        &dir,
+        &[serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{"name":"propor","arguments":{"path":"../fora.md","conteudo":"x"}}})],
+    );
+    assert_eq!(r[0]["result"]["isError"], true);
+    let texto = r[0]["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(texto.contains("fora do vault"), "{texto}");
+}
+
+#[test]
+fn mcp_json_quebrado_nao_derruba_o_servidor() {
+    // Um agente com bug de serialização não pode matar a sessão: o
+    // servidor responde o erro e segue atendendo.
+    let dir = setup_vault();
+    let entrada = "{ isto nao e json\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}";
+    let saida = cli(&dir).arg("mcp").write_stdin(entrada).output().unwrap();
+    let linhas: Vec<&str> = String::from_utf8_lossy(&saida.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| Box::leak(l.to_string().into_boxed_str()) as &str)
+        .collect();
+    assert_eq!(linhas.len(), 2, "esperava erro + resposta do ping");
+    assert!(linhas[0].contains("JSON inválido"), "{}", linhas[0]);
+    assert!(linhas[1].contains("\"id\":2"), "{}", linhas[1]);
+}
+
+#[test]
+fn mcp_notificacao_sem_id_nao_gera_resposta() {
+    // Manda notificação, uma requisição normal.
+    let dir = setup_vault();
+    let entrada = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n\
+                   {\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}";
+    let saida = cli(&dir).arg("mcp").write_stdin(entrada).output().unwrap();
+    let n = String::from_utf8_lossy(&saida.stdout)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .count();
+    assert_eq!(n, 1, "notificação não pode receber resposta");
+}
+
+#[test]
+fn mcp_ferramenta_desconhecida_devolve_erro_legivel() {
+    let dir = setup_vault();
+    let r = mcp(
+        &dir,
+        &[serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{"name":"inventada","arguments":{}}})],
+    );
+    assert_eq!(r[0]["result"]["isError"], true);
+}
