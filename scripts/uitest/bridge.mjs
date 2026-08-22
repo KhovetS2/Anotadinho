@@ -137,3 +137,65 @@ export async function abrirPagina(bridge, nome) {
     `a página "${nome}" abrir`,
   );
 }
+
+/// Espera até `expr` devolver o MESMO valor em duas leituras seguidas.
+///
+/// Serve pra "a tela parou de mudar": o app recarrega a página aberta
+/// quando o watcher vê o arquivo que o cenário acabou de escrever, e
+/// mexer no DOM no meio dessa recarga desfaz o que o cenário fez. Antes
+/// isso era resolvido com `PAUSA(2200)` — tempo suficiente no pior caso,
+/// e desperdiçado em todos os outros (ciclo 198).
+export async function esperarEstavel(bridge, expr, descricao, limiteMs = 10000) {
+  const ate = Date.now() + limiteMs;
+  let anterior = null;
+  let iguais = 0;
+  while (Date.now() < ate) {
+    const atual = await bridge.js(
+      `(() => { try { return ${expr}; } catch (e) { return null; } })()`,
+    );
+    if (atual !== null && atual !== "" && atual === anterior) {
+      iguais++;
+      // Duas leituras iguais seguidas com 120ms entre elas: o suficiente
+      // pra pegar uma recarga em curso, que troca o DOM inteiro.
+      if (iguais >= 2) return atual;
+    } else {
+      iguais = 0;
+    }
+    anterior = atual;
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  throw new Error(`esperava ${descricao} estabilizar, mas não aconteceu em ${limiteMs}ms`);
+}
+
+/// Recarrega e espera a UI voltar — sem tempo fixo.
+///
+/// O marcador em `window` é o que evita a corrida: logo depois de pedir
+/// o reload, o DOM ANTIGO ainda está lá, e uma condição do tipo "a
+/// sidebar tem itens" passa na hora contra a tela velha. O cenário então
+/// clicava num nó que estava prestes a ser destruído. O marcador só
+/// desaparece quando o documento é REALMENTE trocado (ciclo 198).
+export async function recarregarEstavel(bridge) {
+  await bridge.js("window.__uitest_reload = 1; location.reload(); true");
+  await esperar(
+    bridge,
+    "typeof window.__uitest_reload === 'undefined'",
+    "o reload trocar o documento",
+    15000,
+  );
+  await esperar(
+    bridge,
+    "document.querySelectorAll('.sidebar-item__title').length > 0",
+    "a sidebar voltar depois do reload",
+    15000,
+  );
+}
+
+/// Abre a página de rascunho e espera o conteúdo PARAR de mudar.
+export async function abrirPaginaEstavel(bridge, nome) {
+  await abrirPagina(bridge, nome);
+  await esperarEstavel(
+    bridge,
+    "(document.querySelector('.editor__wysiwyg')||{}).innerText || 'vazio'",
+    "o conteúdo do editor",
+  );
+}

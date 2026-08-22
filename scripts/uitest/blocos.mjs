@@ -16,7 +16,7 @@
 //   4. edição      — digitar, quebrar linha, fundir
 //   5. misto       — as transições, que é onde dói
 
-import { esperar } from "./bridge.mjs";
+import { esperar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
 
 const PAUSA = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -94,11 +94,9 @@ function bloco(nome, inicial, fn, ciclo = 195) {
     nome: `blocos: ${nome} (${ciclo})`,
     async fn(bridge, ctx) {
       ctx.escrever(`---\ntitle: __uitest\n---\n${inicial}`);
-      await bridge.js("location.reload(); true");
-      await PAUSA(1500);
-      await ctx.abrirPagina(bridge, ctx.nomePagina);
-      await esperar(bridge, "document.querySelector('.editor__bloco')", "os blocos aparecerem");
-      await PAUSA(2200);
+      // Espera por CONDIÇÃO, não por relógio (ciclo 198).
+      await recarregarEstavel(bridge);
+      await abrirPaginaEstavel(bridge, ctx.nomePagina);
       await fn(bridge, ctx, {
         estado: () => bridge.js(ESTADO),
         salvarELer: async () => {

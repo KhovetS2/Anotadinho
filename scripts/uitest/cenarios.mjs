@@ -5,22 +5,14 @@
 // (`ctx.escrever`), abre no app, mexe pelo DOM e confere. Nunca toca em
 // página real do vault.
 
-import { esperar } from "./bridge.mjs";
+import { esperar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
 
 const PAUSA = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /// Recarrega o webview e espera a sidebar voltar — usado quando o teste
 /// criou um arquivo novo e precisa que a listagem enxergue.
 async function recarregar(bridge) {
-  await bridge.js("location.reload(); true");
-  await PAUSA(1500);
-  await esperar(bridge, "document.querySelectorAll('.sidebar, [class*=sidebar]').length > 0", "a UI recarregar");
-  // O arquivo que o teste acabou de escrever faz o watcher acusar
-  // mudança, e o editor recarrega a página aberta (ciclo 173). Se o
-  // cenário mexer no DOM antes disso, a recarga chega no meio e desfaz
-  // o que ele fez — foi assim que o cenário de blocos "falhou" na
-  // primeira execução, sem bug nenhum no produto.
-  await PAUSA(2500);
+  await recarregarEstavel(bridge);
 }
 
 /// Põe o cursor no fim do primeiro contenteditable e digita.

@@ -9,7 +9,7 @@
 // menos uma vez, pra uma mudança grande não passar despercebida num
 // canto que ninguém testava.
 
-import { esperar } from "./bridge.mjs";
+import { esperar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
 
 const PAUSA = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -51,11 +51,10 @@ function caso(nome, inicial, fn) {
       if (inicial !== null) {
         ctx.escrever(`---\ntitle: __uitest\n---\n${inicial}`);
       }
-      await bridge.js("location.reload(); true");
-      await PAUSA(1600);
+      // Espera por CONDIÇÃO, não por relógio (ciclo 198).
+      await recarregarEstavel(bridge);
       if (inicial !== null) {
-        await ctx.abrirPagina(bridge, ctx.nomePagina);
-        await PAUSA(2200);
+        await abrirPaginaEstavel(bridge, ctx.nomePagina);
       }
       await fn(bridge, ctx, {
         salvarELer: async () => {

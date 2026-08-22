@@ -13,7 +13,7 @@
 // DEVE mudar, e a mudança tem que estar escrita na task do ciclo. Se um
 // deles quebrar sem isso, o produto regrediu.
 
-import { esperar } from "./bridge.mjs";
+import { esperar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
 
 const PAUSA = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -89,13 +89,9 @@ function caso(nome, inicial, passos, conferir) {
     nome: `digitação: ${nome} (193)`,
     async fn(bridge, ctx) {
       ctx.escrever(`---\ntitle: __uitest\n---\n${inicial}`);
-      await bridge.js("location.reload(); true");
-      await PAUSA(1500);
-      await ctx.abrirPagina(bridge, ctx.nomePagina);
-      await esperar(bridge, "document.querySelector('.editor__wysiwyg')", "o editor abrir");
-      // O watcher recarrega a página por causa do arquivo recém-escrito;
-      // esperar evita que a recarga chegue no meio do cenário.
-      await PAUSA(2200);
+      // Espera por CONDIÇÃO, não por relógio (ciclo 198).
+      await recarregarEstavel(bridge);
+      await abrirPaginaEstavel(bridge, ctx.nomePagina);
 
       await passos(bridge, ctx);
 
@@ -309,11 +305,9 @@ digitacao.push({
       "> citação\n\n" +
       "```rust\nfn main() {}\n```\n";
     ctx.escrever(original);
-    await bridge.js("location.reload(); true");
-    await PAUSA(1500);
-    await ctx.abrirPagina(bridge, ctx.nomePagina);
-    await esperar(bridge, "document.querySelector('.editor__wysiwyg')", "o editor abrir");
-    await PAUSA(2200);
+    // Espera por CONDIÇÃO, não por relógio (ciclo 198).
+    await recarregarEstavel(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
 
     // Uma edição mínima e desfeita, só pra habilitar o botão de salvar.
     await bridge.js(IR_PRO_FIM);
@@ -350,11 +344,9 @@ digitacao.push({
   nome: "digitação: letras de comando (d, n, y, K, J, c) são TEXTO no modo edição (194)",
   async fn(bridge, ctx) {
     ctx.escrever("---\ntitle: __uitest\n---\nalfa\n\nbeta\n\ngama\n");
-    await bridge.js("location.reload(); true");
-    await PAUSA(1500);
-    await ctx.abrirPagina(bridge, ctx.nomePagina);
-    await esperar(bridge, "document.querySelector('.editor__bloco')", "os blocos aparecerem");
-    await PAUSA(2200);
+    // Espera por CONDIÇÃO, não por relógio (ciclo 198).
+    await recarregarEstavel(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
 
     const nBlocos = () => bridge.js(`document.querySelectorAll('.editor__bloco').length`);
     ctx.assertEq(await nBlocos(), 3, "três blocos no início");
@@ -384,11 +376,9 @@ digitacao.push({
   nome: "digitação: Enter quebra linha e Shift+Enter cria bloco (194)",
   async fn(bridge, ctx) {
     ctx.escrever("---\ntitle: __uitest\n---\nlinha\n");
-    await bridge.js("location.reload(); true");
-    await PAUSA(1500);
-    await ctx.abrirPagina(bridge, ctx.nomePagina);
-    await esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco aparecer");
-    await PAUSA(2200);
+    // Espera por CONDIÇÃO, não por relógio (ciclo 198).
+    await recarregarEstavel(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
 
     const nBlocos = () => bridge.js(`document.querySelectorAll('.editor__bloco').length`);
 
