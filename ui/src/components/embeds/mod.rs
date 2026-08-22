@@ -10,6 +10,7 @@ mod inline_actions;
 mod inline_calendar;
 mod inline_callout;
 mod inline_columns;
+mod inline_fluxo;
 mod inline_gallery;
 mod inline_query;
 mod inline_timeline;
@@ -63,6 +64,9 @@ pub struct InlineEmbedProps {
     /// gera um por SEGMENTO, então dois embeds do mesmo tipo na mesma
     /// página não compartilham grupo.
     pub nav_group: String,
+    /// Grava um campo no frontmatter da página aberta (ciclo 201).
+    #[prop_or_default]
+    pub on_set_property: Callback<(String, String)>,
 }
 
 /// Dispatcher: renderiza o componente certo pro tipo de `EmbedData`.
@@ -117,6 +121,16 @@ pub fn inline_embed(props: &InlineEmbedProps) -> Html {
                     on_change={Callback::from(move |d| on_change.emit(EmbedData::Timeline(d)))}
                     on_page_selected={props.on_page_selected.clone()}
                     open_dialog={props.open_dialog.clone()} />
+            }
+        }
+        EmbedData::Fluxo(d) => {
+            let on_change = props.on_change.clone();
+            html! {
+                <inline_fluxo::InlineFluxo nav_group={props.nav_group.clone()} data={d.clone()}
+                    vault_path={props.vault_path.clone()}
+                    on_set_property={props.on_set_property.clone()}
+                    on_change={Callback::from(move |d| on_change.emit(d))}
+                    on_page_selected={props.on_page_selected.clone()} />
             }
         }
         EmbedData::Actions(d) => {

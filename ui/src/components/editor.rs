@@ -1902,6 +1902,34 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
+    // Grava um campo do frontmatter da página aberta (ciclo 201).
+    //
+    // Passa pelo MESMO `content_md` que o resto do editor usa — um
+    // embed gravando direto no disco competiria com o salvamento normal,
+    // e o último a escrever apagaria o outro.
+    let on_set_property = {
+        let content_md = content_md.clone();
+        let pending_flush_ref = pending_flush_ref.clone();
+        let mark_edited = mark_edited_estrutural.clone();
+        Callback::from(move |(campo, valor): (String, String)| {
+            // Lê do `pending_flush_ref`, não do `content_md` capturado:
+            // o embed emite `on_change` e `on_set_property` no MESMO
+            // tick, e o handle de `use_state` capturado ainda tem o
+            // valor de antes — o segundo `set` apagava o primeiro, e a
+            // etapa não avançava (ciclo 201).
+            let atual = {
+                let pendente = pending_flush_ref.borrow().clone();
+                if pendente.is_empty() { (*content_md).clone() } else { pendente }
+            };
+            let Ok(novo) = anotadinho_core::MarkdownCodec::set_frontmatter_field(&atual, &campo, &valor)
+            else {
+                return;
+            };
+            content_md.set(novo.clone());
+            mark_edited(novo);
+        })
+    };
+
     let insert_blank_line = {
         let content_md = content_md.clone();
         let frontmatter_text = frontmatter_text.clone();
@@ -2497,6 +2525,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                                 open_dialog={props.open_dialog.clone()}
                                                 on_page_selected={props.on_page_selected.clone()}
                                                 on_search={props.on_search.clone()}
+                                                on_set_property={on_set_property.clone()}
                                             />
                                             <button class="embed-hover-wrapper__add-line embed-hover-wrapper__add-line--bottom"
                                                 onclick={insert_blank_line(i + 1)} title="Adicionar linha abaixo">{ "+" }</button>

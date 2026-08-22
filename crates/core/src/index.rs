@@ -142,7 +142,8 @@ fn collect_embed_tags(body: &str) -> Vec<String> {
                     out.extend(entry.all_tags());
                 }
             }
-            crate::embed::EmbedData::Table(_)
+            crate::embed::EmbedData::Fluxo(_)
+            | crate::embed::EmbedData::Table(_)
             | crate::embed::EmbedData::Callout(_)
             | crate::embed::EmbedData::Columns(_)
             | crate::embed::EmbedData::Gallery(_)

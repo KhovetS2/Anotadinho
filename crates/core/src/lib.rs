@@ -17,6 +17,7 @@ pub mod markdown;
 pub mod date_util;
 pub mod embed;
 pub mod diff;
+pub mod fluxo;
 pub mod history;
 pub mod index;
 pub mod links;

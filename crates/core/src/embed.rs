@@ -60,6 +60,8 @@ pub enum EmbedKind {
     Timeline,
     /// `{{ type: "actions" }}` — botões que operam o vault.
     Actions,
+    /// Etapa do fluxo de trabalho (ciclo 201).
+    Fluxo,
 }
 
 impl EmbedKind {
@@ -75,6 +77,7 @@ impl EmbedKind {
             "query" => Some(Self::Query),
             "timeline" => Some(Self::Timeline),
             "actions" => Some(Self::Actions),
+            "fluxo" => Some(Self::Fluxo),
             _ => None,
         }
     }
@@ -91,6 +94,7 @@ impl EmbedKind {
             Self::Query => "query",
             Self::Timeline => "timeline",
             Self::Actions => "actions",
+            Self::Fluxo => "fluxo",
         }
     }
 
@@ -98,7 +102,7 @@ impl EmbedKind {
     /// Ponto único de verdade: quem quiser listar embeds (menu do
     /// editor, documentação, CLI) itera isto em vez de repetir a lista.
     pub fn all() -> &'static [EmbedKind] {
-        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout, Self::Columns, Self::Gallery, Self::Query, Self::Timeline, Self::Actions]
+        &[Self::Kanban, Self::Calendar, Self::Table, Self::Callout, Self::Columns, Self::Gallery, Self::Query, Self::Timeline, Self::Actions, Self::Fluxo]
     }
 
     /// Nome de exibição (menu `/`, títulos de UI).
@@ -113,6 +117,7 @@ impl EmbedKind {
             Self::Query => "Consulta",
             Self::Timeline => "Cronograma",
             Self::Actions => "Ações",
+            Self::Fluxo => "Fluxo",
         }
     }
 
@@ -128,6 +133,7 @@ impl EmbedKind {
             Self::Query => "Lista viva de páginas por filtro",
             Self::Timeline => "Barras por intervalo de datas (Gantt)",
             Self::Actions => "Botões que criam e abrem páginas",
+            Self::Fluxo => "Etapa do trabalho, com aprovação",
         }
     }
 
@@ -143,6 +149,7 @@ impl EmbedKind {
             Self::Query => "search",
             Self::Timeline => "clock",
             Self::Actions => "zap",
+            Self::Fluxo => "check-square",
         }
     }
 
@@ -169,6 +176,9 @@ impl EmbedKind {
             // sempre tem resultado, então dá pra ver o embed funcionando
             // antes de configurar qualquer filtro.
             Self::Query => "view: list\nlimit: 10".to_string(),
+            // Nasce em rascunho: é onde todo artefato começa, e o
+            // primeiro botão já é "mandar pra revisão".
+            Self::Fluxo => "artefato: spec\netapa: rascunho".to_string(),
             Self::Timeline => {
                 let end = crate::date_util::add_days(today, 6).unwrap_or_else(|| today.to_string());
                 format!("scale: month\nitems:\n- title: Nova etapa\n  start: '{today}'\n  end: '{end}'")
@@ -333,6 +343,8 @@ pub enum EmbedData {
     Timeline(TimelineEmbedData),
     /// Botões de ação.
     Actions(ActionsEmbedData),
+    /// Etapa do fluxo de trabalho (ciclo 201).
+    Fluxo(FluxoEmbedData),
 }
 
 impl EmbedData {
@@ -348,6 +360,7 @@ impl EmbedData {
             EmbedKind::Query => EmbedData::Query(serde_yaml::from_str(raw).unwrap_or_default()),
             EmbedKind::Timeline => EmbedData::Timeline(TimelineEmbedData::parse(raw)),
             EmbedKind::Actions => EmbedData::Actions(ActionsEmbedData::parse(raw)),
+            EmbedKind::Fluxo => EmbedData::Fluxo(FluxoEmbedData::parse(raw)),
         }
     }
 
@@ -363,6 +376,7 @@ impl EmbedData {
             EmbedData::Query(_) => EmbedKind::Query,
             EmbedData::Timeline(_) => EmbedKind::Timeline,
             EmbedData::Actions(_) => EmbedKind::Actions,
+            EmbedData::Fluxo(_) => EmbedKind::Fluxo,
         }
     }
 
@@ -381,6 +395,7 @@ impl EmbedData {
             EmbedData::Query(q) => serde_yaml::to_string(q).unwrap_or_default(),
             EmbedData::Timeline(d) => d.to_fence_body(),
             EmbedData::Actions(d) => d.to_fence_body(),
+            EmbedData::Fluxo(d) => d.to_fence_body(),
         };
         format!("{{{{ type: \"{name}\" }}}}\n{body}\n{{{{ /{name} }}}}\n")
     }
@@ -2020,6 +2035,10 @@ impl EmbedData {
             // A consulta é um FILTRO, não um registro: indexá-la faria
             // a página aparecer por causa do nome de um campo.
             Self::Query(_) => Vec::new(),
+            // O fluxo é ESTADO, não conteúdo. Indexá-lo faria buscar
+            // "rascunho" devolver toda página em rascunho — que é
+            // trabalho da consulta, não da busca por texto.
+            Self::Fluxo(_) => Vec::new(),
         }
     }
 }
@@ -2313,6 +2332,19 @@ impl EmbedData {
                 }
             }
             Self::Query(_) => {}
+            Self::Fluxo(d) => {
+                // A etapa em si é sempre válida (o enum garante). O que
+                // dá pra conferir é a coerência: proposta sem origem
+                // perde o rastro de qual spec a gerou.
+                if d.artefato == crate::fluxo::Artefato::Proposta && d.origem.is_none() {
+                    out.push(Problema::aviso("fluxo", "proposta sem `origem`: some o rastro da spec"));
+                }
+                if let Some(o) = &d.origem {
+                    if !ctx.existe(o) {
+                        out.push(Problema::erro("fluxo", format!("origem \"{o}\" não existe")));
+                    }
+                }
+            }
         }
         out
     }
@@ -2613,6 +2645,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn todo_kind_faz_round_trip_de_nome() {
+        // O ciclo 201 acrescentou um tipo novo e esqueceu de registrá-lo
+        // em `from_type_name`: o embed aparecia no menu `/`, gravava no
+        // arquivo, e sumia ao reabrir a página, porque o parser não o
+        // reconhecia. Um teste derivado de `all()` pega isso na hora.
+        for k in EmbedKind::all() {
+            assert_eq!(
+                EmbedKind::from_type_name(k.type_name()),
+                Some(*k),
+                "{} não volta de `from_type_name`",
+                k.type_name()
+            );
+        }
+    }
+
+    #[test]
+    fn todo_kind_tem_rotulo_descricao_e_icone() {
+        for k in EmbedKind::all() {
+            assert!(!k.label().trim().is_empty(), "{} sem label", k.type_name());
+            assert!(!k.desc().trim().is_empty(), "{} sem desc", k.type_name());
+            assert!(!k.icon().trim().is_empty(), "{} sem ícone", k.type_name());
+        }
+    }
+
+    #[test]
+    fn todo_kind_parseia_o_proprio_corpo_padrao() {
+        // Se o corpo inicial não parseia, inserir pelo menu `/` nasce
+        // quebrado.
+        for k in EmbedKind::all() {
+            let data = EmbedData::parse(*k, &k.default_body("2026-08-22"));
+            assert_eq!(data.kind(), *k, "{} parseou como outro tipo", k.type_name());
+        }
+    }
+
+    #[test]
     fn all_kinds_round_trip_pelo_nome_do_tipo() {
         for kind in EmbedKind::all() {
             assert_eq!(EmbedKind::from_type_name(kind.type_name()), Some(*kind));
@@ -2646,6 +2713,11 @@ mod tests {
                 EmbedData::Table(d) => {
                     assert!(!d.columns.is_empty());
                     assert!(!d.rows.is_empty());
+                }
+                EmbedData::Fluxo(d) => {
+                    // Nasce em rascunho, que é onde todo artefato começa.
+                    assert_eq!(d.etapa, crate::fluxo::Etapa::Rascunho);
+                    assert_eq!(d.artefato, crate::fluxo::Artefato::Spec);
                 }
                 EmbedData::Callout(d) => {
                     assert!(!d.title.is_empty());
@@ -3894,6 +3966,66 @@ Acima do embed você pode ter texto normal. Abaixo também.
         assert_eq!(reparsed.items.len(), 1);
         assert_eq!(reparsed.items[0].title, "X");
         assert_eq!(reparsed.items[0].column, "Doing");
+    }
+}
+
+/// Dados do embed `fluxo` (ciclo 201): onde este artefato está.
+///
+/// O estado mora AQUI, no embed, e não só no frontmatter, por um motivo
+/// prático: o embed é quem desenha e quem move, então ele precisa do
+/// valor sem depender de a UI passar o frontmatter da página pra dentro
+/// de cada embed. Ao avançar, ele espelha o valor em `status:` do
+/// frontmatter — que é o campo que as consultas filtram.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FluxoEmbedData {
+    /// O que esta página é.
+    #[serde(default = "artefato_padrao")]
+    pub artefato: crate::fluxo::Artefato,
+    /// Onde ela está.
+    #[serde(default)]
+    pub etapa: crate::fluxo::Etapa,
+    /// Página que originou esta (a spec de uma proposta, por exemplo).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origem: Option<String>,
+    /// Anotação da última transição — o "por que voltou pra revisão".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nota: Option<String>,
+}
+
+fn artefato_padrao() -> crate::fluxo::Artefato {
+    crate::fluxo::Artefato::Spec
+}
+
+impl Default for FluxoEmbedData {
+    fn default() -> Self {
+        Self {
+            artefato: crate::fluxo::Artefato::Spec,
+            etapa: crate::fluxo::Etapa::default(),
+            origem: None,
+            nota: None,
+        }
+    }
+}
+
+impl FluxoEmbedData {
+    fn parse(raw: &str) -> Self {
+        serde_yaml::from_str(raw).unwrap_or_default()
+    }
+
+    fn to_fence_body(&self) -> String {
+        serde_yaml::to_string(self).unwrap_or_default()
+    }
+
+    /// Move pra `destino` se a transição existir. Devolve `false` e não
+    /// muda nada quando não existe — a máquina de estados é do core, e
+    /// a UI não tem como burlá-la por engano.
+    pub fn ir_para(&mut self, destino: crate::fluxo::Etapa, nota: Option<String>) -> bool {
+        if !self.etapa.pode_ir_para(destino) {
+            return false;
+        }
+        self.etapa = destino;
+        self.nota = nota.filter(|n| !n.trim().is_empty());
+        true
     }
 }
 

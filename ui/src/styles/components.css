@@ -1004,3 +1004,92 @@
   color: var(--accent-purple);
   background: color-mix(in srgb, var(--accent-purple) 16%, transparent);
 }
+
+/* Fluxo de trabalho (ciclo 201).
+   A trilha mostra onde o artefato está; os botões são SÓ as transições
+   que o core permite — não existe botão pra pular a revisão. */
+.fluxo {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 0.75rem 0.9rem;
+  background: var(--bg-surface);
+  margin: 0.75rem 0;
+}
+
+.fluxo__topo {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.fluxo__artefato {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.fluxo__etapa {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  color: var(--accent-blue);
+}
+
+.fluxo__etapa--concluida {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
+}
+
+.fluxo__etapa--bloqueada {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning);
+}
+
+.fluxo__origem {
+  margin-left: auto;
+}
+
+.fluxo__trilha {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0 0 0.7rem;
+  padding: 0;
+}
+
+.fluxo__passo {
+  font-size: 0.6875rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.fluxo__passo--feita {
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  color: var(--success);
+}
+
+.fluxo__passo--atual {
+  border-color: var(--accent-blue);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+}
+
+.fluxo__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.fluxo__nota,
+.fluxo__aviso {
+  margin: 0.6rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}

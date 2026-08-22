@@ -556,6 +556,7 @@ fn embed_summary(data: &EmbedData) -> String {
         ),
         EmbedData::Timeline(d) => format!("{} item(ns), escala {}", d.items.len(), d.scale.slug()),
         EmbedData::Actions(d) => format!("{} botão(ões)", d.buttons.len()),
+        EmbedData::Fluxo(d) => format!("{} — {}", d.artefato.label(), d.etapa.label()),
     }
 }
 
