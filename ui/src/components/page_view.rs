@@ -156,7 +156,8 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 <crate::components::conversa_view::ConversaView
                     vault_path={props.vault_path.clone()}
                     page={page.clone()}
-                    contexto_path={props.contexto_path.clone()} />
+                    contexto_path={props.contexto_path.clone()}
+                    on_page_selected={props.on_page_selected.clone()} />
             },
             None => html! {},
         },

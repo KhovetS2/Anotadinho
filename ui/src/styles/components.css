@@ -1213,3 +1213,19 @@
   background: var(--bg-base);
   color: var(--text-primary);
 }
+
+/* Promover mensagem em artefato (ciclo 203).
+   Só aparece no hover da mensagem: são ações de exceção, e mostrá-las
+   sempre competiria com a leitura da resposta. */
+.conversa__msg-acoes {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.conversa__msg:hover .conversa__msg-acoes,
+.conversa__msg:focus-within .conversa__msg-acoes {
+  opacity: 1;
+}

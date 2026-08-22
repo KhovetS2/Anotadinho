@@ -346,3 +346,89 @@ fluxo.push({
     );
   },
 });
+
+// ── ciclo 203: promover mensagem em artefato ─────────────────────────
+
+fluxo.push({
+  nome: "promover: resposta do agente vira spec com fluxo embutido (203)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const criadas = [];
+    try {
+      ctx.escrever(
+        "---\ntitle: __uitest\ntype: conversa\n---\n" +
+          "## você · 2026-08-22 10:00\n\npergunta\n\n" +
+          "## agente · 2026-08-22 10:01\n\nExportar nota em PDF\n\nDeve gerar um arquivo.\n",
+      );
+      await recarregarEstavel(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await esperar(bridge, "document.querySelector('.conversa__msg--agente')", "a resposta");
+
+      const clicou = await bridge.js(`(() => {
+        const b = [...document.querySelectorAll('.conversa__msg-acoes button')]
+          .find(x => /spec/i.test(x.textContent));
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`);
+      ctx.assertEq(clicou, true, "não achei o botão de virar spec");
+      await PAUSA(1800);
+
+      const esperado = `${ctx.vault}/pages/specs/exportar-nota-em-pdf.md`;
+      criadas.push(esperado);
+      ctx.assert(fs.existsSync(esperado), `a spec não foi criada em ${esperado}`);
+
+      const md = fs.readFileSync(esperado, "utf8");
+      ctx.assert(md.includes("type: spec"), `sem type no frontmatter:\n${md}`);
+      ctx.assert(md.includes("status: rascunho"), `não nasceu em rascunho:\n${md}`);
+      ctx.assert(md.includes('{{ type: "fluxo" }}'), `sem o embed de fluxo:\n${md}`);
+      ctx.assert(
+        md.includes("origem: pages/__uitest.md"),
+        `perdeu o rastro da conversa:\n${md}`,
+      );
+      ctx.assert(md.includes("Deve gerar um arquivo"), `perdeu o corpo:\n${md}`);
+
+      // E a página criada abre.
+      await esperar(
+        bridge,
+        `/Exportar nota em PDF/.test((document.querySelector('.editor__title')||{}).textContent || '')`,
+        "a spec criada abrir",
+        10000,
+      );
+    } finally {
+      for (const c of criadas) fs.rmSync(c, { force: true });
+    }
+  },
+});
+
+fluxo.push({
+  nome: "promover: a spec criada já responde ao fluxo (203)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const criadas = [];
+    try {
+      ctx.escrever(
+        "---\ntitle: __uitest\ntype: conversa\n---\n" +
+          "## agente · 2026-08-22 10:01\n\nUma proposta qualquer\n",
+      );
+      await recarregarEstavel(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await esperar(bridge, "document.querySelector('.conversa__msg-acoes')", "as ações");
+
+      await bridge.js(`(() => {
+        [...document.querySelectorAll('.conversa__msg-acoes button')]
+          .find(x => /proposta/i.test(x.textContent)).click();
+        return true;
+      })()`);
+      await PAUSA(1800);
+      criadas.push(`${ctx.vault}/pages/propostas/uma-proposta-qualquer.md`);
+
+      // O embed de fluxo tem que estar vivo na página nova.
+      await esperar(bridge, "document.querySelector('.fluxo')", "o embed de fluxo na página criada", 10000);
+      const etapa = await bridge.js(`(document.querySelector('.fluxo__etapa')||{}).textContent`);
+      ctx.assertEq(etapa, "Rascunho", "a proposta devia nascer em rascunho");
+    } finally {
+      for (const c of criadas) fs.rmSync(c, { force: true });
+    }
+  },
+});

@@ -16,6 +16,7 @@ use crate::api;
 use crate::components::icon::Icon;
 use anotadinho_core::agente::Adaptador;
 use anotadinho_core::conversa::{self, Autor, Mensagem};
+use anotadinho_core::fluxo::{self, Artefato};
 use yew::prelude::*;
 
 /// Quantas mensagens do histórico vão no prompt. Corta as mais ANTIGAS.
@@ -23,6 +24,9 @@ const HISTORICO_NO_PROMPT: usize = 12;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct ConversaViewProps {
+    /// Abre a página criada ao promover uma mensagem (ciclo 203).
+    #[prop_or_default]
+    pub on_page_selected: Callback<api::PageMeta>,
     pub vault_path: String,
     pub page: api::PageMeta,
     /// Página que estava aberta antes — vai como contexto.
@@ -137,6 +141,43 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         Callback::from(move |_: MouseEvent| usar_contexto.set(!*usar_contexto))
     };
 
+    // Promove uma resposta em artefato (ciclo 203).
+    //
+    // É a ponte entre a conversa e o trabalho estruturado: sem ela o
+    // fluxo morre no copiar-e-colar, que é onde a maioria das
+    // integrações de chat com "criar tarefa" para.
+    let promover = {
+        let vault_path = props.vault_path.clone();
+        let conversa_path = props.page.path.clone();
+        let on_page_selected = props.on_page_selected.clone();
+        let erro = erro.clone();
+        Callback::from(move |(artefato, texto): (Artefato, String)| {
+            let (vault_path, conversa_path) = (vault_path.clone(), conversa_path.clone());
+            let (on_page_selected, erro) = (on_page_selected.clone(), erro.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                let titulo = fluxo::titulo_sugerido(&texto, 60);
+                let hoje = crate::state::agora_legivel();
+                let hoje = hoje.split(' ').next().unwrap_or("").to_string();
+                let md = fluxo::montar_pagina(
+                    artefato,
+                    &titulo,
+                    &texto,
+                    Some(&conversa_path),
+                    &hoje,
+                );
+                let path = format!("{}/{}.md", artefato.pasta(), fluxo::slug_de_titulo(&titulo));
+                match api::write_page(&vault_path, &path, &md).await {
+                    Ok(_) => on_page_selected.emit(api::PageMeta {
+                        path,
+                        title: titulo,
+                        section: "pages".to_string(),
+                    }),
+                    Err(e) => erro.set(Some(format!("não consegui criar a página: {e}"))),
+                }
+            });
+        })
+    };
+
     let adaptador = crate::state::load_adaptador();
 
     html! {
@@ -177,6 +218,23 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                                 { Html::from_html_unchecked(
                                     crate::markdown_render::render(&m.texto).into()) }
                             </div>
+                            if m.autor == Autor::Agente {
+                                <div class="conversa__msg-acoes">
+                                    { for [Artefato::Spec, Artefato::Proposta].into_iter().map(|a| {
+                                        let promover = promover.clone();
+                                        let texto = m.texto.clone();
+                                        let onclick = Callback::from(move |_: MouseEvent| {
+                                            promover.emit((a, texto.clone()))
+                                        });
+                                        html! {
+                                            <button class="btn btn--ghost btn--xs" {onclick}
+                                                title={format!("Criar uma {} a partir desta resposta", a.label())}>
+                                                { format!("virar {}", a.label().to_lowercase()) }
+                                            </button>
+                                        }
+                                    }) }
+                                </div>
+                            }
                         </article>
                     }
                 }) }
