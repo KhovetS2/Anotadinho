@@ -466,6 +466,106 @@ pub fn handle_search_content(
 mod tests {
     use super::*;
 
+    // ── propostas (ciclo 204) ─────────────────────────────────────
+
+    fn vault_temp() -> tempfile::TempDir {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        dir
+    }
+
+    fn proposta_de(alvo: &str, op: anotadinho_core::proposta::Operacao, conteudo: &str)
+        -> anotadinho_core::proposta::Proposta
+    {
+        anotadinho_core::proposta::Proposta {
+            id: "p1".into(),
+            autor: "teste".into(),
+            quando: "2026-08-22 10:00".into(),
+            motivo: "teste".into(),
+            alvo: alvo.into(),
+            operacao: op,
+            conteudo: conteudo.into(),
+        }
+    }
+
+    #[test]
+    fn propor_grava_fora_de_pages_e_nao_toca_no_alvo() {
+        use anotadinho_core::proposta::Operacao;
+        let dir = vault_temp();
+        let v = dir.path().to_string_lossy().to_string();
+        let p = proposta_de("pages/nova.md", Operacao::Criar, "---\ntitle: N\n---\ncorpo\n");
+
+        handle_propor(v.clone(), p).unwrap();
+
+        // A página NÃO foi escrita — é o ponto inteiro.
+        assert!(!dir.path().join("pages/nova.md").exists(), "escreveu sem aprovação");
+        assert!(dir.path().join(".anotadinho/propostas/p1.json").exists());
+        assert_eq!(handle_listar_propostas(v).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn aplicar_escreve_a_pagina_e_some_a_proposta() {
+        use anotadinho_core::proposta::Operacao;
+        let dir = vault_temp();
+        let v = dir.path().to_string_lossy().to_string();
+        handle_propor(v.clone(), proposta_de("pages/nova.md", Operacao::Criar, "---\ntitle: N\n---\ncorpo\n")).unwrap();
+
+        handle_aplicar_proposta(v.clone(), "p1".into()).unwrap();
+
+        let escrito = std::fs::read_to_string(dir.path().join("pages/nova.md")).unwrap();
+        assert!(escrito.contains("corpo"), "{escrito}");
+        assert!(handle_listar_propostas(v).unwrap().is_empty(), "a proposta ficou pendurada");
+    }
+
+    #[test]
+    fn recusar_descarta_sem_escrever() {
+        use anotadinho_core::proposta::Operacao;
+        let dir = vault_temp();
+        let v = dir.path().to_string_lossy().to_string();
+        handle_propor(v.clone(), proposta_de("pages/nova.md", Operacao::Criar, "---\ntitle: N\n---\nx\n")).unwrap();
+
+        handle_recusar_proposta(v.clone(), "p1".into()).unwrap();
+
+        assert!(!dir.path().join("pages/nova.md").exists());
+        assert!(handle_listar_propostas(v).unwrap().is_empty());
+    }
+
+    #[test]
+    fn propor_recusa_caminho_fora_do_vault() {
+        use anotadinho_core::proposta::Operacao;
+        let dir = vault_temp();
+        let v = dir.path().to_string_lossy().to_string();
+        let erro = handle_propor(v, proposta_de("../fora.md", Operacao::Criar, "x")).unwrap_err();
+        assert!(erro.contains("fora do vault"), "{erro}");
+    }
+
+    #[test]
+    fn aplicar_revalida_e_recusa_se_o_vault_mudou() {
+        use anotadinho_core::proposta::Operacao;
+        let dir = vault_temp();
+        let v = dir.path().to_string_lossy().to_string();
+        handle_propor(v.clone(), proposta_de("pages/nova.md", Operacao::Criar, "---\ntitle: N\n---\nx\n")).unwrap();
+
+        // Alguém criou a página no intervalo entre propor e aprovar.
+        std::fs::write(dir.path().join("pages/nova.md"), "escrito por outra pessoa").unwrap();
+
+        let erro = handle_aplicar_proposta(v, "p1".into()).unwrap_err();
+        assert!(erro.contains("mudou"), "{erro}");
+        let atual = std::fs::read_to_string(dir.path().join("pages/nova.md")).unwrap();
+        assert_eq!(atual, "escrito por outra pessoa", "sobrescreveu o trabalho de outro");
+    }
+
+    #[test]
+    fn proposta_ilegivel_nao_esconde_as_outras() {
+        use anotadinho_core::proposta::Operacao;
+        let dir = vault_temp();
+        let v = dir.path().to_string_lossy().to_string();
+        handle_propor(v.clone(), proposta_de("pages/a.md", Operacao::Criar, "---\ntitle: A\n---\nx\n")).unwrap();
+        std::fs::write(dir.path().join(".anotadinho/propostas/corrompida.json"), "{ nao json").unwrap();
+
+        assert_eq!(handle_listar_propostas(v).unwrap().len(), 1);
+    }
+
     #[test]
     fn ping_echo() {
         let r = handle_ping(PingArgs {
@@ -653,4 +753,85 @@ mod tests {
         .unwrap();
         assert!(r.is_empty(), "nome de campo do YAML não é conteúdo: {r:?}");
     }
+}
+
+// ── propostas de escrita (ciclo 204) ─────────────────────────────────
+
+/// Grava uma proposta pra revisão humana, em vez de escrever a página.
+///
+/// É o que separa "o agente mexeu no meu vault" de "o agente sugeriu e
+/// eu aprovei". A proposta chega já validada — caminho dentro do vault,
+/// estado coerente e embeds conferidos — pra a revisão ser sobre o
+/// CONTEÚDO, não sobre se aquilo sequer é aplicável.
+pub fn handle_propor(
+    vault_path: String,
+    proposta: anotadinho_core::proposta::Proposta,
+) -> Result<String, String> {
+    let raiz = std::path::Path::new(&vault_path);
+    let existe = raiz.join(&proposta.alvo).exists();
+    if let Some(r) = proposta.validar(existe) {
+        return Err(r.mensagem());
+    }
+    let pasta = raiz.join(anotadinho_core::proposta::PASTA);
+    std::fs::create_dir_all(&pasta).map_err(|e| format!("erro criando {}: {e}", pasta.display()))?;
+    let arquivo = raiz.join(proposta.arquivo());
+    let json = serde_json::to_string_pretty(&proposta).map_err(|e| e.to_string())?;
+    std::fs::write(&arquivo, json).map_err(|e| format!("erro gravando proposta: {e}"))?;
+    Ok(proposta.id)
+}
+
+/// Lista as propostas pendentes, das mais novas pras mais velhas.
+pub fn handle_listar_propostas(
+    vault_path: String,
+) -> Result<Vec<anotadinho_core::proposta::Proposta>, String> {
+    let pasta = std::path::Path::new(&vault_path).join(anotadinho_core::proposta::PASTA);
+    if !pasta.exists() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    let entradas = std::fs::read_dir(&pasta).map_err(|e| e.to_string())?;
+    for e in entradas.flatten() {
+        if e.path().extension().and_then(|x| x.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(texto) = std::fs::read_to_string(e.path()) else { continue };
+        // Proposta ilegível é PULADA, não fatal: uma sozinha corrompida
+        // não pode esconder as outras da revisão.
+        if let Ok(p) = serde_json::from_str::<anotadinho_core::proposta::Proposta>(&texto) {
+            out.push(p);
+        }
+    }
+    out.sort_by(|a, b| b.quando.cmp(&a.quando));
+    Ok(out)
+}
+
+/// Aplica uma proposta: escreve a página e apaga a proposta.
+///
+/// Revalida ANTES de escrever — entre propor e aprovar o vault pode ter
+/// mudado, e aplicar às cegas escreveria por cima do que ninguém viu.
+pub fn handle_aplicar_proposta(vault_path: String, id: String) -> Result<String, String> {
+    let raiz = std::path::Path::new(&vault_path);
+    let arquivo = raiz.join(format!("{}/{id}.json", anotadinho_core::proposta::PASTA));
+    let texto = std::fs::read_to_string(&arquivo).map_err(|_| format!("proposta {id} não existe"))?;
+    let proposta: anotadinho_core::proposta::Proposta =
+        serde_json::from_str(&texto).map_err(|e| format!("proposta ilegível: {e}"))?;
+
+    let existe = raiz.join(&proposta.alvo).exists();
+    if let Some(r) = proposta.validar(existe) {
+        return Err(r.mensagem());
+    }
+    let vault = VaultIo::open(&vault_path);
+    vault
+        .write_page(&proposta.alvo, &proposta.conteudo)
+        .map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(&arquivo);
+    Ok(proposta.alvo)
+}
+
+/// Descarta uma proposta sem aplicar.
+pub fn handle_recusar_proposta(vault_path: String, id: String) -> Result<(), String> {
+    let arquivo = std::path::Path::new(&vault_path)
+        .join(format!("{}/{id}.json", anotadinho_core::proposta::PASTA));
+    std::fs::remove_file(&arquivo).map_err(|_| format!("proposta {id} não existe"))?;
+    Ok(())
 }

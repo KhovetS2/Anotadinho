@@ -275,6 +275,35 @@ fn delete_asset(vault_path: String, asset_path: String) -> Result<(), String> {
 }
 
 
+/// Grava uma proposta de escrita pra revisão (ciclo 204).
+#[tauri::command]
+fn propor(
+    vault_path: String,
+    proposta: anotadinho_core::proposta::Proposta,
+) -> Result<String, String> {
+    anotadinho_ipc::handle_propor(vault_path, proposta)
+}
+
+/// Propostas pendentes de revisão.
+#[tauri::command]
+fn listar_propostas(
+    vault_path: String,
+) -> Result<Vec<anotadinho_core::proposta::Proposta>, String> {
+    anotadinho_ipc::handle_listar_propostas(vault_path)
+}
+
+/// Aplica uma proposta aprovada.
+#[tauri::command]
+fn aplicar_proposta(vault_path: String, id: String) -> Result<String, String> {
+    anotadinho_ipc::handle_aplicar_proposta(vault_path, id)
+}
+
+/// Descarta uma proposta.
+#[tauri::command]
+fn recusar_proposta(vault_path: String, id: String) -> Result<(), String> {
+    anotadinho_ipc::handle_recusar_proposta(vault_path, id)
+}
+
 /// Executa o agente configurado e devolve a saída (ciclo 202).
 ///
 /// Deliberadamente SEM shell: `Command::new(binario).args(...)`, com o
@@ -419,6 +448,10 @@ fn main() {
             delete_asset,
             search_content,
             rodar_agente,
+            propor,
+            listar_propostas,
+            aplicar_proposta,
+            recusar_proposta,
             check_changes,
             open_vault_dialog
         ])

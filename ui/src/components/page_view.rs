@@ -161,6 +161,12 @@ pub fn page_view(props: &PageViewProps) -> Html {
             },
             None => html! {},
         },
+        // Tela de revisão (ciclo 204) — uma página `type: propostas`.
+        "propostas" => html! {
+            <crate::components::propostas_view::PropostasView
+                vault_path={props.vault_path.clone()}
+                on_page_selected={props.on_page_selected.clone()} />
+        },
         "tags" => html! {
             <>
                 { typed_header }

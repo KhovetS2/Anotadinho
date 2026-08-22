@@ -432,3 +432,152 @@ fluxo.push({
     }
   },
 });
+
+// ── ciclo 204: propostas com revisão ─────────────────────────────────
+//
+// A garantia central: o agente propõe, o arquivo só muda depois de
+// alguém aprovar. É a defesa que continua valendo mesmo se o modelo for
+// enganado — as outras reduzem a chance, esta contém o estrago.
+
+const VAULT_ABS = "/home/elis/Anotadinho/VaultAnotadinho";
+
+/// Abre a página de rascunho e espera a TELA de propostas.
+///
+/// Não dá pra usar `abrirPagina`: uma página `type: propostas` tem
+/// título próprio ("Propostas do agente") e não mostra o nome do
+/// arquivo, então esperar pelo nome nunca resolveria.
+async function abrirTelaDePropostas(bridge, ctx) {
+  await bridge.js(`(() => {
+    const alvo = [...document.querySelectorAll('.sidebar-item__title')]
+      .find(e => e.textContent.trim() === ${JSON.stringify("__uitest")});
+    if (alvo) alvo.click();
+    return !!alvo;
+  })()`);
+  await esperar(bridge, "document.querySelector('.propostas')", "a tela de propostas");
+}
+
+
+
+/// Cria uma proposta pelo backend, como o agente faria.
+const PROPOR = (alvo, conteudo, motivo = "teste") => `(async () => {
+  try {
+    const id = await window.__TAURI_INTERNALS__.invoke('propor', {
+      vaultPath: ${JSON.stringify(VAULT_ABS)},
+      proposta: {
+        id: 'uitest-proposta',
+        autor: 'agente-falso',
+        quando: '2026-08-22 10:00',
+        motivo: ${JSON.stringify(motivo)},
+        alvo: ${JSON.stringify(alvo)},
+        operacao: 'criar',
+        conteudo: ${JSON.stringify(conteudo)},
+      },
+    });
+    return { ok: true, id };
+  } catch (e) { return { ok: false, erro: String(e) }; }
+})()`;
+
+fluxo.push({
+  nome: "proposta: agente propõe e o arquivo NÃO muda até aprovar (204)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const alvo = `${ctx.vault}/pages/__uitest_proposta.md`;
+    const pendente = `${ctx.vault}/.anotadinho/propostas/uitest-proposta.json`;
+    fs.rmSync(alvo, { force: true });
+    fs.rmSync(pendente, { force: true });
+
+    try {
+      const r = await bridge.js(PROPOR("pages/__uitest_proposta.md", "---\ntitle: Proposta\n---\ncorpo proposto\n"));
+      ctx.assertEq(r.ok, true, `propor falhou: ${r.erro}`);
+
+      // O ponto inteiro: a página não existe ainda.
+      ctx.assertEq(fs.existsSync(alvo), false, "escreveu a página sem aprovação");
+      ctx.assertEq(fs.existsSync(pendente), true, "a proposta não foi gravada");
+
+      // A tela de revisão mostra o diff.
+      ctx.escrever("---\ntitle: __uitest\ntype: propostas\n---\n");
+      await recarregarEstavel(bridge);
+      await abrirTelaDePropostas(bridge, ctx);
+      await esperar(bridge, "document.querySelector('.propostas__item')", "a proposta na tela");
+
+      const linhas = await bridge.js(
+        `[...document.querySelectorAll('.propostas__l--entra')].map(e => e.textContent)`,
+      );
+      ctx.assert(
+        linhas.some((l) => l.includes("corpo proposto")),
+        `o diff não mostrou o conteúdo novo: ${linhas.join(" | ")}`,
+      );
+
+      // Aplicar escreve.
+      await bridge.js(`(() => {
+        [...document.querySelectorAll('.propostas__acoes button')]
+          .find(b => b.textContent.trim() === 'Aplicar').click();
+        return true;
+      })()`);
+      await PAUSA(1800);
+      ctx.assertEq(fs.existsSync(alvo), true, "aplicar não escreveu a página");
+      ctx.assert(
+        fs.readFileSync(alvo, "utf8").includes("corpo proposto"),
+        "o conteúdo aplicado está errado",
+      );
+      ctx.assertEq(fs.existsSync(pendente), false, "a proposta ficou pendurada depois de aplicada");
+    } finally {
+      fs.rmSync(alvo, { force: true });
+      fs.rmSync(pendente, { force: true });
+    }
+  },
+});
+
+fluxo.push({
+  nome: "proposta: recusar descarta sem escrever nada (204)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const alvo = `${ctx.vault}/pages/__uitest_proposta.md`;
+    const pendente = `${ctx.vault}/.anotadinho/propostas/uitest-proposta.json`;
+    fs.rmSync(alvo, { force: true });
+    fs.rmSync(pendente, { force: true });
+
+    try {
+      await bridge.js(PROPOR("pages/__uitest_proposta.md", "---\ntitle: X\n---\nnão quero isto\n"));
+      ctx.escrever("---\ntitle: __uitest\ntype: propostas\n---\n");
+      await recarregarEstavel(bridge);
+      await abrirTelaDePropostas(bridge, ctx);
+      await esperar(bridge, "document.querySelector('.propostas__item')", "a proposta");
+
+      await bridge.js(`(() => {
+        [...document.querySelectorAll('.propostas__acoes button')]
+          .find(b => b.textContent.trim() === 'Recusar').click();
+        return true;
+      })()`);
+      await PAUSA(1500);
+
+      ctx.assertEq(fs.existsSync(alvo), false, "recusar escreveu a página");
+      ctx.assertEq(fs.existsSync(pendente), false, "a proposta recusada ficou pendurada");
+    } finally {
+      fs.rmSync(alvo, { force: true });
+      fs.rmSync(pendente, { force: true });
+    }
+  },
+});
+
+fluxo.push({
+  nome: "proposta: caminho fora do vault é recusado no backend (204)",
+  async fn(bridge, ctx) {
+    for (const alvo of ["../fora.md", "/etc/passwd", "pages/../../x.md"]) {
+      const r = await bridge.js(PROPOR(alvo, "conteudo"));
+      ctx.assertEq(r.ok, false, `deixou propor fora do vault: ${alvo}`);
+      ctx.assert(/fora do vault/i.test(r.erro), `mensagem inesperada pra ${alvo}: ${r.erro}`);
+    }
+  },
+});
+
+fluxo.push({
+  nome: "proposta: conteúdo com embed inválido é barrado antes de virar proposta (204)",
+  async fn(bridge, ctx) {
+    const ruim =
+      '---\ntitle: X\n---\n\n{{ type: "kanban" }}\ncolumns:\n- Backlog\nitems:\n- title: C\n  column: Fantasma\n{{ /kanban }}\n';
+    const r = await bridge.js(PROPOR("pages/__uitest_ruim.md", ruim));
+    ctx.assertEq(r.ok, false, "aceitou proposta com embed inválido");
+    ctx.assert(/Fantasma/.test(r.erro), `a validação do 189 não rodou: ${r.erro}`);
+  },
+});

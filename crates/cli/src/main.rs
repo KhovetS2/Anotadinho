@@ -10,7 +10,8 @@ use anotadinho_core::embed::{self, DocSegment, EmbedData, EmbedKind};
 use anotadinho_core::query::{Aggregate, AggregateOp, Condition, Query, QueryOp, Sort};
 use anotadinho_ipc::{
     handle_create_page_from_template, handle_export_folder, handle_list_templates,
-    handle_read_page, handle_read_page_versioned, handle_scan_vault, handle_search_content,
+    handle_aplicar_proposta, handle_listar_propostas, handle_propor, handle_read_page,
+    handle_read_page_versioned, handle_recusar_proposta, handle_scan_vault, handle_search_content,
     handle_write_page_checked,
 };
 use clap::{Parser, Subcommand};
@@ -102,6 +103,34 @@ enum Command {
         forcar: bool,
         #[command(subcommand)]
         action: EmbedCommand,
+    },
+    /// Propõe uma escrita pra revisão humana, em vez de gravar direto
+    /// (ciclo 204). É o modo recomendado pra agente: você vê o diff e
+    /// decide.
+    Propor {
+        /// Página alvo, relativa ao vault.
+        page_path: String,
+        /// Arquivo com o conteúdo proposto. Omitido = lê do stdin.
+        #[arg(long)]
+        file: Option<String>,
+        /// Por que esta mudança.
+        #[arg(long, default_value = "")]
+        motivo: String,
+        /// Quem propôs.
+        #[arg(long, default_value = "cli")]
+        autor: String,
+    },
+    /// Lista as propostas pendentes de revisão.
+    Propostas,
+    /// Aplica uma proposta aprovada.
+    Aplicar {
+        /// Id da proposta.
+        id: String,
+    },
+    /// Descarta uma proposta sem aplicar.
+    Recusar {
+        /// Id da proposta.
+        id: String,
     },
     /// Fica observando o vault e imprime uma linha JSON por mudança
     /// (ciclo 172) — pra um agente REAGIR em vez de ficar consultando
@@ -464,6 +493,67 @@ fn run(cli: Cli) -> Result<(), String> {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(intervalo_ms));
             }
+        }
+        Command::Propor { page_path, file, motivo, autor } => {
+            let conteudo = match &file {
+                Some(p) => std::fs::read_to_string(p)
+                    .map_err(|e| format!("erro ao ler {p}: {e}"))?,
+                None => {
+                    let mut buf = String::new();
+                    std::io::stdin()
+                        .read_to_string(&mut buf)
+                        .map_err(|e| format!("erro ao ler stdin: {e}"))?;
+                    buf
+                }
+            };
+            let existe = std::path::Path::new(&cli.vault).join(&page_path).exists();
+            let proposta = anotadinho_core::proposta::Proposta {
+                // Id derivado do alvo + relógio: legível na listagem e
+                // único o bastante pra duas propostas seguidas na mesma
+                // página não se sobrescreverem.
+                id: format!(
+                    "{}-{}",
+                    anotadinho_core::fluxo::slug_de_titulo(&page_path),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                ),
+                autor,
+                quando: agora_legivel(),
+                motivo,
+                alvo: page_path,
+                operacao: if existe {
+                    anotadinho_core::proposta::Operacao::Substituir
+                } else {
+                    anotadinho_core::proposta::Operacao::Criar
+                },
+                conteudo,
+            };
+            let id = handle_propor(cli.vault, proposta)?;
+            println!("{id}");
+        }
+        Command::Propostas => {
+            let lista = handle_listar_propostas(cli.vault)?;
+            if cli.json {
+                print_json(&lista)?;
+            } else if lista.is_empty() {
+                println!("nenhuma proposta pendente");
+            } else {
+                for p in &lista {
+                    println!(
+                        "{}\t{}\t{:?}\t{}\t{}",
+                        p.id, p.alvo, p.operacao, p.autor, p.motivo
+                    );
+                }
+            }
+        }
+        Command::Aplicar { id } => {
+            let alvo = handle_aplicar_proposta(cli.vault, id)?;
+            println!("{alvo}");
+        }
+        Command::Recusar { id } => {
+            handle_recusar_proposta(cli.vault, id)?;
         }
         Command::Embed { forcar, action } => {
             let vault = cli.vault.clone();
@@ -880,3 +970,32 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<(), String> {
     Ok(())
 }
 
+/// `"YYYY-MM-DD HH:MM"` sem dependência de crate de data — o formato só
+/// precisa ser legível e ordenável.
+fn agora_legivel() -> String {
+    let segundos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let dias = segundos / 86_400;
+    let hora = (segundos % 86_400) / 3600;
+    let minuto = (segundos % 3600) / 60;
+    // Conversão de dias desde 1970 pra data civil (algoritmo de Howard
+    // Hinnant) — o mesmo que o `date_util` do core já usa.
+    let (ano, mes, dia) = crate::civil_de_dias(dias as i64);
+    format!("{ano:04}-{mes:02}-{dia:02} {hora:02}:{minuto:02}")
+}
+
+/// Dias desde 1970-01-01 → (ano, mês, dia).
+fn civil_de_dias(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}

@@ -661,3 +661,40 @@ pub async fn rodar_agente(
         })?;
     result.as_string().ok_or_else(|| "resposta do agente não é texto".to_string())
 }
+
+// ── propostas (ciclo 204) ────────────────────────────────────────────
+
+/// Propostas pendentes de revisão.
+pub async fn listar_propostas(
+    vault_path: &str,
+) -> Result<Vec<anotadinho_core::proposta::Proposta>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let r = tauri_invoke("listar_propostas", &JsValue::from(args))
+        .await
+        .map_err(|e| format!("{:?}", e))?;
+    serde_wasm_bindgen::from_value(r).map_err(|e| format!("deserialize: {e}"))
+}
+
+/// Aplica uma proposta e devolve o path escrito.
+pub async fn aplicar_proposta(vault_path: &str, id: &str) -> Result<String, String> {
+    chamar_proposta("aplicar_proposta", vault_path, id).await
+}
+
+/// Descarta uma proposta.
+pub async fn recusar_proposta(vault_path: &str, id: &str) -> Result<String, String> {
+    chamar_proposta("recusar_proposta", vault_path, id).await
+}
+
+async fn chamar_proposta(cmd: &str, vault_path: &str, id: &str) -> Result<String, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("id"), &JsValue::from_str(id))
+        .map_err(|e| format!("{:?}", e))?;
+    let r = tauri_invoke(cmd, &JsValue::from(args))
+        .await
+        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))?;
+    Ok(r.as_string().unwrap_or_default())
+}

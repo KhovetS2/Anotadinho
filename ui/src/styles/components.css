@@ -1229,3 +1229,48 @@
 .conversa__msg:focus-within .conversa__msg-acoes {
   opacity: 1;
 }
+
+/* Revisão de propostas (ciclo 204). */
+.propostas { padding: 1rem; overflow-y: auto; }
+.propostas__topo { display: flex; align-items: baseline; gap: 0.7rem; margin-bottom: 0.9rem; }
+.propostas__titulo { margin: 0; font-size: 1rem; }
+.propostas__contagem { font-size: 0.75rem; color: var(--text-muted); }
+.propostas__vazio, .propostas__erro { font-size: 0.8125rem; color: var(--text-muted); max-width: 44rem; }
+.propostas__erro { color: var(--error); }
+
+.propostas__item {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 0.8rem;
+  margin-bottom: 0.9rem;
+  background: var(--bg-surface);
+}
+
+.propostas__item-topo { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.propostas__op {
+  font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 0.1rem 0.4rem; border-radius: var(--r-sm);
+}
+.propostas__op--criar { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+.propostas__op--substituir { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+.propostas__alvo { font-size: 0.75rem; }
+.propostas__autor { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.6875rem; color: var(--accent-purple); }
+.propostas__quando { margin-left: auto; font-size: 0.625rem; color: var(--text-muted); }
+.propostas__motivo { margin: 0.5rem 0 0; font-size: 0.8125rem; }
+.propostas__resumo { margin: 0.4rem 0; font-size: 0.6875rem; color: var(--text-muted); }
+
+.propostas__diff {
+  margin: 0 0 0.6rem;
+  max-height: 22rem;
+  /* Diff de página inteira é longo: rola dentro da própria caixa. */
+  overflow: auto;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+.propostas__l { padding: 0 0.5rem; white-space: pre; color: var(--text-muted); }
+.propostas__l--sai { background: color-mix(in srgb, var(--error) 16%, transparent); color: var(--text-primary); }
+.propostas__l--entra { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--text-primary); }
+.propostas__acoes { display: flex; gap: 0.4rem; }
