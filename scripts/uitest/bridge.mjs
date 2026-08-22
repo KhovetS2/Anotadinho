@@ -133,7 +133,9 @@ export async function abrirPagina(bridge, nome) {
   })()`);
   await esperar(
     bridge,
-    `(document.querySelector('.editor__header, .editor__title')||{}).textContent?.includes(${JSON.stringify(nome)})`,
+    // `.conversa__titulo` entra aqui porque uma página `type: conversa`
+    // tem cabeçalho próprio e não usa o do editor (ciclo 202).
+    `(document.querySelector('.editor__header, .editor__title, .conversa__titulo')||{}).textContent?.includes(${JSON.stringify(nome)})`,
     `a página "${nome}" abrir`,
   );
 }

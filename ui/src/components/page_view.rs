@@ -55,6 +55,9 @@ pub struct PageViewProps {
     #[prop_or_default]
     pub on_enter_block_nav: Callback<()>,
     pub on_leave_block_nav: Callback<()>,
+    /// Página aberta ANTES desta — vira contexto da conversa.
+    #[prop_or_default]
+    pub contexto_path: Option<String>,
     pub nav_mode_active: bool,
 }
 
@@ -144,6 +147,18 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 { typed_header }
                 <TaskTable vault_path={props.vault_path.clone()} on_page_selected={props.on_page_selected.clone()} />
             </>
+        },
+        // A conversa é uma PÁGINA (ciclo 202): entra aqui do mesmo jeito
+        // que kanban e calendário, e o `.md` dela segue legível fora do
+        // app.
+        "conversa" => match &props.page {
+            Some(page) => html! {
+                <crate::components::conversa_view::ConversaView
+                    vault_path={props.vault_path.clone()}
+                    page={page.clone()}
+                    contexto_path={props.contexto_path.clone()} />
+            },
+            None => html! {},
         },
         "tags" => html! {
             <>

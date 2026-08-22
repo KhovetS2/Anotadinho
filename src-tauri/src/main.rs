@@ -274,6 +274,83 @@ fn delete_asset(vault_path: String, asset_path: String) -> Result<(), String> {
     handle_delete_asset(vault_path, asset_path)
 }
 
+
+/// Executa o agente configurado e devolve a saída (ciclo 202).
+///
+/// Deliberadamente SEM shell: `Command::new(binario).args(...)`, com o
+/// prompt entrando como um argumento. Aspas, quebras de linha e
+/// `$(...)` dentro do prompt são texto — não há interpretador no
+/// caminho pra transformá-los em comando.
+///
+/// A configuração vem das preferências do app, nunca do conteúdo de uma
+/// página. É a mesma invariante que mantém a lista de ações do embed
+/// `actions` fechada.
+///
+/// Roda em `spawn_blocking` porque `std::process` é bloqueante e travaria
+/// o runtime; o timeout mata o processo em vez de deixá-lo pendurado.
+#[tauri::command]
+async fn rodar_agente(
+    adaptador: anotadinho_core::agente::Adaptador,
+    prompt: String,
+    vault_path: String,
+) -> Result<String, String> {
+    if let Some(problema) = adaptador.validar() {
+        return Err(format!("configuração do agente inválida: {}", problema.mensagem()));
+    }
+    let args = adaptador.montar_args(&prompt);
+    let cwd = if adaptador.cwd.trim().is_empty() { vault_path } else { adaptador.cwd.clone() };
+    let binario = adaptador.binario.clone();
+    let limite = adaptador.timeout_s;
+
+    tokio::task::spawn_blocking(move || {
+        use std::process::{Command, Stdio};
+
+        let mut filho = Command::new(&binario)
+            .args(&args)
+            .current_dir(&cwd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("não consegui executar \"{binario}\": {e}"))?;
+
+        // Espera com limite. Sem isso, um agente que trava deixa o
+        // processo pendurado e a UI esperando pra sempre.
+        let inicio = std::time::Instant::now();
+        loop {
+            match filho.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => {
+                    if limite > 0 && inicio.elapsed().as_secs() >= limite {
+                        let _ = filho.kill();
+                        let _ = filho.wait();
+                        return Err(format!("o agente passou de {limite}s e foi interrompido"));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(120));
+                }
+                Err(e) => return Err(format!("erro esperando o agente: {e}")),
+            }
+        }
+
+        let saida = filho
+            .wait_with_output()
+            .map_err(|e| format!("erro lendo a saída do agente: {e}"))?;
+        let stdout = String::from_utf8_lossy(&saida.stdout).trim().to_string();
+        if saida.status.success() {
+            if stdout.is_empty() {
+                return Err("o agente terminou sem escrever nada na saída".to_string());
+            }
+            Ok(stdout)
+        } else {
+            let stderr = String::from_utf8_lossy(&saida.stderr).trim().to_string();
+            let detalhe = if stderr.is_empty() { stdout } else { stderr };
+            Err(format!("o agente falhou: {detalhe}"))
+        }
+    })
+    .await
+    .map_err(|e| format!("tarefa do agente não completou: {e}"))?
+}
+
 #[tauri::command]
 fn search_content(
     vault_path: String,
@@ -341,6 +418,7 @@ fn main() {
             list_assets_info,
             delete_asset,
             search_content,
+            rodar_agente,
             check_changes,
             open_vault_dialog
         ])

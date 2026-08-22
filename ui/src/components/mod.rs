@@ -6,6 +6,7 @@ pub mod cheatsheet_modal;
 pub mod command_palette;
 pub mod date_picker;
 pub mod dialog_host;
+pub mod conversa_view;
 pub mod editor;
 pub mod embeds;
 pub mod empty_state;

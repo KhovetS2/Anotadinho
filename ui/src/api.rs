@@ -637,3 +637,27 @@ pub async fn write_page(vault_path: &str, page_path: &str, content: &str) -> Res
         .map_err(|e| format!("write_page error: {:?}", e))?;
     Ok(())
 }
+
+/// Executa o agente configurado (ciclo 202).
+pub async fn rodar_agente(
+    adaptador: &anotadinho_core::agente::Adaptador,
+    prompt: &str,
+    vault_path: &str,
+) -> Result<String, String> {
+    let args = js_sys::Object::new();
+    let ad = serde_wasm_bindgen::to_value(adaptador).map_err(|e| format!("{e:?}"))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("adaptador"), &ad)
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("prompt"), &JsValue::from_str(prompt))
+        .map_err(|e| format!("{:?}", e))?;
+    js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
+        .map_err(|e| format!("{:?}", e))?;
+    let result = tauri_invoke("rodar_agente", &JsValue::from(args))
+        .await
+        .map_err(|e| {
+            // A mensagem do backend vem como string; sem isto o usuário
+            // via `JsValue(...)` em vez do motivo real da falha.
+            e.as_string().unwrap_or_else(|| format!("{e:?}"))
+        })?;
+    result.as_string().ok_or_else(|| "resposta do agente não é texto".to_string())
+}

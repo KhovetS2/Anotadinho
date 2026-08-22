@@ -540,3 +540,42 @@ mod tests {
         }
     }
 }
+
+// ── agente externo (ciclo 202) ───────────────────────────────────────
+
+const CHAVE_ADAPTADOR: &str = "anotadinho.adaptador_agente";
+
+/// `"YYYY-MM-DD HH:MM"` — o carimbo das mensagens da conversa.
+///
+/// Fica aqui e não no core porque o core não tem relógio de propósito:
+/// `js_sys::Date` no WASM e `std::time` fora dele.
+pub fn agora_legivel() -> String {
+    let d = js_sys::Date::new_0();
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        d.get_full_year(),
+        d.get_month() + 1,
+        d.get_date(),
+        d.get_hours(),
+        d.get_minutes()
+    )
+}
+
+/// Configuração do agente. Mora nas PREFERÊNCIAS, nunca no vault — uma
+/// página que chegue de terceiro não pode escolher o que será executado.
+pub fn load_adaptador() -> anotadinho_core::agente::Adaptador {
+    let bruto = web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|s| s.get_item(CHAVE_ADAPTADOR).ok().flatten());
+    bruto
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Grava a configuração do agente.
+pub fn save_adaptador(a: &anotadinho_core::agente::Adaptador) {
+    let Ok(json) = serde_json::to_string(a) else { return };
+    if let Some(store) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = store.set_item(CHAVE_ADAPTADOR, &json);
+    }
+}
