@@ -640,3 +640,82 @@ fluxo.push({
     ctx.assert(vazias <= 1, `${vazias} consultas vazias na página de ciclos`);
   },
 });
+
+// ── ciclo 207: home e sidebar ────────────────────────────────────────
+
+fluxo.push({
+  nome: "sidebar: pastas nascem recolhidas mas o que você abre continua aberto (207)",
+  async fn(bridge, ctx) {
+    // Com 200+ páginas, abrir tudo por padrão enterra a estrutura. Mas
+    // recolher a cada recarga da lista desfaria o que a pessoa abriu — e
+    // a lista recarrega a cada gravação de página.
+    await recarregarEstavel(bridge);
+    const estado = () =>
+      bridge.js(`(() => {
+        const d = [...document.querySelectorAll('.app-sidebar details')];
+        return { total: d.length, abertas: d.filter(x => x.open).length };
+      })()`);
+
+    // Espera a lista ASSENTAR: páginas e pastas chegam em chamadas
+    // separadas, então logo depois do reload existe um instante com as
+    // pastas já na tela e o recolhimento ainda não aplicado.
+    await esperar(
+      bridge,
+      "document.querySelectorAll('.app-sidebar details').length >= 3",
+      "as pastas aparecerem",
+    );
+    await PAUSA(600);
+
+    const inicial = await estado();
+    ctx.assert(inicial.total >= 3, `esperava pastas na sidebar, veio ${inicial.total}`);
+    ctx.assertEq(inicial.abertas, 0, "as pastas deviam nascer recolhidas");
+
+    await bridge.js(`(() => {
+      document.querySelector('.app-sidebar details summary').click();
+      return true;
+    })()`);
+    await PAUSA(500);
+    ctx.assertEq((await estado()).abertas, 1, "clicar devia abrir a pasta");
+
+    // Trocar de página recarrega a lista.
+    await bridge.js(`(() => {
+      const a = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.trim() === 'sobre');
+      if (a) a.click();
+      return !!a;
+    })()`);
+    await PAUSA(2000);
+    ctx.assertEq(
+      (await estado()).abertas,
+      1,
+      "a pasta que a pessoa abriu se fechou sozinha ao recarregar a lista",
+    );
+  },
+});
+
+fluxo.push({
+  nome: "home: mostra os dados do vault e os atalhos (207)",
+  async fn(bridge, ctx) {
+    await recarregarEstavel(bridge);
+    await bridge.js(`(() => {
+      const a = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.trim() === 'incio');
+      if (a) a.click();
+      return !!a;
+    })()`);
+    await esperar(bridge, "document.querySelector('.query-embed')", "as consultas do home", 15000);
+    await PAUSA(2000);
+
+    const botoes = await bridge.js(
+      `[...document.querySelectorAll('.actions-embed__btn')].map(b => b.textContent.trim())`,
+    );
+    ctx.assert(botoes.length >= 4, `esperava os atalhos, veio: ${botoes.join(", ")}`);
+
+    // Nenhuma consulta pode estar vazia: seção vazia no home é o mesmo
+    // problema da caixa vazia do painel (ciclo 196).
+    const vazias = await bridge.js(
+      `[...document.querySelectorAll('.query-embed')]
+        .filter(e => /\\b0 páginas\\b/.test(e.textContent))
+        .length`,
+    );
+    ctx.assertEq(vazias, 0, `${vazias} consulta(s) vazia(s) no home`);
+  },
+});

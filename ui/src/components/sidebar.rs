@@ -135,6 +135,9 @@ pub fn sidebar(props: &SidebarProps) -> Html {
     // mouse no `<summary>` sincronizado com esse mesmo estado (fonte
     // única, não duas coisas competindo).
     let collapsed_folders = use_state(HashSet::<String>::new);
+    /// Marca que a primeira carga já recolheu as pastas — `use_mut_ref`
+    /// porque handle de `use_state` capturado em efeito congela.
+    let recolheu_inicial = use_mut_ref(|| false);
     // `None` = navegação por teclado inativa (comportamento de sempre,
     // só clique de mouse); `Some(key)` = item destacado (pasta ou
     // página) — ativado pela ação "Focar sidebar" do `GlobalKeymap`.
@@ -147,12 +150,16 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         let pages = pages.clone();
         let folders = folders.clone();
         let loading = loading.clone();
+        let collapsed_folders = collapsed_folders.clone();
+        let recolheu_inicial = recolheu_inicial.clone();
         let tick = (*refresh_tick, props.list_version);
 
         use_effect_with(tick, move |_| {
             let vault_path = vault_path.clone();
             let pages = pages.clone();
             let folders = folders.clone();
+            let collapsed_folders = collapsed_folders.clone();
+            let recolheu_inicial = recolheu_inicial.clone();
             let loading = loading.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 loading.set(true);
@@ -166,7 +173,25 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                     }
                 }
                 match api::list_folders(&vault_path).await {
-                    Ok(list) => folders.set(list),
+                    Ok(list) => {
+                        // Pastas nascem RECOLHIDAS (ciclo 207): com 200+
+                        // páginas, abrir tudo enterra a estrutura que a
+                        // pasta serve pra mostrar.
+                        //
+                        // Recolhe AQUI, no mesmo lote de atualização em
+                        // que a lista chega, e não num efeito depois da
+                        // renderização — senão a primeira pintura mostra
+                        // tudo aberto e o recolhimento vira um flash.
+                        //
+                        // Só na PRIMEIRA carga: a lista recarrega a cada
+                        // gravação de página, e recolher de novo desfaria
+                        // o que a pessoa abriu.
+                        if !*recolheu_inicial.borrow() && !list.is_empty() {
+                            *recolheu_inicial.borrow_mut() = true;
+                            collapsed_folders.set(list.iter().cloned().collect());
+                        }
+                        folders.set(list);
+                    }
                     Err(e) => {
                         web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
                         folders.set(Vec::new());
