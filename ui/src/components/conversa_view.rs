@@ -57,6 +57,13 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         });
     }
 
+    // Contexto que aponta pra própria conversa não serve de nada —
+    // acontece ao reabrir a mesma página.
+    let contexto_path = props
+        .contexto_path
+        .clone()
+        .filter(|p| *p != props.page.path);
+
     let enviar = {
         let mensagens = mensagens.clone();
         let rascunho = rascunho.clone();
@@ -65,7 +72,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         let usar_contexto = usar_contexto.clone();
         let vault_path = props.vault_path.clone();
         let path = props.page.path.clone();
-        let contexto_path = props.contexto_path.clone();
+        let contexto_path = contexto_path.clone();
         Callback::from(move |_: MouseEvent| {
             let pergunta = (*rascunho).trim().to_string();
             if pergunta.is_empty() || *ocupado {
@@ -187,7 +194,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 <span class="conversa__agente" title={adaptador.binario.clone()}>
                     <Icon name="zap" />{ adaptador.nome.clone() }
                 </span>
-                if props.contexto_path.is_some() {
+                if contexto_path.is_some() {
                     <button class={classes!("btn", "btn--xs",
                         if *usar_contexto { "btn--primary" } else { "btn--ghost" })}
                         onclick={alternar_contexto}

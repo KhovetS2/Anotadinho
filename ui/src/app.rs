@@ -98,6 +98,30 @@ pub fn app() -> Html {
     let vault_path = use_state(|| state::load_vault_path());
     let vault_name = use_state(|| state::load_vault_name());
     let selected_page = use_state(|| None::<PageMeta>);
+    // Página aberta ANTES da atual — é o contexto que a conversa manda
+    // junto (ciclo 202). Quem sabe a ordem de navegação é quem troca de
+    // página, então isto mora aqui e não dentro do painel.
+    let pagina_anterior = use_state(|| None::<String>);
+    {
+        let pagina_anterior = pagina_anterior.clone();
+        let selected_page = selected_page.clone();
+        // `use_mut_ref` e não `use_state` pro caminho corrente: handle de
+        // `use_state` capturado em efeito congela no valor de criação —
+        // o bug que já apareceu nos ciclos 155, 157, 201 e 202.
+        let caminho_atual = use_mut_ref(|| None::<String>);
+        use_effect_with((*selected_page).clone(), move |atual| {
+            let novo = atual.as_ref().map(|p| p.path.clone());
+            let anterior = caminho_atual.borrow().clone();
+            if novo != anterior {
+                if let Some(a) = anterior {
+                    pagina_anterior.set(Some(a));
+                }
+                *caminho_atual.borrow_mut() = novo;
+            }
+            || ()
+        });
+    }
+
     let list_version = use_state(|| 0u32);
     let git_files = use_state(|| None::<Vec<api::GitFileEntry>>);
     let sidebar_collapsed = use_state(|| false);
@@ -1270,6 +1294,7 @@ pub fn app() -> Html {
                                 on_toggle_home={on_toggle_home.clone()}
                                 vault_version={*list_version}
                                 nav_mode_active={*nav_mode_active}
+                                contexto_path={(*pagina_anterior).clone()}
                                 on_enter_block_nav={{
                                     let nav_mode_active = nav_mode_active.clone();
                                     let nav_stack = nav_stack.clone();
