@@ -1274,6 +1274,9 @@ pub fn editor(props: &EditorProps) -> Html {
         let on_enter_blocos = props.on_enter_block_nav.clone();
         let on_sair_blocos = props.on_leave_block_nav.clone();
         let em_navegacao = props.nav_mode_active;
+        // O modo, calculado uma vez por render — é o que a tabela de
+        // atalhos consulta (ciclo 199).
+        let modo_atual = Modo::atual(props.nav_mode_active, props.vim_mode_enabled, false);
         let content_md_esc = content_md.clone();
         let editor_ref_esc = editor_ref.clone();
         let segment_refs_esc = segment_refs.clone();
@@ -1455,7 +1458,7 @@ pub fn editor(props: &EditorProps) -> Html {
             // — e põe `![[Página^id]]` na área de transferência
             // (ciclo 176). Só dispara quando o foco está NO BLOCO, não
             // no texto: digitando, "c" é só a letra c.
-            if em_navegacao && e.key() == "c" && !e.ctrl_key() && !e.meta_key() && !e.alt_key() {
+            if comando_vale(&e, "c", false, modo_atual) {
                 if let Some(bloco) = bloco_focado() {
                     e.prevent_default();
                     e.stop_propagation();
@@ -1498,7 +1501,9 @@ pub fn editor(props: &EditorProps) -> Html {
             // digitação era o CONTÊINER, então `bloco_focado()` devolvia
             // `None`. Quando o `contenteditable` desceu pro bloco, essa
             // distinção sumiu — e ela nunca deveria ter sido implícita.
-            if em_navegacao && !e.ctrl_key() && !e.meta_key() {
+            if !e.ctrl_key() && !e.meta_key() {
+                // A tabela `ATALHOS` decide SE a tecla é comando neste
+                // modo; o `match` decide o que ela faz (ciclo 199).
                 let acao = match (e.key().as_str(), e.alt_key()) {
                     ("ArrowUp", true) | ("K", false) => Some(AcaoBloco::Subir),
                     ("ArrowDown", true) | ("J", false) => Some(AcaoBloco::Descer),
@@ -1506,6 +1511,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     ("y", false) => Some(AcaoBloco::Duplicar),
                     _ => None,
                 };
+                let acao = acao.filter(|_| comando_vale(&e, &e.key(), e.alt_key(), modo_atual));
                 if let (Some(acao), Some(bloco)) = (acao, bloco_focado()) {
                     e.prevent_default();
                     e.stop_propagation();
@@ -1529,7 +1535,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
             }
 
-            if em_navegacao && e.key() == "n" && !e.ctrl_key() && !e.meta_key() && !e.alt_key() {
+            if comando_vale(&e, "n", false, modo_atual) {
                 if let Some(bloco) = bloco_focado() {
                     e.prevent_default();
                     e.stop_propagation();
@@ -1558,11 +1564,14 @@ pub fn editor(props: &EditorProps) -> Html {
             //
             // Só teclas de UM caractere: setas, Enter, Escape, Backspace
             // e afins têm nome longo e seguem pro tratamento normal.
-            if em_navegacao
+            if modo_atual == Modo::Navegacao
                 && !e.ctrl_key()
                 && !e.meta_key()
                 && !e.alt_key()
                 && e.key().chars().count() == 1
+                // Comando conhecido já foi tratado acima; o que chega
+                // aqui é letra solta, e em navegação ela não é texto.
+                && atalho_de(&e.key(), false).is_none()
             {
                 e.prevent_default();
                 return;
@@ -3990,6 +3999,57 @@ fn bloco_novo_depois(bloco: &web_sys::Element) -> bool {
     true
 }
 
+/// Uma tecla que o editor trata, e em que MODO ela vale (ciclo 199).
+///
+/// Existe porque os três bugs seguidos dos ciclos 194, 195 e 197 foram o
+/// MESMO defeito estrutural: uma tecla tratada no modo errado. Cada
+/// atalho tinha sua própria condição solta dentro de um `on_keydown` de
+/// centenas de linhas, e nada obrigava a responder "isto vale em qual
+/// modo?" — dava pra esquecer, e esqueceu-se três vezes.
+///
+/// Com a tabela, essa pergunta vira DADO. E o harness pode gerar os
+/// cenários de "esta tecla não pode disparar aqui" a partir dela, em vez
+/// de alguém lembrar de escrever um por um.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Atalho {
+    /// `e.key()` exato.
+    pub tecla: &'static str,
+    /// Precisa de Alt?
+    pub alt: bool,
+    /// Modo em que a tecla é COMANDO. Fora dele, é texto.
+    pub modo: Modo,
+    /// O que faz — só pra documentação e pro harness.
+    pub descricao: &'static str,
+}
+
+/// Tudo que o editor captura como comando, e onde.
+///
+/// Ordem de leitura: se você for acrescentar um atalho, acrescente aqui
+/// primeiro. Um atalho que não está nesta tabela não deveria existir no
+/// `on_keydown`.
+pub const ATALHOS: &[Atalho] = &[
+    Atalho { tecla: "n", alt: false, modo: Modo::Navegacao, descricao: "bloco novo com o menu /" },
+    Atalho { tecla: "c", alt: false, modo: Modo::Navegacao, descricao: "copiar referência do bloco" },
+    Atalho { tecla: "d", alt: false, modo: Modo::Navegacao, descricao: "apagar bloco" },
+    Atalho { tecla: "y", alt: false, modo: Modo::Navegacao, descricao: "duplicar bloco" },
+    Atalho { tecla: "K", alt: false, modo: Modo::Navegacao, descricao: "mover bloco pra cima" },
+    Atalho { tecla: "J", alt: false, modo: Modo::Navegacao, descricao: "mover bloco pra baixo" },
+    Atalho { tecla: "ArrowUp", alt: true, modo: Modo::Navegacao, descricao: "mover bloco pra cima" },
+    Atalho { tecla: "ArrowDown", alt: true, modo: Modo::Navegacao, descricao: "mover bloco pra baixo" },
+];
+
+impl Atalho {
+    /// A tecla é comando NESTE modo?
+    pub fn vale_em(&self, modo: Modo) -> bool {
+        self.modo == modo
+    }
+}
+
+/// Procura o atalho de uma tecla, se ela for comando em algum modo.
+pub fn atalho_de(tecla: &str, alt: bool) -> Option<&'static Atalho> {
+    ATALHOS.iter().find(|a| a.tecla == tecla && a.alt == alt)
+}
+
 /// Modo da aplicação (ciclo 194).
 ///
 /// Existe pra a pessoa SABER quais teclas estão sendo capturadas, e pra
@@ -3998,15 +4058,18 @@ fn bloco_novo_depois(bloco: &web_sys::Element) -> bool {
 /// sequestra letras comuns.
 ///
 /// Modo novo entra aqui e ganha rótulo, cor e lista de atalhos de graça.
-#[derive(Clone, Copy, PartialEq)]
-enum Modo {
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Modo {
+    /// Teclas são COMANDOS.
     Navegacao,
+    /// Modo normal do vim.
     VimNormal,
+    /// Teclas são TEXTO.
     Edicao,
 }
 
 impl Modo {
-    fn atual(nav: bool, vim_ligado: bool, vim_insert: bool) -> Self {
+    pub fn atual(nav: bool, vim_ligado: bool, vim_insert: bool) -> Self {
         if nav {
             Self::Navegacao
         } else if vim_ligado && !vim_insert {
@@ -4118,5 +4181,91 @@ fn marcar_convite() {
     };
     if unico.text_content().unwrap_or_default().trim().is_empty() {
         let _ = unico.class_list().add_1(CLASSE_CONVITE);
+    }
+}
+
+/// A tecla do evento é um comando VÁLIDO neste modo? (ciclo 199)
+///
+/// Um lugar só respondendo isso, em vez de cada atalho repetir a mesma
+/// condição — foi a repetição que deixou passar os bugs dos ciclos 194,
+/// 195 e 197.
+fn comando_vale(e: &KeyboardEvent, tecla: &str, alt: bool, modo: Modo) -> bool {
+    if e.ctrl_key() || e.meta_key() || e.key() != tecla || e.alt_key() != alt {
+        return false;
+    }
+    atalho_de(tecla, alt).is_some_and(|a| a.vale_em(modo))
+}
+
+#[cfg(test)]
+mod testes_atalhos {
+    use super::*;
+
+    #[test]
+    fn nenhum_atalho_repetido() {
+        // Duas entradas pra mesma tecla+alt tornariam `atalho_de`
+        // dependente da ORDEM da tabela, que é exatamente o tipo de
+        // regra implícita que este ciclo veio remover.
+        for (i, a) in ATALHOS.iter().enumerate() {
+            for b in &ATALHOS[i + 1..] {
+                assert!(
+                    !(a.tecla == b.tecla && a.alt == b.alt),
+                    "atalho duplicado: {} (alt={})",
+                    a.tecla,
+                    a.alt
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn todo_atalho_de_bloco_e_de_navegacao() {
+        // Se um atalho de bloco aparecer marcado como `Edicao`, ele volta
+        // a disparar durante a digitação — o bug do ciclo 194.
+        for a in ATALHOS {
+            assert_eq!(
+                a.modo,
+                Modo::Navegacao,
+                "o atalho {} não é de navegação; se isso for intencional, o teste precisa mudar junto",
+                a.tecla
+            );
+        }
+    }
+
+    #[test]
+    fn letra_comum_nao_e_atalho() {
+        for tecla in ["a", "e", "x", "z", "q", "t"] {
+            assert!(atalho_de(tecla, false).is_none(), "{tecla} virou comando sem querer");
+        }
+    }
+
+    #[test]
+    fn atalho_so_vale_no_proprio_modo() {
+        let n = atalho_de("n", false).expect("n é atalho");
+        assert!(n.vale_em(Modo::Navegacao));
+        assert!(!n.vale_em(Modo::Edicao));
+        assert!(!n.vale_em(Modo::VimNormal));
+    }
+
+    #[test]
+    fn setas_com_alt_sao_comandos_e_sem_alt_nao() {
+        assert!(atalho_de("ArrowUp", true).is_some());
+        assert!(atalho_de("ArrowUp", false).is_none(), "seta sem Alt é navegação, não move bloco");
+    }
+
+    #[test]
+    fn modo_atual_respeita_a_precedencia() {
+        assert_eq!(Modo::atual(true, true, false), Modo::Navegacao, "navegação vence o vim");
+        assert_eq!(Modo::atual(false, true, false), Modo::VimNormal);
+        assert_eq!(Modo::atual(false, true, true), Modo::Edicao, "vim em insert é edição");
+        assert_eq!(Modo::atual(false, false, false), Modo::Edicao);
+    }
+
+    #[test]
+    fn todo_atalho_tem_descricao() {
+        // A descrição vira a lista de atalhos da barra de modo e o
+        // relatório do harness — atalho sem ela é atalho invisível.
+        for a in ATALHOS {
+            assert!(!a.descricao.trim().is_empty(), "{} sem descrição", a.tecla);
+        }
     }
 }
