@@ -48,6 +48,7 @@ const COMMANDS: &[(&str, PaletteAction)] = &[
     ("Nova página: Calendário", PaletteAction::NewPageOfType("calendar")),
     ("Nova página: Tabela de tarefas", PaletteAction::NewPageOfType("table")),
     ("Nova página: Grafo de conexões", PaletteAction::NewPageOfType("graph")),
+    ("Nova página: Conversa", PaletteAction::NewPageOfType("conversa")),
     ("Alternar tema", PaletteAction::ToggleTheme),
     ("Alternar sidebar", PaletteAction::ToggleSidebar),
     ("Ir pra Hoje (journal)", PaletteAction::Today),

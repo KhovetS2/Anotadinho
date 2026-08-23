@@ -743,7 +743,77 @@ fluxo.push({
   },
 });
 
+// ── ciclo 220: home fixa e conversa na família de tipos ──────────────
+
+fluxo.push({
+  nome: "abas: home fica na primeira posição, não fecha e acompanha a troca (220)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
+    const storage = await bridge.js(`(() => {
+      const vault = JSON.parse(localStorage.getItem('anotadinho.vault_path'));
+      const key = 'anotadinho.home_page::' + vault;
+      const old = localStorage.getItem(key);
+      localStorage.setItem(key, JSON.stringify('pages/__uitest.md'));
+      return { key, old };
+    })()`);
+    try {
+      await recarregarEstavel(bridge);
+      await esperar(bridge, `document.querySelector('.tab-bar__tab')?.dataset.path === 'pages/__uitest.md'`, "a home abrir primeiro");
+      const inicial = await bridge.js(`(() => {
+        const t = document.querySelector('.tab-bar__tab');
+        return { fixa: t.classList.contains('tab-bar__tab--fixed'), fechar: !!t.querySelector('.tab-bar__tab-close'), nav: !!t.querySelector('[data-nav-item]') };
+      })()`);
+      ctx.assertEq(inicial.fixa, true, "a home não tem distinção visual");
+      ctx.assertEq(inicial.fechar, false, "a home oferece fechar");
+      ctx.assertEq(inicial.nav, true, "a home não participa da navegação por teclado");
+
+      const abriu = await bridge.js(`(() => {
+        const alvo = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.toLowerCase().includes('missao'));
+        if (alvo) alvo.click();
+        return !!alvo;
+      })()`);
+      ctx.assert(abriu, "não encontrou uma segunda página para testar as abas");
+      await esperar(bridge, `document.querySelectorAll('.tab-bar__tab').length >= 2`, "a segunda aba abrir");
+      const antes = await bridge.js(`document.querySelectorAll('.tab-bar__tab').length`);
+      await bridge.js(`document.querySelector('button[title="Mais ações"]').click(); true`);
+      await esperar(bridge, `[...document.querySelectorAll('.header-menu__item')].some(b => b.textContent.includes('Definir como início'))`, "a ação de definir início");
+      await bridge.js(`(() => { [...document.querySelectorAll('.header-menu__item')].find(b => b.textContent.includes('Definir como início')).click(); return true; })()`);
+      await esperar(bridge, `document.querySelector('.tab-bar__tab')?.dataset.path.includes('missao')`, "a nova home ir para o começo");
+      const depois = await bridge.js(`(() => ({ n: document.querySelectorAll('.tab-bar__tab').length, antigas: [...document.querySelectorAll('.tab-bar__tab')].filter(t => t.dataset.path === 'pages/__uitest.md').length }))()`);
+      ctx.assertEq(depois.n, antes, "trocar a home perdeu uma aba aberta");
+      ctx.assertEq(depois.antigas, 1, "trocar a home perdeu a home anterior");
+    } finally {
+      await bridge.js(`(() => { const key = ${JSON.stringify(storage.key)}; const old = ${JSON.stringify(storage.old)}; if (old === null) localStorage.removeItem(key); else localStorage.setItem(key, old); return true; })()`);
+    }
+  },
+});
+
 // ── ciclo 208: conversa em um passo e contexto anexável ──────────────
+
+fluxo.push({
+  nome: "conversa: tipo da paleta cria uma página pronta para uso (220)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const titulo = `__uitest-conversa-${Date.now()}`;
+    const antes = new Set(fs.readdirSync(`${ctx.vault}/pages`));
+    try {
+      await recarregarEstavel(bridge);
+      await bridge.js(`(() => { const raiz = document.querySelector('.app-root'); raiz.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); return true; })()`);
+      await esperar(bridge, "document.querySelector('[class*=palette]')", "a paleta abrir");
+      const achou = await bridge.js(`(() => { const i = [...document.querySelectorAll('[class*=palette__item]')].find(x => x.textContent.includes('Nova página: Conversa')); if (i) i.click(); return !!i; })()`);
+      ctx.assertEq(achou, true, "conversa não está na família de tipos");
+      await esperar(bridge, "document.querySelector('.modal input')", "o pedido de título");
+      await bridge.js(`(() => { const i = document.querySelector('.modal input'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(titulo)}); i.dispatchEvent(new InputEvent('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
+      await esperar(bridge, "document.querySelector('.conversa')", "a conversa abrir pronta para uso", 12000);
+      const novas = fs.readdirSync(`${ctx.vault}/pages`).filter(f => !antes.has(f));
+      ctx.assertEq(novas.length, 1, `esperava uma página criada, vieram ${novas.length}`);
+      const md = fs.readFileSync(`${ctx.vault}/pages/${novas[0]}`, "utf8");
+      ctx.assert(md.includes("type: conversa"), `a página não nasceu como conversa:\n${md}`);
+    } finally {
+      for (const f of fs.readdirSync(`${ctx.vault}/pages`).filter(x => !antes.has(x))) fs.rmSync(`${ctx.vault}/pages/${f}`, { force: true });
+    }
+  },
+});
 
 fluxo.push({
   nome: "conversa: comando da paleta cria em um passo e anexa a página aberta (208)",

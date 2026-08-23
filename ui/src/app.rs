@@ -17,7 +17,7 @@ use crate::components::kanban::Kanban;
 use crate::components::page_view::PageView;
 use crate::components::vim_settings_modal::VimSettingsModal;
 use crate::components::sidebar::Sidebar;
-use crate::components::tab_bar::TabBar;
+use crate::components::tab_bar::{OpenTab, TabBar, TabFlag};
 use crate::dialog::PendingDialog;
 use crate::state;
 
@@ -31,6 +31,53 @@ fn is_text_input_target(e: &KeyboardEvent) -> bool {
         return true;
     }
     target.get_attribute("contenteditable").as_deref() == Some("true")
+}
+
+/// Recalcula as flags derivadas e promove a home sem alterar a ordem
+/// relativa das outras abas. Toda mutação de `open_tabs` passa por aqui.
+fn organize_tabs(mut tabs: Vec<OpenTab>, home_path: Option<&str>) -> Vec<OpenTab> {
+    for tab in &mut tabs {
+        tab.flags.retain(|flag| *flag != TabFlag::Home);
+        if home_path == Some(tab.page.path.as_str()) {
+            tab.flags.push(TabFlag::Home);
+        }
+    }
+    if let Some(pos) = tabs.iter().position(|tab| tab.has_flag(TabFlag::Home)) {
+        let home = tabs.remove(pos);
+        tabs.insert(0, home);
+    }
+    tabs
+}
+
+#[cfg(test)]
+mod tab_tests {
+    use super::*;
+
+    fn tab(path: &str) -> OpenTab {
+        OpenTab::new(PageMeta {
+            path: path.into(),
+            title: path.into(),
+            section: "pages".into(),
+        })
+    }
+
+    #[test]
+    fn home_vai_para_o_inicio_sem_reordenar_as_demais() {
+        let tabs = organize_tabs(vec![tab("a"), tab("home"), tab("b")], Some("home"));
+        let paths: Vec<_> = tabs.iter().map(|tab| tab.page.path.as_str()).collect();
+        assert_eq!(paths, vec!["home", "a", "b"]);
+        assert!(tabs[0].has_flag(TabFlag::Home));
+        assert!(!tabs[1].has_flag(TabFlag::Home));
+    }
+
+    #[test]
+    fn sem_home_preserva_a_ordem_e_remove_a_flag() {
+        let mut home = tab("home");
+        home.flags.push(TabFlag::Home);
+        let tabs = organize_tabs(vec![tab("a"), home], None);
+        assert_eq!(tabs[0].page.path, "a");
+        assert!(tabs.iter().all(|tab| !tab.has_flag(TabFlag::Home)));
+    }
 }
 
 #[function_component(App)]
@@ -146,7 +193,7 @@ pub fn app() -> Html {
     }
 
     let sidebar_collapsed = use_state(|| false);
-    let open_tabs = use_state(Vec::<PageMeta>::new);
+    let open_tabs = use_state(Vec::<OpenTab>::new);
     // Página inicial (ciclo 089) — movida pra cá (ciclo 109) de dentro
     // do `Editor` porque a `TabBar` (irmã do `Editor`, não descendente)
     // também precisa saber qual página é a inicial, pra mostrar só o
@@ -160,16 +207,29 @@ pub fn app() -> Html {
             || {}
         });
     }
+    {
+        let open_tabs = open_tabs.clone();
+        use_effect_with((*home_page).clone(), move |home| {
+            let organized = organize_tabs((*open_tabs).clone(), home.as_deref());
+            if organized != *open_tabs {
+                open_tabs.set(organized);
+            }
+            || {}
+        });
+    }
     let on_toggle_home = {
         let vault_path = vault_path.clone();
         let home_page = home_page.clone();
+        let open_tabs = open_tabs.clone();
         Callback::from(move |path: String| {
             let Some(ref vault) = *vault_path else { return };
             if home_page.as_deref() == Some(path.as_str()) {
                 state::clear_home_page(vault);
                 home_page.set(None);
+                open_tabs.set(organize_tabs((*open_tabs).clone(), None));
             } else {
                 state::save_home_page(vault, &path);
+                open_tabs.set(organize_tabs((*open_tabs).clone(), Some(&path)));
                 home_page.set(Some(path));
             }
         })
@@ -421,13 +481,14 @@ pub fn app() -> Html {
     let on_page_selected = {
         let selected_page = selected_page.clone();
         let open_tabs = open_tabs.clone();
+        let home_page = home_page.clone();
         Callback::from(move |page: PageMeta| {
             // Add to tabs if not already there
             let mut tabs = (*open_tabs).clone();
-            if !tabs.iter().any(|t| t.path == page.path) {
-                tabs.push(page.clone());
-                open_tabs.set(tabs);
+            if !tabs.iter().any(|t| t.page.path == page.path) {
+                tabs.push(OpenTab::new(page.clone()));
             }
+            open_tabs.set(organize_tabs(tabs, home_page.as_deref()));
             selected_page.set(Some(page));
         })
     };
@@ -476,7 +537,7 @@ pub fn app() -> Html {
         Callback::from(move |_| {
             if let Some(ref page) = *selected_page {
                 let mut tabs = (*open_tabs).clone();
-                tabs.retain(|t| t.path != page.path);
+                tabs.retain(|t| t.page.path != page.path);
                 open_tabs.set(tabs);
             }
             selected_page.set(None);
@@ -532,10 +593,10 @@ pub fn app() -> Html {
         let open_tabs = open_tabs.clone();
         Callback::from(move |idx: usize| {
             let mut tabs = (*open_tabs).clone();
-            if idx < tabs.len() {
+            if idx < tabs.len() && !tabs[idx].has_flag(TabFlag::Home) {
                 let closed = tabs.remove(idx);
-                if selected_page.as_ref().map_or(false, |p| p.path == closed.path) {
-                    let next = tabs.get(idx).or_else(|| tabs.get(idx.saturating_sub(1))).cloned();
+                if selected_page.as_ref().map_or(false, |p| p.path == closed.page.path) {
+                    let next = tabs.get(idx).or_else(|| tabs.get(idx.saturating_sub(1))).map(|tab| tab.page.clone());
                     selected_page.set(next);
                 }
                 open_tabs.set(tabs);
@@ -1295,7 +1356,7 @@ pub fn app() -> Html {
                     e.prevent_default();
                     let tabs = (*open_tabs).clone();
                     if let Some(tab) = tabs.get(digit as usize - 1) {
-                        selected_page.set(Some(tab.clone()));
+                        selected_page.set(Some(tab.page.clone()));
                     }
                     return;
                 }
@@ -1374,11 +1435,11 @@ pub fn app() -> Html {
                 let tabs = (*open_tabs).clone();
                 if !tabs.is_empty() {
                     if let Some(ref sel) = *selected_page {
-                        let pos = tabs.iter().position(|t| t.path == sel.path).unwrap_or(0);
+                        let pos = tabs.iter().position(|t| t.page.path == sel.path).unwrap_or(0);
                         let next = (pos + 1) % tabs.len();
-                        selected_page.set(Some(tabs[next].clone()));
+                        selected_page.set(Some(tabs[next].page.clone()));
                     } else {
-                        selected_page.set(Some(tabs[0].clone()));
+                        selected_page.set(Some(tabs[0].page.clone()));
                     }
                 }
             } else if matches(&km.prev_tab) {
@@ -1386,18 +1447,18 @@ pub fn app() -> Html {
                 let tabs = (*open_tabs).clone();
                 if !tabs.is_empty() {
                     if let Some(ref sel) = *selected_page {
-                        let pos = tabs.iter().position(|t| t.path == sel.path).unwrap_or(0);
+                        let pos = tabs.iter().position(|t| t.page.path == sel.path).unwrap_or(0);
                         let prev = (pos + tabs.len() - 1) % tabs.len();
-                        selected_page.set(Some(tabs[prev].clone()));
+                        selected_page.set(Some(tabs[prev].page.clone()));
                     } else {
-                        selected_page.set(Some(tabs[0].clone()));
+                        selected_page.set(Some(tabs[0].page.clone()));
                     }
                 }
             } else if matches(&km.close_tab) {
                 e.prevent_default();
                 let tabs = (*open_tabs).clone();
                 if let Some(ref sel) = *selected_page {
-                    if let Some(pos) = tabs.iter().position(|t| t.path == sel.path) {
+                    if let Some(pos) = tabs.iter().position(|t| t.page.path == sel.path) {
                         on_tab_close.emit(pos);
                     }
                 }
@@ -1490,7 +1551,6 @@ pub fn app() -> Html {
                                 active_path={selected_page.as_ref().map(|p| p.path.clone())}
                                 on_select={on_tab_select}
                                 on_close={on_tab_close}
-                                home_path={(*home_page).clone()}
                             />
                             <PageView
                                 vault_path={vault_path.as_ref().cloned().unwrap_or_default()}

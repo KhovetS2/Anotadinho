@@ -507,6 +507,15 @@ body {
     border-bottom-color: transparent;
 }
 
+.tab-bar__tab--fixed {
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
+    border-bottom-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.tab-bar__tab--fixed.tab-bar__tab--active {
+    background: color-mix(in srgb, var(--accent) 5%, var(--bg-base));
+}
+
 .tab-bar__tab-title {
     max-width: 120px;
     overflow: hidden;

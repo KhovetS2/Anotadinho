@@ -94,66 +94,6 @@ const SALVAR = `(() => {
 const ITEM_ATIVO = `(document.querySelector('.nav-mode__item-active')
   ?.getAttribute('data-nav-item') ?? null)`;
 
-/// A página inicial fica no `localStorage` com uma chave POR VAULT
-/// (`anotadinho.home_page::<caminho>`), não numa chave fixa.
-const HOME_DEFINIDA = `(() => {
-  for (const k of Object.keys(localStorage)) {
-    if (k.startsWith('anotadinho.home_page::')) {
-      return (localStorage.getItem(k) || '').replace(/^"|"$/g, '');
-    }
-  }
-  return null;
-})()`;
-
-// ─────────────────────────────────────────────────────────────────────
-// Spec: Atalhos do dia a dia
-// ─────────────────────────────────────────────────────────────────────
-
-pendente("atalhos", "a página inicial é a primeira aba", RASCUNHO, async (bridge, ctx) => {
-  const home = await bridge.js(HOME_DEFINIDA);
-  ctx.assert(home, "nenhuma página inicial definida — defina uma antes de rodar");
-
-  // Abre outra página: a home tem que continuar na primeira posição.
-  await abrirPaginaEstavel(bridge, ctx.nomePagina);
-  await PAUSA(400);
-
-  const ehHome = await bridge.js(`(() => {
-    const home = ${HOME_DEFINIDA};
-    const t = document.querySelector('.tab-bar__tab');
-    if (!t) return 'sem abas';
-    return t.getAttribute('data-path') === home
-      || (t.textContent || '').includes(home.split('/').pop().replace(/\\.md$/, ''));
-  })()`);
-  ctx.assertEq(ehHome, true, "a página inicial não é a primeira aba");
-});
-
-pendente("atalhos", "a aba inicial não pode ser fechada", RASCUNHO, async (bridge, ctx) => {
-  await PAUSA(400);
-  const home = await bridge.js(HOME_DEFINIDA);
-  ctx.assert(home, "nenhuma página inicial definida — defina uma antes de rodar");
-  const temFechar = await bridge.js(`(() => {
-    const t = document.querySelector('.tab-bar__tab');
-    return t ? !!t.querySelector('.tab-bar__tab-close') : 'sem abas';
-  })()`);
-  ctx.assertEq(temFechar, false, "a aba inicial ainda oferece o botão de fechar");
-});
-
-pendente("atalhos", "conversa é um tipo no menu de criação", async (bridge, ctx) => {
-  await bridge.js(ATALHO("k", { ctrlKey: true }));
-  await esperar(
-    bridge,
-    `!!document.querySelector('[class*=palette__item]')`,
-    "a paleta não abriu",
-  );
-  const tipos = await bridge.js(`(() => [...document.querySelectorAll('[class*=palette__item]')]
-    .map(i => i.textContent.trim())
-    .filter(t => t.startsWith('Nova página:')))()`);
-  ctx.assert(
-    tipos.some((t) => t.toLowerCase().includes("conversa")),
-    `conversa não está entre os tipos de página: ${JSON.stringify(tipos)}`,
-  );
-});
-
 // ─────────────────────────────────────────────────────────────────────
 // Spec: Leitura de consultas
 // ─────────────────────────────────────────────────────────────────────

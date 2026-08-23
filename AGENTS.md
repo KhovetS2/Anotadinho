@@ -96,19 +96,34 @@ Mexeu em UI? O harness também. Ele roda contra o app DE VERDADE, porque
 bug de DOM não aparece em `cargo test`:
 
 ```bash
-./scripts/dev.sh                 # num terminal, deixa o app de pé
-node scripts/uitest/run.mjs      # noutro; sai != 0 se quebrou
+node scripts/uitest/run.mjs      # sai != 0 se quebrou
 node scripts/uitest/run.mjs foo  # só cenários que casam com "foo"
 ```
 
-Se você não consegue subir o app (sem display, sem permissão), **diga
-isso no relatório** em vez de marcar o ciclo como validado. Um ciclo de
-UI sem harness é um ciclo pela metade, e dizer o contrário é pior do que
-não ter rodado.
+**Não tente subir o app você mesmo.** `./scripts/dev.sh` abre uma janela
+e fica rodando pra sempre; num comando não-interativo isso trava, e num
+sandbox costuma nem começar. Quem deixa o app de pé é a pessoa, num
+terminal dela.
 
-O harness precisa da porta 9223 (dev). O app instalado usa 9323, então
-os dois convivem — mas **nunca deixe dois apps abertos no mesmo vault**:
-os dois escrevem nos mesmos arquivos.
+O harness fala com o app por WebSocket em `127.0.0.1:9223`. Se ele
+responder
+
+```
+✗ não consegui falar com o app na porta 9223.
+```
+
+o app não está aberto: **peça pra pessoa abrir** e diga que a validação
+de UI ficou pendente. Não marque o ciclo como validado, não escreva o
+status `done` e não commite. Um ciclo de UI sem harness é meio ciclo, e
+dizer o contrário é pior do que não ter rodado.
+
+Se a falha for `Operation not permitted (os error 1)` ao abrir socket, é
+o sandbox sem rede: relate exatamente isso, porque é configuração do
+agente e não do repositório.
+
+O app instalado usa a porta 9323, então ele e o dev convivem — mas
+**nunca deixe dois apps abertos no mesmo vault**: os dois escrevem nos
+mesmos arquivos.
 
 ### Snapshot visual
 

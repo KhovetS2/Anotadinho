@@ -211,7 +211,7 @@ impl Adaptador {
         // isso, quem já usou o app fica preso na versão velha — foi
         // como a configuração do usuário ficou sem `--sandbox
         // workspace-write` e a execução travava em "somente leitura".
-        const ANTIGOS: [(&str, &[&str]); 4] = [
+        const ANTIGOS: [(&str, &[&str]); 5] = [
             // ciclo 202
             ("Claude Code", &["-p", MARCADOR_PROMPT]),
             ("Codex", &["exec", MARCADOR_PROMPT]),
@@ -221,6 +221,11 @@ impl Adaptador {
                 &["-p", "--output-format", "stream-json", "--verbose", MARCADOR_PROMPT],
             ),
             ("Codex", &["exec", "--json", MARCADOR_PROMPT]),
+            // ciclo 216: ganhou escrita, ainda sem rede pro harness
+            (
+                "Codex",
+                &["exec", "--json", "--sandbox", "workspace-write", MARCADOR_PROMPT],
+            ),
         ];
         let antigo = ANTIGOS.iter().find(|(nome, args)| {
             self.nome == *nome
@@ -284,6 +289,18 @@ impl Adaptador {
                     // leitura" e a execução não saía do lugar.
                     "--sandbox".into(),
                     "workspace-write".into(),
+                    // Sem rede, o sandbox recusa até abrir socket local
+                    // ("Operation not permitted"), e o agente não
+                    // consegue rodar o harness — que fala com o app por
+                    // WebSocket em 127.0.0.1. Um ciclo de UI sem
+                    // harness é metade de um ciclo.
+                    //
+                    // O Codex não sabe liberar só o localhost: isto
+                    // abre a rede inteira. É um passo a mais sobre o
+                    // `workspace-write`, que já deixa o agente editar o
+                    // código — quem não quer, tira daqui.
+                    "-c".into(),
+                    "sandbox_workspace_write.network_access=true".into(),
                     MARCADOR_PROMPT.into(),
                 ],
                 cwd: String::new(),
@@ -580,6 +597,39 @@ mod tests {
         assert_eq!(novo.arg_pasta_extra, "--add-dir");
         // A pasta que a pessoa escolheu é dela e continua.
         assert_eq!(novo.pastas_extras, vec!["/repo/meu".to_string()]);
+    }
+
+    #[test]
+    fn o_preset_do_codex_libera_rede_pro_harness() {
+        let codex = Adaptador::presets()
+            .into_iter()
+            .find(|p| p.nome == "Codex")
+            .expect("preset do Codex sumiu");
+        assert!(
+            codex.args.iter().any(|a| a.contains("network_access=true")),
+            "sem rede o agente não consegue falar com o app pra rodar o harness: {:?}",
+            codex.args
+        );
+    }
+
+    #[test]
+    fn a_migracao_leva_o_codex_do_216_pro_preset_com_rede() {
+        let do_216 = Adaptador {
+            nome: "Codex".into(),
+            binario: "codex".into(),
+            args: vec![
+                "exec".into(),
+                "--json".into(),
+                "--sandbox".into(),
+                "workspace-write".into(),
+                MARCADOR_PROMPT.into(),
+            ],
+            ..base()
+        };
+        assert!(
+            do_216.migrado().args.iter().any(|a| a.contains("network_access=true")),
+            "quem já usou o app ficaria sem conseguir validar"
+        );
     }
 
     #[test]
