@@ -50,6 +50,20 @@ a origem apontando de volta pra conversa.
 O título sai da primeira linha da resposta — então peça o título na
 primeira linha quando quiser controlá-lo.
 
+## 3.1 Spec e proposta são coisas diferentes
+
+Vale insistir, porque é o que mantém o ciclo coerente:
+
+| | Spec | Proposta |
+|---|---|---|
+| Responde | o **quê** e o **porquê** | o **como** |
+| Contém | requisitos e critérios de aceite | abordagem, etapas, alternativas |
+| Quando muda | quando o problema muda | quando a abordagem não serve |
+
+Recusar uma proposta **não** recusa o trabalho: a spec continua valendo,
+e você pede outra abordagem. Uma spec que já diz como fazer engessa a
+implementação antes de alguém pensar nela.
+
 ## 4. Revisar e aprovar
 
 A página criada traz o embed de fluxo. Os botões mostram **só** as
@@ -58,6 +72,17 @@ Não há como pular pra execução.
 
 Aprovar espelha o `status` no frontmatter, que é o campo que as
 consultas filtram — é assim que a spec aparece no painel.
+
+## 4.1 Da spec aprovada pra proposta
+
+Numa spec **aprovada** aparece o botão **Planejar implementação**. Ele
+abre uma conversa com a spec já anexada e a pergunta pronta — e é ali
+que você anexa as **páginas de padrão** que a proposta terá que
+respeitar. A resposta vira proposta com "virar proposta".
+
+A pergunta traz uma trava explícita: o modelo não deve propor requisito
+novo nem mudar o escopo. Se achar algo ambíguo, ele aponta em vez de
+decidir sozinho.
 
 ## 5. Deixar o agente escrever
 

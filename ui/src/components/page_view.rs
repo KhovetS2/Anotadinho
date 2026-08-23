@@ -58,7 +58,11 @@ pub struct PageViewProps {
     /// Página aberta ANTES desta — vira contexto da conversa.
     #[prop_or_default]
     pub contexto_path: Option<String>,
+    #[prop_or_default]
+    pub pergunta_inicial: Option<String>,
     pub nav_mode_active: bool,
+    #[prop_or_default]
+    pub on_planejar: Callback<()>,
 }
 
 #[function_component(PageView)]
@@ -157,7 +161,8 @@ pub fn page_view(props: &PageViewProps) -> Html {
                     vault_path={props.vault_path.clone()}
                     page={page.clone()}
                     contexto_path={props.contexto_path.clone()}
-                    on_page_selected={props.on_page_selected.clone()} />
+                    on_page_selected={props.on_page_selected.clone()}
+                    pergunta_inicial={props.pergunta_inicial.clone()} />
             },
             None => html! {},
         },
@@ -210,6 +215,7 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 on_enter_block_nav={props.on_enter_block_nav.clone()}
                 on_leave_block_nav={props.on_leave_block_nav.clone()}
                 nav_mode_active={props.nav_mode_active}
+                on_planejar={props.on_planejar.clone()}
             />
         },
     }

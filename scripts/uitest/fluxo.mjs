@@ -817,3 +817,82 @@ fluxo.push({
     ctx.assert(md.includes("type: conversa"), `o frontmatter foi destruído ao tirar:\n${md}`);
   },
 });
+
+// ── ciclo 209: spec e proposta são coisas diferentes ─────────────────
+
+fluxo.push({
+  nome: "spec aprovada oferece planejar, e a conversa nasce com ela anexada (209)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const pasta = `${ctx.vault}/pages/conversas`;
+    const antes = fs.existsSync(pasta) ? fs.readdirSync(pasta) : [];
+    try {
+      ctx.escrever(
+        '---\ntitle: "Spec de teste: com dois-pontos"\ntype: spec\nstatus: aprovada\n---\n' +
+          '{{ type: "fluxo" }}\nartefato: spec\netapa: aprovada\n{{ /fluxo }}\n\n' +
+          "## Requisitos funcionais\n\n- RF1. Alguma coisa.\n",
+      );
+      await recarregarEstavel(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await esperar(bridge, "document.querySelector('.fluxo')", "o embed de fluxo");
+
+      // O botão só existe em spec APROVADA — é a ponte do "o quê" pro "como".
+      ctx.assertEq(
+        await bridge.js(`!!document.querySelector('.fluxo__planejar button')`),
+        true,
+        "spec aprovada devia oferecer planejar a implementação",
+      );
+
+      await bridge.js(`(() => { document.querySelector('.fluxo__planejar button').click(); return true; })()`);
+      await esperar(bridge, "document.querySelector('.conversa')", "a conversa de planejamento", 12000);
+
+      const anexos = await bridge.js(
+        `[...document.querySelectorAll('.conversa__anexo')].map(e => e.textContent.replace('×','').trim())`,
+      );
+      ctx.assert(anexos.includes("__uitest"), `a spec não foi anexada: ${anexos.join(", ")}`);
+
+      const campo = await bridge.js(`(document.querySelector('.conversa__campo')||{}).value || ''`);
+      ctx.assert(campo.includes("PROPOSTA DE IMPLEMENTAÇÃO"), `a pergunta não veio pronta: ${campo}`);
+      ctx.assert(
+        campo.includes("Não proponha requisitos novos"),
+        "faltou a trava contra o modelo reescrever o escopo",
+      );
+      // Título do FRONTMATTER, não o nome do arquivo (ciclo 196/209).
+      ctx.assert(
+        campo.includes("Spec de teste: com dois-pontos"),
+        `usou o nome do arquivo em vez do título: ${campo.slice(0, 80)}`,
+      );
+      // A indentação do código Rust não pode vazar pro prompt.
+      ctx.assertEq(
+        campo.split("\n").filter((l) => l.startsWith("  ")).length,
+        0,
+        "indentação do código vazou pro prompt",
+      );
+    } finally {
+      if (fs.existsSync(pasta)) {
+        for (const f of fs.readdirSync(pasta).filter((x) => !antes.includes(x))) {
+          fs.rmSync(`${pasta}/${f}`, { force: true });
+        }
+      }
+    }
+  },
+});
+
+fluxo.push({
+  nome: "spec em rascunho NÃO oferece planejar (209)",
+  async fn(bridge, ctx) {
+    // Planejar antes de aprovar é planejar o que ainda pode mudar.
+    ctx.escrever(
+      "---\ntitle: __uitest\ntype: spec\nstatus: rascunho\n---\n" +
+        '{{ type: "fluxo" }}\nartefato: spec\netapa: rascunho\n{{ /fluxo }}\n',
+    );
+    await recarregarEstavel(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await esperar(bridge, "document.querySelector('.fluxo')", "o embed");
+    ctx.assertEq(
+      await bridge.js(`!!document.querySelector('.fluxo__planejar')`),
+      false,
+      "spec em rascunho não pode oferecer planejar",
+    );
+  },
+});

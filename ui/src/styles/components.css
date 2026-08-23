@@ -1326,3 +1326,25 @@
   flex: 1 0 100%;
   margin-bottom: 0.3rem;
 }
+
+/* Ponte spec → proposta (ciclo 209).
+   Só aparece numa spec APROVADA: é o momento em que o trabalho passa do
+   "o quê" pro "como". */
+.fluxo__planejar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.7rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 30%, transparent);
+}
+
+.fluxo__planejar-dica {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 14rem;
+}

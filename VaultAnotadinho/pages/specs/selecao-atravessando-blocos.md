@@ -42,23 +42,28 @@ interceptar copiar/recortar/colar pra montar o markdown na mão.
 até agora. O ciclo 175 registrou a decisão em vez de fingir que não
 existia.
 
-## Proposta
+## Requisitos funcionais
 
-Seleção de BLOCOS, não de caracteres entre blocos — que é o que o
-modelo comporta sem reescrever o motor de seleção:
+- **RF1.** É possível levar mais de um bloco de uma vez pra outro lugar
+  (copiar e colar em qualquer editor de texto, com markdown legível).
+- **RF2.** É possível apagar e mover um conjunto de blocos de uma vez.
+- **RF3.** A seleção múltipla é visível enquanto está ativa.
 
-1. No modo de navegação, `Shift+↑/↓` estende a seleção pra blocos
-   vizinhos, com realce visível.
-2. `Ctrl+C` com blocos selecionados monta o markdown deles, na ordem, e
-   põe na área de transferência.
-3. `d` apaga todos os selecionados; `K`/`J` movem o conjunto.
-4. Arrastar o mouse entre blocos passa a selecionar blocos inteiros, em
-   vez de não fazer nada.
+## Requisitos não funcionais
 
-Isso cobre o caso real ("quero levar estes três parágrafos pra outro
-lugar") sem reimplementar seleção de texto.
+- **RNF1.** Seleção DENTRO de um bloco não pode mudar de comportamento —
+  é o caminho mais usado do editor.
+- **RNF2.** O markdown gerado continua byte-idêntico pra página não
+  editada.
 
-## Como saber que funcionou
+## Critérios de aceite
+
+- [ ] Selecionar três blocos e copiar produz markdown legível ao colar
+      num editor comum.
+- [ ] Selecionar e apagar remove exatamente os blocos realçados.
+- [ ] A bateria de digitação continua verde.
+
+## Notas de escopo
 
 - Selecionar três blocos e copiar produz markdown legível ao colar num
   editor de texto comum.

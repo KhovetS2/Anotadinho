@@ -102,6 +102,10 @@ pub fn app() -> Html {
     // junto (ciclo 202). Quem sabe a ordem de navegação é quem troca de
     // página, então isto mora aqui e não dentro do painel.
     let pagina_anterior = use_state(|| None::<String>);
+    /// Pergunta que a próxima conversa aberta deve trazer já escrita
+    /// (ciclo 209) — é como o botão "Planejar implementação" entrega o
+    /// pedido pronto sem a pessoa redigitar.
+    let pergunta_inicial = use_state(|| None::<String>);
     {
         let pagina_anterior = pagina_anterior.clone();
         let selected_page = selected_page.clone();
@@ -685,6 +689,61 @@ pub fn app() -> Html {
                     anotadinho_core::conversa::nome_de_arquivo(&carimbo)
                 );
                 if api::write_page(&vault, &path, &md).await.is_ok() {
+                    list_version.set(*list_version + 1);
+                    on_page_selected.emit(PageMeta {
+                        path,
+                        title: titulo,
+                        section: "pages".to_string(),
+                    });
+                }
+            });
+        })
+    };
+
+    // Planejar a implementação de uma spec aprovada (ciclo 209).
+    //
+    // Cria a conversa com a spec ANEXADA e a pergunta já escrita — é o
+    // ponto em que o trabalho passa do "o quê" pro "como", e é onde se
+    // anexam os padrões que a proposta terá que respeitar.
+    let planejar_implementacao = {
+        let vault_path = vault_path.clone();
+        let selected_page = selected_page.clone();
+        let on_page_selected = on_page_selected.clone();
+        let list_version = list_version.clone();
+        let pergunta_inicial = pergunta_inicial.clone();
+        Callback::from(move |_: ()| {
+            let Some(vault) = (*vault_path).clone() else { return };
+            let Some(spec) = (*selected_page).clone() else { return };
+            let on_page_selected = on_page_selected.clone();
+            let list_version = list_version.clone();
+            let pergunta_inicial = pergunta_inicial.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let carimbo = crate::state::agora_legivel();
+                // Título do FRONTMATTER, não o nome do arquivo: o
+                // `PageMeta` vindo da sidebar traz o stem, e usá-lo
+                // fazia a conversa se chamar "Planejar:
+                // uso-agentico-do-anotadinho". Mesmo defeito do ciclo 196.
+                let paginas = api::scan_vault(&vault).await.unwrap_or_default();
+                let titulo_spec = paginas
+                    .iter()
+                    .find(|p| p.path == spec.path)
+                    .map(|p| p.title.clone())
+                    .filter(|t| !t.trim().is_empty())
+                    .unwrap_or_else(|| spec.title.clone());
+                let titulo = format!("Planejar: {titulo_spec}");
+                let md = anotadinho_core::conversa::montar_pagina(
+                    &titulo,
+                    Some(&spec.path),
+                    &[spec.path.clone()],
+                );
+                let path = format!(
+                    "pages/conversas/{}.md",
+                    anotadinho_core::conversa::nome_de_arquivo(&carimbo)
+                );
+                if api::write_page(&vault, &path, &md).await.is_ok() {
+                    pergunta_inicial.set(Some(
+                        anotadinho_core::fluxo::pergunta_de_planejamento(&titulo_spec),
+                    ));
                     list_version.set(*list_version + 1);
                     on_page_selected.emit(PageMeta {
                         path,
@@ -1338,7 +1397,9 @@ pub fn app() -> Html {
                                 on_toggle_home={on_toggle_home.clone()}
                                 vault_version={*list_version}
                                 nav_mode_active={*nav_mode_active}
+                                on_planejar={planejar_implementacao.clone()}
                                 contexto_path={(*pagina_anterior).clone()}
+                                pergunta_inicial={(*pergunta_inicial).clone()}
                                 on_enter_block_nav={{
                                     let nav_mode_active = nav_mode_active.clone();
                                     let nav_stack = nav_stack.clone();

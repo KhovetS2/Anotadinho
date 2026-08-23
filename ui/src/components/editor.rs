@@ -54,6 +54,9 @@ pub struct EditorProps {
     /// (ciclo 194). Os atalhos de bloco (`d`, `y`, `n`, `K`, `J`, `c`)
     /// SÓ valem aqui — em digitação eles são letras comuns.
     pub nav_mode_active: bool,
+    /// Abre o planejamento de uma spec aprovada (ciclo 209).
+    #[prop_or_default]
+    pub on_planejar: Callback<()>,
     /// Mapa de teclas do vim mode.
     #[prop_or_default]
     pub vim_keymap: crate::state::VimKeymap,
@@ -2526,6 +2529,8 @@ pub fn editor(props: &EditorProps) -> Html {
                                                 on_page_selected={props.on_page_selected.clone()}
                                                 on_search={props.on_search.clone()}
                                                 on_set_property={on_set_property.clone()}
+                                                on_planejar={props.on_planejar.clone()}
+                                                page_path={page.path.clone()}
                                             />
                                             <button class="embed-hover-wrapper__add-line embed-hover-wrapper__add-line--bottom"
                                                 onclick={insert_blank_line(i + 1)} title="Adicionar linha abaixo">{ "+" }</button>

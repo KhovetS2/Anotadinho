@@ -23,30 +23,31 @@ conversa, virar spec, aprovar, executar, sem procurar nada.
 Hoje é preciso criar a página de conversa na mão, lembrar de pôr
 `type: conversa`, e saber que existe uma página `type: propostas`.
 
-## Proposta
+## Requisitos funcionais
 
-**1. Começar uma conversa em um passo.** Comando na paleta ("Nova
-conversa") e botão no home. Cria em `pages/conversas/` com a data no
-nome, já com `type: conversa`, e abre.
+- **RF1.** Começar uma conversa com o agente em um passo, sem criar
+  arquivo à mão nem lembrar de pôr `type: conversa`.
+- **RF2.** A conversa registra de onde nasceu e quais páginas o modelo
+  deve consultar, de forma que sobreviva a fechar o app.
+- **RF3.** Uma proposta pendente de revisão é visível de qualquer
+  página.
+- **RF4.** A partir de uma proposta aprovada, é possível disparar a
+  execução e registrar o que aconteceu.
+- **RF5.** Existe documentação de operação que não dependa de memória.
 
-- Ponto a ser considerado, poder adicionar a conversa paginas como contexto para o modelo, por exemplo, se ao conversar para criar um spec relacionado a modo agentico do Anotadinho eu anexo de contexto que ele deve consultar tanto para me responder como para propor algo que não necessariamente entre em conflito ou que as vezes já existe fazendo com que ele perca menos tempo tendo que preocuparar aleatoriamente e ter um foco maior.
+## Requisitos não funcionais
 
-**2. A conversa lembra de onde veio.** Ao ser criada a partir de uma
-página, gravar `origem:` no frontmatter — hoje o contexto é a página
-anterior em memória e some ao reabrir o app.
+- **RNF1.** Nenhuma escrita do agente chega ao vault sem revisão humana.
+- **RNF2.** A configuração do agente vive fora do vault.
+- **RNF3.** O `.md` continua legível e editável fora do app.
 
-**3. Aviso de proposta pendente.** Um indicador no cabeçalho quando há
-proposta esperando revisão. Sem isso, o agente propõe e ninguém vê até
-abrir a página certa.
+## Critérios de aceite
 
-**4. Executar a partir da proposta aprovada.** Botão que chama o agente
-com a proposta como prompt, gerando a `execucao` — é a etapa que hoje
-só existe como conceito.
+- [ ] Ir de "quero fazer X" até uma spec aprovada sem criar arquivo na mão.
+- [ ] Uma proposta pendente é notada sem abrir a página de propostas.
+- [ ] Cenários de harness cobrindo o caminho inteiro.
 
-**5. Passo a passo escrito.** Uma página só sobre como operar, pra não
-depender de memória. Ver [[Como usar o modo agêntico]].
-
-## Como saber que funcionou
+## Notas de escopo
 
 - Dá pra ir de "quero fazer X" até uma spec aprovada sem criar arquivo
 na mão.

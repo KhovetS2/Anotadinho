@@ -67,6 +67,12 @@ pub struct InlineEmbedProps {
     /// Grava um campo no frontmatter da página aberta (ciclo 201).
     #[prop_or_default]
     pub on_set_property: Callback<(String, String)>,
+    /// Abre o planejamento de uma spec aprovada (ciclo 209).
+    #[prop_or_default]
+    pub on_planejar: Callback<()>,
+    /// Página onde o embed vive.
+    #[prop_or_default]
+    pub page_path: String,
 }
 
 /// Dispatcher: renderiza o componente certo pro tipo de `EmbedData`.
@@ -129,6 +135,8 @@ pub fn inline_embed(props: &InlineEmbedProps) -> Html {
                 <inline_fluxo::InlineFluxo nav_group={props.nav_group.clone()} data={d.clone()}
                     vault_path={props.vault_path.clone()}
                     on_set_property={props.on_set_property.clone()}
+                    on_planejar={props.on_planejar.clone()}
+                    page_path={props.page_path.clone()}
                     on_change={Callback::from(move |d| on_change.emit(d))}
                     on_page_selected={props.on_page_selected.clone()} />
             }

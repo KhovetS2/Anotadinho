@@ -18,85 +18,39 @@ tags:
 
 ## Contexto
 
-Por que essa feature existe. Qual problema resolve, pra quem, e o que
-motivou priorizá-la agora. Linka a página de [[Missão]] ou do
-[[Roadmap]] se fizer sentido.
-
-## Objetivo
-
-1-3 frases descrevendo o resultado esperado, em termos de comportamento
-observável — não de implementação.
-
-## Escopo
-
-### Dentro do escopo
-
--
-
-### Fora do escopo
-
--
+Por que isto existe e que problema resolve — para quem, e o que motivou
+priorizar agora. **Nada de solução aqui**: como fazer é assunto da
+proposta de implementação.
 
 ## Requisitos funcionais
 
-- [ ]
-- [ ]
+O que o sistema PRECISA fazer, em comportamento observável.
 
-## Requisitos não-funcionais
+- **RF1.**
+- **RF2.**
 
-Performance, segurança, compatibilidade, acessibilidade — só o que
-for relevante pra essa spec específica; apagar seções que não se
-aplicam.
+## Requisitos não funcionais
 
--
+Desempenho, segurança, compatibilidade, acessibilidade — as restrições
+que valem seja qual for a abordagem escolhida.
 
-## Design técnico
-
-Arquivos/módulos afetados, decisões de arquitetura tomadas pra essa
-spec (decisões maiores viram uma página própria em `pages/decisoes/`,
-linkada daqui via `related_decision`).
-
--
-
-## Plano de tarefas
-
-Quebra da spec em passos executáveis, na ordem em que devem ser
-feitos. Cada tarefa deve ser pequena o bastante pra ser validada
-isoladamente.
-
-- [ ] Tarefa 1
-- [ ] Tarefa 2
-- [ ] Tarefa 3
+- **RNF1.**
 
 ## Critérios de aceite
 
-Testável — cada item aqui deve ter uma forma objetiva de verificar se
-passou ou não (comando, cenário manual, ou os dois).
+Como saber, sem ambiguidade, que está pronto.
 
 - [ ]
 - [ ]
 
-## Comandos de validação
+## Fora de escopo
 
-```bash
-# comandos que provam que a spec está pronta (testes, build, lint)
-```
+O que esta spec explicitamente NÃO cobre.
 
-## Riscos e dependências
+## Por que separar spec de proposta
 
-O que pode dar errado, o que essa spec depende de outra spec/decisão
-pra poder avançar (ver `depends_on` no frontmatter).
-
--
-
-## Não-objetivos
-
-O que deliberadamente NÃO faz parte desta spec — evita scope creep e
-deixa claro pra quem ler depois por que algo ficou de fora.
-
--
-
-## Notas
-
-Contexto extra, decisões de implementação tomadas no meio do caminho,
-links pra sessões de trabalho relevantes.
+A spec é o **o quê** e sobrevive à troca de abordagem: se a proposta
+ferir um padrão da casa, você descarta a proposta e escreve outra — o
+requisito continua valendo. Quando esta spec for aprovada, use
+"Planejar implementação" pra abrir a conversa que gera a proposta, e
+anexe ali as páginas de padrão que ela deve respeitar.

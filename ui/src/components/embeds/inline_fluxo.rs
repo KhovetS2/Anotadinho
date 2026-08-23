@@ -17,7 +17,7 @@
 
 use crate::components::icon::Icon;
 use anotadinho_core::embed::{EmbedData, FluxoEmbedData};
-use anotadinho_core::fluxo::Etapa;
+use anotadinho_core::fluxo::{Artefato, Etapa};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
@@ -30,6 +30,14 @@ pub struct InlineFluxoProps {
     /// direto no disco criava dois escritores pro mesmo arquivo, e o
     /// que fosse gravado por último apagava o outro (ciclo 201).
     pub on_set_property: Callback<(String, String)>,
+    /// Abre uma conversa de PLANEJAMENTO a partir desta spec aprovada
+    /// (ciclo 209): a spec vai anexada, e a pergunta já pede a proposta
+    /// de implementação.
+    #[prop_or_default]
+    pub on_planejar: Callback<()>,
+    /// Página onde este embed vive.
+    #[prop_or_default]
+    pub page_path: String,
     pub on_page_selected: Callback<crate::api::PageMeta>,
     pub nav_group: String,
 }
@@ -53,6 +61,11 @@ pub fn inline_fluxo(props: &InlineFluxoProps) -> Html {
             // qual as consultas filtram. Pelo editor, não pelo disco.
             on_set_property.emit(("status".to_string(), destino.slug().to_string()));
         })
+    };
+
+    let planejar = {
+        let on_planejar = props.on_planejar.clone();
+        Callback::from(move |_: MouseEvent| on_planejar.emit(()))
     };
 
     let abrir_origem = {
@@ -113,6 +126,21 @@ pub fn inline_fluxo(props: &InlineFluxoProps) -> Html {
                     }
                 }) }
             </ol>
+
+            // Uma spec APROVADA é o ponto onde o trabalho passa do "o
+            // quê" pro "como" (ciclo 209). O botão leva pra conversa de
+            // planejamento com a spec anexada — e é lá que se anexam os
+            // padrões que a implementação deve respeitar.
+            if data.artefato == Artefato::Spec && etapa == Etapa::Aprovada {
+                <div class="fluxo__planejar">
+                    <button class="btn btn--primary btn--sm" onclick={planejar}>
+                        <Icon name="zap" />{ "Planejar implementação" }
+                    </button>
+                    <span class="fluxo__planejar-dica">
+                        { "Abre uma conversa com esta spec anexada. Anexe também os padrões que a proposta deve seguir." }
+                    </span>
+                </div>
+            }
 
             <div class="fluxo__acoes">
                 { for etapa.proximas().into_iter().map(|destino| {

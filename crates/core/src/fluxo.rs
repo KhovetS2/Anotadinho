@@ -282,6 +282,55 @@ mod tests {
     }
 
     #[test]
+    fn pagina_sem_corpo_ganha_o_esqueleto_do_artefato() {
+        let spec = montar_pagina(Artefato::Spec, "T", "", None, "2026-08-22");
+        assert!(spec.contains("Requisitos funcionais"), "{spec}");
+        let prop = montar_pagina(Artefato::Proposta, "T", "", Some("pages/s.md"), "2026-08-22");
+        assert!(prop.contains("Abordagem"), "{prop}");
+        assert!(!prop.contains("Requisitos funcionais"), "proposta não redefine requisito");
+    }
+
+    #[test]
+    fn spec_nao_fala_de_implementacao_e_proposta_fala() {
+        // A separação inteira do ciclo 209: a spec é o QUÊ, a proposta é
+        // o COMO. Uma spec com "abordagem" dentro engessa a implementação
+        // antes de alguém pensar nela.
+        let spec = corpo_padrao(Artefato::Spec);
+        assert!(spec.contains("Requisitos funcionais"), "{spec}");
+        assert!(spec.contains("Critérios de aceite"), "{spec}");
+        assert!(!spec.to_lowercase().contains("## abordagem"), "spec não propõe como fazer");
+        assert!(!spec.to_lowercase().contains("## etapas"), "spec não lista etapas");
+
+        let prop = corpo_padrao(Artefato::Proposta);
+        assert!(prop.contains("Abordagem"), "{prop}");
+        assert!(prop.contains("Alternativas consideradas"), "{prop}");
+        assert!(prop.contains("Spec que atende"), "proposta tem que apontar a spec");
+        assert!(!prop.contains("Requisitos funcionais"), "proposta não redefine requisito");
+    }
+
+    #[test]
+    fn pergunta_de_planejamento_proibe_mudar_escopo() {
+        let p = pergunta_de_planejamento("Exportar em CSV");
+        assert!(p.contains("Exportar em CSV"));
+        assert!(p.contains("Abordagem"));
+        // O que impede o modelo de reescrever o problema em vez de
+        // resolvê-lo.
+        assert!(p.contains("Não proponha requisitos novos"), "{p}");
+        // A indentação do código não pode vazar pro prompt.
+        for linha in p.lines() {
+            assert!(
+                !linha.starts_with("  "),
+                "linha com indentação de código vazou: {linha:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn conversa_nao_tem_esqueleto() {
+        assert!(corpo_padrao(Artefato::Conversa).is_empty());
+    }
+
+    #[test]
     fn pagina_montada_nasce_em_rascunho_com_fluxo_embutido() {
         let md = montar_pagina(Artefato::Spec, "Exportar PDF", "corpo aqui", None, "2026-08-22");
         assert!(md.starts_with("---\n"), "{md}");
@@ -387,8 +436,15 @@ pub fn montar_pagina(
         corpo_final.push_str(&format!("origem: {o}\n"));
     }
     corpo_final.push_str("{{ /fluxo }}\n\n");
-    corpo_final.push_str(corpo.trim());
-    corpo_final.push('\n');
+    // Corpo vazio ganha o esqueleto do artefato: uma spec em branco não
+    // ajuda ninguém a lembrar que precisa de requisitos e critérios.
+    let corpo = corpo.trim();
+    if corpo.is_empty() {
+        corpo_final.push_str(corpo_padrao(artefato));
+    } else {
+        corpo_final.push_str(corpo);
+        corpo_final.push('\n');
+    }
 
     format!("{fm}{corpo_final}")
 }
@@ -434,4 +490,62 @@ pub fn titulo_sugerido(texto: &str, limite: usize) -> String {
     } else {
         corte.trim().to_string()
     }
+}
+
+/// Esqueleto do corpo de cada artefato (ciclo 209).
+///
+/// A separação que isto materializa, e que estava confusa antes:
+///
+/// - **Spec** é o QUÊ e o PORQUÊ: requisitos e critérios de aceite. Ela
+///   não fala de implementação, e por isso não muda quando a abordagem
+///   muda.
+/// - **Proposta** é o COMO: "pra atender esta spec, faremos assim". Ela
+///   pode ser recusada por ferir um padrão da casa — e a spec continua
+///   valendo, porque aquilo ainda precisa ser feito.
+///
+/// Sem essa divisão, recusar uma abordagem parecia recusar o trabalho
+/// inteiro; e uma spec que já diz como fazer engessa a implementação
+/// antes de alguém pensar nela.
+pub fn corpo_padrao(artefato: Artefato) -> &'static str {
+    match artefato {
+        Artefato::Spec => {
+            "## Contexto\n\n             Por que isto existe e que problema resolve. Nada de solução aqui.\n\n             ## Requisitos funcionais\n\n             O que o sistema PRECISA fazer, em comportamento observável.\n\n             - RF1. \n- RF2. \n\n             ## Requisitos não funcionais\n\n             Desempenho, segurança, compatibilidade, acessibilidade — as              restrições que valem seja qual for a abordagem.\n\n             - RNF1. \n\n             ## Critérios de aceite\n\n             Como saber, sem ambiguidade, que está pronto.\n\n             - [ ] \n\n             ## Fora de escopo\n\n             O que esta spec explicitamente NÃO cobre.\n"
+        }
+        Artefato::Proposta => {
+            "## Spec que atende\n\n             Link da spec e, em uma frase, o que dela esta proposta resolve.\n\n             ## Abordagem\n\n             Como pretende ser feito. É esta parte que muda se um padrão              da casa for ferido — a spec continua a mesma.\n\n             ## Etapas\n\n             1. \n2. \n\n             ## Padrões seguidos\n\n             Quais páginas de padrão foram consultadas e como a abordagem              se encaixa nelas.\n\n             ## Alternativas consideradas\n\n             O que foi descartado, e por quê. É o que evita rediscutir a              mesma coisa daqui a três meses.\n\n             ## Riscos\n\n             O que pode dar errado, e o que fazer se der.\n"
+        }
+        Artefato::Execucao => {
+            "## O que foi feito\n\n\n             ## Como foi validado\n\n\n             ## O que ficou de fora\n"
+        }
+        Artefato::Conversa => "",
+    }
+}
+
+/// A pergunta que abre uma conversa de PLANEJAMENTO a partir de uma
+/// spec aprovada (ciclo 209).
+///
+/// Diz explicitamente pro modelo o que NÃO fazer: propor requisito novo
+/// é trabalho da spec, não da proposta. Sem isso ele tende a reescrever
+/// o problema em vez de resolvê-lo.
+pub fn pergunta_de_planejamento(titulo_spec: &str) -> String {
+    // Linhas montadas por `join` e não por string de várias linhas com
+    // `\`: a continuação preserva a indentação do CÓDIGO, e ela vazava
+    // pro prompt. Já tinha me pegado uma vez, num teste do ciclo 204.
+    [
+        format!("Leia a spec \"{titulo_spec}\" e as páginas de padrão anexadas."),
+        String::new(),
+        "Escreva uma PROPOSTA DE IMPLEMENTAÇÃO com esta estrutura:".to_string(),
+        String::new(),
+        "1. Título na primeira linha.".to_string(),
+        "2. Abordagem: como atender os requisitos.".to_string(),
+        "3. Etapas, na ordem de execução.".to_string(),
+        "4. Padrões seguidos: cite os anexados e como a abordagem se encaixa."
+            .to_string(),
+        "5. Alternativas consideradas e por que foram descartadas.".to_string(),
+        "6. Riscos.".to_string(),
+        String::new(),
+        "Não proponha requisitos novos nem mude o escopo — isso é da spec. Se algum          requisito estiver ambíguo, aponte a ambiguidade em vez de decidir por conta."
+            .to_string(),
+    ]
+    .join("\n")
 }

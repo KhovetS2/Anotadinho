@@ -32,12 +32,28 @@ pub struct ConversaViewProps {
     /// Página que estava aberta antes — vai como contexto.
     #[prop_or_default]
     pub contexto_path: Option<String>,
+    /// Pergunta já escrita ao abrir (ciclo 209).
+    #[prop_or_default]
+    pub pergunta_inicial: Option<String>,
 }
 
 #[function_component(ConversaView)]
 pub fn conversa_view(props: &ConversaViewProps) -> Html {
     let mensagens = use_state(Vec::<Mensagem>::new);
     let rascunho = use_state(String::new);
+    {
+        // Preenche o campo quando a conversa nasce de um botão que já
+        // sabe o que perguntar. Só na ABERTURA: sobrescrever depois
+        // apagaria o que a pessoa estivesse escrevendo.
+        let rascunho = rascunho.clone();
+        let inicial = props.pergunta_inicial.clone();
+        use_effect_with(props.page.path.clone(), move |_| {
+            if let Some(p) = inicial {
+                rascunho.set(p);
+            }
+            || ()
+        });
+    }
     let ocupado = use_state(|| false);
     let erro = use_state(|| None::<String>);
     // Páginas anexadas, lidas do FRONTMATTER (ciclo 208) — sobrevivem a
