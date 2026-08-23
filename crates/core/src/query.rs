@@ -133,6 +133,32 @@ pub enum QueryView {
     Cards,
 }
 
+/// Altura padrão, em pixels, da área rolável de uma consulta.
+pub const ALTURA_MAXIMA_PADRAO: u16 = 384;
+
+/// Número de cores disponíveis para os valores de propriedades.
+pub const PALETA_CONSULTA_LEN: usize = 6;
+
+/// Índice estável da cor de um valor de propriedade numa consulta.
+///
+/// A chave inclui coluna, campo e valor para que escalas diferentes na
+/// mesma tabela não se confundam. A normalização é a mesma comparação
+/// sem distinção entre maiúsculas e minúsculas usada por `QueryOp::Eq`.
+pub fn indice_cor_consulta(coluna: &str, campo: &str, valor: &str) -> usize {
+    let chave = format!(
+        "{}\u{1f}{}\u{1f}{}",
+        coluna.trim().to_ascii_lowercase(),
+        campo.trim().to_ascii_lowercase(),
+        valor.to_ascii_lowercase(),
+    );
+    // FNV-1a: pequeno, determinístico e independente do hasher aleatório
+    // da std, cuja saída não pode ser usada como apresentação persistente.
+    let hash = chave.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    });
+    (hash as usize) % PALETA_CONSULTA_LEN
+}
+
 impl QueryView {
     /// Todas as visões, na ordem do seletor.
     pub fn all() -> &'static [QueryView] {
@@ -318,6 +344,9 @@ pub struct Query {
     /// Máximo de resultados.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
+    /// Teto, em pixels, da área de resultados. Ausente usa o padrão.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_height: Option<u16>,
     /// Como desenhar.
     #[serde(default)]
     pub view: QueryView,
@@ -338,6 +367,10 @@ pub struct Query {
 }
 
 impl Query {
+    /// Altura máxima efetiva da área de resultados.
+    pub fn altura_maxima(&self) -> u16 {
+        self.max_height.filter(|altura| *altura > 0).unwrap_or(ALTURA_MAXIMA_PADRAO)
+    }
     /// Aplica filtros, ordenação e limite sobre o índice.
     ///
     /// A ordem base (antes de `sort`) é a que veio do índice — a
@@ -632,6 +665,7 @@ mod tests {
             conditions: vec![Condition { field: "status".into(), op: QueryOp::Neq, value: "done".into() }],
             sort: Some(Sort { field: "priority".into(), desc: true }),
             limit: Some(5),
+            max_height: Some(256),
             view: QueryView::Cards,
             columns: vec!["status".into(), "priority".into()],
             group_by: Some("status".into()),
@@ -642,6 +676,20 @@ mod tests {
         let back: Query = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(back, q);
         assert!(yaml.contains("where:"), "o campo de condições sai como `where` no YAML: {yaml}");
+    }
+
+    #[test]
+    fn altura_maxima_tem_padrao_e_ignora_zero() {
+        assert_eq!(Query::default().altura_maxima(), ALTURA_MAXIMA_PADRAO);
+        assert_eq!(Query { max_height: Some(0), ..Default::default() }.altura_maxima(), ALTURA_MAXIMA_PADRAO);
+        assert_eq!(Query { max_height: Some(240), ..Default::default() }.altura_maxima(), 240);
+    }
+
+    #[test]
+    fn indice_de_cor_e_estavel_normalizado_e_dentro_da_paleta() {
+        let alto = indice_cor_consulta("Prioridade", "priority", "Alta");
+        assert_eq!(alto, indice_cor_consulta(" prioridade ", "PRIORITY", "alta"));
+        assert!(alto < PALETA_CONSULTA_LEN);
     }
 
     #[test]

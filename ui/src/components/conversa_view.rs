@@ -64,6 +64,13 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     let decorrido = use_state(|| 0u64);
     // Qual agente está configurado. É estado, não leitura solta, porque
     // agora dá pra trocar sem sair da conversa (ciclo 214).
+    // Se há execução em andamento, num `RefCell` e não em `use_state`.
+    //
+    // O handle de `use_state` capturado num closure de efeito fica
+    // CONGELADO no valor de quando o efeito rodou — o laço de
+    // acompanhamento leria `false` pra sempre e nunca voltaria a
+    // perguntar. É o mesmo defeito dos ciclos 155, 157 e 201.
+    let ativo = use_mut_ref(|| false);
     let adaptador = use_state(crate::state::load_adaptador);
     let trocando_agente = use_state(|| false);
     // Páginas anexadas, lidas do FRONTMATTER (ciclo 208) — sobrevivem a
@@ -108,17 +115,37 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         let decorrido = decorrido.clone();
         let vault_path = props.vault_path.clone();
         let path = props.page.path.clone();
+        let ativo = ativo.clone();
         use_effect_with(props.page.path.clone(), move |_| {
+            // Só pergunta quando há motivo: enquanto a conversa está
+            // parada, uma ida ao backend por segundo não descobre nada
+            // e ainda re-renderiza a tela. Numa conversa grande isso
+            // saturou o processo de renderização e ele não voltava mais
+            // — as chamadas se acumulavam mais rápido do que eram
+            // atendidas.
+            //
+            // A primeira volta sempre pergunta: é ela que recupera um
+            // trabalho que terminou enquanto a pessoa estava noutra
+            // página.
+            let ja_perguntou = std::rc::Rc::new(std::cell::Cell::new(false));
             let intervalo = gloo_timers::callback::Interval::new(1000, move || {
+                if ja_perguntou.get() && !*ativo.borrow() {
+                    return;
+                }
+                ja_perguntou.set(true);
                 let (mensagens, ocupado, erro) =
                     (mensagens.clone(), ocupado.clone(), erro.clone());
                 let (parcial, decorrido) = (parcial.clone(), decorrido.clone());
                 let (vault_path, path) = (vault_path.clone(), path.clone());
+                // Clonado FORA do `async move`: dentro, o closure
+                // levaria o `Rc` embora e o intervalo só rodaria uma vez.
+                let ativo = ativo.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     let Ok(Some(estado)) = api::estado_agente(&path).await else {
                         // Sem execução: se a tela ainda se achava
                         // ocupada, é porque o resultado foi entregue
                         // noutra montagem desta mesma página.
+                        *ativo.borrow_mut() = false;
                         if *ocupado {
                             ocupado.set(false);
                             parcial.set(String::new());
@@ -127,11 +154,13 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     };
                     match estado {
                         EstadoJob::Rodando { segundos, parcial: saida } => {
+                            *ativo.borrow_mut() = true;
                             ocupado.set(true);
                             decorrido.set(segundos);
                             parcial.set(saida);
                         }
                         EstadoJob::Concluido { .. } => {
+                            *ativo.borrow_mut() = false;
                             // Só RELÊ: a resposta já foi gravada pelo
                             // backend, que é quem tem como fazer isso
                             // mesmo com esta tela fechada. Compor a
@@ -149,11 +178,13 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                             ocupado.set(false);
                         }
                         EstadoJob::Falhou { erro: e } => {
+                            *ativo.borrow_mut() = false;
                             erro.set(Some(e));
                             parcial.set(String::new());
                             ocupado.set(false);
                         }
                         EstadoJob::Cancelado => {
+                            *ativo.borrow_mut() = false;
                             erro.set(Some("execução interrompida por você".to_string()));
                             parcial.set(String::new());
                             ocupado.set(false);
@@ -231,6 +262,24 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         })
     };
 
+    // Markdown das mensagens renderizado UMA vez por mudança da lista.
+    //
+    // Sem isto a conversa reparseava todo o histórico a cada segundo:
+    // o acompanhamento da execução (ciclo 213) atualiza o progresso e o
+    // tempo decorrido de segundo em segundo, e qualquer mudança de
+    // estado re-renderiza o componente inteiro.
+    //
+    // Numa conversa de 26 KB isso levou o processo de renderização a
+    // 85% de CPU e a janela parou de responder — parecia o app travado,
+    // e a pessoa reenviava a pergunta, que entrava duplicada no
+    // arquivo.
+    let renderizadas = use_memo((*mensagens).clone(), |lista: &Vec<Mensagem>| {
+        lista
+            .iter()
+            .map(|m| crate::markdown_render::render(&m.texto))
+            .collect::<Vec<String>>()
+    });
+
     // Contexto que aponta pra própria conversa não serve de nada —
     // acontece ao reabrir a mesma página.
     let contexto_path = props
@@ -245,6 +294,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         let erro = erro.clone();
         let anexos = anexos.clone();
         let adaptador = adaptador.clone();
+        let ativo = ativo.clone();
         let vault_path = props.vault_path.clone();
         let path = props.page.path.clone();
         Callback::from(move |_: MouseEvent| {
@@ -257,6 +307,10 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
             let (vault_path, path) = (vault_path.clone(), path.clone());
             let anexados = (*anexos).clone();
             let adaptador = (*adaptador).clone();
+            // Reacende o laço de acompanhamento, que fica parado
+            // enquanto não há trabalho.
+            let ativo = ativo.clone();
+            *ativo.borrow_mut() = true;
             ocupado.set(true);
             erro.set(None);
 
@@ -297,6 +351,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 // meio, porque o processo é do backend.
                 if let Err(e) = api::iniciar_agente(&adaptador, &prompt, &vault_path, &path).await {
                     erro.set(Some(e));
+                    *ativo.borrow_mut() = false;
                     ocupado.set(false);
                 }
             });
@@ -556,7 +611,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                         { "Pergunte algo, peça uma spec, ou mande analisar a página aberta." }
                     </p>
                 }
-                { for mensagens.iter().map(|m| {
+                { for mensagens.iter().enumerate().map(|(i, m)| {
                     let classe = match m.autor {
                         Autor::Voce => "conversa__msg conversa__msg--voce",
                         Autor::Agente => "conversa__msg conversa__msg--agente",
@@ -569,7 +624,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                             </header>
                             <div class="conversa__msg-corpo">
                                 { Html::from_html_unchecked(
-                                    crate::markdown_render::render(&m.texto).into()) }
+                                    renderizadas.get(i).cloned().unwrap_or_default().into()) }
                             </div>
                             if m.autor == Autor::Agente {
                                 <div class="conversa__msg-acoes">

@@ -11,7 +11,7 @@
 //! página. Escrita a partir de um painel é o embed `actions` (ciclo 156).
 
 use wasm_bindgen::JsCast;
-use web_sys::HtmlInputElement;
+use web_sys::{HtmlElement, HtmlInputElement};
 use yew::prelude::*;
 
 use crate::api::{self, PageIndexEntry, PageMeta};
@@ -22,6 +22,9 @@ use crate::query::{Query, QueryView};
 /// Campos que sempre aparecem no seletor, mesmo que nenhuma página do
 /// vault use ainda.
 const BASE_FIELDS: [&str; 5] = ["title", "path", "type", "status", "priority"];
+const LIMIAR_VIRTUALIZACAO: usize = 100;
+const ALTURA_LINHA_VIRTUAL: f64 = 42.0;
+const MARGEM_VIRTUAL: usize = 5;
 
 /// Props do `InlineQuery`.
 #[derive(Properties, PartialEq, Clone)]
@@ -41,6 +44,39 @@ pub struct InlineQueryProps {
     pub nav_group: String,
 }
 
+/// Ativa a linha com Enter/Espaço e, em janelas virtualizadas, move a
+/// janela antes de entregar o foco à próxima/anterior linha.
+fn tecla_da_linha(
+    ativar: Callback<()>,
+    virtualizada: bool,
+    indice: usize,
+    total: usize,
+    altura_maxima: u16,
+    scroll_top: UseStateHandle<f64>,
+    foco_virtual: UseStateHandle<Option<usize>>,
+) -> Callback<web_sys::KeyboardEvent> {
+    Callback::from(move |evento: web_sys::KeyboardEvent| {
+        if virtualizada && matches!(evento.key().as_str(), "ArrowDown" | "ArrowUp") {
+            evento.prevent_default();
+            evento.stop_propagation();
+            let destino = if evento.key() == "ArrowDown" {
+                (indice + 1) % total
+            } else {
+                (indice + total - 1) % total
+            };
+            let topo = (destino as f64 * ALTURA_LINHA_VIRTUAL
+                - (f64::from(altura_maxima) - ALTURA_LINHA_VIRTUAL) / 2.0)
+                .max(0.0);
+            scroll_top.set(topo);
+            foco_virtual.set(Some(destino));
+        } else if evento.key() == "Enter" || evento.key() == " " {
+            evento.prevent_default();
+            evento.stop_propagation();
+            ativar.emit(());
+        }
+    })
+}
+
 /// Consulta viva.
 #[function_component(InlineQuery)]
 pub fn inline_query(props: &InlineQueryProps) -> Html {
@@ -48,6 +84,11 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
     let loading = use_state(|| true);
     let settings_open = use_state(|| false);
     let erro = use_state(|| None::<String>);
+    let scroll_top = use_state(|| 0.0_f64);
+    let fim_da_rolagem = use_state(|| false);
+    let foco_virtual = use_state(|| None::<usize>);
+    let raiz = use_node_ref();
+    let resultados_ref = use_node_ref();
 
     // UMA varredura (ciclo 150) alimenta a consulta inteira — o filtro
     // roda em memória, então reconfigurar não custa I/O nenhum.
@@ -67,6 +108,68 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
     }
 
     let results = props.data.run(&entries);
+    let altura_maxima = props.data.altura_maxima();
+    let virtualizada = results.len() > LIMIAR_VIRTUALIZACAO
+        && props.data.group_by.is_none()
+        && props.data.aggregate.is_empty()
+        && matches!(props.data.view, QueryView::List | QueryView::Table);
+    let inicio_virtual = if virtualizada {
+        ((*scroll_top / ALTURA_LINHA_VIRTUAL).floor() as usize).saturating_sub(MARGEM_VIRTUAL)
+    } else {
+        0
+    };
+    let quantidade_virtual = if virtualizada {
+        (f64::from(altura_maxima) / ALTURA_LINHA_VIRTUAL).ceil() as usize + MARGEM_VIRTUAL * 2
+    } else {
+        results.len()
+    };
+    let fim_virtual = (inicio_virtual + quantidade_virtual).min(results.len());
+
+    // A origem da janela é a rolagem real do contêiner. Quando a seta
+    // pede uma linha fora dela, o estado também reposiciona esse
+    // contêiner antes de o efeito abaixo entregar o foco.
+    {
+        let resultados_ref = resultados_ref.clone();
+        use_effect_with(*scroll_top, move |topo| {
+            if let Some(resultados) = resultados_ref.cast::<HtmlElement>() {
+                resultados.set_scroll_top(*topo as i32);
+            }
+            || {}
+        });
+    }
+
+    {
+        let resultados_ref = resultados_ref.clone();
+        let fim_da_rolagem = fim_da_rolagem.clone();
+        use_effect_with((results.len(), altura_maxima), move |_| {
+            if let Some(resultados) = resultados_ref.cast::<HtmlElement>() {
+                fim_da_rolagem.set(
+                    resultados.scroll_top() + resultados.client_height() >= resultados.scroll_height() - 1,
+                );
+            }
+            || {}
+        });
+    }
+
+    // Depois de a rolagem montar a nova janela, põe o foco na linha que
+    // a seta pediu. Assim o nav-mode não fica preso à última linha visível.
+    {
+        let raiz = raiz.clone();
+        let foco_virtual = foco_virtual.clone();
+        use_effect_with(*foco_virtual, move |alvo| {
+            if let Some(indice) = *alvo {
+                if let Some(raiz) = raiz.cast::<HtmlElement>() {
+                    if let Ok(Some(el)) = raiz.query_selector(&format!("[data-query-index=\"{indice}\"]")) {
+                        if let Ok(el) = el.dyn_into::<HtmlElement>() {
+                            let _ = el.focus();
+                            foco_virtual.set(None);
+                        }
+                    }
+                }
+            }
+            || {}
+        });
+    }
 
     // Edição de propriedade na própria linha (ciclo 168). Antes disso a
     // consulta era só leitura: ver a spec em backlog e mudar o status
@@ -174,7 +277,9 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
         let gravar = gravar.clone();
         let sugestoes = sugestoes.clone();
         let nav_group = nav_group.clone();
-        move |path: String, campo: String, valor: String, classe: &'static str| -> Html {
+        move |path: String, campo: String, valor: String, coluna: String, classe: &'static str| -> Html {
+            let cor = format!("query-embed__chip--cor-{}", anotadinho_core::query::indice_cor_consulta(&coluna, &campo, &valor));
+            let classes = classes!(classe, cor);
             let em_edicao = editando.as_ref().is_some_and(|(p, c)| *p == path && *c == campo);
             if em_edicao {
                 let commit = {
@@ -213,7 +318,7 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                 let lista_id = format!("sug-{}-{}", campo, path.replace(['/', '.'], "-"));
                 let opcoes = sugestoes.get(&campo).cloned().unwrap_or_default();
                 html! {
-                    <span class={classe}>
+                    <span class={classes.clone()}>
                         <input class="query-embed__editar" type="text" value={valor}
                             list={lista_id.clone()} autofocus=true {onblur} {onkeydown} />
                         <datalist id={lista_id}>
@@ -229,9 +334,16 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                     Callback::from(move |_| editando.set(Some((path.clone(), campo.clone()))))
                 };
                 let rotulo = if valor.trim().is_empty() { "—".to_string() } else { valor };
+                // O valor inteiro entra no tooltip: numa janela virtualizada a
+                // linha é fixa e o texto pode sair truncado.
+                let dica = if rotulo == "—" {
+                    format!("Editar {campo}")
+                } else {
+                    format!("{rotulo} — editar {campo}")
+                };
                 html! {
-                    <span class={classes!(classe, "query-embed__editavel")} tabindex="0" role="button"
-                        title={format!("Editar {campo}")}
+                    <span class={classes!(classes, "query-embed__editavel")} tabindex="0" role="button"
+                        title={dica}
                         data-nav-item="query-cell" data-nav-parent={nav_group.clone()}
                         onclick={abrir.reform(|e: MouseEvent| { e.stop_propagation(); })}
                         onkeydown={crate::keyboard_activate::activate_on_enter_or_space(abrir.clone())}>
@@ -310,7 +422,7 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                                                 <span class="query-embed__meta">
                                                     { for columns.iter().map(|c| celula(
                                                         entry.path.clone(), c.clone(),
-                                                        entry.field(c).unwrap_or_default(), "query-embed__chip")) }
+                                                        entry.field(c).unwrap_or_default(), String::new(), "query-embed__chip")) }
                                                 </span>
                                             </li>
                                         }
@@ -326,22 +438,29 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
         match props.data.view {
             QueryView::List => html! {
                 <ul class="query-embed__list">
-                    { for results.iter().map(|entry| {
+                    if virtualizada && inicio_virtual > 0 {
+                        <li class="query-embed__spacer" style={format!("height: {}px", inicio_virtual as f64 * ALTURA_LINHA_VIRTUAL)} />
+                    }
+                    { for results.iter().enumerate().skip(inicio_virtual).take(fim_virtual - inicio_virtual).map(|(indice, entry)| {
                         let activate = open_page(entry);
+                        let classes = classes!("query-embed__row", virtualizada.then_some("query-embed__row--virtual"));
                         html! {
-                            <li class="query-embed__row" tabindex="0" role="button"
+                            <li class={classes} tabindex="0" role="button" data-query-index={indice.to_string()}
                                 data-nav-item="query-row" data-nav-parent={nav_group.clone()}
                                 onclick={activate.reform(|_: MouseEvent| ())}
-                                onkeydown={crate::keyboard_activate::activate_on_enter_or_space(activate.clone())}>
-                                <span class="query-embed__title">{ entry.title.clone() }</span>
+                                onkeydown={tecla_da_linha(activate.clone(), virtualizada, indice, results.len(), altura_maxima, scroll_top.clone(), foco_virtual.clone())}>
+                                <span class="query-embed__title" title={entry.title.clone()}>{ entry.title.clone() }</span>
                                 <span class="query-embed__meta">
                                     { for columns.iter().map(|c| celula(
                                         entry.path.clone(), c.clone(),
-                                        entry.field(c).unwrap_or_default(), "query-embed__chip")) }
+                                        entry.field(c).unwrap_or_default(), String::new(), "query-embed__chip")) }
                                 </span>
                             </li>
                         }
                     }) }
+                    if virtualizada && fim_virtual < results.len() {
+                        <li class="query-embed__spacer" style={format!("height: {}px", (results.len() - fim_virtual) as f64 * ALTURA_LINHA_VIRTUAL)} />
+                    }
                 </ul>
             },
             QueryView::Table => html! {
@@ -353,21 +472,28 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                         </tr>
                     </thead>
                     <tbody>
-                        { for results.iter().map(|entry| {
+                        if virtualizada && inicio_virtual > 0 {
+                            <tr class="query-embed__spacer"><td colspan={(columns.len() + 1).to_string()} style={format!("height: {}px", inicio_virtual as f64 * ALTURA_LINHA_VIRTUAL)} /></tr>
+                        }
+                        { for results.iter().enumerate().skip(inicio_virtual).take(fim_virtual - inicio_virtual).map(|(indice, entry)| {
                             let activate = open_page(entry);
+                            let classes = classes!("query-embed__row", virtualizada.then_some("query-embed__row--virtual"));
                             html! {
-                                <tr class="query-embed__row" tabindex="0" role="button"
+                                <tr class={classes} tabindex="0" role="button" data-query-index={indice.to_string()}
                                     data-nav-item="query-row" data-nav-parent={nav_group.clone()}
                                     onclick={activate.reform(|_: MouseEvent| ())}
-                                    onkeydown={crate::keyboard_activate::activate_on_enter_or_space(activate.clone())}>
-                                    <td class="query-embed__title">{ entry.title.clone() }</td>
+                                    onkeydown={tecla_da_linha(activate.clone(), virtualizada, indice, results.len(), altura_maxima, scroll_top.clone(), foco_virtual.clone())}>
+                                    <td class="query-embed__title" title={entry.title.clone()}>{ entry.title.clone() }</td>
                                     { for columns.iter().map(|c| html! {
                                         <td>{ celula(entry.path.clone(), c.clone(),
-                                            entry.field(c).unwrap_or_default(), "query-embed__chip") }</td>
+                                            entry.field(c).unwrap_or_default(), c.clone(), "query-embed__chip") }</td>
                                     }) }
                                 </tr>
                             }
                         }) }
+                        if virtualizada && fim_virtual < results.len() {
+                            <tr class="query-embed__spacer"><td colspan={(columns.len() + 1).to_string()} style={format!("height: {}px", (results.len() - fim_virtual) as f64 * ALTURA_LINHA_VIRTUAL)} /></tr>
+                        }
                     </tbody>
                 </table>
             },
@@ -384,8 +510,12 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                                 <span class="query-embed__path">{ entry.path.clone() }</span>
                                 <div class="query-embed__meta">
                                     { for columns.iter().filter_map(|c| {
-                                        entry.field(c).filter(|v| !v.is_empty()).map(|v| html! {
-                                            <span class="query-embed__chip">{ v }</span>
+                                        // Cartão só ganha a cor do badge: a edição em linha
+                                        // (ciclo 168) segue restrita a lista e tabela.
+                                        entry.field(c).filter(|v| !v.is_empty()).map(|v| {
+                                            let cor = format!("query-embed__chip--cor-{}",
+                                                anotadinho_core::query::indice_cor_consulta("", c, &v));
+                                            html! { <span class={classes!("query-embed__chip", cor)}>{ v }</span> }
                                         })
                                     }) }
                                 </div>
@@ -398,6 +528,21 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
     };
 
     let describe = describe_query(&props.data);
+    let onscroll = {
+        let scroll_top = scroll_top.clone();
+        let fim_da_rolagem = fim_da_rolagem.clone();
+        Callback::from(move |evento: Event| {
+            let Some(resultados) = evento.target().and_then(|t| t.dyn_into::<HtmlElement>().ok()) else { return };
+            scroll_top.set(f64::from(resultados.scroll_top()));
+            fim_da_rolagem.set(
+                resultados.scroll_top() + resultados.client_height() >= resultados.scroll_height() - 1,
+            );
+        })
+    };
+    let classe_resultados = classes!(
+        "query-embed__results",
+        (!*fim_da_rolagem && !results.is_empty()).then_some("query-embed__results--has-more"),
+    );
 
     html! {
         <div class="query-embed" data-nav-group={nav_group.clone()} data-nav-item={nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
@@ -419,7 +564,10 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
             if let Some(msg) = (*erro).clone() {
                 <p class="query-embed__erro">{ msg }</p>
             }
-            { body }
+            <div class={classe_resultados} ref={resultados_ref} {onscroll}
+                style={format!("max-height: {}px", altura_maxima)}>
+                { body }
+            </div>
             if *settings_open {
                 <QuerySettingsModal
                     query={props.data.clone()}

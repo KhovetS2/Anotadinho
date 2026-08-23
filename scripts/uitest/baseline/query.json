@@ -175,6 +175,28 @@
     },
     "n": 3
   },
+  "query-embed__results": {
+    "estilos": {
+      "background-color": "rgba(0, 0, 0, 0)",
+      "border-radius": "0px",
+      "border-top-color": "rgb(228, 232, 245)",
+      "border-top-width": "0px",
+      "color": "rgb(228, 232, 245)",
+      "display": "block",
+      "flex-direction": "row",
+      "font-size": "15px",
+      "font-weight": "400",
+      "gap": "normal",
+      "grid-template-columns": "none",
+      "margin-top": "0px",
+      "opacity": "1",
+      "overflow-x": "auto",
+      "padding-left": "0px",
+      "padding-top": "0px",
+      "text-align": "start"
+    },
+    "n": 1
+  },
   "query-embed__row": {
     "estilos": {
       "background-color": "rgba(0, 0, 0, 0)",

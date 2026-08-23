@@ -1,5 +1,5 @@
 //! Modal de configuração de um embed de consulta: pasta, tags,
-//! condições (campo/operador/valor), ordenação, limite, modo de
+//! condições (campo/operador/valor), ordenação, limite, altura, modo de
 //! exibição e campos mostrados.
 //!
 //! Mesma ideia do `ColumnSettingsModal`: configuração com mais de dois
@@ -87,6 +87,16 @@ pub fn query_settings_modal(props: &QuerySettingsModalProps) -> Html {
             let Some(v) = input_value(&e) else { return };
             update(Box::new(move |q| {
                 q.limit = v.trim().parse::<usize>().ok().filter(|n| *n > 0);
+            }));
+        })
+    };
+
+    let on_max_height = {
+        let update = update.clone();
+        Callback::from(move |e: Event| {
+            let Some(v) = input_value(&e) else { return };
+            update(Box::new(move |q| {
+                q.max_height = v.trim().parse::<u16>().ok().filter(|n| *n > 0);
             }));
         })
     };
@@ -253,6 +263,13 @@ pub fn query_settings_modal(props: &QuerySettingsModalProps) -> Html {
                     <span class="query-settings__label">{ "Limite" }</span>
                     <input class="query-settings__input" type="number" min="1" placeholder="sem limite"
                         value={q.limit.map(|l| l.to_string()).unwrap_or_default()} onchange={on_limit} />
+                </label>
+
+                <label class="query-settings__row">
+                    <span class="query-settings__label">{ "Altura máxima" }</span>
+                    <input class="query-settings__input" type="number" min="1" placeholder="384 px (padrão)"
+                        value={q.max_height.map(|h| h.to_string()).unwrap_or_default()} onchange={on_max_height} />
+                    <span class="query-settings__hint">{ "px" }</span>
                 </label>
 
                 <label class="query-settings__row">

@@ -466,6 +466,64 @@ cenarios.push({
 
 // ── ciclo 169: agrupamento e agregados ───────────────────────────────
 
+// ── ciclo 217: leitura de consultas ──────────────────────────────────
+
+cenarios.push({
+  nome: "consulta: tabela alinhada, badges e janela virtualizada (217)",
+  async fn(bridge, ctx) {
+    const { mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const pasta = join(ctx.vault, "pages/__uitest-query");
+    mkdirSync(pasta, { recursive: true });
+    try {
+      for (let i = 0; i < 101; i++) {
+        writeFileSync(join(pasta, `q-${i}.md`), `---\ntitle: Consulta ${i}\npriority: alta\ntype: spec\n---\n# ${i}\n`);
+      }
+      ctx.escrever(
+        '---\ntitle: __uitest\n---\n{{ type: "query" }}\nfrom: pages/__uitest-query\nview: table\ncolumns:\n- priority\n- type\nmax_height: 84\n{{ /query }}\n',
+      );
+      await recarregar(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await ctx.esperar(bridge, "document.querySelectorAll('.query-embed__row').length > 0", "a primeira janela da consulta renderizar");
+
+      const inicio = await bridge.js(`(() => {
+        const area = document.querySelector('.query-embed__results');
+        const th = document.querySelector('.query-embed__table th:nth-child(2)');
+        const td = document.querySelector('.query-embed__table td:nth-child(2)');
+        const chips = [...document.querySelectorAll('.query-embed__chip')];
+        return { altura: area.getBoundingClientRect().height, rola: area.scrollHeight > area.clientHeight,
+          alinhado: Math.abs(th.getBoundingClientRect().left - td.getBoundingClientRect().left) < 1,
+          poucos: document.querySelectorAll('.query-embed__row').length < 30,
+          cor: chips.length > 1 && chips[0].className === chips[2].className };
+      })()`);
+      ctx.assert(inicio.altura <= 84.5, `a área passou da altura configurada: ${inicio.altura}`);
+      ctx.assert(inicio.rola, "a consulta longa devia rolar internamente");
+      ctx.assert(inicio.alinhado, "o valor da coluna priority não alinhou com o cabeçalho");
+      ctx.assert(inicio.poucos, "a virtualização montou linhas demais no DOM");
+      ctx.assert(inicio.cor, "o mesmo valor de propriedade não recebeu o mesmo badge");
+
+      // Índices montados antes de rolar: a janela precisa MUDAR, não só
+      // conter o último item — que, na ordem do índice, pode já estar no
+      // primeiro recorte.
+      const antes = await bridge.js(`(() => [...document.querySelectorAll('[data-query-index]')].map((e) => +e.dataset.queryIndex))()`);
+      await bridge.js(`(() => { const area = document.querySelector('.query-embed__results'); area.scrollTop = area.scrollHeight; area.dispatchEvent(new Event('scroll', { bubbles: true })); return true; })()`);
+      await ctx.esperar(bridge, "[...document.querySelectorAll('[data-query-index]')].some((e) => +e.dataset.queryIndex === 100)", "a janela virtualizada alcançar o último resultado");
+
+      const fim = await bridge.js(`(() => {
+        const indices = [...document.querySelectorAll('[data-query-index]')].map((e) => +e.dataset.queryIndex);
+        const area = document.querySelector('.query-embed__results');
+        return { primeiro: Math.min(...indices), total: indices.length,
+          altura: area.getBoundingClientRect().height };
+      })()`);
+      ctx.assert(fim.primeiro > Math.min(...antes), `a janela não avançou: começou em ${Math.min(...antes)} e continua em ${fim.primeiro}`);
+      ctx.assert(fim.total < 30, `a virtualização montou linhas demais depois de rolar: ${fim.total}`);
+      ctx.assert(fim.altura <= 84.5, `a área cresceu depois de rolar: ${fim.altura}`);
+    } finally {
+      rmSync(pasta, { recursive: true, force: true });
+    }
+  },
+});
+
 cenarios.push({
   nome: "consulta agrupada: cabeçalho por valor, contagem e recolher (169)",
   async fn(bridge, ctx) {

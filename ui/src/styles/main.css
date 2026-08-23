@@ -4095,6 +4095,26 @@ body {
     margin: 0;
 }
 
+/* A barra, a contagem e o erro pertencem ao embed; só os resultados
+   rolam. O degradê é uma pista adicional de continuação, sem ocultar
+   texto nem depender apenas da barra de rolagem. */
+.query-embed__results {
+    position: relative;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+
+.query-embed__results--has-more::after {
+    content: "";
+    position: sticky;
+    display: block;
+    bottom: 0;
+    height: var(--sp-6);
+    margin-top: calc(-1 * var(--sp-6));
+    pointer-events: none;
+    background: linear-gradient(transparent, var(--bg-surface));
+}
+
 .query-embed__list {
     list-style: none;
     margin: 0;
@@ -4112,6 +4132,12 @@ body {
 
 .query-embed__row:last-child {
     border-bottom: none;
+}
+
+/* A lista é flex; a linha da tabela não pode herdar esse layout, senão
+   deixa de participar do algoritmo que alinha td e th. */
+.query-embed__table .query-embed__row {
+    display: table-row;
 }
 
 .query-embed__row:hover {
@@ -4152,6 +4178,13 @@ body {
     line-height: 1.6;
 }
 
+.query-embed__chip--cor-0 { background: color-mix(in srgb, var(--accent-blue) 24%, var(--bg-elevated)); color: var(--text-primary); }
+.query-embed__chip--cor-1 { background: color-mix(in srgb, var(--accent-purple) 25%, var(--bg-elevated)); color: var(--text-primary); }
+.query-embed__chip--cor-2 { background: color-mix(in srgb, var(--success) 30%, var(--bg-elevated)); color: var(--text-primary); }
+.query-embed__chip--cor-3 { background: color-mix(in srgb, var(--warning) 32%, var(--bg-elevated)); color: var(--text-primary); }
+.query-embed__chip--cor-4 { background: color-mix(in srgb, var(--error) 24%, var(--bg-elevated)); color: var(--text-primary); }
+.query-embed__chip--cor-5 { background: color-mix(in srgb, var(--text-muted) 28%, var(--bg-elevated)); color: var(--text-primary); }
+
 .query-embed__table {
     width: 100%;
     border-collapse: collapse;
@@ -4169,10 +4202,44 @@ body {
     border-bottom: 1px solid var(--border);
 }
 
+.query-embed__results .query-embed__table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg-surface);
+}
+
 .query-embed__table td {
     padding: var(--sp-2) var(--sp-3);
     color: var(--text-primary);
     border-bottom: 1px solid var(--border);
+}
+
+/* Virtualização só entra em lista/tabela sem grupos. A altura fixa é o
+   contrato que torna os espaçadores matematicamente corretos. */
+.query-embed__row--virtual,
+.query-embed__row--virtual > td {
+    height: 42px;
+}
+
+.query-embed__row--virtual .query-embed__title,
+.query-embed__row--virtual .query-embed__meta,
+.query-embed__row--virtual .query-embed__chip {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.query-embed__row--virtual .query-embed__meta {
+    flex-wrap: nowrap;
+}
+
+.query-embed__spacer > td,
+.query-embed__spacer {
+    height: 0;
+    padding: 0;
+    border: 0;
 }
 
 .query-embed__cards {
@@ -4225,6 +4292,13 @@ body {
 
 .query-settings__label {
     flex: 0 0 6rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+/* Unidade à direita do campo — só rótulo, não disputa espaço com ele. */
+.query-settings__hint {
+    flex: 0 0 auto;
     color: var(--text-muted);
     font-size: 0.75rem;
 }
