@@ -1489,3 +1489,30 @@ fluxo.push({
     );
   },
 });
+
+// ── ciclo 219: o motivo da falha não pode ser engolido pelo ruído ────
+
+fluxo.push({
+  nome: "agente: falha mostra o motivo do stream, não o ruído do stderr (219)",
+  async fn(bridge, ctx) {
+    const conversa = "pages/__uitest-motivo.md";
+    await bridge.js(DISPARAR(["--falha-no-stream", "{prompt}"], "x", conversa, 30, "stream_json"));
+    let fim = null;
+    for (let i = 0; i < 40; i++) {
+      await PAUSA(200);
+      fim = await bridge.js(ESTADO(conversa));
+      if (!fim || fim.estado !== "rodando") break;
+    }
+    ctx.assertEq(fim && fim.estado, "falhou", `esperava falhou, veio ${JSON.stringify(fim)}`);
+    // Caso real: a conta do Codex bateu o limite e a tela mostrou
+    // "Reading additional input from stdin...", que não diz nada.
+    ctx.assert(
+      fim.erro.includes("bateu o limite de uso"),
+      `a mensagem não traz o motivo: ${fim.erro}`,
+    );
+    ctx.assert(
+      !fim.erro.includes("stdin"),
+      `o ruído do stderr venceu o motivo: ${fim.erro}`,
+    );
+  },
+});

@@ -7,7 +7,7 @@
 # lenta, cara e não determinística.
 #
 # Modos: --responder (padrão), --demorar, --falhar, --mudo, --devagar,
-# --stream (Claude Code), --codex, --onde, --args.
+# --stream (Claude Code), --codex, --onde, --args, --falha-no-stream.
 # Guarda a linha inteira antes de consumir as pastas extras — é ela que
 # o modo --args devolve.
 TODOS="$*"
@@ -35,6 +35,13 @@ case "$1" in
     exit 0
     ;;
 
+  # Falha reportando o motivo no STREAM e ruído no stderr (ciclo 219).
+  --falha-no-stream)
+    echo "Reading additional input from stdin..." >&2
+    echo '{"type":"error","message":"bateu o limite de uso"}'
+    echo '{"type":"turn.failed","error":{"message":"bateu o limite de uso"}}'
+    exit 1
+    ;;
   # Diz onde está rodando (ciclo 215).
   --onde) pwd; exit 0 ;;
   # Fala o dialeto JSONL do Codex (ciclo 214).

@@ -423,6 +423,17 @@ mod tests {
     }
 
     #[test]
+    fn o_evento_error_do_codex_vira_o_motivo() {
+        // Caso real: a conta bateu o limite de uso. O motivo vinha no
+        // stream, e a tela mostrava "Reading additional input from
+        // stdin..." — ruído do stderr, que não diz nada.
+        let mut l = LeitorStream::novo();
+        l.linha(r#"{"type":"error","message":"You've hit your usage limit."}"#);
+        l.linha(r#"{"type":"turn.failed","error":{"message":"You've hit your usage limit."}}"#);
+        assert_eq!(l.resposta().unwrap_err(), "You've hit your usage limit.");
+    }
+
+    #[test]
     fn os_dois_dialetos_nao_se_confundem() {
         // Os nomes de evento são disjuntos, então um leitor só dá conta
         // dos dois sem precisar saber de antemão qual agente falou.
@@ -807,6 +818,16 @@ impl LeitorStream {
                     }
                     Some(outro) if !completo => self.anotar(&format!("· {outro}")),
                     _ => {}
+                }
+            }
+            // O Codex emite `error` antes do `turn.failed`; outros
+            // agentes podem emitir só um dos dois. O primeiro que
+            // chegar vale — a mensagem é a mesma.
+            Some("error") => {
+                if self.erro.is_none() {
+                    if let Some(m) = v.get("message").and_then(|m| m.as_str()) {
+                        self.erro = Some(m.to_string());
+                    }
                 }
             }
             Some("turn.failed") => {

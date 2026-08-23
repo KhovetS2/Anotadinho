@@ -551,8 +551,24 @@ fn iniciar_agente(
                     }
                 });
             } else {
-                let stdout = lido.unwrap_or_default();
-                let detalhe = if stderr.is_empty() { stdout } else { stderr };
+                // A ordem aqui é o que decide se a mensagem ajuda ou
+                // não. O agente diz o MOTIVO no stream (stdout); o
+                // stderr costuma ter só ruído de inicialização.
+                //
+                // Preferir stderr escondia o motivo real: o Codex
+                // avisou "You've hit your usage limit" no stream, e a
+                // tela mostrou "Reading additional input from stdin...",
+                // que não diz nada a ninguém.
+                let detalhe = match lido {
+                    // O leitor entendeu o erro que o agente reportou.
+                    Err(e) => e,
+                    // Saiu com erro mas o stream trouxe texto: é a
+                    // melhor pista que existe.
+                    Ok(s) if !s.trim().is_empty() => s,
+                    // Nada no stream: aí sim o stderr é o que sobrou.
+                    Ok(_) if !stderr.is_empty() => stderr,
+                    Ok(_) => format!("terminou com código {status}, sem dizer por quê"),
+                };
                 Err(format!("o agente falhou: {}", ultimas_linhas(&detalhe, 6)))
             }
         })();
