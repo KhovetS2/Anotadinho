@@ -719,3 +719,101 @@ fluxo.push({
     ctx.assertEq(vazias, 0, `${vazias} consulta(s) vazia(s) no home`);
   },
 });
+
+// ── ciclo 208: conversa em um passo e contexto anexável ──────────────
+
+fluxo.push({
+  nome: "conversa: comando da paleta cria em um passo e anexa a página aberta (208)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const pasta = `${ctx.vault}/pages/conversas`;
+    const antes = fs.existsSync(pasta) ? fs.readdirSync(pasta) : [];
+    try {
+      ctx.escrever("---\ntitle: __uitest\n---\nconteudo de origem\n");
+      await recarregarEstavel(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+
+      await bridge.js(`(() => {
+        const raiz = document.querySelector('.app-root') || document.body;
+        raiz.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true }));
+        return true;
+      })()`);
+      await esperar(bridge, "document.querySelector('[class*=palette]')", "a paleta");
+      const achou = await bridge.js(`(() => {
+        const it = [...document.querySelectorAll('[class*=palette__item]')]
+          .find(x => x.textContent.includes('Nova conversa com o agente'));
+        if (!it) return false;
+        it.click();
+        return true;
+      })()`);
+      ctx.assertEq(achou, true, "o comando não está na paleta");
+
+      await esperar(bridge, "document.querySelector('.conversa')", "o painel abrir", 12000);
+
+      // A página aberta entra como anexo — é o ponto 1 da spec.
+      const anexos = await bridge.js(
+        `[...document.querySelectorAll('.conversa__anexo')].map(e => e.textContent.replace('×','').trim())`,
+      );
+      ctx.assert(anexos.includes("__uitest"), `a página aberta não foi anexada: ${anexos.join(", ")}`);
+
+      // E o vínculo fica no ARQUIVO, não em memória — ponto 2 da spec.
+      const novas = fs.readdirSync(pasta).filter((f) => !antes.includes(f));
+      ctx.assertEq(novas.length, 1, `esperava 1 conversa nova, veio ${novas.length}`);
+      const md = fs.readFileSync(`${pasta}/${novas[0]}`, "utf8");
+      ctx.assert(md.includes("type: conversa"), `sem o tipo:\n${md}`);
+      ctx.assert(md.includes("origem: pages/__uitest.md"), `sem a origem:\n${md}`);
+      ctx.assert(md.includes("- pages/__uitest.md"), `sem o contexto:\n${md}`);
+    } finally {
+      if (fs.existsSync(pasta)) {
+        for (const f of fs.readdirSync(pasta).filter((x) => !antes.includes(x))) {
+          fs.rmSync(`${pasta}/${f}`, { force: true });
+        }
+      }
+    }
+  },
+});
+
+fluxo.push({
+  nome: "conversa: anexar e tirar páginas grava no frontmatter (208)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const alvo = `${ctx.vault}/pages/__uitest.md`;
+    ctx.escrever("---\ntitle: __uitest\ntype: conversa\n---\n");
+    await recarregarEstavel(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await esperar(bridge, "document.querySelector('.conversa')", "o painel");
+
+    await bridge.js(`(() => { document.querySelector('.conversa__anexar').click(); return true; })()`);
+    await esperar(bridge, "document.querySelector('.conversa__seletor-busca')", "o seletor");
+
+    // Sem filtro a lista é inútil com 200+ páginas.
+    await bridge.js(`(() => {
+      const inp = document.querySelector('.conversa__seletor-busca');
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      inp.focus();
+      set.call(inp, 'nomenclatura');
+      inp.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      return true;
+    })()`);
+    await PAUSA(600);
+    const itens = await bridge.js(
+      `[...document.querySelectorAll('.conversa__seletor-item')].map(e => e.textContent.trim())`,
+    );
+    ctx.assert(itens.length > 0 && itens.length < 10, `o filtro não reduziu: ${itens.length} itens`);
+
+    await bridge.js(`(() => { document.querySelector('.conversa__seletor-item').click(); return true; })()`);
+    await PAUSA(1500);
+
+    let md = fs.readFileSync(alvo, "utf8");
+    ctx.assert(/^contexto:$/m.test(md), `o anexo não foi gravado:\n${md}`);
+    ctx.assert(md.includes("nomenclatura"), `o anexo errado foi gravado:\n${md}`);
+    ctx.assert(md.includes("type: conversa"), `o frontmatter foi destruído:\n${md}`);
+
+    // Tirar também grava.
+    await bridge.js(`(() => { document.querySelector('.conversa__anexo-x').click(); return true; })()`);
+    await PAUSA(1500);
+    md = fs.readFileSync(alvo, "utf8");
+    ctx.assert(!md.includes("nomenclatura"), `tirar o anexo não gravou:\n${md}`);
+    ctx.assert(md.includes("type: conversa"), `o frontmatter foi destruído ao tirar:\n${md}`);
+  },
+});

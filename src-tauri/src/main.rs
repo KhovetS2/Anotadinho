@@ -409,7 +409,19 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_mcp_bridge::init())
+        // Porta separada por perfil (ciclo 208).
+        //
+        // Dev e release abrindo a MESMA porta faz a ponte responder pelo
+        // app errado quando os dois estão de pé — e os dois ficam de pé
+        // com frequência, porque o app está instalado no sistema e o
+        // `dev.sh` sobe outro. O sintoma é traiçoeiro: você edita, o dev
+        // reconstrói, e a janela na sua frente não muda, porque é a
+        // outra. Custou tempo duas vezes antes de ser diagnosticado.
+        .plugin(
+            tauri_plugin_mcp_bridge::Builder::new()
+                .base_port(if cfg!(debug_assertions) { 9223 } else { 9323 })
+                .build(),
+        )
         .manage(AppWatchers(Mutex::new(HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             ping,

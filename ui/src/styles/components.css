@@ -1274,3 +1274,55 @@
 .propostas__l--sai { background: color-mix(in srgb, var(--error) 16%, transparent); color: var(--text-primary); }
 .propostas__l--entra { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--text-primary); }
 .propostas__acoes { display: flex; gap: 0.4rem; }
+
+/* Páginas anexadas como contexto (ciclo 208).
+   Ficam à vista o tempo todo: o que o modelo está lendo não pode ser
+   invisível — foi o pedido de "anexar o que ele deve consultar". */
+.conversa__anexar { margin-left: auto; }
+
+.conversa__anexos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.conversa__anexo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.6875rem;
+  padding: 0.1rem 0.2rem 0.1rem 0.45rem;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: var(--accent-blue);
+}
+
+.conversa__anexo-x {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+}
+
+.conversa__seletor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  /* Lista longa não pode empurrar a conversa pra fora da tela. */
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+/* Busca do seletor de anexos (ciclo 208): com 200+ páginas, lista sem
+   filtro só mostra as primeiras do mesmo prefixo. */
+.conversa__seletor-busca {
+  flex: 1 0 100%;
+  margin-bottom: 0.3rem;
+}

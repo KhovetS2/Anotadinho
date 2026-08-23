@@ -40,17 +40,25 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     let rascunho = use_state(String::new);
     let ocupado = use_state(|| false);
     let erro = use_state(|| None::<String>);
-    let usar_contexto = use_state(|| true);
+    // Páginas anexadas, lidas do FRONTMATTER (ciclo 208) — sobrevivem a
+    // fechar o app, diferente do contexto em memória do ciclo 202.
+    let anexos = use_state(Vec::<String>::new);
+    let escolhendo = use_state(|| false);
+    let disponiveis = use_state(Vec::<crate::api::PageMeta>::new);
+    let filtro_anexo = use_state(String::new);
 
     // Carrega a conversa do arquivo.
     {
         let mensagens = mensagens.clone();
+        let anexos = anexos.clone();
         let vault_path = props.vault_path.clone();
         let path = props.page.path.clone();
         use_effect_with(props.page.path.clone(), move |_| {
             wasm_bindgen_futures::spawn_local(async move {
                 let Ok(conteudo) = api::read_page(&vault_path, &path).await else { return };
-                let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+                let (frontmatter, corpo) =
+                    anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+                anexos.set(conversa::contexto_do_frontmatter(frontmatter));
                 mensagens.set(conversa::parse(corpo));
             });
             || ()
@@ -69,10 +77,9 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         let rascunho = rascunho.clone();
         let ocupado = ocupado.clone();
         let erro = erro.clone();
-        let usar_contexto = usar_contexto.clone();
+        let anexos = anexos.clone();
         let vault_path = props.vault_path.clone();
         let path = props.page.path.clone();
-        let contexto_path = contexto_path.clone();
         Callback::from(move |_: MouseEvent| {
             let pergunta = (*rascunho).trim().to_string();
             if pergunta.is_empty() || *ocupado {
@@ -81,7 +88,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
             let (mensagens, rascunho, ocupado, erro) =
                 (mensagens.clone(), rascunho.clone(), ocupado.clone(), erro.clone());
             let (vault_path, path) = (vault_path.clone(), path.clone());
-            let contexto_path = if *usar_contexto { contexto_path.clone() } else { None };
+            let anexados = (*anexos).clone();
             ocupado.set(true);
             erro.set(None);
 
@@ -98,14 +105,22 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 rascunho.set(String::new());
                 gravar(&vault_path, &path, &lista).await;
 
-                let contexto = match &contexto_path {
-                    Some(p) => api::read_page(&vault_path, p).await.ok(),
-                    None => None,
-                };
+                // Lê cada anexo na hora do envio, não ao abrir: a página
+                // pode ter mudado desde então, e mandar a versão velha
+                // faria o modelo responder sobre o que não existe mais.
+                let mut contextos = Vec::new();
+                for a in &anexados {
+                    if *a == path {
+                        continue; // a própria conversa não é contexto dela
+                    }
+                    if let Ok(c) = api::read_page(&vault_path, a).await {
+                        contextos.push(conversa::Contexto { nome: a.clone(), conteudo: c });
+                    }
+                }
                 let prompt = conversa::montar_prompt(
                     &lista[..lista.len() - 1],
                     &pergunta,
-                    contexto.as_deref(),
+                    &contextos,
                     HISTORICO_NO_PROMPT,
                 );
 
@@ -143,10 +158,6 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         })
     };
 
-    let alternar_contexto = {
-        let usar_contexto = usar_contexto.clone();
-        Callback::from(move |_: MouseEvent| usar_contexto.set(!*usar_contexto))
-    };
 
     // Promove uma resposta em artefato (ciclo 203).
     //
@@ -185,6 +196,84 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         })
     };
 
+    // Anexar/remover grava no FRONTMATTER na hora — o que a pessoa
+    // anexa precisa continuar lá depois de fechar o app.
+    let gravar_anexos = {
+        let vault_path = props.vault_path.clone();
+        let path = props.page.path.clone();
+        let anexos = anexos.clone();
+        Callback::from(move |lista: Vec<String>| {
+            anexos.set(lista.clone());
+            let (vault_path, path) = (vault_path.clone(), path.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                let Ok(atual) = api::read_page(&vault_path, &path).await else { return };
+                let novo = reescrever_contexto(&atual, &lista);
+                let _ = api::write_page(&vault_path, &path, &novo).await;
+            });
+        })
+    };
+
+    let adicionar_anexo = {
+        let anexos = anexos.clone();
+        let gravar = gravar_anexos.clone();
+        let escolhendo = escolhendo.clone();
+        Callback::from(move |alvo: String| {
+            let mut lista = (*anexos).clone();
+            if !lista.contains(&alvo) {
+                lista.push(alvo);
+                gravar.emit(lista);
+            }
+            escolhendo.set(false);
+        })
+    };
+
+    let remover_anexo = {
+        let anexos = anexos.clone();
+        let gravar = gravar_anexos.clone();
+        Callback::from(move |alvo: String| {
+            let lista: Vec<String> = (*anexos).iter().filter(|x| **x != alvo).cloned().collect();
+            gravar.emit(lista);
+        })
+    };
+
+    let filtrar_anexo = {
+        let filtro_anexo = filtro_anexo.clone();
+        Callback::from(move |e: InputEvent| {
+            if let Some(el) = e.target_dyn_into::<web_sys::HtmlInputElement>() {
+                filtro_anexo.set(el.value());
+            }
+        })
+    };
+
+    let abrir_seletor = {
+        let escolhendo = escolhendo.clone();
+        let disponiveis = disponiveis.clone();
+        let filtro_limpar = filtro_anexo.clone();
+        let vault_path = props.vault_path.clone();
+        Callback::from(move |_: MouseEvent| {
+            let abrir = !*escolhendo;
+            escolhendo.set(abrir);
+            filtro_limpar.set(String::new());
+            if !abrir {
+                return;
+            }
+            let (disponiveis, vault_path) = (disponiveis.clone(), vault_path.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                let paginas = api::scan_vault(&vault_path).await.unwrap_or_default();
+                disponiveis.set(
+                    paginas
+                        .into_iter()
+                        .map(|p| crate::api::PageMeta {
+                            path: p.path,
+                            title: p.title,
+                            section: p.section,
+                        })
+                        .collect(),
+                );
+            });
+        })
+    };
+
     let adaptador = crate::state::load_adaptador();
 
     html! {
@@ -194,15 +283,54 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 <span class="conversa__agente" title={adaptador.binario.clone()}>
                     <Icon name="zap" />{ adaptador.nome.clone() }
                 </span>
-                if contexto_path.is_some() {
-                    <button class={classes!("btn", "btn--xs",
-                        if *usar_contexto { "btn--primary" } else { "btn--ghost" })}
-                        onclick={alternar_contexto}
-                        title="Mandar a página anterior junto como contexto">
-                        { if *usar_contexto { "com contexto" } else { "sem contexto" } }
-                    </button>
-                }
+                <button class="btn btn--ghost btn--xs conversa__anexar" onclick={abrir_seletor}
+                    title="Anexar páginas que o modelo deve consultar">
+                    <Icon name="paperclip" />{ format!("{} anexo(s)", anexos.len()) }
+                </button>
             </header>
+
+            if !anexos.is_empty() {
+                <div class="conversa__anexos">
+                    { for anexos.iter().map(|a| {
+                        let remover = remover_anexo.clone();
+                        let alvo = a.clone();
+                        html! {
+                            <span class="conversa__anexo" title={alvo.clone()}>
+                                { nome_curto(a) }
+                                <button class="conversa__anexo-x"
+                                    onclick={Callback::from(move |_: MouseEvent| remover.emit(alvo.clone()))}
+                                    title="Tirar do contexto">{ "×" }</button>
+                            </span>
+                        }
+                    }) }
+                </div>
+            }
+
+            if *escolhendo {
+                <div class="conversa__seletor">
+                    <input class="input input--sm conversa__seletor-busca" type="text"
+                        placeholder="Filtrar páginas..." value={(*filtro_anexo).clone()}
+                        oninput={filtrar_anexo} />
+                    { for disponiveis.iter().filter(|p| {
+                        // Sem filtro a lista é inútil com 200+ páginas: as
+                        // 40 primeiras são todas do mesmo prefixo.
+                        let f = filtro_anexo.trim().to_lowercase();
+                        f.is_empty()
+                            || p.title.to_lowercase().contains(&f)
+                            || p.path.to_lowercase().contains(&f)
+                    }).take(30).map(|p| {
+                        let add = adicionar_anexo.clone();
+                        let alvo = p.path.clone();
+                        let ja = anexos.contains(&p.path);
+                        html! {
+                            <button class="conversa__seletor-item btn btn--ghost btn--xs" disabled={ja}
+                                onclick={Callback::from(move |_: MouseEvent| add.emit(alvo.clone()))}>
+                                { &p.title }
+                            </button>
+                        }
+                    }) }
+                </div>
+            }
 
             <div class="conversa__mensagens">
                 if mensagens.is_empty() {
@@ -276,4 +404,59 @@ async fn gravar(vault_path: &str, path: &str, mensagens: &[Mensagem]) {
     let corpo = conversa::serializar(mensagens);
     let novo = if frontmatter.is_empty() { corpo } else { format!("{frontmatter}\n{corpo}") };
     let _ = api::write_page(vault_path, path, &novo).await;
+}
+
+/// Nome curto pra mostrar no chip — o path inteiro não cabe.
+fn nome_curto(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string())
+}
+
+/// Reescreve só a lista `contexto:` do frontmatter, preservando o resto.
+///
+/// Não usa serialização do `Frontmatter` inteiro de propósito: isso
+/// reordenaria os campos e mexeria em coisas que a pessoa escreveu à
+/// mão, num arquivo que ela também edita fora do app.
+fn reescrever_contexto(conteudo: &str, lista: &[String]) -> String {
+    let (frontmatter, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(conteudo);
+    let mut linhas: Vec<String> = Vec::new();
+    let mut pulando = false;
+    for linha in frontmatter.lines() {
+        if linha.starts_with("contexto:") {
+            pulando = true;
+            continue;
+        }
+        if pulando {
+            if linha.starts_with("- ") || linha.starts_with("  ") {
+                continue;
+            }
+            pulando = false;
+        }
+        // A linha de fecho do bloco entra depois, junto da lista nova.
+        if linha.trim() == "---" && linhas.iter().any(|l| l.trim() == "---") {
+            continue;
+        }
+        linhas.push(linha.to_string());
+    }
+    // Tira o `---` de abertura pra remontar de forma previsível.
+    let corpo_fm: Vec<String> = linhas
+        .into_iter()
+        .filter(|l| l.trim() != "---")
+        .collect();
+
+    let mut fm = String::from("---\n");
+    for l in corpo_fm {
+        fm.push_str(&l);
+        fm.push('\n');
+    }
+    if !lista.is_empty() {
+        fm.push_str("contexto:\n");
+        for c in lista {
+            fm.push_str(&format!("- {}\n", anotadinho_core::markdown::escapar_escalar_yaml(c)));
+        }
+    }
+    fm.push_str("---\n");
+    format!("{fm}{corpo}")
 }

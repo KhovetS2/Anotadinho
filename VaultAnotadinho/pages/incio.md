@@ -11,9 +11,13 @@ desenvolvimento. Tudo abaixo se atualiza sozinho a partir do vault.
 {{ type: "actions" }}
 layout: row
 buttons:
-- label: Como usar o modo agêntico
+- label: Nova conversa
   icon: zap
   variant: primary
+  action: run-search
+  query: Nova conversa com o agente
+- label: Como usar o modo agêntico
+  icon: file-text
   action: open-page
   path: pages/produto/como-usar-modo-agentico.md
 - label: Propostas pendentes

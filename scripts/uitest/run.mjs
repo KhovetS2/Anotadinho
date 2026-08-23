@@ -103,6 +103,20 @@ try {
   console.log(`  ! não consegui normalizar as configurações: ${e.message}`);
 }
 
+// Guarda a configuração do AGENTE antes de rodar (ciclo 208).
+//
+// Os cenários apontam o adaptador pro agente de mentira. Sem restaurar,
+// a suíte deixa o app do usuário configurado pra um script de teste — e
+// a próxima conversa dele falha com "erro proposital". Aconteceu.
+let adaptadorOriginal = null;
+try {
+  adaptadorOriginal = await bridge.js(
+    `localStorage.getItem('anotadinho.adaptador_agente')`,
+  );
+} catch {
+  /* app sem storage acessível: segue sem restaurar */
+}
+
 let passaram = 0;
 const falharam = [];
 const inicio = Date.now();
@@ -147,6 +161,20 @@ if (!filtro && !process.argv.includes("--sem-snapshot")) {
     console.log(`      ${e.message.replace(/\n/g, "\n      ")}`);
   }
   selecionados.push({ nome: "snapshot visual dos embeds (187)" });
+}
+
+// Devolve o adaptador do usuário.
+if (adaptadorOriginal !== null) {
+  try {
+    await bridge.js(`(() => {
+      const v = ${JSON.stringify(adaptadorOriginal)};
+      if (v === null) localStorage.removeItem('anotadinho.adaptador_agente');
+      else localStorage.setItem('anotadinho.adaptador_agente', v);
+      return true;
+    })()`);
+  } catch {
+    console.log("  ! não consegui restaurar a configuração do agente");
+  }
 }
 
 bridge.fechar();

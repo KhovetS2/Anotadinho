@@ -34,9 +34,14 @@ pub enum PaletteAction {
     /// `PendingDialog::Prompt` de `NewPage`), sem passar pelo painel
     /// de Propriedades pra trocar o tipo depois de criada.
     NewPageOfType(&'static str),
+    /// Conversa nova com o agente, em um passo (ciclo 208): cria em
+    /// `pages/conversas/`, já com `type: conversa` e a página atual
+    /// anexada como contexto, e abre.
+    NovaConversa,
 }
 
 const COMMANDS: &[(&str, PaletteAction)] = &[
+    ("Nova conversa com o agente", PaletteAction::NovaConversa),
     ("Nova página", PaletteAction::NewPage),
     ("Nova pasta", PaletteAction::NewFolder),
     ("Nova página: Kanban", PaletteAction::NewPageOfType("kanban")),

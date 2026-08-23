@@ -653,6 +653,49 @@ pub fn app() -> Html {
         })
     };
 
+    // Conversa nova em um passo (ciclo 208).
+    //
+    // A página ABERTA vai anexada como contexto, e a origem fica gravada
+    // no frontmatter — não em memória, pra sobreviver a fechar o app.
+    // Era a queixa do ponto 2 da spec aprovada.
+    let nova_conversa = {
+        let vault_path = vault_path.clone();
+        let selected_page = selected_page.clone();
+        let on_page_selected = on_page_selected.clone();
+        let list_version = list_version.clone();
+        Callback::from(move |_: ()| {
+            let Some(vault) = (*vault_path).clone() else { return };
+            let atual = (*selected_page).clone();
+            let on_page_selected = on_page_selected.clone();
+            let list_version = list_version.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let carimbo = crate::state::agora_legivel();
+                let titulo = format!("Conversa de {carimbo}");
+                // A página aberta entra como contexto E como origem —
+                // são coisas diferentes: origem é "de onde nasceu",
+                // contexto é "o que o modelo deve consultar".
+                let anexos: Vec<String> = atual.as_ref().map(|p| vec![p.path.clone()]).unwrap_or_default();
+                let md = anotadinho_core::conversa::montar_pagina(
+                    &titulo,
+                    atual.as_ref().map(|p| p.path.as_str()),
+                    &anexos,
+                );
+                let path = format!(
+                    "pages/conversas/{}.md",
+                    anotadinho_core::conversa::nome_de_arquivo(&carimbo)
+                );
+                if api::write_page(&vault, &path, &md).await.is_ok() {
+                    list_version.set(*list_version + 1);
+                    on_page_selected.emit(PageMeta {
+                        path,
+                        title: titulo,
+                        section: "pages".to_string(),
+                    });
+                }
+            });
+        })
+    };
+
     let today_action = {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();
@@ -757,6 +800,7 @@ pub fn app() -> Html {
             PaletteAction::ViewAssets => view_assets_action.emit(()),
             PaletteAction::ExportVault => export_vault_action.emit(()),
             PaletteAction::ViewCheatsheet => cheatsheet_open.set(true),
+            PaletteAction::NovaConversa => nova_conversa.emit(()),
             PaletteAction::NewPageOfType(page_type) => {
                 let vault = (*vault_path).clone().unwrap_or_default();
                 prompt_title_and_create_typed(
