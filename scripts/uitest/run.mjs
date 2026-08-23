@@ -12,6 +12,7 @@
 //   ./scripts/dev.sh            # num terminal, deixa o app de pé
 //   node scripts/uitest/run.mjs # noutro
 //   node scripts/uitest/run.mjs callout   # só cenários que casam
+//   node scripts/uitest/run.mjs --pendentes  # só a bateria das specs
 //
 // Sai com código != 0 se algum cenário falhar (serve pra CI local).
 
@@ -24,6 +25,7 @@ import { blocos } from "./blocos.mjs";
 import { interacoes } from "./interacoes.mjs";
 import { telas } from "./telas.mjs";
 import { fluxo } from "./fluxo.mjs";
+import { pendentes } from "./pendentes.mjs";
 import { conferirSnapshots } from "./snapshot.mjs";
 
 const VAULT = process.env.ANOTADINHO_VAULT || "VaultAnotadinho";
@@ -64,10 +66,16 @@ ctx.assertEq = assertEq;
 // permanente, não um cenário pontual.
 const todos = [...cenarios, ...digitacao, ...blocos, ...interacoes, ...telas, ...fluxo];
 
-const filtro = process.argv[2];
+// `--pendentes` roda a bateria escrita a partir das specs ainda não
+// implementadas (`pendentes.mjs`). Ela fica FORA de `todos` de
+// propósito: é vermelha por definição, e a suíte principal precisa
+// continuar sendo o sinal confiável de "está tudo certo?".
+const soPendentes = process.argv.includes("--pendentes");
+const filtro = process.argv.slice(2).find((a) => !a.startsWith("--"));
+const base = soPendentes ? pendentes : todos;
 let selecionados = filtro
-  ? todos.filter((c) => c.nome.toLowerCase().includes(filtro.toLowerCase()))
-  : todos;
+  ? base.filter((c) => c.nome.toLowerCase().includes(filtro.toLowerCase()))
+  : base;
 
 let bridge;
 try {
@@ -141,7 +149,7 @@ for (const cenario of selecionados) {
 // pra `run.mjs` continuar sendo o comando único de "está tudo certo?".
 // `--sem-snapshot` pula (útil quando você está no meio de um redesenho e
 // ainda não quer regravar a baseline).
-if (!filtro && !process.argv.includes("--sem-snapshot")) {
+if (!filtro && !soPendentes && !process.argv.includes("--sem-snapshot")) {
   const t0 = Date.now();
   try {
     const resultados = await conferirSnapshots(bridge);

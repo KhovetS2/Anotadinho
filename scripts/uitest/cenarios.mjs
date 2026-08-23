@@ -123,8 +123,19 @@ export const cenarios = [
   {
     nome: "cronograma: arrastar a barra grava a data nova (155)",
     async fn(bridge, ctx) {
+      // Datas RELATIVAS a hoje, não fixas.
+      //
+      // O cenário nasceu com `2026-08-10`/`14` cravados, o que
+      // funcionou até a janela do cronograma (ancorada em hoje) passar
+      // dessas datas — daí a barra deixou de ser desenhada e o cenário
+      // ficou vermelho sozinho, sem ninguém ter mexido no código.
+      const dia = (offset) => {
+        const d = new Date();
+        d.setDate(d.getDate() + offset);
+        return d.toISOString().slice(0, 10);
+      };
       ctx.escrever(
-        '---\ntitle: __uitest\n---\n{{ type: "timeline" }}\nscale: month\nitems:\n- title: Etapa\n  start: 2026-08-10\n  end: 2026-08-14\n{{ /timeline }}\n',
+        `---\ntitle: __uitest\n---\n{{ type: "timeline" }}\nscale: month\nitems:\n- title: Etapa\n  start: ${dia(2)}\n  end: ${dia(6)}\n{{ /timeline }}\n`,
       );
       await recarregar(bridge);
       await ctx.abrirPagina(bridge, ctx.nomePagina);

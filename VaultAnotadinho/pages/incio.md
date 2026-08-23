@@ -80,7 +80,6 @@ group_by: type
 aggregate:
 - op: count
 view: list
-collapsed: true
 {{ /query }}
 
 ## Trabalho recente

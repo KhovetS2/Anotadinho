@@ -347,6 +347,57 @@ pub enum EmbedData {
     Fluxo(FluxoEmbedData),
 }
 
+/// Parseia YAML descartando SÓ os campos que não deram certo.
+///
+/// `serde_yaml::from_str(...).unwrap_or_default()` era a forma usada em
+/// todo embed, e ela troca um campo ruim pelo documento inteiro em
+/// branco. Isso é perda de dado silenciosa: a home tinha
+/// `collapsed: true` numa consulta (o campo é `Vec<String>`), o parse
+/// caía no default, e o save seguinte gravava a consulta VAZIA — sumiram
+/// `group_by` e `aggregate` do arquivo sem nenhum aviso.
+///
+/// Aqui, quando o documento inteiro falha, cada chave do mapa é
+/// retirada por vez até sobrar algo que parseia. O que dava pra
+/// aproveitar é aproveitado, e só o campo problemático se perde.
+fn parse_yaml_tolerante<T>(raw: &str) -> T
+where
+    T: serde::de::DeserializeOwned + Default,
+{
+    if let Ok(v) = serde_yaml::from_str::<T>(raw) {
+        return v;
+    }
+    let Ok(mapa) = serde_yaml::from_str::<serde_yaml::Mapping>(raw) else {
+        // Nem mapa é (lista solta, escalar, YAML quebrado): não há
+        // campo pra descartar.
+        return T::default();
+    };
+    // Descarta o MENOR número de campos que resolve: primeiro tenta
+    // tirar um só (todos os candidatos), e só depois pares. Tentar
+    // pares antes de esgotar os singles devolvia um resultado que
+    // jogava fora campo bom junto com o ruim.
+    let chaves: Vec<serde_yaml::Value> = mapa.keys().cloned().collect();
+    let tentar = |sem: &[&serde_yaml::Value]| -> Option<T> {
+        let mut m = mapa.clone();
+        for k in sem {
+            m.remove(*k);
+        }
+        serde_yaml::from_value::<T>(serde_yaml::Value::Mapping(m)).ok()
+    };
+    for chave in &chaves {
+        if let Some(v) = tentar(&[chave]) {
+            return v;
+        }
+    }
+    for (i, a) in chaves.iter().enumerate() {
+        for b in &chaves[i + 1..] {
+            if let Some(v) = tentar(&[a, b]) {
+                return v;
+            }
+        }
+    }
+    T::default()
+}
+
 impl EmbedData {
     /// Parseia o conteúdo interno de um wrapper no tipo correspondente.
     pub fn parse(kind: EmbedKind, raw: &str) -> Self {
@@ -357,7 +408,7 @@ impl EmbedData {
             EmbedKind::Callout => EmbedData::Callout(CalloutEmbedData::parse(raw)),
             EmbedKind::Columns => EmbedData::Columns(ColumnsEmbedData::parse(raw)),
             EmbedKind::Gallery => EmbedData::Gallery(GalleryEmbedData::parse(raw)),
-            EmbedKind::Query => EmbedData::Query(serde_yaml::from_str(raw).unwrap_or_default()),
+            EmbedKind::Query => EmbedData::Query(parse_yaml_tolerante(raw)),
             EmbedKind::Timeline => EmbedData::Timeline(TimelineEmbedData::parse(raw)),
             EmbedKind::Actions => EmbedData::Actions(ActionsEmbedData::parse(raw)),
             EmbedKind::Fluxo => EmbedData::Fluxo(FluxoEmbedData::parse(raw)),
@@ -468,7 +519,7 @@ pub struct KanbanEmbedData {
 
 impl KanbanEmbedData {
     fn parse(raw: &str) -> Self {
-        let mut data: Self = serde_yaml::from_str(raw).unwrap_or_default();
+        let mut data: Self = parse_yaml_tolerante(raw);
         if data.columns.is_empty() {
             data.columns = vec!["Backlog".to_string(), "Todo".to_string(), "Done".to_string()];
         }
@@ -700,7 +751,7 @@ pub struct CalendarEmbedData {
 
 impl CalendarEmbedData {
     fn parse(raw: &str) -> Self {
-        let mut data: Self = serde_yaml::from_str(raw).unwrap_or_default();
+        let mut data: Self = parse_yaml_tolerante(raw);
         // Migra o `tag:` singular antigo pra `tags` AQUI, na leitura.
         //
         // Antes a migração era prometida pra "primeira edição do evento",
@@ -930,7 +981,7 @@ where
 
 impl CalloutEmbedData {
     fn parse(raw: &str) -> Self {
-        serde_yaml::from_str(raw).unwrap_or_default()
+        parse_yaml_tolerante(raw)
     }
 
     fn to_fence_body(&self) -> String {
@@ -999,7 +1050,7 @@ impl ColumnsEmbedData {
     pub const MAX_COLUMNS: usize = 4;
 
     fn parse(raw: &str) -> Self {
-        let mut data: Self = serde_yaml::from_str(raw).unwrap_or_default();
+        let mut data: Self = parse_yaml_tolerante(raw);
         // Sem painel nenhum não há o que renderizar (e o embed ficaria
         // invisível, impossível de consertar pela interface).
         if data.columns.is_empty() {
@@ -1130,7 +1181,7 @@ impl Default for GalleryEmbedData {
 
 impl GalleryEmbedData {
     fn parse(raw: &str) -> Self {
-        let mut data: Self = serde_yaml::from_str(raw).unwrap_or_default();
+        let mut data: Self = parse_yaml_tolerante(raw);
         data.columns = data.columns.clamp(1, 6);
         data
     }
@@ -1315,7 +1366,7 @@ pub fn bar_span(
 
 impl TimelineEmbedData {
     fn parse(raw: &str) -> Self {
-        serde_yaml::from_str(raw).unwrap_or_default()
+        parse_yaml_tolerante(raw)
     }
 
     fn to_fence_body(&self) -> String {
@@ -1519,7 +1570,7 @@ pub struct ActionsEmbedData {
 
 impl ActionsEmbedData {
     fn parse(raw: &str) -> Self {
-        serde_yaml::from_str(raw).unwrap_or_default()
+        parse_yaml_tolerante(raw)
     }
 
     fn to_fence_body(&self) -> String {
@@ -4009,7 +4060,7 @@ impl Default for FluxoEmbedData {
 
 impl FluxoEmbedData {
     fn parse(raw: &str) -> Self {
-        serde_yaml::from_str(raw).unwrap_or_default()
+        parse_yaml_tolerante(raw)
     }
 
     fn to_fence_body(&self) -> String {
@@ -4048,3 +4099,32 @@ pub struct SearchHit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ancora: Option<String>,
 }
+
+#[cfg(test)]
+mod testes_parse_tolerante {
+    use super::*;
+
+    /// Um campo com o TIPO errado não pode apagar o resto do embed.
+    ///
+    /// Bug real: a home tinha `collapsed: true` numa consulta (o campo
+    /// é `Vec<String>`, não bool). O `unwrap_or_default` do parse
+    /// devolvia `Query::default()`, e o save seguinte gravava a
+    /// consulta VAZIA — `group_by` e `aggregate` sumiram do arquivo
+    /// sem nenhum aviso.
+    #[test]
+    fn campo_com_tipo_errado_nao_apaga_o_resto_da_consulta() {
+        let corpo = "group_by: type\naggregate:\n- op: count\nview: list\ncollapsed: true\n";
+        let data = EmbedData::parse(EmbedKind::Query, corpo);
+        let EmbedData::Query(q) = data else {
+            panic!("não parseou como consulta");
+        };
+        assert_eq!(
+            q.group_by.as_deref(),
+            Some("type"),
+            "group_by foi perdido por causa de outro campo"
+        );
+        assert_eq!(q.aggregate.len(), 1, "aggregate foi perdido");
+    }
+}
+
+
