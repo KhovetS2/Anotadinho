@@ -6,16 +6,14 @@ tags:
 type: spec
 date: 2026-08-23
 prioridade: media
-status: aprovada
+status: concluida
 ---
 # Atalhos do dia a dia: aba fixa e criação de conversa
-
 {{ type: "fluxo" }}
 artefato: spec
-etapa: aprovada
+etapa: concluida
 
 {{ /fluxo }}
-
 ## Contexto
 
 Duas asperezas pequenas que aparecem toda sessão.
@@ -38,26 +36,26 @@ escolhida como se faz com os outros tipos.
 - **RF2.** A aba inicial não pode ser fechada.
 - **RF3.** Trocar qual página é a inicial move a fixação junto.
 - **RF4.** Sem página inicial definida, a barra de abas se comporta como
-  hoje.
+hoje.
 - **RF5.** `conversa` aparece junto dos outros tipos de página no menu
-  de criação, com o mesmo tratamento que kanban ou tabela.
+de criação, com o mesmo tratamento que kanban ou tabela.
 - **RF6.** A conversa criada por esse caminho abre pronta pra uso, igual
-  à criada pelo botão da home.
+à criada pelo botão da home.
 
 ## Requisitos não funcionais
 
 - **RNF1.** A aba fixa é visualmente distinta de uma aba comum, mas sem
-  virar um elemento à parte da barra.
+virar um elemento à parte da barra.
 - **RNF2.** A navegação por teclado enxerga a aba fixa como enxerga as
-  outras.
+outras.
 
 ## Critérios de aceite
 
 - [ ] Com uma home definida, ela abre na primeira posição e não oferece
-      fechar.
+fechar.
 - [ ] Trocar a home reordena as abas sem perder o que estava aberto.
 - [ ] `conversa` aparece na família de tipos do menu de criação e
-      produz uma página utilizável.
+produz uma página utilizável.
 - [ ] Cenário de harness pra cada um dos dois.
 
 ## Fora de escopo

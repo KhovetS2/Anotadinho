@@ -22,6 +22,13 @@
 // Uso:
 //   node scripts/uitest/snapshot.mjs             # confere
 //   node scripts/uitest/snapshot.mjs --atualizar # regrava a baseline
+//
+// CUIDADO: a baseline guarda pixels ABSOLUTOS, e grid se distribui pela
+// largura disponível. Rodar numa janela mais estreita do que a de
+// gravação faz `grid-template-columns` diferir em tudo, sem nenhuma
+// mudança de estilo — as PROPORÇÕES continuam iguais, e é isso que
+// denuncia o falso positivo. Se a diferença for um fator constante em
+// todas as colunas, é tamanho de janela, não regressão.
 //   node scripts/uitest/snapshot.mjs kanban      # só um tipo
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";

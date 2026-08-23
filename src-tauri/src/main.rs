@@ -727,7 +727,48 @@ async fn open_vault_dialog(app: tauri::AppHandle) -> Result<Option<String>, Stri
     rx.await.map_err(|e| e.to_string())
 }
 
+/// Contorna um travamento do WebKitGTK com o driver NVIDIA proprietário.
+///
+/// Sintoma: a janela congela e o processo de renderização fica a 100% de
+/// CPU, sem nenhum IPC. Amostrando a pilha do processo travado, ele está
+/// sempre no mesmo lugar:
+///
+/// ```text
+/// WebCore::BitmapTexturePool::releaseUnusedTexturesTimerFired()
+///   → WebCore::BitmapTexture::~BitmapTexture()
+///     → libnvidia-eglcore.so
+/// ```
+///
+/// É o compositor liberando textura de GPU e ficando preso dentro do
+/// driver. Não é laço do nosso código: o backend fica em 0% o tempo
+/// todo, e não há chamada de IPC nenhuma.
+///
+/// `WEBKIT_DISABLE_DMABUF_RENDERER=1` é a saída conhecida: tira o
+/// caminho de DMABUF entre o WebKit e o driver, que é justamente onde a
+/// interação azeda. Custa um pouco de desempenho de composição.
+///
+/// Só age quando há NVIDIA proprietária carregada, e nunca por cima de
+/// uma escolha explícita — quem definiu a variável decidiu, e a decisão
+/// é dela.
+fn contornar_travamento_nvidia() {
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some() {
+        return;
+    }
+    let tem_nvidia = std::path::Path::new("/sys/module/nvidia/version").exists()
+        || std::env::var("__GLX_VENDOR_LIBRARY_NAME")
+            .map(|v| v.eq_ignore_ascii_case("nvidia"))
+            .unwrap_or(false);
+    if !tem_nvidia {
+        return;
+    }
+    // Antes de qualquer coisa do WebKit subir: ele lê isto ao criar o
+    // processo de renderização.
+    std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+}
+
 fn main() {
+    contornar_travamento_nvidia();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
