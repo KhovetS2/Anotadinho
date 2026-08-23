@@ -1,19 +1,18 @@
 ---
-title: "Proposta de implementação — Atalhos do dia a dia: aba fixa e"
-type: proposta
-date: 2026-08-23
-status: rascunho
+title: 'Proposta de implementação — Atalhos do dia a dia: aba fixa e'
 tags:
 - proposta
+type: proposta
+date: 2026-08-23
+status: aprovada
 ---
 # Proposta de implementação — Atalhos do dia a dia: aba fixa e
-
 {{ type: "fluxo" }}
 artefato: proposta
-etapa: rascunho
+etapa: aprovada
 origem: pages/conversas/conversa-2026-08-23-02-48.md
-{{ /fluxo }}
 
+{{ /fluxo }}
 Proposta de implementação — Atalhos do dia a dia: aba fixa e criação de conversa
 
 ## Abordagem
@@ -27,13 +26,14 @@ Para criação, incluir `conversa` nas ações existentes de “Nova página: ti
 ## Etapas
 
 1. Mapear os pontos que alteram `open_tabs`, definem/removem a home e fecham abas.
-2. Criar uma operação única de ordenação que promova a home configurada para a primeira posição, preservando a ordem relativa das demais abas.
-3. Aplicar essa operação ao abrir páginas, restaurar a home ao iniciar o vault e trocar a página inicial.
-4. Bloquear o fechamento da aba home tanto na interface quanto no handler que remove a aba.
-5. Ajustar `TabBar` para distinguir visualmente a aba fixa e omitir seu botão de fechar, mantendo seu elemento acionável e navegável por teclado.
-6. Adicionar a ação “Nova página: Conversa” à família de tipos na paleta e encaminhá-la ao fluxo de criação tipada.
-7. Acrescentar cenários ao harness: home fixa/reatribuída e criação de conversa pela paleta.
-8. Executar as validações do ciclo, registrar status, atualizar a task e concluir o ciclo conforme o processo do repositório.
+1. Adicionar flags genericas para as abas sem necessariamente implementar o fixar aba para todas e criar uma flag especial para home para usar nesse caso.
+1. Criar uma operação única de ordenação que promova a home configurada para a primeira posição, preservando a ordem relativa das demais abas.
+1. Aplicar essa operação ao abrir páginas, restaurar a home ao iniciar o vault e trocar a página inicial.
+1. Bloquear o fechamento da aba home tanto na interface quanto no handler que remove a aba.
+1. Ajustar `TabBar` para distinguir visualmente a aba fixa e omitir seu botão de fechar, mantendo seu elemento acionável e navegável por teclado.
+1. Adicionar a ação “Nova página: Conversa” à família de tipos na paleta e encaminhá-la ao fluxo de criação tipada.
+1. Acrescentar cenários ao harness: home fixa/reatribuída e criação de conversa pela paleta.
+1. Executar as validações do ciclo, registrar status, atualizar a task e concluir o ciclo conforme o processo do repositório.
 
 ## Padrões seguidos
 
@@ -46,8 +46,8 @@ Para criação, incluir `conversa` nas ações existentes de “Nova página: ti
 ## Alternativas consideradas
 
 - Criar uma “área de home” separada antes da barra de abas: descartado porque violaria o requisito de ela continuar sendo uma aba e dificultaria a paridade de teclado.
-- Adicionar uma flag genérica de abas fixadas: descartado por ampliar o escopo para fixação arbitrária de abas.
-- Criar uma ação exclusiva de “Nova conversa” dentro da família de tipos: descartado porque manteria a inconsistência que a spec quer eliminar e duplicaria a criação tipada.
+- Criar uma ação exclusiva de “Nova conversa” dentro da família de tipos: descartado porque manteria a inconsistência que a spec quer eliminar e duplicaria a criação tipada.  
+
 - Persistir a posição fixa junto ao vault: descartado porque a home já é preferência local por vault e a spec não pede mudança nesse modelo.
 
 ## Riscos

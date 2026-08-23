@@ -1478,3 +1478,47 @@
 .conversa__agente-marca {
   margin-left: auto;
 }
+
+/* Pasta de trabalho do agente (ciclo 216).
+
+   Fica dentro do seletor de agente porque as duas coisas andam juntas:
+   qual agente, e onde ele pode mexer. A escolha da pasta é o que
+   autoriza a escrita — por isso é da pessoa, não deduzida pelo app. */
+.conversa__pastas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border);
+}
+
+.conversa__pasta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+
+.conversa__pasta-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-blue);
+  border-style: solid;
+}
+
+.conversa__pasta-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}

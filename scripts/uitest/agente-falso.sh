@@ -7,8 +7,21 @@
 # lenta, cara e não determinística.
 #
 # Modos: --responder (padrão), --demorar, --falhar, --mudo, --devagar,
-# --stream (Claude Code), --codex, --onde.
+# --stream (Claude Code), --codex, --onde, --args.
+# Guarda a linha inteira antes de consumir as pastas extras — é ela que
+# o modo --args devolve.
+TODOS="$*"
+
+# Pastas extras chegam ANTES do resto (ciclo 216), igual nos agentes de
+# verdade: consome os pares `--add-dir <pasta>` pra o modo cair no
+# `case` certo.
+while [ "$1" = "--add-dir" ]; do
+  shift 2
+done
+
 case "$1" in
+  # Ecoa a linha de argumentos inteira, pastas extras incluídas.
+  --args) echo "$TODOS"; exit 0 ;;
   --demorar) sleep 60 ;;
   --falhar) echo "erro proposital" >&2; exit 3 ;;
   --mudo) exit 0 ;;
@@ -21,6 +34,7 @@ case "$1" in
     done
     exit 0
     ;;
+
   # Diz onde está rodando (ciclo 215).
   --onde) pwd; exit 0 ;;
   # Fala o dialeto JSONL do Codex (ciclo 214).

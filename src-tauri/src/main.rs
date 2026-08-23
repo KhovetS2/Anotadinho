@@ -682,6 +682,24 @@ fn search_content(
     handle_search_content(vault_path, query)
 }
 
+/// Abre o seletor de pasta (ciclo 216).
+///
+/// A pasta de trabalho do agente é ESCOLHA da pessoa, não dedução do
+/// app: adivinhar pela raiz do git só acerta quando as notas moram
+/// dentro do repositório. Quem tem o vault num lugar e os repositórios
+/// noutro precisa dizer onde é — e é essa escolha que autoriza o agente
+/// a escrever lá.
+#[tauri::command]
+async fn escolher_pasta(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .pick_folder(move |file_path| {
+            let _ = tx.send(file_path.map(|p| p.to_string()));
+        });
+    rx.await.map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn open_vault_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -761,7 +779,8 @@ fn main() {
             aplicar_proposta,
             recusar_proposta,
             check_changes,
-            open_vault_dialog
+            open_vault_dialog,
+            escolher_pasta
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar Anotadinho");

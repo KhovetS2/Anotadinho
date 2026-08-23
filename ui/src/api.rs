@@ -708,6 +708,17 @@ pub async fn cancelar_agente(conversa_path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Abre o seletor de pasta e devolve o caminho escolhido (ciclo 216).
+pub async fn escolher_pasta() -> Result<Option<String>, String> {
+    let result = tauri_invoke("escolher_pasta", &JsValue::from(js_sys::Object::new()))
+        .await
+        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))?;
+    if result.is_null() || result.is_undefined() {
+        return Ok(None);
+    }
+    Ok(result.as_string())
+}
+
 // ── propostas (ciclo 204) ────────────────────────────────────────────
 
 /// Propostas pendentes de revisão.

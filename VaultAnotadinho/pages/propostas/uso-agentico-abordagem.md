@@ -1,18 +1,19 @@
 ---
-title: "Abordagem para o uso agêntico"
-type: proposta
-date: 2026-08-22
-status: em-execucao
-prioridade: alta
+title: Abordagem para o uso agêntico
 tags:
 - proposta
+type: proposta
+date: 2026-08-22
+prioridade: alta
+status: aprovada
 ---
 # Abordagem para o uso agêntico
 
 {{ type: "fluxo" }}
 artefato: proposta
-etapa: em-execucao
+etapa: aprovada
 origem: pages/specs/uso-agentico-do-anotadinho.md
+
 {{ /fluxo }}
 
 ## Spec que atende

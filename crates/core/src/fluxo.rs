@@ -588,3 +588,49 @@ pub fn pergunta_de_execucao(titulo_proposta: &str) -> String {
     ]
     .join("\n")
 }
+
+/// A página que originou esta, lida do embed de fluxo no corpo.
+///
+/// É o que permite a execução CONTINUAR na conversa que gerou a
+/// proposta, em vez de abrir uma conversa nova a cada clique. Sem isso,
+/// o histórico do trabalho ficava espalhado: a discussão que produziu a
+/// proposta numa página, o que o agente fez pra executá-la noutra.
+pub fn origem_da_pagina(corpo: &str) -> Option<String> {
+    crate::embed::segment(corpo).into_iter().find_map(|seg| match seg {
+        crate::embed::DocSegment::Embed(data) => match data {
+            crate::embed::EmbedData::Fluxo(f) => f.origem.filter(|o| !o.trim().is_empty()),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
+#[cfg(test)]
+mod testes_origem {
+    use super::*;
+
+    #[test]
+    fn le_a_origem_do_embed_de_fluxo() {
+        let md = montar_pagina(
+            Artefato::Proposta,
+            "Titulo",
+            "corpo",
+            Some("pages/conversas/c1.md"),
+            "2026-08-23",
+        );
+        let (_, corpo) = crate::MarkdownCodec::split_frontmatter_text(&md);
+        assert_eq!(origem_da_pagina(corpo).as_deref(), Some("pages/conversas/c1.md"));
+    }
+
+    #[test]
+    fn pagina_sem_origem_devolve_nada() {
+        let md = montar_pagina(Artefato::Proposta, "T", "c", None, "2026-08-23");
+        let (_, corpo) = crate::MarkdownCodec::split_frontmatter_text(&md);
+        assert!(origem_da_pagina(corpo).is_none());
+    }
+
+    #[test]
+    fn pagina_sem_embed_de_fluxo_devolve_nada() {
+        assert!(origem_da_pagina("# so texto\n\nnada aqui").is_none());
+    }
+}

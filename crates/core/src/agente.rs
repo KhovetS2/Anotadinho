@@ -42,6 +42,18 @@ pub struct Adaptador {
     /// propostas existe pra proteger.
     #[serde(default)]
     pub cwd: String,
+    /// Outras pastas que o agente pode alcançar (ciclo 216).
+    ///
+    /// O caso real: o vault mora num lugar e os repositórios em que se
+    /// trabalha moram noutro, às vezes vários. Sem isto, escolher a
+    /// pasta de trabalho seria escolher UM repositório e perder os
+    /// outros.
+    #[serde(default)]
+    pub pastas_extras: Vec<String>,
+    /// Argumento que o agente usa pra receber pasta extra (`--add-dir`).
+    /// Vazio = ele não sabe receber, e `pastas_extras` é ignorado.
+    #[serde(default)]
+    pub arg_pasta_extra: String,
     /// Segundos até desistir. 0 = sem limite (desaconselhado).
     #[serde(default = "timeout_padrao")]
     pub timeout_s: u64,
@@ -153,10 +165,22 @@ impl Adaptador {
     /// de shell — então aspas, quebras de linha e `$(...)` dentro dele
     /// são texto, não código.
     pub fn montar_args(&self, prompt: &str) -> Vec<String> {
-        self.args
-            .iter()
-            .map(|a| a.replace(MARCADOR_PROMPT, prompt))
-            .collect()
+        let mut out: Vec<String> = Vec::new();
+        // As pastas extras entram ANTES do resto: o `{prompt}` costuma
+        // ser o último argumento, e alguns agentes tratam tudo depois
+        // dele como parte do prompt.
+        if !self.arg_pasta_extra.trim().is_empty() {
+            for pasta in self.pastas_extras.iter().filter(|p| !p.trim().is_empty()) {
+                out.push(self.arg_pasta_extra.clone());
+                out.push(pasta.clone());
+            }
+        }
+        out.extend(
+            self.args
+                .iter()
+                .map(|a| a.replace(MARCADOR_PROMPT, prompt)),
+        );
+        out
     }
 
     /// Devolve uma cópia com o timeout elevado ao piso, se estiver
@@ -181,10 +205,22 @@ impl Adaptador {
     /// configuração velha e não vê nem o timeout novo nem o progresso
     /// em tempo real, sem ter como saber por quê.
     pub fn migrado(self) -> Self {
-        // (nome do preset, args que a versão anterior gravava)
-        const ANTIGOS: [(&str, &[&str]); 2] = [
+        // (nome do preset, args que ALGUMA versão anterior gravava)
+        //
+        // A lista cresce a cada mudança de contrato do preset. Sem
+        // isso, quem já usou o app fica preso na versão velha — foi
+        // como a configuração do usuário ficou sem `--sandbox
+        // workspace-write` e a execução travava em "somente leitura".
+        const ANTIGOS: [(&str, &[&str]); 4] = [
+            // ciclo 202
             ("Claude Code", &["-p", MARCADOR_PROMPT]),
             ("Codex", &["exec", MARCADOR_PROMPT]),
+            // ciclos 213 e 214: ganharam streaming, ainda sem escrita
+            (
+                "Claude Code",
+                &["-p", "--output-format", "stream-json", "--verbose", MARCADOR_PROMPT],
+            ),
+            ("Codex", &["exec", "--json", MARCADOR_PROMPT]),
         ];
         let antigo = ANTIGOS.iter().find(|(nome, args)| {
             self.nome == *nome
@@ -193,7 +229,14 @@ impl Adaptador {
         });
         let atualizado = match antigo {
             Some((nome, _)) => match Self::presets().into_iter().find(|p| p.nome == *nome) {
-                Some(preset) => Self { args: preset.args, formato: preset.formato, ..self },
+                Some(preset) => Self {
+                    args: preset.args,
+                    formato: preset.formato,
+                    // A pasta EXTRA configurada é da pessoa e fica;
+                    // o argumento que a transporta é do preset.
+                    arg_pasta_extra: preset.arg_pasta_extra,
+                    ..self
+                },
                 None => self,
             },
             None => self,
@@ -213,17 +256,39 @@ impl Adaptador {
                     "--output-format".into(),
                     "stream-json".into(),
                     "--verbose".into(),
+                    // Executar uma proposta é EDITAR arquivo. Sem isto,
+                    // o agente lê tudo e não consegue mudar nada — foi
+                    // o que travou a etapa de execução.
+                    //
+                    // Escrever é limitado à pasta de trabalho, que quem
+                    // escolhe é a pessoa: é dela a aprovação de onde o
+                    // agente pode mexer.
+                    "--permission-mode".into(),
+                    "acceptEdits".into(),
                     MARCADOR_PROMPT.into(),
                 ],
                 cwd: String::new(),
+                pastas_extras: Vec::new(),
+                arg_pasta_extra: "--add-dir".into(),
                 timeout_s: TIMEOUT_PADRAO_S,
                 formato: FormatoSaida::StreamJson,
             },
             Adaptador {
                 nome: "Codex".into(),
                 binario: "codex".into(),
-                args: vec!["exec".into(), "--json".into(), MARCADOR_PROMPT.into()],
+                args: vec![
+                    "exec".into(),
+                    "--json".into(),
+                    // O padrão do `codex exec` é somente leitura: ele
+                    // respondia "este ambiente está em modo somente
+                    // leitura" e a execução não saía do lugar.
+                    "--sandbox".into(),
+                    "workspace-write".into(),
+                    MARCADOR_PROMPT.into(),
+                ],
                 cwd: String::new(),
+                pastas_extras: Vec::new(),
+                arg_pasta_extra: "--add-dir".into(),
                 timeout_s: TIMEOUT_PADRAO_S,
                 formato: FormatoSaida::StreamJson,
             },
@@ -232,6 +297,10 @@ impl Adaptador {
                 binario: "opencode".into(),
                 args: vec!["run".into(), MARCADOR_PROMPT.into()],
                 cwd: String::new(),
+                pastas_extras: Vec::new(),
+                // Não confirmado contra o binário; vazio significa
+                // "não sei mandar pasta extra pra ele".
+                arg_pasta_extra: String::new(),
                 timeout_s: TIMEOUT_PADRAO_S,
                 // O opencode tem `--format json`, mas o formato dos
                 // eventos dele não foi conferido contra um binário
@@ -260,6 +329,8 @@ mod tests {
             binario: "eco".into(),
             args: vec!["-p".into(), MARCADOR_PROMPT.into()],
             cwd: String::new(),
+            pastas_extras: Vec::new(),
+            arg_pasta_extra: String::new(),
             timeout_s: 30,
             formato: FormatoSaida::Texto,
         }
@@ -399,21 +470,105 @@ mod tests {
     }
 
     #[test]
+    fn pastas_extras_viram_argumentos_antes_do_prompt() {
+        let a = Adaptador {
+            args: vec!["exec".into(), MARCADOR_PROMPT.into()],
+            pastas_extras: vec!["/repo/a".into(), "/repo/b".into()],
+            arg_pasta_extra: "--add-dir".into(),
+            ..base()
+        };
+        assert_eq!(
+            a.montar_args("pergunta"),
+            vec!["--add-dir", "/repo/a", "--add-dir", "/repo/b", "exec", "pergunta"]
+        );
+    }
+
+    #[test]
+    fn sem_arg_de_pasta_extra_as_pastas_sao_ignoradas() {
+        // O opencode não teve isso confirmado contra o binário: mandar
+        // uma flag que ele não conhece derrubaria a execução inteira.
+        let a = Adaptador {
+            args: vec![MARCADOR_PROMPT.into()],
+            pastas_extras: vec!["/repo/a".into()],
+            arg_pasta_extra: String::new(),
+            ..base()
+        };
+        assert_eq!(a.montar_args("p"), vec!["p"]);
+    }
+
+    #[test]
+    fn pasta_extra_em_branco_nao_vira_argumento() {
+        let a = Adaptador {
+            args: vec![MARCADOR_PROMPT.into()],
+            pastas_extras: vec!["  ".into(), "/repo/a".into()],
+            arg_pasta_extra: "--add-dir".into(),
+            ..base()
+        };
+        assert_eq!(a.montar_args("p"), vec!["--add-dir", "/repo/a", "p"]);
+    }
+
+    #[test]
+    fn os_presets_que_editam_pedem_permissao_de_escrita() {
+        // Executar uma proposta é editar arquivo: um preset que não
+        // pede escrita lê tudo e não muda nada, que foi o que travou a
+        // etapa de execução.
+        for p in Adaptador::presets() {
+            if p.formato != FormatoSaida::StreamJson {
+                continue;
+            }
+            let linha = p.args.join(" ");
+            assert!(
+                linha.contains("workspace-write") || linha.contains("acceptEdits"),
+                "preset \"{}\" não pede permissão de escrita: {linha}",
+                p.nome
+            );
+        }
+    }
+
+    #[test]
     fn a_migracao_atualiza_o_preset_antigo_do_claude() {
         let velho = Adaptador {
             nome: "Claude Code".into(),
             binario: "/home/x/.local/bin/claude".into(),
             args: vec!["-p".into(), MARCADOR_PROMPT.into()],
             cwd: String::new(),
+            pastas_extras: Vec::new(),
+            arg_pasta_extra: String::new(),
             timeout_s: 180,
             formato: FormatoSaida::Texto,
         };
         let novo = velho.migrado();
         assert_eq!(novo.formato, FormatoSaida::StreamJson);
+        assert!(
+            novo.args.join(" ").contains("acceptEdits"),
+            "a migração não trouxe a permissão de escrita: {:?}",
+            novo.args
+        );
         assert!(novo.args.contains(&"stream-json".to_string()));
         assert_eq!(novo.timeout_s, TIMEOUT_MINIMO_S);
         // O binário que a pessoa apontou continua sendo o dela.
         assert_eq!(novo.binario, "/home/x/.local/bin/claude");
+    }
+
+    #[test]
+    fn a_migracao_atualiza_tambem_o_codex_da_versao_anterior() {
+        let velho = Adaptador {
+            nome: "Codex".into(),
+            binario: "codex".into(),
+            args: vec!["exec".into(), "--json".into(), MARCADOR_PROMPT.into()],
+            pastas_extras: vec!["/repo/meu".into()],
+            arg_pasta_extra: String::new(),
+            ..base()
+        };
+        let novo = velho.migrado();
+        assert!(
+            novo.args.join(" ").contains("workspace-write"),
+            "sem permissão de escrita: {:?}",
+            novo.args
+        );
+        assert_eq!(novo.arg_pasta_extra, "--add-dir");
+        // A pasta que a pessoa escolheu é dela e continua.
+        assert_eq!(novo.pastas_extras, vec!["/repo/meu".to_string()]);
     }
 
     #[test]
@@ -423,6 +578,8 @@ mod tests {
             binario: "claude".into(),
             args: vec!["--dangerously-skip".into(), MARCADOR_PROMPT.into()],
             cwd: String::new(),
+            pastas_extras: Vec::new(),
+            arg_pasta_extra: String::new(),
             timeout_s: 180,
             formato: FormatoSaida::Texto,
         };

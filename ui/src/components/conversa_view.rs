@@ -184,6 +184,42 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         })
     };
 
+    // Escolhe a pasta de trabalho do agente (ciclo 216).
+    //
+    // É a pessoa que decide onde o agente pode mexer. Adivinhar pela
+    // raiz do git só acerta quando as notas moram dentro do
+    // repositório; quem tem o vault num lugar e os repositórios noutro
+    // ficava com o agente apontado pro lugar errado, e sem saber disso.
+    let escolher_pasta = {
+        let adaptador = adaptador.clone();
+        Callback::from(move |extra: bool| {
+            let adaptador = adaptador.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let Ok(Some(pasta)) = api::escolher_pasta().await else { return };
+                let mut novo = (*adaptador).clone();
+                if extra {
+                    if !novo.pastas_extras.contains(&pasta) {
+                        novo.pastas_extras.push(pasta);
+                    }
+                } else {
+                    novo.cwd = pasta;
+                }
+                crate::state::save_adaptador(&novo);
+                adaptador.set(novo);
+            });
+        })
+    };
+
+    let tirar_pasta_extra = {
+        let adaptador = adaptador.clone();
+        Callback::from(move |pasta: String| {
+            let mut novo = (*adaptador).clone();
+            novo.pastas_extras.retain(|p| *p != pasta);
+            crate::state::save_adaptador(&novo);
+            adaptador.set(novo);
+        })
+    };
+
     // Interrompe a execução em andamento.
     let interromper = {
         let path = props.page.path.clone();
@@ -427,6 +463,41 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                                     </button>
                                 }
                             }) }
+                            <div class="conversa__pastas">
+                                <button class="conversa__pasta-btn" onclick={{
+                                        let e = escolher_pasta.clone();
+                                        Callback::from(move |_: MouseEvent| e.emit(false))
+                                    }}
+                                    title="Onde o agente trabalha — e a única pasta onde ele pode escrever">
+                                    <Icon name="folder" />
+                                    { if adaptador.cwd.trim().is_empty() {
+                                        "trabalha na raiz do projeto".to_string()
+                                      } else {
+                                        nome_curto(&adaptador.cwd)
+                                      } }
+                                </button>
+                                { for adaptador.pastas_extras.iter().map(|pasta| {
+                                    let tirar = tirar_pasta_extra.clone();
+                                    let alvo = pasta.clone();
+                                    html! {
+                                        <span class="conversa__pasta-extra" title={pasta.clone()}>
+                                            { nome_curto(pasta) }
+                                            <button class="conversa__anexo-x"
+                                                onclick={Callback::from(move |_: MouseEvent| tirar.emit(alvo.clone()))}
+                                                title="Tirar do alcance do agente">{ "×" }</button>
+                                        </span>
+                                    }
+                                }) }
+                                if !adaptador.arg_pasta_extra.trim().is_empty() {
+                                    <button class="conversa__pasta-btn" onclick={{
+                                            let e = escolher_pasta.clone();
+                                            Callback::from(move |_: MouseEvent| e.emit(true))
+                                        }}
+                                        title="Outro repositório que o agente também precisa alcançar">
+                                        { "+ pasta" }
+                                    </button>
+                                }
+                            </div>
                         </div>
                     }
                 </div>

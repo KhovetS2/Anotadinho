@@ -1377,3 +1377,115 @@ fluxo.push({
     );
   },
 });
+
+// ── ciclo 216: execução continua na conversa de origem ───────────────
+
+fluxo.push({
+  nome: "fluxo: executar continua na conversa que gerou a proposta (216)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const conversa = "pages/conversas/__uitest-origem.md";
+    const proposta = "pages/propostas/__uitest-com-origem.md";
+    fs.mkdirSync(`${ctx.vault}/pages/conversas`, { recursive: true });
+    fs.mkdirSync(`${ctx.vault}/pages/propostas`, { recursive: true });
+    fs.writeFileSync(
+      `${ctx.vault}/${conversa}`,
+      "---\ntitle: __uitest-origem\ntype: conversa\n---\n## você · 2026-01-01 00:00\n\noi\n",
+    );
+    fs.writeFileSync(
+      `${ctx.vault}/${proposta}`,
+      [
+        "---",
+        "title: __uitest-com-origem",
+        "type: proposta",
+        "status: aprovada",
+        "---",
+        "# __uitest-com-origem",
+        "",
+        '{{ type: "fluxo" }}',
+        "artefato: proposta",
+        "etapa: aprovada",
+        `origem: ${conversa}`,
+        "{{ /fluxo }}",
+        "",
+        "corpo da proposta",
+        "",
+      ].join("\n"),
+    );
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPaginaEstavel(bridge, "__uitest-com-origem");
+      const antes = fs.readdirSync(`${ctx.vault}/pages/conversas`).length;
+
+      await bridge.js(`(() => {
+        const b = [...document.querySelectorAll('[class*=fluxo] button')]
+          .find(x => x.textContent.trim() === 'Executar');
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`);
+      await PAUSA(2500);
+
+      // Abrir conversa nova a cada execução espalhava o histórico: a
+      // discussão que produziu a proposta numa página, o que o agente
+      // fez pra executá-la noutra.
+      const depois = fs.readdirSync(`${ctx.vault}/pages/conversas`).length;
+      ctx.assertEq(depois, antes, "criou uma conversa nova em vez de continuar na de origem");
+
+      const aberta = await bridge.js(
+        `(document.querySelector('.conversa__titulo') || {}).textContent || null`,
+      );
+      ctx.assertEq(aberta, "__uitest-origem", `abriu a página errada: ${aberta}`);
+
+      const rascunho = await bridge.js(
+        `(document.querySelector('.conversa__campo') || {}).value || ''`,
+      );
+      ctx.assert(
+        rascunho.trim().length > 0,
+        "a conversa abriu sem a pergunta de execução preenchida",
+      );
+    } finally {
+      fs.rmSync(`${ctx.vault}/${conversa}`, { force: true });
+      fs.rmSync(`${ctx.vault}/${proposta}`, { force: true });
+    }
+  },
+});
+
+fluxo.push({
+  nome: "agente: pastas extras viram --add-dir na execução (216)",
+  async fn(bridge, ctx) {
+    const conversa = "pages/__uitest-pastas.md";
+    // O agente falso ecoa os argumentos que recebeu.
+    const r = await bridge.js(`(async () => {
+      await window.__TAURI_INTERNALS__.invoke('iniciar_agente', {
+        adaptador: {
+          nome: 'falso',
+          binario: ${JSON.stringify(FALSO)},
+          args: ['--args', '{prompt}'],
+          cwd: '',
+          pastas_extras: ['/repo/um', '/repo/dois'],
+          arg_pasta_extra: '--add-dir',
+          timeout_s: 30,
+          formato: 'texto',
+        },
+        prompt: 'x',
+        vaultPath: '/home/elis/Anotadinho',
+        conversaPath: ${JSON.stringify(conversa)},
+      });
+      for (let i = 0; i < 40; i++) {
+        await new Promise(r => setTimeout(r, 200));
+        const e = await window.__TAURI_INTERNALS__.invoke('estado_agente', { conversaPath: ${JSON.stringify(conversa)} });
+        if (!e) return { ok: false, erro: 'sumiu' };
+        if (e.estado !== 'rodando') return { ok: e.estado === 'concluido', saida: e.texto, erro: e.erro };
+      }
+      return { ok: false, erro: 'demorou' };
+    })()`);
+    ctx.assertEq(r.ok, true, `execução falhou: ${r.erro}`);
+    // Quem tem o vault num lugar e os repositórios noutro precisa que
+    // TODOS cheguem ao agente, não só um.
+    ctx.assert(
+      r.saida.includes("--add-dir /repo/um") && r.saida.includes("--add-dir /repo/dois"),
+      `as pastas extras não chegaram: ${r.saida}`,
+    );
+  },
+});

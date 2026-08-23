@@ -760,6 +760,56 @@ pub fn app() -> Html {
                 } else {
                     format!("Planejar: {titulo_spec}")
                 };
+                // Executar CONTINUA na conversa que gerou a proposta.
+                //
+                // A proposta guarda o caminho dela em `origem` (é o
+                // `promover` que grava isso). Abrir uma conversa nova a
+                // cada execução espalhava o histórico do trabalho: a
+                // discussão que produziu a proposta numa página, o que
+                // o agente fez pra executá-la noutra, sem ligação
+                // visível entre as duas.
+                //
+                // Só vale pra proposta com origem viva. Uma proposta
+                // escrita à mão, ou cuja conversa foi apagada, ganha
+                // conversa nova como antes.
+                let continuacao = if e_proposta {
+                    match api::read_page(&vault, &spec.path).await {
+                        Ok(conteudo) => {
+                            let (_, corpo) =
+                                anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+                            anotadinho_core::fluxo::origem_da_pagina(corpo)
+                                .filter(|o| paginas.iter().any(|p| p.path == *o))
+                                .filter(|o| {
+                                    paginas
+                                        .iter()
+                                        .find(|p| p.path == *o)
+                                        .map(|p| p.page_type == "conversa")
+                                        .unwrap_or(false)
+                                })
+                        }
+                        Err(_) => None,
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(conversa) = continuacao {
+                    let titulo_conversa = paginas
+                        .iter()
+                        .find(|p| p.path == conversa)
+                        .map(|p| p.title.clone())
+                        .unwrap_or_else(|| titulo.clone());
+                    pergunta_inicial.set(Some(
+                        anotadinho_core::fluxo::pergunta_de_execucao(&titulo_spec),
+                    ));
+                    on_page_selected.emit(PageMeta {
+                        path: conversa,
+                        title: titulo_conversa,
+                        section: "pages".to_string(),
+                    });
+                    return;
+                }
+
                 let md = anotadinho_core::conversa::montar_pagina(
                     &titulo,
                     Some(&spec.path),
