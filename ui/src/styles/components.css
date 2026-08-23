@@ -1404,8 +1404,77 @@
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
-  /* Só o rabo da saída interessa; o resto rola. Sem limite, uma tarefa
-     verbosa empurra o campo de escrita pra fora da tela. */
-  max-height: 14rem;
+  /* Altura fixa com rolagem própria: mostra bastante do raciocínio sem
+     empurrar o campo de escrita pra fora da tela. Antes só cabia a
+     primeira linha de cada trecho, que escondia justamente o miolo. */
+  max-height: 22rem;
   overflow-y: auto;
+  /* A saída cresce por baixo; ancorar embaixo mantém o mais recente à
+     vista sem precisar rolar a cada linha nova. */
+  overflow-anchor: auto;
+}
+
+/* Troca de agente (ciclo 214) — fica na conversa porque é onde a pessoa
+   percebe que quer trocar, não num painel escondido. */
+.conversa__agente-caixa {
+  position: relative;
+}
+
+.conversa__agente {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.conversa__agente:hover {
+  color: var(--text);
+  border-color: var(--accent-blue);
+}
+
+.conversa__agentes {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 11rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  box-shadow: 0 6px 20px color-mix(in srgb, black 25%, transparent);
+}
+
+.conversa__agente-op {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversa__agente-op:hover {
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+}
+
+.conversa__agente-op--atual {
+  color: var(--accent-blue);
+}
+
+.conversa__agente-marca {
+  margin-left: auto;
 }

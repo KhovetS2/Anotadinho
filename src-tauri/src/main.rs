@@ -461,7 +461,20 @@ fn iniciar_agente(
                 })
             });
 
-            let erro_pipe = filho.stderr.take();
+            // O stderr é lido SEMPRE, em thread própria, por dois
+            // motivos: um agente que escreve muito nele encheria o
+            // buffer do pipe e ficaria bloqueado esperando alguém ler;
+            // e quando a saída vem vazia, o que ele disse no stderr é a
+            // única pista do motivo — "terminou sem escrever nada" por
+            // si só não ajuda ninguém.
+            let erro_thread = filho.stderr.take().map(|mut e| {
+                std::thread::spawn(move || {
+                    use std::io::Read;
+                    let mut s = String::new();
+                    let _ = e.read_to_string(&mut s);
+                    s
+                })
+            });
 
             // O processo passa a viver no slot COMPARTILHADO: é por ele
             // que `cancelar_agente` alcança o `kill`. Guardá-lo só nesta
@@ -506,26 +519,33 @@ fn iniciar_agente(
                 .and_then(|h| h.join().ok())
                 .unwrap_or_else(|| Err("não consegui ler a saída do agente".to_string()));
 
+            let stderr = erro_thread
+                .and_then(|h| h.join().ok())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+
             if status.success() {
                 // No `stream-json` o próprio agente reporta erro dentro
                 // do stream, com código de saída 0 — por isso o erro do
                 // leitor vale mesmo quando o processo "deu certo".
                 return lido.map(|s| s.trim().to_string()).and_then(|s| {
-                    if s.is_empty() {
+                    if !s.is_empty() {
+                        return Ok(s);
+                    }
+                    if stderr.is_empty() {
                         Err("o agente terminou sem escrever nada na saída".to_string())
                     } else {
-                        Ok(s)
+                        Err(format!(
+                            "o agente terminou sem resposta. Ele disse: {}",
+                            ultimas_linhas(&stderr, 6)
+                        ))
                     }
                 });
             } else {
                 let stdout = lido.unwrap_or_default();
-                let mut stderr = String::new();
-                if let Some(mut e) = erro_pipe {
-                    use std::io::Read;
-                    let _ = e.read_to_string(&mut stderr);
-                }
-                let detalhe = if stderr.trim().is_empty() { stdout } else { stderr.trim().to_string() };
-                Err(format!("o agente falhou: {detalhe}"))
+                let detalhe = if stderr.is_empty() { stdout } else { stderr };
+                Err(format!("o agente falhou: {}", ultimas_linhas(&detalhe, 6)))
             }
         })();
 
@@ -562,6 +582,13 @@ fn iniciar_agente(
     });
 
     Ok(())
+}
+
+/// As últimas `n` linhas não vazias — o rabo do erro é o que interessa.
+fn ultimas_linhas(texto: &str, n: usize) -> String {
+    let linhas: Vec<&str> = texto.lines().filter(|l| !l.trim().is_empty()).collect();
+    let inicio = linhas.len().saturating_sub(n);
+    linhas[inicio..].join("\n")
 }
 
 /// Acrescenta a resposta do agente ao arquivo da conversa.

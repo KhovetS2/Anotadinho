@@ -96,12 +96,18 @@ pub enum FormatoSaida {
     Texto,
     /// Uma linha = um evento JSON, transmitido conforme acontece.
     ///
-    /// Segue o esquema do Claude Code
-    /// (`--output-format stream-json --verbose`): eventos `assistant`
-    /// trazem o texto e as ferramentas usadas, e o `result` final traz
-    /// a resposta. Se o `result` não vier, o texto acumulado dos
-    /// eventos serve de resposta — melhor entregar algo do que falhar
-    /// por causa do formato.
+    /// Entende os dois dialetos que os agentes suportados falam, e eles
+    /// não se confundem porque usam nomes de evento disjuntos:
+    ///
+    /// - **Claude Code** (`--output-format stream-json --verbose`):
+    ///   eventos `assistant` com o texto e as ferramentas, `result`
+    ///   final com a resposta.
+    /// - **Codex** (`exec --json`): `item.completed` com
+    ///   `agent_message` (texto) ou `command_execution` (comando
+    ///   rodado); a resposta é o ÚLTIMO `agent_message`.
+    ///
+    /// Sem nenhum evento reconhecido, o texto acumulado serve de
+    /// resposta — melhor entregar algo do que falhar pelo formato.
     StreamJson,
 }
 
@@ -167,15 +173,22 @@ impl Adaptador {
     /// configuração velha e não vê nem o timeout novo nem o progresso
     /// em tempo real, sem ter como saber por quê.
     pub fn migrado(self) -> Self {
-        const ARGS_ANTIGOS_CLAUDE: [&str; 2] = ["-p", MARCADOR_PROMPT];
-        let e_o_preset_antigo = self.nome == "Claude Code"
-            && self.args.len() == ARGS_ANTIGOS_CLAUDE.len()
-            && self.args.iter().zip(ARGS_ANTIGOS_CLAUDE).all(|(a, b)| a == b);
-        let atualizado = if e_o_preset_antigo {
-            let preset = Self::presets().remove(0);
-            Self { args: preset.args, formato: preset.formato, ..self }
-        } else {
-            self
+        // (nome do preset, args que a versão anterior gravava)
+        const ANTIGOS: [(&str, &[&str]); 2] = [
+            ("Claude Code", &["-p", MARCADOR_PROMPT]),
+            ("Codex", &["exec", MARCADOR_PROMPT]),
+        ];
+        let antigo = ANTIGOS.iter().find(|(nome, args)| {
+            self.nome == *nome
+                && self.args.len() == args.len()
+                && self.args.iter().zip(args.iter()).all(|(a, b)| a == b)
+        });
+        let atualizado = match antigo {
+            Some((nome, _)) => match Self::presets().into_iter().find(|p| p.nome == *nome) {
+                Some(preset) => Self { args: preset.args, formato: preset.formato, ..self },
+                None => self,
+            },
+            None => self,
         };
         atualizado.com_piso_de_timeout()
     }
@@ -201,10 +214,10 @@ impl Adaptador {
             Adaptador {
                 nome: "Codex".into(),
                 binario: "codex".into(),
-                args: vec!["exec".into(), MARCADOR_PROMPT.into()],
+                args: vec!["exec".into(), "--json".into(), MARCADOR_PROMPT.into()],
                 cwd: String::new(),
                 timeout_s: TIMEOUT_PADRAO_S,
-                formato: FormatoSaida::Texto,
+                formato: FormatoSaida::StreamJson,
             },
             Adaptador {
                 nome: "opencode".into(),
@@ -212,6 +225,11 @@ impl Adaptador {
                 args: vec!["run".into(), MARCADOR_PROMPT.into()],
                 cwd: String::new(),
                 timeout_s: TIMEOUT_PADRAO_S,
+                // O opencode tem `--format json`, mas o formato dos
+                // eventos dele não foi conferido contra um binário
+                // rodando de verdade — aqui não havia modelo
+                // configurado pra provocar uma saída. Fica em `Texto`,
+                // que funciona com qualquer agente, até alguém checar.
                 formato: FormatoSaida::Texto,
             },
         ]
@@ -273,10 +291,67 @@ mod tests {
         l.linha(r#"{"type":"result","is_error":false,"result":"Proposta pronta"}"#);
 
         let p = l.progresso();
-        assert!(p.contains("usando Read"), "progresso sem a ferramenta: {p}");
+        assert!(p.contains("· Read"), "progresso sem a ferramenta: {p}");
         assert!(p.contains("Vou ler a spec"), "progresso sem o texto: {p}");
         // O progresso é ruído de execução: não pode virar a resposta.
         assert_eq!(l.resposta().unwrap(), "Proposta pronta");
+    }
+
+    #[test]
+    fn o_progresso_guarda_o_texto_inteiro_nao_so_a_primeira_linha() {
+        // Durante uma execução longa é o miolo do raciocínio que diz se
+        // o agente entendeu o pedido. Guardar só a primeira linha
+        // escondia justamente isso.
+        let mut l = LeitorStream::novo();
+        l.linha(
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"primeira\nsegunda\nterceira"}]}}"#,
+        );
+        let p = l.progresso();
+        for esperada in ["primeira", "segunda", "terceira"] {
+            assert!(p.contains(esperada), "progresso sem \"{esperada}\": {p}");
+        }
+    }
+
+    #[test]
+    fn entende_o_dialeto_do_codex() {
+        let mut l = LeitorStream::novo();
+        l.linha(r#"{"type":"thread.started","thread_id":"x"}"#);
+        l.linha(r#"{"type":"turn.started"}"#);
+        l.linha(
+            r#"{"type":"item.completed","item":{"id":"i0","type":"agent_message","text":"Vou listar a pasta."}}"#,
+        );
+        l.linha(
+            r#"{"type":"item.started","item":{"id":"i1","type":"command_execution","command":"ls -1"}}"#,
+        );
+        l.linha(
+            r#"{"type":"item.completed","item":{"id":"i2","type":"agent_message","text":"Há 4 itens."}}"#,
+        );
+        l.linha(r#"{"type":"turn.completed","usage":{}}"#);
+
+        let p = l.progresso();
+        assert!(p.contains("· ls -1"), "progresso sem o comando: {p}");
+        assert!(p.contains("Vou listar a pasta."), "progresso sem a narração: {p}");
+        // O Codex narra o que VAI fazer antes de fazer; a resposta é o
+        // último recado, não a soma deles.
+        assert_eq!(l.resposta().unwrap(), "Há 4 itens.");
+    }
+
+    #[test]
+    fn o_codex_reporta_falha_do_turno() {
+        let mut l = LeitorStream::novo();
+        l.linha(r#"{"type":"turn.failed","error":{"message":"sem credencial"}}"#);
+        assert_eq!(l.resposta().unwrap_err(), "sem credencial");
+    }
+
+    #[test]
+    fn os_dois_dialetos_nao_se_confundem() {
+        // Os nomes de evento são disjuntos, então um leitor só dá conta
+        // dos dois sem precisar saber de antemão qual agente falou.
+        let mut l = LeitorStream::novo();
+        l.linha(r#"{"type":"item.completed","item":{"type":"agent_message","text":"do codex"}}"#);
+        l.linha(r#"{"type":"result","is_error":false,"result":"do claude"}"#);
+        // O `result` do Claude é explícito e ganha do acumulado.
+        assert_eq!(l.resposta().unwrap(), "do claude");
     }
 
     #[test]
@@ -476,9 +551,10 @@ impl LeitorStream {
             return;
         };
         match v.get("type").and_then(|t| t.as_str()) {
+            // ── dialeto do Claude Code ──
             Some("system") => {
                 if v.get("subtype").and_then(|s| s.as_str()) == Some("init") {
-                    self.progresso.push("conectado".to_string());
+                    self.anotar("conectado");
                 }
             }
             Some("assistant") => {
@@ -491,17 +567,12 @@ impl LeitorStream {
                         Some("text") => {
                             if let Some(txt) = b.get("text").and_then(|t| t.as_str()) {
                                 self.texto.push_str(txt);
-                                // Só a primeira linha vira progresso: o
-                                // texto inteiro aparece no fim, e
-                                // repeti-lo aqui encheria o painel.
-                                if let Some(primeira) = txt.lines().find(|l| !l.trim().is_empty()) {
-                                    self.progresso.push(resumir(primeira));
-                                }
+                                self.anotar(txt);
                             }
                         }
                         Some("tool_use") => {
                             if let Some(nome) = b.get("name").and_then(|n| n.as_str()) {
-                                self.progresso.push(format!("usando {nome}"));
+                                self.anotar(&format!("· {nome}"));
                             }
                         }
                         _ => {}
@@ -520,14 +591,75 @@ impl LeitorStream {
                     self.resultado = Some(r.to_string());
                 }
             }
+
+            // ── dialeto do Codex ──
+            Some("thread.started") => self.anotar("conectado"),
+            Some("item.started") | Some("item.completed") => {
+                let completo = v.get("type").and_then(|t| t.as_str()) == Some("item.completed");
+                let Some(item) = v.get("item") else { return };
+                match item.get("type").and_then(|t| t.as_str()) {
+                    Some("agent_message") => {
+                        // Só no `completed`: o `started` do mesmo item
+                        // traz o texto pela metade e duplicaria tudo.
+                        if completo {
+                            if let Some(txt) = item.get("text").and_then(|t| t.as_str()) {
+                                self.texto.push_str(txt);
+                                // A resposta é o ÚLTIMO recado, não a
+                                // soma deles: o Codex narra o que vai
+                                // fazer antes de fazer, e essa narração
+                                // não é resposta.
+                                self.resultado = Some(txt.to_string());
+                                self.anotar(txt);
+                            }
+                        }
+                    }
+                    Some("command_execution") => {
+                        if !completo {
+                            if let Some(cmd) = item.get("command").and_then(|c| c.as_str()) {
+                                self.anotar(&format!("· {cmd}"));
+                            }
+                        }
+                    }
+                    Some(outro) if !completo => self.anotar(&format!("· {outro}")),
+                    _ => {}
+                }
+            }
+            Some("turn.failed") => {
+                self.erro = Some(
+                    v.get("error")
+                        .and_then(|e| e.get("message"))
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("o agente terminou com erro")
+                        .to_string(),
+                );
+            }
             _ => {}
+        }
+    }
+
+    /// Guarda um trecho no progresso, quebrado em linhas.
+    ///
+    /// Guarda o texto INTEIRO, não só a primeira linha: durante uma
+    /// execução longa é justamente o miolo do raciocínio que diz se o
+    /// agente entendeu o pedido. A janela rolante evita que isso cresça
+    /// sem limite, e a tela dá altura fixa com rolagem própria.
+    fn anotar(&mut self, texto: &str) {
+        for linha in texto.lines() {
+            let l = linha.trim_end();
+            if l.trim().is_empty() {
+                continue;
+            }
+            self.progresso.push(resumir(l));
+        }
+        let sobra = self.progresso.len().saturating_sub(LINHAS_DE_PROGRESSO);
+        if sobra > 0 {
+            self.progresso.drain(..sobra);
         }
     }
 
     /// As últimas linhas de progresso, pra mostrar enquanto roda.
     pub fn progresso(&self) -> String {
-        let n = self.progresso.len().saturating_sub(LINHAS_DE_PROGRESSO);
-        self.progresso[n..].join("\n")
+        self.progresso.join("\n")
     }
 
     /// A resposta final, ou o erro que o agente reportou.
@@ -553,8 +685,12 @@ impl LeitorStream {
     }
 }
 
-/// Quantas linhas de progresso ficam visíveis.
-const LINHAS_DE_PROGRESSO: usize = 12;
+/// Quantas linhas de progresso ficam guardadas.
+///
+/// Generoso de propósito: a tela mostra numa caixa de altura fixa com
+/// rolagem, então mais linhas significam mais contexto pra rolar, não
+/// uma tela empurrada pra fora.
+const LINHAS_DE_PROGRESSO: usize = 200;
 
 /// Encurta uma linha pra caber no painel de progresso.
 fn resumir(linha: &str) -> String {

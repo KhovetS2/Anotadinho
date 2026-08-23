@@ -544,6 +544,8 @@ mod tests {
 // ── agente externo (ciclo 202) ───────────────────────────────────────
 
 const CHAVE_ADAPTADOR: &str = "anotadinho.adaptador_agente";
+/// Ajustes por agente, guardados na troca.
+const CHAVE_ADAPTADORES: &str = "anotadinho.adaptadores_agente";
 
 /// `"YYYY-MM-DD HH:MM"` — o carimbo das mensagens da conversa.
 ///
@@ -578,9 +580,67 @@ pub fn load_adaptador() -> anotadinho_core::agente::Adaptador {
 }
 
 /// Grava a configuração do agente.
+///
+/// Grava em DOIS lugares: qual está ativo, e como aquele agente está
+/// configurado. O segundo é o que faz trocar de agente e voltar não
+/// apagar um caminho de binário ajustado à mão — sem isso, quem apontou
+/// pro `~/.local/bin/claude` perderia o ajuste na primeira troca.
 pub fn save_adaptador(a: &anotadinho_core::agente::Adaptador) {
     let Ok(json) = serde_json::to_string(a) else { return };
-    if let Some(store) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = store.set_item(CHAVE_ADAPTADOR, &json);
+    let Some(store) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) else {
+        return;
+    };
+    let _ = store.set_item(CHAVE_ADAPTADOR, &json);
+    lembrar_adaptador(a);
+}
+
+/// Guarda como um agente está configurado, sem torná-lo o ativo.
+///
+/// Chamado com o agente que SAI, na troca. Sem isso só o recém-escolhido
+/// era lembrado, e o ajuste do anterior — o caminho do binário que a
+/// pessoa apontou — sumia na primeira ida e volta.
+pub fn lembrar_adaptador(a: &anotadinho_core::agente::Adaptador) {
+    let Some(store) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) else {
+        return;
+    };
+    let mut conhecidos = adaptadores_conhecidos();
+    conhecidos.retain(|c| c.nome != a.nome);
+    conhecidos.push(a.clone());
+    if let Ok(lista) = serde_json::to_string(&conhecidos) {
+        let _ = store.set_item(CHAVE_ADAPTADORES, &lista);
     }
+}
+
+/// Como cada agente ficou configurado da última vez que foi usado.
+pub fn adaptadores_conhecidos() -> Vec<anotadinho_core::agente::Adaptador> {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|s| s.get_item(CHAVE_ADAPTADORES).ok().flatten())
+        .and_then(|s| serde_json::from_str::<Vec<anotadinho_core::agente::Adaptador>>(&s).ok())
+        .unwrap_or_default()
+}
+
+/// As opções pra escolher, com os ajustes de quem já foi usado.
+///
+/// A lista de presets é a fonte da ordem e dos nomes; o que a pessoa
+/// mexeu ganha por cima.
+pub fn opcoes_de_agente() -> Vec<anotadinho_core::agente::Adaptador> {
+    let conhecidos = adaptadores_conhecidos();
+    let ativo = load_adaptador();
+    anotadinho_core::agente::Adaptador::presets()
+        .into_iter()
+        .map(|preset| {
+            if ativo.nome == preset.nome {
+                return ativo.clone();
+            }
+            match conhecidos.iter().find(|c| c.nome == preset.nome) {
+                // O ajuste do usuário vale, mas os args e o formato
+                // vêm da migração: um preset que mudou de contrato
+                // (como o Codex, que ganhou `--json`) não pode ficar
+                // preso na versão velha só porque foi usado uma vez.
+                Some(c) => c.clone().migrado(),
+                None => preset,
+            }
+        })
+        .collect()
 }

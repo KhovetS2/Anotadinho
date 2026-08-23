@@ -62,6 +62,10 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     // indistinguível de uma tela travada — isto é o sinal de vida.
     let parcial = use_state(String::new);
     let decorrido = use_state(|| 0u64);
+    // Qual agente está configurado. É estado, não leitura solta, porque
+    // agora dá pra trocar sem sair da conversa (ciclo 214).
+    let adaptador = use_state(crate::state::load_adaptador);
+    let trocando_agente = use_state(|| false);
     // Páginas anexadas, lidas do FRONTMATTER (ciclo 208) — sobrevivem a
     // fechar o app, diferente do contexto em memória do ciclo 202.
     let anexos = use_state(Vec::<String>::new);
@@ -161,6 +165,25 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         });
     }
 
+    // Troca o agente configurado (ciclo 214).
+    //
+    // A configuração é uma só, do app inteiro — trocar aqui vale pra
+    // toda conversa. Fica na conversa porque é onde a pessoa percebe
+    // que quer trocar, não num painel escondido de configurações.
+    let trocar_agente = {
+        let adaptador = adaptador.clone();
+        let trocando = trocando_agente.clone();
+        Callback::from(move |novo: Adaptador| {
+            // Guarda o que SAI antes de gravar o que entra: é isso que
+            // faz voltar pro anterior devolver o binário que a pessoa
+            // apontou, em vez de recomeçar do preset.
+            crate::state::lembrar_adaptador(&adaptador);
+            crate::state::save_adaptador(&novo);
+            adaptador.set(novo);
+            trocando.set(false);
+        })
+    };
+
     // Interrompe a execução em andamento.
     let interromper = {
         let path = props.page.path.clone();
@@ -185,6 +208,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         let ocupado = ocupado.clone();
         let erro = erro.clone();
         let anexos = anexos.clone();
+        let adaptador = adaptador.clone();
         let vault_path = props.vault_path.clone();
         let path = props.page.path.clone();
         Callback::from(move |_: MouseEvent| {
@@ -196,6 +220,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 (mensagens.clone(), rascunho.clone(), ocupado.clone(), erro.clone());
             let (vault_path, path) = (vault_path.clone(), path.clone());
             let anexados = (*anexos).clone();
+            let adaptador = (*adaptador).clone();
             ocupado.set(true);
             erro.set(None);
 
@@ -234,7 +259,6 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 // Só DISPARA. Quem acompanha é o efeito de polling
                 // abaixo — inclusive se esta tela for desmontada no
                 // meio, porque o processo é do backend.
-                let adaptador = crate::state::load_adaptador();
                 if let Err(e) = api::iniciar_agente(&adaptador, &prompt, &vault_path, &path).await {
                     erro.set(Some(e));
                     ocupado.set(false);
@@ -368,15 +392,37 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         })
     };
 
-    let adaptador = crate::state::load_adaptador();
-
     html! {
         <main class="conversa">
             <header class="conversa__topo">
                 <h2 class="conversa__titulo">{ &props.page.title }</h2>
-                <span class="conversa__agente" title={adaptador.binario.clone()}>
-                    <Icon name="zap" />{ adaptador.nome.clone() }
-                </span>
+                <div class="conversa__agente-caixa">
+                    <button class="conversa__agente" title={format!("{} — clique pra trocar", adaptador.binario)}
+                        onclick={{
+                            let t = trocando_agente.clone();
+                            let aberto = *trocando_agente;
+                            Callback::from(move |_: MouseEvent| t.set(!aberto))
+                        }}>
+                        <Icon name="zap" />{ adaptador.nome.clone() }
+                    </button>
+                    if *trocando_agente {
+                        <div class="conversa__agentes">
+                            { for crate::state::opcoes_de_agente().into_iter().map(|preset| {
+                                let atual = preset.nome == adaptador.nome;
+                                let trocar = trocar_agente.clone();
+                                let escolhido = preset.clone();
+                                html! {
+                                    <button class={classes!("conversa__agente-op", atual.then_some("conversa__agente-op--atual"))}
+                                        onclick={Callback::from(move |_: MouseEvent| trocar.emit(escolhido.clone()))}
+                                        title={preset.binario.clone()}>
+                                        <Icon name="zap" />{ preset.nome.clone() }
+                                        if atual { <span class="conversa__agente-marca">{ "•" }</span> }
+                                    </button>
+                                }
+                            }) }
+                        </div>
+                    }
+                </div>
                 <button class="btn btn--ghost btn--xs conversa__anexar" onclick={abrir_seletor}
                     title="Anexar páginas que o modelo deve consultar">
                     <Icon name="paperclip" />{ format!("{} anexo(s)", anexos.len()) }

@@ -1175,7 +1175,7 @@ fluxo.push({
     ctx.assertEq(meio && meio.estado, "rodando", `esperava rodando, veio ${JSON.stringify(meio)}`);
     // O painel mostra o que ELE está fazendo, não o JSON cru.
     ctx.assert(
-      meio.parcial.includes("usando Read"),
+      meio.parcial.includes("· Read"),
       `progresso não traduziu o evento: ${JSON.stringify(meio.parcial)}`,
     );
     ctx.assert(!meio.parcial.includes('"type"'), "o JSON cru vazou pro painel");
@@ -1188,5 +1188,130 @@ fluxo.push({
     }
     ctx.assertEq(fim && fim.estado, "concluido", `esperava concluido, veio ${JSON.stringify(fim)}`);
     ctx.assertEq(fim.texto, "RESPOSTA para: pergunta", "a resposta não saiu do evento result");
+  },
+});
+
+// ── ciclo 214: dialeto do Codex e troca de agente ────────────────────
+
+fluxo.push({
+  nome: "agente: dialeto do Codex vira progresso e resposta (214)",
+  async fn(bridge, ctx) {
+    const conversa = "pages/__uitest-codex-dialeto.md";
+    await bridge.js(DISPARAR(["--codex", "{prompt}"], "pergunta", conversa, 30, "stream_json"));
+    await PAUSA(1300);
+    const meio = await bridge.js(ESTADO(conversa));
+    ctx.assertEq(meio && meio.estado, "rodando", `esperava rodando, veio ${JSON.stringify(meio)}`);
+    ctx.assert(
+      meio.parcial.includes("Vou conferir a pasta."),
+      `progresso sem a narração: ${JSON.stringify(meio.parcial)}`,
+    );
+    ctx.assert(!meio.parcial.includes('"type"'), "o JSON cru vazou pro painel");
+
+    let fim = null;
+    for (let i = 0; i < 40; i++) {
+      await PAUSA(250);
+      fim = await bridge.js(ESTADO(conversa));
+      if (!fim || fim.estado !== "rodando") break;
+    }
+    ctx.assertEq(fim && fim.estado, "concluido", `esperava concluido, veio ${JSON.stringify(fim)}`);
+    // O Codex narra o que VAI fazer antes de fazer; a resposta é o
+    // último recado, não a soma deles.
+    ctx.assertEq(fim.texto, "RESPOSTA para: pergunta", "a resposta não é o último recado");
+  },
+});
+
+fluxo.push({
+  nome: "agente: o progresso mostra o texto inteiro, não só a 1ª linha (214)",
+  async fn(bridge, ctx) {
+    const conversa = "pages/__uitest-progresso-inteiro.md";
+    await bridge.js(DISPARAR(["--devagar", "{prompt}"], "x", conversa));
+    await PAUSA(4000);
+    const meio = await bridge.js(ESTADO(conversa));
+    ctx.assertEq(meio && meio.estado, "rodando", `esperava rodando, veio ${JSON.stringify(meio)}`);
+    // Guardar só a primeira linha escondia justamente o miolo do
+    // raciocínio, que é o que diz se o agente entendeu o pedido.
+    ctx.assert(
+      meio.parcial.split("\n").length >= 3,
+      `só veio ${meio.parcial.split("\n").length} linha(s): ${JSON.stringify(meio.parcial)}`,
+    );
+    await bridge.js(`window.__TAURI_INTERNALS__.invoke('cancelar_agente', { conversaPath: ${JSON.stringify(conversa)} })`);
+  },
+});
+
+fluxo.push({
+  nome: "conversa: trocar de agente pelo chip preserva o binário ajustado (214)",
+  async fn(bridge, ctx) {
+    const rel = "pages/__uitest-troca.md";
+    const fs = await import("node:fs");
+    const arquivo = `${ctx.vault}/${rel}`;
+    fs.writeFileSync(arquivo, "---\ntitle: __uitest-troca\ntype: conversa\n---\n");
+    const antes = await bridge.js(`localStorage.getItem('anotadinho.adaptador_agente')`);
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPaginaEstavel(bridge, "__uitest-troca");
+
+      // Um binário ajustado à mão, como quem aponta pro próprio
+      // caminho de instalação.
+      await bridge.js(`(() => {
+        localStorage.setItem('anotadinho.adaptador_agente', JSON.stringify({
+          nome: 'Claude Code', binario: '/caminho/meu/claude',
+          args: ['-p','--output-format','stream-json','--verbose','{prompt}'],
+          cwd: '', timeout_s: 1800, formato: 'stream_json' }));
+        localStorage.removeItem('anotadinho.adaptadores_agente');
+        return true;
+      })()`);
+      await recarregarEstavel(bridge);
+      await abrirPaginaEstavel(bridge, "__uitest-troca");
+
+      // Clicar e LER em chamadas separadas: o Yew só re-renderiza no
+      // tick seguinte, então ler junto pega a tela de antes.
+      const achou = await bridge.js(`(() => {
+        const chip = document.querySelector('.conversa__agente');
+        if (!chip) return false;
+        chip.click();
+        return true;
+      })()`);
+      ctx.assert(achou, "não há chip de agente na conversa");
+      await PAUSA(300);
+      const opcoes = await bridge.js(
+        `[...document.querySelectorAll('.conversa__agente-op')].map(o => o.textContent.trim())`,
+      );
+      ctx.assertEq(opcoes.length, 3, `esperava 3 agentes, veio ${JSON.stringify(opcoes)}`);
+
+      // Vai pro Codex e volta: o caminho ajustado tem que sobreviver.
+      await bridge.js(`(() => {
+        [...document.querySelectorAll('.conversa__agente-op')]
+          .find(o => o.textContent.includes('Codex')).click();
+        return true;
+      })()`);
+      await PAUSA(500);
+      const codex = await bridge.js(`JSON.parse(localStorage.getItem('anotadinho.adaptador_agente'))`);
+      ctx.assertEq(codex.nome, "Codex", "não trocou pro Codex");
+      ctx.assert(codex.args.includes("--json"), `Codex sem --json: ${JSON.stringify(codex.args)}`);
+
+      await bridge.js(`(() => { document.querySelector('.conversa__agente').click(); return true; })()`);
+      await PAUSA(300);
+      await bridge.js(`(() => {
+        [...document.querySelectorAll('.conversa__agente-op')]
+          .find(o => o.textContent.includes('Claude')).click();
+        return true;
+      })()`);
+      await PAUSA(500);
+      const volta = await bridge.js(`JSON.parse(localStorage.getItem('anotadinho.adaptador_agente'))`);
+      ctx.assertEq(
+        volta.binario,
+        "/caminho/meu/claude",
+        "trocar de agente e voltar apagou o binário ajustado à mão",
+      );
+    } finally {
+      fs.rmSync(arquivo, { force: true });
+      await bridge.js(`(() => {
+        const v = ${JSON.stringify(antes)};
+        if (v === null) localStorage.removeItem('anotadinho.adaptador_agente');
+        else localStorage.setItem('anotadinho.adaptador_agente', v);
+        localStorage.removeItem('anotadinho.adaptadores_agente');
+        return true;
+      })()`);
+    }
   },
 });

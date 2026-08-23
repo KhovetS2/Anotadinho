@@ -7,7 +7,7 @@
 # lenta, cara e não determinística.
 #
 # Modos: --responder (padrão), --demorar, --falhar, --mudo, --devagar,
-# --stream.
+# --stream (Claude Code), --codex.
 case "$1" in
   --demorar) sleep 60 ;;
   --falhar) echo "erro proposital" >&2; exit 3 ;;
@@ -19,6 +19,18 @@ case "$1" in
       echo "linha $i"
       sleep 1
     done
+    exit 0
+    ;;
+  # Fala o dialeto JSONL do Codex (ciclo 214).
+  --codex)
+    echo '{"type":"thread.started","thread_id":"t1"}'
+    echo '{"type":"turn.started"}'
+    echo '{"type":"item.completed","item":{"id":"i0","type":"agent_message","text":"Vou conferir a pasta."}}'
+    sleep 1
+    echo '{"type":"item.started","item":{"id":"i1","type":"command_execution","command":"ls -1"}}'
+    sleep 1
+    printf '{"type":"item.completed","item":{"id":"i2","type":"agent_message","text":"RESPOSTA para: %s"}}\n' "$2"
+    echo '{"type":"turn.completed","usage":{}}'
     exit 0
     ;;
   # Fala o dialeto `stream-json` do Claude Code (ciclo 213).

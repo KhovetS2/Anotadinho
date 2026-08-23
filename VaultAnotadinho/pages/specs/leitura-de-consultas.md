@@ -1,17 +1,17 @@
 ---
-title: "Leitura de consultas: alinhamento, cor e altura"
-type: spec
-date: 2026-08-23
-status: em-revisao
-prioridade: alta
+title: 'Leitura de consultas: alinhamento, cor e altura'
 tags:
 - spec
 - ui
+type: spec
+date: 2026-08-23
+prioridade: alta
+status: aprovada
 ---
 # Leitura de consultas: alinhamento, cor e altura
 {{ type: "fluxo" }}
 artefato: spec
-etapa: em-revisao
+etapa: aprovada
 
 {{ /fluxo }}
 ## Contexto
