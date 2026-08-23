@@ -397,7 +397,14 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
             <header class="conversa__topo">
                 <h2 class="conversa__titulo">{ &props.page.title }</h2>
                 <div class="conversa__agente-caixa">
-                    <button class="conversa__agente" title={format!("{} — clique pra trocar", adaptador.binario)}
+                    <button class="conversa__agente" title={format!(
+                            "{} · trabalha em {} — clique pra trocar",
+                            adaptador.binario,
+                            if adaptador.cwd.trim().is_empty() {
+                                "raiz do projeto".to_string()
+                            } else {
+                                adaptador.cwd.clone()
+                            })}
                         onclick={{
                             let t = trocando_agente.clone();
                             let aberto = *trocando_agente;

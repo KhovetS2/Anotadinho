@@ -1315,3 +1315,65 @@ fluxo.push({
     }
   },
 });
+
+// ── ciclo 215: trava contra esvaziamento e raiz do projeto ───────────
+
+fluxo.push({
+  nome: "vault: gravar vazio por cima de página com conteúdo é recusado (215)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const rel = "pages/__uitest-nao-esvaziar.md";
+    const arquivo = `${ctx.vault}/${rel}`;
+    fs.writeFileSync(arquivo, "---\ntitle: __uitest-nao-esvaziar\n---\ntexto que importa\n");
+    try {
+      // Duas propostas do vault foram zeradas sem que a causa fosse
+      // reproduzida. A trava fica no ponto por onde TODO escritor passa,
+      // então não depende de saber quem escreveu.
+      const r = await bridge.js(`(async () => {
+        try {
+          await window.__TAURI_INTERNALS__.invoke('write_page', {
+            vaultPath: ${JSON.stringify(`${process.cwd()}/${ctx.vault}`)},
+            pagePath: ${JSON.stringify(rel)},
+            content: '',
+          });
+          return { ok: true };
+        } catch (e) { return { ok: false, erro: String(e) }; }
+      })()`);
+      ctx.assertEq(r.ok, false, "o app aceitou apagar o conteúdo da página");
+      ctx.assert(/recusada/i.test(r.erro), `erro não explica o motivo: ${r.erro}`);
+      ctx.assert(
+        fs.readFileSync(arquivo, "utf8").includes("texto que importa"),
+        "o conteúdo se perdeu mesmo com a recusa",
+      );
+    } finally {
+      fs.rmSync(arquivo, { force: true });
+    }
+  },
+});
+
+fluxo.push({
+  nome: "agente: sem cwd configurado, trabalha na raiz do projeto (215)",
+  async fn(bridge, ctx) {
+    const conversa = "pages/__uitest-cwd.md";
+    // O agente falso ecoa o prompt; o que importa aqui é ONDE ele roda,
+    // então o cenário confere o diretório pelo próprio processo.
+    await bridge.js(DISPARAR(["--onde", "{prompt}"], "x", conversa, 30, "texto"));
+    let fim = null;
+    for (let i = 0; i < 40; i++) {
+      await PAUSA(250);
+      fim = await bridge.js(ESTADO(conversa));
+      if (!fim || fim.estado !== "rodando") break;
+    }
+    ctx.assertEq(fim && fim.estado, "concluido", `esperava concluido, veio ${JSON.stringify(fim)}`);
+    // Rodar dentro do vault deixava o agente sem enxergar o código que
+    // a proposta manda mudar — e com escrita justo nas notas.
+    ctx.assert(
+      !fim.texto.trim().endsWith("VaultAnotadinho"),
+      `o agente rodou dentro do vault: ${fim.texto}`,
+    );
+    ctx.assert(
+      fim.texto.includes("Anotadinho"),
+      `diretório inesperado: ${fim.texto}`,
+    );
+  },
+});

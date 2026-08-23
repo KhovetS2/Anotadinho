@@ -141,6 +141,31 @@ pub fn handle_read_page_versioned(
 ///
 /// `expected_version` vazio/ausente = gravação incondicional (mesmo
 /// comportamento de `handle_write_page`, pra criar arquivo novo).
+/// Recusa gravar VAZIO por cima de uma página que tem conteúdo.
+///
+/// Duas propostas do vault foram zeradas (0 bytes) logo depois de um
+/// pedido de execução, e a causa não foi reproduzida — nem pelo editor,
+/// nem pelo agente sandboxado, que é bloqueado antes de truncar.
+///
+/// Sem saber quem escreveu, a trava fica no ponto por onde TODOS passam.
+/// Apagar uma nota inteira nunca é o resultado certo de um save: quem
+/// quer esvaziar uma página apaga a página. Uma página nova (que ainda
+/// não existe no disco) continua podendo nascer vazia.
+fn recusar_esvaziamento(vault: &VaultIo, page_path: &str, content: &str) -> Result<(), String> {
+    if !content.trim().is_empty() {
+        return Ok(());
+    }
+    match vault.read_page(page_path) {
+        Ok(atual) if !atual.trim().is_empty() => Err(format!(
+            "gravação recusada: isso apagaria as {} letras de \"{}\". \
+             Pra esvaziar de propósito, apague a página.",
+            atual.trim().chars().count(),
+            page_path
+        )),
+        _ => Ok(()),
+    }
+}
+
 pub fn handle_write_page_checked(
     vault_path: String,
     page_path: String,
@@ -148,6 +173,7 @@ pub fn handle_write_page_checked(
     expected_version: Option<String>,
 ) -> Result<String, String> {
     let vault = VaultIo::open(&vault_path);
+    recusar_esvaziamento(&vault, &page_path, &content)?;
     vault
         .write_page_checked(&page_path, &content, expected_version.as_deref())
         .map_err(|e| e.to_string())
@@ -160,6 +186,7 @@ pub fn handle_write_page(
     content: String,
 ) -> Result<(), String> {
     let vault = VaultIo::open(&vault_path);
+    recusar_esvaziamento(&vault, &page_path, &content)?;
     vault
         .write_page(&page_path, &content)
         .map_err(|e| e.to_string())
@@ -465,6 +492,55 @@ pub fn handle_search_content(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── trava contra esvaziamento (ciclo 215) ─────────────────────
+
+    #[test]
+    fn gravar_vazio_por_cima_de_pagina_com_conteudo_e_recusado() {
+        let dir = vault_temp();
+        let vault = dir.path().to_string_lossy().to_string();
+        let pagina = "pages/importante.md".to_string();
+        handle_write_page(vault.clone(), pagina.clone(), "texto que importa".into()).unwrap();
+
+        let erro = handle_write_page(vault.clone(), pagina.clone(), String::new()).unwrap_err();
+        assert!(erro.contains("recusada"), "erro não explica: {erro}");
+
+        // E o arquivo continua lá, inteiro.
+        assert_eq!(
+            handle_read_page(vault, pagina).unwrap().trim(),
+            "texto que importa"
+        );
+    }
+
+    #[test]
+    fn so_espaco_em_branco_tambem_conta_como_vazio() {
+        let dir = vault_temp();
+        let vault = dir.path().to_string_lossy().to_string();
+        let pagina = "pages/importante.md".to_string();
+        handle_write_page(vault.clone(), pagina.clone(), "texto".into()).unwrap();
+        assert!(handle_write_page(vault, pagina, "  \n\n  ".into()).is_err());
+    }
+
+    #[test]
+    fn pagina_nova_ainda_pode_nascer_vazia() {
+        // A trava é contra APAGAR o que existe, não contra criar.
+        let dir = vault_temp();
+        let vault = dir.path().to_string_lossy().to_string();
+        handle_write_page(vault, "pages/nova.md".into(), String::new()).unwrap();
+    }
+
+    #[test]
+    fn a_trava_vale_para_o_caminho_com_versao() {
+        let dir = vault_temp();
+        let vault = dir.path().to_string_lossy().to_string();
+        let pagina = "pages/importante.md".to_string();
+        let v = handle_write_page_checked(vault.clone(), pagina.clone(), "texto".into(), None)
+            .unwrap();
+        assert!(
+            handle_write_page_checked(vault, pagina, String::new(), Some(v)).is_err(),
+            "o caminho com versão passou por cima da trava"
+        );
+    }
 
     // ── propostas (ciclo 204) ─────────────────────────────────────
 

@@ -31,7 +31,15 @@ pub struct Adaptador {
     pub binario: String,
     /// Argumentos. Exatamente um deles deve conter `{prompt}`.
     pub args: Vec<String>,
-    /// Diretório de trabalho. Vazio = raiz do vault.
+    /// Diretório de trabalho. Vazio = o PROJETO que contém o vault
+    /// (ver `raiz_do_projeto`), não o vault.
+    ///
+    /// Rodar no vault deixava o agente sem enxergar o código: pedir a
+    /// execução de uma proposta que mexe em `ui/` e `crates/` dava
+    /// "acesso negado", porque a sessão dele só alcançava as notas. E é
+    /// o pior dos dois mundos: sem acesso ao que precisa mudar, e com
+    /// acesso de escrita justamente às notas, que é o que o fluxo de
+    /// propostas existe pra proteger.
     #[serde(default)]
     pub cwd: String,
     /// Segundos até desistir. 0 = sem limite (desaconselhado).
@@ -426,6 +434,26 @@ mod tests {
     }
 
     #[test]
+    fn a_raiz_do_projeto_sobe_ate_o_git() {
+        // O caso do Anotadinho: o vault mora dentro do repositório, e é
+        // da raiz que dá pra ler o código E as notas.
+        let raiz = raiz_do_projeto("/casa/proj/VaultX", |d| d == std::path::Path::new("/casa/proj"));
+        assert_eq!(raiz, "/casa/proj");
+    }
+
+    #[test]
+    fn o_proprio_vault_sendo_repositorio_vale_como_raiz() {
+        let raiz = raiz_do_projeto("/casa/notas", |d| d == std::path::Path::new("/casa/notas"));
+        assert_eq!(raiz, "/casa/notas");
+    }
+
+    #[test]
+    fn sem_git_em_lugar_nenhum_fica_o_vault() {
+        let raiz = raiz_do_projeto("/casa/notas", |_| false);
+        assert_eq!(raiz, "/casa/notas");
+    }
+
+    #[test]
     fn todos_os_presets_sao_validos() {
         for p in Adaptador::presets() {
             assert_eq!(p.validar(), None, "preset inválido: {}", p.nome);
@@ -701,4 +729,28 @@ fn resumir(linha: &str) -> String {
     }
     let cortado: String = l.chars().take(LIMITE).collect();
     format!("{cortado}…")
+}
+
+/// O diretório onde o agente deve trabalhar, partindo do vault.
+///
+/// Sobe procurando um `.git`: num projeto que guarda as notas dentro do
+/// próprio repositório — que é o caso do Anotadinho — a raiz é o lugar
+/// de onde dá pra ler o código E as notas. Sem `.git` em lugar nenhum,
+/// fica o vault mesmo, que é o comportamento antigo.
+///
+/// Recebe a lista de ancestrais já pronta pra ser testável sem tocar em
+/// disco; quem chama passa `existe` sabendo procurar `.git`.
+pub fn raiz_do_projeto<F>(vault: &str, tem_git: F) -> String
+where
+    F: Fn(&std::path::Path) -> bool,
+{
+    let caminho = std::path::Path::new(vault);
+    let mut atual = Some(caminho);
+    while let Some(dir) = atual {
+        if tem_git(dir) {
+            return dir.to_string_lossy().to_string();
+        }
+        atual = dir.parent();
+    }
+    vault.to_string()
 }

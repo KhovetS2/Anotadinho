@@ -7,7 +7,7 @@
 # lenta, cara e não determinística.
 #
 # Modos: --responder (padrão), --demorar, --falhar, --mudo, --devagar,
-# --stream (Claude Code), --codex.
+# --stream (Claude Code), --codex, --onde.
 case "$1" in
   --demorar) sleep 60 ;;
   --falhar) echo "erro proposital" >&2; exit 3 ;;
@@ -21,6 +21,8 @@ case "$1" in
     done
     exit 0
     ;;
+  # Diz onde está rodando (ciclo 215).
+  --onde) pwd; exit 0 ;;
   # Fala o dialeto JSONL do Codex (ciclo 214).
   --codex)
     echo '{"type":"thread.started","thread_id":"t1"}'

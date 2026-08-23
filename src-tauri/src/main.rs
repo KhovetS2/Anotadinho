@@ -378,7 +378,15 @@ fn iniciar_agente(
 
     let args = adaptador.montar_args(&prompt);
     let vault_conversa = vault_path.clone();
-    let cwd = if adaptador.cwd.trim().is_empty() { vault_path } else { adaptador.cwd.clone() };
+    // Sem `cwd` configurado, o agente trabalha na raiz do PROJETO, não
+    // no vault: rodar dentro das notas o deixava sem enxergar o código
+    // que a proposta manda mudar — e com escrita justo nas notas, que é
+    // o que o fluxo de propostas existe pra proteger.
+    let cwd = if adaptador.cwd.trim().is_empty() {
+        anotadinho_core::agente::raiz_do_projeto(&vault_path, |d| d.join(".git").exists())
+    } else {
+        adaptador.cwd.clone()
+    };
     let binario = adaptador.binario.clone();
     let limite = adaptador.timeout_s;
     let formato = adaptador.formato;
