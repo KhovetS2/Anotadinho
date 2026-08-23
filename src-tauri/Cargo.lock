@@ -62,6 +62,7 @@ dependencies = [
  "anotadinho-search",
  "anotadinho-vault",
  "anyhow",
+ "chrono",
  "serde",
  "serde_json",
  "tauri",

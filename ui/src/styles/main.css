@@ -1216,6 +1216,24 @@ body {
     margin: 0 0 0.5rem;
 }
 
+/* Lista que É um bloco de primeiro nível (ciclos 175/194).
+
+   A regra acima é mais específica que `.editor__bloco` e zerava a
+   `margin-left: -0.5rem` dele — a lista virava o único bloco cuja
+   caixa começa 0.5rem à direita das outras. Efeito visível: a linha de
+   realce do bloco caía DENTRO da coluna de texto, encostando no
+   marcador, em vez de ficar na canaleta à esquerda como em todo
+   parágrafo e título.
+
+   Aqui a lista volta pra mesma geometria dos demais blocos, e o recuo
+   do marcador vira padding INTERNO: 0.5rem da caixa do bloco + 1.5rem
+   de espaço pro "1." caber sem invadir a canaleta. */
+.editor__wysiwyg ul.editor__bloco,
+.editor__wysiwyg ol.editor__bloco {
+    margin-left: -0.5rem;
+    padding-left: 2rem;
+}
+
 .editor__wysiwyg li {
     margin-bottom: 0.15rem;
 }

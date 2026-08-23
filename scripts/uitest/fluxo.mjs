@@ -136,24 +136,46 @@ caso(
 
 const FALSO = new URL("./agente-falso.sh", import.meta.url).pathname;
 
-/// Chama o comando de execução direto, sem passar pela UI.
+/// Chama a execução direto, sem passar pela UI, e espera terminar.
+///
+/// A execução deixou de ser bloqueante no ciclo 213: `iniciar_agente`
+/// volta na hora e o resultado é buscado com `estado_agente`. Este
+/// helper reconstitui a espera pros cenários, que continuam querendo
+/// afirmar sobre o RESULTADO.
+///
+/// Cada chamada usa uma conversa própria: o registro é por conversa, e
+/// dois cenários na mesma chave brigariam por "já existe execução em
+/// andamento".
 const RODAR = (args, prompt, timeout = 30) => `(async () => {
+  const conversa = 'pages/__uitest-agente-' + Math.random().toString(36).slice(2) + '.md';
   try {
-    const r = await window.__TAURI_INTERNALS__.invoke('rodar_agente', {
+    await window.__TAURI_INTERNALS__.invoke('iniciar_agente', {
       adaptador: {
         nome: 'falso',
         binario: ${JSON.stringify(FALSO)},
         args: ${JSON.stringify(args)},
         cwd: '',
         timeout_s: ${timeout},
+        formato: 'texto',
       },
       prompt: ${JSON.stringify(prompt)},
       vaultPath: '/home/elis/Anotadinho',
+      conversaPath: conversa,
     });
-    return { ok: true, saida: r };
   } catch (e) {
     return { ok: false, erro: String(e) };
   }
+  // O limite aqui é do TESTE, não do agente: o timeout do adaptador é
+  // quem decide o caso de "passou do tempo", e precisa caber dentro.
+  const limite = Date.now() + (${timeout} + 10) * 1000;
+  while (Date.now() < limite) {
+    const e = await window.__TAURI_INTERNALS__.invoke('estado_agente', { conversaPath: conversa });
+    if (!e) return { ok: false, erro: 'a execução sumiu do registro' };
+    if (e.estado === 'rodando') { await new Promise(r => setTimeout(r, 150)); continue; }
+    if (e.estado === 'concluido') return { ok: true, saida: e.texto };
+    return { ok: false, erro: e.erro || e.estado };
+  }
+  return { ok: false, erro: 'o cenário desistiu de esperar' };
 })()`;
 
 fluxo.push({
@@ -219,8 +241,9 @@ fluxo.push({
   async fn(bridge, ctx) {
     const r = await bridge.js(`(async () => {
       try {
-        await window.__TAURI_INTERNALS__.invoke('rodar_agente', {
-          adaptador: { nome: 'x', binario: 'sh -c', args: ['{prompt}'], cwd: '', timeout_s: 10 },
+        await window.__TAURI_INTERNALS__.invoke('iniciar_agente', {
+          conversaPath: 'pages/__uitest-agente-invalido.md',
+          adaptador: { nome: 'x', binario: 'sh -c', args: ['{prompt}'], cwd: '', timeout_s: 10, formato: 'texto' },
           prompt: 'oi', vaultPath: '/home/elis/Anotadinho',
         });
         return { ok: true };
@@ -1002,5 +1025,168 @@ fluxo.push({
         }
       }
     }
+  },
+});
+
+// ── ciclo 213: execução assíncrona, progresso e interromper ──────────
+
+/// Dispara sem esperar e devolve a chave da conversa, pra o cenário
+/// poder observar o meio da execução.
+const DISPARAR = (
+  args,
+  prompt,
+  conversa,
+  timeout = 60,
+  formato = "texto",
+  vault = "/home/elis/Anotadinho",
+) => `(async () => {
+  await window.__TAURI_INTERNALS__.invoke('iniciar_agente', {
+    adaptador: {
+      nome: 'falso',
+      binario: ${JSON.stringify(FALSO)},
+      args: ${JSON.stringify(args)},
+      cwd: '',
+      timeout_s: ${timeout},
+      formato: ${JSON.stringify(formato)},
+    },
+    prompt: ${JSON.stringify(prompt)},
+    vaultPath: ${JSON.stringify(vault)},
+    conversaPath: ${JSON.stringify(conversa)},
+  });
+  return true;
+})()`;
+
+const ESTADO = (conversa) =>
+  `window.__TAURI_INTERNALS__.invoke('estado_agente', { conversaPath: ${JSON.stringify(conversa)} })`;
+
+fluxo.push({
+  nome: "agente: disparar não bloqueia a chamada (213)",
+  async fn(bridge, ctx) {
+    const conversa = "pages/__uitest-async-rapido.md";
+    const ms = await bridge.js(`(async () => {
+      const t0 = performance.now();
+      await ${DISPARAR(["--devagar", "{prompt}"], "x", "pages/__uitest-async-rapido.md")};
+      return performance.now() - t0;
+    })()`);
+    // O agente falso leva 10s; se a chamada esperasse, isto não seria
+    // um número pequeno. Era exatamente o problema: a tela ficava
+    // presa até o modelo terminar.
+    ctx.assert(ms < 1500, `a chamada demorou ${Math.round(ms)}ms — ainda está bloqueando`);
+    await bridge.js(`window.__TAURI_INTERNALS__.invoke('cancelar_agente', { conversaPath: ${JSON.stringify(conversa)} })`);
+  },
+});
+
+fluxo.push({
+  nome: "agente: a saída parcial aparece antes de terminar (213)",
+  async fn(bridge, ctx) {
+    const conversa = "pages/__uitest-async-parcial.md";
+    await bridge.js(DISPARAR(["--devagar", "{prompt}"], "x", conversa));
+    await PAUSA(3000);
+    const meio = await bridge.js(ESTADO(conversa));
+    ctx.assertEq(meio && meio.estado, "rodando", `esperava rodando, veio ${JSON.stringify(meio)}`);
+    ctx.assert(
+      meio.parcial.includes("linha 1"),
+      `sem saída parcial no meio da execução: ${JSON.stringify(meio.parcial)}`,
+    );
+    await bridge.js(`window.__TAURI_INTERNALS__.invoke('cancelar_agente', { conversaPath: ${JSON.stringify(conversa)} })`);
+  },
+});
+
+fluxo.push({
+  nome: "agente: interromper mata o processo e reporta cancelado (213)",
+  async fn(bridge, ctx) {
+    const conversa = "pages/__uitest-async-cancelar.md";
+    await bridge.js(DISPARAR(["--devagar", "{prompt}"], "x", conversa));
+    await PAUSA(1200);
+    await bridge.js(
+      `window.__TAURI_INTERNALS__.invoke('cancelar_agente', { conversaPath: ${JSON.stringify(conversa)} })`,
+    );
+    await PAUSA(1200);
+    const fim = await bridge.js(ESTADO(conversa));
+    ctx.assertEq(fim && fim.estado, "cancelado", `esperava cancelado, veio ${JSON.stringify(fim)}`);
+  },
+});
+
+fluxo.push({
+  nome: "agente: uma execução por conversa (213)",
+  async fn(bridge, ctx) {
+    const conversa = "pages/__uitest-async-duplo.md";
+    await bridge.js(DISPARAR(["--devagar", "{prompt}"], "x", conversa));
+    const segundo = await bridge.js(`(async () => {
+      try {
+        await ${DISPARAR(["--devagar", "{prompt}"], "y", "pages/__uitest-async-duplo.md")};
+        return { ok: true };
+      } catch (e) { return { ok: false, erro: String(e) }; }
+    })()`);
+    // Sem esta recusa, duas respostas gravariam no mesmo arquivo ao
+    // mesmo tempo — dois escritores, que é a origem do bug do 209.
+    ctx.assertEq(segundo.ok, false, "aceitou uma segunda execução na mesma conversa");
+    ctx.assert(
+      /andamento/i.test(segundo.erro),
+      `erro não explica o motivo: ${segundo.erro}`,
+    );
+    await bridge.js(`window.__TAURI_INTERNALS__.invoke('cancelar_agente', { conversaPath: ${JSON.stringify(conversa)} })`);
+  },
+});
+
+fluxo.push({
+  nome: "agente: resposta é gravada mesmo sem a tela aberta (213)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const rel = "pages/__uitest-async-grava.md";
+    const arquivo = `${ctx.vault}/${rel}`;
+    fs.writeFileSync(arquivo, "---\ntitle: __uitest async grava\ntype: conversa\n---\n");
+    try {
+      // Ninguém abre a conversa: o backend é quem grava, e é isso que
+      // faz a resposta sobreviver a sair da página no meio.
+      await bridge.js(
+        DISPARAR(
+          ["--responder", "{prompt}"],
+          "pergunta solta",
+          rel,
+          30,
+          "texto",
+          `${process.cwd()}/${ctx.vault}`,
+        ),
+      );
+      let disco = "";
+      for (let i = 0; i < 40; i++) {
+        await PAUSA(250);
+        disco = fs.readFileSync(arquivo, "utf8");
+        if (disco.includes("## agente")) break;
+      }
+      ctx.assert(
+        disco.includes("## agente") && disco.includes("RESPOSTA para: pergunta solta"),
+        `a resposta não chegou ao arquivo:\n${disco}`,
+      );
+    } finally {
+      fs.rmSync(arquivo, { force: true });
+    }
+  },
+});
+
+fluxo.push({
+  nome: "agente: stream-json vira progresso e resposta (213)",
+  async fn(bridge, ctx) {
+    const conversa = "pages/__uitest-async-stream.md";
+    await bridge.js(DISPARAR(["--stream", "{prompt}"], "pergunta", conversa, 30, "stream_json"));
+    await PAUSA(1300);
+    const meio = await bridge.js(ESTADO(conversa));
+    ctx.assertEq(meio && meio.estado, "rodando", `esperava rodando, veio ${JSON.stringify(meio)}`);
+    // O painel mostra o que ELE está fazendo, não o JSON cru.
+    ctx.assert(
+      meio.parcial.includes("usando Read"),
+      `progresso não traduziu o evento: ${JSON.stringify(meio.parcial)}`,
+    );
+    ctx.assert(!meio.parcial.includes('"type"'), "o JSON cru vazou pro painel");
+
+    let fim = null;
+    for (let i = 0; i < 40; i++) {
+      await PAUSA(250);
+      fim = await bridge.js(ESTADO(conversa));
+      if (!fim || fim.estado !== "rodando") break;
+    }
+    ctx.assertEq(fim && fim.estado, "concluido", `esperava concluido, veio ${JSON.stringify(fim)}`);
+    ctx.assertEq(fim.texto, "RESPOSTA para: pergunta", "a resposta não saiu do evento result");
   },
 });

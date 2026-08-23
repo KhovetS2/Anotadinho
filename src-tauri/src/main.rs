@@ -26,6 +26,40 @@ use tauri_plugin_dialog::DialogExt;
 
 struct AppWatchers(Mutex<HashMap<String, VaultWatcher>>);
 
+/// Execuções do agente em andamento ou recém-terminadas, por conversa.
+///
+/// A chave é o path da página de conversa: uma execução por conversa,
+/// várias conversas em paralelo.
+///
+/// Este registro é o que permite a pessoa sair da página enquanto o
+/// modelo pensa. Antes, a requisição vivia dentro do componente Yew da
+/// conversa — navegar pra outra nota desmontava o componente e a
+/// resposta caía no vazio, sem erro e sem aviso. Agora o processo é do
+/// backend e a tela só consulta o estado, então voltar pra conversa
+/// recupera tudo, inclusive o que chegou enquanto ela estava fora.
+///
+/// É um global, não um `tauri::State`, porque a thread que espera o
+/// processo precisa alcançá-lo depois que o comando já retornou — e
+/// `State` só vive durante a chamada.
+static JOBS: std::sync::LazyLock<std::sync::Arc<Mutex<HashMap<String, Job>>>> =
+    std::sync::LazyLock::new(|| std::sync::Arc::new(Mutex::new(HashMap::new())));
+
+struct Job {
+    /// `None` enquanto roda; `Some` quando terminou (de qualquer jeito).
+    /// O resultado FICA aqui até a tela consumir — é o que evita perder
+    /// a resposta de quem estava noutra página quando ela chegou.
+    fim: Option<anotadinho_core::agente::EstadoJob>,
+    /// Saída parcial do agente, alimentada linha a linha enquanto ele
+    /// escreve. É o sinal de vida durante uma execução longa.
+    parcial: std::sync::Arc<Mutex<String>>,
+    inicio: std::time::Instant,
+    /// O processo, pra poder matá-lo quando alguém pedir. Vira `None`
+    /// assim que ele termina sozinho.
+    filho: std::sync::Arc<Mutex<Option<std::process::Child>>>,
+    /// Marcado por `cancelar_agente` — o laço de espera olha pra ele.
+    cancelado: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
 #[tauri::command]
 fn check_changes(
     vault_path: String,
@@ -304,7 +338,7 @@ fn recusar_proposta(vault_path: String, id: String) -> Result<(), String> {
     anotadinho_ipc::handle_recusar_proposta(vault_path, id)
 }
 
-/// Executa o agente configurado e devolve a saída (ciclo 202).
+/// Dispara o agente configurado e volta na hora (ciclo 213).
 ///
 /// Deliberadamente SEM shell: `Command::new(binario).args(...)`, com o
 /// prompt entrando como um argumento. Aspas, quebras de linha e
@@ -315,69 +349,294 @@ fn recusar_proposta(vault_path: String, id: String) -> Result<(), String> {
 /// página. É a mesma invariante que mantém a lista de ações do embed
 /// `actions` fechada.
 ///
-/// Roda em `spawn_blocking` porque `std::process` é bloqueante e travaria
-/// o runtime; o timeout mata o processo em vez de deixá-lo pendurado.
+/// Esta chamada NÃO espera o agente terminar: ela registra o trabalho
+/// no registro `JOBS` e devolve. Quem quer saber como foi pergunta depois
+/// com `estado_agente`. É o que permite navegar pra outra nota no meio
+/// de uma execução longa sem perder nem o processo nem a resposta.
 #[tauri::command]
-async fn rodar_agente(
+fn iniciar_agente(
     adaptador: anotadinho_core::agente::Adaptador,
     prompt: String,
     vault_path: String,
-) -> Result<String, String> {
+    conversa_path: String,
+) -> Result<(), String> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
     if let Some(problema) = adaptador.validar() {
         return Err(format!("configuração do agente inválida: {}", problema.mensagem()));
     }
+
+    {
+        let mapa = JOBS.lock().map_err(|_| "registro de execuções travado".to_string())?;
+        if let Some(j) = mapa.get(&conversa_path) {
+            if j.fim.is_none() {
+                return Err("já existe uma execução em andamento nesta conversa".to_string());
+            }
+        }
+    }
+
     let args = adaptador.montar_args(&prompt);
+    let vault_conversa = vault_path.clone();
     let cwd = if adaptador.cwd.trim().is_empty() { vault_path } else { adaptador.cwd.clone() };
     let binario = adaptador.binario.clone();
     let limite = adaptador.timeout_s;
+    let formato = adaptador.formato;
 
-    tokio::task::spawn_blocking(move || {
+    let parcial = Arc::new(Mutex::new(String::new()));
+    let filho_slot: Arc<Mutex<Option<std::process::Child>>> = Arc::new(Mutex::new(None));
+    let cancelado = Arc::new(AtomicBool::new(false));
+
+    {
+        let mut mapa = JOBS.lock().map_err(|_| "registro de execuções travado".to_string())?;
+        mapa.insert(
+            conversa_path.clone(),
+            Job {
+                fim: None,
+                parcial: parcial.clone(),
+                inicio: std::time::Instant::now(),
+                filho: filho_slot.clone(),
+                cancelado: cancelado.clone(),
+            },
+        );
+    }
+
+    // O processo vive numa thread própria, não no runtime async: o
+    // `std::process` é bloqueante e travaria o executor.
+    let registro = JOBS.clone();
+    std::thread::spawn(move || {
+        use std::io::{BufRead, BufReader};
         use std::process::{Command, Stdio};
 
-        let mut filho = Command::new(&binario)
-            .args(&args)
-            .current_dir(&cwd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("não consegui executar \"{binario}\": {e}"))?;
+        let resultado = (|| -> Result<String, String> {
+            let mut filho = Command::new(&binario)
+                .args(&args)
+                .current_dir(&cwd)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("não consegui executar \"{binario}\": {e}"))?;
 
-        // Espera com limite. Sem isso, um agente que trava deixa o
-        // processo pendurado e a UI esperando pra sempre.
-        let inicio = std::time::Instant::now();
-        loop {
-            match filho.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) => {
-                    if limite > 0 && inicio.elapsed().as_secs() >= limite {
-                        let _ = filho.kill();
-                        let _ = filho.wait();
-                        return Err(format!("o agente passou de {limite}s e foi interrompido"));
+            // Lê a saída LINHA A LINHA numa thread separada. Sem isso
+            // não haveria nada pra mostrar durante a execução — e numa
+            // tarefa de meia hora, uma tela parada é indistinguível de
+            // uma tela travada.
+            //
+            // Também evita o deadlock clássico: um agente que escreve
+            // muito enche o buffer do pipe e fica bloqueado esperando
+            // alguém ler, enquanto nós esperamos ele terminar.
+            let saida = filho.stdout.take();
+            let acumulado = parcial.clone();
+            let leitor = saida.map(|s| {
+                std::thread::spawn(move || {
+                    let mut stream = anotadinho_core::agente::LeitorStream::novo();
+                    let mut bruto = String::new();
+                    for linha in BufReader::new(s).lines().map_while(Result::ok) {
+                        match formato {
+                            anotadinho_core::agente::FormatoSaida::StreamJson => {
+                                stream.linha(&linha);
+                                // O painel mostra o PROGRESSO (que
+                                // ferramenta está em uso, o que ele
+                                // acabou de dizer), não o JSON cru —
+                                // que não diz nada pra quem olha.
+                                if let Ok(mut p) = acumulado.lock() {
+                                    *p = stream.progresso();
+                                }
+                            }
+                            anotadinho_core::agente::FormatoSaida::Texto => {
+                                bruto.push_str(&linha);
+                                bruto.push('\n');
+                                if let Ok(mut p) = acumulado.lock() {
+                                    p.push_str(&linha);
+                                    p.push('\n');
+                                }
+                            }
+                        }
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(120));
-                }
-                Err(e) => return Err(format!("erro esperando o agente: {e}")),
-            }
-        }
+                    match formato {
+                        anotadinho_core::agente::FormatoSaida::StreamJson => stream.resposta(),
+                        anotadinho_core::agente::FormatoSaida::Texto => Ok(bruto),
+                    }
+                })
+            });
 
-        let saida = filho
-            .wait_with_output()
-            .map_err(|e| format!("erro lendo a saída do agente: {e}"))?;
-        let stdout = String::from_utf8_lossy(&saida.stdout).trim().to_string();
-        if saida.status.success() {
-            if stdout.is_empty() {
-                return Err("o agente terminou sem escrever nada na saída".to_string());
+            let erro_pipe = filho.stderr.take();
+
+            // O processo passa a viver no slot COMPARTILHADO: é por ele
+            // que `cancelar_agente` alcança o `kill`. Guardá-lo só nesta
+            // thread deixaria o botão de interromper sem nada pra matar.
+            *filho_slot.lock().map_err(|_| "registro travado".to_string())? = Some(filho);
+
+            let inicio = std::time::Instant::now();
+            let status = loop {
+                let mut guarda = filho_slot
+                    .lock()
+                    .map_err(|_| "registro travado".to_string())?;
+                let Some(proc) = guarda.as_mut() else {
+                    return Err("__CANCELADO__".to_string());
+                };
+                if cancelado.load(Ordering::Relaxed) {
+                    let _ = proc.kill();
+                    let _ = proc.wait();
+                    return Err("__CANCELADO__".to_string());
+                }
+                match proc.try_wait() {
+                    Ok(Some(s)) => break s,
+                    Ok(None) => {
+                        if limite > 0 && inicio.elapsed().as_secs() >= limite {
+                            let _ = proc.kill();
+                            let _ = proc.wait();
+                            let minutos = limite / 60;
+                            return Err(format!(
+                                "o agente passou de {minutos} min e foi interrompido"
+                            ));
+                        }
+                        // Solta o cadeado ANTES de dormir: com ele na
+                        // mão, `cancelar_agente` ficaria bloqueado e o
+                        // botão de interromper não responderia.
+                        drop(guarda);
+                        std::thread::sleep(std::time::Duration::from_millis(150));
+                    }
+                    Err(e) => return Err(format!("erro esperando o agente: {e}")),
+                }
+            };
+
+            let lido = leitor
+                .and_then(|h| h.join().ok())
+                .unwrap_or_else(|| Err("não consegui ler a saída do agente".to_string()));
+
+            if status.success() {
+                // No `stream-json` o próprio agente reporta erro dentro
+                // do stream, com código de saída 0 — por isso o erro do
+                // leitor vale mesmo quando o processo "deu certo".
+                return lido.map(|s| s.trim().to_string()).and_then(|s| {
+                    if s.is_empty() {
+                        Err("o agente terminou sem escrever nada na saída".to_string())
+                    } else {
+                        Ok(s)
+                    }
+                });
+            } else {
+                let stdout = lido.unwrap_or_default();
+                let mut stderr = String::new();
+                if let Some(mut e) = erro_pipe {
+                    use std::io::Read;
+                    let _ = e.read_to_string(&mut stderr);
+                }
+                let detalhe = if stderr.trim().is_empty() { stdout } else { stderr.trim().to_string() };
+                Err(format!("o agente falhou: {detalhe}"))
             }
-            Ok(stdout)
-        } else {
-            let stderr = String::from_utf8_lossy(&saida.stderr).trim().to_string();
-            let detalhe = if stderr.is_empty() { stdout } else { stderr };
-            Err(format!("o agente falhou: {detalhe}"))
+        })();
+
+        let estado = match resultado {
+            Ok(texto) => {
+                // Quem GRAVA a resposta é o backend, não a tela.
+                //
+                // A tela pode não estar lá: a pessoa manda a pergunta e
+                // vai trabalhar noutra nota, que é justamente o que
+                // este ciclo passou a permitir. Se a gravação
+                // dependesse dela, a resposta viveria só na memória até
+                // alguém voltar — e sumiria de vez ao fechar o app.
+                //
+                // Não há dois escritores: a tela grava a PERGUNTA, o
+                // backend grava a RESPOSTA, e `iniciar_agente` recusa
+                // uma segunda execução na mesma conversa, então as duas
+                // escritas nunca se cruzam.
+                if let Err(e) = gravar_resposta(&vault_conversa, &conversa_path, &texto) {
+                    eprintln!("não consegui gravar a resposta do agente: {e}");
+                }
+                anotadinho_core::agente::EstadoJob::Concluido { texto }
+            }
+            Err(e) if e == "__CANCELADO__" => anotadinho_core::agente::EstadoJob::Cancelado,
+            Err(erro) => anotadinho_core::agente::EstadoJob::Falhou { erro },
+        };
+        if let Ok(mut mapa) = registro.lock() {
+            if let Some(j) = mapa.get_mut(&conversa_path) {
+                j.fim = Some(estado);
+                if let Ok(mut f) = j.filho.lock() {
+                    *f = None;
+                }
+            }
         }
-    })
-    .await
-    .map_err(|e| format!("tarefa do agente não completou: {e}"))?
+    });
+
+    Ok(())
+}
+
+/// Acrescenta a resposta do agente ao arquivo da conversa.
+///
+/// Read-modify-write do arquivo inteiro, preservando o frontmatter —
+/// é lá que moram `type: conversa` e a lista de páginas anexadas.
+fn gravar_resposta(vault_path: &str, conversa_path: &str, texto: &str) -> Result<(), String> {
+    // Só ACRESCENTA a uma conversa que já existe; nunca cria arquivo.
+    //
+    // Em uso real a página sempre existe: ela é criada antes, e a
+    // pergunta é gravada nela antes do disparo. Criar aqui só
+    // aconteceria com um path que não é conversa nenhuma — foi o que
+    // aconteceu com o harness, que apontava pra raiz do repositório e
+    // encheu `pages/` de arquivo solto.
+    let atual = anotadinho_ipc::handle_read_page(vault_path.to_string(), conversa_path.to_string())
+        .map_err(|_| format!("a conversa \"{conversa_path}\" não existe mais"))?;
+    let (frontmatter, corpo) =
+        anotadinho_core::MarkdownCodec::split_frontmatter_text(&atual);
+    let mensagem = anotadinho_core::conversa::Mensagem {
+        autor: anotadinho_core::conversa::Autor::Agente,
+        quando: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
+        texto: texto.to_string(),
+    };
+    let novo_corpo = anotadinho_core::conversa::append(corpo, &mensagem);
+    let novo = if frontmatter.is_empty() {
+        novo_corpo
+    } else {
+        format!("{frontmatter}\n{novo_corpo}")
+    };
+    anotadinho_ipc::handle_write_page(vault_path.to_string(), conversa_path.to_string(), novo)
+}
+
+/// Como está a execução desta conversa.
+///
+/// `None` significa "nunca houve" ou "a tela já consumiu o resultado".
+/// Um estado terminal é entregue UMA vez e some do registro: quem
+/// perguntou é quem grava a resposta na conversa, então deixá-lo ali
+/// faria a mesma resposta ser escrita de novo a cada consulta.
+#[tauri::command]
+fn estado_agente(
+    conversa_path: String,
+) -> Option<anotadinho_core::agente::EstadoJob> {
+    let mut mapa = JOBS.lock().ok()?;
+    let job = mapa.get(&conversa_path)?;
+    match &job.fim {
+        None => {
+            let parcial = job.parcial.lock().map(|p| p.clone()).unwrap_or_default();
+            Some(anotadinho_core::agente::EstadoJob::Rodando {
+                segundos: job.inicio.elapsed().as_secs(),
+                parcial,
+            })
+        }
+        Some(_) => mapa.remove(&conversa_path).and_then(|j| j.fim),
+    }
+}
+
+/// Interrompe a execução desta conversa.
+///
+/// Existe porque o timeout deixou de ser curto: com meia hora de
+/// margem, quem percebe que pediu a coisa errada precisa de um jeito
+/// de parar sem esperar o limite.
+#[tauri::command]
+fn cancelar_agente(conversa_path: String) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    let mapa = JOBS.lock().map_err(|_| "registro travado".to_string())?;
+    let job = mapa
+        .get(&conversa_path)
+        .ok_or_else(|| "não há execução nesta conversa".to_string())?;
+    job.cancelado.store(true, Ordering::Relaxed);
+    if let Ok(mut f) = job.filho.lock() {
+        if let Some(ref mut c) = *f {
+            let _ = c.kill();
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -459,7 +718,9 @@ fn main() {
             list_assets_info,
             delete_asset,
             search_content,
-            rodar_agente,
+            iniciar_agente,
+            estado_agente,
+            cancelar_agente,
             propor,
             listar_propostas,
             aplicar_proposta,

@@ -15,6 +15,7 @@
 use crate::api;
 use crate::components::icon::Icon;
 use anotadinho_core::agente::Adaptador;
+use anotadinho_core::agente::EstadoJob;
 use anotadinho_core::conversa::{self, Autor, Mensagem};
 use anotadinho_core::fluxo::{self, Artefato};
 use yew::prelude::*;
@@ -56,6 +57,11 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     }
     let ocupado = use_state(|| false);
     let erro = use_state(|| None::<String>);
+    // Saída que o agente já escreveu, e há quanto tempo ele está nisso
+    // (ciclo 213). Numa tarefa de meia hora, uma tela parada é
+    // indistinguível de uma tela travada — isto é o sinal de vida.
+    let parcial = use_state(String::new);
+    let decorrido = use_state(|| 0u64);
     // Páginas anexadas, lidas do FRONTMATTER (ciclo 208) — sobrevivem a
     // fechar o app, diferente do contexto em memória do ciclo 202.
     let anexos = use_state(Vec::<String>::new);
@@ -80,6 +86,91 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
             || ()
         });
     }
+
+    // Acompanha a execução desta conversa (ciclo 213).
+    //
+    // Roda enquanto a tela existir, não enquanto o envio existir: é o
+    // que faz uma resposta que chegou com a pessoa noutra página
+    // aparecer assim que ela volta. O backend guarda o resultado até
+    // alguém buscar, e entrega uma vez só.
+    //
+    // O intervalo é criado UMA vez por conversa e destruído no cleanup;
+    // sem isso, cada renderização deixaria mais um timer vivo.
+    {
+        let mensagens = mensagens.clone();
+        let ocupado = ocupado.clone();
+        let erro = erro.clone();
+        let parcial = parcial.clone();
+        let decorrido = decorrido.clone();
+        let vault_path = props.vault_path.clone();
+        let path = props.page.path.clone();
+        use_effect_with(props.page.path.clone(), move |_| {
+            let intervalo = gloo_timers::callback::Interval::new(1000, move || {
+                let (mensagens, ocupado, erro) =
+                    (mensagens.clone(), ocupado.clone(), erro.clone());
+                let (parcial, decorrido) = (parcial.clone(), decorrido.clone());
+                let (vault_path, path) = (vault_path.clone(), path.clone());
+                wasm_bindgen_futures::spawn_local(async move {
+                    let Ok(Some(estado)) = api::estado_agente(&path).await else {
+                        // Sem execução: se a tela ainda se achava
+                        // ocupada, é porque o resultado foi entregue
+                        // noutra montagem desta mesma página.
+                        if *ocupado {
+                            ocupado.set(false);
+                            parcial.set(String::new());
+                        }
+                        return;
+                    };
+                    match estado {
+                        EstadoJob::Rodando { segundos, parcial: saida } => {
+                            ocupado.set(true);
+                            decorrido.set(segundos);
+                            parcial.set(saida);
+                        }
+                        EstadoJob::Concluido { .. } => {
+                            // Só RELÊ: a resposta já foi gravada pelo
+                            // backend, que é quem tem como fazer isso
+                            // mesmo com esta tela fechada. Compor a
+                            // mensagem aqui criaria um segundo escritor
+                            // e duplicaria a resposta.
+                            //
+                            // Reler também evita o handle congelado do
+                            // closure, que é como mensagem some
+                            // (ciclos 155, 157, 201).
+                            let atual = api::read_page(&vault_path, &path).await.unwrap_or_default();
+                            let (_, corpo) =
+                                anotadinho_core::MarkdownCodec::split_frontmatter_text(&atual);
+                            mensagens.set(conversa::parse(corpo));
+                            parcial.set(String::new());
+                            ocupado.set(false);
+                        }
+                        EstadoJob::Falhou { erro: e } => {
+                            erro.set(Some(e));
+                            parcial.set(String::new());
+                            ocupado.set(false);
+                        }
+                        EstadoJob::Cancelado => {
+                            erro.set(Some("execução interrompida por você".to_string()));
+                            parcial.set(String::new());
+                            ocupado.set(false);
+                        }
+                    }
+                });
+            });
+            move || drop(intervalo)
+        });
+    }
+
+    // Interrompe a execução em andamento.
+    let interromper = {
+        let path = props.page.path.clone();
+        Callback::from(move |_: MouseEvent| {
+            let path = path.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let _ = api::cancelar_agente(&path).await;
+            });
+        })
+    };
 
     // Contexto que aponta pra própria conversa não serve de nada —
     // acontece ao reabrir a mesma página.
@@ -140,27 +231,14 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     HISTORICO_NO_PROMPT,
                 );
 
+                // Só DISPARA. Quem acompanha é o efeito de polling
+                // abaixo — inclusive se esta tela for desmontada no
+                // meio, porque o processo é do backend.
                 let adaptador = crate::state::load_adaptador();
-                match api::rodar_agente(&adaptador, &prompt, &vault_path).await {
-                    Ok(resposta) => {
-                        let dele = Mensagem {
-                            autor: Autor::Agente,
-                            quando: crate::state::agora_legivel(),
-                            texto: resposta,
-                        };
-                        // A partir de `lista`, NÃO de `(*mensagens)`: o
-                        // handle capturado no closure ainda tem o valor
-                        // de antes do `set`, então ler dele aqui
-                        // descartaria a pergunta que acabou de entrar.
-                        // Mesmo padrão dos ciclos 155, 157 e 201.
-                        let mut lista2 = lista.clone();
-                        lista2.push(dele);
-                        mensagens.set(lista2.clone());
-                        gravar(&vault_path, &path, &lista2).await;
-                    }
-                    Err(e) => erro.set(Some(e)),
+                if let Err(e) = api::iniciar_agente(&adaptador, &prompt, &vault_path, &path).await {
+                    erro.set(Some(e));
+                    ocupado.set(false);
                 }
-                ocupado.set(false);
             });
         })
     };
@@ -390,7 +468,23 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     }
                 }) }
                 if *ocupado {
-                    <p class="conversa__pensando"><span class="spinner"></span>{ " pensando..." }</p>
+                    <div class="conversa__trabalhando">
+                        <p class="conversa__pensando">
+                            <span class="spinner"></span>
+                            { format!(" pensando há {}", duracao_legivel(*decorrido)) }
+                            <button class="btn btn--ghost btn--xs conversa__parar"
+                                onclick={interromper.clone()}
+                                title="Matar o processo do agente agora">
+                                <Icon name="x" />{ " interromper" }
+                            </button>
+                        </p>
+                        if !parcial.is_empty() {
+                            // A saída CRUA, sem markdown: ela chega
+                            // pela metade, e renderizar markdown
+                            // incompleto pisca a tela a cada linha.
+                            <pre class="conversa__parcial">{ (*parcial).clone() }</pre>
+                        }
+                    </div>
                 }
                 if let Some(e) = &*erro {
                     <p class="conversa__erro">{ e }</p>
@@ -403,9 +497,13 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     value={(*rascunho).clone()}
                     oninput={on_input}
                     disabled={*ocupado} />
-                <button class="btn btn--primary" onclick={enviar} disabled={*ocupado || rascunho.trim().is_empty()}>
-                    { if *ocupado { "..." } else { "Enviar" } }
-                </button>
+                if *ocupado {
+                    <button class="btn" onclick={interromper}
+                        title="Matar o processo do agente agora">{ "Parar" }</button>
+                } else {
+                    <button class="btn btn--primary" onclick={enviar}
+                        disabled={rascunho.trim().is_empty()}>{ "Enviar" }</button>
+                }
             </footer>
         </main>
     }
@@ -475,4 +573,28 @@ fn reescrever_contexto(conteudo: &str, lista: &[String]) -> String {
     }
     fm.push_str("---\n");
     format!("{fm}{corpo}")
+}
+
+/// "12s", "3 min", "1h04" — o suficiente pra saber se vale esperar.
+fn duracao_legivel(segundos: u64) -> String {
+    match segundos {
+        s if s < 60 => format!("{s}s"),
+        s if s < 3600 => format!("{} min", s / 60),
+        s => format!("{}h{:02}", s / 3600, (s % 3600) / 60),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::duracao_legivel;
+
+    #[test]
+    fn duracao_muda_de_unidade_nos_limites() {
+        assert_eq!(duracao_legivel(0), "0s");
+        assert_eq!(duracao_legivel(59), "59s");
+        assert_eq!(duracao_legivel(60), "1 min");
+        assert_eq!(duracao_legivel(3599), "59 min");
+        assert_eq!(duracao_legivel(3600), "1h00");
+        assert_eq!(duracao_legivel(3900), "1h05");
+    }
 }

@@ -1,18 +1,19 @@
 ---
-title: "Atalhos do dia a dia: aba fixa e criação de conversa"
-type: spec
-date: 2026-08-23
-status: em-revisao
-prioridade: media
+title: 'Atalhos do dia a dia: aba fixa e criação de conversa'
 tags:
 - spec
 - ui
+type: spec
+date: 2026-08-23
+prioridade: media
+status: aprovada
 ---
 # Atalhos do dia a dia: aba fixa e criação de conversa
 
 {{ type: "fluxo" }}
 artefato: spec
-etapa: em-revisao
+etapa: aprovada
+
 {{ /fluxo }}
 
 ## Contexto

@@ -568,8 +568,13 @@ pub fn load_adaptador() -> anotadinho_core::agente::Adaptador {
         .and_then(|w| w.local_storage().ok().flatten())
         .and_then(|s| s.get_item(CHAVE_ADAPTADOR).ok().flatten());
     bruto
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|s| serde_json::from_str::<anotadinho_core::agente::Adaptador>(&s).ok())
         .unwrap_or_default()
+        // Migração aplicada na LEITURA (ciclo 213): quem já usou o app
+        // tem `timeout_s: 180` e os args antigos gravados no navegador,
+        // e sem isto continuaria com o agente morto aos 3 minutos e sem
+        // progresso em tempo real, sem ter como saber por quê.
+        .migrado()
 }
 
 /// Grava a configuração do agente.

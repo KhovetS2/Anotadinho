@@ -9,12 +9,11 @@ tags:
 - ui
 ---
 # Leitura de consultas: alinhamento, cor e altura
-
 {{ type: "fluxo" }}
 artefato: spec
 etapa: em-revisao
-{{ /fluxo }}
 
+{{ /fluxo }}
 ## Contexto
 
 As consultas viraram a principal forma de ler o vault — a página de
@@ -32,39 +31,39 @@ fazem com badge.
 
 **Bloco sem fim.** Uma consulta que devolve 168 ciclos ocupa uma página
 inteira de rolagem, e passar por ela pra chegar na consulta seguinte é
-um exercício de paciência.
+um exercício de
 
 ## Requisitos funcionais
 
 - **RF1.** Numa consulta em tabela, cada valor fica alinhado com o
-  título da sua coluna.
+título da sua coluna.
 - **RF2.** Valores de propriedade aparecem com cor consistente: o mesmo
-  valor tem sempre a mesma cor, em qualquer consulta da mesma página.
+valor tem sempre a mesma cor, em qualquer consulta da mesma página.
 - **RF3.** O bloco de consulta tem altura máxima e rola internamente,
-  sem empurrar o resto da página.
+sem empurrar o resto da página.
 - **RF4.** A altura máxima é ajustável por consulta, pra um recorte
-  curto não ganhar barra de rolagem desnecessária.
+curto não ganhar barra de rolagem desnecessária.
 - **RF5.** É visível que há mais conteúdo abaixo do que a área mostra.
 
 ## Requisitos não funcionais
 
 - **RNF1.** Cor não pode ser a ÚNICA forma de distinguir um valor —
-  o texto continua lá, legível.
+o texto continua lá, legível.
 - **RNF2.** A cor sai do valor de forma determinística, sem estado
-  guardado: a mesma propriedade não pode mudar de cor entre sessões.
+guardado: a mesma propriedade não pode mudar de cor entre sessões.
 - **RNF3.** O `.md` não muda: isto é apresentação.
 - **RNF4.** O contraste atende leitura em tema claro e escuro.
 
 ## Critérios de aceite
 
 - [ ] Numa consulta com quatro colunas, todos os valores ficam sob o
-      título correto.
+título correto.
 - [ ] Dois valores iguais em consultas diferentes da mesma página têm a
-      mesma cor.
+mesma cor.
 - [ ] Uma consulta com 168 resultados ocupa altura limitada e rola
-      dentro de si.
+dentro de si.
 - [ ] O snapshot visual dos embeds continua passando (ou é atualizado de
-      propósito, com a mudança registrada na task).
+propósito, com a mudança registrada na task).
 
 ## Fora de escopo
 

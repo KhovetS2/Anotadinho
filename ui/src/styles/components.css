@@ -1181,6 +1181,14 @@
   margin: 0.35rem 0;
 }
 
+/* O reset zera o padding de toda lista, e marcador de lista é
+   desenhado FORA da caixa (`list-style-position: outside`). Sem recuo,
+   o "1." saía da coluna de texto da mensagem e ficava pendurado à
+   esquerda, desalinhado de tudo. */
+.conversa__msg-corpo :where(ul, ol) {
+  padding-left: 1.5rem;
+}
+
 .conversa__vazia,
 .conversa__pensando {
   color: var(--text-muted);
@@ -1363,4 +1371,41 @@
 
 .header-bar__propostas:hover {
   background: color-mix(in srgb, var(--warning) 32%, transparent);
+}
+
+/* Sinal de vida durante uma execução do agente (ciclo 213).
+
+   O timeout passou de 3 para 30 minutos, então uma tela sem retorno
+   deixou de ser aceitável: meia hora de "pensando..." parado é
+   indistinguível de um app travado. Aqui aparece o que o agente já
+   escreveu, há quanto tempo, e como parar. */
+.conversa__trabalhando {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-self: flex-start;
+  max-width: 52rem;
+  width: 100%;
+}
+
+.conversa__parar {
+  margin-left: 0.5rem;
+}
+
+.conversa__parcial {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* Só o rabo da saída interessa; o resto rola. Sem limite, uma tarefa
+     verbosa empurra o campo de escrita pra fora da tela. */
+  max-height: 14rem;
+  overflow-y: auto;
 }

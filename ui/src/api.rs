@@ -638,12 +638,17 @@ pub async fn write_page(vault_path: &str, page_path: &str, content: &str) -> Res
     Ok(())
 }
 
-/// Executa o agente configurado (ciclo 202).
-pub async fn rodar_agente(
+/// Dispara o agente e volta na hora (ciclo 213).
+///
+/// Não espera a resposta: quem acompanha é `estado_agente`. É o que
+/// permite sair da conversa no meio de uma execução longa sem matar o
+/// processo nem perder o que ele responder.
+pub async fn iniciar_agente(
     adaptador: &anotadinho_core::agente::Adaptador,
     prompt: &str,
     vault_path: &str,
-) -> Result<String, String> {
+    conversa_path: &str,
+) -> Result<(), String> {
     let args = js_sys::Object::new();
     let ad = serde_wasm_bindgen::to_value(adaptador).map_err(|e| format!("{e:?}"))?;
     js_sys::Reflect::set(&args, &JsValue::from_str("adaptador"), &ad)
@@ -652,14 +657,55 @@ pub async fn rodar_agente(
         .map_err(|e| format!("{:?}", e))?;
     js_sys::Reflect::set(&args, &JsValue::from_str("vaultPath"), &JsValue::from_str(vault_path))
         .map_err(|e| format!("{:?}", e))?;
-    let result = tauri_invoke("rodar_agente", &JsValue::from(args))
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("conversaPath"),
+        &JsValue::from_str(conversa_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    tauri_invoke("iniciar_agente", &JsValue::from(args))
         .await
-        .map_err(|e| {
-            // A mensagem do backend vem como string; sem isto o usuário
-            // via `JsValue(...)` em vez do motivo real da falha.
-            e.as_string().unwrap_or_else(|| format!("{e:?}"))
-        })?;
-    result.as_string().ok_or_else(|| "resposta do agente não é texto".to_string())
+        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))?;
+    Ok(())
+}
+
+/// Como está a execução desta conversa.
+///
+/// `None` = não há nenhuma, ou o resultado já foi entregue. O backend
+/// devolve um estado terminal UMA vez só: quem pergunta é quem grava a
+/// resposta, então repetir faria a mesma resposta entrar duas vezes.
+pub async fn estado_agente(
+    conversa_path: &str,
+) -> Result<Option<anotadinho_core::agente::EstadoJob>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("conversaPath"),
+        &JsValue::from_str(conversa_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    let result = tauri_invoke("estado_agente", &JsValue::from(args))
+        .await
+        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))?;
+    if result.is_null() || result.is_undefined() {
+        return Ok(None);
+    }
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("{e:?}"))
+}
+
+/// Interrompe a execução desta conversa.
+pub async fn cancelar_agente(conversa_path: &str) -> Result<(), String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("conversaPath"),
+        &JsValue::from_str(conversa_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    tauri_invoke("cancelar_agente", &JsValue::from(args))
+        .await
+        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))?;
+    Ok(())
 }
 
 // ── propostas (ciclo 204) ────────────────────────────────────────────
