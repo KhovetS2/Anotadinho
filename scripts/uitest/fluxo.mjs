@@ -896,3 +896,111 @@ fluxo.push({
     );
   },
 });
+
+// ── ciclo 210: aviso de pendente e execução da proposta ──────────────
+
+fluxo.push({
+  nome: "aviso: proposta pendente aparece no cabeçalho e some ao resolver (210)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const pendente = `${ctx.vault}/.anotadinho/propostas/uitest-aviso.json`;
+    const alvo = `${ctx.vault}/pages/__uitest_aviso.md`;
+    fs.rmSync(pendente, { force: true });
+    fs.rmSync(alvo, { force: true });
+    try {
+      // O agente propõe — pode ser pelo CLI ou pelo MCP, sem nenhum
+      // evento de UI pra reagir. O aviso tem que aparecer assim mesmo.
+      await bridge.js(`(async () => {
+        await window.__TAURI_INTERNALS__.invoke('propor', {
+          vaultPath: ${JSON.stringify(VAULT_ABS)},
+          proposta: {
+            id: 'uitest-aviso', autor: 'agente', quando: '2026-08-22 10:00',
+            motivo: 'teste', alvo: 'pages/__uitest_aviso.md', operacao: 'criar',
+            conteudo: '---\\ntitle: X\\n---\\ncorpo\\n',
+          },
+        });
+        return true;
+      })()`);
+
+      await recarregarEstavel(bridge);
+      await esperar(bridge, "document.querySelector('.header-bar__propostas')", "o aviso no cabeçalho");
+      const texto = await bridge.js(`document.querySelector('.header-bar__propostas').textContent.trim()`);
+      ctx.assert(/\d/.test(texto), `o aviso devia mostrar a contagem, veio "${texto}"`);
+
+      // Clicar leva pra revisão — o aviso não pode levar a lugar nenhum.
+      await bridge.js(`(() => { document.querySelector('.header-bar__propostas').click(); return true; })()`);
+      await esperar(bridge, "document.querySelector('.propostas__item')", "a tela de revisão");
+
+      await bridge.js(`(() => {
+        [...document.querySelectorAll('.propostas__acoes button')]
+          .find(b => b.textContent.trim() === 'Recusar').click();
+        return true;
+      })()`);
+      await PAUSA(2500);
+      ctx.assertEq(
+        await bridge.js(`!!document.querySelector('.header-bar__propostas')`),
+        false,
+        "o aviso ficou preso depois de resolver a fila",
+      );
+    } finally {
+      fs.rmSync(pendente, { force: true });
+      fs.rmSync(alvo, { force: true });
+    }
+  },
+});
+
+fluxo.push({
+  nome: "proposta aprovada oferece EXECUTAR, com pergunta diferente da de planejar (210)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const pasta = `${ctx.vault}/pages/conversas`;
+    const antes = fs.existsSync(pasta) ? fs.readdirSync(pasta) : [];
+    try {
+      ctx.escrever(
+        '---\ntitle: "Abordagem de teste"\ntype: proposta\nstatus: aprovada\n---\n' +
+          '{{ type: "fluxo" }}\nartefato: proposta\netapa: aprovada\n{{ /fluxo }}\n\n' +
+          "## Abordagem\n\nFazer assim.\n",
+      );
+      await recarregarEstavel(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await esperar(bridge, "document.querySelector('.fluxo__planejar button')", "o botão");
+
+      const rotulo = await bridge.js(
+        `document.querySelector('.fluxo__planejar button').textContent.trim()`,
+      );
+      ctx.assert(/Executar/.test(rotulo), `numa proposta o botão devia ser Executar, veio "${rotulo}"`);
+
+      await bridge.js(`(() => { document.querySelector('.fluxo__planejar button').click(); return true; })()`);
+      await esperar(bridge, "document.querySelector('.conversa')", "a conversa de execução", 12000);
+
+      const campo = await bridge.js(`(document.querySelector('.conversa__campo')||{}).value || ''`);
+      ctx.assert(campo.includes("Execute a proposta"), `pergunta errada: ${campo.slice(0, 60)}`);
+      // A trava desta etapa é OUTRA: lá não muda escopo, aqui não muda
+      // abordagem sem passar por proposta nova.
+      ctx.assert(campo.includes("PARE e explique"), "faltou a trava contra mudar a abordagem");
+      ctx.assert(
+        !campo.includes("PROPOSTA DE IMPLEMENTAÇÃO"),
+        "veio a pergunta de planejar numa proposta",
+      );
+
+      const anexos = await bridge.js(
+        `[...document.querySelectorAll('.conversa__anexo')].map(e => e.textContent.replace('×','').trim())`,
+      );
+      ctx.assert(anexos.includes("__uitest"), `a proposta não foi anexada: ${anexos.join(", ")}`);
+
+      // E dá pra promover a resposta em execução.
+      const opcoes = await bridge.js(`(() => {
+        const m = document.querySelector('.conversa__msg--agente');
+        if (!m) return ['sem resposta ainda'];
+        return [...m.querySelectorAll('.conversa__msg-acoes button')].map(b => b.textContent.trim());
+      })()`);
+      ctx.assert(Array.isArray(opcoes), "não consegui ler as ações");
+    } finally {
+      if (fs.existsSync(pasta)) {
+        for (const f of fs.readdirSync(pasta).filter((x) => !antes.includes(x))) {
+          fs.rmSync(`${pasta}/${f}`, { force: true });
+        }
+      }
+    }
+  },
+});

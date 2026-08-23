@@ -128,6 +128,23 @@ pub fn app() -> Html {
 
     let list_version = use_state(|| 0u32);
     let git_files = use_state(|| None::<Vec<api::GitFileEntry>>);
+    /// Quantas propostas aguardam revisão (ciclo 210).
+    let propostas_pendentes = use_state(|| 0usize);
+    {
+        // Reconsulta quando o vault muda — o agente pode propor a
+        // qualquer momento, inclusive pelo CLI ou pelo MCP, e nesses
+        // casos não há nenhum evento de UI pra reagir.
+        let propostas_pendentes = propostas_pendentes.clone();
+        let vault_path = vault_path.clone();
+        use_effect_with((*list_version, (*vault_path).clone()), move |_| {
+            let Some(v) = (*vault_path).clone() else { return };
+            wasm_bindgen_futures::spawn_local(async move {
+                let n = api::listar_propostas(&v).await.map(|l| l.len()).unwrap_or(0);
+                propostas_pendentes.set(n);
+            });
+        });
+    }
+
     let sidebar_collapsed = use_state(|| false);
     let open_tabs = use_state(Vec::<PageMeta>::new);
     // Página inicial (ciclo 089) — movida pra cá (ciclo 109) de dentro
@@ -730,7 +747,19 @@ pub fn app() -> Html {
                     .map(|p| p.title.clone())
                     .filter(|t| !t.trim().is_empty())
                     .unwrap_or_else(|| spec.title.clone());
-                let titulo = format!("Planejar: {titulo_spec}");
+                // A página pode ser uma SPEC (planejar) ou uma PROPOSTA
+                // (executar) — o mesmo botão, perguntas diferentes.
+                let e_proposta = spec.path.contains("/propostas/")
+                    || paginas
+                        .iter()
+                        .find(|p| p.path == spec.path)
+                        .map(|p| p.page_type == "proposta")
+                        .unwrap_or(false);
+                let titulo = if e_proposta {
+                    format!("Executar: {titulo_spec}")
+                } else {
+                    format!("Planejar: {titulo_spec}")
+                };
                 let md = anotadinho_core::conversa::montar_pagina(
                     &titulo,
                     Some(&spec.path),
@@ -741,9 +770,11 @@ pub fn app() -> Html {
                     anotadinho_core::conversa::nome_de_arquivo(&carimbo)
                 );
                 if api::write_page(&vault, &path, &md).await.is_ok() {
-                    pergunta_inicial.set(Some(
-                        anotadinho_core::fluxo::pergunta_de_planejamento(&titulo_spec),
-                    ));
+                    pergunta_inicial.set(Some(if e_proposta {
+                        anotadinho_core::fluxo::pergunta_de_execucao(&titulo_spec)
+                    } else {
+                        anotadinho_core::fluxo::pergunta_de_planejamento(&titulo_spec)
+                    }));
                     list_version.set(*list_version + 1);
                     on_page_selected.emit(PageMeta {
                         path,
@@ -751,6 +782,32 @@ pub fn app() -> Html {
                         section: "pages".to_string(),
                     });
                 }
+            });
+        })
+    };
+
+    // Abre a tela de revisão. Cria a página se ela não existir — o
+    // aviso não pode levar a lugar nenhum (ciclo 210).
+    let abrir_propostas = {
+        let vault_path = vault_path.clone();
+        let on_page_selected = on_page_selected.clone();
+        let list_version = list_version.clone();
+        Callback::from(move |_: ()| {
+            let Some(vault) = (*vault_path).clone() else { return };
+            let on_page_selected = on_page_selected.clone();
+            let list_version = list_version.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let path = "pages/propostas.md".to_string();
+                if api::read_page(&vault, &path).await.is_err() {
+                    let md = "---\ntitle: Propostas\ntype: propostas\ntags:\n- agent-os\n---\n";
+                    let _ = api::write_page(&vault, &path, md).await;
+                    list_version.set(*list_version + 1);
+                }
+                on_page_selected.emit(PageMeta {
+                    path,
+                    title: "Propostas".to_string(),
+                    section: "pages".to_string(),
+                });
             });
         })
     };
@@ -1340,6 +1397,8 @@ pub fn app() -> Html {
                 git_files={(*git_files).clone()}
                 open_dialog={open_dialog.clone()}
                 on_git_changed={on_git_changed}
+                propostas_pendentes={*propostas_pendentes}
+                on_abrir_propostas={abrir_propostas.clone()}
                 on_toggle_sidebar={toggle_sidebar}
                 on_toggle_theme={toggle_theme}
                 on_toggle_autosave={toggle_autosave}
@@ -1398,6 +1457,10 @@ pub fn app() -> Html {
                                 vault_version={*list_version}
                                 nav_mode_active={*nav_mode_active}
                                 on_planejar={planejar_implementacao.clone()}
+                                on_fila_mudou={{
+                                    let list_version = list_version.clone();
+                                    Callback::from(move |_: ()| list_version.set(*list_version + 1))
+                                }}
                                 contexto_path={(*pagina_anterior).clone()}
                                 pergunta_inicial={(*pergunta_inicial).clone()}
                                 on_enter_block_nav={{

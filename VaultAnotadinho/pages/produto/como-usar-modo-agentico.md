@@ -98,6 +98,25 @@ Entre o primeiro e o terceiro comando, a página não existe. Uma página
 `type: propostas` mostra o diff de tudo que está pendente, com Aplicar e
 Recusar.
 
+## 5.1 O aviso de proposta pendente
+
+Quando há proposta esperando, um indicador aparece no **cabeçalho**, de
+qualquer página. Clicar leva pra tela de revisão. Ele conta propostas
+vindas de qualquer canal — UI, CLI ou MCP — e some quando a fila zera.
+
+## 5.2 Executar a proposta aprovada
+
+Numa proposta **aprovada** o botão vira **Executar**. Ele abre a conversa
+com a proposta anexada e uma pergunta diferente da de planejar: aqui a
+abordagem já foi aceita, então o que se pede é o trabalho e o relato.
+
+A trava também é outra. No planejamento, o modelo não pode mudar o
+escopo; na execução, não pode mudar a abordagem — se ela se mostrar
+inviável, ele deve **parar e explicar**, porque mudar de rumo exige uma
+proposta nova.
+
+A resposta vira o registro com "virar execução".
+
 ## 6. Ou deixar o agente se conectar
 
 O caminho inverso: você trabalha no Claude Code e o Anotadinho é o

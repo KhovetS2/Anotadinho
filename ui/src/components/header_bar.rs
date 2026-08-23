@@ -28,6 +28,16 @@ pub struct HeaderBarProps {
     /// (ciclo 119).
     #[prop_or_default]
     pub on_git_changed: Callback<()>,
+    /// Quantas propostas do agente aguardam revisão (ciclo 210).
+    ///
+    /// Fica no cabeçalho porque proposta pendente é assunto de QUALQUER
+    /// página: sem isso o agente propõe e ninguém vê até abrir a tela de
+    /// propostas por acaso.
+    #[prop_or_default]
+    pub propostas_pendentes: usize,
+    /// Abre a tela de revisão.
+    #[prop_or_default]
+    pub on_abrir_propostas: Callback<()>,
     pub on_toggle_sidebar: Callback<()>,
     pub on_toggle_theme: Callback<()>,
     pub on_toggle_autosave: Callback<()>,
@@ -333,6 +343,14 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                 }
             </div>
             <div class="header-bar__right" data-tauri-drag-region="true">
+                if props.propostas_pendentes > 0 {
+                    <button class="header-bar__propostas btn btn--xs"
+                        onclick={props.on_abrir_propostas.reform(|_| ())}
+                        data-nav-item="header-propostas" data-nav-parent="header"
+                        title={format!("{} proposta(s) do agente esperando revisão", props.propostas_pendentes)}>
+                        <Icon name="check-square" />{ props.propostas_pendentes.to_string() }
+                    </button>
+                }
                 <button class="btn btn--ghost btn--xs" onclick={props.on_toggle_theme.reform(|_| ())}
                     data-nav-item="header-theme" data-nav-parent="header">
                     <Icon name={if props.theme_light { "sun" } else { "moon" }} />

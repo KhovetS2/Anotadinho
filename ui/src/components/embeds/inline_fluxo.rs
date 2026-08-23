@@ -131,13 +131,24 @@ pub fn inline_fluxo(props: &InlineFluxoProps) -> Html {
             // quê" pro "como" (ciclo 209). O botão leva pra conversa de
             // planejamento com a spec anexada — e é lá que se anexam os
             // padrões que a implementação deve respeitar.
-            if data.artefato == Artefato::Spec && etapa == Etapa::Aprovada {
+            if etapa == Etapa::Aprovada
+                && matches!(data.artefato, Artefato::Spec | Artefato::Proposta)
+            {
                 <div class="fluxo__planejar">
                     <button class="btn btn--primary btn--sm" onclick={planejar}>
-                        <Icon name="zap" />{ "Planejar implementação" }
+                        <Icon name="zap" />
+                        { if data.artefato == Artefato::Spec {
+                            "Planejar implementação"
+                        } else {
+                            "Executar"
+                        } }
                     </button>
                     <span class="fluxo__planejar-dica">
-                        { "Abre uma conversa com esta spec anexada. Anexe também os padrões que a proposta deve seguir." }
+                        { if data.artefato == Artefato::Spec {
+                            "Abre uma conversa com esta spec anexada. Anexe também os padrões que a proposta deve seguir."
+                        } else {
+                            "Abre uma conversa com esta proposta anexada. A abordagem já foi aceita — o que sair daqui vira o registro de execução."
+                        } }
                     </span>
                 </div>
             }

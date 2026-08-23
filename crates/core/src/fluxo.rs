@@ -326,6 +326,19 @@ mod tests {
     }
 
     #[test]
+    fn pergunta_de_execucao_proibe_mudar_a_abordagem() {
+        let p = pergunta_de_execucao("Abordagem X");
+        assert!(p.contains("Abordagem X"));
+        assert!(p.contains("O que foi feito"), "{p}");
+        // O espelho da trava do planejamento: lá não muda escopo, aqui
+        // não muda abordagem sem passar por proposta nova.
+        assert!(p.contains("PARE e explique"), "{p}");
+        for linha in p.lines() {
+            assert!(!linha.starts_with("  "), "indentação vazou: {linha:?}");
+        }
+    }
+
+    #[test]
     fn conversa_nao_tem_esqueleto() {
         assert!(corpo_padrao(Artefato::Conversa).is_empty());
     }
@@ -545,6 +558,32 @@ pub fn pergunta_de_planejamento(titulo_spec: &str) -> String {
         "6. Riscos.".to_string(),
         String::new(),
         "Não proponha requisitos novos nem mude o escopo — isso é da spec. Se algum          requisito estiver ambíguo, aponte a ambiguidade em vez de decidir por conta."
+            .to_string(),
+    ]
+    .join("\n")
+}
+
+/// A pergunta que abre a EXECUÇÃO de uma proposta aprovada (ciclo 210).
+///
+/// Diferente do planejamento, aqui o modelo não decide mais o rumo: a
+/// abordagem já foi revisada e aceita. O que se pede é o trabalho, e o
+/// relato do que foi feito — inclusive do que não deu.
+///
+/// A trava explícita é o espelho da do planejamento: lá ele não podia
+/// mudar o escopo; aqui não pode mudar a abordagem sem avisar.
+pub fn pergunta_de_execucao(titulo_proposta: &str) -> String {
+    [
+        format!("Execute a proposta \"{titulo_proposta}\", que já foi revisada e aprovada."),
+        String::new(),
+        "Ao terminar, relate:".to_string(),
+        String::new(),
+        "1. O que foi feito, etapa por etapa.".to_string(),
+        "2. Como foi validado.".to_string(),
+        "3. O que ficou de fora, e por quê.".to_string(),
+        String::new(),
+        "Siga a abordagem aprovada. Se durante a execução ela se mostrar inviável, \
+         PARE e explique o problema em vez de mudar de rumo por conta — mudar a \
+         abordagem exige uma proposta nova."
             .to_string(),
     ]
     .join("\n")

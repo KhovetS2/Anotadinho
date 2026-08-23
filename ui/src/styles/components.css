@@ -1348,3 +1348,19 @@
   flex: 1;
   min-width: 14rem;
 }
+
+/* Aviso de proposta pendente (ciclo 210).
+   No cabeçalho porque é assunto de QUALQUER página: sem ele o agente
+   propõe e ninguém vê até abrir a tela de propostas por acaso. */
+.header-bar__propostas {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: color-mix(in srgb, var(--warning) 20%, transparent);
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.header-bar__propostas:hover {
+  background: color-mix(in srgb, var(--warning) 32%, transparent);
+}

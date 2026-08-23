@@ -43,9 +43,9 @@ Hoje é preciso criar a página de conversa na mão, lembrar de pôr
 
 ## Critérios de aceite
 
-- [ ] Ir de "quero fazer X" até uma spec aprovada sem criar arquivo na mão.
-- [ ] Uma proposta pendente é notada sem abrir a página de propostas.
-- [ ] Cenários de harness cobrindo o caminho inteiro.
+- [x] Ir de "quero fazer X" até uma spec aprovada sem criar arquivo na mão.
+- [x] Uma proposta pendente é notada sem abrir a página de propostas.
+- [x] Cenários de harness cobrindo o caminho inteiro.
 
 ## Notas de escopo
 

@@ -371,7 +371,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                             </div>
                             if m.autor == Autor::Agente {
                                 <div class="conversa__msg-acoes">
-                                    { for [Artefato::Spec, Artefato::Proposta].into_iter().map(|a| {
+                                    { for [Artefato::Spec, Artefato::Proposta, Artefato::Execucao].into_iter().map(|a| {
                                         let promover = promover.clone();
                                         let texto = m.texto.clone();
                                         let onclick = Callback::from(move |_: MouseEvent| {

@@ -63,6 +63,8 @@ pub struct PageViewProps {
     pub nav_mode_active: bool,
     #[prop_or_default]
     pub on_planejar: Callback<()>,
+    #[prop_or_default]
+    pub on_fila_mudou: Callback<()>,
 }
 
 #[function_component(PageView)]
@@ -170,7 +172,8 @@ pub fn page_view(props: &PageViewProps) -> Html {
         "propostas" => html! {
             <crate::components::propostas_view::PropostasView
                 vault_path={props.vault_path.clone()}
-                on_page_selected={props.on_page_selected.clone()} />
+                on_page_selected={props.on_page_selected.clone()}
+                on_fila_mudou={props.on_fila_mudou.clone()} />
         },
         "tags" => html! {
             <>

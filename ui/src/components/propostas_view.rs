@@ -20,6 +20,11 @@ use yew::prelude::*;
 pub struct PropostasViewProps {
     pub vault_path: String,
     pub on_page_selected: Callback<api::PageMeta>,
+    /// Avisa que a fila mudou (ciclo 210) — sem isto o aviso do
+    /// cabeçalho fica preso no número de antes, porque aplicar ou
+    /// recusar não mexe na lista de páginas.
+    #[prop_or_default]
+    pub on_fila_mudou: Callback<()>,
 }
 
 #[function_component(PropostasView)]
@@ -56,10 +61,12 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
         let recarregar = recarregar.clone();
         let erro = erro.clone();
         let on_page_selected = props.on_page_selected.clone();
+        let on_fila_mudou = props.on_fila_mudou.clone();
         Callback::from(move |(id, aplicar): (String, bool)| {
             let (vault_path, recarregar, erro) =
                 (vault_path.clone(), recarregar.clone(), erro.clone());
             let on_page_selected = on_page_selected.clone();
+            let on_fila_mudou = on_fila_mudou.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 let r = if aplicar {
                     api::aplicar_proposta(&vault_path, &id).await
@@ -82,6 +89,7 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                     Err(e) => erro.set(Some(e)),
                 }
                 recarregar.set(*recarregar + 1);
+                on_fila_mudou.emit(());
             });
         })
     };
