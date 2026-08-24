@@ -114,13 +114,27 @@ export class Bridge {
 /// Espera `cond` (JS que devolve booleano) virar true, ou estoura.
 export async function esperar(bridge, cond, descricao, limiteMs = 8000) {
   const ate = Date.now() + limiteMs;
-  let ultimo;
+  let ultimoErro = null;
   while (Date.now() < ate) {
-    ultimo = await bridge.js(`(() => { try { return !!(${cond}); } catch (e) { return false; } })()`);
-    if (ultimo) return true;
+    try {
+      const ok = await bridge.js(
+        `(() => { try { return !!(${cond}); } catch (e) { return false; } })()`,
+      );
+      if (ok) return true;
+    } catch (e) {
+      // Um eval que cai exatamente na troca do documento não é falha do
+      // cenário: é a recarga acontecendo. Antes isso abortava o teste
+      // com "Script execution timeout", e o cenário morria por causa
+      // do relógio da máquina, não do código.
+      //
+      // O prazo continua valendo: se a condição nunca chegar, o erro
+      // sai igual, agora dizendo qual foi o último problema.
+      ultimoErro = e;
+    }
     await new Promise((r) => setTimeout(r, 250));
   }
-  throw new Error(`esperava ${descricao}, mas não aconteceu em ${limiteMs}ms`);
+  const detalhe = ultimoErro ? ` (último erro: ${ultimoErro.message})` : "";
+  throw new Error(`esperava ${descricao}, mas não aconteceu em ${limiteMs}ms${detalhe}`);
 }
 
 /// Abre uma página pelo nome que aparece na sidebar.
@@ -152,9 +166,15 @@ export async function esperarEstavel(bridge, expr, descricao, limiteMs = 10000) 
   let anterior = null;
   let iguais = 0;
   while (Date.now() < ate) {
-    const atual = await bridge.js(
-      `(() => { try { return ${expr}; } catch (e) { return null; } })()`,
-    );
+    let atual = null;
+    try {
+      atual = await bridge.js(
+        `(() => { try { return ${expr}; } catch (e) { return null; } })()`,
+      );
+    } catch {
+      // Recarga em curso: conta como leitura instável, não como falha.
+      atual = null;
+    }
     if (atual !== null && atual !== "" && atual === anterior) {
       iguais++;
       // Duas leituras iguais seguidas com 120ms entre elas: o suficiente

@@ -1807,3 +1807,95 @@ fluxo.push({
     }
   },
 });
+
+// ── ciclo 225: a conversa acompanha o que está acontecendo ───────────
+
+/// Conversa comprida o bastante pra precisar rolar.
+function conversaLonga(n) {
+  const linhas = ["---", "title: __uitest-rolagem", "type: conversa", "---", ""];
+  for (let i = 1; i <= n; i++) {
+    linhas.push(`## você · 2026-01-01 00:${String(i).padStart(2, "0")}`, "", `pergunta ${i}`, "");
+    linhas.push(`## agente · 2026-01-01 00:${String(i).padStart(2, "0")}`, "", `resposta ${i}`, "");
+  }
+  return linhas.join("\n");
+}
+
+fluxo.push({
+  nome: "conversa: abre no fim, onde está o que aconteceu por último (225)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const rel = "pages/conversas/__uitest-rolagem.md";
+    const arquivo = `${ctx.vault}/${rel}`;
+    fs.mkdirSync(`${ctx.vault}/pages/conversas`, { recursive: true });
+    fs.writeFileSync(arquivo, conversaLonga(25));
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPaginaEstavel(bridge, "__uitest-rolagem");
+      await PAUSA(800);
+
+      const estado = await bridge.js(`(() => {
+        const l = document.querySelector('.conversa__mensagens');
+        if (!l) return null;
+        return {
+          rolavel: l.scrollHeight > l.clientHeight + 10,
+          distanciaDoFim: l.scrollHeight - (l.scrollTop + l.clientHeight),
+        };
+      })()`);
+      ctx.assert(estado, "a conversa não abriu");
+      ctx.assertEq(estado.rolavel, true, "a conversa de teste não ficou grande o bastante");
+      // Sem isto, abrir uma conversa longa mostrava o começo dela — o
+      // que aconteceu por último ficava fora da vista.
+      ctx.assert(
+        estado.distanciaDoFim < 60,
+        `abriu a ${estado.distanciaDoFim}px do fim, não no fim`,
+      );
+    } finally {
+      fs.rmSync(arquivo, { force: true });
+    }
+  },
+});
+
+fluxo.push({
+  nome: "conversa: conteúdo novo acompanha, mas quem subiu fica onde está (225)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const rel = "pages/conversas/__uitest-rolagem2.md";
+    const arquivo = `${ctx.vault}/${rel}`;
+    fs.mkdirSync(`${ctx.vault}/pages/conversas`, { recursive: true });
+    fs.writeFileSync(arquivo, conversaLonga(25));
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPaginaEstavel(bridge, "__uitest-rolagem2");
+      await PAUSA(800);
+
+      // A pessoa sobe pra reler alguma coisa.
+      await bridge.js(`(() => {
+        const l = document.querySelector('.conversa__mensagens');
+        l.scrollTop = 0;
+        l.dispatchEvent(new Event('scroll', { bubbles: true }));
+        return true;
+      })()`);
+      await PAUSA(400);
+
+      // Chega conteúdo novo enquanto ela lê.
+      await bridge.js(DISPARAR(["--devagar", "{prompt}"], "x", rel, 30, "texto"));
+      await PAUSA(3000);
+
+      const onde = await bridge.js(
+        `(document.querySelector('.conversa__mensagens') || {}).scrollTop`,
+      );
+      // Puxar a pessoa de volta no meio da leitura é pior do que não
+      // rolar. Só acompanha quem já estava no fim.
+      ctx.assert(
+        onde < 60,
+        `arrastou quem estava lendo mais acima (scrollTop virou ${onde})`,
+      );
+
+      await bridge.js(
+        `window.__TAURI_INTERNALS__.invoke('cancelar_agente', { conversaPath: ${JSON.stringify(rel)} })`,
+      );
+    } finally {
+      fs.rmSync(arquivo, { force: true });
+    }
+  },
+});
