@@ -69,7 +69,7 @@ pub struct InlineEmbedProps {
     pub on_set_property: Callback<(String, String)>,
     /// Abre o planejamento de uma spec aprovada (ciclo 209).
     #[prop_or_default]
-    pub on_planejar: Callback<()>,
+    pub on_planejar: Callback<anotadinho_core::fluxo::Pedido>,
     /// Página onde o embed vive.
     #[prop_or_default]
     pub page_path: String,

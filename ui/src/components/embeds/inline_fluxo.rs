@@ -17,7 +17,7 @@
 
 use crate::components::icon::Icon;
 use anotadinho_core::embed::{EmbedData, FluxoEmbedData};
-use anotadinho_core::fluxo::{Artefato, Etapa};
+use anotadinho_core::fluxo::{self, Artefato, Etapa};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
@@ -34,7 +34,7 @@ pub struct InlineFluxoProps {
     /// (ciclo 209): a spec vai anexada, e a pergunta já pede a proposta
     /// de implementação.
     #[prop_or_default]
-    pub on_planejar: Callback<()>,
+    pub on_planejar: Callback<fluxo::Pedido>,
     /// Página onde este embed vive.
     #[prop_or_default]
     pub page_path: String,
@@ -65,7 +65,11 @@ pub fn inline_fluxo(props: &InlineFluxoProps) -> Html {
 
     let planejar = {
         let on_planejar = props.on_planejar.clone();
-        Callback::from(move |_: MouseEvent| on_planejar.emit(()))
+        Callback::from(move |_: MouseEvent| on_planejar.emit(fluxo::Pedido::Avancar))
+    };
+    let alterar = {
+        let on_planejar = props.on_planejar.clone();
+        Callback::from(move |_: MouseEvent| on_planejar.emit(fluxo::Pedido::Alterar))
     };
 
     let abrir_origem = {
@@ -149,6 +153,23 @@ pub fn inline_fluxo(props: &InlineFluxoProps) -> Html {
                         } else {
                             "Abre uma conversa com esta proposta anexada. A abordagem já foi aceita — o que sair daqui vira o registro de execução."
                         } }
+                    </span>
+                </div>
+            }
+
+            // Revisar só tinha duas saídas — aprovar ou mandar pra
+            // trás. A terceira, "está quase, muda estes pontos", virava
+            // copiar e colar na mão (ciclo 223).
+            if etapa == Etapa::EmRevisao
+                && matches!(data.artefato, Artefato::Spec | Artefato::Proposta)
+            {
+                <div class="fluxo__planejar">
+                    <button class="btn btn--sm" onclick={alterar}>
+                        <Icon name="edit" />
+                        { "Pedir alteração" }
+                    </button>
+                    <span class="fluxo__planejar-dica">
+                        { "Abre a conversa com esta página anexada. O agente devolve a mudança como proposta, pra você ver o diff antes de aplicar." }
                     </span>
                 </div>
             }

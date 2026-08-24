@@ -789,7 +789,7 @@ pub fn app() -> Html {
         let on_page_selected = on_page_selected.clone();
         let list_version = list_version.clone();
         let pergunta_inicial = pergunta_inicial.clone();
-        Callback::from(move |_: ()| {
+        Callback::from(move |pedido: anotadinho_core::fluxo::Pedido| {
             let Some(vault) = (*vault_path).clone() else { return };
             let Some(spec) = (*selected_page).clone() else { return };
             let on_page_selected = on_page_selected.clone();
@@ -816,10 +816,25 @@ pub fn app() -> Html {
                         .find(|p| p.path == spec.path)
                         .map(|p| p.page_type == "proposta")
                         .unwrap_or(false);
-                let titulo = if e_proposta {
+                let alterando = pedido == anotadinho_core::fluxo::Pedido::Alterar;
+                let artefato = if e_proposta {
+                    anotadinho_core::fluxo::Artefato::Proposta
+                } else {
+                    anotadinho_core::fluxo::Artefato::Spec
+                };
+                let titulo = if alterando {
+                    format!("Alterar: {titulo_spec}")
+                } else if e_proposta {
                     format!("Executar: {titulo_spec}")
                 } else {
                     format!("Planejar: {titulo_spec}")
+                };
+                let pergunta = if alterando {
+                    anotadinho_core::fluxo::pergunta_de_alteracao(&titulo_spec, artefato)
+                } else if e_proposta {
+                    anotadinho_core::fluxo::pergunta_de_execucao(&titulo_spec)
+                } else {
+                    anotadinho_core::fluxo::pergunta_de_planejamento(&titulo_spec)
                 };
                 // Executar CONTINUA na conversa que gerou a proposta.
                 //
@@ -860,9 +875,7 @@ pub fn app() -> Html {
                         .find(|p| p.path == conversa)
                         .map(|p| p.title.clone())
                         .unwrap_or_else(|| titulo.clone());
-                    pergunta_inicial.set(Some(
-                        anotadinho_core::fluxo::pergunta_de_execucao(&titulo_spec),
-                    ));
+                    pergunta_inicial.set(Some(pergunta.clone()));
                     on_page_selected.emit(PageMeta {
                         path: conversa,
                         title: titulo_conversa,
@@ -881,11 +894,7 @@ pub fn app() -> Html {
                     anotadinho_core::conversa::nome_de_arquivo(&carimbo)
                 );
                 if api::write_page(&vault, &path, &md).await.is_ok() {
-                    pergunta_inicial.set(Some(if e_proposta {
-                        anotadinho_core::fluxo::pergunta_de_execucao(&titulo_spec)
-                    } else {
-                        anotadinho_core::fluxo::pergunta_de_planejamento(&titulo_spec)
-                    }));
+                    pergunta_inicial.set(Some(pergunta));
                     list_version.set(*list_version + 1);
                     on_page_selected.emit(PageMeta {
                         path,

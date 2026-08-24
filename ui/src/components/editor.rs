@@ -56,7 +56,7 @@ pub struct EditorProps {
     pub nav_mode_active: bool,
     /// Abre o planejamento de uma spec aprovada (ciclo 209).
     #[prop_or_default]
-    pub on_planejar: Callback<()>,
+    pub on_planejar: Callback<anotadinho_core::fluxo::Pedido>,
     /// Mapa de teclas do vim mode.
     #[prop_or_default]
     pub vim_keymap: crate::state::VimKeymap,

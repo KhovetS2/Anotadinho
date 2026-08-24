@@ -62,7 +62,7 @@ pub struct PageViewProps {
     pub pergunta_inicial: Option<String>,
     pub nav_mode_active: bool,
     #[prop_or_default]
-    pub on_planejar: Callback<()>,
+    pub on_planejar: Callback<anotadinho_core::fluxo::Pedido>,
     #[prop_or_default]
     pub on_fila_mudou: Callback<()>,
 }

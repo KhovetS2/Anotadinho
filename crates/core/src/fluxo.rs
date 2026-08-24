@@ -326,6 +326,38 @@ mod tests {
     }
 
     #[test]
+    fn nenhuma_pergunta_carrega_indentacao_do_codigo() {
+        // Linha de código continuada com `\` preserva a indentação do
+        // FONTE, e ela vazava pro prompt: a pergunta de planejamento
+        // chegava com "Se algum          requisito", visível na tela.
+        for p in [
+            pergunta_de_planejamento("X"),
+            pergunta_de_execucao("X"),
+            pergunta_de_alteracao("X", Artefato::Spec),
+        ] {
+            assert!(
+                !p.contains("  "),
+                "espaço duplo no meio do prompt:\n{p}"
+            );
+            assert!(
+                !p.lines().any(|l| l.starts_with(' ')),
+                "linha começando com espaço:\n{p}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_pergunta_de_alteracao_manda_propor_em_vez_de_gravar() {
+        let p = pergunta_de_alteracao("Tema configurável", Artefato::Spec);
+        assert!(p.contains("Tema configurável"));
+        // É isto que faz a mudança voltar como diff pra revisão em vez
+        // de aparecer já aplicada no arquivo.
+        assert!(p.contains("propor"), "{p}");
+        assert!(p.contains("NÃO grave"), "{p}");
+        assert!(p.contains("spec"), "não diz de que artefato se trata: {p}");
+    }
+
+    #[test]
     fn pergunta_de_execucao_proibe_mudar_a_abordagem() {
         let p = pergunta_de_execucao("Abordagem X");
         assert!(p.contains("Abordagem X"));
@@ -557,8 +589,12 @@ pub fn pergunta_de_planejamento(titulo_spec: &str) -> String {
         "5. Alternativas consideradas e por que foram descartadas.".to_string(),
         "6. Riscos.".to_string(),
         String::new(),
-        "Não proponha requisitos novos nem mude o escopo — isso é da spec. Se algum          requisito estiver ambíguo, aponte a ambiguidade em vez de decidir por conta."
-            .to_string(),
+        [
+            "Não proponha requisitos novos nem mude o escopo — isso é da spec.",
+            "Se algum requisito estiver ambíguo, aponte a ambiguidade em vez de",
+            "decidir por conta.",
+        ]
+        .join(" "),
     ]
     .join("\n")
 }
@@ -585,6 +621,49 @@ pub fn pergunta_de_execucao(titulo_proposta: &str) -> String {
          PARE e explique o problema em vez de mudar de rumo por conta — mudar a \
          abordagem exige uma proposta nova."
             .to_string(),
+    ]
+    .join("\n")
+}
+
+/// O que o botão do fluxo está pedindo à conversa (ciclo 223).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pedido {
+    /// Avançar: planejar (spec aprovada) ou executar (proposta aprovada).
+    /// Qual dos dois, quem decide é a página.
+    Avancar,
+    /// Mudar trechos de algo que está em revisão.
+    Alterar,
+}
+
+/// A pergunta que pede ALTERAÇÃO numa spec ou proposta em revisão
+/// (ciclo 223).
+///
+/// É o caminho de volta que faltava. Revisar só tinha duas saídas —
+/// aprovar ou mandar pra trás — e a terceira, "está quase, muda estes
+/// pontos", virava copiar e colar na mão.
+///
+/// O pedido manda o agente propor pelo `anotadinho-cli propor`, não
+/// gravar. É o que faz a mudança voltar como DIFF pra revisão em vez de
+/// aparecer já aplicada: quem revisa vê o que mudou antes de aceitar.
+pub fn pergunta_de_alteracao(titulo: &str, artefato: Artefato) -> String {
+    let tipo = artefato.label().to_lowercase();
+    [
+        format!("Leia a {tipo} \"{titulo}\", anexada, e altere os pontos que eu pedir."),
+        String::new(),
+        "Diga aqui embaixo o que precisa mudar.".to_string(),
+        String::new(),
+        [
+            "NÃO grave o arquivo direto. Proponha a mudança com",
+            "`anotadinho-cli --vault VaultAnotadinho propor <caminho> --file <novo>`",
+            "e diga o que mudou. Assim eu vejo o diff e decido antes de aplicar.",
+        ]
+        .join(" "),
+        String::new(),
+        [
+            "Mexa só no que eu pedir. Se alguma coisa que eu pedir conflitar com o",
+            "resto do documento, aponte o conflito em vez de resolver por conta.",
+        ]
+        .join(" "),
     ]
     .join("\n")
 }

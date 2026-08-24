@@ -500,6 +500,24 @@ const PROPOR = (alvo, conteudo, motivo = "teste") => `(async () => {
   } catch (e) { return { ok: false, erro: String(e) }; }
 })()`;
 
+/// Clica um botão do item da proposta de TESTE, achando-o pelo alvo.
+///
+/// A fila é do usuário: pode ter proposta de verdade esperando revisão,
+/// e o cenário não pode encostar nela.
+const BOTAO_DA_PROPOSTA_DE_TESTE = (rotulo, alvo = "__uitest_proposta") => `(() => {
+  const itens = [...document.querySelectorAll('.propostas__item')];
+  const meu = itens.find(i => i.textContent.includes(${JSON.stringify(alvo)}));
+  if (!meu) return false;
+  const b = [...meu.querySelectorAll('.propostas__acoes button')]
+    .find(x => x.textContent.trim() === ${JSON.stringify(rotulo)});
+  if (!b) return false;
+  b.click();
+  return true;
+})()`;
+
+const APLICAR_A_DE_TESTE = BOTAO_DA_PROPOSTA_DE_TESTE("Aplicar");
+const RECUSAR_A_DE_TESTE = BOTAO_DA_PROPOSTA_DE_TESTE("Recusar");
+
 fluxo.push({
   nome: "proposta: agente propõe e o arquivo NÃO muda até aprovar (204)",
   async fn(bridge, ctx) {
@@ -531,12 +549,14 @@ fluxo.push({
         `o diff não mostrou o conteúdo novo: ${linhas.join(" | ")}`,
       );
 
-      // Aplicar escreve.
-      await bridge.js(`(() => {
-        [...document.querySelectorAll('.propostas__acoes button')]
-          .find(b => b.textContent.trim() === 'Aplicar').click();
-        return true;
-      })()`);
+      // Aplicar escreve — SÓ o item da proposta de teste.
+      //
+      // Antes clicava no primeiro "Aplicar" da tela. Com uma proposta
+      // real esperando revisão na fila, o cenário aplicou a proposta do
+      // usuário sem ele ver o diff. É a mesma trava do ciclo 197, agora
+      // do lado das propostas.
+      const aplicou = await bridge.js(APLICAR_A_DE_TESTE);
+      ctx.assertEq(aplicou, true, "não achei o item da proposta de teste na tela");
       await PAUSA(1800);
       ctx.assertEq(fs.existsSync(alvo), true, "aplicar não escreveu a página");
       ctx.assert(
@@ -567,11 +587,8 @@ fluxo.push({
       await abrirTelaDePropostas(bridge, ctx);
       await esperar(bridge, "document.querySelector('.propostas__item')", "a proposta");
 
-      await bridge.js(`(() => {
-        [...document.querySelectorAll('.propostas__acoes button')]
-          .find(b => b.textContent.trim() === 'Recusar').click();
-        return true;
-      })()`);
+      const recusou = await bridge.js(RECUSAR_A_DE_TESTE);
+      ctx.assertEq(recusou, true, "não achei o item da proposta de teste na tela");
       await PAUSA(1500);
 
       ctx.assertEq(fs.existsSync(alvo), false, "recusar escreveu a página");
@@ -1024,16 +1041,22 @@ fluxo.push({
       await bridge.js(`(() => { document.querySelector('.header-bar__propostas').click(); return true; })()`);
       await esperar(bridge, "document.querySelector('.propostas__item')", "a tela de revisão");
 
-      await bridge.js(`(() => {
-        [...document.querySelectorAll('.propostas__acoes button')]
-          .find(b => b.textContent.trim() === 'Recusar').click();
-        return true;
-      })()`);
+      const recusou = await bridge.js(BOTAO_DA_PROPOSTA_DE_TESTE("Recusar", "__uitest_aviso"));
+      ctx.assertEq(recusou, true, "não achei o item da proposta de teste na tela");
       await PAUSA(2500);
+      // O aviso some quando a fila esvazia. Se o usuário tiver proposta
+      // de VERDADE esperando revisão, ela continua lá — e deve
+      // continuar. O que este cenário afirma é que o aviso acompanha a
+      // fila, não que a fila fica vazia.
+      const restantes = fs.existsSync(`${ctx.vault}/.anotadinho/propostas`)
+        ? fs.readdirSync(`${ctx.vault}/.anotadinho/propostas`).length
+        : 0;
       ctx.assertEq(
         await bridge.js(`!!document.querySelector('.header-bar__propostas')`),
-        false,
-        "o aviso ficou preso depois de resolver a fila",
+        restantes > 0,
+        restantes > 0
+          ? "o aviso sumiu com proposta ainda na fila"
+          : "o aviso ficou preso depois de resolver a fila",
       );
     } finally {
       fs.rmSync(pendente, { force: true });
@@ -1584,5 +1607,72 @@ fluxo.push({
       !fim.erro.includes("stdin"),
       `o ruído do stderr venceu o motivo: ${fim.erro}`,
     );
+  },
+});
+
+// ── ciclo 223: pedir alteração no que está em revisão ────────────────
+
+fluxo.push({
+  nome: "fluxo: em revisão oferece pedir alteração, e ela manda propor (223)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const rel = "pages/specs/__uitest-em-revisao.md";
+    const arquivo = `${ctx.vault}/${rel}`;
+    fs.mkdirSync(`${ctx.vault}/pages/specs`, { recursive: true });
+    fs.writeFileSync(
+      arquivo,
+      [
+        "---",
+        "title: __uitest-em-revisao",
+        "type: spec",
+        "status: em-revisao",
+        "---",
+        "# __uitest-em-revisao",
+        "",
+        '{{ type: "fluxo" }}',
+        "artefato: spec",
+        "etapa: em-revisao",
+        "{{ /fluxo }}",
+        "",
+        "corpo",
+        "",
+      ].join("\n"),
+    );
+    const antesConversas = fs.existsSync(`${ctx.vault}/pages/conversas`)
+      ? fs.readdirSync(`${ctx.vault}/pages/conversas`).length
+      : 0;
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPaginaEstavel(bridge, "__uitest-em-revisao");
+
+      const achou = await bridge.js(`(() => {
+        const b = [...document.querySelectorAll('[class*=fluxo] button')]
+          .find(x => x.textContent.includes('Pedir alteração'));
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`);
+      // Revisar só tinha duas saídas — aprovar ou mandar pra trás.
+      ctx.assertEq(achou, true, "não há botão de pedir alteração em revisão");
+      await PAUSA(2500);
+
+      const rascunho = await bridge.js(
+        `(document.querySelector('.conversa__campo') || {}).value || ''`,
+      );
+      ctx.assert(rascunho.includes("__uitest-em-revisao"), `pergunta sem o título: ${rascunho}`);
+      // É isto que faz a mudança voltar como diff em vez de já aplicada.
+      ctx.assert(rascunho.includes("propor"), `a pergunta não manda propor: ${rascunho}`);
+      ctx.assert(rascunho.includes("NÃO grave"), `a pergunta não barra a gravação: ${rascunho}`);
+      // A pergunta não pode carregar indentação do código-fonte.
+      ctx.assert(!rascunho.includes("  "), `espaço duplo na pergunta: ${rascunho}`);
+    } finally {
+      fs.rmSync(arquivo, { force: true });
+      const depois = fs.existsSync(`${ctx.vault}/pages/conversas`)
+        ? fs.readdirSync(`${ctx.vault}/pages/conversas`)
+        : [];
+      depois
+        .slice(antesConversas)
+        .forEach((f) => fs.rmSync(`${ctx.vault}/pages/conversas/${f}`, { force: true }));
+    }
   },
 });
