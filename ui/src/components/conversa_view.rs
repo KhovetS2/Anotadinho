@@ -12,12 +12,16 @@
 //!   próprio `.md`, então a conversa sobrevive a fechar o app, entra no
 //!   git e pode ser lida pela consulta como qualquer página.
 
+use wasm_bindgen::JsCast;
 use crate::api;
 use crate::components::icon::Icon;
+use crate::components::modal::Modal;
 use anotadinho_core::agente::Adaptador;
 use anotadinho_core::agente::EstadoJob;
 use anotadinho_core::conversa::{self, Autor, Mensagem};
 use anotadinho_core::fluxo::{self, Artefato};
+use anotadinho_core::prompt_padrao::{self, PromptPadrao};
+use std::collections::BTreeMap;
 use yew::prelude::*;
 
 /// Quantas mensagens do histórico vão no prompt. Corta as mais ANTIGAS.
@@ -71,6 +75,14 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     // acompanhamento leria `false` pra sempre e nunca voltaria a
     // perguntar. É o mesmo defeito dos ciclos 155, 157 e 201.
     let ativo = use_mut_ref(|| false);
+    // A lista de mensagens, pra poder rolar até o fim sozinha.
+    let lista_ref = use_node_ref();
+    // Se a pessoa está acompanhando o fim da conversa.
+    //
+    // `RefCell` e não `use_state`: quem lê isto é o efeito de rolagem,
+    // e handle de `use_state` capturado em closure fica congelado.
+    let colado_no_fim = use_mut_ref(|| true);
+    let parcial_ref = use_node_ref();
     let adaptador = use_state(crate::state::load_adaptador);
     let trocando_agente = use_state(|| false);
     // Páginas anexadas, lidas do FRONTMATTER (ciclo 208) — sobrevivem a
@@ -79,6 +91,35 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     let escolhendo = use_state(|| false);
     let disponiveis = use_state(Vec::<crate::api::PageMeta>::new);
     let filtro_anexo = use_state(String::new);
+    // O molde e seus valores ficam separados até a expansão. Sem isso,
+    // não haveria como manter o texto inserido como DADO (ciclo 202).
+    let prompts = use_state(Vec::<anotadinho_core::PageIndexEntry>::new);
+    let prompt_ativo = use_state(|| None::<PromptPadrao>);
+    let prompt_path = use_state(String::new);
+    let valores_prompt = use_state(BTreeMap::<String, String>::new);
+    let rascunho_antes_prompt = use_state(String::new);
+    let preview_prompt = use_state(|| false);
+    let carregando_prompts = use_state(|| true);
+
+    // Descoberta usa uma única varredura e aplica simultaneamente pasta e
+    // tipo. Recarrega ao trocar de conversa para enxergar páginas novas.
+    {
+        let prompts = prompts.clone();
+        let carregando = carregando_prompts.clone();
+        let erro = erro.clone();
+        let vault_path = props.vault_path.clone();
+        use_effect_with(props.page.path.clone(), move |_| {
+            wasm_bindgen_futures::spawn_local(async move {
+                carregando.set(true);
+                match api::scan_vault(&vault_path).await {
+                    Ok(paginas) => prompts.set(prompt_padrao::descobrir(paginas)),
+                    Err(e) => erro.set(Some(format!("não consegui listar prompts: {e}"))),
+                }
+                carregando.set(false);
+            });
+            || ()
+        });
+    }
 
     // Carrega a conversa do arquivo.
     {
@@ -280,12 +321,90 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
             .collect::<Vec<String>>()
     });
 
+    // Rola até o fim quando chega coisa nova (ciclo 224).
+    //
+    // Sem isto, acompanhar uma execução longa exigia ficar arrastando a
+    // barra: o progresso crescia embaixo, fora da vista.
+    //
+    // A dependência é o CONTEÚDO (quantidade de mensagens e tamanho do
+    // progresso), nunca a posição de rolagem. Um efeito que reage à
+    // própria rolagem e escreve rolagem de volta vira laço, e laço de
+    // rolagem trava a janela — ver a nota do ciclo 222.
+    {
+        let lista_ref = lista_ref.clone();
+        let colado_no_fim = colado_no_fim.clone();
+        use_effect_with(
+            (mensagens.len(), parcial.len(), *ocupado),
+            move |_| {
+                // Só arrasta quem já estava no fim. Quem subiu pra
+                // reler alguma coisa fica onde está — puxar a pessoa de
+                // volta no meio da leitura é pior do que não rolar.
+                if *colado_no_fim.borrow() {
+                    if let Some(el) = lista_ref.cast::<web_sys::HtmlElement>() {
+                        el.set_scroll_top(el.scroll_height());
+                    }
+                }
+                || ()
+            },
+        );
+    }
+
+    // A caixa de progresso tem rolagem PRÓPRIA (altura fixa): sem isto,
+    // a lista rola até o fim e mesmo assim o que o agente acabou de
+    // dizer fica escondido dentro dela.
+    {
+        let parcial_ref = parcial_ref.clone();
+        use_effect_with(parcial.len(), move |_| {
+            if let Some(el) = parcial_ref.cast::<web_sys::HtmlElement>() {
+                el.set_scroll_top(el.scroll_height());
+            }
+            || ()
+        });
+    }
+
+    // Ao trocar de conversa, o fim é o lugar certo pra começar.
+    {
+        let lista_ref = lista_ref.clone();
+        let colado_no_fim = colado_no_fim.clone();
+        use_effect_with(props.page.path.clone(), move |_| {
+            *colado_no_fim.borrow_mut() = true;
+            if let Some(el) = lista_ref.cast::<web_sys::HtmlElement>() {
+                el.set_scroll_top(el.scroll_height());
+            }
+            || ()
+        });
+    }
+
+    // Descobre se a pessoa saiu do fim.
+    let ao_rolar = {
+        let colado_no_fim = colado_no_fim.clone();
+        Callback::from(move |e: Event| {
+            let Some(el) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlElement>().ok())
+            else {
+                return;
+            };
+            // Uma folga: rolagem por linha e arredondamento de subpixel
+            // deixam a conta encostar sem bater exato, e sem a folga o
+            // acompanhamento desligava sozinho.
+            const FOLGA: i32 = 40;
+            let no_fim = el.scroll_top() + el.client_height() >= el.scroll_height() - FOLGA;
+            *colado_no_fim.borrow_mut() = no_fim;
+        })
+    };
+
     // Contexto que aponta pra própria conversa não serve de nada —
     // acontece ao reabrir a mesma página.
     let contexto_path = props
         .contexto_path
         .clone()
         .filter(|p| *p != props.page.path);
+
+    let ha_marcador_pendente = prompt_ativo.as_ref().is_some_and(|prompt| {
+        prompt
+            .variaveis
+            .iter()
+            .any(|nome| valores_prompt.get(nome).is_none_or(|v| v.trim().is_empty()))
+    });
 
     let enviar = {
         let mensagens = mensagens.clone();
@@ -297,9 +416,10 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         let ativo = ativo.clone();
         let vault_path = props.vault_path.clone();
         let path = props.page.path.clone();
+        let ha_marcador_pendente = ha_marcador_pendente;
         Callback::from(move |_: MouseEvent| {
             let pergunta = (*rascunho).trim().to_string();
-            if pergunta.is_empty() || *ocupado {
+            if pergunta.is_empty() || *ocupado || ha_marcador_pendente {
                 return;
             }
             let (mensagens, rascunho, ocupado, erro) =
@@ -360,9 +480,19 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
 
     let on_input = {
         let rascunho = rascunho.clone();
+        let prompt_ativo = prompt_ativo.clone();
+        let prompt_path = prompt_path.clone();
+        let valores_prompt = valores_prompt.clone();
         Callback::from(move |e: InputEvent| {
             if let Some(el) = e.target_dyn_into::<web_sys::HtmlTextAreaElement>() {
                 rascunho.set(el.value());
+                // Editar o resultado transforma-o em mensagem livre. Os
+                // blocos de DADO já visíveis permanecem no texto.
+                if prompt_ativo.is_some() {
+                    prompt_ativo.set(None);
+                    prompt_path.set(String::new());
+                    valores_prompt.set(BTreeMap::new());
+                }
             }
         })
     };
@@ -481,6 +611,110 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 );
             });
         })
+    };
+
+    let escolher_prompt = {
+        let prompt_ativo = prompt_ativo.clone();
+        let prompt_path = prompt_path.clone();
+        let valores_prompt = valores_prompt.clone();
+        let rascunho = rascunho.clone();
+        let rascunho_anterior = rascunho_antes_prompt.clone();
+        let anexos = anexos.clone();
+        let gravar_anexos = gravar_anexos.clone();
+        let erro = erro.clone();
+        let vault_path = props.vault_path.clone();
+        Callback::from(move |e: Event| {
+            let Some(select) = e.target_dyn_into::<web_sys::HtmlSelectElement>() else { return };
+            let escolhido = select.value();
+            if escolhido.is_empty() {
+                if prompt_ativo.is_some() {
+                    rascunho.set((*rascunho_anterior).clone());
+                }
+                prompt_ativo.set(None);
+                prompt_path.set(String::new());
+                valores_prompt.set(BTreeMap::new());
+                erro.set(None);
+                return;
+            }
+
+            let (prompt_ativo, prompt_path, valores_prompt) =
+                (prompt_ativo.clone(), prompt_path.clone(), valores_prompt.clone());
+            let (rascunho, rascunho_anterior) = (rascunho.clone(), rascunho_anterior.clone());
+            let (anexos, gravar_anexos, erro) =
+                (anexos.clone(), gravar_anexos.clone(), erro.clone());
+            let vault_path = vault_path.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let conteudo = match api::read_page(&vault_path, &escolhido).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        erro.set(Some(format!("não consegui ler o prompt: {e}")));
+                        return;
+                    }
+                };
+                let prompt = PromptPadrao::parse(&conteudo);
+                let paginas = match api::scan_vault(&vault_path).await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        erro.set(Some(format!("não consegui validar o contexto do prompt: {e}")));
+                        return;
+                    }
+                };
+                let ausentes = prompt
+                    .contexto
+                    .iter()
+                    .filter(|path| !paginas.iter().any(|p| &p.path == *path))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !ausentes.is_empty() {
+                    erro.set(Some(format!(
+                        "contexto do prompt não encontrado: {}",
+                        ausentes.join(", ")
+                    )));
+                    return;
+                }
+
+                let base = if prompt_ativo.is_some() {
+                    (*rascunho_anterior).clone()
+                } else {
+                    (*rascunho).clone()
+                };
+                rascunho_anterior.set(base.clone());
+                let mut valores = BTreeMap::new();
+                if let Some(primeira) = prompt.variaveis.first() {
+                    if !base.trim().is_empty() {
+                        valores.insert(primeira.clone(), base.clone());
+                    }
+                }
+                let exibido = if prompt.variaveis.is_empty() {
+                    prompt.com_rascunho_ao_final(&base)
+                } else {
+                    prompt.visualizar_parcial(&valores)
+                };
+                let mut lista = (*anexos).clone();
+                for contexto in &prompt.contexto {
+                    if !lista.contains(contexto) {
+                        lista.push(contexto.clone());
+                    }
+                }
+                if lista != *anexos {
+                    gravar_anexos.emit(lista);
+                }
+                valores_prompt.set(valores);
+                prompt_path.set(escolhido);
+                prompt_ativo.set(Some(prompt));
+                rascunho.set(exibido);
+                erro.set(None);
+            });
+        })
+    };
+
+    let abrir_preview = {
+        let preview = preview_prompt.clone();
+        Callback::from(move |_: MouseEvent| preview.set(true))
+    };
+    let fechar_preview = {
+        let preview = preview_prompt.clone();
+        Callback::from(move |_: ()| preview.set(false))
     };
 
     html! {
@@ -605,7 +839,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 </div>
             }
 
-            <div class="conversa__mensagens">
+            <div class="conversa__mensagens" ref={lista_ref} onscroll={ao_rolar}>
                 if mensagens.is_empty() {
                     <p class="conversa__vazia">
                         { "Pergunte algo, peça uma spec, ou mande analisar a página aberta." }
@@ -661,7 +895,9 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                             // A saída CRUA, sem markdown: ela chega
                             // pela metade, e renderizar markdown
                             // incompleto pisca a tela a cada linha.
-                            <pre class="conversa__parcial">{ (*parcial).clone() }</pre>
+                            <pre class="conversa__parcial" ref={parcial_ref.clone()}>
+                                { (*parcial).clone() }
+                            </pre>
                         }
                     </div>
                 }
@@ -670,7 +906,58 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 }
             </div>
 
-            <footer class="conversa__compositor">
+            <footer class="conversa__compositor" data-nav-group="prompt-padrao">
+                <div class="conversa__prompt-barra">
+                    <label class="conversa__prompt-label" for="conversa-prompt-padrao">
+                        { "Prompt padrão" }
+                    </label>
+                    <select id="conversa-prompt-padrao" class="input input--sm conversa__prompt-select"
+                        value={(*prompt_path).clone()} onchange={escolher_prompt}
+                        disabled={*ocupado || *carregando_prompts} data-nav-item="true">
+                        <option value="">{ if *carregando_prompts { "Carregando…" } else { "Nenhum — escrever do zero" } }</option>
+                        { for prompts.iter().map(|p| html! {
+                            <option value={p.path.clone()}>{ &p.title }</option>
+                        }) }
+                    </select>
+                    <button class="btn btn--ghost btn--xs conversa__prompt-preview"
+                        onclick={abrir_preview} disabled={rascunho.trim().is_empty() || ha_marcador_pendente}
+                        data-nav-item="true" title="Visualizar o texto final sem enviar">
+                        { "Visualizar" }
+                    </button>
+                </div>
+                if let Some(prompt) = &*prompt_ativo {
+                    if !prompt.variaveis.is_empty() {
+                        <div class="conversa__prompt-campos">
+                            { for prompt.variaveis.iter().map(|nome| {
+                                let prompt = prompt.clone();
+                                let nome_atual = nome.clone();
+                                let valor = valores_prompt.get(nome).cloned().unwrap_or_default();
+                                let valores = valores_prompt.clone();
+                                let rascunho = rascunho.clone();
+                                html! {
+                                    <label class="conversa__prompt-campo">
+                                        <span>{ format!("{{{{{nome}}}}}") }</span>
+                                        <input class="input input--sm" value={valor}
+                                            placeholder="Preencha antes de enviar"
+                                            data-nav-item="true"
+                                            oninput={Callback::from(move |e: InputEvent| {
+                                                let Some(input) = e.target_dyn_into::<web_sys::HtmlInputElement>() else { return };
+                                                let mut novos = (*valores).clone();
+                                                novos.insert(nome_atual.clone(), input.value());
+                                                rascunho.set(prompt.visualizar_parcial(&novos));
+                                                valores.set(novos);
+                                            })} />
+                                    </label>
+                                }
+                            }) }
+                        </div>
+                    }
+                }
+                if ha_marcador_pendente {
+                    <p class="conversa__prompt-pendente">
+                        { "Preencha todos os marcadores antes de visualizar ou enviar." }
+                    </p>
+                }
                 <textarea class="conversa__campo" rows="3"
                     placeholder="Escreva e mande. Shift+Enter quebra linha."
                     value={(*rascunho).clone()}
@@ -681,9 +968,20 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                         title="Matar o processo do agente agora">{ "Parar" }</button>
                 } else {
                     <button class="btn btn--primary" onclick={enviar}
-                        disabled={rascunho.trim().is_empty()}>{ "Enviar" }</button>
+                        disabled={rascunho.trim().is_empty() || ha_marcador_pendente}
+                        data-nav-item="true">{ "Enviar" }</button>
                 }
             </footer>
+            <Modal title="Visualização do prompt final" open={*preview_prompt}
+                on_close={fechar_preview} wide=true>
+                <pre class="conversa__prompt-final">{ (*rascunho).clone() }</pre>
+                <div class="modal__actions">
+                    <button class="btn" onclick={{
+                        let preview = preview_prompt.clone();
+                        Callback::from(move |_: MouseEvent| preview.set(false))
+                    }}>{ "Fechar" }</button>
+                </div>
+            </Modal>
         </main>
     }
 }

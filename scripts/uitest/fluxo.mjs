@@ -928,6 +928,137 @@ fluxo.push({
   },
 });
 
+// ── ciclo 224: prompts padrão reutilizáveis ─────────────────────────
+
+fluxo.push({
+  nome: "conversa: prompt padrão filtra, preenche, repete, prevê e anexa contexto (224)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const pasta = `${ctx.vault}/pages/prompts-default`;
+    const fora = `${ctx.vault}/pages/__uitest-prompt-fora.md`;
+    const conversa = `${ctx.vault}/pages/__uitest.md`;
+    fs.mkdirSync(`${pasta}/sub`, { recursive: true });
+    fs.writeFileSync(
+      `${pasta}/sub/__uitest-prompt.md`,
+      "---\ntitle: __uitest prompt completo\ntype: prompt\ncontexto:\n- pages/produto/missao.md\n---\n" +
+        "Revise {{title}} para {{publico}}. Compare {{title}} com {{referencia}}.",
+    );
+    fs.writeFileSync(
+      `${pasta}/__uitest-tipo-errado.md`,
+      "---\ntitle: __uitest tipo errado\ntype: md\n---\n{{title}}",
+    );
+    fs.writeFileSync(
+      `${pasta}/__uitest-unico.md`,
+      "---\ntitle: __uitest marcador único\ntype: prompt\n---\nResuma {{title}}.",
+    );
+    fs.writeFileSync(
+      fora,
+      "---\ntitle: __uitest fora\ntype: prompt\n---\n{{title}}",
+    );
+    try {
+      ctx.escrever("---\ntitle: __uitest\ntype: conversa\n---\n");
+      await recarregarEstavel(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await esperar(bridge, "document.querySelector('.conversa__prompt-select')", "o seletor de prompts");
+      await esperar(
+        bridge,
+        "[...document.querySelectorAll('.conversa__prompt-select option')].some(o => o.textContent.includes('__uitest prompt completo'))",
+        "o prompt ser descoberto",
+      );
+
+      const opcoes = await bridge.js(
+        `[...document.querySelectorAll('.conversa__prompt-select option')].map(o => o.textContent.trim())`,
+      );
+      ctx.assert(opcoes.some((x) => x.includes("Nenhum")), "faltou a opção vazia");
+      ctx.assert(opcoes.some((x) => x.includes("prompt completo")), "prompt da subpasta não apareceu");
+      ctx.assert(!opcoes.some((x) => x.includes("tipo errado")), "página sem type: prompt apareceu");
+      ctx.assert(!opcoes.some((x) => x.includes("fora")), "prompt fora da pasta apareceu");
+
+      await bridge.js(`(() => {
+        const campo = document.querySelector('.conversa__campo');
+        const setArea = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+        setArea.call(campo, 'rascunho inicial');
+        campo.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        return true;
+      })()`);
+      await PAUSA(300);
+      await bridge.js(`(() => {
+        const select = document.querySelector('.conversa__prompt-select');
+        const option = [...select.options].find(o => o.textContent.includes('__uitest prompt completo'));
+        const setSelect = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+        setSelect.call(select, option.value);
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`);
+      await esperar(bridge, "document.querySelectorAll('.conversa__prompt-campo').length === 3", "os três campos únicos");
+
+      const campos = await bridge.js(`(() => ({
+        nomes: [...document.querySelectorAll('.conversa__prompt-campo span')].map(x => x.textContent),
+        valores: [...document.querySelectorAll('.conversa__prompt-campo input')].map(x => x.value),
+        enviarDesabilitado: document.querySelector('.conversa__compositor .btn--primary').disabled,
+      }))()`);
+      ctx.assertEq(campos.nomes.join(","), "{{title}},{{publico}},{{referencia}}", "ordem dos campos");
+      ctx.assertEq(campos.valores[0], "rascunho inicial", "rascunho não preencheu a primeira variável");
+      ctx.assertEq(campos.enviarDesabilitado, true, "marcador ausente não bloqueou o envio");
+
+      for (const [indice, valor] of [[1, "leitores"], [2, "modelo"]]) {
+        await bridge.js(`(() => {
+          const input = document.querySelectorAll('.conversa__prompt-campo input')[${indice}];
+          const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+          set.call(input, ${JSON.stringify(valor)});
+          input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+          return true;
+        })()`);
+        await PAUSA(300);
+      }
+      const final = await bridge.js(`document.querySelector('.conversa__campo').value`);
+      ctx.assertEq(final.split("rascunho inicial").length - 1, 2, "variável repetida não reutilizou o valor");
+      ctx.assert(final.includes("leitores") && final.includes("modelo"), "valores não foram substituídos");
+      ctx.assert(final.includes("<<<DADO-ANOTADINHO VALOR title>>>"), "valor não foi blindado como DADO");
+
+      await bridge.js(`document.querySelector('.conversa__prompt-preview').click(); true`);
+      await esperar(bridge, "document.querySelector('.conversa__prompt-final')", "o preview abrir");
+      const preview = await bridge.js(`document.querySelector('.conversa__prompt-final').textContent`);
+      ctx.assertEq(preview, final, "preview não mostra o prompt final");
+      ctx.assertEq(await bridge.js(`document.querySelectorAll('.conversa__msg').length`), 0, "preview enviou a mensagem");
+      await bridge.js(`document.querySelector('.modal__actions button').click(); true`);
+      await PAUSA(900);
+      const md = fs.readFileSync(conversa, "utf8");
+      ctx.assert(md.includes("- pages/produto/missao.md"), `contexto do prompt não persistiu:\n${md}`);
+
+      await bridge.js(`(() => {
+        const select = document.querySelector('.conversa__prompt-select');
+        const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+        set.call(select, '');
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`);
+      await PAUSA(300);
+      ctx.assertEq(
+        await bridge.js(`document.querySelector('.conversa__campo').value`),
+        "rascunho inicial",
+        "opção vazia não restaurou a escrita livre",
+      );
+
+      await bridge.js(`(() => {
+        const select = document.querySelector('.conversa__prompt-select');
+        const option = [...select.options].find(o => o.textContent.includes('marcador único'));
+        const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+        set.call(select, option.value);
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`);
+      await esperar(bridge, "document.querySelectorAll('.conversa__prompt-campo').length === 1", "o marcador único");
+      const unico = await bridge.js(`document.querySelector('.conversa__campo').value`);
+      ctx.assert(unico.startsWith("Resuma O bloco abaixo"), "marcador único não foi expandido");
+      ctx.assert(unico.includes("rascunho inicial"), "marcador único não recebeu o rascunho");
+    } finally {
+      fs.rmSync(pasta, { recursive: true, force: true });
+      fs.rmSync(fora, { force: true });
+    }
+  },
+});
+
 // ── ciclo 209: spec e proposta são coisas diferentes ─────────────────
 
 fluxo.push({

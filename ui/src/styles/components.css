@@ -1204,10 +1204,63 @@
 
 .conversa__compositor {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: flex-end;
   padding: 0.7rem 1rem;
   border-top: 1px solid var(--border);
+}
+
+/* Molde reutilizável (ciclo 224). O seletor e os campos ficam acima do
+   envio para o texto final continuar sempre à vista no compositor. */
+.conversa__prompt-barra {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.conversa__prompt-label,
+.conversa__prompt-campo span {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+
+.conversa__prompt-select { flex: 1; }
+.conversa__prompt-preview { margin-left: auto; }
+
+.conversa__prompt-campos {
+  flex: 1 0 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.45rem;
+}
+
+.conversa__prompt-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.conversa__prompt-pendente {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--warning);
+  font-size: 0.6875rem;
+}
+
+.conversa__prompt-final {
+  max-height: 28rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 0.7rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
 }
 
 .conversa__campo {

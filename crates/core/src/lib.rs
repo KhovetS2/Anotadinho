@@ -24,6 +24,7 @@ pub mod history;
 pub mod index;
 pub mod links;
 pub mod proposta;
+pub mod prompt_padrao;
 pub mod query;
 
 pub use block::{Block, BlockId, BlockKind};

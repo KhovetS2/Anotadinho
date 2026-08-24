@@ -1,18 +1,19 @@
 ---
-title: "Prompts padrão reutilizáveis"
-type: spec
-date: 2026-08-22
-status: em-revisao
-prioridade: media
+title: Prompts padrão reutilizáveis
 tags:
 - spec
 - agent-os
+type: spec
+date: 2026-08-22
+prioridade: media
+status: aprovada
 ---
 # Prompts padrão reutilizáveis
 
 {{ type: "fluxo" }}
 artefato: spec
-etapa: em-revisao
+etapa: aprovada
+
 {{ /fluxo }}
 
 ## Contexto
@@ -31,16 +32,28 @@ recorrente — quem sabe quais são é quem usa.
 
 ## Requisitos funcionais
 
-- **RF1.** A pessoa cria um prompt padrão, com título e corpo, e ele
-  fica guardado no vault como página.
-- **RF2.** Ao escrever uma mensagem na conversa, é possível escolher um
-  prompt padrão; o que foi digitado entra dentro dele, no lugar marcado.
-- **RF3.** Um prompt padrão pode ter **mais de um ponto de inserção**,
-  identificados por marcadores no texto; a pessoa preenche cada um.
-- **RF4.** Um prompt padrão pode declarar páginas de contexto que devem
+- **RF1.** A pessoa cria um prompt padrão, com título e corpo, como uma
+  página de `type: prompt` dentro de `pages/prompts-default/` ou de uma
+  de suas subpastas.
+- **RF2.** Na página de conversa, um seletor acima da ação de enviar
+  lista somente os prompts padrão encontrados nessa pasta e em suas
+  subpastas.
+- **RF3.** O seletor oferece uma opção vazia, que mantém o comportamento
+  de escrever a mensagem inteira do zero, sem aplicar prompt padrão.
+- **RF4.** Ao escolher um prompt padrão, o que foi digitado na conversa
+  entra no lugar indicado pelo marcador correspondente.
+- **RF5.** Marcadores são variáveis nomeadas no formato `{{title}}`. Um
+  prompt pode declarar mais de uma variável, e a pessoa preenche os
+  valores na ordem da primeira ocorrência de cada variável no prompt.
+- **RF6.** Quando uma mesma variável aparece mais de uma vez, ela é
+  preenchida uma única vez e o mesmo valor é repetido em todas as suas
+  ocorrências.
+- **RF7.** Um prompt padrão pode declarar páginas de contexto que devem
   ser anexadas junto quando ele for usado.
-- **RF5.** Prompts padrão são editáveis como qualquer página, sem
+- **RF8.** Prompts padrão são editáveis como qualquer página, sem
   precisar de tela de configuração própria.
+- **RF9.** Antes do envio, uma ação de visualização abre um modal com o
+  prompt final e os valores já substituídos.
 
 ## Requisitos não funcionais
 
@@ -56,26 +69,48 @@ recorrente — quem sabe quais são é quem usa.
 
 ## Critérios de aceite
 
-- [ ] Criar um prompt com um marcador, usá-lo numa conversa e ver o
-      texto digitado aparecer no lugar certo do prompt final.
-- [ ] Um prompt com três marcadores pede os três antes de enviar.
+- [ ] Criar uma página `type: prompt` em `pages/prompts-default/`,
+      escolhê-la no seletor da conversa e ver o texto digitado aparecer
+      no lugar de `{{title}}` no prompt final.
+- [ ] Páginas fora de `pages/prompts-default/` e de suas subpastas não
+      aparecem no seletor, mesmo que tenham `type: prompt`.
+- [ ] A opção vazia do seletor permite escrever e enviar uma mensagem
+      sem aplicar um prompt padrão.
+- [ ] Um prompt com três variáveis diferentes pede as três na ordem em
+      que aparecem no prompt.
+- [ ] Duas ocorrências de `{{title}}` pedem um único valor e repetem esse
+      valor nos dois lugares.
 - [ ] Um marcador esquecido é apontado antes do envio, não depois.
 - [ ] Um prompt que declara contexto anexa as páginas ao ser escolhido.
-- [ ] Cenários de harness cobrindo marcador único, múltiplo e faltando.
+- [ ] O modal de visualização mostra o prompt final com todos os valores
+      substituídos e não envia a mensagem automaticamente.
+- [ ] Cenários de harness cobrem marcador único, múltiplas variáveis,
+      variável repetida, marcador faltando, opção vazia e preview.
 
 ## Fora de escopo
 
 - Compartilhar prompts entre vaults ou publicar uma biblioteca.
+- Descobrir prompts fora de `pages/prompts-default/` e de suas
+  subpastas.
 - Condicionais ou laços dentro do prompt — se precisar disso, é código,
   não molde de texto.
 - Gerar o prompt automaticamente a partir do histórico.
 
 ## Notas de escopo
 
-O marcador precisa ser algo que não apareça por acidente em texto comum
-e que sobreviva a ser editado à mão no `.md`. Vale olhar como o
-`{{title}}` dos templates de página já resolve isso — usar a mesma
-convenção evita inventar uma segunda linguagem no mesmo vault.
+O marcador usa a mesma convenção legível dos templates de página: nome
+entre chaves duplas, como `{{title}}`. Nomes diferentes representam
+campos diferentes. A ordem de preenchimento é a ordem da primeira
+ocorrência de cada nome no prompt; ocorrências posteriores do mesmo nome
+reutilizam o valor já informado.
+
+A localização e o tipo são necessários ao mesmo tempo: somente páginas
+com `type: prompt` dentro de `pages/prompts-default/` ou de suas
+subpastas são descobertas pelo seletor.
+
+A spec ainda não define como as páginas de contexto são declaradas no
+Markdown nem se os anexos valem apenas para o uso atual ou permanecem na
+conversa. Essas decisões precisam ser registradas antes da implementação.
 
 ## Relacionado
 

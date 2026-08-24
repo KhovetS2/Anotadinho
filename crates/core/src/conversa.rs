@@ -153,6 +153,15 @@ fn blindar(rotulo: &str, texto: &str) -> String {
     format!("{MARCA_INICIO} {rotulo}>>>\n{limpo}\n<<<FIM {MARCA_FIM}")
 }
 
+/// Blinda um valor interpolado por um prompt padrão (ciclo 224).
+///
+/// O molde é instrução, mas aquilo que a pessoa encaixa nele continua
+/// sendo DADO. Tornar o bloco parte do texto visível também preserva a
+/// separação caso a pessoa edite o prompt expandido antes de enviar.
+pub fn blindar_dado(rotulo: &str, texto: &str) -> String {
+    format!("{AVISO_DADO}\n\n{}", blindar(rotulo, texto))
+}
+
 /// Uma página anexada como contexto (ciclo 208).
 ///
 /// O nome vai junto do conteúdo porque o modelo precisa saber DE ONDE
