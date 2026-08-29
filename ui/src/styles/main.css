@@ -36,6 +36,50 @@
     --r-lg: 12px;
 }
 
+/* Cor de texto e realce (ciclo 235).
+   Nomeadas, não hex solto: assim a cor escolhida no tema escuro continua
+   legível no claro, que é o problema de gravar `#ffee00` no arquivo. */
+:root {
+    --cor-vermelho: #FF7B85;
+    --cor-ambar: #FFC24D;
+    --cor-verde: #5FD3B2;
+    --cor-azul: #6FD3FF;
+    --cor-roxo: #C79BFF;
+    --cor-rosa: #FF8FC7;
+    --cor-cinza: #A0A5BD;
+
+    --fundo-vermelho: #58272E;
+    --fundo-ambar: #574424;
+    --fundo-verde: #22493F;
+    --fundo-azul: #1E3E51;
+    --fundo-roxo: #3E2C57;
+    --fundo-rosa: #542A41;
+    --fundo-cinza: #3A3D49;
+}
+
+.cor--vermelho { color: var(--cor-vermelho); }
+.cor--ambar    { color: var(--cor-ambar); }
+.cor--verde    { color: var(--cor-verde); }
+.cor--azul     { color: var(--cor-azul); }
+.cor--roxo     { color: var(--cor-roxo); }
+.cor--rosa     { color: var(--cor-rosa); }
+.cor--cinza    { color: var(--cor-cinza); }
+
+.fundo--vermelho { background: var(--fundo-vermelho); }
+.fundo--ambar    { background: var(--fundo-ambar); }
+.fundo--verde    { background: var(--fundo-verde); }
+.fundo--azul     { background: var(--fundo-azul); }
+.fundo--roxo     { background: var(--fundo-roxo); }
+.fundo--rosa     { background: var(--fundo-rosa); }
+.fundo--cinza    { background: var(--fundo-cinza); }
+
+/* Realce cola no texto: sem isto a caixa de fundo fica colada na linha
+   de cima e de baixo. */
+[class*="fundo--"] {
+    padding: 0.05em 0.2em;
+    border-radius: 0.2em;
+}
+
 /* Light theme override */
 .theme-light {
     color-scheme: light;
@@ -52,6 +96,24 @@
     --success: #248569;
     --warning: #DB7E21;
     --error: #E71D32;
+
+    /* Paleta de texto, no claro (ciclo 235). Tons mais fechados: no
+       fundo branco os do tema escuro sumiriam. */
+    --cor-vermelho: #C0182B;
+    --cor-ambar: #9A6100;
+    --cor-verde: #1B6B55;
+    --cor-azul: #0072A8;
+    --cor-roxo: #6E1FC7;
+    --cor-rosa: #B01468;
+    --cor-cinza: #6F748C;
+
+    --fundo-vermelho: #FFE1E4;
+    --fundo-ambar: #FFF0CC;
+    --fundo-verde: #D9F2EA;
+    --fundo-azul: #D6F0FF;
+    --fundo-roxo: #EEE0FF;
+    --fundo-rosa: #FFDCEE;
+    --fundo-cinza: #E9EBF2;
 }
 
 * {

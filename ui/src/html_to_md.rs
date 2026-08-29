@@ -30,6 +30,22 @@ fn walk(node: &Element, _depth: usize) -> String {
         "u" => text_of(node),
         "s" | "del" | "strike" => format!("~~{}~~", text_of(node)),
         "code" => format!("`{}`", text_of(node)),
+        // Cor e realce (ciclo 235). Sem este braço o `<span>` caía no
+        // `_` genérico, que devolve só o texto — digitar um caractere
+        // numa página colorida apagava a cor no autosave, três segundos
+        // depois. Era essa a assimetria: o modelo escrevia cor no
+        // arquivo, o editor não sabia devolvê-la.
+        //
+        // Só sobrevive o que é vocabulário de cor. `<span>` com qualquer
+        // outra coisa continua virando texto puro, como antes.
+        "span" => match cor_do_span(node) {
+            Some((atributo, valor)) => format!(
+                "<span {atributo}=\"{}\">{}</span>",
+                html_attr(&valor),
+                text_of(node)
+            ),
+            None => text_of(node),
+        },
         "pre" => {
             // Se o <pre> tem um único filho <code class="language-X">, a
             // fence sai com a linguagem preservada (```X). Sem isso, inserir
@@ -312,6 +328,35 @@ fn walk(node: &Element, _depth: usize) -> String {
             }
         }
     }
+}
+
+/// O que, num `<span>`, é cor legítima — e nada além disso.
+///
+/// Duas formas convivem de propósito: a classe da paleta acompanha o
+/// tema claro/escuro, e a cor livre é o que o AppFlowy chama de cor
+/// personalizada. A do tema é a que se recomenda; a livre existe porque
+/// às vezes a pessoa quer AQUELE tom.
+fn cor_do_span(node: &Element) -> Option<(&'static str, String)> {
+    if let Some(classe) = node.get_attribute("class") {
+        let da_paleta: Vec<&str> = classe
+            .split_whitespace()
+            .filter(|c| c.starts_with("cor--") || c.starts_with("fundo--"))
+            .collect();
+        if !da_paleta.is_empty() {
+            return Some(("class", da_paleta.join(" ")));
+        }
+    }
+    let estilo = node.get_attribute("style")?;
+    let so_cor: Vec<String> = estilo
+        .split(';')
+        .map(str::trim)
+        .filter(|d| {
+            let nome = d.split(':').next().unwrap_or("").trim().to_ascii_lowercase();
+            nome == "color" || nome == "background-color"
+        })
+        .map(|d| d.to_string())
+        .collect();
+    (!so_cor.is_empty()).then(|| ("style", so_cor.join("; ")))
 }
 
 fn html_attr(value: &str) -> String {

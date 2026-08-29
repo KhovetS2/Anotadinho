@@ -23,6 +23,19 @@ use crate::dialog::PendingDialog;
 /// Quanto a barra fica acima da seleção.
 const FOLGA: f64 = 10.0;
 
+/// A paleta nomeada (ciclo 235). Vira `class="cor--X"` / `fundo--X`, que
+/// são tokens do tema — a cor escolhida no escuro continua legível no
+/// claro. Gravar `#ffee00` no arquivo não teria essa propriedade.
+const PALETA: &[(&str, &str)] = &[
+    ("vermelho", "Vermelho"),
+    ("ambar", "Âmbar"),
+    ("verde", "Verde"),
+    ("azul", "Azul"),
+    ("roxo", "Roxo"),
+    ("rosa", "Rosa"),
+    ("cinza", "Cinza"),
+];
+
 #[derive(Properties, PartialEq, Clone)]
 pub struct SelectionToolbarProps {
     /// Raiz do editor. Seleção fora dela não abre a barra — a página de
@@ -36,6 +49,9 @@ pub struct SelectionToolbarProps {
 pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
     // Onde desenhar. `None` = sem seleção de texto, barra escondida.
     let posicao = use_state(|| None::<(f64, f64)>);
+    // A paleta fica fechada por padrão: sete cores de texto e sete de
+    // fundo abertas o tempo todo virariam uma parede na frente do texto.
+    let mostrar_cores = use_state(|| false);
     // A seleção de antes de abrir um modal. Abrir diálogo tira o foco do
     // editor e a seleção se perde; sem guardar, o link seria aplicado
     // em lugar nenhum. Mesmo cuidado do modal de imagens (ciclo 226).
@@ -69,6 +85,7 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
     let Some((x, y)) = *posicao else {
         return html! {};
     };
+    let cores_abertas = *mostrar_cores;
 
     // Aplicar marca não avisa o editor por callback: dispara um `input`
     // no bloco, que borbulha até o `oninput` do contêiner. É o mesmo
@@ -107,6 +124,25 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
         })
     };
 
+    // Pintar pela PALETA grava a classe do tema; a cor livre grava o
+    // hex. As duas convivem porque cada uma resolve uma coisa: a do tema
+    // sobrevive à troca de claro/escuro, a livre atende quem quer
+    // exatamente aquele tom.
+    let pintar = move |eixo: &'static str, slug: &'static str| {
+        Callback::from(move |e: MouseEvent| {
+            e.prevent_default();
+            aplicar_cor(Cor::DaPaleta { eixo, slug });
+        })
+    };
+    let cor_livre = Callback::from(|e: Event| {
+        let Some(input) = e.target_dyn_into::<web_sys::HtmlInputElement>() else { return };
+        aplicar_cor(Cor::Livre(input.value()));
+    });
+    let limpar_cor = Callback::from(|e: MouseEvent| {
+        e.prevent_default();
+        aplicar_cor(Cor::Nenhuma);
+    });
+
     let estilo = format!("left: {x}px; top: {y}px;");
     html! {
         <div class="selecao-barra" style={estilo} data-nav-group="selecao-barra"
@@ -127,6 +163,44 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
             <span class="selecao-barra__separador"></span>
             <button class="selecao-barra__botao selecao-barra__link" title="Link"
                 data-nav-item="true" onclick={link}>{ "🔗" }</button>
+            <span class="selecao-barra__separador"></span>
+            <button class={classes!("selecao-barra__botao", "selecao-barra__cores",
+                    cores_abertas.then_some("selecao-barra__cores--aberto"))}
+                title="Cor e realce" data-nav-item="true"
+                onclick={{
+                    let abrir = mostrar_cores.clone();
+                    Callback::from(move |e: MouseEvent| {
+                        e.prevent_default();
+                        abrir.set(!*abrir);
+                    })
+                }}>{ "A" }</button>
+            if cores_abertas {
+                <div class="selecao-barra__paleta">
+                    <p class="selecao-barra__paleta-titulo">{ "Cor do texto" }</p>
+                    <div class="selecao-barra__amostras">
+                        { for PALETA.iter().map(|(slug, nome)| html! {
+                            <button class={classes!("selecao-barra__amostra", format!("cor--{slug}"))}
+                                title={*nome} data-nav-item="true"
+                                onclick={pintar("cor", slug)}>{ "A" }</button>
+                        }) }
+                    </div>
+                    <p class="selecao-barra__paleta-titulo">{ "Realce" }</p>
+                    <div class="selecao-barra__amostras">
+                        { for PALETA.iter().map(|(slug, nome)| html! {
+                            <button class={classes!("selecao-barra__amostra", format!("fundo--{slug}"))}
+                                title={*nome} data-nav-item="true"
+                                onclick={pintar("fundo", slug)}>{ "A" }</button>
+                        }) }
+                    </div>
+                    <label class="selecao-barra__livre">
+                        { "Cor personalizada" }
+                        <input type="color" data-nav-item="true"
+                            onchange={cor_livre} />
+                    </label>
+                    <button class="selecao-barra__limpar" data-nav-item="true"
+                        onclick={limpar_cor}>{ "Tirar a cor" }</button>
+                </div>
+            }
         </div>
     }
 }
@@ -258,4 +332,90 @@ fn avisar_edicao(range: &Range) -> Option<()> {
     .ok()?;
     bloco.dispatch_event(&ev).ok()?;
     Some(())
+}
+
+/// O que aplicar como cor.
+enum Cor {
+    /// Um tom da paleta do tema: `eixo` é "cor" (texto) ou "fundo".
+    DaPaleta { eixo: &'static str, slug: &'static str },
+    /// Um hex escolhido no seletor do sistema.
+    Livre(String),
+    /// Tirar a cor que estiver lá.
+    Nenhuma,
+}
+
+/// Pinta a seleção, trocando a cor anterior se já houver uma.
+fn aplicar_cor(cor: Cor) -> Option<()> {
+    let doc = web_sys::window()?.document()?;
+    let range = selecao_atual()?;
+
+    // Se a seleção já está dentro de um span de cor, ele é reaproveitado
+    // em vez de aninhar outro. Sem isso, trocar de cor cinco vezes
+    // deixaria cinco spans encaixados, e o arquivo viraria sopa.
+    let existente = ancestral_da_marca(&range, "span")
+        .filter(|el| cor_do_span_existe(el));
+
+    match (&cor, existente) {
+        (Cor::Nenhuma, Some(el)) => {
+            desembrulhar(&el)?;
+        }
+        (Cor::Nenhuma, None) => return None,
+        (_, Some(el)) => {
+            aplicar_no_elemento(&el, &cor);
+        }
+        (_, None) => {
+            let el = doc.create_element("span").ok()?;
+            aplicar_no_elemento(&el, &cor);
+            let conteudo = range.extract_contents().ok()?;
+            el.append_child(&conteudo).ok()?;
+            range.insert_node(&el).ok()?;
+            selecionar_conteudo(&doc, &el);
+        }
+    }
+    avisar_edicao(&range)
+}
+
+fn aplicar_no_elemento(el: &Element, cor: &Cor) {
+    match cor {
+        Cor::DaPaleta { eixo, slug } => {
+            // Texto e realce são independentes: pintar o fundo não pode
+            // apagar a cor da letra.
+            let manter: Vec<String> = el
+                .get_attribute("class")
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter(|c| !c.starts_with(&format!("{eixo}--")))
+                .map(|c| c.to_string())
+                .collect();
+            let mut classes = manter;
+            classes.push(format!("{eixo}--{slug}"));
+            let _ = el.set_attribute("class", &classes.join(" "));
+            let _ = el.remove_attribute("style");
+        }
+        Cor::Livre(hex) => {
+            let _ = el.set_attribute("style", &format!("color:{hex}"));
+            let sem_cor: Vec<String> = el
+                .get_attribute("class")
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter(|c| !c.starts_with("cor--"))
+                .map(|c| c.to_string())
+                .collect();
+            let _ = el.set_attribute("class", &sem_cor.join(" "));
+        }
+        Cor::Nenhuma => {}
+    }
+}
+
+/// O span já carrega cor? Um `<span>` qualquer não deve ser sequestrado.
+fn cor_do_span_existe(el: &Element) -> bool {
+    let classe = el.get_attribute("class").unwrap_or_default();
+    if classe
+        .split_whitespace()
+        .any(|c| c.starts_with("cor--") || c.starts_with("fundo--"))
+    {
+        return true;
+    }
+    el.get_attribute("style")
+        .is_some_and(|s| s.contains("color"))
 }

@@ -20,6 +20,7 @@ pub mod agente;
 pub mod conversa;
 pub mod diff;
 pub mod fluxo;
+pub mod sanitize;
 pub mod semente;
 pub mod history;
 pub mod index;

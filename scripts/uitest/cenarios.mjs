@@ -574,6 +574,119 @@ cenarios.push({
   },
 });
 
+// ── ciclo 235: cor, realce e faxina do HTML ──────────────────────────
+
+const ABRIR_CORES = `(() => {
+  const b = [...document.querySelectorAll('.selecao-barra__botao')].find(x => x.title === 'Cor e realce');
+  if (!b) return false;
+  b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  return true;
+})()`;
+
+const PINTAR = (classe) => `(() => {
+  const b = [...document.querySelectorAll('.selecao-barra__amostra')]
+    .find(x => x.className.includes(${JSON.stringify(classe)}));
+  if (!b) return false;
+  b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  return true;
+})()`;
+
+cenarios.push({
+  nome: "cor: pintar pela paleta chega ao arquivo como classe do tema (235)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto para pintar\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    await bridge.js(SELECIONAR(0, 5));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra");
+    await bridge.js(ABRIR_CORES);
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra__paleta')", "a paleta");
+    ctx.assertEq(await bridge.js(PINTAR("cor--ambar")), true, "não achei a amostra");
+    await PAUSA(400);
+
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const md = ctx.ler() || "";
+    // Classe do tema, não hex: a cor escolhida no escuro tem que
+    // continuar legível no claro.
+    ctx.assert(md.includes('<span class="cor--ambar">texto</span>'), `a cor não chegou ao arquivo:\n${md}`);
+    ctx.assert(md.includes("para pintar"), `o resto se perdeu:\n${md}`);
+
+    // E sobrevive a reabrir + editar, que é onde ela morria antes: o
+    // `<span>` caía no braço genérico do html_to_md e virava texto puro.
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco .cor--ambar')", "a cor reabrir");
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    ctx.assert((ctx.ler() || "").includes('cor--ambar'), "a cor sumiu no segundo salvamento");
+  },
+});
+
+cenarios.push({
+  nome: "cor: realce é independente da cor da letra (235)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto para pintar\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    await bridge.js(SELECIONAR(0, 5));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra");
+    await bridge.js(ABRIR_CORES);
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra__paleta')", "a paleta");
+    // A paleta continua aberta depois de pintar — reabrir aqui a
+    // fecharia, e o segundo clique cairia no vazio.
+    ctx.assertEq(await bridge.js(PINTAR("cor--azul")), true, "não achei a cor de texto");
+    await PAUSA(300);
+    ctx.assertEq(await bridge.js(PINTAR("fundo--ambar")), true, "não achei o realce");
+    await PAUSA(400);
+
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const md = ctx.ler() || "";
+    // Pintar o fundo não pode apagar a cor da letra, e nem aninhar um
+    // span dentro do outro a cada clique.
+    ctx.assert(md.includes("cor--azul") && md.includes("fundo--ambar"), `perdeu uma das duas:\n${md}`);
+    ctx.assertEq((md.match(/<span/g) || []).length, 1, `aninhou spans:\n${md}`);
+  },
+});
+
+cenarios.push({
+  nome: "html: script numa página não chega ao DOM, e a checklist continua (235)",
+  async fn(bridge, ctx) {
+    // Um `.md` do vault pode vir de git, de sincronização ou de um
+    // agente: é conteúdo de terceiros.
+    ctx.escrever(
+      "---\ntitle: __uitest\n---\n" +
+        "antes\n\n" +
+        '<script>window.__invadiu = true;</script>\n\n' +
+        '<img src="x.png" onerror="window.__invadiu = true;">\n\n' +
+        "- [ ] uma tarefa\n- [x] outra\n",
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+    await PAUSA(600);
+
+    ctx.assertEq(await bridge.js("!!window.__invadiu"), false, "o script rodou");
+    ctx.assertEq(await bridge.js("!!document.querySelector('.editor script')"), false, "o script entrou no DOM");
+    ctx.assertEq(
+      await bridge.js(`[...document.querySelectorAll('.editor img')].some(i => i.getAttribute('onerror'))`),
+      false,
+      "o onerror sobreviveu",
+    );
+    // E a faxina não pode comer conteúdo legítimo: a caixinha da
+    // checklist é um <input type=checkbox>.
+    ctx.assert(
+      await bridge.js(`document.querySelectorAll('.editor input[type=checkbox]').length >= 2`),
+      "a faxina comeu as caixinhas da checklist",
+    );
+  },
+});
+
 // ── ciclo 167: operar kanban e cronograma pelo teclado ───────────────
 
 cenarios.push({

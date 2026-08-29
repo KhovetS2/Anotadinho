@@ -1764,3 +1764,67 @@
   margin: 0 0.15rem;
   background: var(--border);
 }
+
+/* Paleta da barra de seleção (ciclo 235). Fechada por padrão: catorze
+   amostras abertas o tempo todo virariam uma parede na frente do texto. */
+.selecao-barra__paleta {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.selecao-barra__paleta-titulo {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.625rem;
+}
+
+.selecao-barra__amostras {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.selecao-barra__amostra {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-base);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.selecao-barra__livre {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+
+.selecao-barra__limpar {
+  padding: 0.2rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+
+.selecao-barra__limpar:hover { color: var(--text-primary); }
+
+.selecao-barra { position: fixed; }
+.selecao-barra__cores--aberto { background: color-mix(in srgb, var(--accent-blue) 20%, transparent); }

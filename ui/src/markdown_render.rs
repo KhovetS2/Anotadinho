@@ -98,7 +98,17 @@ fn marcar_linha(linha: &str) -> String {
 }
 
 /// Converte Markdown em HTML (ver doc do módulo acima).
+/// Renderiza markdown pra HTML, já sem o que não pode entrar no DOM.
+///
+/// A faxina (ciclo 235) é a última coisa a acontecer: o `pulldown-cmark`
+/// repassa HTML inline verbatim e o resultado vai direto pro
+/// `set_inner_html`, então sem ela qualquer `.md` do vault — vindo de
+/// git, de sincronização ou de um agente — podia injetar `<script>`.
 pub fn render(markdown: &str) -> String {
+    anotadinho_core::sanitize::limpar(&render_cru(markdown))
+}
+
+fn render_cru(markdown: &str) -> String {
     let body = anotadinho_core::MarkdownCodec::split_frontmatter(markdown)
         .map(|(_, body)| body)
         .unwrap_or(markdown);
