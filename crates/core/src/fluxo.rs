@@ -326,6 +326,17 @@ mod tests {
     }
 
     #[test]
+    fn execucao_da_conversa_nomeia_a_pagina_e_pede_relato() {
+        let p = pergunta_de_execucao_da_conversa("Cache do índice");
+        assert!(p.contains("\"Cache do índice\""), "não nomeou a execução:\n{p}");
+        assert!(p.contains("anexei"), "não diz que a página foi anexada:\n{p}");
+        assert!(p.contains("PARE"), "faltou a trava contra mudar de rumo:\n{p}");
+        // Não pode se confundir com a execução de proposta revisada: ali
+        // existe aprovação humana, aqui a página nasceu da resposta.
+        assert!(!p.contains("aprovada"), "prometeu revisão que não houve:\n{p}");
+    }
+
+    #[test]
     fn nenhuma_pergunta_carrega_indentacao_do_codigo() {
         // Linha de código continuada com `\` preserva a indentação do
         // FONTE, e ela vazava pro prompt: a pergunta de planejamento
@@ -333,6 +344,7 @@ mod tests {
         for p in [
             pergunta_de_planejamento("X"),
             pergunta_de_execucao("X"),
+            pergunta_de_execucao_da_conversa("X"),
             pergunta_de_alteracao("X", Artefato::Spec),
         ] {
             assert!(
@@ -620,6 +632,37 @@ pub fn pergunta_de_execucao(titulo_proposta: &str) -> String {
         "Siga a abordagem aprovada. Se durante a execução ela se mostrar inviável, \
          PARE e explique o problema em vez de mudar de rumo por conta — mudar a \
          abordagem exige uma proposta nova."
+            .to_string(),
+    ]
+    .join("\n")
+}
+
+/// A pergunta que pede a implementação de uma execução criada a partir
+/// da própria resposta do modelo (ciclo 228).
+///
+/// É diferente de `pergunta_de_execucao`: lá existe uma proposta que
+/// passou por revisão humana. Aqui a página acabou de nascer do que o
+/// modelo respondeu na conversa, e o que se pede é que ele agora FAÇA o
+/// que descreveu — antes, o botão só criava o arquivo e ia embora, e a
+/// pessoa tinha que redigitar o pedido.
+///
+/// A trava contra sair do escopo continua: a página é o combinado.
+pub fn pergunta_de_execucao_da_conversa(titulo_execucao: &str) -> String {
+    [
+        format!(
+            "Implemente o que está na execução \"{titulo_execucao}\", que acabei de \
+             criar a partir da sua resposta e anexei aqui."
+        ),
+        String::new(),
+        "Ao terminar, relate:".to_string(),
+        String::new(),
+        "1. O que foi feito, etapa por etapa.".to_string(),
+        "2. Como foi validado.".to_string(),
+        "3. O que ficou de fora, e por quê.".to_string(),
+        String::new(),
+        "Siga o que está escrito na página. Se durante a implementação ela se \
+         mostrar inviável, PARE e explique o problema em vez de mudar de rumo \
+         por conta."
             .to_string(),
     ]
     .join("\n")

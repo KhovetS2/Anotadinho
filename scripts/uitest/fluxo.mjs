@@ -1065,6 +1065,82 @@ fluxo.push({
   },
 });
 
+// ── ciclo 228: virar execução pede a implementação ───────────────────
+
+fluxo.push({
+  nome: "conversa: virar execução cria a página, anexa e pede a implementação (228)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const pasta = `${ctx.vault}/pages/execucoes`;
+    const antes = fs.existsSync(pasta) ? fs.readdirSync(pasta) : [];
+    const conversa = `${ctx.vault}/pages/__uitest.md`;
+    try {
+      await bridge.js(`(() => {
+        localStorage.setItem('anotadinho.adaptador_agente', JSON.stringify({
+          nome: 'falso', binario: ${JSON.stringify(FALSO)},
+          args: ['--responder', '{prompt}'], cwd: '', timeout_s: 20,
+        }));
+        return true;
+      })()`);
+      // Uma resposta do agente já no arquivo: é dela que sai a execução.
+      ctx.escrever(
+        "---\ntitle: __uitest\ntype: conversa\n---\n" +
+          "## agente · 2026-08-29 10:00\n\n" +
+          "Trocar o cache do índice por um mapa\n\nDepois disso, medir de novo.\n",
+      );
+      await recarregarEstavel(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await esperar(bridge, "document.querySelector('.conversa__msg-acoes')", "as ações da resposta");
+
+      // Virar execução PERGUNTA antes: agora gasta tempo de modelo.
+      await bridge.js(`([...document.querySelectorAll('.conversa__msg-acoes button')]
+        .find(b => b.textContent.includes('execução')).click(), true)`);
+      await esperar(bridge, "document.querySelector('.conversa__confirmar-execucao')", "a confirmação");
+      ctx.assertEq(
+        (fs.existsSync(pasta) ? fs.readdirSync(pasta) : []).filter(f => !antes.includes(f)).length,
+        0,
+        "criou a página antes de confirmar",
+      );
+
+      await bridge.js(`document.querySelector('.conversa__confirmar-execucao').click(); true`);
+      await esperar(
+        bridge,
+        "[...document.querySelectorAll('.conversa__msg')].some(m => m.textContent.includes('Implemente o que está na execução'))",
+        "o pedido de implementação sair",
+        12000,
+      );
+
+      const novos = (fs.existsSync(pasta) ? fs.readdirSync(pasta) : []).filter(f => !antes.includes(f));
+      ctx.assertEq(novos.length, 1, "a execução não foi criada");
+      const md = fs.readFileSync(`${pasta}/${novos[0]}`, "utf8");
+      ctx.assert(md.includes("type: execucao"), `a página não é execução:\n${md}`);
+      ctx.assert(md.includes("Trocar o cache do índice"), `o texto da resposta não entrou:\n${md}`);
+
+      // A execução entra no contexto da conversa: sem isso o modelo
+      // receberia um pedido sobre uma página que ele não pode ler.
+      await esperar(
+        bridge,
+        `[...document.querySelectorAll('.conversa__anexo')].some(e => e.textContent.includes(${JSON.stringify(novos[0].replace(/\.md$/, ""))}))`,
+        "a execução aparecer nos anexos",
+      );
+      const conteudo = fs.readFileSync(conversa, "utf8");
+      ctx.assert(
+        conteudo.includes(`pages/execucoes/${novos[0]}`),
+        `o anexo não foi gravado no frontmatter:\n${conteudo}`,
+      );
+      // E continua NESTA conversa — não abriu outra pra executar.
+      ctx.assert(
+        (await bridge.js(`(document.querySelector('.conversa__titulo')||{}).textContent||''`)).includes("__uitest"),
+        "saiu da conversa que originou a execução",
+      );
+    } finally {
+      for (const f of (fs.existsSync(pasta) ? fs.readdirSync(pasta) : []).filter(x => !antes.includes(x))) {
+        fs.rmSync(`${pasta}/${f}`, { force: true });
+      }
+    }
+  },
+});
+
 // ── ciclo 227: o compositor devolve espaço, e a pergunta não sobra ───
 
 fluxo.push({

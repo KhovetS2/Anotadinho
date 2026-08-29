@@ -135,6 +135,10 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     // é o que a pessoa veio fazer aqui, e a faixa fixa que existia antes
     // comia uma linha da tela mesmo quando não havia prompt nenhum.
     let prompt_aberto = use_state(|| false);
+    // Resposta que virou candidata a execução e está esperando o "sim".
+    // Virar execução deixou de ser só criar um arquivo (ciclo 228): agora
+    // gasta tempo de modelo, então pergunta antes.
+    let confirmar_execucao = use_state(|| None::<String>);
     let carregando_prompts = use_state(|| true);
 
     // Descoberta usa uma única varredura e aplica simultaneamente pasta e
@@ -446,26 +450,27 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
             .any(|nome| valores_prompt.get(nome).is_none_or(|v| v.trim().is_empty()))
     });
 
-    let enviar = {
+    // Mandar a pergunta pro agente. Recebe os anexos em vez de lê-los do
+    // estado porque quem promove uma execução acabou de criar uma página
+    // e precisa que ELA entre no contexto — o handle capturado no render
+    // ainda não a conhece.
+    let disparar = {
         let mensagens = mensagens.clone();
         let rascunho = rascunho.clone();
         let ocupado = ocupado.clone();
         let erro = erro.clone();
-        let anexos = anexos.clone();
         let adaptador = adaptador.clone();
         let ativo = ativo.clone();
         let vault_path = props.vault_path.clone();
         let path = props.page.path.clone();
-        let ha_marcador_pendente = ha_marcador_pendente;
-        Callback::from(move |_: MouseEvent| {
-            let pergunta = (*rascunho).trim().to_string();
-            if pergunta.is_empty() || *ocupado || ha_marcador_pendente {
+        Callback::from(move |(pergunta, anexados): (String, Vec<String>)| {
+            let pergunta = pergunta.trim().to_string();
+            if pergunta.is_empty() || *ocupado {
                 return;
             }
             let (mensagens, rascunho, ocupado, erro) =
                 (mensagens.clone(), rascunho.clone(), ocupado.clone(), erro.clone());
             let (vault_path, path) = (vault_path.clone(), path.clone());
-            let anexados = (*anexos).clone();
             let adaptador = (*adaptador).clone();
             // Reacende o laço de acompanhamento, que fica parado
             // enquanto não há trabalho.
@@ -518,6 +523,19 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         })
     };
 
+    let enviar = {
+        let disparar = disparar.clone();
+        let rascunho = rascunho.clone();
+        let anexos = anexos.clone();
+        let ha_marcador_pendente = ha_marcador_pendente;
+        Callback::from(move |_: MouseEvent| {
+            if ha_marcador_pendente {
+                return;
+            }
+            disparar.emit(((*rascunho).clone(), (*anexos).clone()));
+        })
+    };
+
     let on_input = {
         let rascunho = rascunho.clone();
         let prompt_ativo = prompt_ativo.clone();
@@ -543,38 +561,6 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     // É a ponte entre a conversa e o trabalho estruturado: sem ela o
     // fluxo morre no copiar-e-colar, que é onde a maioria das
     // integrações de chat com "criar tarefa" para.
-    let promover = {
-        let vault_path = props.vault_path.clone();
-        let conversa_path = props.page.path.clone();
-        let on_page_selected = props.on_page_selected.clone();
-        let erro = erro.clone();
-        Callback::from(move |(artefato, texto): (Artefato, String)| {
-            let (vault_path, conversa_path) = (vault_path.clone(), conversa_path.clone());
-            let (on_page_selected, erro) = (on_page_selected.clone(), erro.clone());
-            wasm_bindgen_futures::spawn_local(async move {
-                let titulo = fluxo::titulo_sugerido(&texto, 60);
-                let hoje = crate::state::agora_legivel();
-                let hoje = hoje.split(' ').next().unwrap_or("").to_string();
-                let md = fluxo::montar_pagina(
-                    artefato,
-                    &titulo,
-                    &texto,
-                    Some(&conversa_path),
-                    &hoje,
-                );
-                let path = format!("{}/{}.md", artefato.pasta(), fluxo::slug_de_titulo(&titulo));
-                match api::write_page(&vault_path, &path, &md).await {
-                    Ok(_) => on_page_selected.emit(api::PageMeta {
-                        path,
-                        title: titulo,
-                        section: "pages".to_string(),
-                    }),
-                    Err(e) => erro.set(Some(format!("não consegui criar a página: {e}"))),
-                }
-            });
-        })
-    };
-
     // Anexar/remover grava no FRONTMATTER na hora — o que a pessoa
     // anexa precisa continuar lá depois de fechar o app.
     let gravar_anexos = {
@@ -588,6 +574,79 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 let Ok(atual) = api::read_page(&vault_path, &path).await else { return };
                 let novo = reescrever_contexto(&atual, &lista);
                 let _ = api::write_page(&vault_path, &path, &novo).await;
+            });
+        })
+    };
+
+    let promover = {
+        let vault_path = props.vault_path.clone();
+        let conversa_path = props.page.path.clone();
+        let on_page_selected = props.on_page_selected.clone();
+        let erro = erro.clone();
+        let anexos = anexos.clone();
+        let disparar = disparar.clone();
+        let ocupado = ocupado.clone();
+        Callback::from(move |(artefato, texto): (Artefato, String)| {
+            let (vault_path, conversa_path) = (vault_path.clone(), conversa_path.clone());
+            let (on_page_selected, erro) = (on_page_selected.clone(), erro.clone());
+            let anexos = anexos.clone();
+            let (disparar, ocupado) = (disparar.clone(), ocupado.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                let titulo = fluxo::titulo_sugerido(&texto, 60);
+                let hoje = crate::state::agora_legivel();
+                let hoje = hoje.split(' ').next().unwrap_or("").to_string();
+                let md = fluxo::montar_pagina(
+                    artefato,
+                    &titulo,
+                    &texto,
+                    Some(&conversa_path),
+                    &hoje,
+                );
+                let path = format!("{}/{}.md", artefato.pasta(), fluxo::slug_de_titulo(&titulo));
+                if let Err(e) = api::write_page(&vault_path, &path, &md).await {
+                    erro.set(Some(format!("não consegui criar a página: {e}")));
+                    return;
+                }
+
+                // Spec e proposta são para LER e decidir: abre a página.
+                if artefato != Artefato::Execucao {
+                    on_page_selected.emit(api::PageMeta {
+                        path,
+                        title: titulo,
+                        section: "pages".to_string(),
+                    });
+                    return;
+                }
+
+                // Execução é para FAZER. Fica nesta conversa e pede a
+                // implementação agora — antes o botão criava o arquivo e
+                // ia embora, e a pessoa redigitava o pedido na mão.
+                if *ocupado {
+                    erro.set(Some(
+                        "já tem uma execução em andamento nesta conversa — \
+                         espere ela terminar ou interrompa."
+                            .to_string(),
+                    ));
+                    return;
+                }
+                let mut lista = (*anexos).clone();
+                if !lista.contains(&path) {
+                    lista.push(path.clone());
+                }
+                // Grava o contexto e ESPERA antes de disparar. As duas
+                // escritas são no mesmo arquivo — o frontmatter aqui, o
+                // corpo com a mensagem lá — e soltas ao mesmo tempo uma
+                // sobrescreve a outra, porque cada uma lê o arquivo
+                // inteiro antes de escrever.
+                if let Ok(atual) = api::read_page(&vault_path, &conversa_path).await {
+                    let novo = reescrever_contexto(&atual, &lista);
+                    if let Err(e) = api::write_page(&vault_path, &conversa_path, &novo).await {
+                        erro.set(Some(format!("não consegui anexar a execução: {e}")));
+                        return;
+                    }
+                }
+                anexos.set(lista.clone());
+                disparar.emit((fluxo::pergunta_de_execucao_da_conversa(&titulo), lista));
             });
         })
     };
@@ -923,13 +982,24 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                                 <div class="conversa__msg-acoes">
                                     { for [Artefato::Spec, Artefato::Proposta, Artefato::Execucao].into_iter().map(|a| {
                                         let promover = promover.clone();
+                                        let pedir = confirmar_execucao.clone();
                                         let texto = m.texto.clone();
+                                        // Execução passa pela confirmação: ela dispara
+                                        // o agente, não só cria arquivo.
                                         let onclick = Callback::from(move |_: MouseEvent| {
-                                            promover.emit((a, texto.clone()))
+                                            if a == Artefato::Execucao {
+                                                pedir.set(Some(texto.clone()));
+                                            } else {
+                                                promover.emit((a, texto.clone()));
+                                            }
                                         });
+                                        let dica = if a == Artefato::Execucao {
+                                            "Criar a execução e pedir a implementação agora".to_string()
+                                        } else {
+                                            format!("Criar uma {} a partir desta resposta", a.label())
+                                        };
                                         html! {
-                                            <button class="btn btn--ghost btn--xs" {onclick}
-                                                title={format!("Criar uma {} a partir desta resposta", a.label())}>
+                                            <button class="btn btn--ghost btn--xs" {onclick} title={dica}>
                                                 { format!("virar {}", a.label().to_lowercase()) }
                                             </button>
                                         }
@@ -1071,6 +1141,33 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     }
                 </div>
             </footer>
+            <Modal title="Pedir a implementação?" open={confirmar_execucao.is_some()}
+                on_close={{
+                    let pedir = confirmar_execucao.clone();
+                    Callback::from(move |_: ()| pedir.set(None))
+                }}>
+                <p>
+                    { "Isto cria a página de execução a partir desta resposta, anexa \
+                       ela à conversa e pede ao agente para implementar agora, aqui \
+                       mesmo." }
+                </p>
+                <div class="modal__actions">
+                    <button class="btn" onclick={{
+                        let pedir = confirmar_execucao.clone();
+                        Callback::from(move |_: MouseEvent| pedir.set(None))
+                    }}>{ "Cancelar" }</button>
+                    <button class="btn btn--primary conversa__confirmar-execucao" onclick={{
+                        let pedir = confirmar_execucao.clone();
+                        let promover = promover.clone();
+                        Callback::from(move |_: MouseEvent| {
+                            if let Some(texto) = (*pedir).clone() {
+                                promover.emit((Artefato::Execucao, texto));
+                            }
+                            pedir.set(None);
+                        })
+                    }}>{ "Criar e pedir" }</button>
+                </div>
+            </Modal>
             <Modal title="Visualização do prompt final" open={*preview_prompt}
                 on_close={fechar_preview} wide=true>
                 <pre class="conversa__prompt-final">{ (*rascunho).clone() }</pre>
