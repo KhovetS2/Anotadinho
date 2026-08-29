@@ -13,6 +13,7 @@
 
 use crate::api;
 use crate::components::icon::Icon;
+use crate::components::pagina_preview::PaginaPreview;
 use anotadinho_core::proposta::{Operacao, Proposta};
 use yew::prelude::*;
 
@@ -33,6 +34,11 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
     let atuais = use_state(|| std::collections::HashMap::<String, String>::new());
     let erro = use_state(|| None::<String>);
     let recarregar = use_state(|| 0u32);
+    // Quais propostas estão sendo vistas RENDERIZADAS em vez de como
+    // diff. Diff continua o padrão: é o que responde "o que mudou". A
+    // visualização responde "como vai ficar", que é outra pergunta —
+    // e a única que quem não escreve embed consegue responder.
+    let visualizando = use_state(std::collections::HashSet::<String>::new);
 
     {
         let propostas = propostas.clone();
@@ -55,6 +61,17 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
             || ()
         });
     }
+
+    let alternar_modo = {
+        let visualizando = visualizando.clone();
+        Callback::from(move |id: String| {
+            let mut novo = (*visualizando).clone();
+            if !novo.remove(&id) {
+                novo.insert(id);
+            }
+            visualizando.set(novo);
+        })
+    };
 
     let decidir = {
         let vault_path = props.vault_path.clone();
@@ -118,6 +135,7 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                 let (removidas, adicionadas) = anotadinho_core::diff::contar(&linhas);
                 let id_ok = p.id.clone();
                 let id_no = p.id.clone();
+                let preview = visualizando.contains(&p.id);
                 let d1 = decidir.clone();
                 let d2 = decidir.clone();
                 html! {
@@ -136,20 +154,52 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                             <p class="propostas__motivo">{ &p.motivo }</p>
                         }
 
-                        <p class="propostas__resumo">
-                            { format!("{removidas} linha(s) removida(s) · {adicionadas} adicionada(s)") }
-                        </p>
+                        <div class="propostas__cabecalho-modo">
+                            <p class="propostas__resumo">
+                                { format!("{removidas} linha(s) removida(s) · {adicionadas} adicionada(s)") }
+                            </p>
+                            <div class="propostas__modos" role="group" aria-label="Como ver a proposta">
+                                { for [(false, "Diff"), (true, "Visualização")].into_iter().map(|(modo, rotulo)| {
+                                    let alternar = alternar_modo.clone();
+                                    let id = p.id.clone();
+                                    html! {
+                                        <button
+                                            class={classes!("propostas__modo",
+                                                (modo == preview).then_some("propostas__modo--atual"))}
+                                            aria-pressed={(modo == preview).to_string()}
+                                            onclick={Callback::from(move |_: MouseEvent| {
+                                                if modo != preview {
+                                                    alternar.emit(id.clone());
+                                                }
+                                            })}>
+                                            { rotulo }
+                                        </button>
+                                    }
+                                }) }
+                            </div>
+                        </div>
 
-                        <pre class="propostas__diff">
-                            { for linhas.iter().map(|l| {
-                                let (classe, marca) = match l {
-                                    anotadinho_core::diff::LinhaDiff::Igual { .. } => ("propostas__l", " "),
-                                    anotadinho_core::diff::LinhaDiff::Removida { .. } => ("propostas__l propostas__l--sai", "-"),
-                                    anotadinho_core::diff::LinhaDiff::Adicionada { .. } => ("propostas__l propostas__l--entra", "+"),
-                                };
-                                html! { <div class={classe}>{ format!("{marca}{}", l.texto()) }</div> }
-                            }) }
-                        </pre>
+                        if preview {
+                            // O conteúdo PROPOSTO, como a página fica se
+                            // for aplicada.
+                            <div class="propostas__preview">
+                                <PaginaPreview conteudo={p.conteudo.clone()}
+                                    vault_path={props.vault_path.clone()}
+                                    page_path={p.alvo.clone()}
+                                    nav_prefixo={p.id.clone()} />
+                            </div>
+                        } else {
+                            <pre class="propostas__diff">
+                                { for linhas.iter().map(|l| {
+                                    let (classe, marca) = match l {
+                                        anotadinho_core::diff::LinhaDiff::Igual { .. } => ("propostas__l", " "),
+                                        anotadinho_core::diff::LinhaDiff::Removida { .. } => ("propostas__l propostas__l--sai", "-"),
+                                        anotadinho_core::diff::LinhaDiff::Adicionada { .. } => ("propostas__l propostas__l--entra", "+"),
+                                    };
+                                    html! { <div class={classe}>{ format!("{marca}{}", l.texto()) }</div> }
+                                }) }
+                            </pre>
+                        }
 
                         <div class="propostas__acoes">
                             <button class="btn btn--primary btn--sm"

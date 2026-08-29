@@ -1069,6 +1069,90 @@ fluxo.push({
   },
 });
 
+// ── ciclo 230: revisar vendo a página, não só o texto ────────────────
+
+fluxo.push({
+  nome: "revisão: alternar para visualização renderiza o embed proposto (230)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const id = "uitest-preview";
+    const pendente = `${ctx.vault}/.anotadinho/propostas/${id}.json`;
+    const alvo = "pages/__uitest_preview.md";
+    fs.rmSync(pendente, { force: true });
+    fs.rmSync(`${ctx.vault}/${alvo}`, { force: true });
+    try {
+      // Uma proposta com EMBED: é exatamente o caso em que ler o diff
+      // cru não diz nada a quem não escreve YAML de embed na mão.
+      const conteudo =
+        "---\ntitle: Preview\n---\n\n## Uma tabela\n\n" +
+        '{{ type: "table" }}\ncolumns:\n- name: Tarefa\n---\n' +
+        "| Tarefa |\n| ------ |\n| Medir de novo |\n{{ /table }}\n";
+      await bridge.js(`(async () => {
+        await window.__TAURI_INTERNALS__.invoke('propor', {
+          vaultPath: ${JSON.stringify(VAULT_ABS)},
+          proposta: {
+            id: ${JSON.stringify(id)}, autor: 'agente', quando: '2026-08-29 10:00',
+            motivo: 'teste de visualização', alvo: ${JSON.stringify(alvo)}, operacao: 'criar',
+            conteudo: ${JSON.stringify(conteudo)},
+          },
+        });
+        return true;
+      })()`);
+
+      await recarregarEstavel(bridge);
+      await esperar(bridge, "document.querySelector('.header-bar__propostas')", "o aviso da fila");
+      await bridge.js(`(() => { document.querySelector('.header-bar__propostas').click(); return true; })()`);
+      await esperar(bridge, "document.querySelector('.propostas__item')", "a tela de revisão");
+
+      // Diff é o padrão: continua sendo o que responde "o que mudou".
+      const item = `[...document.querySelectorAll('.propostas__item')].find(e => e.textContent.includes(${JSON.stringify(alvo)}))`;
+      ctx.assertEq(await bridge.js(`!!(${item}).querySelector('.propostas__diff')`), true, "não abriu no diff");
+      ctx.assertEq(await bridge.js(`!!(${item}).querySelector('.propostas__preview')`), false, "abriu já na visualização");
+      // E no diff o embed é só texto — é essa a queixa.
+      ctx.assert(
+        (await bridge.js(`(${item}).querySelector('.propostas__diff').textContent`)).includes('{{ type: "table" }}'),
+        "o diff devia mostrar o embed como texto cru",
+      );
+
+      await bridge.js(`([...(${item}).querySelectorAll('.propostas__modo')]
+        .find(b => b.textContent.includes('Visualização')).click(), true)`);
+      await esperar(bridge, `(${item}).querySelector('.propostas__preview')`, "a visualização abrir");
+
+      // Agora o embed é a tabela de verdade, e o markdown virou título.
+      ctx.assertEq(await bridge.js(`!!(${item}).querySelector('.propostas__preview table')`), true, "o embed não virou tabela");
+      // Célula de texto é `<textarea>`: o valor não está no textContent
+      // nem no innerHTML, só na propriedade.
+      const dentro = await bridge.js(`(() => {
+        const alvo = (${item}).querySelector('.propostas__preview');
+        return alvo.textContent + ' ' +
+          [...alvo.querySelectorAll('input, textarea')].map(i => i.value).join(' ');
+      })()`);
+      ctx.assert(dentro.includes("Medir de novo"), `o conteúdo da tabela não apareceu: ${dentro.slice(0, 200)}`);
+      ctx.assertEq(await bridge.js(`!!(${item}).querySelector('.propostas__preview h2')`), true, "o markdown não foi renderizado");
+      // Os embeds trazem botões de editar que aqui não fazem nada. Um
+      // preview que convida a clicar mente sobre o que está acontecendo.
+      ctx.assertEq(
+        await bridge.js(`getComputedStyle((${item}).querySelector('.pagina-preview')).pointerEvents`),
+        "none",
+        "o preview aceita interação",
+      );
+      ctx.assertEq(await bridge.js(`!!(${item}).querySelector('.propostas__diff')`), false, "o diff continuou junto");
+
+      // Alternar não decide nada: a proposta continua pendente e o
+      // arquivo continua sem existir.
+      ctx.assertEq(fs.existsSync(`${ctx.vault}/${alvo}`), false, "visualizar aplicou a proposta");
+      ctx.assertEq(fs.existsSync(pendente), true, "a proposta sumiu da fila");
+
+      await bridge.js(`([...(${item}).querySelectorAll('.propostas__modo')]
+        .find(b => b.textContent.includes('Diff')).click(), true)`);
+      await esperar(bridge, `(${item}).querySelector('.propostas__diff')`, "voltar pro diff");
+    } finally {
+      fs.rmSync(pendente, { force: true });
+      fs.rmSync(`${ctx.vault}/${alvo}`, { force: true });
+    }
+  },
+});
+
 // ── ciclo 229: o agente propõe o fechamento da etapa ─────────────────
 
 fluxo.push({

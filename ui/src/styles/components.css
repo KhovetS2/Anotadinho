@@ -1406,6 +1406,62 @@
 .propostas__motivo { margin: 0.5rem 0 0; font-size: 0.8125rem; }
 .propostas__resumo { margin: 0.4rem 0; font-size: 0.6875rem; color: var(--text-muted); }
 
+/* Diff ou visualização (ciclo 230). Um diff de texto responde "o que
+   mudou"; a visualização responde "como vai ficar", que é a pergunta de
+   quem não escreve embed na mão. */
+.propostas__cabecalho-modo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.propostas__modos {
+  margin-left: auto;
+  display: flex;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.propostas__modo {
+  padding: 0.2rem 0.55rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+
+.propostas__modo:hover { color: var(--text-primary); }
+
+.propostas__modo--atual {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.propostas__preview {
+  margin: 0 0 0.6rem;
+  max-height: 32rem;
+  /* Mesma regra do diff: página inteira é longa, rola dentro da caixa. */
+  overflow: auto;
+  padding: 0.8rem 1rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+/* O preview é uma LEITURA. Os embeds trazem seus próprios botões de
+   editar — "+ linha", "excluir coluna" — e num preview eles não fazem
+   nada, porque os callbacks são `noop`. Botão que não faz nada é pior
+   que botão nenhum: some com o ponteiro do subárvore inteira.
+   O scroll continua funcionando porque quem rola é o contêiner de fora. */
+.pagina-preview { pointer-events: none; }
+.pagina-preview__embed { margin: 0.6rem 0; }
+
 .propostas__diff {
   margin: 0 0 0.6rem;
   max-height: 22rem;
