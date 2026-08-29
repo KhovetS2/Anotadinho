@@ -481,6 +481,99 @@ cenarios.push({
   },
 });
 
+// ── ciclo 234: barra flutuante de formatação ─────────────────────────
+
+// Seleciona um trecho do primeiro bloco, por índices de caractere.
+const SELECIONAR = (de, ate) => `(() => {
+  const bloco = document.querySelector('.editor__bloco');
+  const no = bloco.firstChild;
+  const r = document.createRange();
+  r.setStart(no, ${de});
+  r.setEnd(no, ${ate});
+  const s = getSelection();
+  s.removeAllRanges();
+  s.addRange(r);
+  document.dispatchEvent(new Event('selectionchange'));
+  return true;
+})()`;
+
+const CLICAR_MARCA = (titulo) => `(() => {
+  const b = [...document.querySelectorAll('.selecao-barra__botao')]
+    .find(x => x.title === ${JSON.stringify(titulo)});
+  if (!b) return false;
+  b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  return true;
+})()`;
+
+cenarios.push({
+  nome: "formatação: a barra só aparece com texto selecionado no editor (234)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto para marcar\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    ctx.assertEq(await bridge.js("!!document.querySelector('.selecao-barra')"), false, "a barra nasce visível");
+    await bridge.js(SELECIONAR(0, 5));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra aparecer");
+
+    // Some quando a seleção esvazia — barra pendurada sem seleção
+    // aplicaria marca em lugar nenhum.
+    await bridge.js("getSelection().removeAllRanges(); document.dispatchEvent(new Event('selectionchange')); true");
+    await ctx.esperar(bridge, "!document.querySelector('.selecao-barra')", "a barra sumir");
+  },
+});
+
+cenarios.push({
+  nome: "formatação: negrito pela barra sobrevive ao salvar (234)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto para marcar\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    await bridge.js(SELECIONAR(0, 5));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra");
+    ctx.assertEq(await bridge.js(CLICAR_MARCA("Negrito")), true, "não achei o botão de negrito");
+    await PAUSA(400);
+    ctx.assertEq(await bridge.js("!!document.querySelector('.editor__bloco strong')"), true, "não virou negrito no DOM");
+
+    // O que interessa é o ARQUIVO: marca que o html_to_md não sabe
+    // devolver some sozinha no autosave, três segundos depois.
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const md = ctx.ler() || "";
+    ctx.assert(md.includes("**texto**"), `o negrito não chegou ao arquivo:\n${md}`);
+    ctx.assert(md.includes("para marcar"), `o resto do texto se perdeu:\n${md}`);
+  },
+});
+
+cenarios.push({
+  nome: "formatação: clicar de novo na mesma marca tira ela (234)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto para marcar\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    await bridge.js(SELECIONAR(0, 5));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra");
+    await bridge.js(CLICAR_MARCA("Itálico"));
+    await PAUSA(400);
+    ctx.assertEq(await bridge.js("!!document.querySelector('.editor__bloco em')"), true, "não virou itálico");
+
+    await bridge.js(CLICAR_MARCA("Itálico"));
+    await PAUSA(400);
+    ctx.assertEq(await bridge.js("!!document.querySelector('.editor__bloco em')"), false, "a marca não saiu");
+
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const md = ctx.ler() || "";
+    ctx.assert(!md.includes("*texto*"), `o itálico ficou no arquivo:\n${md}`);
+    ctx.assert(md.includes("texto para marcar"), `o texto se perdeu:\n${md}`);
+  },
+});
+
 // ── ciclo 167: operar kanban e cronograma pelo teclado ───────────────
 
 cenarios.push({

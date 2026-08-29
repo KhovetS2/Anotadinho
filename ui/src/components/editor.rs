@@ -3094,11 +3094,13 @@ pub fn editor(props: &EditorProps) -> Html {
                     // dois editáveis aninhados — contêiner E bloco. Era o
                     // que fazia o Enter num bloco vazio criar parágrafo no
                     // lugar errado e o bloco de origem crescer junto.
-                    <div class="editor__wysiwyg" key="plain" ref={editor_ref} contenteditable="false"
+                    <div class="editor__wysiwyg" key="plain" ref={editor_ref.clone()} contenteditable="false"
                         spellcheck="false" onkeydown={on_keydown} oninput={on_edit}
                         ondrop={on_drop} ondragover={on_dragover} ondragleave={on_dragleave} onclick={on_wysiwyg_click} onpaste={on_paste} />
                 }
             </div>
+            <crate::components::selection_toolbar::SelectionToolbar
+                editor_ref={editor_ref.clone()} open_dialog={props.open_dialog.clone()} />
             if *slash_open {
                 <div class="slash-menu">
                     <div class="slash-menu__header">

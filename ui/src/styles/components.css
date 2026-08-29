@@ -1717,3 +1717,50 @@
   color: var(--text-muted);
   font-size: 0.6875rem;
 }
+
+/* Barra flutuante de formatação (ciclo 234). Aparece sobre a seleção,
+   como no AppFlowy: quem seleciona quer agir sobre AQUELE trecho, e uma
+   barra fixa no topo obriga a percorrer a tela inteira pra isso. */
+.selecao-barra {
+  position: fixed;
+  z-index: 60;
+  transform: translate(-50%, -100%);
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.2rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.selecao-barra__botao {
+  min-width: 1.8rem;
+  height: 1.8rem;
+  padding: 0 0.35rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.selecao-barra__botao:hover,
+.selecao-barra__botao:focus-visible {
+  background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+}
+
+.selecao-barra__negrito { font-weight: 700; }
+.selecao-barra__italico { font-style: italic; }
+.selecao-barra__tachado { text-decoration: line-through; }
+.selecao-barra__codigo { font-family: var(--font-mono); }
+
+.selecao-barra__separador {
+  width: 1px;
+  height: 1.1rem;
+  margin: 0 0.15rem;
+  background: var(--border);
+}

@@ -8,6 +8,7 @@ pub mod date_picker;
 pub mod dialog_host;
 pub mod conversa_view;
 pub mod pagina_preview;
+pub mod selection_toolbar;
 pub mod propostas_view;
 pub mod editor;
 pub mod embeds;
