@@ -54,14 +54,31 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
     // em lugar nenhum. Mesmo cuidado do modal de imagens (ciclo 226).
     let guardada = use_mut_ref(|| None::<Range>);
 
+    // O último valor conhecido, pra não chamar `set` quando nada mudou.
+    //
+    // `selectionchange` dispara a CADA movimento de cursor, inclusive ao
+    // digitar. Sem esta comparação, cada tecla causava um re-render deste
+    // componente pra escrever `None` por cima de `None`.
+    //
+    // `use_mut_ref` e não `use_state`: quem lê é o ouvinte, e handle de
+    // `use_state` capturado em closure fica congelado no valor da
+    // criação (ciclos 155, 157, 201, 213, 218).
+    let ultimo = use_mut_ref(|| None::<(f64, f64)>);
+
     {
         let posicao = posicao.clone();
+        let ultimo = ultimo.clone();
         use_effect_with((), move |_| {
             let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
                 return Box::new(|| ()) as Box<dyn FnOnce()>;
             };
             let ouvinte = wasm_bindgen::closure::Closure::<dyn Fn()>::new(move || {
-                posicao.set(medir_selecao());
+                let agora = medir_selecao();
+                if *ultimo.borrow() == agora {
+                    return;
+                }
+                *ultimo.borrow_mut() = agora;
+                posicao.set(agora);
             });
             let _ = doc.add_event_listener_with_callback(
                 "selectionchange",

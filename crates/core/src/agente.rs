@@ -73,7 +73,7 @@ pub enum ProblemaConfig {
     SemBinario,
     SemMarcador,
     MarcadorRepetido,
-    BinarioComEspaco,
+    BinarioParecComandoDeShell,
 }
 
 impl ProblemaConfig {
@@ -82,8 +82,9 @@ impl ProblemaConfig {
             Self::SemBinario => "informe o executável do agente",
             Self::SemMarcador => "um dos argumentos precisa conter {prompt}",
             Self::MarcadorRepetido => "{prompt} pode aparecer em um argumento só",
-            Self::BinarioComEspaco => {
-                "o executável não pode ter espaço: use um argumento separado, não uma linha de shell"
+            Self::BinarioParecComandoDeShell => {
+                "isto parece uma linha de comando inteira: aqui vai só o executável, \
+                 e o resto em argumentos separados"
             }
         }
     }
@@ -139,17 +140,38 @@ pub enum FormatoSaida {
 /// mesmo depois da correção.
 pub const TIMEOUT_MINIMO_S: u64 = 1800;
 
+/// O texto parece uma linha de comando em vez de um executável?
+///
+/// Um caminho, mesmo com espaço, não tem operador de shell nem token que
+/// comece com `-`. Uma linha colada tem quase sempre um dos dois.
+fn parece_comando_de_shell(texto: &str) -> bool {
+    const OPERADORES: &[char] = &['|', '&', ';', '>', '<', '$', '`', '\n'];
+    if texto.contains(OPERADORES) {
+        return true;
+    }
+    // `claude -p` → linha. `/opt/My Tools/claude` → caminho.
+    texto
+        .split_whitespace()
+        .skip(1)
+        .any(|t| t.starts_with('-'))
+}
+
 impl Adaptador {
     /// Confere a configuração ANTES de qualquer execução.
     pub fn validar(&self) -> Option<ProblemaConfig> {
         if self.binario.trim().is_empty() {
             return Some(ProblemaConfig::SemBinario);
         }
-        // Espaço no binário quase sempre significa que a pessoa colou
-        // uma linha de shell inteira. Aceitar isso viraria execução de
-        // shell pela porta dos fundos.
-        if self.binario.trim().contains(' ') {
-            return Some(ProblemaConfig::BinarioComEspaco);
+        // A trava é contra colar uma LINHA DE COMANDO inteira aqui —
+        // aceitar isso viraria execução de shell pela porta dos fundos.
+        //
+        // Antes a regra era "não pode ter espaço", o que também recusava
+        // caminho legítimo: `/home/eu/My Tools/claude` no Linux e
+        // qualquer `C:\Program Files\...` no Windows. Caminho com espaço
+        // é caminho; o que denuncia uma linha de comando é ter operador
+        // de shell ou um argumento no meio (ciclo 239).
+        if parece_comando_de_shell(self.binario.trim()) {
+            return Some(ProblemaConfig::BinarioParecComandoDeShell);
         }
         let com_marcador = self.args.iter().filter(|a| a.contains(MARCADOR_PROMPT)).count();
         match com_marcador {
@@ -697,7 +719,7 @@ mod tests {
         // Aceitar isso seria execução de shell pela porta dos fundos.
         let mut a = base();
         a.binario = "sh -c".into();
-        assert_eq!(a.validar(), Some(ProblemaConfig::BinarioComEspaco));
+        assert_eq!(a.validar(), Some(ProblemaConfig::BinarioParecComandoDeShell));
     }
 
     #[test]
@@ -981,4 +1003,62 @@ where
         atual = dir.parent();
     }
     vault.to_string()
+}
+
+#[cfg(test)]
+mod testes_config {
+    use super::*;
+
+    fn com_binario(binario: &str) -> Adaptador {
+        Adaptador {
+            nome: "teste".into(),
+            binario: binario.into(),
+            args: vec!["{prompt}".into()],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn caminho_com_espaco_e_aceito() {
+        // Recusar espaço recusava caminho legítimo: `My Tools` no Linux
+        // e qualquer `C:\Program Files\...` no Windows (ciclo 239).
+        for caminho in [
+            "/home/eu/My Tools/claude",
+            "C:\\Program Files\\Claude\\claude.cmd",
+            "/usr/local/bin/claude",
+        ] {
+            assert_eq!(
+                com_binario(caminho).validar(),
+                None,
+                "recusou caminho válido: {caminho}"
+            );
+        }
+    }
+
+    #[test]
+    fn linha_de_comando_continua_recusada() {
+        // A trava existe pra shell não entrar pela porta dos fundos.
+        for linha in [
+            "claude -p",
+            "sh -c 'claude'",
+            "claude && rm -rf /",
+            "claude | tee log",
+            "echo $(whoami)",
+        ] {
+            assert_eq!(
+                com_binario(linha).validar(),
+                Some(ProblemaConfig::BinarioParecComandoDeShell),
+                "aceitou linha de comando: {linha}"
+            );
+        }
+    }
+
+    #[test]
+    fn o_marcador_continua_obrigatorio_e_unico() {
+        let mut a = com_binario("claude");
+        a.args = vec!["-p".into()];
+        assert_eq!(a.validar(), Some(ProblemaConfig::SemMarcador));
+        a.args = vec!["{prompt}".into(), "{prompt}".into()];
+        assert_eq!(a.validar(), Some(ProblemaConfig::MarcadorRepetido));
+    }
 }

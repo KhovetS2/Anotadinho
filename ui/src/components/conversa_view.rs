@@ -139,6 +139,8 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     // Virar execução deixou de ser só criar um arquivo (ciclo 228): agora
     // gasta tempo de modelo, então pergunta antes.
     let confirmar_execucao = use_state(|| None::<String>);
+    // A tela de configuração dos agentes (ciclo 239).
+    let config_aberta = use_state(|| false);
     let carregando_prompts = use_state(|| true);
 
     // Descoberta usa uma única varredura e aplica simultaneamente pasta e
@@ -873,6 +875,18 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                                     </button>
                                 }
                             }) }
+                            <button class="conversa__agente-config"
+                                onclick={{
+                                    let abrir = config_aberta.clone();
+                                    let fechar = trocando_agente.clone();
+                                    Callback::from(move |_: MouseEvent| {
+                                        fechar.set(false);
+                                        abrir.set(true);
+                                    })
+                                }}
+                                title="Apontar outro executável, mudar argumentos, criar um agente novo">
+                                <Icon name="settings" />{ "configurar…" }
+                            </button>
                             <div class="conversa__pastas">
                                 <button class="conversa__pasta-btn" onclick={{
                                         let e = escolher_pasta.clone();
@@ -1144,6 +1158,20 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     }
                 </div>
             </footer>
+            <crate::components::agente_config::AgenteConfig
+                aberto={*config_aberta}
+                on_fechar={{
+                    let abrir = config_aberta.clone();
+                    Callback::from(move |_| abrir.set(false))
+                }}
+                on_usar={{
+                    let adaptador = adaptador.clone();
+                    let abrir = config_aberta.clone();
+                    Callback::from(move |a: Adaptador| {
+                        adaptador.set(a);
+                        abrir.set(false);
+                    })
+                }} />
             <Modal title="Pedir a implementação?" open={confirmar_execucao.is_some()}
                 on_close={{
                     let pedir = confirmar_execucao.clone();

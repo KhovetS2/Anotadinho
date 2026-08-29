@@ -623,11 +623,16 @@ pub fn adaptadores_conhecidos() -> Vec<anotadinho_core::agente::Adaptador> {
 /// As opções pra escolher, com os ajustes de quem já foi usado.
 ///
 /// A lista de presets é a fonte da ordem e dos nomes; o que a pessoa
-/// mexeu ganha por cima.
+/// mexeu ganha por cima. Depois deles vêm os agentes que a própria
+/// pessoa criou (ciclo 239) — antes esta função só olhava para os
+/// presets, então um agente novo era gravado e nunca mais aparecia.
 pub fn opcoes_de_agente() -> Vec<anotadinho_core::agente::Adaptador> {
     let conhecidos = adaptadores_conhecidos();
     let ativo = load_adaptador();
-    anotadinho_core::agente::Adaptador::presets()
+    let presets = anotadinho_core::agente::Adaptador::presets();
+    let nomes_de_preset: Vec<String> = presets.iter().map(|p| p.nome.clone()).collect();
+
+    let mut opcoes: Vec<_> = presets
         .into_iter()
         .map(|preset| {
             if ativo.nome == preset.nome {
@@ -642,5 +647,34 @@ pub fn opcoes_de_agente() -> Vec<anotadinho_core::agente::Adaptador> {
                 None => preset,
             }
         })
-        .collect()
+        .collect();
+
+    for c in conhecidos {
+        if !nomes_de_preset.contains(&c.nome) {
+            opcoes.push(if ativo.nome == c.nome { ativo.clone() } else { c });
+        }
+    }
+    opcoes
+}
+
+/// Se este agente é um preset que veio com o app.
+///
+/// Preset não se apaga: some da lista e volta na próxima abertura, o que
+/// pareceria bug. O que dá pra fazer com ele é voltar ao padrão.
+pub fn e_preset(nome: &str) -> bool {
+    anotadinho_core::agente::Adaptador::presets()
+        .iter()
+        .any(|p| p.nome == nome)
+}
+
+/// Esquece um agente criado pela pessoa.
+pub fn remover_adaptador(nome: &str) {
+    let Some(store) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) else {
+        return;
+    };
+    let mut conhecidos = adaptadores_conhecidos();
+    conhecidos.retain(|c| c.nome != nome);
+    if let Ok(lista) = serde_json::to_string(&conhecidos) {
+        let _ = store.set_item(CHAVE_ADAPTADORES, &lista);
+    }
 }

@@ -1069,6 +1069,128 @@ fluxo.push({
   },
 });
 
+// ── ciclo 239: configurar como um agente é chamado ───────────────────
+
+// Dois passos de propósito: o popover só existe no quadro SEGUINTE ao
+// clique no chip, e procurar o botão no mesmo tick não acha nada.
+const abrirConfig = async (bridge) => {
+  await bridge.js(`(document.querySelector('.conversa__agente').click(), true)`);
+  await esperar(bridge, "document.querySelector('.conversa__agente-config')", "o acesso à configuração");
+  await bridge.js(`(document.querySelector('.conversa__agente-config').click(), true)`);
+  await esperar(bridge, "document.querySelector('.agente-config')", "a tela de agentes");
+};
+
+const PREENCHER = (rotulo, valor) => `(() => {
+  const campo = [...document.querySelectorAll('.agente-config__campo')]
+    .find(c => (c.querySelector('span')||{}).textContent.includes(${JSON.stringify(rotulo)}));
+  if (!campo) return false;
+  const el = campo.querySelector('input, textarea');
+  const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement : HTMLInputElement;
+  Object.getOwnPropertyDescriptor(proto.prototype, 'value').set.call(el, ${JSON.stringify(valor)});
+  el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  return true;
+})()`;
+
+fluxo.push({
+  nome: "agente: dá pra criar um agente novo e apontar outro executável (239)",
+  async fn(bridge, ctx) {
+    const antes = await bridge.js(`localStorage.getItem('anotadinho.adaptadores_agente')`);
+    try {
+      ctx.escrever("---\ntitle: __uitest\ntype: conversa\n---\n");
+      await recarregarEstavel(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await esperar(bridge, "document.querySelector('.conversa')", "a conversa");
+
+      await abrirConfig(bridge);
+
+      await bridge.js(`document.querySelector('.agente-config__novo').click(); true`);
+      await PAUSA(200);
+      await bridge.js(PREENCHER("Nome", "__uitest agente"));
+      await PAUSA(150);
+      await bridge.js(PREENCHER("Executável", "/opt/My Tools/meu-modelo"));
+      await PAUSA(150);
+      await bridge.js(PREENCHER("Argumentos", "run\n{prompt}"));
+      await PAUSA(250);
+
+      // Caminho com espaço é caminho: recusá-lo bloqueava
+      // `C:\Program Files\...` e qualquer pasta com espaço no Linux.
+      ctx.assertEq(
+        await bridge.js(`!!document.querySelector('.agente-config__erro')`),
+        false,
+        "recusou um caminho com espaço",
+      );
+      ctx.assertEq(
+        await bridge.js(`document.querySelector('.agente-config__salvar').disabled`),
+        false,
+        "não deixou salvar uma configuração válida",
+      );
+
+      await bridge.js(`document.querySelector('.agente-config__salvar').click(); true`);
+      await PAUSA(500);
+
+      // Virou o ativo, e o chip da conversa mostra isso.
+      const ativo = JSON.parse(await bridge.js(`localStorage.getItem('anotadinho.adaptador_agente')`));
+      ctx.assertEq(ativo.nome, "__uitest agente", "não virou o agente ativo");
+      ctx.assertEq(ativo.binario, "/opt/My Tools/meu-modelo", "não gravou o executável");
+      ctx.assertEq(ativo.args.join("|"), "run|{prompt}", "não gravou os argumentos");
+
+      // E aparece na lista — antes, agente que não fosse preset era
+      // gravado e nunca mais aparecia.
+      await recarregarEstavel(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await esperar(bridge, "document.querySelector('.conversa')", "a conversa de volta");
+      await abrirConfig(bridge);
+      ctx.assert(
+        await bridge.js(`[...document.querySelectorAll('.agente-config__item')].some(b => b.textContent.includes('__uitest agente'))`),
+        "o agente criado sumiu da lista",
+      );
+
+      // Remover devolve para um preset, sem deixar a tela órfã.
+      await bridge.js(`document.querySelector('.agente-config__remover').click(); true`);
+      await PAUSA(400);
+      ctx.assert(
+        !(await bridge.js(`(localStorage.getItem('anotadinho.adaptadores_agente')||'')`)).includes("__uitest agente"),
+        "remover não esqueceu o agente",
+      );
+    } finally {
+      await bridge.js(`(() => {
+        const antes = ${JSON.stringify(antes)};
+        if (antes === null) localStorage.removeItem('anotadinho.adaptadores_agente');
+        else localStorage.setItem('anotadinho.adaptadores_agente', antes);
+        return true;
+      })()`);
+    }
+  },
+});
+
+fluxo.push({
+  nome: "agente: linha de comando colada no executável é recusada (239)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\ntype: conversa\n---\n");
+    await recarregarEstavel(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await esperar(bridge, "document.querySelector('.conversa')", "a conversa");
+    await abrirConfig(bridge);
+
+    await bridge.js(`document.querySelector('.agente-config__novo').click(); true`);
+    await PAUSA(200);
+    // Aceitar isto seria execução de shell pela porta dos fundos.
+    await bridge.js(PREENCHER("Executável", "sh -c 'claude'"));
+    await PAUSA(300);
+    ctx.assertEq(
+      await bridge.js(`!!document.querySelector('.agente-config__erro')`),
+      true,
+      "aceitou uma linha de shell",
+    );
+    ctx.assertEq(
+      await bridge.js(`document.querySelector('.agente-config__salvar').disabled`),
+      true,
+      "deixou salvar uma configuração inválida",
+    );
+    await bridge.js(`[...document.querySelectorAll('.modal__actions button')].find(b => b.textContent === 'Fechar').click(); true`);
+  },
+});
+
 // ── ciclo 233: vault novo nasce completo ─────────────────────────────
 
 fluxo.push({
@@ -1565,10 +1687,14 @@ fluxo.push({
       await bridge.js(`(() => { document.querySelector('.fluxo__planejar button').click(); return true; })()`);
       await esperar(bridge, "document.querySelector('.conversa')", "a conversa de planejamento", 12000);
 
-      const anexos = await bridge.js(
-        `[...document.querySelectorAll('.conversa__anexo')].map(e => e.textContent.replace('×','').trim())`,
+      // Os anexos vêm do frontmatter, lido de forma assíncrona: ler os
+      // chips no instante em que a conversa aparece é corrida, e passava
+      // por sorte.
+      await esperar(
+        bridge,
+        `[...document.querySelectorAll('.conversa__anexo')].some(e => e.textContent.includes('__uitest'))`,
+        "a spec aparecer nos anexos",
       );
-      ctx.assert(anexos.includes("__uitest"), `a spec não foi anexada: ${anexos.join(", ")}`);
 
       const campo = await bridge.js(`(document.querySelector('.conversa__campo')||{}).value || ''`);
       ctx.assert(campo.includes("PROPOSTA DE IMPLEMENTAÇÃO"), `a pergunta não veio pronta: ${campo}`);

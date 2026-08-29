@@ -1828,3 +1828,115 @@
 
 .selecao-barra { position: fixed; }
 .selecao-barra__cores--aberto { background: color-mix(in srgb, var(--accent-blue) 20%, transparent); }
+
+/* Configuração de agentes (ciclo 239). Lista à esquerda, formulário à
+   direita: escolher qual agente e como ele é chamado são duas perguntas
+   diferentes, e empilhá-las esconderia a segunda. */
+.agente-config {
+  display: grid;
+  grid-template-columns: 12rem 1fr;
+  gap: 1rem;
+}
+
+.agente-config__lista {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border-right: 1px solid var(--border);
+  padding-right: 0.6rem;
+}
+
+.agente-config__item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agente-config__item:hover { background: color-mix(in srgb, var(--accent-blue) 12%, transparent); }
+
+.agente-config__item--atual {
+  background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.agente-config__novo { color: var(--text-muted); }
+
+.agente-config__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.agente-config__campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.agente-config__campo > span {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+
+.agente-config__campo small {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.agente-config__args {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  resize: vertical;
+}
+
+.agente-config__linha {
+  display: grid;
+  grid-template-columns: 1fr 10rem;
+  gap: 0.6rem;
+}
+
+.agente-config__erro {
+  margin: 0;
+  color: var(--error);
+  font-size: 0.75rem;
+}
+
+.agente-config__remover { margin-right: auto; color: var(--error); }
+
+/* O acesso à configuração fica no fim do popover de agentes, depois das
+   opções. NÃO usa a classe das opções de propósito: ele não é um agente,
+   e um cenário que conta os agentes do popover contaria ele junto. */
+.conversa__agente-config {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversa__agente-config:hover { color: var(--text-primary); }
+
+@media (max-width: 640px) {
+  .agente-config { grid-template-columns: 1fr; }
+  .agente-config__lista { border-right: 0; padding-right: 0; }
+}
