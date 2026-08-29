@@ -1065,3 +1065,34 @@ async fn chamar_proposta(cmd: &str, vault_path: &str, id: &str) -> Result<String
         .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))?;
     Ok(r.as_string().unwrap_or_default())
 }
+
+/// Prepara uma pasta pra ser um vault (ciclo 233). Devolve os caminhos
+/// criados; o que já existia é deixado em paz.
+pub async fn criar_vault(vault_path: &str) -> Result<Vec<String>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("vaultPath"),
+        &JsValue::from_str(vault_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    let result = tauri_invoke("criar_vault", &JsValue::from(args))
+        .await
+        .map_err(|e| format!("{:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+}
+
+/// A pasta aberta ainda não tem página nenhuma? (ciclo 233)
+pub async fn vault_esta_vazio(vault_path: &str) -> Result<bool, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("vaultPath"),
+        &JsValue::from_str(vault_path),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    let result = tauri_invoke("vault_esta_vazio", &JsValue::from(args))
+        .await
+        .map_err(|e| format!("{:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+}

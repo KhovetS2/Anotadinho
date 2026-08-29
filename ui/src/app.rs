@@ -464,19 +464,53 @@ pub fn app() -> Html {
         })
     };
 
+    let open_dialog: Callback<PendingDialog> = {
+        let pending_dialog = pending_dialog.clone();
+        Callback::from(move |d: PendingDialog| pending_dialog.set(Some(d)))
+    };
+
     let on_vault_selected = {
         let vault_path = vault_path.clone();
         let vault_name = vault_name.clone();
         let selected_page = selected_page.clone();
         let open_tabs = open_tabs.clone();
+        let list_version = list_version.clone();
+        let abrir_dialogo = open_dialog.clone();
         Callback::from(move |path: String| {
             let name = state::extract_name_from_path(&path);
             state::save_vault_path(&path);
             state::save_vault_name(&name);
-            vault_path.set(Some(path));
+            vault_path.set(Some(path.clone()));
             vault_name.set(Some(name));
             selected_page.set(None);
             open_tabs.set(Vec::new());
+
+            // Abrir uma pasta sem página nenhuma dá um app mudo: sem
+            // sidebar, sem template, sem sinal do que fazer. Em vez de
+            // deixar a pessoa adivinhar, OFERECE semear (ciclo 233) —
+            // oferece, não faz: encher a pasta de alguém com dezessete
+            // arquivos sem perguntar não é a mesma coisa que ajudar.
+            let list_version = list_version.clone();
+            let abrir = abrir_dialogo.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                if !api::vault_esta_vazio(&path).await.unwrap_or(false) {
+                    return;
+                }
+                abrir.emit(PendingDialog::Confirm {
+                    message: "Esta pasta ainda não tem nada. Preparar como vault, \
+                              com estrutura, modelos, padrões e um guia?"
+                        .to_string(),
+                    confirm_label: "Preparar".to_string(),
+                    on_confirm: Callback::from(move |_| {
+                        let (path, list_version) = (path.clone(), list_version.clone());
+                        wasm_bindgen_futures::spawn_local(async move {
+                            if api::criar_vault(&path).await.is_ok() {
+                                list_version.set(*list_version + 1);
+                            }
+                        });
+                    }),
+                });
+            });
         })
     };
 
@@ -576,11 +610,6 @@ pub fn app() -> Html {
                 let _ = s.set_item("anotadinho.theme", if next { "light" } else { "dark" });
             }
         })
-    };
-
-    let open_dialog: Callback<PendingDialog> = {
-        let pending_dialog = pending_dialog.clone();
-        Callback::from(move |d: PendingDialog| pending_dialog.set(Some(d)))
     };
 
     // Apagar a página ABERTA (ciclo 232). A sidebar cobre qualquer

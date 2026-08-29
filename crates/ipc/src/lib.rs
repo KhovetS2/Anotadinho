@@ -235,6 +235,69 @@ pub fn handle_delete_page(vault_path: String, page_path: String) -> Result<(), S
     vault.delete_page(&page_path).map_err(|e| e.to_string())
 }
 
+/// Handler de criar_vault: prepara uma pasta para ser um vault (ciclo 233).
+///
+/// Semeia estrutura, templates, padrões, prompts e a página inicial.
+/// **Nunca sobrescreve**: um arquivo que já existe é deixado como está, e
+/// devolvido na lista de ignorados. Assim "preparar" uma pasta que já
+/// tem coisa dentro é seguro — completa o que falta sem tocar no resto.
+///
+/// Devolve os caminhos criados.
+pub fn handle_criar_vault(vault_path: String) -> Result<Vec<String>, String> {
+    let raiz = std::path::Path::new(&vault_path);
+    if raiz.exists() && !raiz.is_dir() {
+        return Err(format!("{vault_path} existe e não é uma pasta"));
+    }
+    std::fs::create_dir_all(raiz).map_err(|e| format!("não consegui criar {vault_path}: {e}"))?;
+
+    for pasta in anotadinho_core::semente::PASTAS {
+        std::fs::create_dir_all(raiz.join(pasta))
+            .map_err(|e| format!("não consegui criar {pasta}: {e}"))?;
+    }
+
+    let mut criados = Vec::new();
+    for arquivo in anotadinho_core::semente::arquivos() {
+        let destino = raiz.join(arquivo.caminho);
+        if destino.exists() {
+            continue;
+        }
+        if let Some(pai) = destino.parent() {
+            std::fs::create_dir_all(pai)
+                .map_err(|e| format!("não consegui criar {}: {e}", pai.display()))?;
+        }
+        std::fs::write(&destino, arquivo.conteudo)
+            .map_err(|e| format!("não consegui escrever {}: {e}", arquivo.caminho))?;
+        criados.push(arquivo.caminho.to_string());
+    }
+    Ok(criados)
+}
+
+/// A pasta já parece um vault com conteúdo? (ciclo 233)
+///
+/// Serve pra decidir entre "abrir" e "preparar": uma pasta sem nenhuma
+/// página é uma pasta vazia com cara de vault quebrado, e a pessoa não
+/// tem como saber disso olhando a tela.
+pub fn handle_vault_esta_vazio(vault_path: String) -> Result<bool, String> {
+    let raiz = std::path::Path::new(&vault_path);
+    for pasta in ["pages", "journals"] {
+        let dir = raiz.join(pasta);
+        let Ok(entradas) = std::fs::read_dir(&dir) else { continue };
+        for e in entradas.flatten() {
+            if e.path().extension().is_some_and(|x| x == "md") {
+                return Ok(false);
+            }
+            if e.path().is_dir()
+                && std::fs::read_dir(e.path())
+                    .map(|mut i| i.any(|f| f.is_ok_and(|f| f.path().extension().is_some_and(|x| x == "md"))))
+                    .unwrap_or(false)
+            {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
 /// Handler de create_folder: cria pasta (subdiretório) no vault.
 pub fn handle_create_folder(vault_path: String, folder_path: String) -> Result<(), String> {
     let vault = VaultIo::open(&vault_path);
@@ -1103,4 +1166,62 @@ pub fn handle_recusar_proposta(vault_path: String, id: String) -> Result<(), Str
         .join(format!("{}/{id}.json", anotadinho_core::proposta::PASTA));
     std::fs::remove_file(&arquivo).map_err(|_| format!("proposta {id} não existe"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod testes_semente {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn vault_novo_nasce_navegavel() {
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        let criados = handle_criar_vault(raiz.clone()).expect("criar");
+
+        assert!(criados.contains(&anotadinho_core::semente::PAGINA_INICIAL.to_string()));
+        // As pastas que o código espera existir têm que existir mesmo
+        // vazias — é delas que dependem o fluxo e o seletor de prompt.
+        for pasta in anotadinho_core::semente::PASTAS {
+            assert!(dir.path().join(pasta).is_dir(), "faltou a pasta {pasta}");
+        }
+        // E o vault recém-criado já se enxerga: a varredura tem que
+        // achar a página inicial e os prompts.
+        let paginas = handle_scan_vault(raiz).expect("varrer");
+        assert!(paginas.iter().any(|p| p.path == "pages/inicio.md"));
+        assert!(
+            !anotadinho_core::prompt_padrao::descobrir(paginas).is_empty(),
+            "o seletor de prompt nasceria vazio"
+        );
+    }
+
+    #[test]
+    fn preparar_de_novo_nao_sobrescreve_nada() {
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        handle_criar_vault(raiz.clone()).unwrap();
+
+        let inicial = dir.path().join(anotadinho_core::semente::PAGINA_INICIAL);
+        std::fs::write(&inicial, "---\ntitle: Meu\n---\nescrevi por cima\n").unwrap();
+
+        let criados = handle_criar_vault(raiz).expect("preparar de novo");
+        assert!(criados.is_empty(), "recriou arquivo que já existia: {criados:?}");
+        assert!(
+            std::fs::read_to_string(&inicial).unwrap().contains("escrevi por cima"),
+            "a semente destruiu o que a pessoa escreveu"
+        );
+    }
+
+    #[test]
+    fn pasta_com_pagina_nao_e_considerada_vazia() {
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        assert!(handle_vault_esta_vazio(raiz.clone()).unwrap(), "pasta vazia");
+
+        std::fs::create_dir_all(dir.path().join("pages/specs")).unwrap();
+        assert!(handle_vault_esta_vazio(raiz.clone()).unwrap(), "só pastas ainda é vazio");
+
+        std::fs::write(dir.path().join("pages/specs/x.md"), "---\ntitle: X\n---\n").unwrap();
+        assert!(!handle_vault_esta_vazio(raiz).unwrap(), "página em subpasta conta");
+    }
 }

@@ -1069,6 +1069,64 @@ fluxo.push({
   },
 });
 
+// ── ciclo 233: vault novo nasce completo ─────────────────────────────
+
+fluxo.push({
+  nome: "vault novo: semear deixa a pasta navegável e o fluxo de pé (233)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const novo = fs.mkdtempSync(`${os.tmpdir()}/uitest-vault-`);
+    try {
+      const criados = await bridge.js(`(async () =>
+        await window.__TAURI_INTERNALS__.invoke('criar_vault', { vaultPath: ${JSON.stringify(novo)} })
+      )()`);
+      ctx.assert(criados.includes("pages/inicio.md"), "não criou a página inicial");
+
+      // As pastas que o CÓDIGO espera existir. Sem elas o fluxo
+      // spec→proposta→execução e o seletor de prompt ficam mudos, sem
+      // erro nenhum — que é o pior jeito de falhar.
+      for (const p of [
+        "pages/specs", "pages/propostas", "pages/execucoes", "pages/conversas",
+        "pages/prompts-default", "pages/padroes", "journals", "templates", "assets",
+      ]) {
+        ctx.assert(fs.existsSync(`${novo}/${p}`), `faltou a pasta ${p}`);
+      }
+      ctx.assert(fs.readdirSync(`${novo}/templates`).length >= 6, "faltaram modelos");
+      ctx.assert(fs.readdirSync(`${novo}/pages/padroes`).length >= 7, "faltaram padrões");
+      ctx.assert(fs.readdirSync(`${novo}/pages/prompts-default`).length >= 3, "faltaram prompts");
+
+      // O guia tem que dizer o que dá pra fazer, não só existir.
+      const guia = fs.readFileSync(`${novo}/pages/inicio.md`, "utf8");
+      for (const tipo of ["conversa", "spec", "proposta", "kanban"]) {
+        ctx.assert(guia.includes(tipo), `o guia não explica o tipo ${tipo}`);
+      }
+
+      // Semear de novo não pode destruir nada.
+      fs.writeFileSync(`${novo}/pages/inicio.md`, "---\ntitle: Meu\n---\nmeu texto\n");
+      const denovo = await bridge.js(`(async () =>
+        await window.__TAURI_INTERNALS__.invoke('criar_vault', { vaultPath: ${JSON.stringify(novo)} })
+      )()`);
+      ctx.assertEq(denovo.length, 0, "recriou arquivo que já existia");
+      ctx.assert(
+        fs.readFileSync(`${novo}/pages/inicio.md`, "utf8").includes("meu texto"),
+        "a semente escreveu por cima do que a pessoa tinha",
+      );
+
+      // E o app enxerga o vault recém-criado como vault de verdade.
+      ctx.assertEq(
+        await bridge.js(`(async () =>
+          await window.__TAURI_INTERNALS__.invoke('vault_esta_vazio', { vaultPath: ${JSON.stringify(novo)} })
+        )()`),
+        false,
+        "um vault semeado ainda se diz vazio",
+      );
+    } finally {
+      fs.rmSync(novo, { recursive: true, force: true });
+    }
+  },
+});
+
 // ── ciclo 232: dá pra apagar conversa (e as outras páginas de tipo) ──
 
 fluxo.push({

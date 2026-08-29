@@ -141,6 +141,9 @@ enum Command {
         #[arg(long, default_value = "agente")]
         autor: String,
     },
+    /// Prepara a pasta do vault: estrutura, templates, padrões, prompts
+    /// e a página inicial (ciclo 233). Não sobrescreve nada.
+    Init,
     /// Lista as propostas pendentes de revisão.
     Propostas,
     /// Aplica uma proposta aprovada.
@@ -574,6 +577,16 @@ fn run(cli: Cli) -> Result<(), String> {
                 autor,
             )?;
             println!("{id}");
+        }
+        Command::Init => {
+            let criados = anotadinho_ipc::handle_criar_vault(cli.vault.clone())?;
+            if criados.is_empty() {
+                println!("nada a fazer: já estava tudo lá");
+            } else {
+                for c in &criados {
+                    println!("{c}");
+                }
+            }
         }
         Command::Mcp => {
             mcp::servir(cli.vault)?;

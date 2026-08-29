@@ -765,6 +765,18 @@ async fn open_vault_dialog(app: tauri::AppHandle) -> Result<Option<String>, Stri
     rx.await.map_err(|e| e.to_string())
 }
 
+/// Prepara uma pasta pra ser um vault (ciclo 233).
+#[tauri::command]
+fn criar_vault(vault_path: String) -> Result<Vec<String>, String> {
+    anotadinho_ipc::handle_criar_vault(vault_path)
+}
+
+/// A pasta aberta ainda não tem página nenhuma? (ciclo 233)
+#[tauri::command]
+fn vault_esta_vazio(vault_path: String) -> Result<bool, String> {
+    anotadinho_ipc::handle_vault_esta_vazio(vault_path)
+}
+
 /// Contorna um travamento do WebKitGTK com o driver NVIDIA proprietário.
 ///
 /// Sintoma: a janela congela e o processo de renderização fica a 100% de
@@ -877,6 +889,8 @@ fn main() {
             recusar_proposta,
             check_changes,
             open_vault_dialog,
+            criar_vault,
+            vault_esta_vazio,
             escolher_pasta
         ])
         .run(tauri::generate_context!())

@@ -180,6 +180,27 @@ body {
     margin-bottom: var(--sp-6);
 }
 
+/* Duas saídas na tela vazia (ciclo 233): abrir o que já existe, ou
+   preparar uma pasta do zero. */
+.empty-state__acoes {
+    display: flex;
+    gap: var(--sp-2);
+    justify-content: center;
+}
+
+.empty-state__nota {
+    margin-top: var(--sp-3);
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    max-width: 30rem;
+}
+
+.empty-state__erro {
+    margin-top: var(--sp-2);
+    color: var(--error);
+    font-size: 0.8125rem;
+}
+
 .empty-state__button {
     background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
     color: var(--text-primary);
