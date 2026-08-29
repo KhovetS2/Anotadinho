@@ -3100,7 +3100,7 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
             </div>
             <crate::components::selection_toolbar::SelectionToolbar
-                editor_ref={editor_ref.clone()} open_dialog={props.open_dialog.clone()} />
+                open_dialog={props.open_dialog.clone()} />
             if *slash_open {
                 <div class="slash-menu">
                     <div class="slash-menu__header">

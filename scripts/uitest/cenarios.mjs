@@ -493,7 +493,9 @@ const SELECIONAR = (de, ate) => `(() => {
   const s = getSelection();
   s.removeAllRanges();
   s.addRange(r);
-  document.dispatchEvent(new Event('selectionchange'));
+  // Sem disparar selectionchange na mão: quem tem que acordar a barra
+  // é o evento NATIVO, o único que existe quando a pessoa seleciona
+  // com o mouse.
   return true;
 })()`;
 
@@ -590,6 +592,38 @@ const PINTAR = (classe) => `(() => {
   b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   return true;
 })()`;
+
+cenarios.push({
+  nome: "formatação: a barra aparece também em página COM embed (234)",
+  async fn(bridge, ctx) {
+    // Numa página com embed o editor não tem raiz única: cada segmento
+    // de markdown é seu próprio `.editor__wysiwyg`. A primeira versão da
+    // barra pedia a raiz, e por isso não aparecia em NENHUMA página com
+    // embed — que é onde mora quase todo conteúdo do vault.
+    ctx.escrever(
+      "---\ntitle: __uitest\n---\ntexto antes do embed\n\n" +
+        '{{ type: "fluxo" }}\nartefato: spec\netapa: rascunho\n{{ /fluxo }}\n\n' +
+        "texto depois\n",
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.fluxo')", "o embed");
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    await bridge.js(SELECIONAR(0, 5));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra na página com embed");
+    ctx.assertEq(await bridge.js(CLICAR_MARCA("Negrito")), true, "não achei o botão");
+    await PAUSA(400);
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const md = ctx.ler() || "";
+    ctx.assert(md.includes("**texto**"), `o negrito não chegou ao arquivo:\n${md}`);
+    // E o embed continua inteiro: marcar texto num segmento não pode
+    // mexer no segmento vizinho.
+    ctx.assert(md.includes('{{ type: "fluxo" }}') && md.includes("etapa: rascunho"),
+      `o embed foi danificado:\n${md}`);
+  },
+});
 
 cenarios.push({
   nome: "cor: pintar pela paleta chega ao arquivo como classe do tema (235)",

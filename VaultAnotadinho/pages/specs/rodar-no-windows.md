@@ -8,12 +8,10 @@ tags:
 - spec
 - portabilidade
 ---
-
 {{ type: "fluxo" }}
 artefato: spec
 etapa: rascunho
 {{ /fluxo }}
-
 ## Por que isto existe
 
 A configuração de agentes foi construída e testada só no Linux. Esta spec
@@ -22,7 +20,6 @@ para a decisão de portar ser tomada com o custo à vista em vez de no
 escuro. **Não é um pedido de implementação** — é o mapa.
 
 macOS foi levantado junto: nada bloqueia lá.
-
 {{ type: "callout" }}
 variant: warning
 title: Nada disto foi testado numa máquina Windows
@@ -32,16 +29,13 @@ body: |
   na prática, e o que mais surge depois de resolvê-los, só se descobre
   rodando de verdade.
 {{ /callout }}
-
 ## O que bloqueia
 
-**B1. O binário do agente não é executável por `Command::new`.**
-`claude`, `codex` e `opencode` são instalados por npm como shims `.cmd`.
+**B1. O binário do agente não é executável por `Command::new`.**`claude`, `codex` e `opencode` são instalados por npm como shims `.cmd`.
 `CreateProcessW` resolve `.exe`, não `.cmd`/`.bat`. O spawn em
 `src-tauri/src/main.rs` falha antes de qualquer coisa.
 
-**B2. A validação recusa caminho com espaço.**
-`ProblemaConfig::BinarioComEspaco`, em `crates/core/src/agente.rs`, rejeita
+**B2. A validação recusa caminho com espaço.**`ProblemaConfig::BinarioComEspaco`, em `crates/core/src/agente.rs`, rejeita
 binário cujo caminho contenha espaço. No Windows o caminho canônico é
 `C:\Program Files\...`. A configuração legítima é recusada.
 
@@ -51,16 +45,14 @@ só permite trocar de preset e escolher pastas. A única forma de apontar
 outro executável é editar o `localStorage` na mão. Isto é um problema
 **mesmo no Linux** — só não aparece porque os presets funcionam lá.
 
-**B4. Separador de caminho.**
-`strip_prefix` em `crates/vault/src/io.rs` produz caminhos relativos com
+**B4. Separador de caminho.**`strip_prefix` em `crates/vault/src/io.rs` produz caminhos relativos com
 `\`, e cerca de dez lugares comparam com `/` literal: a hierarquia da
 sidebar, a descoberta de prompts padrão (`prompt_padrao::descobrir`), a
 exportação de pasta, a detecção de `journals/`, a resolução de wikilink e
 as chaves do cache de índice. Nenhum deles dá erro — todos simplesmente
 param de casar, em silêncio.
 
-**B5. Build local.**
-`beforeDevCommand` e `beforeBuildCommand` em `src-tauri/tauri.conf.json`
+**B5. Build local.**`beforeDevCommand` e `beforeBuildCommand` em `src-tauri/tauri.conf.json`
 usam sintaxe POSIX, executada por `cmd.exe`.
 
 ## O que degrada, sem bloquear

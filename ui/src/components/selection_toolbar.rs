@@ -15,7 +15,7 @@
 //! na mão, pela API de `Range`.
 
 use wasm_bindgen::JsCast;
-use web_sys::{Element, HtmlElement, Range};
+use web_sys::{Element, Range};
 use yew::prelude::*;
 
 use crate::dialog::PendingDialog;
@@ -38,9 +38,6 @@ const PALETA: &[(&str, &str)] = &[
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct SelectionToolbarProps {
-    /// Raiz do editor. Seleção fora dela não abre a barra — a página de
-    /// propostas e a conversa também têm texto selecionável.
-    pub editor_ref: NodeRef,
     /// Abre o diálogo do app (usado pra pedir a URL do link).
     pub open_dialog: Callback<PendingDialog>,
 }
@@ -59,13 +56,12 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
 
     {
         let posicao = posicao.clone();
-        let editor_ref = props.editor_ref.clone();
         use_effect_with((), move |_| {
             let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
                 return Box::new(|| ()) as Box<dyn FnOnce()>;
             };
             let ouvinte = wasm_bindgen::closure::Closure::<dyn Fn()>::new(move || {
-                posicao.set(medir_selecao(&editor_ref));
+                posicao.set(medir_selecao());
             });
             let _ = doc.add_event_listener_with_callback(
                 "selectionchange",
@@ -222,22 +218,25 @@ fn restaurar(r: &Range) {
 }
 
 /// Onde desenhar a barra, ou `None` se não há seleção editável.
-fn medir_selecao(editor_ref: &NodeRef) -> Option<(f64, f64)> {
+fn medir_selecao() -> Option<(f64, f64)> {
     let range = selecao_atual()?;
-    let editor = editor_ref.cast::<HtmlElement>()?;
 
     // Só dentro de um bloco editável do editor. Selecionar texto na
     // barra lateral, numa proposta ou numa conversa não pode abrir uma
     // barra que não vai conseguir escrever em lugar nenhum.
+    //
+    // A âncora é `.editor`, não a raiz do `contenteditable`: numa página
+    // COM embeds o editor não tem raiz única — cada segmento de markdown
+    // é seu próprio `.editor__wysiwyg`. A primeira versão pedia a raiz e
+    // por isso a barra simplesmente não aparecia em nenhuma página com
+    // embed, que é justamente onde mora quase todo conteúdo do vault.
     let no = range.common_ancestor_container().ok()?;
     let alvo: Element = match no.dyn_ref::<Element>() {
         Some(e) => e.clone(),
         None => no.parent_element()?,
     };
-    let editavel = alvo.closest("[contenteditable=\"true\"]").ok()??;
-    if !editor.contains(Some(&editavel)) {
-        return None;
-    }
+    alvo.closest("[contenteditable=\"true\"]").ok()??;
+    alvo.closest(".editor").ok()??;
 
     let r = range.get_bounding_client_rect();
     if r.width() == 0.0 && r.height() == 0.0 {
