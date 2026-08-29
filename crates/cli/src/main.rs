@@ -144,6 +144,13 @@ enum Command {
     /// Prepara a pasta do vault: estrutura, templates, padrões, prompts
     /// e a página inicial (ciclo 233). Não sobrescreve nada.
     Init,
+    /// Mapa do vault numa chamada só (ciclo 236).
+    ///
+    /// Pensado pra ser a PRIMEIRA coisa que um agente roda: diz onde as
+    /// coisas moram, o que está em cada etapa do fluxo, o que espera
+    /// revisão e quais padrões existem pra anexar. Sem ele, o mesmo
+    /// entendimento custa uma dezena de `list-pages` e `read`.
+    Contexto,
     /// Lista as propostas pendentes de revisão.
     Propostas,
     /// Aplica uma proposta aprovada.
@@ -588,6 +595,15 @@ fn run(cli: Cli) -> Result<(), String> {
                 }
             }
         }
+        Command::Contexto => {
+            let paginas = handle_scan_vault(cli.vault.clone())?;
+            let propostas = handle_listar_propostas(cli.vault.clone()).unwrap_or_default();
+            if cli.json {
+                print_json(&contexto_json(&cli.vault, &paginas, &propostas))?;
+            } else {
+                print!("{}", contexto_texto(&cli.vault, &paginas, &propostas));
+            }
+        }
         Command::Mcp => {
             mcp::servir(cli.vault)?;
         }
@@ -724,6 +740,124 @@ fn propor_conteudo(
         conteudo,
     };
     handle_propor(vault.to_string(), proposta)
+}
+
+/// Conta quantas páginas há por valor de uma chave, em ordem estável.
+fn contar_por<F>(paginas: &[anotadinho_core::PageIndexEntry], chave: F) -> Vec<(String, usize)>
+where
+    F: Fn(&anotadinho_core::PageIndexEntry) -> Option<String>,
+{
+    let mut mapa: std::collections::BTreeMap<String, usize> = Default::default();
+    for p in paginas {
+        if let Some(v) = chave(p) {
+            *mapa.entry(v).or_default() += 1;
+        }
+    }
+    let mut v: Vec<_> = mapa.into_iter().collect();
+    v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    v
+}
+
+/// A pasta de uma página (`pages/specs/x.md` → `pages/specs`).
+fn pasta_de(path: &str) -> String {
+    match path.rfind('/') {
+        Some(i) => path[..i].to_string(),
+        None => ".".to_string(),
+    }
+}
+
+fn contexto_texto(
+    vault: &str,
+    paginas: &[anotadinho_core::PageIndexEntry],
+    propostas: &[anotadinho_core::proposta::Proposta],
+) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    let _ = writeln!(s, "vault: {vault}");
+    let _ = writeln!(s, "páginas: {}", paginas.len());
+    let _ = writeln!(s);
+
+    let _ = writeln!(s, "## Onde as coisas moram");
+    for (pasta, n) in contar_por(paginas, |p| Some(pasta_de(&p.path))) {
+        let _ = writeln!(s, "  {pasta:<32} {n}");
+    }
+    let _ = writeln!(s);
+
+    let _ = writeln!(s, "## Tipos de página");
+    for (tipo, n) in contar_por(paginas, |p| {
+        (!p.page_type.is_empty() && p.page_type != "md").then(|| p.page_type.clone())
+    }) {
+        let _ = writeln!(s, "  {tipo:<32} {n}");
+    }
+    let _ = writeln!(s);
+
+    // O estado do fluxo é a pergunta mais frequente: "o que está
+    // esperando alguma coisa de mim?"
+    let _ = writeln!(s, "## Fluxo, por etapa");
+    for artefato in ["spec", "proposta", "execucao"] {
+        let do_tipo: Vec<_> = paginas.iter().filter(|p| p.page_type == artefato).collect();
+        if do_tipo.is_empty() {
+            continue;
+        }
+        let _ = writeln!(s, "  {artefato}:");
+        let mut por_etapa: std::collections::BTreeMap<&str, Vec<&str>> = Default::default();
+        for p in &do_tipo {
+            let etapa = p.properties.get("status").map(String::as_str).unwrap_or("(sem etapa)");
+            por_etapa.entry(etapa).or_default().push(&p.title);
+        }
+        for (etapa, titulos) in por_etapa {
+            let _ = writeln!(s, "    {etapa} ({})", titulos.len());
+            for t in titulos.iter().take(8) {
+                let _ = writeln!(s, "      - {t}");
+            }
+            if titulos.len() > 8 {
+                let _ = writeln!(s, "      … e mais {}", titulos.len() - 8);
+            }
+        }
+    }
+    let _ = writeln!(s);
+
+    let _ = writeln!(s, "## Esperando revisão humana");
+    if propostas.is_empty() {
+        let _ = writeln!(s, "  nada pendente");
+    } else {
+        for p in propostas {
+            let _ = writeln!(s, "  {} → {}", p.id, p.alvo);
+        }
+    }
+    let _ = writeln!(s);
+
+    let _ = writeln!(s, "## Padrões (anexe o que for do assunto)");
+    for p in paginas.iter().filter(|p| p.path.starts_with("pages/padroes/")) {
+        let _ = writeln!(s, "  {:<44} {}", p.path, p.title);
+    }
+    let _ = writeln!(s);
+
+    let _ = writeln!(s, "## Prompts padrão");
+    for p in anotadinho_core::prompt_padrao::descobrir(paginas.to_vec()) {
+        let _ = writeln!(s, "  {:<44} {}", p.path, p.title);
+    }
+    s
+}
+
+fn contexto_json(
+    vault: &str,
+    paginas: &[anotadinho_core::PageIndexEntry],
+    propostas: &[anotadinho_core::proposta::Proposta],
+) -> serde_json::Value {
+    serde_json::json!({
+        "vault": vault,
+        "paginas": paginas.len(),
+        "pastas": contar_por(paginas, |p| Some(pasta_de(&p.path)))
+            .into_iter().map(|(k, v)| serde_json::json!({ "pasta": k, "paginas": v })).collect::<Vec<_>>(),
+        "tipos": contar_por(paginas, |p| (!p.page_type.is_empty() && p.page_type != "md").then(|| p.page_type.clone()))
+            .into_iter().map(|(k, v)| serde_json::json!({ "tipo": k, "paginas": v })).collect::<Vec<_>>(),
+        "propostas_pendentes": propostas.iter().map(|p| serde_json::json!({ "id": p.id, "alvo": p.alvo })).collect::<Vec<_>>(),
+        "padroes": paginas.iter().filter(|p| p.path.starts_with("pages/padroes/"))
+            .map(|p| serde_json::json!({ "path": p.path, "titulo": p.title })).collect::<Vec<_>>(),
+        "prompts": anotadinho_core::prompt_padrao::descobrir(paginas.to_vec())
+            .into_iter().map(|p| serde_json::json!({ "path": p.path, "titulo": p.title })).collect::<Vec<_>>(),
+    })
 }
 
 fn embed_summary(data: &EmbedData) -> String {

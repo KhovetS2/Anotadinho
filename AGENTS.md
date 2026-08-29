@@ -6,6 +6,28 @@ também é o painel do próprio desenvolvimento. As notas moram em
 
 Leia isto inteiro antes de mexer em qualquer coisa.
 
+## Os primeiros noventa segundos
+
+Nesta ordem, sempre:
+
+```bash
+cargo build -p anotadinho-cli                        # se ainda não existir
+./target/debug/anotadinho-cli --vault VaultAnotadinho contexto
+```
+
+`contexto` devolve, numa chamada: onde as coisas moram, o que está em cada
+etapa do fluxo, o que espera revisão, quais padrões existem pra anexar e
+quais prompts padrão estão disponíveis. É a foto que antes custava uma
+dezena de `list-pages` e `read` — e que, sem ela, quase sempre não era
+tirada, e o trabalho começava no escuro.
+
+Depois:
+
+1. Leia a **spec ou proposta** que originou o pedido, inteira.
+2. Leia os **padrões do assunto** (`pages/padroes/`). Eles são cicatrizes
+   de bugs reais: cada um evita um erro que já custou um ciclo.
+3. Só então mexa em código.
+
 ## O que este projeto é
 
 | Camada | Tecnologia |
@@ -48,6 +70,8 @@ cli embed list pages/x.md                     # embeds da página
 cli embed get pages/x.md 0                    # YAML de um embed
 cli set-property pages/x.md status aprovada   # frontmatter, corpo intocado
 cli embed check pages/x.md                    # valida embeds antes de gravar
+cli contexto                                  # o mapa do vault (comece por aqui)
+cli init                                      # semeia um vault novo
 ```
 
 Se o binário não existir: `cargo build -p anotadinho-cli`.
@@ -62,6 +86,20 @@ cli propostas          # o humano revisa
 `propor` grava um diff pra revisão humana em vez de escrever direto. É o
 modo recomendado pra você. Uma nota é trabalho de alguém: sobrescrever
 sem revisão não é um risco teórico, é o que já aconteceu.
+
+### Fechar o que você fez
+
+Ao terminar uma execução, registre — propondo, como tudo mais:
+
+```bash
+cli etapa pages/propostas/x.md --para concluida --resumo -   # resumo pelo stdin
+cli etapa pages/propostas/x.md --para bloqueada --resumo -   # quando não deu
+```
+
+Isso muda a etapa no embed e o `status` no frontmatter, juntos, e entra na
+fila de revisão. **Não avance etapa de outro jeito**, e não diga que
+terminou quando não terminou: `bloqueada` com o motivo no resumo vale
+mais que `concluida` mentindo.
 
 **Nunca esvazie uma página.** Gravar vazio por cima de página com
 conteúdo é recusado pelo app, e é sinal de bug — se você chegou nisso,
@@ -174,6 +212,25 @@ avança etapa.
 **Se um requisito estiver ambíguo, aponte a ambiguidade — não decida por
 conta.** E se a abordagem aprovada se mostrar inviável no meio da
 execução, PARE e explique: mudar de abordagem exige proposta nova.
+
+## Como responder
+
+O que você escreve é lido por alguém que já conhece o projeto e vai
+decidir alguma coisa com base naquilo. Então:
+
+- **Diga o que mudou e como você validou.** Nessa ordem, no começo.
+- **Não reconte o arquivo.** Quem pediu tem o diff; repetir o conteúdo em
+  prosa não acrescenta e enterra o que importa.
+- **Aponte o que ficou de fora**, e por quê. Silêncio sobre um pedaço não
+  feito é a pior forma de entregar.
+- **Uma descoberta inesperada vale mais que três parágrafos de resumo.**
+  Se você encontrou a causa real de um bug, ou um acoplamento que ninguém
+  veria quebrar, é isso que deve estar em destaque.
+- **Não peça confirmação pra seguir.** Se o próximo passo é óbvio pelo
+  ciclo, faça.
+- Sem preâmbulo, sem "vou começar agora", sem repetir o pedido de volta.
+
+Se você errou, corrija e siga. Não faça retrospectiva do erro.
 
 ## Quando você não conseguir
 

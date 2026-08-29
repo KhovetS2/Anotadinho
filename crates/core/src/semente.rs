@@ -66,6 +66,8 @@ pub fn arquivos() -> Vec<Arquivo> {
         Arquivo { caminho: "pages/prompts-default/investigar-comportamento-errado.md", conteudo: include_str!("../seeds/prompts-default/investigar-comportamento-errado.md") },
         Arquivo { caminho: "pages/prompts-default/revisar-spec.md", conteudo: include_str!("../seeds/prompts-default/revisar-spec.md") },
         Arquivo { caminho: "pages/prompts-default/escrever-cenario-de-harness.md", conteudo: include_str!("../seeds/prompts-default/escrever-cenario-de-harness.md") },
+        Arquivo { caminho: "pages/prompts-default/planejar-a-partir-de-uma-spec.md", conteudo: include_str!("../seeds/prompts-default/planejar-a-partir-de-uma-spec.md") },
+        Arquivo { caminho: "pages/prompts-default/entender-um-trecho-do-codigo.md", conteudo: include_str!("../seeds/prompts-default/entender-um-trecho-do-codigo.md") },
     ]);
 
     lista

@@ -1025,3 +1025,48 @@ fn etapa_desconhecida_diz_quais_existem() {
         .failure()
         .stderr(predicates::str::contains("em-execucao"));
 }
+
+// ── ciclo 236: o mapa do vault numa chamada ──────────────────────────
+
+#[test]
+fn contexto_diz_onde_as_coisas_moram_e_o_que_espera_revisao() {
+    let dir = TempDir::new().unwrap();
+    let raiz = dir.path().to_str().unwrap();
+    Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args(["--vault", raiz, "init"])
+        .assert()
+        .success();
+
+    Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args(["--vault", raiz, "contexto"])
+        .assert()
+        .success()
+        // Um vault recém-semeado já tem o que orientar: as pastas do
+        // fluxo, os padrões pra anexar e os prompts disponíveis.
+        .stdout(predicates::str::contains("pages/padroes"))
+        .stdout(predicates::str::contains("pages/prompts-default"))
+        .stdout(predicates::str::contains("Prompts padrão"))
+        .stdout(predicates::str::contains("nada pendente"));
+}
+
+#[test]
+fn contexto_mostra_a_etapa_de_cada_artefato() {
+    let dir = TempDir::new().unwrap();
+    let raiz = dir.path().to_str().unwrap();
+    fs::create_dir_all(dir.path().join("pages/specs")).unwrap();
+    fs::write(
+        dir.path().join("pages/specs/uma.md"),
+        "---\ntitle: Uma spec\ntype: spec\nstatus: em-revisao\n---\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args(["--vault", raiz, "contexto"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("em-revisao"))
+        .stdout(predicates::str::contains("Uma spec"));
+}
