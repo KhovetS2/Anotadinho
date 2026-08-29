@@ -929,6 +929,24 @@ fluxo.push({
 });
 
 // ── ciclo 224: prompts padrão reutilizáveis ─────────────────────────
+//
+// O seletor virou botão + popover no ciclo 227: a faixa fixa comia uma
+// linha do compositor mesmo sem prompt nenhum no vault.
+
+const ABRIR_PROMPTS = `(() => {
+  if (!document.querySelector('.conversa__prompt-popover')) {
+    document.querySelector('.conversa__prompt-botao').click();
+  }
+  return true;
+})()`;
+
+const ESCOLHER_PROMPT = (texto) => `(() => {
+  const alvo = [...document.querySelectorAll('.conversa__prompt-opcao')]
+    .find(o => o.textContent.includes(${JSON.stringify(texto)}));
+  if (!alvo) return false;
+  alvo.click();
+  return true;
+})()`;
 
 fluxo.push({
   nome: "conversa: prompt padrão filtra, preenche, repete, prevê e anexa contexto (224)",
@@ -959,15 +977,16 @@ fluxo.push({
       ctx.escrever("---\ntitle: __uitest\ntype: conversa\n---\n");
       await recarregarEstavel(bridge);
       await ctx.abrirPagina(bridge, ctx.nomePagina);
-      await esperar(bridge, "document.querySelector('.conversa__prompt-select')", "o seletor de prompts");
+      await esperar(bridge, "document.querySelector('.conversa__prompt-botao')", "o botão de prompt padrão");
+      await bridge.js(ABRIR_PROMPTS);
       await esperar(
         bridge,
-        "[...document.querySelectorAll('.conversa__prompt-select option')].some(o => o.textContent.includes('__uitest prompt completo'))",
+        "[...document.querySelectorAll('.conversa__prompt-opcao')].some(o => o.textContent.includes('__uitest prompt completo'))",
         "o prompt ser descoberto",
       );
 
       const opcoes = await bridge.js(
-        `[...document.querySelectorAll('.conversa__prompt-select option')].map(o => o.textContent.trim())`,
+        `[...document.querySelectorAll('.conversa__prompt-opcao')].map(o => o.textContent.trim())`,
       );
       ctx.assert(opcoes.some((x) => x.includes("Nenhum")), "faltou a opção vazia");
       ctx.assert(opcoes.some((x) => x.includes("prompt completo")), "prompt da subpasta não apareceu");
@@ -982,14 +1001,7 @@ fluxo.push({
         return true;
       })()`);
       await PAUSA(300);
-      await bridge.js(`(() => {
-        const select = document.querySelector('.conversa__prompt-select');
-        const option = [...select.options].find(o => o.textContent.includes('__uitest prompt completo'));
-        const setSelect = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
-        setSelect.call(select, option.value);
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
-      })()`);
+      await bridge.js(ESCOLHER_PROMPT("__uitest prompt completo"));
       await esperar(bridge, "document.querySelectorAll('.conversa__prompt-campo').length === 3", "os três campos únicos");
 
       const campos = await bridge.js(`(() => ({
@@ -1016,7 +1028,7 @@ fluxo.push({
       ctx.assert(final.includes("leitores") && final.includes("modelo"), "valores não foram substituídos");
       ctx.assert(final.includes("<<<DADO-ANOTADINHO VALOR title>>>"), "valor não foi blindado como DADO");
 
-      await bridge.js(`document.querySelector('.conversa__prompt-preview').click(); true`);
+      await bridge.js(`[...document.querySelectorAll('.conversa__prompt-rodape button')].find(b => b.textContent.includes('Visualizar')).click(); true`);
       await esperar(bridge, "document.querySelector('.conversa__prompt-final')", "o preview abrir");
       const preview = await bridge.js(`document.querySelector('.conversa__prompt-final').textContent`);
       ctx.assertEq(preview, final, "preview não mostra o prompt final");
@@ -1026,13 +1038,8 @@ fluxo.push({
       const md = fs.readFileSync(conversa, "utf8");
       ctx.assert(md.includes("- pages/produto/missao.md"), `contexto do prompt não persistiu:\n${md}`);
 
-      await bridge.js(`(() => {
-        const select = document.querySelector('.conversa__prompt-select');
-        const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
-        set.call(select, '');
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
-      })()`);
+      await bridge.js(ABRIR_PROMPTS);
+      await bridge.js(ESCOLHER_PROMPT("Nenhum"));
       await PAUSA(300);
       ctx.assertEq(
         await bridge.js(`document.querySelector('.conversa__campo').value`),
@@ -1040,22 +1047,98 @@ fluxo.push({
         "opção vazia não restaurou a escrita livre",
       );
 
-      await bridge.js(`(() => {
-        const select = document.querySelector('.conversa__prompt-select');
-        const option = [...select.options].find(o => o.textContent.includes('marcador único'));
-        const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
-        set.call(select, option.value);
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-        return true;
-      })()`);
+      await bridge.js(ABRIR_PROMPTS);
+      await bridge.js(ESCOLHER_PROMPT("marcador único"));
       await esperar(bridge, "document.querySelectorAll('.conversa__prompt-campo').length === 1", "o marcador único");
       const unico = await bridge.js(`document.querySelector('.conversa__campo').value`);
       ctx.assert(unico.startsWith("Resuma O bloco abaixo"), "marcador único não foi expandido");
       ctx.assert(unico.includes("rascunho inicial"), "marcador único não recebeu o rascunho");
     } finally {
-      fs.rmSync(pasta, { recursive: true, force: true });
+      // Apaga só o que ESTE cenário criou. Apagar a pasta inteira levava
+      // junto os prompts padrão que moram no vault de verdade.
+      fs.rmSync(`${pasta}/sub/__uitest-prompt.md`, { force: true });
+      fs.rmSync(`${pasta}/sub`, { recursive: true, force: true });
+      fs.rmSync(`${pasta}/__uitest-tipo-errado.md`, { force: true });
+      fs.rmSync(`${pasta}/__uitest-unico.md`, { force: true });
       fs.rmSync(fora, { force: true });
     }
+  },
+});
+
+// ── ciclo 227: o compositor devolve espaço, e a pergunta não sobra ───
+
+fluxo.push({
+  nome: "conversa: a pergunta de planejar não reaparece na conversa seguinte (227)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const pasta = `${ctx.vault}/pages/conversas`;
+    const antes = fs.existsSync(pasta) ? fs.readdirSync(pasta) : [];
+    const outra = `${ctx.vault}/pages/__uitest-outra-conversa.md`;
+    fs.writeFileSync(outra, "---\ntitle: __uitest-outra-conversa\ntype: conversa\n---\n");
+    try {
+      ctx.escrever(
+        "---\ntitle: __uitest\ntype: spec\nstatus: aprovada\n---\n" +
+          '{{ type: "fluxo" }}\nartefato: spec\netapa: aprovada\n{{ /fluxo }}\n\n' +
+          "## Requisitos funcionais\n\n- RF1. Alguma coisa.\n",
+      );
+      await recarregarEstavel(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await esperar(bridge, "document.querySelector('.fluxo__planejar')", "a spec aprovada");
+      await bridge.js(`(() => { document.querySelector('.fluxo__planejar button').click(); return true; })()`);
+      await esperar(bridge, "document.querySelector('.conversa')", "a conversa de planejamento", 12000);
+      await esperar(
+        bridge,
+        "((document.querySelector('.conversa__campo')||{}).value||'').includes('PROPOSTA DE IMPLEMENTAÇÃO')",
+        "a pergunta chegar pronta",
+      );
+
+      // A pergunta era endereçada ÀQUELA conversa. Abrir outra não pode
+      // trazer o pedido de planejamento junto: até o ciclo 227 ele ficava
+      // pendurado no app e reescrevia o rascunho de toda conversa aberta
+      // em seguida.
+      await ctx.abrirPagina(bridge, "__uitest-outra-conversa");
+      await esperar(bridge, "document.querySelector('.conversa__campo')", "o compositor da outra conversa");
+      await PAUSA(600);
+      ctx.assertEq(
+        await bridge.js(`document.querySelector('.conversa__campo').value`),
+        "",
+        "a pergunta de planejamento vazou para a conversa seguinte",
+      );
+    } finally {
+      fs.rmSync(outra, { force: true });
+      if (fs.existsSync(pasta)) {
+        for (const f of fs.readdirSync(pasta).filter((x) => !antes.includes(x))) {
+          fs.rmSync(`${pasta}/${f}`, { force: true });
+        }
+      }
+    }
+  },
+});
+
+fluxo.push({
+  nome: "conversa: o compositor não gasta linha com o prompt padrão (227)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\ntype: conversa\n---\n");
+    await recarregarEstavel(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await esperar(bridge, "document.querySelector('.conversa__campo')", "o compositor");
+    // A faixa fixa do ciclo 224 saiu de cena: o que resta é um botão na
+    // linha de ações, e a lista só existe depois de aberta.
+    ctx.assertEq(await bridge.js(`!!document.querySelector('.conversa__prompt-barra')`), false, "a faixa fixa continua lá");
+    ctx.assertEq(await bridge.js(`!!document.querySelector('.conversa__prompt-popover')`), false, "a lista nasce aberta");
+    ctx.assertEq(await bridge.js(`!!document.querySelector('.conversa__prompt-botao')`), true, "sumiu o botão de prompt");
+
+    // O campo ocupa a largura toda, e a lista abre por cima dele em vez
+    // de empurrá-lo para baixo.
+    const antes = await bridge.js(`document.querySelector('.conversa__campo').getBoundingClientRect().top`);
+    await bridge.js(ABRIR_PROMPTS);
+    await esperar(bridge, "document.querySelector('.conversa__prompt-popover')", "a lista abrir");
+    ctx.assertEq(
+      await bridge.js(`document.querySelector('.conversa__campo').getBoundingClientRect().top`),
+      antes,
+      "abrir a lista empurrou o campo de escrever",
+    );
+    await bridge.js(`[...document.querySelectorAll('.conversa__prompt-rodape button')].find(b => b.textContent.includes('Fechar')).click(); true`);
   },
 });
 

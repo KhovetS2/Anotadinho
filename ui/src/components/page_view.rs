@@ -59,7 +59,10 @@ pub struct PageViewProps {
     #[prop_or_default]
     pub contexto_path: Option<String>,
     #[prop_or_default]
-    pub pergunta_inicial: Option<String>,
+    pub pergunta_inicial: Option<crate::components::conversa_view::PerguntaInicial>,
+    /// Repassa o aviso de que a pergunta inicial já foi usada (ciclo 227).
+    #[prop_or_default]
+    pub on_pergunta_consumida: Callback<()>,
     pub nav_mode_active: bool,
     #[prop_or_default]
     pub on_planejar: Callback<anotadinho_core::fluxo::Pedido>,
@@ -164,7 +167,8 @@ pub fn page_view(props: &PageViewProps) -> Html {
                     page={page.clone()}
                     contexto_path={props.contexto_path.clone()}
                     on_page_selected={props.on_page_selected.clone()}
-                    pergunta_inicial={props.pergunta_inicial.clone()} />
+                    pergunta_inicial={props.pergunta_inicial.clone()}
+                    on_pergunta_consumida={props.on_pergunta_consumida.clone()} />
             },
             None => html! {},
         },

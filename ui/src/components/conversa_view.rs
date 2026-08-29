@@ -27,6 +27,21 @@ use yew::prelude::*;
 /// Quantas mensagens do histórico vão no prompt. Corta as mais ANTIGAS.
 const HISTORICO_NO_PROMPT: usize = 12;
 
+/// Pergunta que uma conversa deve trazer já escrita, e pra QUAL conversa
+/// ela é (ciclo 227).
+///
+/// O caminho não é decoração. Sem ele a pergunta ficava pendurada no app
+/// pra sempre — e como o efeito que a injeta reage à troca de página,
+/// abrir qualquer outra conversa depois reescrevia o rascunho com o
+/// último pedido de planejamento, do nada.
+#[derive(Clone, PartialEq, Debug)]
+pub struct PerguntaInicial {
+    /// Conversa a que a pergunta pertence.
+    pub conversa: String,
+    /// Texto a escrever no campo.
+    pub texto: String,
+}
+
 #[derive(Properties, PartialEq, Clone)]
 pub struct ConversaViewProps {
     /// Abre a página criada ao promover uma mensagem (ciclo 203).
@@ -37,9 +52,14 @@ pub struct ConversaViewProps {
     /// Página que estava aberta antes — vai como contexto.
     #[prop_or_default]
     pub contexto_path: Option<String>,
-    /// Pergunta já escrita ao abrir (ciclo 209).
+    /// Pergunta já escrita ao abrir (ciclo 209), endereçada a uma
+    /// conversa específica (ciclo 227).
     #[prop_or_default]
-    pub pergunta_inicial: Option<String>,
+    pub pergunta_inicial: Option<PerguntaInicial>,
+    /// Avisa que a pergunta inicial foi escrita no campo, pra quem a
+    /// guardou poder esquecê-la (ciclo 227).
+    #[prop_or_default]
+    pub on_pergunta_consumida: Callback<()>,
 }
 
 #[function_component(ConversaView)]
@@ -48,16 +68,25 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     let rascunho = use_state(String::new);
     {
         // Preenche o campo quando a conversa nasce de um botão que já
-        // sabe o que perguntar. Só na ABERTURA: sobrescrever depois
-        // apagaria o que a pessoa estivesse escrevendo.
+        // sabe o que perguntar — e SÓ nela: a pergunta traz o caminho de
+        // destino, e quem avisa que consumiu é este efeito, pra ela não
+        // sobrar e reaparecer na próxima conversa que a pessoa abrir.
         let rascunho = rascunho.clone();
         let inicial = props.pergunta_inicial.clone();
-        use_effect_with(props.page.path.clone(), move |_| {
-            if let Some(p) = inicial {
-                rascunho.set(p);
-            }
-            || ()
-        });
+        let path = props.page.path.clone();
+        let consumida = props.on_pergunta_consumida.clone();
+        use_effect_with(
+            (props.page.path.clone(), props.pergunta_inicial.clone()),
+            move |_| {
+                if let Some(p) = inicial {
+                    if p.conversa == path {
+                        rascunho.set(p.texto);
+                        consumida.emit(());
+                    }
+                }
+                || ()
+            },
+        );
     }
     let ocupado = use_state(|| false);
     let erro = use_state(|| None::<String>);
@@ -94,17 +123,25 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     // O molde e seus valores ficam separados até a expansão. Sem isso,
     // não haveria como manter o texto inserido como DADO (ciclo 202).
     let prompts = use_state(Vec::<anotadinho_core::PageIndexEntry>::new);
+    // A varredura da abertura fica guardada: validar o `contexto:` de um
+    // prompt não precisa varrer o vault de novo, é a mesma foto.
+    let paginas_vault = use_state(Vec::<anotadinho_core::PageIndexEntry>::new);
     let prompt_ativo = use_state(|| None::<PromptPadrao>);
     let prompt_path = use_state(String::new);
     let valores_prompt = use_state(BTreeMap::<String, String>::new);
     let rascunho_antes_prompt = use_state(String::new);
     let preview_prompt = use_state(|| false);
+    // O popover do prompt padrão. Fechado por padrão: o campo de escrever
+    // é o que a pessoa veio fazer aqui, e a faixa fixa que existia antes
+    // comia uma linha da tela mesmo quando não havia prompt nenhum.
+    let prompt_aberto = use_state(|| false);
     let carregando_prompts = use_state(|| true);
 
     // Descoberta usa uma única varredura e aplica simultaneamente pasta e
     // tipo. Recarrega ao trocar de conversa para enxergar páginas novas.
     {
         let prompts = prompts.clone();
+        let paginas_vault = paginas_vault.clone();
         let carregando = carregando_prompts.clone();
         let erro = erro.clone();
         let vault_path = props.vault_path.clone();
@@ -112,7 +149,10 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
             wasm_bindgen_futures::spawn_local(async move {
                 carregando.set(true);
                 match api::scan_vault(&vault_path).await {
-                    Ok(paginas) => prompts.set(prompt_padrao::descobrir(paginas)),
+                    Ok(paginas) => {
+                        prompts.set(prompt_padrao::descobrir(paginas.clone()));
+                        paginas_vault.set(paginas);
+                    }
                     Err(e) => erro.set(Some(format!("não consegui listar prompts: {e}"))),
                 }
                 carregando.set(false);
@@ -614,6 +654,8 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     };
 
     let escolher_prompt = {
+        let aberto = prompt_aberto.clone();
+        let paginas_vault = paginas_vault.clone();
         let prompt_ativo = prompt_ativo.clone();
         let prompt_path = prompt_path.clone();
         let valores_prompt = valores_prompt.clone();
@@ -623,10 +665,9 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         let gravar_anexos = gravar_anexos.clone();
         let erro = erro.clone();
         let vault_path = props.vault_path.clone();
-        Callback::from(move |e: Event| {
-            let Some(select) = e.target_dyn_into::<web_sys::HtmlSelectElement>() else { return };
-            let escolhido = select.value();
+        Callback::from(move |escolhido: String| {
             if escolhido.is_empty() {
+                aberto.set(false);
                 if prompt_ativo.is_some() {
                     rascunho.set((*rascunho_anterior).clone());
                 }
@@ -637,11 +678,13 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 return;
             }
 
+            let paginas = (*paginas_vault).clone();
             let (prompt_ativo, prompt_path, valores_prompt) =
                 (prompt_ativo.clone(), prompt_path.clone(), valores_prompt.clone());
             let (rascunho, rascunho_anterior) = (rascunho.clone(), rascunho_anterior.clone());
             let (anexos, gravar_anexos, erro) =
                 (anexos.clone(), gravar_anexos.clone(), erro.clone());
+            let aberto = aberto.clone();
             let vault_path = vault_path.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 let conteudo = match api::read_page(&vault_path, &escolhido).await {
@@ -652,13 +695,6 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     }
                 };
                 let prompt = PromptPadrao::parse(&conteudo);
-                let paginas = match api::scan_vault(&vault_path).await {
-                    Ok(p) => p,
-                    Err(e) => {
-                        erro.set(Some(format!("não consegui validar o contexto do prompt: {e}")));
-                        return;
-                    }
-                };
                 let ausentes = prompt
                     .contexto
                     .iter()
@@ -699,6 +735,13 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 if lista != *anexos {
                     gravar_anexos.emit(lista);
                 }
+                // Um molde sem variáveis já está pronto, então a lista
+                // sai da frente. Com variáveis, os campos vivem DENTRO do
+                // popover — fechá-lo aqui esconderia exatamente o que a
+                // pessoa precisa preencher em seguida.
+                if prompt.variaveis.is_empty() {
+                    aberto.set(false);
+                }
                 valores_prompt.set(valores);
                 prompt_path.set(escolhido);
                 prompt_ativo.set(Some(prompt));
@@ -707,6 +750,22 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
             });
         })
     };
+
+    let alternar_prompt = {
+        let aberto = prompt_aberto.clone();
+        Callback::from(move |_: MouseEvent| aberto.set(!*aberto))
+    };
+    let fechar_prompt = {
+        let aberto = prompt_aberto.clone();
+        Callback::from(move |_: MouseEvent| aberto.set(false))
+    };
+    // O botão mostra o prompt em uso, não um rótulo genérico: é o único
+    // sinal de que o texto no campo veio de um molde.
+    let rotulo_do_prompt = prompts
+        .iter()
+        .find(|p| p.path == *prompt_path)
+        .map(|p| p.title.clone())
+        .unwrap_or_else(|| "Prompt padrão".to_string());
 
     let abrir_preview = {
         let preview = preview_prompt.clone();
@@ -906,71 +965,111 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 }
             </div>
 
-            <footer class="conversa__compositor" data-nav-group="prompt-padrao">
-                <div class="conversa__prompt-barra">
-                    <label class="conversa__prompt-label" for="conversa-prompt-padrao">
-                        { "Prompt padrão" }
-                    </label>
-                    <select id="conversa-prompt-padrao" class="input input--sm conversa__prompt-select"
-                        value={(*prompt_path).clone()} onchange={escolher_prompt}
-                        disabled={*ocupado || *carregando_prompts} data-nav-item="true">
-                        <option value="">{ if *carregando_prompts { "Carregando…" } else { "Nenhum — escrever do zero" } }</option>
-                        { for prompts.iter().map(|p| html! {
-                            <option value={p.path.clone()}>{ &p.title }</option>
-                        }) }
-                    </select>
-                    <button class="btn btn--ghost btn--xs conversa__prompt-preview"
-                        onclick={abrir_preview} disabled={rascunho.trim().is_empty() || ha_marcador_pendente}
-                        data-nav-item="true" title="Visualizar o texto final sem enviar">
-                        { "Visualizar" }
-                    </button>
-                </div>
-                if let Some(prompt) = &*prompt_ativo {
-                    if !prompt.variaveis.is_empty() {
-                        <div class="conversa__prompt-campos">
-                            { for prompt.variaveis.iter().map(|nome| {
-                                let prompt = prompt.clone();
-                                let nome_atual = nome.clone();
-                                let valor = valores_prompt.get(nome).cloned().unwrap_or_default();
-                                let valores = valores_prompt.clone();
-                                let rascunho = rascunho.clone();
-                                html! {
-                                    <label class="conversa__prompt-campo">
-                                        <span>{ format!("{{{{{nome}}}}}") }</span>
-                                        <input class="input input--sm" value={valor}
-                                            placeholder="Preencha antes de enviar"
-                                            data-nav-item="true"
-                                            oninput={Callback::from(move |e: InputEvent| {
-                                                let Some(input) = e.target_dyn_into::<web_sys::HtmlInputElement>() else { return };
-                                                let mut novos = (*valores).clone();
-                                                novos.insert(nome_atual.clone(), input.value());
-                                                rascunho.set(prompt.visualizar_parcial(&novos));
-                                                valores.set(novos);
-                                            })} />
-                                    </label>
-                                }
-                            }) }
-                        </div>
-                    }
-                }
+            <footer class="conversa__compositor">
+                <textarea class="conversa__campo" rows="4"
+                    placeholder="Escreva e mande. Shift+Enter quebra linha."
+                    value={(*rascunho).clone()}
+                    oninput={on_input}
+                    disabled={*ocupado} />
                 if ha_marcador_pendente {
                     <p class="conversa__prompt-pendente">
                         { "Preencha todos os marcadores antes de visualizar ou enviar." }
                     </p>
                 }
-                <textarea class="conversa__campo" rows="3"
-                    placeholder="Escreva e mande. Shift+Enter quebra linha."
-                    value={(*rascunho).clone()}
-                    oninput={on_input}
-                    disabled={*ocupado} />
-                if *ocupado {
-                    <button class="btn" onclick={interromper}
-                        title="Matar o processo do agente agora">{ "Parar" }</button>
-                } else {
-                    <button class="btn btn--primary" onclick={enviar}
-                        disabled={rascunho.trim().is_empty() || ha_marcador_pendente}
-                        data-nav-item="true">{ "Enviar" }</button>
-                }
+                <div class="conversa__acoes">
+                    // Sem prompt no vault não há o que escolher, e um
+                    // botão que abre uma lista vazia é pior que botão
+                    // nenhum.
+                    if !prompts.is_empty() {
+                        <div class="conversa__prompt" data-nav-group="prompt-padrao">
+                            <button class="btn btn--ghost btn--sm conversa__prompt-botao"
+                                onclick={alternar_prompt} disabled={*ocupado}
+                                data-nav-item="true"
+                                title="Começar de um prompt padrão do vault">
+                                <Icon name="file-text" />
+                                { rotulo_do_prompt }
+                                <Icon name={if *prompt_aberto { "chevron-down" } else { "chevron-up" }} />
+                            </button>
+                            if *prompt_aberto {
+                                <div class="conversa__prompt-popover">
+                                    <ul class="conversa__prompt-lista">
+                                        <li>
+                                            <button class="conversa__prompt-opcao" data-nav-item="true"
+                                                onclick={{
+                                                    let escolher = escolher_prompt.clone();
+                                                    Callback::from(move |_: MouseEvent| escolher.emit(String::new()))
+                                                }}>
+                                                { "Nenhum — escrever do zero" }
+                                            </button>
+                                        </li>
+                                        { for prompts.iter().map(|p| {
+                                            let escolher = escolher_prompt.clone();
+                                            let alvo = p.path.clone();
+                                            let atual = *prompt_path == p.path;
+                                            html! {
+                                                <li>
+                                                    <button class={classes!("conversa__prompt-opcao",
+                                                        atual.then_some("conversa__prompt-opcao--atual"))}
+                                                        data-nav-item="true"
+                                                        onclick={Callback::from(move |_: MouseEvent| escolher.emit(alvo.clone()))}>
+                                                        { &p.title }
+                                                    </button>
+                                                </li>
+                                            }
+                                        }) }
+                                    </ul>
+                                    if let Some(prompt) = &*prompt_ativo {
+                                        if !prompt.variaveis.is_empty() {
+                                            <div class="conversa__prompt-campos">
+                                                { for prompt.variaveis.iter().map(|nome| {
+                                                    let prompt = prompt.clone();
+                                                    let nome_atual = nome.clone();
+                                                    let valor = valores_prompt.get(nome).cloned().unwrap_or_default();
+                                                    let valores = valores_prompt.clone();
+                                                    let rascunho = rascunho.clone();
+                                                    html! {
+                                                        <label class="conversa__prompt-campo">
+                                                            <span>{ format!("{{{{{nome}}}}}") }</span>
+                                                            <input class="input input--sm" value={valor}
+                                                                placeholder="Preencha antes de enviar"
+                                                                data-nav-item="true"
+                                                                oninput={Callback::from(move |e: InputEvent| {
+                                                                    let Some(input) = e.target_dyn_into::<web_sys::HtmlInputElement>() else { return };
+                                                                    let mut novos = (*valores).clone();
+                                                                    novos.insert(nome_atual.clone(), input.value());
+                                                                    rascunho.set(prompt.visualizar_parcial(&novos));
+                                                                    valores.set(novos);
+                                                                })} />
+                                                        </label>
+                                                    }
+                                                }) }
+                                            </div>
+                                        }
+                                    }
+                                    <div class="conversa__prompt-rodape">
+                                        <button class="btn btn--ghost btn--xs"
+                                            onclick={abrir_preview}
+                                            disabled={rascunho.trim().is_empty() || ha_marcador_pendente}
+                                            data-nav-item="true" title="Visualizar o texto final sem enviar">
+                                            { "Visualizar" }
+                                        </button>
+                                        <button class="btn btn--ghost btn--xs" data-nav-item="true"
+                                            onclick={fechar_prompt}>{ "Fechar" }</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    <span class="conversa__acoes-folga"></span>
+                    if *ocupado {
+                        <button class="btn" onclick={interromper}
+                            title="Matar o processo do agente agora">{ "Parar" }</button>
+                    } else {
+                        <button class="btn btn--primary" onclick={enviar}
+                            disabled={rascunho.trim().is_empty() || ha_marcador_pendente}
+                            data-nav-item="true">{ "Enviar" }</button>
+                    }
+                </div>
             </footer>
             <Modal title="Visualização do prompt final" open={*preview_prompt}
                 on_close={fechar_preview} wide=true>

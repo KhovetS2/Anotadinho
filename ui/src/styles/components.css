@@ -1224,36 +1224,92 @@
 
 .conversa__compositor {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: 0.45rem;
   padding: 0.7rem 1rem;
   border-top: 1px solid var(--border);
 }
 
-/* Molde reutilizável (ciclo 224). O seletor e os campos ficam acima do
-   envio para o texto final continuar sempre à vista no compositor. */
-.conversa__prompt-barra {
-  flex: 1 0 100%;
+/* Linha de ações abaixo do campo (ciclo 227). O molde reutilizável do
+   ciclo 224 morava numa faixa fixa acima da textarea, sempre presente
+   mesmo sem nenhum prompt no vault — comia uma linha da tela para não
+   oferecer nada. Agora é um botão, e a lista abre por cima. */
+.conversa__acoes {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.conversa__prompt-label,
-.conversa__prompt-campo span {
-  color: var(--text-muted);
-  font-size: 0.6875rem;
+.conversa__acoes-folga { flex: 1; }
+
+.conversa__prompt { position: relative; }
+
+.conversa__prompt-botao {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 18rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.conversa__prompt-select { flex: 1; }
-.conversa__prompt-preview { margin-left: auto; }
+/* Abre para CIMA: o compositor mora no rodapé, e uma lista que descesse
+   sairia da janela. */
+.conversa__prompt-popover {
+  position: absolute;
+  bottom: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 20;
+  min-width: 20rem;
+  max-width: min(28rem, 80vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.conversa__prompt-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.conversa__prompt-opcao {
+  width: 100%;
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.conversa__prompt-opcao:hover,
+.conversa__prompt-opcao:focus-visible {
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+}
+
+.conversa__prompt-opcao--atual {
+  color: var(--accent-blue);
+  font-weight: 600;
+}
 
 .conversa__prompt-campos {
-  flex: 1 0 100%;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   gap: 0.45rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
 }
 
 .conversa__prompt-campo {
@@ -1262,8 +1318,18 @@
   gap: 0.2rem;
 }
 
+.conversa__prompt-campo span {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+
+.conversa__prompt-rodape {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
 .conversa__prompt-pendente {
-  flex: 1 0 100%;
   margin: 0;
   color: var(--warning);
   font-size: 0.6875rem;
@@ -1284,7 +1350,7 @@
 }
 
 .conversa__campo {
-  flex: 1;
+  width: 100%;
   resize: vertical;
   font-family: inherit;
   font-size: 0.875rem;

@@ -149,10 +149,12 @@ pub fn app() -> Html {
     // junto (ciclo 202). Quem sabe a ordem de navegação é quem troca de
     // página, então isto mora aqui e não dentro do painel.
     let pagina_anterior = use_state(|| None::<String>);
-    /// Pergunta que a próxima conversa aberta deve trazer já escrita
-    /// (ciclo 209) — é como o botão "Planejar implementação" entrega o
-    /// pedido pronto sem a pessoa redigitar.
-    let pergunta_inicial = use_state(|| None::<String>);
+    // Pergunta que uma conversa deve trazer já escrita (ciclo 209) — é
+    // como o botão "Planejar implementação" entrega o pedido pronto sem a
+    // pessoa redigitar. Guarda o caminho de destino e é zerada assim que
+    // a conversa a consome (ciclo 227), senão sobra aqui e reaparece na
+    // próxima conversa que a pessoa abrir.
+    let pergunta_inicial = use_state(|| None::<crate::components::conversa_view::PerguntaInicial>);
     {
         let pagina_anterior = pagina_anterior.clone();
         let selected_page = selected_page.clone();
@@ -875,7 +877,12 @@ pub fn app() -> Html {
                         .find(|p| p.path == conversa)
                         .map(|p| p.title.clone())
                         .unwrap_or_else(|| titulo.clone());
-                    pergunta_inicial.set(Some(pergunta.clone()));
+                    pergunta_inicial.set(Some(
+                        crate::components::conversa_view::PerguntaInicial {
+                            conversa: conversa.clone(),
+                            texto: pergunta.clone(),
+                        },
+                    ));
                     on_page_selected.emit(PageMeta {
                         path: conversa,
                         title: titulo_conversa,
@@ -894,7 +901,12 @@ pub fn app() -> Html {
                     anotadinho_core::conversa::nome_de_arquivo(&carimbo)
                 );
                 if api::write_page(&vault, &path, &md).await.is_ok() {
-                    pergunta_inicial.set(Some(pergunta));
+                    pergunta_inicial.set(Some(
+                        crate::components::conversa_view::PerguntaInicial {
+                            conversa: path.clone(),
+                            texto: pergunta,
+                        },
+                    ));
                     list_version.set(*list_version + 1);
                     on_page_selected.emit(PageMeta {
                         path,
@@ -1582,6 +1594,10 @@ pub fn app() -> Html {
                                 }}
                                 contexto_path={(*pagina_anterior).clone()}
                                 pergunta_inicial={(*pergunta_inicial).clone()}
+                                on_pergunta_consumida={{
+                                    let p = pergunta_inicial.clone();
+                                    Callback::from(move |_| p.set(None))
+                                }}
                                 on_enter_block_nav={{
                                     let nav_mode_active = nav_mode_active.clone();
                                     let nav_stack = nav_stack.clone();
