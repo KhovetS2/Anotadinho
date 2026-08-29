@@ -931,3 +931,97 @@ fn mcp_ferramenta_desconhecida_devolve_erro_legivel() {
     );
     assert_eq!(r[0]["result"]["isError"], true);
 }
+
+// ── ciclo 229: o agente propõe o fechamento da etapa ─────────────────
+
+/// Uma página de fluxo em execução, pronta pra ser fechada.
+fn vault_com_execucao() -> TempDir {
+    let dir = setup_vault();
+    fs::create_dir_all(dir.path().join("pages/propostas")).unwrap();
+    fs::write(
+        dir.path().join("pages/propostas/cache.md"),
+        "---\ntitle: Cache do índice\ntype: proposta\nstatus: em-execucao\n---\n\n\
+         {{ type: \"fluxo\" }}\nartefato: proposta\netapa: em-execucao\n{{ /fluxo }}\n\n\
+         ## Abordagem\n\nTrocar o mapa.\n",
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn etapa_propoe_em_vez_de_gravar() {
+    let dir = vault_com_execucao();
+    let alvo = dir.path().join("pages/propostas/cache.md");
+    let antes = fs::read_to_string(&alvo).unwrap();
+
+    Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args([
+            "--vault",
+            dir.path().to_str().unwrap(),
+            "etapa",
+            "pages/propostas/cache.md",
+            "--para",
+            "concluida",
+        ])
+        .assert()
+        .success();
+
+    // A garantia que sustenta o acoplamento com modelos: o arquivo NÃO
+    // muda. O que muda é a fila de revisão.
+    assert_eq!(fs::read_to_string(&alvo).unwrap(), antes, "o agente gravou direto");
+    let fila = dir.path().join(".anotadinho/propostas");
+    let pendentes: Vec<_> = fs::read_dir(&fila).unwrap().filter_map(Result::ok).collect();
+    assert_eq!(pendentes.len(), 1, "a proposta não entrou na fila");
+    let json = fs::read_to_string(pendentes[0].path()).unwrap();
+    assert!(json.contains("concluida"), "a proposta não leva a etapa nova:\n{json}");
+}
+
+#[test]
+fn etapa_recusa_pulo_invalido_e_nao_enfileira() {
+    let dir = setup_vault();
+    fs::write(
+        dir.path().join("pages/specs/rascunho.md"),
+        "---\ntitle: R\nstatus: rascunho\n---\n\n\
+         {{ type: \"fluxo\" }}\nartefato: spec\netapa: rascunho\n{{ /fluxo }}\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args([
+            "--vault",
+            dir.path().to_str().unwrap(),
+            "etapa",
+            "pages/specs/rascunho.md",
+            "--para",
+            "concluida",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("em-revisao"));
+
+    assert!(
+        !dir.path().join(".anotadinho/propostas").exists()
+            || fs::read_dir(dir.path().join(".anotadinho/propostas")).unwrap().count() == 0,
+        "pulo inválido virou proposta"
+    );
+}
+
+#[test]
+fn etapa_desconhecida_diz_quais_existem() {
+    let dir = vault_com_execucao();
+    Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args([
+            "--vault",
+            dir.path().to_str().unwrap(),
+            "etapa",
+            "pages/propostas/cache.md",
+            "--para",
+            "quase-la",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("em-execucao"));
+}

@@ -646,7 +646,10 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     }
                 }
                 anexos.set(lista.clone());
-                disparar.emit((fluxo::pergunta_de_execucao_da_conversa(&titulo), lista));
+                disparar.emit((
+                    fluxo::pergunta_de_execucao_da_conversa(&titulo, &path),
+                    lista,
+                ));
             });
         })
     };

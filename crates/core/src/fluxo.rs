@@ -12,6 +12,7 @@
 //! Fica no core porque a UI, o CLI e (depois) o servidor MCP precisam
 //! concordar sobre o que é uma etapa válida.
 
+use crate::MarkdownCodec;
 use serde::{Deserialize, Serialize};
 
 /// Onde um artefato está no fluxo.
@@ -326,8 +327,43 @@ mod tests {
     }
 
     #[test]
+    fn etapa_move_o_embed_e_o_frontmatter_juntos() {
+        let pagina = "---\ntitle: Cache\ntype: proposta\nstatus: em-execucao\n---\n\n\
+                      {{ type: \"fluxo\" }}\nartefato: proposta\netapa: em-execucao\n{{ /fluxo }}\n\n\
+                      ## Abordagem\n\nTrocar o mapa.\n";
+        let novo = aplicar_etapa_no_texto(pagina, Etapa::Concluida, Some("Feito e validado."))
+            .expect("transição válida");
+        // Os dois lugares onde o estado vive: um sem o outro deixa a
+        // página mentindo pra si mesma.
+        assert!(novo.contains("status: concluida"), "frontmatter não mudou:\n{novo}");
+        assert!(novo.contains("etapa: concluida"), "embed não mudou:\n{novo}");
+        assert!(novo.contains("Feito e validado."), "o resumo não entrou:\n{novo}");
+        // E o resto do documento continua lá.
+        assert!(novo.contains("## Abordagem"), "o corpo foi destruído:\n{novo}");
+        assert!(novo.contains("Trocar o mapa."), "o corpo foi destruído:\n{novo}");
+    }
+
+    #[test]
+    fn etapa_recusa_pulo_que_a_maquina_nao_permite() {
+        // Rascunho direto pra concluída pula a revisão inteira. É esse
+        // pulo que o fluxo existe pra impedir, e vale igual pro agente.
+        let pagina = "---\ntitle: X\nstatus: rascunho\n---\n\n\
+                      {{ type: \"fluxo\" }}\nartefato: spec\netapa: rascunho\n{{ /fluxo }}\n";
+        let erro = aplicar_etapa_no_texto(pagina, Etapa::Concluida, None)
+            .expect_err("pular a revisão tinha que ser recusado");
+        assert!(erro.contains("em-revisao"), "o erro não diz o que dá pra fazer: {erro}");
+    }
+
+    #[test]
+    fn etapa_sem_embed_de_fluxo_e_recusada() {
+        let pagina = "---\ntitle: X\n---\n\nSó texto.\n";
+        let erro = aplicar_etapa_no_texto(pagina, Etapa::EmRevisao, None).expect_err("sem embed");
+        assert!(erro.contains("embed de fluxo"), "erro pouco claro: {erro}");
+    }
+
+    #[test]
     fn execucao_da_conversa_nomeia_a_pagina_e_pede_relato() {
-        let p = pergunta_de_execucao_da_conversa("Cache do índice");
+        let p = pergunta_de_execucao_da_conversa("Cache do índice", "pages/execucoes/cache.md");
         assert!(p.contains("\"Cache do índice\""), "não nomeou a execução:\n{p}");
         assert!(p.contains("anexei"), "não diz que a página foi anexada:\n{p}");
         assert!(p.contains("PARE"), "faltou a trava contra mudar de rumo:\n{p}");
@@ -343,8 +379,8 @@ mod tests {
         // chegava com "Se algum          requisito", visível na tela.
         for p in [
             pergunta_de_planejamento("X"),
-            pergunta_de_execucao("X"),
-            pergunta_de_execucao_da_conversa("X"),
+            pergunta_de_execucao("X", "pages/propostas/x.md"),
+            pergunta_de_execucao_da_conversa("X", "pages/execucoes/x.md"),
             pergunta_de_alteracao("X", Artefato::Spec),
         ] {
             assert!(
@@ -371,7 +407,7 @@ mod tests {
 
     #[test]
     fn pergunta_de_execucao_proibe_mudar_a_abordagem() {
-        let p = pergunta_de_execucao("Abordagem X");
+        let p = pergunta_de_execucao("Abordagem X", "pages/propostas/abordagem-x.md");
         assert!(p.contains("Abordagem X"));
         assert!(p.contains("O que foi feito"), "{p}");
         // O espelho da trava do planejamento: lá não muda escopo, aqui
@@ -619,7 +655,7 @@ pub fn pergunta_de_planejamento(titulo_spec: &str) -> String {
 ///
 /// A trava explícita é o espelho da do planejamento: lá ele não podia
 /// mudar o escopo; aqui não pode mudar a abordagem sem avisar.
-pub fn pergunta_de_execucao(titulo_proposta: &str) -> String {
+pub fn pergunta_de_execucao(titulo_proposta: &str, caminho: &str) -> String {
     [
         format!("Execute a proposta \"{titulo_proposta}\", que já foi revisada e aprovada."),
         String::new(),
@@ -632,6 +668,28 @@ pub fn pergunta_de_execucao(titulo_proposta: &str) -> String {
         "Siga a abordagem aprovada. Se durante a execução ela se mostrar inviável, \
          PARE e explique o problema em vez de mudar de rumo por conta — mudar a \
          abordagem exige uma proposta nova."
+            .to_string(),
+        String::new(),
+        fechamento_da_etapa(caminho),
+    ]
+    .join("\n")
+}
+
+/// O rodapé que manda o agente FECHAR o que fez — propondo, não gravando.
+///
+/// Sem isto a página ficava eternamente "em execução" mesmo depois do
+/// trabalho pronto, e alguém tinha que lembrar de virar a etapa na mão.
+fn fechamento_da_etapa(caminho: &str) -> String {
+    [
+        format!(
+            "Ao terminar, registre o fechamento com `anotadinho-cli --vault \
+             VaultAnotadinho etapa {caminho} --para concluida --resumo -`, mandando \
+             pelo stdin o resumo do que foi feito."
+        ),
+        String::new(),
+        "Isso NÃO grava o arquivo: entra na fila de revisão como diff, e eu decido. \
+         Se o trabalho não pôde ser concluído, use `--para bloqueada` e diga o motivo \
+         no resumo, em vez de dizer que terminou."
             .to_string(),
     ]
     .join("\n")
@@ -647,7 +705,7 @@ pub fn pergunta_de_execucao(titulo_proposta: &str) -> String {
 /// pessoa tinha que redigitar o pedido.
 ///
 /// A trava contra sair do escopo continua: a página é o combinado.
-pub fn pergunta_de_execucao_da_conversa(titulo_execucao: &str) -> String {
+pub fn pergunta_de_execucao_da_conversa(titulo_execucao: &str, caminho: &str) -> String {
     [
         format!(
             "Implemente o que está na execução \"{titulo_execucao}\", que acabei de \
@@ -664,6 +722,8 @@ pub fn pergunta_de_execucao_da_conversa(titulo_execucao: &str) -> String {
          mostrar inviável, PARE e explique o problema em vez de mudar de rumo \
          por conta."
             .to_string(),
+        String::new(),
+        fechamento_da_etapa(caminho),
     ]
     .join("\n")
 }
@@ -709,6 +769,65 @@ pub fn pergunta_de_alteracao(titulo: &str, artefato: Artefato) -> String {
         .join(" "),
     ]
     .join("\n")
+}
+
+/// Move a etapa de uma página, devolvendo o texto novo (ciclo 229).
+///
+/// Existe para o agente poder FECHAR o que implementou sem escrever no
+/// vault: o CLI usa isto para montar o conteúdo e manda por `propor`, e a
+/// mudança chega como diff na fila de revisão. A etapa é o registro de
+/// que algo foi decidido — deixar um modelo virá-la sozinho apagaria o
+/// sentido de ter revisão.
+///
+/// Muda os DOIS lugares onde o estado vive, porque eles são espelho um do
+/// outro: `etapa:` no embed de fluxo e `status:` no frontmatter, que é
+/// por onde as consultas filtram. Um sem o outro deixa a página mentindo
+/// para si mesma.
+///
+/// Nada de YAML na mão: o embed é reserializado pelo próprio derive e o
+/// frontmatter pelo `MarkdownCodec` (o bug do ciclo 064 nasceu de montar
+/// string).
+pub fn aplicar_etapa_no_texto(
+    pagina: &str,
+    destino: Etapa,
+    resumo: Option<&str>,
+) -> Result<String, String> {
+    let (frontmatter, corpo) = MarkdownCodec::split_frontmatter_text(pagina);
+    let mut segmentos = crate::embed::segment(corpo);
+    let mut achou = false;
+    for seg in segmentos.iter_mut() {
+        let crate::embed::DocSegment::Embed(crate::embed::EmbedData::Fluxo(dados)) = seg else {
+            continue;
+        };
+        let atual = dados.etapa;
+        if !dados.ir_para(destino, resumo.map(|s| s.to_string())) {
+            return Err(format!(
+                "de \"{}\" não dá pra ir pra \"{}\". Daqui dá pra: {}.",
+                atual.slug(),
+                destino.slug(),
+                atual
+                    .proximas()
+                    .iter()
+                    .map(|e| e.slug())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        achou = true;
+        break;
+    }
+    if !achou {
+        return Err("a página não tem embed de fluxo — não há etapa pra mover".to_string());
+    }
+
+    let corpo_novo = crate::embed::join(&segmentos);
+    let texto = if frontmatter.trim().is_empty() {
+        corpo_novo
+    } else {
+        format!("{frontmatter}\n{corpo_novo}")
+    };
+    MarkdownCodec::set_frontmatter_field(&texto, "status", destino.slug())
+        .map_err(|e| format!("não consegui gravar o status no frontmatter: {e}"))
 }
 
 /// A página que originou esta, lida do embed de fluxo no corpo.

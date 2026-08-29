@@ -122,6 +122,25 @@ enum Command {
         #[arg(long, default_value = "cli")]
         autor: String,
     },
+    /// Propõe mover a etapa de uma página do fluxo (ciclo 229).
+    ///
+    /// NÃO grava: monta o conteúdo novo e manda pela mesma fila de
+    /// revisão do `propor`. É como um agente fecha o que implementou
+    /// sem decidir sozinho que está pronto.
+    Etapa {
+        /// Página alvo, relativa ao vault.
+        page_path: String,
+        /// Destino: rascunho, em-revisao, aprovada, em-execucao,
+        /// concluida ou bloqueada.
+        #[arg(long)]
+        para: String,
+        /// Arquivo com o resumo do que foi feito. `-` lê do stdin.
+        #[arg(long)]
+        resumo: Option<String>,
+        /// Quem propôs.
+        #[arg(long, default_value = "agente")]
+        autor: String,
+    },
     /// Lista as propostas pendentes de revisão.
     Propostas,
     /// Aplica uma proposta aprovada.
@@ -514,31 +533,46 @@ fn run(cli: Cli) -> Result<(), String> {
                     buf
                 }
             };
-            let existe = std::path::Path::new(&cli.vault).join(&page_path).exists();
-            let proposta = anotadinho_core::proposta::Proposta {
-                // Id derivado do alvo + relógio: legível na listagem e
-                // único o bastante pra duas propostas seguidas na mesma
-                // página não se sobrescreverem.
-                id: format!(
-                    "{}-{}",
-                    anotadinho_core::fluxo::slug_de_titulo(&page_path),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0)
+            let id = propor_conteudo(&cli.vault, page_path, conteudo, motivo, autor)?;
+            println!("{id}");
+        }
+        Command::Etapa { page_path, para, resumo, autor } => {
+            let destino = anotadinho_core::fluxo::Etapa::from_slug(&para).ok_or_else(|| {
+                format!(
+                    "etapa desconhecida: \"{para}\". Use uma de: {}.",
+                    anotadinho_core::fluxo::Etapa::all()
+                        .iter()
+                        .map(|e| e.slug())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })?;
+            let texto = match &resumo {
+                Some(p) if p == "-" => {
+                    let mut buf = String::new();
+                    std::io::stdin()
+                        .read_to_string(&mut buf)
+                        .map_err(|e| format!("erro ao ler stdin: {e}"))?;
+                    Some(buf)
+                }
+                Some(p) => Some(
+                    std::fs::read_to_string(p).map_err(|e| format!("erro ao ler {p}: {e}"))?,
                 ),
-                autor,
-                quando: agora_legivel(),
-                motivo,
-                alvo: page_path,
-                operacao: if existe {
-                    anotadinho_core::proposta::Operacao::Substituir
-                } else {
-                    anotadinho_core::proposta::Operacao::Criar
-                },
-                conteudo,
+                None => None,
             };
-            let id = handle_propor(cli.vault, proposta)?;
+            let atual = handle_read_page(cli.vault.clone(), page_path.clone())?;
+            let novo = anotadinho_core::fluxo::aplicar_etapa_no_texto(
+                &atual,
+                destino,
+                texto.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+            )?;
+            let id = propor_conteudo(
+                &cli.vault,
+                page_path,
+                novo,
+                format!("mover a etapa para \"{}\"", destino.slug()),
+                autor,
+            )?;
             println!("{id}");
         }
         Command::Mcp => {
@@ -643,6 +677,42 @@ impl PageDoc {
 
 /// Resumo de uma linha por embed, pra `embed list` dizer o que tem
 /// dentro sem despejar o conteúdo.
+/// Monta e enfileira uma proposta. Compartilhado por `propor` e `etapa`
+/// para os dois entrarem na fila exatamente do mesmo jeito.
+fn propor_conteudo(
+    vault: &str,
+    page_path: String,
+    conteudo: String,
+    motivo: String,
+    autor: String,
+) -> Result<String, String> {
+    let existe = std::path::Path::new(vault).join(&page_path).exists();
+    let proposta = anotadinho_core::proposta::Proposta {
+        // Id derivado do alvo + relógio: legível na listagem e único o
+        // bastante pra duas propostas seguidas na mesma página não se
+        // sobrescreverem.
+        id: format!(
+            "{}-{}",
+            anotadinho_core::fluxo::slug_de_titulo(&page_path),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        ),
+        autor,
+        quando: agora_legivel(),
+        motivo,
+        alvo: page_path,
+        operacao: if existe {
+            anotadinho_core::proposta::Operacao::Substituir
+        } else {
+            anotadinho_core::proposta::Operacao::Criar
+        },
+        conteudo,
+    };
+    handle_propor(vault.to_string(), proposta)
+}
+
 fn embed_summary(data: &EmbedData) -> String {
     match data {
         EmbedData::Kanban(d) => format!("{} coluna(s), {} card(s)", d.columns.len(), d.items.len()),

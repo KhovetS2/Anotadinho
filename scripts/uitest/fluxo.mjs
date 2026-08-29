@@ -136,6 +136,10 @@ caso(
 
 const FALSO = new URL("./agente-falso.sh", import.meta.url).pathname;
 
+// Raiz do repositório, deduzida daqui — nada de caminho cravado, senão a
+// suíte só roda numa máquina.
+const RAIZ = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
+
 /// Chama a execução direto, sem passar pela UI, e espera terminar.
 ///
 /// A execução deixou de ser bloqueante no ciclo 213: `iniciar_agente`
@@ -159,7 +163,7 @@ const RODAR = (args, prompt, timeout = 30) => `(async () => {
         formato: 'texto',
       },
       prompt: ${JSON.stringify(prompt)},
-      vaultPath: '/home/elis/Anotadinho',
+      vaultPath: ${JSON.stringify(RAIZ)},
       conversaPath: conversa,
     });
   } catch (e) {
@@ -244,7 +248,7 @@ fluxo.push({
         await window.__TAURI_INTERNALS__.invoke('iniciar_agente', {
           conversaPath: 'pages/__uitest-agente-invalido.md',
           adaptador: { nome: 'x', binario: 'sh -c', args: ['{prompt}'], cwd: '', timeout_s: 10, formato: 'texto' },
-          prompt: 'oi', vaultPath: '/home/elis/Anotadinho',
+          prompt: 'oi', vaultPath: ${JSON.stringify(RAIZ)},
         });
         return { ok: true };
       } catch (e) { return { ok: false, erro: String(e) }; }
@@ -462,7 +466,7 @@ fluxo.push({
 // alguém aprovar. É a defesa que continua valendo mesmo se o modelo for
 // enganado — as outras reduzem a chance, esta contém o estrago.
 
-const VAULT_ABS = "/home/elis/Anotadinho/VaultAnotadinho";
+const VAULT_ABS = `${RAIZ}/VaultAnotadinho`;
 
 /// Abre a página de rascunho e espera a TELA de propostas.
 ///
@@ -634,7 +638,7 @@ fluxo.push({
     await recarregarEstavel(bridge);
     const r = await bridge.js(`(async () => {
       const paginas = await window.__TAURI_INTERNALS__.invoke('scan_vault', {
-        vaultPath: '/home/elis/Anotadinho/VaultAnotadinho',
+        vaultPath: ${JSON.stringify(VAULT_ABS)},
       });
       const ciclos = paginas.filter(p => p.path.startsWith('pages/ciclos/'));
       return {
@@ -1065,6 +1069,66 @@ fluxo.push({
   },
 });
 
+// ── ciclo 229: o agente propõe o fechamento da etapa ─────────────────
+
+fluxo.push({
+  nome: "fluxo: o agente fecha a etapa propondo, e a revisão aplica (229)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const { execFileSync } = await import("node:child_process");
+    const cli = `${RAIZ}/target/debug/anotadinho-cli`;
+    if (!fs.existsSync(cli)) {
+      throw new Error("compile o CLI antes: cargo build -p anotadinho-cli");
+    }
+    const fila = `${ctx.vault}/.anotadinho/propostas`;
+    const antes = fs.existsSync(fila) ? fs.readdirSync(fila) : [];
+    try {
+      ctx.escrever(
+        "---\ntitle: __uitest\ntype: proposta\nstatus: em-execucao\n---\n\n" +
+          '{{ type: "fluxo" }}\nartefato: proposta\netapa: em-execucao\n{{ /fluxo }}\n\n' +
+          "## Abordagem\n\nTrocar o mapa.\n",
+      );
+
+      // É assim que o agente fecha: propondo. O arquivo não pode mudar.
+      const conteudoAntes = fs.readFileSync(`${ctx.vault}/pages/__uitest.md`, "utf8");
+      execFileSync(cli, [
+        "--vault", ctx.vault,
+        "etapa", "pages/__uitest.md",
+        "--para", "concluida",
+        "--resumo", "-",
+      ], { input: "Feito e validado.", encoding: "utf8" });
+      ctx.assertEq(
+        fs.readFileSync(`${ctx.vault}/pages/__uitest.md`, "utf8"),
+        conteudoAntes,
+        "o agente gravou direto em vez de propor",
+      );
+
+      await recarregarEstavel(bridge);
+      await esperar(bridge, "document.querySelector('.header-bar__propostas')", "o aviso da fila");
+      await bridge.js(`(() => { document.querySelector('.header-bar__propostas').click(); return true; })()`);
+      await esperar(bridge, "document.querySelector('.propostas__item')", "a tela de revisão");
+
+      const aplicou = await bridge.js(BOTAO_DA_PROPOSTA_DE_TESTE("Aplicar", "__uitest"));
+      ctx.assertEq(aplicou, true, "não achei a proposta de etapa na tela");
+      await PAUSA(2500);
+
+      // Só DEPOIS da aprovação humana a página muda — e muda nos dois
+      // lugares, porque um sem o outro deixa a página mentindo pra si.
+      const md = fs.readFileSync(`${ctx.vault}/pages/__uitest.md`, "utf8");
+      ctx.assert(md.includes("status: concluida"), `o frontmatter não mudou:\n${md}`);
+      ctx.assert(md.includes("etapa: concluida"), `o embed não mudou:\n${md}`);
+      ctx.assert(md.includes("Feito e validado."), `o resumo não entrou:\n${md}`);
+      ctx.assert(md.includes("## Abordagem"), `o corpo foi destruído:\n${md}`);
+    } finally {
+      if (fs.existsSync(fila)) {
+        for (const f of fs.readdirSync(fila).filter((x) => !antes.includes(x))) {
+          fs.rmSync(`${fila}/${f}`, { force: true });
+        }
+      }
+    }
+  },
+});
+
 // ── ciclo 228: virar execução pede a implementação ───────────────────
 
 fluxo.push({
@@ -1421,7 +1485,7 @@ const DISPARAR = (
   conversa,
   timeout = 60,
   formato = "texto",
-  vault = "/home/elis/Anotadinho",
+  vault = RAIZ,
 ) => `(async () => {
   await window.__TAURI_INTERNALS__.invoke('iniciar_agente', {
     adaptador: {
@@ -1852,7 +1916,7 @@ fluxo.push({
           formato: 'texto',
         },
         prompt: 'x',
-        vaultPath: '/home/elis/Anotadinho',
+        vaultPath: ${JSON.stringify(RAIZ)},
         conversaPath: ${JSON.stringify(conversa)},
       });
       for (let i = 0; i < 40; i++) {

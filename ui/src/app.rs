@@ -834,7 +834,7 @@ pub fn app() -> Html {
                 let pergunta = if alterando {
                     anotadinho_core::fluxo::pergunta_de_alteracao(&titulo_spec, artefato)
                 } else if e_proposta {
-                    anotadinho_core::fluxo::pergunta_de_execucao(&titulo_spec)
+                    anotadinho_core::fluxo::pergunta_de_execucao(&titulo_spec, &spec.path)
                 } else {
                     anotadinho_core::fluxo::pergunta_de_planejamento(&titulo_spec)
                 };
