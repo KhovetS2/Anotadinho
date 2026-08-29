@@ -448,7 +448,15 @@ impl EmbedData {
             EmbedData::Actions(d) => d.to_fence_body(),
             EmbedData::Fluxo(d) => d.to_fence_body(),
         };
-        format!("{{{{ type: \"{name}\" }}}}\n{body}\n{{{{ /{name} }}}}\n")
+        // `trim_end` porque alguns corpos já terminam em quebra de linha
+        // (o `serde_yaml` sempre termina) e outros não. Sem isto, cada
+        // gravação de uma página com embed ganhava UMA linha em branco
+        // antes do `{{ /... }}` — o arquivo mudava só de ser aberto e
+        // salvo, e o diff do git enchia de ruído (ciclo 231).
+        format!(
+            "{{{{ type: \"{name}\" }}}}\n{}\n{{{{ /{name} }}}}\n",
+            body.trim_end()
+        )
     }
 }
 
@@ -2408,6 +2416,29 @@ impl EmbedData {
 
 #[cfg(test)]
 mod tests {
+    /// Gravar uma página com embed não pode MUDAR a página (ciclo 231).
+    ///
+    /// Cada salvamento acrescentava uma linha em branco antes do
+    /// `{{ /... }}`: o arquivo mudava só de ser aberto e salvo, e o diff
+    /// do git enchia de ruído que ninguém escreveu.
+    #[test]
+    fn gravar_duas_vezes_nao_muda_o_arquivo() {
+        for corpo in [
+            "{{ type: \"fluxo\" }}\nartefato: spec\netapa: rascunho\n{{ /fluxo }}\n",
+            "{{ type: \"query\" }}\nview: list\nfrom: pages/specs\n{{ /query }}\n",
+            "{{ type: \"table\" }}\ncolumns:\n- name: T\n---\n| T |\n| - |\n| a |\n{{ /table }}\n",
+            "{{ type: \"callout\" }}\nvariant: info\nbody: oi\n{{ /callout }}\n",
+        ] {
+            let uma = super::join(&super::segment(corpo));
+            let duas = super::join(&super::segment(&uma));
+            assert_eq!(uma, duas, "a segunda gravação mudou o arquivo:\n{uma}");
+            assert!(
+                !uma.contains("\n\n{{ /"),
+                "linha em branco antes do fechamento:\n{uma}"
+            );
+        }
+    }
+
 
     #[test]
     fn tag_singular_antiga_migra_na_leitura_e_sobrevive_ao_round_trip() {

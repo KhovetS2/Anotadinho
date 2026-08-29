@@ -76,10 +76,13 @@ columns:
 ## O que o vault tem
 
 {{ type: "query" }}
+view: list
 group_by: type
 aggregate:
 - op: count
-view: list
+collapsed:
+- ciclo
+- conversa
 {{ /query }}
 
 ## Trabalho recente
