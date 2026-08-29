@@ -112,6 +112,9 @@ pub struct SidebarProps {
     pub collapsed: bool,
     /// Abre o modal de diálogo do app (ver `crate::dialog`).
     pub open_dialog: Callback<PendingDialog>,
+    /// Avisa que uma página foi apagada, com o caminho dela (ciclo 232).
+    #[prop_or_default]
+    pub on_page_deleted: Callback<String>,
     /// Nonce disparado pela ação "Focar sidebar" do `GlobalKeymap`
     /// (ciclo 105/106) — qualquer mudança de valor (mesmo repetida)
     /// ativa a navegação por teclado, destacando o primeiro item.
@@ -696,6 +699,51 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         }
     };
 
+    // Apagar pela sidebar (ciclo 232). O comando existia ponta a ponta
+    // desde sempre, mas o único botão morava no menu do Editor — e
+    // conversa, kanban, tabela e afins não passam pelo Editor, então não
+    // havia como apagar nenhuma delas pela interface.
+    let make_on_delete_page = {
+        let vault_path = props.vault_path.clone();
+        let refresh_tick = refresh_tick.clone();
+        let open_dialog = props.open_dialog.clone();
+        let on_page_deleted = props.on_page_deleted.clone();
+        move |page_path: String, titulo: String| {
+            let vault_path = vault_path.clone();
+            let refresh_tick = refresh_tick.clone();
+            let open_dialog = open_dialog.clone();
+            let on_page_deleted = on_page_deleted.clone();
+            Callback::from(move |e: MouseEvent| {
+                e.stop_propagation();
+                let vault_path = vault_path.clone();
+                let refresh_tick = refresh_tick.clone();
+                let page_path = page_path.clone();
+                let on_page_deleted = on_page_deleted.clone();
+                open_dialog.emit(PendingDialog::Confirm {
+                    message: format!("Excluir \"{titulo}\"? O vault está no git, então dá pra recuperar por lá."),
+                    confirm_label: "Excluir".to_string(),
+                    on_confirm: Callback::from(move |_| {
+                        let vault_path = vault_path.clone();
+                        let refresh_tick = refresh_tick.clone();
+                        let page_path = page_path.clone();
+                        let on_page_deleted = on_page_deleted.clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            match api::delete_page(&vault_path, &page_path).await {
+                                Ok(_) => {
+                                    on_page_deleted.emit(page_path);
+                                    refresh_tick.set(*refresh_tick + 1);
+                                }
+                                Err(e) => web_sys::console::warn_1(
+                                    &wasm_bindgen::JsValue::from_str(&e),
+                                ),
+                            }
+                        });
+                    }),
+                });
+            })
+        }
+    };
+
     let make_on_move_page = {
         let vault_path = props.vault_path.clone();
         let refresh_tick = refresh_tick.clone();
@@ -791,9 +839,9 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                     if page_items.is_empty() {
                         <p class="sidebar-section__empty">{ "Nenhuma página ainda" }</p>
                     } else if filter.is_empty() {
-                        { render_tree(&build_tree(&page_items, &folders), "pages", &selected_path, &props.on_page_selected, &make_on_move_page, &make_on_new_page_in, &make_on_export, &collapsed_folders, &nav_active, &nav_item_ref) }
+                        { render_tree(&build_tree(&page_items, &folders), "pages", &selected_path, &props.on_page_selected, &make_on_move_page, &make_on_new_page_in, &make_on_export, &make_on_delete_page, &collapsed_folders, &nav_active, &nav_item_ref) }
                     } else {
-                        { render_movable_list(&page_items, &selected_path, &props.on_page_selected, &make_on_move_page, &nav_active, &nav_item_ref) }
+                        { render_movable_list(&page_items, &selected_path, &props.on_page_selected, &make_on_move_page, &make_on_delete_page, &nav_active, &nav_item_ref) }
                     }
                 </div>
                 <div class="sidebar-section">
@@ -902,11 +950,15 @@ fn render_list(
 /// Como `render_list`, mas cada item ganha um botão "📁" pra mover a
 /// página pra outra pasta — usado só na seção Pages (Journals e
 /// resultados de busca continuam com `render_list`).
-fn render_movable_list<F: Fn(String) -> Callback<MouseEvent>>(
+fn render_movable_list<
+    F: Fn(String) -> Callback<MouseEvent>,
+    D: Fn(String, String) -> Callback<MouseEvent>,
+>(
     items: &[PageMeta],
     selected_path: &UseStateHandle<Option<String>>,
     on_page_selected: &Callback<PageMeta>,
     make_on_move: &F,
+    make_on_delete: &D,
     nav_active: &Option<String>,
     nav_item_ref: &NodeRef,
 ) -> Html {
@@ -936,11 +988,13 @@ fn render_movable_list<F: Fn(String) -> Callback<MouseEvent>>(
                     on_page_selected.emit(page_meta.clone());
                 });
                 let on_move = make_on_move(path.clone());
+                let on_delete = make_on_delete(path.clone(), title.clone());
                 html! {
                     <li {class} ref={node_ref} {onclick}>
                         <span class="sidebar-item__icon"><Icon name={page_icon(&page.section)} /></span>
                         <span class="sidebar-item__title">{ &title }</span>
                         <button class="sidebar-item__move btn btn--ghost btn--xs" title="Mover pra pasta" onclick={on_move}><Icon name="folder" /></button>
+                        <button class="sidebar-item__delete btn btn--ghost btn--xs" title="Excluir" onclick={on_delete}><Icon name="x" /></button>
                     </li>
                 }
             }) }
@@ -958,6 +1012,7 @@ fn render_tree<
     F: Fn(String) -> Callback<MouseEvent>,
     G: Fn(String) -> Callback<MouseEvent>,
     H: Fn(String) -> Callback<MouseEvent>,
+    D: Fn(String, String) -> Callback<MouseEvent>,
 >(
     node: &TreeNode,
     path_prefix: &str,
@@ -966,6 +1021,7 @@ fn render_tree<
     make_on_move: &F,
     make_on_new_page_in: &G,
     make_on_export: &H,
+    make_on_delete: &D,
     collapsed_folders: &UseStateHandle<HashSet<String>>,
     nav_active: &Option<String>,
     nav_item_ref: &NodeRef,
@@ -1003,12 +1059,12 @@ fn render_tree<
                             <button class="btn btn--ghost btn--xs" title="Exportar pasta" onclick={on_export}><Icon name="download" /></button>
                         </summary>
                         <div class="sidebar-folder__body">
-                            { render_tree(sub, &full_path, selected_path, on_page_selected, make_on_move, make_on_new_page_in, make_on_export, collapsed_folders, nav_active, nav_item_ref) }
+                            { render_tree(sub, &full_path, selected_path, on_page_selected, make_on_move, make_on_new_page_in, make_on_export, make_on_delete, collapsed_folders, nav_active, nav_item_ref) }
                         </div>
                     </details>
                 }
             }) }
-            { render_movable_list(&node.pages, selected_path, on_page_selected, make_on_move, nav_active, nav_item_ref) }
+            { render_movable_list(&node.pages, selected_path, on_page_selected, make_on_move, make_on_delete, nav_active, nav_item_ref) }
         </>
     }
 }

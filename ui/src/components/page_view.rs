@@ -16,7 +16,7 @@ use crate::dialog::PendingDialog;
 pub struct PageViewProps {
     pub vault_path: String,
     pub page: Option<PageMeta>,
-    pub on_page_deleted: Callback<()>,
+    pub on_page_deleted: Callback<String>,
     pub on_page_selected: Callback<PageMeta>,
     /// Abre o modal de diálogo do app (ver `crate::dialog`).
     pub open_dialog: Callback<PendingDialog>,

@@ -735,8 +735,21 @@ body {
     transition: opacity 0.1s ease;
 }
 
-.sidebar-item:hover .sidebar-item__move {
+/* Excluir (ciclo 232). Aparece no hover, como mover — são ações de
+   exceção, e mostrá-las sempre competiria com a leitura da lista. */
+.sidebar-item__delete {
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.1s ease, color 0.1s ease;
+}
+
+.sidebar-item:hover .sidebar-item__move,
+.sidebar-item:hover .sidebar-item__delete {
     opacity: 1;
+}
+
+.sidebar-item__delete:hover {
+    color: var(--error);
 }
 
 /* Árvore de pastas (Pages) */

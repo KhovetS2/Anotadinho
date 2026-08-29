@@ -38,6 +38,10 @@ pub enum PaletteAction {
     /// `pages/conversas/`, já com `type: conversa` e a página atual
     /// anexada como contexto, e abre.
     NovaConversa,
+    /// Apaga a página aberta (ciclo 232), com confirmação. Existe pra
+    /// conversa e afins, que não passam pelo Editor e por isso não
+    /// alcançavam o único botão de excluir que havia.
+    ExcluirPaginaAberta,
 }
 
 const COMMANDS: &[(&str, PaletteAction)] = &[
@@ -56,6 +60,7 @@ const COMMANDS: &[(&str, PaletteAction)] = &[
     ("Ver Assets", PaletteAction::ViewAssets),
     ("Exportar vault inteiro", PaletteAction::ExportVault),
     ("Ver atalhos", PaletteAction::ViewCheatsheet),
+    ("Excluir a página aberta", PaletteAction::ExcluirPaginaAberta),
 ];
 
 #[derive(Debug, Clone, PartialEq)]

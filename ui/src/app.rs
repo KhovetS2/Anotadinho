@@ -536,13 +536,16 @@ pub fn app() -> Html {
         let selected_page = selected_page.clone();
         let list_version = list_version.clone();
         let open_tabs = open_tabs.clone();
-        Callback::from(move |_| {
-            if let Some(ref page) = *selected_page {
-                let mut tabs = (*open_tabs).clone();
-                tabs.retain(|t| t.page.path != page.path);
-                open_tabs.set(tabs);
+        Callback::from(move |apagada: String| {
+            let mut tabs = (*open_tabs).clone();
+            tabs.retain(|t| t.page.path != apagada);
+            open_tabs.set(tabs);
+            // Só sai da tela se era ESTA a página aberta. Apagar uma
+            // conversa velha pela sidebar não pode fechar o que a pessoa
+            // está lendo.
+            if selected_page.as_ref().is_some_and(|p| p.path == apagada) {
+                selected_page.set(None);
             }
-            selected_page.set(None);
             list_version.set(*list_version + 1);
         })
     };
@@ -579,6 +582,43 @@ pub fn app() -> Html {
         let pending_dialog = pending_dialog.clone();
         Callback::from(move |d: PendingDialog| pending_dialog.set(Some(d)))
     };
+
+    // Apagar a página ABERTA (ciclo 232). A sidebar cobre qualquer
+    // página; isto cobre "estou aqui e não quero mais isto", que é o
+    // caso da conversa criada por engano.
+    let excluir_pagina_aberta = {
+        let vault_path = vault_path.clone();
+        let selected_page = selected_page.clone();
+        let open_dialog = open_dialog.clone();
+        let on_page_deleted = on_page_deleted.clone();
+        Callback::from(move |_: ()| {
+            let (Some(vault), Some(pagina)) = ((*vault_path).clone(), (*selected_page).clone())
+            else {
+                return;
+            };
+            let on_page_deleted = on_page_deleted.clone();
+            open_dialog.emit(PendingDialog::Confirm {
+                message: format!(
+                    "Excluir \"{}\"? O vault está no git, então dá pra recuperar por lá.",
+                    pagina.title
+                ),
+                confirm_label: "Excluir".to_string(),
+                on_confirm: Callback::from(move |_| {
+                    let (vault, caminho) = (vault.clone(), pagina.path.clone());
+                    let on_page_deleted = on_page_deleted.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        match api::delete_page(&vault, &caminho).await {
+                            Ok(_) => on_page_deleted.emit(caminho),
+                            Err(e) => web_sys::console::warn_1(
+                                &wasm_bindgen::JsValue::from_str(&e),
+                            ),
+                        }
+                    });
+                }),
+            });
+        })
+    };
+
 
     let dismiss_dialog = {
         let pending_dialog = pending_dialog.clone();
@@ -1049,6 +1089,7 @@ pub fn app() -> Html {
             PaletteAction::ExportVault => export_vault_action.emit(()),
             PaletteAction::ViewCheatsheet => cheatsheet_open.set(true),
             PaletteAction::NovaConversa => nova_conversa.emit(()),
+            PaletteAction::ExcluirPaginaAberta => excluir_pagina_aberta.emit(()),
             PaletteAction::NewPageOfType(page_type) => {
                 let vault = (*vault_path).clone().unwrap_or_default();
                 prompt_title_and_create_typed(
@@ -1562,6 +1603,7 @@ pub fn app() -> Html {
                             list_version={*list_version}
                             collapsed={*sidebar_collapsed}
                             open_dialog={open_dialog.clone()}
+                            on_page_deleted={on_page_deleted.clone()}
                             activate_nav_signal={*sidebar_activate_nav}
                         />
                         <div class="app-main-panel" tabindex="0"

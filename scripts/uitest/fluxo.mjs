@@ -1069,6 +1069,119 @@ fluxo.push({
   },
 });
 
+// ── ciclo 232: dá pra apagar conversa (e as outras páginas de tipo) ──
+
+fluxo.push({
+  nome: "apagar: a sidebar exclui uma conversa, com confirmação (232)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const alvo = `${ctx.vault}/pages/__uitest-descartavel.md`;
+    fs.writeFileSync(alvo, "---\ntitle: __uitest-descartavel\ntype: conversa\n---\n");
+    try {
+      await recarregarEstavel(bridge);
+      await esperar(
+        bridge,
+        `[...document.querySelectorAll('.sidebar-item__title')].some(e => e.textContent.trim() === '__uitest-descartavel')`,
+        "a página aparecer na sidebar",
+      );
+
+      // Pedir pra excluir NÃO exclui: pergunta antes.
+      await bridge.js(`(() => {
+        const item = [...document.querySelectorAll('.sidebar-item')]
+          .find(e => (e.querySelector('.sidebar-item__title')||{}).textContent.trim() === '__uitest-descartavel');
+        item.querySelector('.sidebar-item__delete').click();
+        return true;
+      })()`);
+      await esperar(bridge, "document.querySelector('.modal')", "a confirmação");
+      ctx.assertEq(fs.existsSync(alvo), true, "apagou antes de perguntar");
+
+      await bridge.js(`([...document.querySelectorAll('.modal button')]
+        .find(b => b.textContent.trim() === 'Excluir').click(), true)`);
+      await PAUSA(1200);
+      ctx.assertEq(fs.existsSync(alvo), false, "confirmar não apagou o arquivo");
+      await esperar(
+        bridge,
+        `![...document.querySelectorAll('.sidebar-item__title')].some(e => e.textContent.trim() === '__uitest-descartavel')`,
+        "a página sair da sidebar",
+      );
+    } finally {
+      fs.rmSync(alvo, { force: true });
+    }
+  },
+});
+
+fluxo.push({
+  nome: "apagar: cancelar a confirmação deixa a página em paz (232)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const alvo = `${ctx.vault}/pages/__uitest-fica.md`;
+    fs.writeFileSync(alvo, "---\ntitle: __uitest-fica\ntype: conversa\n---\n");
+    try {
+      await recarregarEstavel(bridge);
+      await esperar(
+        bridge,
+        `[...document.querySelectorAll('.sidebar-item__title')].some(e => e.textContent.trim() === '__uitest-fica')`,
+        "a página aparecer",
+      );
+      await bridge.js(`(() => {
+        const item = [...document.querySelectorAll('.sidebar-item')]
+          .find(e => (e.querySelector('.sidebar-item__title')||{}).textContent.trim() === '__uitest-fica');
+        item.querySelector('.sidebar-item__delete').click();
+        return true;
+      })()`);
+      await esperar(bridge, "document.querySelector('.modal')", "a confirmação");
+      await bridge.js(`([...document.querySelectorAll('.modal button')]
+        .find(b => /Cancelar|Fechar/.test(b.textContent)).click(), true)`);
+      await PAUSA(800);
+      ctx.assertEq(fs.existsSync(alvo), true, "cancelar apagou mesmo assim");
+    } finally {
+      fs.rmSync(alvo, { force: true });
+    }
+  },
+});
+
+fluxo.push({
+  nome: "apagar: excluir a conversa aberta fecha a aba dela (232)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const alvo = `${ctx.vault}/pages/__uitest-aberta.md`;
+    fs.writeFileSync(alvo, "---\ntitle: __uitest-aberta\ntype: conversa\n---\n");
+    try {
+      await recarregarEstavel(bridge);
+      await ctx.abrirPagina(bridge, "__uitest-aberta");
+      await esperar(bridge, "document.querySelector('.conversa')", "a conversa abrir");
+
+      // Pela paleta: é o caminho de quem já está na página errada.
+      await bridge.js(`(() => {
+        const item = [...document.querySelectorAll('.sidebar-item')]
+          .find(e => (e.querySelector('.sidebar-item__title')||{}).textContent.trim() === '__uitest-aberta');
+        item.querySelector('.sidebar-item__delete').click();
+        return true;
+      })()`);
+      await esperar(bridge, "document.querySelector('.modal')", "a confirmação");
+      await bridge.js(`([...document.querySelectorAll('.modal button')]
+        .find(b => b.textContent.trim() === 'Excluir').click(), true)`);
+      await PAUSA(1200);
+
+      ctx.assertEq(fs.existsSync(alvo), false, "não apagou");
+      // Aba órfã apontando pra arquivo que não existe é pior que não
+      // ter apagado.
+      ctx.assertEq(
+        await bridge.js(`[...document.querySelectorAll('.tab-bar__tab')].some(t => t.textContent.includes('__uitest-aberta'))`),
+        false,
+        "a aba da página apagada continuou aberta",
+      );
+      ctx.assertEq(
+        await bridge.js(`!!document.querySelector('.conversa')`),
+        false,
+        "continuou mostrando a conversa apagada",
+      );
+    } finally {
+      fs.rmSync(alvo, { force: true });
+    }
+  },
+});
+
 // ── ciclo 230: revisar vendo a página, não só o texto ────────────────
 
 fluxo.push({

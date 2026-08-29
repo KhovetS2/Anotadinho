@@ -90,7 +90,7 @@ pub struct EditorProps {
     pub vault_path: String,
     pub page: Option<PageMeta>,
     #[prop_or_default]
-    pub on_page_deleted: Callback<()>,
+    pub on_page_deleted: Callback<String>,
     /// Abre o modal de diálogo do app (ver `crate::dialog`).
     pub open_dialog: Callback<PendingDialog>,
     /// Navega pra outra página do vault — usado pela célula de tipo
@@ -1958,7 +1958,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         if let Err(e) = api::delete_page(&vault_path, &page_path).await {
                             web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
                         } else {
-                            cb.emit(());
+                            cb.emit(page_path.clone());
                         }
                     });
                 }),
