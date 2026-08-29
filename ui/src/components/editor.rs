@@ -3,8 +3,8 @@
 use base64::Engine;
 use gloo_events::EventListener;
 use wasm_bindgen::JsCast;
-use yew::prelude::*;
 use web_sys::KeyboardEvent;
+use yew::prelude::*;
 
 use crate::api::{self, PageMeta};
 use crate::components::embeds::InlineEmbed;
@@ -26,6 +26,63 @@ use crate::state;
 struct ConflitoExterno {
     conteudo: String,
     versao: Option<String>,
+}
+
+#[derive(Clone, PartialEq)]
+struct ImageDraft {
+    file: api::ImageAssetPayload,
+    alt: String,
+    title: String,
+    caption: String,
+    width: String,
+    height: String,
+    alignment: String,
+    keep_aspect: bool,
+}
+
+impl ImageDraft {
+    fn new(file: api::ImageAssetPayload) -> Self {
+        let alt = std::path::Path::new(&file.name)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "imagem".into());
+        Self {
+            file,
+            alt,
+            title: String::new(),
+            caption: String::new(),
+            width: String::new(),
+            height: String::new(),
+            alignment: "inline".into(),
+            keep_aspect: true,
+        }
+    }
+
+    fn model(&self, src: String) -> Result<anotadinho_core::InsertedImage, String> {
+        let number = |value: &str, field: &str| -> Result<Option<u32>, String> {
+            if value.trim().is_empty() {
+                Ok(None)
+            } else {
+                value
+                    .parse::<u32>()
+                    .map(Some)
+                    .map_err(|_| format!("{field} precisa ser um número inteiro"))
+            }
+        };
+        let model = anotadinho_core::InsertedImage {
+            src,
+            alt: self.alt.clone(),
+            title: self.title.clone(),
+            caption: self.caption.clone(),
+            width: number(&self.width, "largura")?,
+            height: number(&self.height, "altura")?,
+            alignment: anotadinho_core::ImageAlignment::parse(&self.alignment)
+                .ok_or("alinhamento inválido")?,
+            keep_aspect: self.keep_aspect,
+        };
+        model.validate()?;
+        Ok(model)
+    }
 }
 
 #[derive(Properties, PartialEq, Clone)]
@@ -149,7 +206,12 @@ fn slash_items() -> Vec<SlashItem> {
 /// calendário (`EmbedKind::default_body`).
 fn today_iso() -> String {
     let d = js_sys::Date::new_0();
-    format!("{:04}-{:02}-{:02}", d.get_full_year(), d.get_month() + 1, d.get_date())
+    format!(
+        "{:04}-{:02}-{:02}",
+        d.get_full_year(),
+        d.get_month() + 1,
+        d.get_date()
+    )
 }
 
 #[function_component(Editor)]
@@ -235,6 +297,13 @@ pub fn editor(props: &EditorProps) -> Html {
     let wikilink_idx = use_state(|| 0usize);
     let wikilink_active_ref = use_node_ref();
     let wikilink_pages = use_state(Vec::<PageMeta>::new);
+    // O Range é capturado antes de abrir seletor/modal e revalidado na
+    // confirmação; `use_mut_ref` evita a seleção congelada depois do await.
+    let image_range = use_mut_ref(|| None::<web_sys::Range>);
+    let image_drafts = use_state(Vec::<ImageDraft>::new);
+    let image_error = use_state(|| None::<String>);
+    let image_saving = use_state(|| false);
+    let image_drop_active = use_state(|| false);
 
     // Rola a lista pra manter o item ativo visível ao navegar com o
     // teclado — sem isso, se o item selecionado saísse da área visível do
@@ -263,10 +332,21 @@ pub fn editor(props: &EditorProps) -> Html {
             let listener = if *open {
                 let window = web_sys::window().expect("no global window");
                 Some(EventListener::new(&window, "mousedown", move |e| {
-                    let Some(node) = e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()) else { return };
-                    let target = node.dyn_ref::<web_sys::Element>().cloned().or_else(|| node.parent_element());
+                    let Some(node) = e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok())
+                    else {
+                        return;
+                    };
+                    let target = node
+                        .dyn_ref::<web_sys::Element>()
+                        .cloned()
+                        .or_else(|| node.parent_element());
                     let Some(target) = target else { return };
-                    if target.closest(".editor__wysiwyg, .slash-menu").ok().flatten().is_none() {
+                    if target
+                        .closest(".editor__wysiwyg, .slash-menu")
+                        .ok()
+                        .flatten()
+                        .is_none()
+                    {
                         slash_open.set(false);
                         slash_text.set(String::new());
                         slash_idx.set(0);
@@ -301,10 +381,21 @@ pub fn editor(props: &EditorProps) -> Html {
             let listener = if *open {
                 let window = web_sys::window().expect("no global window");
                 Some(EventListener::new(&window, "mousedown", move |e| {
-                    let Some(node) = e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()) else { return };
-                    let target = node.dyn_ref::<web_sys::Element>().cloned().or_else(|| node.parent_element());
+                    let Some(node) = e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok())
+                    else {
+                        return;
+                    };
+                    let target = node
+                        .dyn_ref::<web_sys::Element>()
+                        .cloned()
+                        .or_else(|| node.parent_element());
                     let Some(target) = target else { return };
-                    if target.closest(".editor__wysiwyg, .wikilink-menu").ok().flatten().is_none() {
+                    if target
+                        .closest(".editor__wysiwyg, .wikilink-menu")
+                        .ok()
+                        .flatten()
+                        .is_none()
+                    {
                         wikilink_open.set(false);
                         wikilink_text.set(String::new());
                         wikilink_idx.set(0);
@@ -338,15 +429,21 @@ pub fn editor(props: &EditorProps) -> Html {
     }
 
     let all_slash_items = slash_items();
-    let filtered: Vec<usize> = all_slash_items.iter().enumerate()
+    let filtered: Vec<usize> = all_slash_items
+        .iter()
+        .enumerate()
         .filter(|(_, item)| {
             let q = slash_text.to_lowercase();
-            q.is_empty() || item.label.to_lowercase().contains(&q) || item.desc.to_lowercase().contains(&q)
+            q.is_empty()
+                || item.label.to_lowercase().contains(&q)
+                || item.desc.to_lowercase().contains(&q)
         })
         .map(|(i, _)| i)
         .collect();
 
-    let filtered_wikilink: Vec<usize> = wikilink_pages.iter().enumerate()
+    let filtered_wikilink: Vec<usize> = wikilink_pages
+        .iter()
+        .enumerate()
         .filter(|(_, p)| {
             let q = wikilink_text.to_lowercase();
             q.is_empty() || p.title.to_lowercase().contains(&q)
@@ -363,7 +460,8 @@ pub fn editor(props: &EditorProps) -> Html {
     // Trechos de markdown continuam no fluxo contenteditable de sempre;
     // embeds viram componentes Yew reais fora dele (ver InlineEmbed).
     let full_snapshot = (*content_md).clone();
-    let (frontmatter_text, body_text) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&full_snapshot);
+    let (frontmatter_text, body_text) =
+        anotadinho_core::MarkdownCodec::split_frontmatter_text(&full_snapshot);
     let frontmatter_text = frontmatter_text.to_string();
     let segments: Vec<DocSegment> = crate::embed::segment(body_text);
     let has_embeds = segments.iter().any(|s| matches!(s, DocSegment::Embed(_)));
@@ -429,7 +527,9 @@ pub fn editor(props: &EditorProps) -> Html {
                             content_md.set(page.content.clone());
                             saved_content.set(page.content);
                         }
-                        Err(e) => { error.set(Some(e)); }
+                        Err(e) => {
+                            error.set(Some(e));
+                        }
                     }
                     loading.set(false);
                 });
@@ -489,67 +589,99 @@ pub fn editor(props: &EditorProps) -> Html {
         let has_embeds_eff = has_embeds;
         let segment_count = segments.len();
         let last_rendered = use_mut_ref(|| (String::new(), false, 0usize, 0u32));
-        let current_path = props.page.as_ref().map(|p| p.path.clone()).unwrap_or_default();
+        let current_path = props
+            .page
+            .as_ref()
+            .map(|p| p.path.clone())
+            .unwrap_or_default();
         let render_gen_val = *render_gen;
         let vault_path_eff = props.vault_path.clone();
 
-        use_effect_with((loading_val, current_path.clone(), has_embeds_eff, segment_count, render_gen_val), move |_| {
-            let should_render = {
-                let last = last_rendered.borrow();
-                !loading_val && !content_md_empty
-                    && (last.0 != current_path || last.1 != has_embeds_eff || last.2 != segment_count || last.3 != render_gen_val)
-            };
-            if should_render {
-                let caminho_para_transclusao = current_path.clone();
-                *last_rendered.borrow_mut() = (current_path, has_embeds_eff, segment_count, render_gen_val);
+        use_effect_with(
+            (
+                loading_val,
+                current_path.clone(),
+                has_embeds_eff,
+                segment_count,
+                render_gen_val,
+            ),
+            move |_| {
+                let should_render = {
+                    let last = last_rendered.borrow();
+                    !loading_val
+                        && !content_md_empty
+                        && (last.0 != current_path
+                            || last.1 != has_embeds_eff
+                            || last.2 != segment_count
+                            || last.3 != render_gen_val)
+                };
+                if should_render {
+                    let caminho_para_transclusao = current_path.clone();
+                    *last_rendered.borrow_mut() =
+                        (current_path, has_embeds_eff, segment_count, render_gen_val);
 
-                if has_embeds_eff {
-                    for (i, seg) in segments_eff.iter().enumerate() {
-                        if let DocSegment::Markdown(text) = seg {
-                            if let Some(div) = segment_refs_eff.get(i).and_then(|r| r.cast::<web_sys::Element>()) {
-                                div.set_inner_html(&crate::markdown_render::render(text));
-                                upgrade_embedded_assets_at(&div, vault_path_eff.clone());
-                                upgrade_transclusions_at(&div, vault_path_eff.clone(), caminho_para_transclusao.clone());
-                                marcar_blocos(&div);
+                    if has_embeds_eff {
+                        for (i, seg) in segments_eff.iter().enumerate() {
+                            if let DocSegment::Markdown(text) = seg {
+                                if let Some(div) = segment_refs_eff
+                                    .get(i)
+                                    .and_then(|r| r.cast::<web_sys::Element>())
+                                {
+                                    div.set_inner_html(&crate::markdown_render::render(text));
+                                    upgrade_embedded_assets_at(&div, vault_path_eff.clone());
+                                    upgrade_transclusions_at(
+                                        &div,
+                                        vault_path_eff.clone(),
+                                        caminho_para_transclusao.clone(),
+                                    );
+                                    marcar_blocos(&div);
+                                }
                             }
                         }
-                    }
-                    for r in segment_refs_eff.iter() {
-                        if let Some(el) = r.cast::<web_sys::Element>() {
-                            wasm_bindgen_futures::spawn_local(async move {
-                                gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
-                                init_mermaid_at(&el);
-                            });
+                        for r in segment_refs_eff.iter() {
+                            if let Some(el) = r.cast::<web_sys::Element>() {
+                                wasm_bindgen_futures::spawn_local(async move {
+                                    gloo_timers::future::sleep(std::time::Duration::from_millis(
+                                        200,
+                                    ))
+                                    .await;
+                                    init_mermaid_at(&el);
+                                });
+                            }
                         }
+                    } else if let Some(div) = editor_ref.cast::<web_sys::Element>() {
+                        let html = crate::markdown_render::render(&full_snapshot_eff);
+                        div.set_inner_html(&html);
+                        upgrade_embedded_assets_at(&div, vault_path_eff.clone());
+                        upgrade_transclusions_at(
+                            &div,
+                            vault_path_eff.clone(),
+                            caminho_para_transclusao.clone(),
+                        );
+                        marcar_blocos(&div);
+                        let _div = div.clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
+                            init_mermaid_at(&_div);
+                        });
                     }
-                } else if let Some(div) = editor_ref.cast::<web_sys::Element>() {
-                    let html = crate::markdown_render::render(&full_snapshot_eff);
-                    div.set_inner_html(&html);
-                    upgrade_embedded_assets_at(&div, vault_path_eff.clone());
-                    upgrade_transclusions_at(&div, vault_path_eff.clone(), caminho_para_transclusao.clone());
-                    marcar_blocos(&div);
-                    let _div = div.clone();
-                    wasm_bindgen_futures::spawn_local(async move {
-                        gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
-                        init_mermaid_at(&_div);
-                    });
-                }
-                init_highlight();
+                    init_highlight();
 
-                // Veio da busca com um alvo dentro de um embed (ciclo
-                // 188): rola até ele e destaca. Depois do
-                // `set_inner_html` mas com folga, porque os embeds são
-                // componentes Yew — eles não estão no DOM no instante
-                // em que este efeito roda.
-                if let Some(ancora) = crate::nav_mode::tomar_alvo_de_busca() {
-                    wasm_bindgen_futures::spawn_local(async move {
-                        gloo_timers::future::sleep(std::time::Duration::from_millis(260)).await;
-                        crate::nav_mode::revelar_alvo_de_busca(&ancora);
-                    });
+                    // Veio da busca com um alvo dentro de um embed (ciclo
+                    // 188): rola até ele e destaca. Depois do
+                    // `set_inner_html` mas com folga, porque os embeds são
+                    // componentes Yew — eles não estão no DOM no instante
+                    // em que este efeito roda.
+                    if let Some(ancora) = crate::nav_mode::tomar_alvo_de_busca() {
+                        wasm_bindgen_futures::spawn_local(async move {
+                            gloo_timers::future::sleep(std::time::Duration::from_millis(260)).await;
+                            crate::nav_mode::revelar_alvo_de_busca(&ancora);
+                        });
+                    }
                 }
-            }
-            || {}
-        });
+                || {}
+            },
+        );
     }
 
     // Backlinks: quais páginas têm `[[Título desta página]]`. Calculado
@@ -621,7 +753,10 @@ pub fn editor(props: &EditorProps) -> Html {
     // mesmo tratamento da `HeaderBar` — evita o foco cair fora da
     // árvore de qualquer coisa que dependa dele, ex: nav-mode).
     let editor_menu_toggle_ref = use_node_ref();
-    let toggle_editor_menu = { let m = editor_menu_open.clone(); Callback::from(move |_| m.set(!*m)) };
+    let toggle_editor_menu = {
+        let m = editor_menu_open.clone();
+        Callback::from(move |_| m.set(!*m))
+    };
     {
         let editor_menu_open = editor_menu_open.clone();
         let editor_menu_ref = editor_menu_ref.clone();
@@ -636,7 +771,11 @@ pub fn editor(props: &EditorProps) -> Html {
                     let editor_menu_open = editor_menu_open.clone();
                     let editor_menu_ref = editor_menu_ref.clone();
                     EventListener::new(&window, "mousedown", move |e| {
-                        let Some(target) = e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok()) else { return };
+                        let Some(target) =
+                            e.target().and_then(|t| t.dyn_into::<web_sys::Node>().ok())
+                        else {
+                            return;
+                        };
                         if let Some(el) = editor_menu_ref.cast::<web_sys::Element>() {
                             if !el.contains(Some(&target)) {
                                 editor_menu_open.set(false);
@@ -657,11 +796,17 @@ pub fn editor(props: &EditorProps) -> Html {
                                 "Escape" => {}
                                 "ArrowDown" => {
                                     e.prevent_default();
-                                    crate::menu_keyboard::move_item_focus(&editor_menu_content_ref, 1);
+                                    crate::menu_keyboard::move_item_focus(
+                                        &editor_menu_content_ref,
+                                        1,
+                                    );
                                 }
                                 "ArrowUp" => {
                                     e.prevent_default();
-                                    crate::menu_keyboard::move_item_focus(&editor_menu_content_ref, -1);
+                                    crate::menu_keyboard::move_item_focus(
+                                        &editor_menu_content_ref,
+                                        -1,
+                                    );
                                 }
                                 _ => {}
                             }
@@ -764,31 +909,45 @@ pub fn editor(props: &EditorProps) -> Html {
     }
 
     let persist = {
-        let content_md = content_md.clone(); let saved_content = saved_content.clone();
-        let saving = saving.clone(); let error = error.clone(); let status = status.clone();
-        let vault_path = props.vault_path.clone(); let page_path = page.path.clone();
+        let content_md = content_md.clone();
+        let saved_content = saved_content.clone();
+        let saving = saving.clone();
+        let error = error.clone();
+        let status = status.clone();
+        let vault_path = props.vault_path.clone();
+        let page_path = page.path.clone();
         let edited = edited.clone();
         let edited_ref = edited_ref.clone();
         let pending_flush_ref = pending_flush_ref.clone();
         let file_version_ref = file_version_ref.clone();
         let open_dialog = props.open_dialog.clone();
         move |md: String| {
-            let saved_content = saved_content.clone(); let saving = saving.clone();
-            let error = error.clone(); let status = status.clone();
-            let vault_path = vault_path.clone(); let page_path = page_path.clone();
-            let content_md = content_md.clone(); let edited = edited.clone();
+            let saved_content = saved_content.clone();
+            let saving = saving.clone();
+            let error = error.clone();
+            let status = status.clone();
+            let vault_path = vault_path.clone();
+            let page_path = page_path.clone();
+            let content_md = content_md.clone();
+            let edited = edited.clone();
             let edited_ref = edited_ref.clone();
             let pending_flush_ref = pending_flush_ref.clone();
             let file_version_ref = file_version_ref.clone();
             let open_dialog = open_dialog.clone();
-            saving.set(true); error.set(None);
+            saving.set(true);
+            error.set(None);
             wasm_bindgen_futures::spawn_local(async move {
                 let expected = file_version_ref.borrow().clone();
-                match api::write_page_checked(&vault_path, &page_path, &md, expected.as_deref()).await {
+                match api::write_page_checked(&vault_path, &page_path, &md, expected.as_deref())
+                    .await
+                {
                     Ok(new_version) => {
                         *file_version_ref.borrow_mut() = Some(new_version);
-                        content_md.set(md.clone()); saved_content.set(md); edited.set(false);
-                        *edited_ref.borrow_mut() = false; pending_flush_ref.borrow_mut().clear();
+                        content_md.set(md.clone());
+                        saved_content.set(md);
+                        edited.set(false);
+                        *edited_ref.borrow_mut() = false;
+                        pending_flush_ref.borrow_mut().clear();
                         status.set(Some("Salvo".to_string()));
                     }
                     // Conflito (ciclo 173): alguém escreveu no arquivo
@@ -838,7 +997,9 @@ pub fn editor(props: &EditorProps) -> Html {
                         });
                         return;
                     }
-                    Err(e) => { error.set(Some(e)); }
+                    Err(e) => {
+                        error.set(Some(e));
+                    }
                 }
                 saving.set(false);
             });
@@ -852,7 +1013,9 @@ pub fn editor(props: &EditorProps) -> Html {
         let saving = saving.clone();
         let persist = persist.clone();
         Callback::from(move |_| {
-            if *saving { return; }
+            if *saving {
+                return;
+            }
             let md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
             persist(md);
         })
@@ -963,7 +1126,9 @@ pub fn editor(props: &EditorProps) -> Html {
         let render_gen = render_gen.clone();
         let persist = persist.clone();
         Callback::from(move |_: ()| {
-            let Some(prev) = historico.borrow_mut().desfazer() else { return };
+            let Some(prev) = historico.borrow_mut().desfazer() else {
+                return;
+            };
             content_md.set(prev.clone());
             render_gen.set(*render_gen + 1);
             persist(prev);
@@ -975,7 +1140,9 @@ pub fn editor(props: &EditorProps) -> Html {
         let render_gen = render_gen.clone();
         let persist = persist.clone();
         Callback::from(move |_: ()| {
-            let Some(next) = historico.borrow_mut().refazer() else { return };
+            let Some(next) = historico.borrow_mut().refazer() else {
+                return;
+            };
             content_md.set(next.clone());
             render_gen.set(*render_gen + 1);
             persist(next);
@@ -1016,6 +1183,9 @@ pub fn editor(props: &EditorProps) -> Html {
         let editor_ref = editor_ref.clone();
         let segment_refs = segment_refs.clone();
         let mark_edited_estrutural = mark_edited_estrutural.clone();
+        let image_range = image_range.clone();
+        let image_drafts = image_drafts.clone();
+        let image_error = image_error.clone();
         // Recebe a posição na lista filtrada explicitamente (`vi`) em vez
         // de ler `*slash_idx` — o clique do mouse num item precisa
         // aplicar AQUELE item, não o que estava destacado por último via
@@ -1032,47 +1202,23 @@ pub fn editor(props: &EditorProps) -> Html {
                 delete_slash_context_and_collapse(&text_node, slash_pos, query.chars().count());
             }
             if let Some(&item_idx) = items.get(vi) {
-                let Some(item) = all_items.get(item_idx) else { return };
+                let Some(item) = all_items.get(item_idx) else {
+                    return;
+                };
                 match item.action.as_str() {
                     "__IMG__" => {
-                        let vault_path = vault_path.clone();
-                        let content_md = content_md.clone();
-                        let editor_ref = editor_ref.clone();
-                        let segment_refs = segment_refs.clone();
-                        let mark_edited_estrutural = mark_edited_estrutural.clone();
-                        open_dialog.emit(PendingDialog::Prompt {
-                            title: "Caminho da imagem ou URL".to_string(),
-                            default: String::new(),
-                            on_submit: Callback::from(move |path: String| {
-                                let content_md = content_md.clone();
-                                let editor_ref = editor_ref.clone();
-                                let segment_refs = segment_refs.clone();
-                                let mark_edited_estrutural = mark_edited_estrutural.clone();
-                                if path.starts_with("http") {
-                                    let html = format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", path.replace('"', "&quot;"));
-                                    if let Some(el) = parse_single_element(&html) {
-                                        if insert_element_at_cursor(&el, false) {
-                                            let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
-                                            content_md.set(new_md.clone());
-                                            mark_edited_estrutural(new_md);
-                                        }
-                                    }
-                                } else {
-                                    let vp = vault_path.clone();
-                                    wasm_bindgen_futures::spawn_local(async move {
-                                        if let Ok(relative) = crate::api::copy_to_assets(&vp, &path).await {
-                                            let html = format!("<img src=\"{}\" alt=\"imagem\" style=\"max-width:100%;border-radius:8px;\">", relative.replace('"', "&quot;"));
-                                            if let Some(el) = parse_single_element(&html) {
-                                                if insert_element_at_cursor(&el, false) {
-                                                    let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
-                                                    content_md.set(new_md.clone());
-                                                    mark_edited_estrutural(new_md);
-                                                }
-                                            }
-                                        }
-                                    });
+                        *image_range.borrow_mut() = current_range();
+                        let image_drafts = image_drafts.clone();
+                        let image_error = image_error.clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            match api::pick_images().await {
+                                Ok(files) if !files.is_empty() => image_drafts
+                                    .set(files.into_iter().map(ImageDraft::new).collect()),
+                                Ok(_) => {}
+                                Err(e) => {
+                                    image_error.set(Some(format!("Erro ao escolher imagens: {e}")))
                                 }
-                            }),
+                            }
                         });
                     }
                     "__MERMAID__" => {
@@ -1084,19 +1230,31 @@ pub fn editor(props: &EditorProps) -> Html {
                             title: "Código Mermaid (ex: graph TD; A-->B)".to_string(),
                             default: String::new(),
                             on_submit: Callback::from(move |code: String| {
-                                let html = format!("<div class=\"mermaid\">{}</div>", code.replace('<', "&lt;").replace('>', "&gt;"));
+                                let html = format!(
+                                    "<div class=\"mermaid\">{}</div>",
+                                    code.replace('<', "&lt;").replace('>', "&gt;")
+                                );
                                 if let Some(el) = parse_single_element(&html) {
                                     if insert_element_at_cursor(&el, true) {
-                                        let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                        let new_md = recompute_markdown_from_dom(
+                                            &content_md,
+                                            &editor_ref,
+                                            &segment_refs,
+                                        );
                                         content_md.set(new_md.clone());
                                         mark_edited_estrutural(new_md);
                                     }
                                 }
                                 wasm_bindgen_futures::spawn_local(async {
-                                    gloo_timers::future::sleep(std::time::Duration::from_millis(100)).await;
+                                    gloo_timers::future::sleep(std::time::Duration::from_millis(
+                                        100,
+                                    ))
+                                    .await;
                                     if let Some(window) = web_sys::window() {
                                         if let Some(doc) = window.document() {
-                                            if let Some(el) = doc.query_selector(".mermaid").ok().flatten() {
+                                            if let Some(el) =
+                                                doc.query_selector(".mermaid").ok().flatten()
+                                            {
                                                 if let Ok(el) = el.dyn_into::<web_sys::Element>() {
                                                     init_mermaid_at(&el);
                                                 }
@@ -1170,7 +1328,11 @@ pub fn editor(props: &EditorProps) -> Html {
                         if let Some(kind) = crate::embed::EmbedKind::from_type_name(type_name) {
                             let body = kind.default_body(&today_iso());
                             if insert_embed_marker_at_cursor(kind.type_name(), &body) {
-                                let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                let new_md = recompute_markdown_from_dom(
+                                    &content_md,
+                                    &editor_ref,
+                                    &segment_refs,
+                                );
                                 content_md.set(new_md.clone());
                                 mark_edited_estrutural(new_md);
                             }
@@ -1189,7 +1351,11 @@ pub fn editor(props: &EditorProps) -> Html {
                         // literal, não um heading de verdade).
                         if let Some(el) = parse_single_element(other) {
                             if insert_element_at_cursor(&el, true) {
-                                let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                let new_md = recompute_markdown_from_dom(
+                                    &content_md,
+                                    &editor_ref,
+                                    &segment_refs,
+                                );
                                 content_md.set(new_md.clone());
                                 mark_edited_estrutural(new_md);
                             }
@@ -1206,7 +1372,11 @@ pub fn editor(props: &EditorProps) -> Html {
                 gloo_timers::future::sleep(std::time::Duration::from_millis(100)).await;
                 if let Some(window) = web_sys::window() {
                     if let Some(doc) = window.document() {
-                        if let Some(el) = doc.query_selector(".editor__wysiwyg .mermaid").ok().flatten() {
+                        if let Some(el) = doc
+                            .query_selector(".editor__wysiwyg .mermaid")
+                            .ok()
+                            .flatten()
+                        {
                             if let Ok(el) = el.dyn_into::<web_sys::Element>() {
                                 init_mermaid_at(&el);
                             }
@@ -1238,11 +1408,23 @@ pub fn editor(props: &EditorProps) -> Html {
                     // errado. Quem gera o wikilink escapa; a pessoa nunca
                     // digita isso na mão.
                     let bruto = anotadinho_core::links::escapar_barra(&page.title);
-                    let href = format!("{}{}", crate::wikilink::SCHEME_PREFIX, crate::wikilink::encode_title(&bruto));
-                    let html = format!("<a href=\"{}\">{}</a>", href, page.title.replace('<', "&lt;").replace('>', "&gt;"));
+                    let href = format!(
+                        "{}{}",
+                        crate::wikilink::SCHEME_PREFIX,
+                        crate::wikilink::encode_title(&bruto)
+                    );
+                    let html = format!(
+                        "<a href=\"{}\">{}</a>",
+                        href,
+                        page.title.replace('<', "&lt;").replace('>', "&gt;")
+                    );
                     if let Some(el) = parse_single_element(&html) {
                         if insert_element_at_cursor(&el, false) {
-                            let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                            let new_md = recompute_markdown_from_dom(
+                                &content_md,
+                                &editor_ref,
+                                &segment_refs,
+                            );
                             content_md.set(new_md.clone());
                             mark_edited_estrutural(new_md);
                         }
@@ -1257,11 +1439,13 @@ pub fn editor(props: &EditorProps) -> Html {
 
     let on_keydown = {
         let do_save = do_save.clone();
-        let slash_open = slash_open.clone(); let slash_text = slash_text.clone();
+        let slash_open = slash_open.clone();
+        let slash_text = slash_text.clone();
         let slash_idx = slash_idx.clone();
         let filtered_len = filtered.len();
         let select_slash = select_slash.clone();
-        let wikilink_open = wikilink_open.clone(); let wikilink_text = wikilink_text.clone();
+        let wikilink_open = wikilink_open.clone();
+        let wikilink_text = wikilink_text.clone();
         let wikilink_idx = wikilink_idx.clone();
         let filtered_wikilink_len = filtered_wikilink.len();
         let select_wikilink = select_wikilink.clone();
@@ -1300,16 +1484,25 @@ pub fn editor(props: &EditorProps) -> Html {
             // (que também reconhece Ctrl+S/Ctrl+Z como Salvar/Desfazer
             // por padrão) dispara a MESMA ação de novo — aqui já é
             // tratado por completo, então não deve continuar subindo.
-            if (e.ctrl_key()||e.meta_key()) && e.key()=="s" { e.prevent_default(); e.stop_propagation(); do_save.emit(()); return; }
+            if (e.ctrl_key() || e.meta_key()) && e.key() == "s" {
+                e.prevent_default();
+                e.stop_propagation();
+                do_save.emit(());
+                return;
+            }
 
             // Ctrl+Z/Ctrl+Shift+Z funcionam independente do vim mode
             // estar ligado (checado ANTES da interceptação de modo
             // Normal, mesma prioridade do Ctrl+S acima) — desfazer é
             // uma ação de documento, não uma motion de texto.
-            if (e.ctrl_key()||e.meta_key()) && e.key().eq_ignore_ascii_case("z") {
+            if (e.ctrl_key() || e.meta_key()) && e.key().eq_ignore_ascii_case("z") {
                 e.prevent_default();
                 e.stop_propagation();
-                if e.shift_key() { do_redo.emit(()); } else { do_undo.emit(()); }
+                if e.shift_key() {
+                    do_redo.emit(());
+                } else {
+                    do_undo.emit(());
+                }
                 return;
             }
 
@@ -1335,7 +1528,11 @@ pub fn editor(props: &EditorProps) -> Html {
                         e.prevent_default();
                         if let Some((no, pos, consulta)) = find_slash_context() {
                             delete_slash_context_and_collapse(&no, pos, consulta.chars().count());
-                            let novo = recompute_markdown_from_dom(&content_md_esc, &editor_ref_esc, &segment_refs_esc);
+                            let novo = recompute_markdown_from_dom(
+                                &content_md_esc,
+                                &editor_ref_esc,
+                                &segment_refs_esc,
+                            );
                             content_md_esc.set(novo.clone());
                             mark_edited_esc(novo);
                         }
@@ -1343,9 +1540,26 @@ pub fn editor(props: &EditorProps) -> Html {
                         slash_text.set(String::new());
                         slash_idx.set(0);
                     }
-                    "ArrowDown" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + 1) % filtered_len); } }
-                    "ArrowUp" => { e.stop_propagation(); e.prevent_default(); if filtered_len > 0 { slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len); } }
-                    "Enter" => { e.stop_propagation(); e.prevent_default(); select_slash.emit(*slash_idx); return; }
+                    "ArrowDown" => {
+                        e.stop_propagation();
+                        e.prevent_default();
+                        if filtered_len > 0 {
+                            slash_idx.set((*slash_idx + 1) % filtered_len);
+                        }
+                    }
+                    "ArrowUp" => {
+                        e.stop_propagation();
+                        e.prevent_default();
+                        if filtered_len > 0 {
+                            slash_idx.set((*slash_idx + filtered_len - 1) % filtered_len);
+                        }
+                    }
+                    "Enter" => {
+                        e.stop_propagation();
+                        e.prevent_default();
+                        select_slash.emit(*slash_idx);
+                        return;
+                    }
                     _ => {}
                 }
                 return;
@@ -1353,10 +1567,35 @@ pub fn editor(props: &EditorProps) -> Html {
 
             if *wikilink_open {
                 match e.key().as_str() {
-                    "Escape" => { e.stop_propagation(); wikilink_open.set(false); wikilink_text.set(String::new()); wikilink_idx.set(0); e.prevent_default(); }
-                    "ArrowDown" => { e.stop_propagation(); e.prevent_default(); if filtered_wikilink_len > 0 { wikilink_idx.set((*wikilink_idx + 1) % filtered_wikilink_len); } }
-                    "ArrowUp" => { e.stop_propagation(); e.prevent_default(); if filtered_wikilink_len > 0 { wikilink_idx.set((*wikilink_idx + filtered_wikilink_len - 1) % filtered_wikilink_len); } }
-                    "Enter" => { e.stop_propagation(); e.prevent_default(); select_wikilink.emit(*wikilink_idx); return; }
+                    "Escape" => {
+                        e.stop_propagation();
+                        wikilink_open.set(false);
+                        wikilink_text.set(String::new());
+                        wikilink_idx.set(0);
+                        e.prevent_default();
+                    }
+                    "ArrowDown" => {
+                        e.stop_propagation();
+                        e.prevent_default();
+                        if filtered_wikilink_len > 0 {
+                            wikilink_idx.set((*wikilink_idx + 1) % filtered_wikilink_len);
+                        }
+                    }
+                    "ArrowUp" => {
+                        e.stop_propagation();
+                        e.prevent_default();
+                        if filtered_wikilink_len > 0 {
+                            wikilink_idx.set(
+                                (*wikilink_idx + filtered_wikilink_len - 1) % filtered_wikilink_len,
+                            );
+                        }
+                    }
+                    "Enter" => {
+                        e.stop_propagation();
+                        e.prevent_default();
+                        select_wikilink.emit(*wikilink_idx);
+                        return;
+                    }
                     _ => {}
                 }
                 return;
@@ -1378,7 +1617,11 @@ pub fn editor(props: &EditorProps) -> Html {
                     if matched {
                         if pending == "delete_line" {
                             if vim_delete_line(&vim_register) {
-                                let new_md = recompute_markdown_from_dom(&content_md_vim, &editor_ref_vim, &segment_refs_vim);
+                                let new_md = recompute_markdown_from_dom(
+                                    &content_md_vim,
+                                    &editor_ref_vim,
+                                    &segment_refs_vim,
+                                );
                                 content_md_vim.set(new_md.clone());
                                 mark_edited_vim(new_md);
                             }
@@ -1400,43 +1643,66 @@ pub fn editor(props: &EditorProps) -> Html {
                     return;
                 }
 
-                if key == vim_keymap.left { vim_move("backward", "character"); }
-                else if key == vim_keymap.right { vim_move("forward", "character"); }
-                else if key == vim_keymap.down { vim_move("forward", "line"); }
-                else if key == vim_keymap.up { vim_move("backward", "line"); }
-                else if key == vim_keymap.word_forward { vim_move("forward", "word"); }
-                else if key == vim_keymap.word_backward { vim_move("backward", "word"); }
-                else if key == vim_keymap.line_start { vim_move("backward", "lineboundary"); }
-                else if key == vim_keymap.line_end { vim_move("forward", "lineboundary"); }
-                else if key == vim_keymap.doc_start { vim_move("backward", "documentboundary"); }
-                else if key == vim_keymap.doc_end { vim_move("forward", "documentboundary"); }
-                else if key == vim_keymap.insert_before { vim_insert.set(true); }
-                else if key == vim_keymap.insert_after { vim_move("forward", "character"); vim_insert.set(true); }
-                else if key == vim_keymap.open_below {
+                if key == vim_keymap.left {
+                    vim_move("backward", "character");
+                } else if key == vim_keymap.right {
+                    vim_move("forward", "character");
+                } else if key == vim_keymap.down {
+                    vim_move("forward", "line");
+                } else if key == vim_keymap.up {
+                    vim_move("backward", "line");
+                } else if key == vim_keymap.word_forward {
+                    vim_move("forward", "word");
+                } else if key == vim_keymap.word_backward {
+                    vim_move("backward", "word");
+                } else if key == vim_keymap.line_start {
+                    vim_move("backward", "lineboundary");
+                } else if key == vim_keymap.line_end {
+                    vim_move("forward", "lineboundary");
+                } else if key == vim_keymap.doc_start {
+                    vim_move("backward", "documentboundary");
+                } else if key == vim_keymap.doc_end {
+                    vim_move("forward", "documentboundary");
+                } else if key == vim_keymap.insert_before {
+                    vim_insert.set(true);
+                } else if key == vim_keymap.insert_after {
+                    vim_move("forward", "character");
+                    vim_insert.set(true);
+                } else if key == vim_keymap.open_below {
                     if vim_open_line(false) {
                         vim_insert.set(true);
-                        let new_md = recompute_markdown_from_dom(&content_md_vim, &editor_ref_vim, &segment_refs_vim);
+                        let new_md = recompute_markdown_from_dom(
+                            &content_md_vim,
+                            &editor_ref_vim,
+                            &segment_refs_vim,
+                        );
                         content_md_vim.set(new_md.clone());
                         mark_edited_vim(new_md);
                     }
-                }
-                else if key == vim_keymap.open_above {
+                } else if key == vim_keymap.open_above {
                     if vim_open_line(true) {
                         vim_insert.set(true);
-                        let new_md = recompute_markdown_from_dom(&content_md_vim, &editor_ref_vim, &segment_refs_vim);
+                        let new_md = recompute_markdown_from_dom(
+                            &content_md_vim,
+                            &editor_ref_vim,
+                            &segment_refs_vim,
+                        );
                         content_md_vim.set(new_md.clone());
                         mark_edited_vim(new_md);
                     }
-                }
-                else if key == vim_keymap.delete_char { doc_exec_vim("forwardDelete", ""); }
-                else if key == vim_keymap.paste {
+                } else if key == vim_keymap.delete_char {
+                    doc_exec_vim("forwardDelete", "");
+                } else if key == vim_keymap.paste {
                     if vim_paste_after(&vim_register) {
-                        let new_md = recompute_markdown_from_dom(&content_md_vim, &editor_ref_vim, &segment_refs_vim);
+                        let new_md = recompute_markdown_from_dom(
+                            &content_md_vim,
+                            &editor_ref_vim,
+                            &segment_refs_vim,
+                        );
                         content_md_vim.set(new_md.clone());
                         mark_edited_vim(new_md);
                     }
-                }
-                else if key == vim_keymap.undo {
+                } else if key == vim_keymap.undo {
                     // Reusa o MESMO undo de documento do Ctrl+Z (não
                     // `execCommand("undo")` nativo) — o undo nativo do
                     // contenteditable opera fora do controle de
@@ -1580,7 +1846,6 @@ pub fn editor(props: &EditorProps) -> Html {
                 return;
             }
 
-
             // Escape com o cursor no texto SOBE pro nível de blocos
             // (ciclo 174) em vez de desselecionar a página, que era o
             // que o handler global fazia. Sem `stop_propagation` os dois
@@ -1673,20 +1938,28 @@ pub fn editor(props: &EditorProps) -> Html {
     };
 
     let on_delete = {
-        let vault_path = props.vault_path.clone(); let page_path = page.path.clone();
-        let page_title = page.title.clone(); let cb = props.on_page_deleted.clone();
+        let vault_path = props.vault_path.clone();
+        let page_path = page.path.clone();
+        let page_title = page.title.clone();
+        let cb = props.on_page_deleted.clone();
         let open_dialog = props.open_dialog.clone();
         Callback::from(move |_| {
-            let vault_path = vault_path.clone(); let page_path = page_path.clone(); let cb = cb.clone();
+            let vault_path = vault_path.clone();
+            let page_path = page_path.clone();
+            let cb = cb.clone();
             open_dialog.emit(PendingDialog::Confirm {
                 message: format!("Excluir \"{}\"?", page_title),
                 confirm_label: "Excluir".to_string(),
                 on_confirm: Callback::from(move |_| {
-                    let vault_path = vault_path.clone(); let page_path = page_path.clone(); let cb = cb.clone();
+                    let vault_path = vault_path.clone();
+                    let page_path = page_path.clone();
+                    let cb = cb.clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         if let Err(e) = api::delete_page(&vault_path, &page_path).await {
                             web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&e));
-                        } else { cb.emit(()); }
+                        } else {
+                            cb.emit(());
+                        }
                     });
                 }),
             });
@@ -1705,20 +1978,28 @@ pub fn editor(props: &EditorProps) -> Html {
                 for (i, seg) in segments_export.iter().enumerate() {
                     match seg {
                         DocSegment::Markdown(_) => {
-                            if let Some(div) = segment_refs.get(i).and_then(|r| r.cast::<web_sys::Element>()) {
+                            if let Some(div) = segment_refs
+                                .get(i)
+                                .and_then(|r| r.cast::<web_sys::Element>())
+                            {
                                 out.push_str(&div.inner_html());
                             }
                         }
                         DocSegment::Embed(data) => {
-                            let escaped = data.to_fence_text()
-                                .replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+                            let escaped = data
+                                .to_fence_text()
+                                .replace('&', "&amp;")
+                                .replace('<', "&lt;")
+                                .replace('>', "&gt;");
                             out.push_str(&format!("<pre>{}</pre>", escaped));
                         }
                     }
                 }
                 Some(out)
             } else {
-                editor_ref.cast::<web_sys::Element>().map(|div| div.inner_html())
+                editor_ref
+                    .cast::<web_sys::Element>()
+                    .map(|div| div.inner_html())
             };
             if let Some(html) = html {
                 let full = format!(
@@ -1743,7 +2024,8 @@ pub fn editor(props: &EditorProps) -> Html {
                 arr.push(&wasm_bindgen::JsValue::from_str(&full));
                 if let Some(blob) = web_sys::Blob::new_with_str_sequence(&arr).ok() {
                     let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap_or_default();
-                    let _ = web_sys::window().and_then(|w| w.open_with_url_and_target(&url, "_blank").ok());
+                    let _ = web_sys::window()
+                        .and_then(|w| w.open_with_url_and_target(&url, "_blank").ok());
                 }
             }
         })
@@ -1800,7 +2082,13 @@ pub fn editor(props: &EditorProps) -> Html {
         }
     };
 
-    let save_label = if *saving { "Salvando..." } else if *edited { "Salvar *" } else { "Salvar" };
+    let save_label = if *saving {
+        "Salvando..."
+    } else if *edited {
+        "Salvar *"
+    } else {
+        "Salvar"
+    };
     let on_edit: Callback<InputEvent> = {
         let content_md = content_md.clone();
         let editor_ref = editor_ref.clone();
@@ -1892,7 +2180,9 @@ pub fn editor(props: &EditorProps) -> Html {
             if e.key() != "n" || e.ctrl_key() || e.meta_key() || e.alt_key() {
                 return;
             }
-            let Some(pos) = segmento_do_embed_focado() else { return };
+            let Some(pos) = segmento_do_embed_focado() else {
+                return;
+            };
             e.prevent_default();
             e.stop_propagation();
             sair_do_nav_mode(&on_sair_blocos);
@@ -1922,9 +2212,14 @@ pub fn editor(props: &EditorProps) -> Html {
             // etapa não avançava (ciclo 201).
             let atual = {
                 let pendente = pending_flush_ref.borrow().clone();
-                if pendente.is_empty() { (*content_md).clone() } else { pendente }
+                if pendente.is_empty() {
+                    (*content_md).clone()
+                } else {
+                    pendente
+                }
             };
-            let Ok(novo) = anotadinho_core::MarkdownCodec::set_frontmatter_field(&atual, &campo, &valor)
+            let Ok(novo) =
+                anotadinho_core::MarkdownCodec::set_frontmatter_field(&atual, &campo, &valor)
             else {
                 return;
             };
@@ -1954,7 +2249,11 @@ pub fn editor(props: &EditorProps) -> Html {
                 // pro parser reconhecer como um segmento distinto).
                 segs.insert(pos, DocSegment::Markdown("\n".to_string()));
                 let new_body = crate::embed::join(&segs);
-                let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
+                let new_full = if frontmatter_text.is_empty() {
+                    new_body
+                } else {
+                    format!("{}\n{}", frontmatter_text, new_body)
+                };
                 content_md.set(new_full.clone());
                 mark_edited_estrutural(new_full);
 
@@ -2034,7 +2333,11 @@ pub fn editor(props: &EditorProps) -> Html {
                     return;
                 }
                 let new_body = crate::embed::join(&segs);
-                let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
+                let new_full = if frontmatter_text.is_empty() {
+                    new_body
+                } else {
+                    format!("{}\n{}", frontmatter_text, new_body)
+                };
                 content_md.set(new_full.clone());
                 mark_edited_estrutural(new_full);
             })
@@ -2058,7 +2361,11 @@ pub fn editor(props: &EditorProps) -> Html {
                     return;
                 }
                 let new_body = crate::embed::join(&segs);
-                let new_full = if frontmatter_text.is_empty() { new_body } else { format!("{}\n{}", frontmatter_text, new_body) };
+                let new_full = if frontmatter_text.is_empty() {
+                    new_body
+                } else {
+                    format!("{}\n{}", frontmatter_text, new_body)
+                };
                 content_md.set(new_full.clone());
                 mark_edited_estrutural(new_full);
             })
@@ -2066,38 +2373,86 @@ pub fn editor(props: &EditorProps) -> Html {
     };
 
     let on_drop = {
-        let vault_path = props.vault_path.clone();
+        let image_range = image_range.clone();
+        let image_drafts = image_drafts.clone();
+        let image_error = image_error.clone();
+        let image_drop_active = image_drop_active.clone();
         Callback::from(move |e: DragEvent| {
             e.prevent_default();
-            let dt = js_sys::Reflect::get(&e, &wasm_bindgen::JsValue::from_str("dataTransfer")).ok();
-            let files = dt.and_then(|v| js_sys::Reflect::get(&v, &wasm_bindgen::JsValue::from_str("files")).ok())
+            image_drop_active.set(false);
+            let dt =
+                js_sys::Reflect::get(&e, &wasm_bindgen::JsValue::from_str("dataTransfer")).ok();
+            let files = dt
+                .and_then(|v| {
+                    js_sys::Reflect::get(&v, &wasm_bindgen::JsValue::from_str("files")).ok()
+                })
                 .and_then(|v| v.dyn_into::<web_sys::FileList>().ok());
             if let Some(files) = files {
-                let doc = web_sys::window().and_then(|w| w.document());
+                // Eventos de drop sem coordenadas úteis (inclusive automação e
+                // algumas integrações do webview) devolvem um Range em (0, 0),
+                // fora do editor. Guardá-lo fazia o modal abrir normalmente,
+                // mas a confirmação falhava por "destino mudou" e escondia a
+                // seleção válida que já existia no bloco.
+                let range = range_at_point(e.client_x(), e.client_y())
+                    .filter(range_is_in_editor)
+                    .or_else(|| current_range().filter(range_is_in_editor));
+                let image_range = image_range.clone();
+                let image_drafts = image_drafts.clone();
+                let image_error = image_error.clone();
+                let mut accepted = Vec::new();
                 for i in 0..files.length() {
                     if let Some(file) = files.item(i) {
-                        let name = file.name();
-                        let ext = std::path::Path::new(&name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-                        if !matches!(ext.as_str(), "png"|"jpg"|"jpeg"|"gif"|"svg"|"webp") { continue; }
-                        if let Ok(blob) = file.slice() {
-                            let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap_or_default();
-                            let html = format!("<img src=\"{}\" alt=\"{}\" style=\"max-width:100%;border-radius:8px;\">", url, name.replace('"', "&quot;"));
-                            if let Some(ref doc) = doc {
-                                let args = js_sys::Array::new();
-                                args.push(&wasm_bindgen::JsValue::from_str("insertHTML"));
-                                args.push(&wasm_bindgen::JsValue::from_bool(false));
-                                args.push(&wasm_bindgen::JsValue::from_str(&html));
-                                if let Some(f) = js_sys::Reflect::get(doc, &wasm_bindgen::JsValue::from_str("execCommand"))
-                                    .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
-                                { let _ = f.apply(doc, &args); }
-                            }
+                        if file.type_().starts_with("image/") {
+                            accepted.push(file);
                         }
                     }
                 }
+                if accepted.is_empty() {
+                    return;
+                }
+                wasm_bindgen_futures::spawn_local(async move {
+                    let mut drafts = Vec::new();
+                    for file in accepted {
+                        let name = file.name();
+                        let extension = std::path::Path::new(&name)
+                            .extension()
+                            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+                            .unwrap_or_else(|| {
+                                file.type_().trim_start_matches("image/").to_string()
+                            });
+                        match gloo_file::futures::read_as_bytes(&gloo_file::Blob::from(file)).await
+                        {
+                            Ok(bytes) => drafts.push(ImageDraft::new(api::ImageAssetPayload {
+                                name,
+                                extension,
+                                base64_data: base64::engine::general_purpose::STANDARD
+                                    .encode(bytes),
+                            })),
+                            Err(_) => {
+                                image_error.set(Some(
+                                    "Não foi possível ler uma das imagens soltas.".into(),
+                                ));
+                                return;
+                            }
+                        }
+                    }
+                    *image_range.borrow_mut() = range;
+                    image_drafts.set(drafts);
+                });
             }
         })
     };
-    let on_dragover = Callback::from(|e: DragEvent| { e.prevent_default(); });
+    let on_dragover = {
+        let active = image_drop_active.clone();
+        Callback::from(move |e: DragEvent| {
+            e.prevent_default();
+            active.set(true);
+        })
+    };
+    let on_dragleave = {
+        let active = image_drop_active.clone();
+        Callback::from(move |_: DragEvent| active.set(false))
+    };
 
     // Colar (Ctrl+V) uma imagem da área de transferência (ciclo 118)
     // — diferente do `on_drop` acima (que usa uma URL `blob:` só de
@@ -2114,25 +2469,27 @@ pub fn editor(props: &EditorProps) -> Html {
         let mark_edited = mark_edited.clone();
         let open_dialog = props.open_dialog.clone();
         Callback::from(move |e: web_sys::Event| {
-            let cd = js_sys::Reflect::get(&e, &wasm_bindgen::JsValue::from_str("clipboardData")).ok();
+            let cd =
+                js_sys::Reflect::get(&e, &wasm_bindgen::JsValue::from_str("clipboardData")).ok();
             let files = cd
-                .and_then(|v| js_sys::Reflect::get(&v, &wasm_bindgen::JsValue::from_str("files")).ok())
+                .and_then(|v| {
+                    js_sys::Reflect::get(&v, &wasm_bindgen::JsValue::from_str("files")).ok()
+                })
                 .and_then(|v| v.dyn_into::<web_sys::FileList>().ok());
             let Some(files) = files else { return };
-            let mut image_file = None;
+            let mut image_files = Vec::new();
             for i in 0..files.length() {
                 if let Some(file) = files.item(i) {
                     if file.type_().starts_with("image/") {
-                        image_file = Some(file);
-                        break;
+                        image_files.push(file);
                     }
                 }
             }
-            let Some(file) = image_file else { return };
+            if image_files.is_empty() {
+                return;
+            }
             e.prevent_default();
-
-            let mime = file.type_();
-            let ext = mime.strip_prefix("image/").unwrap_or("png").to_string();
+            let range = current_range();
             let vault_path = vault_path.clone();
             let content_md = content_md.clone();
             let editor_ref = editor_ref.clone();
@@ -2140,26 +2497,63 @@ pub fn editor(props: &EditorProps) -> Html {
             let mark_edited = mark_edited.clone();
             let open_dialog = open_dialog.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                let blob = gloo_file::Blob::from(file);
-                let Ok(bytes) = gloo_file::futures::read_as_bytes(&blob).await else {
-                    open_dialog.emit(PendingDialog::Alert {
-                        message: "Erro ao ler a imagem colada.".to_string(),
+                let mut payloads = Vec::new();
+                for file in image_files {
+                    let mime = file.type_();
+                    let extension = mime.strip_prefix("image/").unwrap_or("png").to_string();
+                    let name = file.name();
+                    let Ok(bytes) =
+                        gloo_file::futures::read_as_bytes(&gloo_file::Blob::from(file)).await
+                    else {
+                        open_dialog.emit(PendingDialog::Alert {
+                            message: "Erro ao ler uma imagem colada.".to_string(),
+                        });
+                        return;
+                    };
+                    payloads.push(api::ImageAssetPayload {
+                        name,
+                        extension,
+                        base64_data: base64::engine::general_purpose::STANDARD.encode(bytes),
                     });
-                    return;
-                };
-                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                match api::save_pasted_asset(&vault_path, &ext, &b64).await {
-                    Ok(relative) => {
-                        let html = format!(
-                            "<img src=\"{}\" alt=\"imagem colada\" style=\"max-width:100%;border-radius:8px;\">",
-                            relative.replace('"', "&quot;")
-                        );
-                        if let Some(el) = parse_single_element(&html) {
-                            if insert_element_at_cursor(&el, false) {
-                                let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
-                                content_md.set(new_md.clone());
-                                mark_edited(new_md);
+                }
+                match api::save_image_assets(&vault_path, &payloads).await {
+                    Ok(paths) => {
+                        let Some(range) = range.filter(range_is_in_editor) else {
+                            for path in paths { let _ = api::delete_asset(&vault_path, &path).await; }
+                            open_dialog.emit(PendingDialog::Alert {
+                                message: "A posição de colagem não existe mais.".into(),
+                            });
+                            return;
+                        };
+                        if !restore_range(&range) {
+                            return;
+                        }
+                        let created_paths = paths.clone();
+                        let mut inserted_count = 0usize;
+                        for relative in paths {
+                            let model = anotadinho_core::InsertedImage {
+                                src: relative,
+                                alt: "imagem colada".into(),
+                                keep_aspect: true,
+                                ..Default::default()
+                            };
+                            if let Ok(html) = model.to_html() {
+                                if let Some(el) = parse_single_element(&html) {
+                                    inserted_count += usize::from(insert_element_at_cursor(&el, true));
+                                }
                             }
+                        }
+                        if inserted_count == created_paths.len() {
+                            let new_md = recompute_markdown_from_dom(
+                                &content_md,
+                                &editor_ref,
+                                &segment_refs,
+                            );
+                            content_md.set(new_md.clone());
+                            mark_edited(new_md);
+                        } else {
+                            for path in created_paths { let _ = api::delete_asset(&vault_path, &path).await; }
+                            open_dialog.emit(PendingDialog::Alert { message: "A colagem não pôde ser inserida; nenhum asset foi mantido.".into() });
                         }
                     }
                     Err(e) => {
@@ -2187,7 +2581,9 @@ pub fn editor(props: &EditorProps) -> Html {
         let mark_edited = mark_edited.clone();
         Callback::from(move |e: MouseEvent| {
             let Some(target) = e.target() else { return };
-            let Ok(el) = target.dyn_into::<web_sys::Element>() else { return };
+            let Ok(el) = target.dyn_into::<web_sys::Element>() else {
+                return;
+            };
 
             // Toggle de checkbox de tarefa — clicar no <input> só dispara
             // "click" no container, nunca "input" (que é quem chama
@@ -2204,9 +2600,15 @@ pub fn editor(props: &EditorProps) -> Html {
                 return;
             }
 
-            let Ok(Some(anchor)) = el.closest("a") else { return };
-            let Some(href) = anchor.get_attribute("href") else { return };
-            let Some(encoded) = href.strip_prefix(crate::wikilink::SCHEME_PREFIX) else { return };
+            let Ok(Some(anchor)) = el.closest("a") else {
+                return;
+            };
+            let Some(href) = anchor.get_attribute("href") else {
+                return;
+            };
+            let Some(encoded) = href.strip_prefix(crate::wikilink::SCHEME_PREFIX) else {
+                return;
+            };
             e.prevent_default();
             // O href leva o miolo CRU do `[[...]]`; o alvo sai dele.
             let bruto_do_link = crate::wikilink::decode_title(encoded);
@@ -2300,7 +2702,9 @@ pub fn editor(props: &EditorProps) -> Html {
         Callback::from(move |_: MouseEvent| {
             let Some(c) = (*conflito).clone() else { return };
             *file_version_ref.borrow_mut() = c.versao;
-            status.set(Some("Mantido o seu — salve pra gravar por cima".to_string()));
+            status.set(Some(
+                "Mantido o seu — salve pra gravar por cima".to_string(),
+            ));
             conflito_meu_texto.set(String::new());
             conflito.set(None);
         })
@@ -2313,8 +2717,11 @@ pub fn editor(props: &EditorProps) -> Html {
         let segment_refs = segment_refs.clone();
         Callback::from(move |_: MouseEvent| {
             if conflito_meu_texto.is_empty() {
-                conflito_meu_texto
-                    .set(recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs));
+                conflito_meu_texto.set(recompute_markdown_from_dom(
+                    &content_md,
+                    &editor_ref,
+                    &segment_refs,
+                ));
             } else {
                 conflito_meu_texto.set(String::new());
             }
@@ -2322,6 +2729,111 @@ pub fn editor(props: &EditorProps) -> Html {
     };
 
     let modo = Modo::atual(props.nav_mode_active, props.vim_mode_enabled, *vim_insert);
+
+    let close_image_modal = {
+        let drafts = image_drafts.clone();
+        let error = image_error.clone();
+        let range = image_range.clone();
+        Callback::from(move |_| {
+            drafts.set(Vec::new());
+            error.set(None);
+            *range.borrow_mut() = None;
+        })
+    };
+    let confirm_images = {
+        let drafts = image_drafts.clone();
+        let image_error = image_error.clone();
+        let image_saving = image_saving.clone();
+        let image_range = image_range.clone();
+        let vault_path = props.vault_path.clone();
+        let content_md = content_md.clone();
+        let editor_ref = editor_ref.clone();
+        let segment_refs = segment_refs.clone();
+        let mark_edited_estrutural = mark_edited_estrutural.clone();
+        Callback::from(move |_| {
+            if *image_saving {
+                return;
+            }
+            let values = (*drafts).clone();
+            if values.is_empty() {
+                return;
+            }
+            for draft in &values {
+                if let Err(e) = draft.model("assets/validacao.png".into()) {
+                    image_error.set(Some(e));
+                    return;
+                }
+            }
+            let Some(range) = image_range.borrow().clone() else {
+                image_error.set(Some(
+                    "A posição de inserção não existe mais; feche o modal e tente novamente."
+                        .into(),
+                ));
+                return;
+            };
+            if !range_is_in_editor(&range) {
+                image_error.set(Some(
+                    "O bloco de destino mudou; feche o modal e tente novamente.".into(),
+                ));
+                return;
+            }
+            image_saving.set(true);
+            image_error.set(None);
+            let payloads: Vec<_> = values.iter().map(|d| d.file.clone()).collect();
+            let vault_path = vault_path.clone();
+            let drafts = drafts.clone();
+            let image_error = image_error.clone();
+            let image_saving = image_saving.clone();
+            let content_md = content_md.clone();
+            let editor_ref = editor_ref.clone();
+            let segment_refs = segment_refs.clone();
+            let mark_edited_estrutural = mark_edited_estrutural.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::save_image_assets(&vault_path, &payloads).await {
+                    Ok(paths) => {
+                        if !restore_range(&range) {
+                            image_error.set(Some("A posição de inserção não existe mais.".into()));
+                            image_saving.set(false);
+                            return;
+                        }
+                        let created_paths = paths.clone();
+                        let mut inserted = true;
+                        for (draft, path) in values.iter().zip(paths) {
+                            inserted &= draft
+                                .model(path)
+                                .and_then(|m| m.to_html())
+                                .ok()
+                                .and_then(|html| parse_single_element(&html))
+                                .map(|el| insert_element_at_cursor(&el, true))
+                                .unwrap_or(false);
+                        }
+                        if inserted {
+                            let new_md = recompute_markdown_from_dom(
+                                &content_md,
+                                &editor_ref,
+                                &segment_refs,
+                            );
+                            content_md.set(new_md.clone());
+                            mark_edited_estrutural(new_md);
+                            drafts.set(Vec::new());
+                        } else {
+                            for path in created_paths {
+                                let _ = api::delete_asset(&vault_path, &path).await;
+                            }
+                            image_error.set(Some(
+                                "O destino deixou de aceitar a inserção; nenhum asset foi mantido."
+                                    .into(),
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        image_error.set(Some(format!("Não foi possível gravar as imagens: {e}")))
+                    }
+                }
+                image_saving.set(false);
+            });
+        })
+    };
 
     html! {
         <main class="editor">
@@ -2419,7 +2931,42 @@ pub fn editor(props: &EditorProps) -> Html {
                     { history_body }
                 </Modal>
             }
+            <Modal title="Inserir imagens" open={!image_drafts.is_empty()} on_close={close_image_modal.clone()} wide=true>
+                <div class="image-modal" data-nav-group="image-modal">
+                    { for image_drafts.iter().enumerate().map(|(index, draft)| {
+                        let update = |field: &'static str| {
+                            let drafts = image_drafts.clone();
+                            Callback::from(move |e: InputEvent| {
+                                let input: web_sys::HtmlInputElement = e.target_unchecked_into();
+                                let mut next = (*drafts).clone();
+                                if let Some(item) = next.get_mut(index) { match field { "alt" => item.alt = input.value(), "title" => item.title = input.value(), "caption" => item.caption = input.value(), "width" => item.width = input.value(), "height" => item.height = input.value(), _ => {} } }
+                                drafts.set(next);
+                            })
+                        };
+                        let on_alignment = { let drafts = image_drafts.clone(); Callback::from(move |e: Event| { let input: web_sys::HtmlSelectElement = e.target_unchecked_into(); let mut next = (*drafts).clone(); if let Some(item) = next.get_mut(index) { item.alignment = input.value(); } drafts.set(next); }) };
+                        let on_aspect = { let drafts = image_drafts.clone(); Callback::from(move |e: Event| { let input: web_sys::HtmlInputElement = e.target_unchecked_into(); let mut next = (*drafts).clone(); if let Some(item) = next.get_mut(index) { item.keep_aspect = input.checked(); } drafts.set(next); }) };
+                        let remove = { let drafts = image_drafts.clone(); Callback::from(move |_| { let mut next = (*drafts).clone(); if index < next.len() { next.remove(index); } drafts.set(next); }) };
+                        let preview = format!("data:image/{};base64,{}", draft.file.extension, draft.file.base64_data);
+                        html! { <section class="image-modal__item" data-nav-group={format!("image-{index}")}>
+                            <img class="image-modal__preview" src={preview} alt="Prévia local" />
+                            <div class="image-modal__fields">
+                                <strong>{ &draft.file.name }</strong>
+                                <label>{ "Texto alternativo" }<input data-nav-item="true" value={draft.alt.clone()} oninput={update("alt")} /></label>
+                                <label>{ "Legenda" }<input data-nav-item="true" value={draft.caption.clone()} oninput={update("caption")} /></label>
+                                <label>{ "Título" }<input data-nav-item="true" value={draft.title.clone()} oninput={update("title")} /></label>
+                                <div class="image-modal__row"><label>{ "Largura" }<input data-nav-item="true" type="number" min="1" value={draft.width.clone()} oninput={update("width")} /></label><label>{ "Altura" }<input data-nav-item="true" type="number" min="1" value={draft.height.clone()} oninput={update("height")} /></label></div>
+                                <label>{ "Alinhamento" }<select data-nav-item="true" value={draft.alignment.clone()} onchange={on_alignment}><option value="inline">{ "No fluxo" }</option><option value="left">{ "Esquerda" }</option><option value="center">{ "Centro" }</option><option value="right">{ "Direita" }</option></select></label>
+                                <label class="image-modal__check"><input data-nav-item="true" type="checkbox" checked={draft.keep_aspect} onchange={on_aspect} />{ "Preservar proporção" }</label>
+                                <button class="btn btn--ghost btn--sm" data-nav-item="true" onclick={remove}>{ "Remover desta inserção" }</button>
+                            </div>
+                        </section> }
+                    }) }
+                    if let Some(ref message) = *image_error { <p class="image-modal__error" role="alert">{ message }</p> }
+                    <div class="modal__actions"><button class="btn btn--ghost" data-nav-item="true" onclick={close_image_modal.reform(|_| ())}>{ "Cancelar" }</button><button class="btn btn--primary" data-nav-item="true" disabled={*image_saving} onclick={confirm_images}>{ if *image_saving { "Gravando…" } else { "Inserir" } }</button></div>
+                </div>
+            </Modal>
             <div class="editor__body">
+                if *image_drop_active { <div class="editor__drop-target">{ "Solte para revisar as imagens" }</div> }
                 if *loading {
                     <div class="editor__overlay">
                         <div class="spinner"></div>
@@ -2474,7 +3021,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                         // servindo pra todos.
                                         <div class="editor__wysiwyg" {key} data-segment-index={i.to_string()} ref={node_ref} contenteditable="false"
                                             spellcheck="false" onkeydown={on_keydown.clone()} oninput={on_edit.clone()}
-                                            ondrop={on_drop.clone()} ondragover={on_dragover.clone()} onpaste={on_paste.clone()} />
+                                            ondrop={on_drop.clone()} ondragover={on_dragover.clone()} ondragleave={on_dragleave.clone()} onpaste={on_paste.clone()} />
                                     }
                                 }
                                 DocSegment::Embed(data) => {
@@ -2549,7 +3096,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     // lugar errado e o bloco de origem crescer junto.
                     <div class="editor__wysiwyg" key="plain" ref={editor_ref} contenteditable="false"
                         spellcheck="false" onkeydown={on_keydown} oninput={on_edit}
-                        ondrop={on_drop} ondragover={on_dragover} onclick={on_wysiwyg_click} onpaste={on_paste} />
+                        ondrop={on_drop} ondragover={on_dragover} ondragleave={on_dragleave} onclick={on_wysiwyg_click} onpaste={on_paste} />
                 }
             </div>
             if *slash_open {
@@ -2716,7 +3263,11 @@ fn find_slash_context() -> Option<(web_sys::Text, u32, String)> {
 /// Apaga o "/consulta" (achado por `find_slash_context`) do nó de texto e
 /// deixa o cursor colapsado exatamente onde o "/" estava — pronto pro
 /// item selecionado ser inserido ali no lugar.
-fn delete_slash_context_and_collapse(text_node: &web_sys::Text, slash_pos: u32, query_len: usize) -> bool {
+fn delete_slash_context_and_collapse(
+    text_node: &web_sys::Text,
+    slash_pos: u32,
+    query_len: usize,
+) -> bool {
     delete_range_and_collapse(text_node, slash_pos, (1 + query_len) as u32)
 }
 
@@ -2742,7 +3293,10 @@ fn find_wikilink_context() -> Option<(web_sys::Text, u32, String)> {
     let prefix: String = data.chars().take(offset).collect();
     let open_byte_pos = prefix.rfind("[[")?;
     let query = &prefix[open_byte_pos + 2..];
-    if query.chars().any(|c| c.is_whitespace() || c == ']' || c == '[') {
+    if query
+        .chars()
+        .any(|c| c.is_whitespace() || c == ']' || c == '[')
+    {
         return None;
     }
     let open_char_pos = prefix[..open_byte_pos].chars().count() as u32;
@@ -2757,10 +3311,18 @@ fn delete_range_and_collapse(text_node: &web_sys::Text, start_pos: u32, delete_l
     if text_node.delete_data(start_pos, delete_len).is_err() {
         return false;
     }
-    let Some(window) = web_sys::window() else { return false };
-    let Some(doc) = window.document() else { return false };
-    let Some(sel) = window.get_selection().ok().flatten() else { return false };
-    let Ok(range) = doc.create_range() else { return false };
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let Some(doc) = window.document() else {
+        return false;
+    };
+    let Some(sel) = window.get_selection().ok().flatten() else {
+        return false;
+    };
+    let Ok(range) = doc.create_range() else {
+        return false;
+    };
     if range.set_start(text_node, start_pos).is_err() {
         return false;
     }
@@ -2770,8 +3332,12 @@ fn delete_range_and_collapse(text_node: &web_sys::Text, start_pos: u32, delete_l
 }
 
 fn insert_embed_marker_at_cursor(kind: &str, body: &str) -> bool {
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return false };
-    let Ok(div) = doc.create_element("div") else { return false };
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return false;
+    };
+    let Ok(div) = doc.create_element("div") else {
+        return false;
+    };
     if div.set_attribute("data-embed-insert", kind).is_err() {
         return false;
     }
@@ -2796,20 +3362,34 @@ fn insert_embed_marker_at_cursor(kind: &str, body: &str) -> bool {
 /// inline-safe (ex: imagem), que pode ficar aninhado normalmente dentro
 /// de um parágrafo.
 fn insert_element_at_cursor(el: &web_sys::Element, break_out_of_block: bool) -> bool {
-    let Some(window) = web_sys::window() else { return false };
-    let Some(sel) = window.get_selection().ok().flatten() else { return false };
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let Some(sel) = window.get_selection().ok().flatten() else {
+        return false;
+    };
     if sel.range_count() == 0 {
         return false;
     }
-    let Ok(range) = sel.get_range_at(0) else { return false };
+    let Ok(range) = sel.get_range_at(0) else {
+        return false;
+    };
 
-    let block_ancestor = break_out_of_block.then(|| {
-        let start_container = range.start_container().ok();
-        let container_el: Option<web_sys::Element> = start_container.and_then(|n| {
-            n.dyn_ref::<web_sys::Element>().cloned().or_else(|| n.parent_element())
-        });
-        container_el.and_then(|e| e.closest("li, p, blockquote, h1, h2, h3, h4, h5, h6").ok().flatten())
-    }).flatten();
+    let block_ancestor = break_out_of_block
+        .then(|| {
+            let start_container = range.start_container().ok();
+            let container_el: Option<web_sys::Element> = start_container.and_then(|n| {
+                n.dyn_ref::<web_sys::Element>()
+                    .cloned()
+                    .or_else(|| n.parent_element())
+            });
+            container_el.and_then(|e| {
+                e.closest("li, p, blockquote, h1, h2, h3, h4, h5, h6")
+                    .ok()
+                    .flatten()
+            })
+        })
+        .flatten();
 
     let inserted = if let Some(block) = block_ancestor {
         let anchor = if block.tag_name().to_lowercase() == "li" {
@@ -2817,7 +3397,8 @@ fn insert_element_at_cursor(el: &web_sys::Element, break_out_of_block: bool) -> 
         } else {
             Some(block)
         };
-        anchor.and_then(|a| a.parent_node().map(|p| (p, a.next_sibling())))
+        anchor
+            .and_then(|a| a.parent_node().map(|p| (p, a.next_sibling())))
             .map(|(parent, next)| parent.insert_before(el, next.as_ref()).is_ok())
             .unwrap_or(false)
     } else {
@@ -2837,6 +3418,66 @@ fn insert_element_at_cursor(el: &web_sys::Element, break_out_of_block: bool) -> 
     true
 }
 
+fn current_range() -> Option<web_sys::Range> {
+    let selection = web_sys::window()?.get_selection().ok()??;
+    if selection.range_count() == 0 {
+        None
+    } else {
+        selection.get_range_at(0).ok()
+    }
+}
+
+fn range_at_point(x: i32, y: i32) -> Option<web_sys::Range> {
+    let doc = web_sys::window()?.document()?;
+    let function = js_sys::Reflect::get(
+        &doc,
+        &wasm_bindgen::JsValue::from_str("caretRangeFromPoint"),
+    )
+    .ok()?
+    .dyn_into::<js_sys::Function>()
+    .ok()?;
+    let args = js_sys::Array::new();
+    args.push(&x.into());
+    args.push(&y.into());
+    function
+        .apply(&doc, &args)
+        .ok()?
+        .dyn_into::<web_sys::Range>()
+        .ok()
+}
+
+fn restore_range(range: &web_sys::Range) -> bool {
+    if range
+        .start_container()
+        .ok()
+        .and_then(|n| n.owner_document())
+        .is_none()
+    {
+        return false;
+    }
+    let Some(selection) = web_sys::window()
+        .and_then(|w| w.get_selection().ok())
+        .flatten()
+    else {
+        return false;
+    };
+    selection.remove_all_ranges().ok();
+    selection.add_range(range).is_ok()
+}
+
+fn range_is_in_editor(range: &web_sys::Range) -> bool {
+    let Ok(node) = range.start_container() else {
+        return false;
+    };
+    let element = node
+        .dyn_ref::<web_sys::Element>()
+        .cloned()
+        .or_else(|| node.parent_element());
+    element
+        .and_then(|el| el.closest(".editor__wysiwyg").ok().flatten())
+        .is_some()
+}
+
 /// Constrói UM elemento a partir de uma string HTML (assume que `html`
 /// tem exatamente um elemento raiz — todos os itens do menu `/`
 /// respeitam isso).
@@ -2853,7 +3494,10 @@ fn parse_single_element(html: &str) -> Option<web_sys::Element> {
 /// `documentboundary`) pra implementar as motions do vim mode sem
 /// reescrever navegação de texto/palavra/linha na mão.
 fn vim_move(direction: &str, granularity: &str) {
-    if let Some(sel) = web_sys::window().and_then(|w| w.get_selection().ok()).flatten() {
+    if let Some(sel) = web_sys::window()
+        .and_then(|w| w.get_selection().ok())
+        .flatten()
+    {
         let _ = sel.modify("move", direction, granularity);
     }
     // `Selection.modify` move o caret mas, diferente do comportamento
@@ -2870,13 +3514,28 @@ fn vim_move(direction: &str, granularity: &str) {
 /// usado pra manter o item destacado visível na sidebar/paleta (rola o
 /// mínimo pra reaparecer, sem centralizar à toa a cada tecla).
 fn vim_scroll_caret_into_view() {
-    let Some(sel) = web_sys::window().and_then(|w| w.get_selection().ok()).flatten() else { return };
+    let Some(sel) = web_sys::window()
+        .and_then(|w| w.get_selection().ok())
+        .flatten()
+    else {
+        return;
+    };
     if sel.range_count() == 0 {
         return;
     }
-    let Ok(range) = sel.get_range_at(0) else { return };
-    let Ok(node) = range.start_container() else { return };
-    let Some(el) = node.dyn_ref::<web_sys::Element>().cloned().or_else(|| node.parent_element()) else { return };
+    let Ok(range) = sel.get_range_at(0) else {
+        return;
+    };
+    let Ok(node) = range.start_container() else {
+        return;
+    };
+    let Some(el) = node
+        .dyn_ref::<web_sys::Element>()
+        .cloned()
+        .or_else(|| node.parent_element())
+    else {
+        return;
+    };
     let opts = web_sys::ScrollIntoViewOptions::new();
     opts.set_block(web_sys::ScrollLogicalPosition::Nearest);
     el.scroll_into_view_with_scroll_into_view_options(&opts);
@@ -2894,13 +3553,20 @@ fn vim_current_block() -> Option<web_sys::Element> {
     }
     let range = sel.get_range_at(0).ok()?;
     let node = range.start_container().ok()?;
-    let el = node.dyn_ref::<web_sys::Element>().cloned().or_else(|| node.parent_element())?;
-    el.closest("li, p, h1, h2, h3, h4, h5, h6, blockquote").ok().flatten()
+    let el = node
+        .dyn_ref::<web_sys::Element>()
+        .cloned()
+        .or_else(|| node.parent_element())?;
+    el.closest("li, p, h1, h2, h3, h4, h5, h6, blockquote")
+        .ok()
+        .flatten()
 }
 
 /// `yy`: copia o texto da linha atual pro registrador, sem mutar nada.
 fn vim_yank_line(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
-    let Some(block) = vim_current_block() else { return false };
+    let Some(block) = vim_current_block() else {
+        return false;
+    };
     *register.borrow_mut() = block.text_content().unwrap_or_default();
     true
 }
@@ -2909,7 +3575,9 @@ fn vim_yank_line(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
 /// Mutação direta (não passa por `execCommand`), então quem chama
 /// precisa recalcular o markdown e chamar `mark_edited` depois.
 fn vim_delete_line(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
-    let Some(block) = vim_current_block() else { return false };
+    let Some(block) = vim_current_block() else {
+        return false;
+    };
     *register.borrow_mut() = block.text_content().unwrap_or_default();
     block.remove();
     true
@@ -2922,7 +3590,11 @@ fn vim_delete_line(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
 /// mesmo comportamento padrão de outros editores (abrir linha depois de
 /// um título não repete o título).
 fn sibling_line_tag(block: &web_sys::Element) -> &'static str {
-    if block.tag_name().to_lowercase() == "li" { "li" } else { "p" }
+    if block.tag_name().to_lowercase() == "li" {
+        "li"
+    } else {
+        "p"
+    }
 }
 
 /// `p`: insere o conteúdo do registrador como uma linha nova logo depois
@@ -2932,11 +3604,19 @@ fn vim_paste_after(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
     if text.is_empty() {
         return false;
     }
-    let Some(block) = vim_current_block() else { return false };
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return false };
-    let Ok(new_el) = doc.create_element(sibling_line_tag(&block)) else { return false };
+    let Some(block) = vim_current_block() else {
+        return false;
+    };
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return false;
+    };
+    let Ok(new_el) = doc.create_element(sibling_line_tag(&block)) else {
+        return false;
+    };
     new_el.set_text_content(Some(&text));
-    let Some(parent) = block.parent_node() else { return false };
+    let Some(parent) = block.parent_node() else {
+        return false;
+    };
     let next = block.next_sibling();
     parent.insert_before(&new_el, next.as_ref()).is_ok()
 }
@@ -2945,14 +3625,26 @@ fn vim_paste_after(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
 /// (`before=true`) da linha atual e coloca o cursor nela — quem chama
 /// ainda precisa setar `vim_insert` pra `true`.
 fn vim_open_line(before: bool) -> bool {
-    let Some(block) = vim_current_block() else { return false };
-    let Some(window) = web_sys::window() else { return false };
-    let Some(doc) = window.document() else { return false };
-    let Ok(new_el) = doc.create_element(sibling_line_tag(&block)) else { return false };
+    let Some(block) = vim_current_block() else {
+        return false;
+    };
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let Some(doc) = window.document() else {
+        return false;
+    };
+    let Ok(new_el) = doc.create_element(sibling_line_tag(&block)) else {
+        return false;
+    };
     new_el.set_inner_html("<br>");
-    let Some(parent) = block.parent_node() else { return false };
+    let Some(parent) = block.parent_node() else {
+        return false;
+    };
     let inserted = if before {
-        parent.insert_before(&new_el, Some(block.unchecked_ref())).is_ok()
+        parent
+            .insert_before(&new_el, Some(block.unchecked_ref()))
+            .is_ok()
     } else {
         let next = block.next_sibling();
         parent.insert_before(&new_el, next.as_ref()).is_ok()
@@ -2960,34 +3652,51 @@ fn vim_open_line(before: bool) -> bool {
     if !inserted {
         return false;
     }
-    let Ok(range) = doc.create_range() else { return false };
+    let Ok(range) = doc.create_range() else {
+        return false;
+    };
     if range.set_start(&new_el, 0).is_err() {
         return false;
     }
     range.collapse_with_to_start(true);
-    let Some(sel) = window.get_selection().ok().flatten() else { return false };
+    let Some(sel) = window.get_selection().ok().flatten() else {
+        return false;
+    };
     sel.remove_all_ranges().ok();
     sel.add_range(&range).is_ok()
 }
 
-fn recompute_markdown_from_dom(content_md: &str, editor_ref: &NodeRef, segment_refs: &[NodeRef]) -> String {
+fn recompute_markdown_from_dom(
+    content_md: &str,
+    editor_ref: &NodeRef,
+    segment_refs: &[NodeRef],
+) -> String {
     let (fm, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(content_md);
     let segs = crate::embed::segment(body);
     let has_embeds_now = segs.iter().any(|s| matches!(s, DocSegment::Embed(_)));
 
     if has_embeds_now {
-        let new_segs: Vec<DocSegment> = segs.iter().enumerate().map(|(i, seg)| match seg {
-            DocSegment::Markdown(orig) => {
-                let text = segment_refs.get(i)
-                    .and_then(|r| r.cast::<web_sys::Element>())
-                    .map(|el| crate::html_to_md::html_to_markdown(&el))
-                    .unwrap_or_else(|| orig.clone());
-                DocSegment::Markdown(text)
-            }
-            other => other.clone(),
-        }).collect();
+        let new_segs: Vec<DocSegment> = segs
+            .iter()
+            .enumerate()
+            .map(|(i, seg)| match seg {
+                DocSegment::Markdown(orig) => {
+                    let text = segment_refs
+                        .get(i)
+                        .and_then(|r| r.cast::<web_sys::Element>())
+                        .map(|el| crate::html_to_md::html_to_markdown(&el))
+                        .unwrap_or_else(|| orig.clone());
+                    DocSegment::Markdown(text)
+                }
+                other => other.clone(),
+            })
+            .collect();
         let new_body = crate::embed::join(&new_segs);
-        if fm.is_empty() { new_body } else { format!("{}\n{}", fm, new_body) }
+        if fm.is_empty() {
+            new_body
+        } else {
+            format!("{}\n{}", fm, new_body)
+        }
     } else if let Some(div) = editor_ref.cast::<web_sys::Element>() {
         // Bug real encontrado durante o ciclo do autosave: esse branch
         // (páginas sem embed) reconstruía só o corpo a partir do DOM sem
@@ -2996,7 +3705,11 @@ fn recompute_markdown_from_dom(content_md: &str, editor_ref: &NodeRef, segment_r
         // frontmatter inteiro. O branch com embeds (acima) já fazia isso
         // certo, só esse aqui estava faltando.
         let body_md = crate::html_to_md::html_to_markdown(&div);
-        if fm.is_empty() { body_md } else { format!("{}\n{}", fm, body_md) }
+        if fm.is_empty() {
+            body_md
+        } else {
+            format!("{}\n{}", fm, body_md)
+        }
     } else {
         content_md.to_string()
     }
@@ -3008,20 +3721,27 @@ fn exec_cmd_global(cmd: &str) {
         args.push(&wasm_bindgen::JsValue::from_str(cmd));
         args.push(&wasm_bindgen::JsValue::from_bool(false));
         if let Some(f) = js_sys::Reflect::get(&doc, &wasm_bindgen::JsValue::from_str("execCommand"))
-            .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
-        { let _ = f.apply(&doc, &args); }
+            .ok()
+            .and_then(|v| v.dyn_into::<js_sys::Function>().ok())
+        {
+            let _ = f.apply(&doc, &args);
+        }
     }
 }
 
 fn init_highlight() {
     if let Some(window) = web_sys::window() {
-        if let Some(hljs) = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("hljs")).ok() {
+        if let Some(hljs) =
+            js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("hljs")).ok()
+        {
             if let Some(obj) = hljs.dyn_into::<js_sys::Object>().ok() {
                 let _ = js_sys::Reflect::apply(
-                    &js_sys::Reflect::get(&obj, &wasm_bindgen::JsValue::from_str("highlightAll")).ok()
-                        .and_then(|v| v.dyn_into::<js_sys::Function>().ok()).unwrap_or_else(|| js_sys::Function::new_no_args("")),
+                    &js_sys::Reflect::get(&obj, &wasm_bindgen::JsValue::from_str("highlightAll"))
+                        .ok()
+                        .and_then(|v| v.dyn_into::<js_sys::Function>().ok())
+                        .unwrap_or_else(|| js_sys::Function::new_no_args("")),
                     &wasm_bindgen::JsValue::null(),
-                    &js_sys::Array::new()
+                    &js_sys::Array::new(),
                 );
             }
         }
@@ -3032,10 +3752,15 @@ fn exec_cmd(doc: &web_sys::Document, cmd: &str, val: &str) {
     let args = js_sys::Array::new();
     args.push(&wasm_bindgen::JsValue::from_str(cmd));
     args.push(&wasm_bindgen::JsValue::from_bool(false));
-    if !val.is_empty() { args.push(&wasm_bindgen::JsValue::from_str(val)); }
+    if !val.is_empty() {
+        args.push(&wasm_bindgen::JsValue::from_str(val));
+    }
     if let Some(f) = js_sys::Reflect::get(doc, &wasm_bindgen::JsValue::from_str("execCommand"))
-        .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok())
-    { let _ = f.apply(doc, &args); }
+        .ok()
+        .and_then(|v| v.dyn_into::<js_sys::Function>().ok())
+    {
+        let _ = f.apply(doc, &args);
+    }
 }
 
 fn apply_block_shortcut(win: &web_sys::Window, doc: &web_sys::Document, e: &KeyboardEvent) {
@@ -3043,7 +3768,9 @@ fn apply_block_shortcut(win: &web_sys::Window, doc: &web_sys::Document, e: &Keyb
         Some(s) => s,
         None => return,
     };
-    if sel.range_count() == 0 { return; }
+    if sel.range_count() == 0 {
+        return;
+    }
     let range = match sel.get_range_at(0) {
         Ok(r) => r,
         Err(_) => return,
@@ -3074,7 +3801,9 @@ fn apply_block_shortcut(win: &web_sys::Window, doc: &web_sys::Document, e: &Keyb
     // esperado). No momento do `keydown` do espaço, o espaço em si AINDA
     // não foi inserido no DOM, então o prefixo aqui não tem o espaço à
     // direita (mesmo motivo do heading comparar só com "#", não "# ").
-    if !is_space { return; }
+    if !is_space {
+        return;
+    }
 
     // Checkbox: "[]" ou "[ ]" — checado ANTES do "-"/"*" solto pra
     // cobrir tanto o caso solto num parágrafo quanto o combo "digitar
@@ -3104,7 +3833,12 @@ fn apply_block_shortcut(win: &web_sys::Window, doc: &web_sys::Document, e: &Keyb
         return;
     }
 
-    if prefix.len() > 1 && prefix[..prefix.len()-1].chars().all(|c| c.is_ascii_digit()) && prefix.ends_with('.') {
+    if prefix.len() > 1
+        && prefix[..prefix.len() - 1]
+            .chars()
+            .all(|c| c.is_ascii_digit())
+        && prefix.ends_with('.')
+    {
         select_prefix(doc, &sel, &container, prefix.len());
         exec_cmd(doc, "delete", "");
         exec_cmd(doc, "insertOrderedList", "");
@@ -3115,7 +3849,12 @@ fn apply_block_shortcut(win: &web_sys::Window, doc: &web_sys::Document, e: &Keyb
 /// Seleciona `[0, len)` do `container` de texto — usado pelos atalhos de
 /// bloco acima pra marcar o marcador digitado (`"#"`, `"-"`, `">"`,
 /// `"1."`) antes de apagá-lo com `exec_cmd(doc, "delete", "")`.
-fn select_prefix(doc: &web_sys::Document, sel: &web_sys::Selection, container: &web_sys::Node, len: usize) {
+fn select_prefix(
+    doc: &web_sys::Document,
+    sel: &web_sys::Selection,
+    container: &web_sys::Node,
+    len: usize,
+) {
     if let Ok(r) = doc.create_range() {
         r.set_start(container, 0u32).ok();
         r.set_end(container, len as u32).ok();
@@ -3129,7 +3868,9 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
         Some(s) => s,
         None => return,
     };
-    if sel.range_count() == 0 { return; }
+    if sel.range_count() == 0 {
+        return;
+    }
     let range = match sel.get_range_at(0) {
         Ok(r) => r,
         Err(_) => return,
@@ -3151,7 +3892,8 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
             if !inner.is_empty() {
                 if let Ok(mut r) = doc.create_range() {
                     r.set_start(&container, inner_start as u32).ok();
-                    r.set_end(&container, (inner_start + inner.len()) as u32).ok();
+                    r.set_end(&container, (inner_start + inner.len()) as u32)
+                        .ok();
                     sel.remove_all_ranges().ok();
                     sel.add_range(&r).ok();
                     exec_cmd(doc, "bold", "");
@@ -3186,7 +3928,8 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
                 if !inner.is_empty() {
                     if let Ok(mut r) = doc.create_range() {
                         r.set_start(&container, inner_start as u32).ok();
-                        r.set_end(&container, (inner_start + inner.len()) as u32).ok();
+                        r.set_end(&container, (inner_start + inner.len()) as u32)
+                            .ok();
                         sel.remove_all_ranges().ok();
                         sel.add_range(&r).ok();
                         exec_cmd(doc, "italic", "");
@@ -3218,7 +3961,10 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
             let inner = &between[..inner_end];
             let inner_start = start + 1;
             if !inner.is_empty() {
-                let code_html = format!("<code>{}</code>", inner.replace('<', "&lt;").replace('>', "&gt;"));
+                let code_html = format!(
+                    "<code>{}</code>",
+                    inner.replace('<', "&lt;").replace('>', "&gt;")
+                );
                 let full_end = inner_start + inner.len() + 1;
                 if let Ok(mut r) = doc.create_range() {
                     r.set_start(&container, start as u32).ok();
@@ -3254,8 +4000,12 @@ fn upgrade_embedded_assets_at(el: &web_sys::Element, vault_path: String) {
     if let Ok(links) = el.query_selector_all("a[href]") {
         for i in 0..links.length() {
             let Some(node) = links.item(i) else { continue };
-            let Ok(a) = node.dyn_into::<web_sys::Element>() else { continue };
-            let Some(href) = a.get_attribute("href") else { continue };
+            let Ok(a) = node.dyn_into::<web_sys::Element>() else {
+                continue;
+            };
+            let Some(href) = a.get_attribute("href") else {
+                continue;
+            };
             let is_local_pdf = href.to_lowercase().ends_with(".pdf")
                 && !href.starts_with("http://")
                 && !href.starts_with("https://")
@@ -3265,11 +4015,15 @@ fn upgrade_embedded_assets_at(el: &web_sys::Element, vault_path: String) {
                 continue;
             }
             let Some(ref doc) = doc else { continue };
-            let Ok(wrapper) = doc.create_element("div") else { continue };
+            let Ok(wrapper) = doc.create_element("div") else {
+                continue;
+            };
             let _ = wrapper.set_attribute("class", "pdf-embed");
             let _ = wrapper.set_attribute("data-pdf-href", &href);
             let _ = wrapper.set_attribute("data-pdf-text", &a.text_content().unwrap_or_default());
-            let Ok(iframe) = doc.create_element("iframe") else { continue };
+            let Ok(iframe) = doc.create_element("iframe") else {
+                continue;
+            };
             let _ = iframe.set_attribute("class", "pdf-embed__frame");
             let _ = iframe.set_attribute("data-asset-src", &href);
             let _ = wrapper.append_child(&iframe);
@@ -3282,14 +4036,21 @@ fn upgrade_embedded_assets_at(el: &web_sys::Element, vault_path: String) {
     if let Ok(assets) = el.query_selector_all("img[src^='assets/'], iframe[data-asset-src]") {
         for i in 0..assets.length() {
             let Some(node) = assets.item(i) else { continue };
-            let Ok(target) = node.dyn_into::<web_sys::Element>() else { continue };
+            let Ok(target) = node.dyn_into::<web_sys::Element>() else {
+                continue;
+            };
             let is_iframe = target.tag_name().eq_ignore_ascii_case("iframe");
             let asset_path = if is_iframe {
                 target.get_attribute("data-asset-src")
             } else {
                 target.get_attribute("src")
             };
-            let Some(asset_path) = asset_path else { continue };
+            let Some(asset_path) = asset_path else {
+                continue;
+            };
+            if !is_iframe {
+                let _ = target.set_attribute("data-asset-src", &asset_path);
+            }
             let vault_path = vault_path.clone();
             let target = target.clone();
             wasm_bindgen_futures::spawn_local(async move {
@@ -3303,15 +4064,33 @@ fn upgrade_embedded_assets_at(el: &web_sys::Element, vault_path: String) {
 
 fn init_mermaid_at(el: &web_sys::Element) {
     if let Some(window) = web_sys::window() {
-        if let Some(mermaid) = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("mermaid"))
-            .ok().and_then(|v| v.dyn_into::<js_sys::Object>().ok())
+        if let Some(mermaid) =
+            js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("mermaid"))
+                .ok()
+                .and_then(|v| v.dyn_into::<js_sys::Object>().ok())
         {
             let config = js_sys::Object::new();
-            js_sys::Reflect::set(&config, &wasm_bindgen::JsValue::from_str("theme"), &wasm_bindgen::JsValue::from_str("dark")).ok();
-            js_sys::Reflect::set(&config, &wasm_bindgen::JsValue::from_str("startOnLoad"), &wasm_bindgen::JsValue::from_bool(false)).ok();
-            js_sys::Reflect::set(&mermaid, &wasm_bindgen::JsValue::from_str("initialize"), &config).ok();
+            js_sys::Reflect::set(
+                &config,
+                &wasm_bindgen::JsValue::from_str("theme"),
+                &wasm_bindgen::JsValue::from_str("dark"),
+            )
+            .ok();
+            js_sys::Reflect::set(
+                &config,
+                &wasm_bindgen::JsValue::from_str("startOnLoad"),
+                &wasm_bindgen::JsValue::from_bool(false),
+            )
+            .ok();
+            js_sys::Reflect::set(
+                &mermaid,
+                &wasm_bindgen::JsValue::from_str("initialize"),
+                &config,
+            )
+            .ok();
             let run = js_sys::Reflect::get(&mermaid, &wasm_bindgen::JsValue::from_str("run"))
-                .ok().and_then(|v| v.dyn_into::<js_sys::Function>().ok());
+                .ok()
+                .and_then(|v| v.dyn_into::<js_sys::Function>().ok());
             if let Some(run_fn) = run {
                 let opts = js_sys::Object::new();
                 js_sys::Reflect::set(&opts, &wasm_bindgen::JsValue::from_str("nodes"), el).ok();
@@ -3347,7 +4126,9 @@ fn marcar_blocos(container: &web_sys::Element) {
 
     let filhos = container.children();
     for i in 0..filhos.length() {
-        let Some(bloco) = filhos.item(i) else { continue };
+        let Some(bloco) = filhos.item(i) else {
+            continue;
+        };
         let _ = bloco.set_attribute("data-nav-item", &format!("bloco-{i}"));
         let _ = bloco.set_attribute("data-nav-parent", crate::nav_mode::GRUPO_BLOCOS);
         let _ = bloco.set_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO, "texto");
@@ -3377,9 +4158,15 @@ pub fn entrar_no_bloco(bloco: &web_sys::Element) -> bool {
         return false;
     };
     let _ = editavel.focus();
-    let Some(window) = web_sys::window() else { return false };
-    let Some(doc) = window.document() else { return false };
-    let Ok(range) = doc.create_range() else { return false };
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let Some(doc) = window.document() else {
+        return false;
+    };
+    let Ok(range) = doc.create_range() else {
+        return false;
+    };
     let _ = range.select_node_contents(bloco);
     range.collapse_with_to_start(false);
     if let Some(sel) = window.get_selection().ok().flatten() {
@@ -3426,11 +4213,19 @@ fn bloco_do_cursor() -> Option<web_sys::Element> {
 /// aninha infinitamente. Auto-referência é barrada explicitamente,
 /// porque é o erro mais fácil de cometer.
 fn upgrade_transclusions_at(el: &web_sys::Element, vault_path: String, pagina_atual: String) {
-    let Ok(marcadores) = el.query_selector_all("[data-transclusao]") else { return };
+    let Ok(marcadores) = el.query_selector_all("[data-transclusao]") else {
+        return;
+    };
     for i in 0..marcadores.length() {
-        let Some(node) = marcadores.item(i) else { continue };
-        let Ok(alvo_el) = node.dyn_into::<web_sys::Element>() else { continue };
-        let Some(alvo) = alvo_el.get_attribute("data-transclusao") else { continue };
+        let Some(node) = marcadores.item(i) else {
+            continue;
+        };
+        let Ok(alvo_el) = node.dyn_into::<web_sys::Element>() else {
+            continue;
+        };
+        let Some(alvo) = alvo_el.get_attribute("data-transclusao") else {
+            continue;
+        };
         if alvo_el.has_attribute("data-transcluido") {
             continue;
         }
@@ -3453,7 +4248,9 @@ fn upgrade_transclusions_at(el: &web_sys::Element, vault_path: String, pagina_at
             // interessa é o do FRONTMATTER — `list_pages` devolve o nome
             // do arquivo, então `![[Guia do Agent OS]]` nunca casaria
             // com `guia-agent-os.md`.
-            let paginas = crate::api::scan_vault(&vault_path).await.unwrap_or_default();
+            let paginas = crate::api::scan_vault(&vault_path)
+                .await
+                .unwrap_or_default();
             let encontrada = paginas
                 .iter()
                 .find(|p| p.title.eq_ignore_ascii_case(&titulo))
@@ -3545,16 +4342,23 @@ fn upgrade_transclusions_at(el: &web_sys::Element, vault_path: String, pagina_at
                 crate::wikilink::SCHEME_PREFIX,
                 crate::wikilink::encode_title(&pagina.title),
                 escape_html(&pagina.title),
-                secao.as_deref().map(|s| format!(" › {}", escape_html(s))).unwrap_or_default()
+                secao
+                    .as_deref()
+                    .map(|s| format!(" › {}", escape_html(s)))
+                    .unwrap_or_default()
             );
-            alvo_el.set_inner_html(&format!("{cabecalho}<div class=\"transclusao__corpo\">{html}</div>"));
+            alvo_el.set_inner_html(&format!(
+                "{cabecalho}<div class=\"transclusao__corpo\">{html}</div>"
+            ));
         });
     }
 }
 
 /// Escapa texto que vai pro HTML montado à mão aqui.
 fn escape_html(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// Bloco de texto atualmente FOCADO pelo nav-mode (ciclo 174) — `None`
@@ -3591,9 +4395,11 @@ fn copiar_referencia(
     }
     let completo = (**content_md).clone();
     let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&completo);
-    let alvo = corpo
-        .lines()
-        .position(|l| anotadinho_core::links::strip_block_id(l).trim().contains(&primeira));
+    let alvo = corpo.lines().position(|l| {
+        anotadinho_core::links::strip_block_id(l)
+            .trim()
+            .contains(&primeira)
+    });
     let Some(alvo) = alvo else { return };
     let Some((novo_corpo, id)) = anotadinho_core::links::garantir_block_id(corpo, alvo) else {
         return;
@@ -3622,9 +4428,15 @@ fn copiar_referencia(
 /// `web-sys`; este caminho usa o mesmo `execCommand` que o editor já
 /// usa e funciona no WebView do Tauri.
 fn copiar_para_area_de_transferencia(texto: &str) {
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return };
-    let Ok(el) = doc.create_element("textarea") else { return };
-    let Ok(area) = el.dyn_into::<web_sys::HtmlTextAreaElement>() else { return };
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Ok(el) = doc.create_element("textarea") else {
+        return;
+    };
+    let Ok(area) = el.dyn_into::<web_sys::HtmlTextAreaElement>() else {
+        return;
+    };
     area.set_value(texto);
     let _ = area.style().set_property("position", "fixed");
     let _ = area.style().set_property("opacity", "0");
@@ -3685,7 +4497,10 @@ fn inserir_segmento_e_abrir_menu(
     let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&completo);
     let mut segs = crate::embed::segment(corpo);
     let pos = pos.min(segs.len());
-    segs.insert(pos, DocSegment::Markdown(crate::embed::BLANK_SEGMENT.to_string()));
+    segs.insert(
+        pos,
+        DocSegment::Markdown(crate::embed::BLANK_SEGMENT.to_string()),
+    );
     let novo_corpo = crate::embed::join(&segs);
     let novo = if frontmatter.is_empty() {
         novo_corpo
@@ -3697,9 +4512,13 @@ fn inserir_segmento_e_abrir_menu(
 
     wasm_bindgen_futures::spawn_local(async move {
         gloo_timers::future::sleep(std::time::Duration::from_millis(80)).await;
-        let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return };
+        let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+            return;
+        };
         let seletor = format!("[data-segment-index=\"{pos}\"]");
-        let Some(segmento) = doc.query_selector(&seletor).ok().flatten() else { return };
+        let Some(segmento) = doc.query_selector(&seletor).ok().flatten() else {
+            return;
+        };
         // O foco vai no BLOCO, não no segmento: desde o ciclo 175 o
         // contêiner do segmento é `contenteditable="false"`, então focar
         // nele não põe cursor em lugar nenhum e o "/" digitado logo
@@ -3840,7 +4659,13 @@ fn aplicar_acao_de_bloco(bloco: &web_sys::Element, acao: AcaoBloco) -> Option<us
         }
         AcaoBloco::Duplicar => {
             let copia = bloco.clone_node_with_deep(true).ok()?;
-            let _ = pai.insert_before(&copia, bloco.next_element_sibling().as_ref().map(|e| e.unchecked_ref()));
+            let _ = pai.insert_before(
+                &copia,
+                bloco
+                    .next_element_sibling()
+                    .as_ref()
+                    .map(|e| e.unchecked_ref()),
+            );
         }
         AcaoBloco::Apagar => {
             // Vizinho pra onde o foco vai: o de baixo, ou o de cima se
@@ -3878,16 +4703,28 @@ fn aplicar_acao_de_bloco(bloco: &web_sys::Element, acao: AcaoBloco) -> Option<us
 /// Devolve `false` quando não há o que fazer, pra o handler deixar o
 /// comportamento nativo seguir.
 fn dividir_bloco(bloco: &web_sys::Element) -> bool {
-    let Some(win) = web_sys::window() else { return false };
-    let Some(doc) = win.document() else { return false };
-    let Some(pai) = bloco.parent_element() else { return false };
-    let Some(sel) = win.get_selection().ok().flatten() else { return false };
-    let Ok(range) = sel.get_range_at(0) else { return false };
+    let Some(win) = web_sys::window() else {
+        return false;
+    };
+    let Some(doc) = win.document() else {
+        return false;
+    };
+    let Some(pai) = bloco.parent_element() else {
+        return false;
+    };
+    let Some(sel) = win.get_selection().ok().flatten() else {
+        return false;
+    };
+    let Ok(range) = sel.get_range_at(0) else {
+        return false;
+    };
 
     // O que fica DEPOIS do cursor vira o bloco novo. `extract_contents`
     // já remove essa parte do bloco atual, então não dá pra duplicar
     // conteúdo por engano.
-    let Ok(resto) = doc.create_range() else { return false };
+    let Ok(resto) = doc.create_range() else {
+        return false;
+    };
     let _ = resto.select_node_contents(bloco);
     let (Ok(fim_c), Ok(fim_o)) = (range.end_container(), range.end_offset()) else {
         return false;
@@ -3895,7 +4732,9 @@ fn dividir_bloco(bloco: &web_sys::Element) -> bool {
     if resto.set_start(&fim_c, fim_o).is_err() {
         return false;
     }
-    let Ok(fragmento) = resto.extract_contents() else { return false };
+    let Ok(fragmento) = resto.extract_contents() else {
+        return false;
+    };
 
     // Bloco novo com a MESMA tag: dividir um `<h2>` no meio dá dois
     // headings, que é o que se espera. Menos o caso do fim de um
@@ -3905,8 +4744,14 @@ fn dividir_bloco(bloco: &web_sys::Element) -> bool {
         .text_content()
         .map(|t| t.trim().is_empty())
         .unwrap_or(true);
-    let tag_nova = if vazio && tag.starts_with('h') { "p" } else { &tag };
-    let Ok(novo) = doc.create_element(tag_nova) else { return false };
+    let tag_nova = if vazio && tag.starts_with('h') {
+        "p"
+    } else {
+        &tag
+    };
+    let Ok(novo) = doc.create_element(tag_nova) else {
+        return false;
+    };
     let _ = novo.append_child(&fragmento);
     if novo.text_content().unwrap_or_default().is_empty() {
         // Bloco sem nada não recebe cursor no WebKit; o `<br>` é o
@@ -3936,22 +4781,41 @@ fn dividir_bloco(bloco: &web_sys::Element) -> bool {
 /// navegador, e reimplementar isso seria trocar código testado por
 /// código novo sem ganho.
 fn fundir_com_anterior(bloco: &web_sys::Element) -> bool {
-    let Some(win) = web_sys::window() else { return false };
-    let Some(sel) = win.get_selection().ok().flatten() else { return false };
-    let Ok(range) = sel.get_range_at(0) else { return false };
+    let Some(win) = web_sys::window() else {
+        return false;
+    };
+    let Some(sel) = win.get_selection().ok().flatten() else {
+        return false;
+    };
+    let Ok(range) = sel.get_range_at(0) else {
+        return false;
+    };
     if !range.collapsed() {
         return false;
     }
     // Só age se o cursor estiver colado no começo do bloco.
-    let Some(doc) = win.document() else { return false };
-    let Ok(ate_aqui) = doc.create_range() else { return false };
+    let Some(doc) = win.document() else {
+        return false;
+    };
+    let Ok(ate_aqui) = doc.create_range() else {
+        return false;
+    };
     let _ = ate_aqui.select_node_contents(bloco);
-    let Ok(fim_c) = range.start_container() else { return false };
-    let Ok(fim_o) = range.start_offset() else { return false };
+    let Ok(fim_c) = range.start_container() else {
+        return false;
+    };
+    let Ok(fim_o) = range.start_offset() else {
+        return false;
+    };
     if ate_aqui.set_end(&fim_c, fim_o).is_err() {
         return false;
     }
-    if !ate_aqui.to_string().as_string().unwrap_or_default().is_empty() {
+    if !ate_aqui
+        .to_string()
+        .as_string()
+        .unwrap_or_default()
+        .is_empty()
+    {
         return false;
     }
 
@@ -4000,7 +4864,9 @@ fn primeiro_texto(el: &web_sys::Element) -> Option<web_sys::Node> {
 
 /// Quebra de linha DENTRO do bloco (ciclo 194) — o Enter sem shift.
 fn quebra_de_linha() -> bool {
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return false };
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return false;
+    };
     exec_cmd(&doc, "insertLineBreak", "");
     true
 }
@@ -4010,9 +4876,15 @@ fn quebra_de_linha() -> bool {
 /// É a saída de um bloco de código (Shift+Enter num `<pre>`): dividir um
 /// `<pre>` daria dois blocos de código, e o que se quer é sair dele.
 fn bloco_novo_depois(bloco: &web_sys::Element) -> bool {
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return false };
-    let Some(pai) = bloco.parent_element() else { return false };
-    let Ok(novo) = doc.create_element("p") else { return false };
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return false;
+    };
+    let Some(pai) = bloco.parent_element() else {
+        return false;
+    };
+    let Ok(novo) = doc.create_element("p") else {
+        return false;
+    };
     if let Ok(br) = doc.create_element("br") {
         let _ = novo.append_child(&br);
     }
@@ -4062,14 +4934,54 @@ pub struct Atalho {
 /// primeiro. Um atalho que não está nesta tabela não deveria existir no
 /// `on_keydown`.
 pub const ATALHOS: &[Atalho] = &[
-    Atalho { tecla: "n", alt: false, modo: Modo::Navegacao, descricao: "bloco novo com o menu /" },
-    Atalho { tecla: "c", alt: false, modo: Modo::Navegacao, descricao: "copiar referência do bloco" },
-    Atalho { tecla: "d", alt: false, modo: Modo::Navegacao, descricao: "apagar bloco" },
-    Atalho { tecla: "y", alt: false, modo: Modo::Navegacao, descricao: "duplicar bloco" },
-    Atalho { tecla: "K", alt: false, modo: Modo::Navegacao, descricao: "mover bloco pra cima" },
-    Atalho { tecla: "J", alt: false, modo: Modo::Navegacao, descricao: "mover bloco pra baixo" },
-    Atalho { tecla: "ArrowUp", alt: true, modo: Modo::Navegacao, descricao: "mover bloco pra cima" },
-    Atalho { tecla: "ArrowDown", alt: true, modo: Modo::Navegacao, descricao: "mover bloco pra baixo" },
+    Atalho {
+        tecla: "n",
+        alt: false,
+        modo: Modo::Navegacao,
+        descricao: "bloco novo com o menu /",
+    },
+    Atalho {
+        tecla: "c",
+        alt: false,
+        modo: Modo::Navegacao,
+        descricao: "copiar referência do bloco",
+    },
+    Atalho {
+        tecla: "d",
+        alt: false,
+        modo: Modo::Navegacao,
+        descricao: "apagar bloco",
+    },
+    Atalho {
+        tecla: "y",
+        alt: false,
+        modo: Modo::Navegacao,
+        descricao: "duplicar bloco",
+    },
+    Atalho {
+        tecla: "K",
+        alt: false,
+        modo: Modo::Navegacao,
+        descricao: "mover bloco pra cima",
+    },
+    Atalho {
+        tecla: "J",
+        alt: false,
+        modo: Modo::Navegacao,
+        descricao: "mover bloco pra baixo",
+    },
+    Atalho {
+        tecla: "ArrowUp",
+        alt: true,
+        modo: Modo::Navegacao,
+        descricao: "mover bloco pra cima",
+    },
+    Atalho {
+        tecla: "ArrowDown",
+        alt: true,
+        modo: Modo::Navegacao,
+        descricao: "mover bloco pra baixo",
+    },
 ];
 
 impl Atalho {
@@ -4131,7 +5043,9 @@ impl Modo {
 
     fn atalhos(&self) -> &'static str {
         match self {
-            Self::Navegacao => "setas movem · Enter entra · n novo · d apaga · y duplica · K/J move",
+            Self::Navegacao => {
+                "setas movem · Enter entra · n novo · d apaga · y duplica · K/J move"
+            }
             Self::VimNormal => "h j k l movem · i insere",
             Self::Edicao => "Enter quebra linha · Shift+Enter novo bloco · / insere · Esc navega",
         }
@@ -4168,8 +5082,11 @@ fn indice_do_bloco(bloco: &web_sys::Element) -> usize {
 fn refocar_bloco_apos_render(indice: usize) {
     wasm_bindgen_futures::spawn_local(async move {
         gloo_timers::future::sleep(std::time::Duration::from_millis(80)).await;
-        let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return };
-        let Ok(blocos) = doc.query_selector_all(&format!("[{}]", crate::nav_mode::ATTR_BLOCO_TEXTO))
+        let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+            return;
+        };
+        let Ok(blocos) =
+            doc.query_selector_all(&format!("[{}]", crate::nav_mode::ATTR_BLOCO_TEXTO))
         else {
             return;
         };
@@ -4197,20 +5114,28 @@ const CLASSE_CONVITE: &str = "editor__bloco--convite";
 /// página satisfazia `:only-child` do seu próprio segmento e a mensagem
 /// aparecia no meio da escrita (ciclo 195).
 fn marcar_convite() {
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else { return };
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
     let Ok(blocos) = doc.query_selector_all(&format!("[{}]", crate::nav_mode::ATTR_BLOCO_TEXTO))
     else {
         return;
     };
     for i in 0..blocos.length() {
-        if let Some(el) = blocos.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) {
+        if let Some(el) = blocos
+            .item(i)
+            .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        {
             let _ = el.class_list().remove_1(CLASSE_CONVITE);
         }
     }
     if blocos.length() != 1 {
         return;
     }
-    let Some(unico) = blocos.item(0).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) else {
+    let Some(unico) = blocos
+        .item(0)
+        .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+    else {
         return;
     };
     if unico.text_content().unwrap_or_default().trim().is_empty() {
@@ -4268,7 +5193,10 @@ mod testes_atalhos {
     #[test]
     fn letra_comum_nao_e_atalho() {
         for tecla in ["a", "e", "x", "z", "q", "t"] {
-            assert!(atalho_de(tecla, false).is_none(), "{tecla} virou comando sem querer");
+            assert!(
+                atalho_de(tecla, false).is_none(),
+                "{tecla} virou comando sem querer"
+            );
         }
     }
 
@@ -4283,14 +5211,25 @@ mod testes_atalhos {
     #[test]
     fn setas_com_alt_sao_comandos_e_sem_alt_nao() {
         assert!(atalho_de("ArrowUp", true).is_some());
-        assert!(atalho_de("ArrowUp", false).is_none(), "seta sem Alt é navegação, não move bloco");
+        assert!(
+            atalho_de("ArrowUp", false).is_none(),
+            "seta sem Alt é navegação, não move bloco"
+        );
     }
 
     #[test]
     fn modo_atual_respeita_a_precedencia() {
-        assert_eq!(Modo::atual(true, true, false), Modo::Navegacao, "navegação vence o vim");
+        assert_eq!(
+            Modo::atual(true, true, false),
+            Modo::Navegacao,
+            "navegação vence o vim"
+        );
         assert_eq!(Modo::atual(false, true, false), Modo::VimNormal);
-        assert_eq!(Modo::atual(false, true, true), Modo::Edicao, "vim em insert é edição");
+        assert_eq!(
+            Modo::atual(false, true, true),
+            Modo::Edicao,
+            "vim em insert é edição"
+        );
         assert_eq!(Modo::atual(false, false, false), Modo::Edicao);
     }
 

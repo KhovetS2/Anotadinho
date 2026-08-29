@@ -36,10 +36,12 @@ fn walk(node: &Element, _depth: usize) -> String {
             // um embed via slash command (ver editor.rs) perderia a
             // linguagem no primeiro save e nunca viraria um embed de verdade.
             let code_el = node.query_selector("code").ok().flatten();
-            let lang = code_el.as_ref()
+            let lang = code_el
+                .as_ref()
                 .and_then(|code| code.get_attribute("class"))
                 .and_then(|class| {
-                    class.split_whitespace()
+                    class
+                        .split_whitespace()
                         .find_map(|c| c.strip_prefix("language-").map(|s| s.to_string()))
                 })
                 .unwrap_or_default();
@@ -57,7 +59,10 @@ fn walk(node: &Element, _depth: usize) -> String {
         }
         "blockquote" => {
             let body = text_of(node);
-            body.lines().map(|l| format!("> {}\n", l)).collect::<String>() + "\n"
+            body.lines()
+                .map(|l| format!("> {}\n", l))
+                .collect::<String>()
+                + "\n"
         }
         "li" => {
             let body = inline_children(node);
@@ -66,11 +71,15 @@ fn walk(node: &Element, _depth: usize) -> String {
             // marcador aqui (o "-"/"1." de baixo) duplicava o
             // marcador ("- - [ ] texto", markdown quebrado). Combo
             // lista+checkbox pedido pelo usuário cai nesse caso.
-            if let Some(rest) = body.strip_prefix("- [ ] ").or_else(|| body.strip_prefix("- [x] ")) {
+            if let Some(rest) = body
+                .strip_prefix("- [ ] ")
+                .or_else(|| body.strip_prefix("- [x] "))
+            {
                 let marker = &body[..6];
                 format!("{}{}\n", marker, rest.trim_start())
             } else {
-                let kind = node.parent_element()
+                let kind = node
+                    .parent_element()
                     .map(|p| p.tag_name().to_lowercase())
                     .unwrap_or_default();
                 let marker = if kind == "ol" { "1." } else { "-" };
@@ -122,7 +131,7 @@ fn walk(node: &Element, _depth: usize) -> String {
                 format!("[{}]({})", text, href)
             }
         }
-        "p" |         "div" => {
+        "p" | "div" => {
             if let Some(href) = node.get_attribute("data-pdf-href") {
                 // Wrapper de embed de PDF (ver `editor.rs::
                 // upgrade_embedded_assets_at`, ciclo 121) — reconstrói
@@ -148,7 +157,11 @@ fn walk(node: &Element, _depth: usize) -> String {
                 // quebra dura — e uma quebra no FIM do parágrafo não
                 // significa nada, então não vai pro arquivo.
                 let inner = inner.trim_end().to_string();
-                if inner.is_empty() { "\n".to_string() } else { format!("{}\n\n", inner) }
+                if inner.is_empty() {
+                    "\n".to_string()
+                } else {
+                    format!("{}\n\n", inner)
+                }
             }
         }
         // Quebra DURA (dois espaços + `\n`): um `\n` sozinho é quebra
@@ -180,7 +193,9 @@ fn walk(node: &Element, _depth: usize) -> String {
                 }
             }
 
-            let col_count = header.len().max(rows.iter().map(|r| r.len()).max().unwrap_or(0));
+            let col_count = header
+                .len()
+                .max(rows.iter().map(|r| r.len()).max().unwrap_or(0));
             if col_count == 0 {
                 String::new()
             } else {
@@ -200,19 +215,86 @@ fn walk(node: &Element, _depth: usize) -> String {
                 out
             }
         }
+        "figure"
+            if node
+                .class_name()
+                .split_whitespace()
+                .any(|c| c == "inserted-image") =>
+        {
+            let Some(img) = node.query_selector("img").ok().flatten() else {
+                return String::new();
+            };
+            let src = img
+                .get_attribute("data-asset-src")
+                .or_else(|| img.get_attribute("src"))
+                .unwrap_or_default();
+            let alt = img.get_attribute("alt").unwrap_or_default();
+            let title = img.get_attribute("title");
+            let width = img.get_attribute("width");
+            let height = img.get_attribute("height");
+            let class = img
+                .get_attribute("class")
+                .unwrap_or_else(|| "inserted-image__media".into());
+            let mut raw = format!(
+                "<figure class=\"{}\"><img src=\"{}\" alt=\"{}\"",
+                html_attr(&node.class_name()),
+                html_attr(&src),
+                html_attr(&alt)
+            );
+            if let Some(v) = title {
+                raw.push_str(&format!(" title=\"{}\"", html_attr(&v)));
+            }
+            if let Some(v) = width {
+                raw.push_str(&format!(" width=\"{}\"", html_attr(&v)));
+            }
+            if let Some(v) = height {
+                raw.push_str(&format!(" height=\"{}\"", html_attr(&v)));
+            }
+            raw.push_str(&format!(" class=\"{}\">", html_attr(&class)));
+            if let Some(caption) = node.query_selector("figcaption").ok().flatten() {
+                raw.push_str(&format!(
+                    "<figcaption>{}</figcaption>",
+                    html_text(&caption.text_content().unwrap_or_default())
+                ));
+            }
+            raw.push_str("</figure>\n\n");
+            raw
+        }
         "img" => {
             let alt = node.get_attribute("alt").unwrap_or_default();
-            let src = node.get_attribute("src").unwrap_or_default();
-            format!("![{}]({})\n", alt, src)
+            let src = node
+                .get_attribute("data-asset-src")
+                .or_else(|| node.get_attribute("src"))
+                .unwrap_or_default();
+            if node.class_name().contains("inserted-image__media") {
+                let title = node
+                    .get_attribute("title")
+                    .map(|v| format!(" title=\"{}\"", html_attr(&v)))
+                    .unwrap_or_default();
+                format!(
+                    "<img src=\"{}\" alt=\"{}\"{} class=\"{}\">\n",
+                    html_attr(&src),
+                    html_attr(&alt),
+                    title,
+                    html_attr(&node.class_name())
+                )
+            } else {
+                format!("![{}]({})\n", alt, src)
+            }
         }
         "input" => {
             // `.checked()` (propriedade viva) — não `has_attribute("checked")`
             // (atributo estático, nunca reflete o toggle que o usuário faz
             // clicando no checkbox em runtime).
-            let checked = node.dyn_ref::<web_sys::HtmlInputElement>()
+            let checked = node
+                .dyn_ref::<web_sys::HtmlInputElement>()
                 .map(|el| el.checked())
                 .unwrap_or(false);
-            if checked { "- [x] ".to_string() } else { "- [ ] ".to_string() }
+            if checked {
+                "- [x] ".to_string()
+            } else {
+                "- [ ] ".to_string()
+            }
         }
         _ => {
             if child_count > 0 {
@@ -230,6 +312,21 @@ fn walk(node: &Element, _depth: usize) -> String {
             }
         }
     }
+}
+
+fn html_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn html_text(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// Texto (com formatação inline preservada) de cada `<th>`/`<td>` de

@@ -82,6 +82,10 @@ function fixture() {
   const ano = hoje.getFullYear();
   const mes = String(hoje.getMonth() + 1).padStart(2, "0");
   const d = (dia) => `${ano}-${mes}-${String(dia).padStart(2, "0")}`;
+  const relativa = (dias) => {
+    const data = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + dias);
+    return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+  };
 
   return `---
 title: __uisnap
@@ -158,13 +162,13 @@ entries:
 scale: month
 items:
 - title: Primeira etapa
-  start: '${d(3)}'
-  end: '${d(10)}'
+  start: '${relativa(-3)}'
+  end: '${relativa(4)}'
   tags:
   - infra
 - title: Segunda etapa
-  start: '${d(11)}'
-  end: '${d(20)}'
+  start: '${relativa(5)}'
+  end: '${relativa(12)}'
 {{ /timeline }}
 
 {{ type: "gallery" }}

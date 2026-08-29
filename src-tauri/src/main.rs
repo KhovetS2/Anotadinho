@@ -8,19 +8,19 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use anotadinho_ipc::{
-    handle_copy_to_assets, handle_create_folder, handle_create_page, handle_create_page_from_template,
-    handle_read_asset_data_url,
-    handle_create_page_in_folder, handle_create_page_typed, handle_delete_asset, handle_delete_page,
-    handle_export_folder, handle_git_commit_and_push, handle_git_log, handle_git_pull, handle_git_status,
-    handle_list_assets, handle_list_assets_info,
-    handle_list_folders, handle_list_pages, handle_list_templates, handle_move_page,
-    handle_open_today_journal, handle_ping, handle_read_page, handle_save_pasted_asset,
-    handle_read_page_versioned, handle_scan_vault, handle_search_content, handle_write_page,
-    handle_write_page_checked, VersionedPage,
-    AssetInfo, PageMeta, PingArgs, PingResult, VaultInfo,
-};
 use anotadinho_core::PageIndexEntry;
+use anotadinho_ipc::{
+    handle_copy_to_assets, handle_create_folder, handle_create_page,
+    handle_create_page_from_template, handle_create_page_in_folder, handle_create_page_typed,
+    handle_delete_asset, handle_delete_page, handle_export_folder, handle_git_commit_and_push,
+    handle_git_log, handle_git_pull, handle_git_status, handle_list_assets,
+    handle_list_assets_info, handle_list_folders, handle_list_pages, handle_list_templates,
+    handle_move_page, handle_open_today_journal, handle_ping, handle_read_asset_data_url,
+    handle_read_page, handle_read_page_versioned, handle_save_image_assets,
+    handle_save_pasted_asset, handle_scan_vault, handle_search_content, handle_write_page,
+    handle_write_page_checked, AssetInfo, ImageAssetPayload, PageMeta, PingArgs, PingResult,
+    VaultInfo, VersionedPage,
+};
 use anotadinho_vault::{GitFileEntry, GitLogEntry, VaultIo, VaultWatcher};
 use tauri_plugin_dialog::DialogExt;
 
@@ -61,10 +61,7 @@ struct Job {
 }
 
 #[tauri::command]
-fn check_changes(
-    vault_path: String,
-    state: tauri::State<'_, AppWatchers>,
-) -> Result<bool, String> {
+fn check_changes(vault_path: String, state: tauri::State<'_, AppWatchers>) -> Result<bool, String> {
     let mut map = state.0.lock().map_err(|e| e.to_string())?;
     if let Some(watcher) = map.get_mut(&vault_path) {
         return Ok(watcher.has_changes());
@@ -120,7 +117,9 @@ fn window_start_resize(window: tauri::Window, direcao: String) -> Result<(), Str
         "se" => D::SouthEast,
         outro => return Err(format!("direção desconhecida: {outro}")),
     };
-    window.start_resize_dragging(direcao).map_err(|e| e.to_string())
+    window
+        .start_resize_dragging(direcao)
+        .map_err(|e| e.to_string())
 }
 
 /// Estado inicial do botão de maximizar (a janela pode abrir já
@@ -294,8 +293,46 @@ fn read_asset_data_url(vault_path: String, asset_path: String) -> Result<String,
 }
 
 #[tauri::command]
-fn save_pasted_asset(vault_path: String, extension: String, base64_data: String) -> Result<String, String> {
+fn save_pasted_asset(
+    vault_path: String,
+    extension: String,
+    base64_data: String,
+) -> Result<String, String> {
     handle_save_pasted_asset(vault_path, extension, base64_data)
+}
+
+#[tauri::command]
+fn save_image_assets(
+    vault_path: String,
+    images: Vec<ImageAssetPayload>,
+) -> Result<Vec<String>, String> {
+    handle_save_image_assets(vault_path, images)
+}
+
+#[tauri::command]
+async fn pick_images(app: tauri::AppHandle) -> Result<Vec<ImageAssetPayload>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("Imagens", &["png", "jpg", "jpeg", "gif", "webp", "svg"])
+        .pick_files(move |paths| {
+            let values = paths
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|p| {
+                    let path = p.as_path()?;
+                    let bytes = std::fs::read(path).ok()?;
+                    use base64::Engine;
+                    Some(ImageAssetPayload {
+                        name: path.file_name()?.to_string_lossy().to_string(),
+                        extension: path.extension()?.to_string_lossy().to_ascii_lowercase(),
+                        base64_data: base64::engine::general_purpose::STANDARD.encode(bytes),
+                    })
+                })
+                .collect();
+            let _ = tx.send(values);
+        });
+    rx.await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -307,7 +344,6 @@ fn list_assets_info(vault_path: String) -> Result<Vec<AssetInfo>, String> {
 fn delete_asset(vault_path: String, asset_path: String) -> Result<(), String> {
     handle_delete_asset(vault_path, asset_path)
 }
-
 
 /// Grava uma proposta de escrita pra revisão (ciclo 204).
 #[tauri::command]
@@ -364,11 +400,16 @@ fn iniciar_agente(
     use std::sync::Arc;
 
     if let Some(problema) = adaptador.validar() {
-        return Err(format!("configuração do agente inválida: {}", problema.mensagem()));
+        return Err(format!(
+            "configuração do agente inválida: {}",
+            problema.mensagem()
+        ));
     }
 
     {
-        let mapa = JOBS.lock().map_err(|_| "registro de execuções travado".to_string())?;
+        let mapa = JOBS
+            .lock()
+            .map_err(|_| "registro de execuções travado".to_string())?;
         if let Some(j) = mapa.get(&conversa_path) {
             if j.fim.is_none() {
                 return Err("já existe uma execução em andamento nesta conversa".to_string());
@@ -396,7 +437,9 @@ fn iniciar_agente(
     let cancelado = Arc::new(AtomicBool::new(false));
 
     {
-        let mut mapa = JOBS.lock().map_err(|_| "registro de execuções travado".to_string())?;
+        let mut mapa = JOBS
+            .lock()
+            .map_err(|_| "registro de execuções travado".to_string())?;
         mapa.insert(
             conversa_path.clone(),
             Job {
@@ -487,7 +530,9 @@ fn iniciar_agente(
             // O processo passa a viver no slot COMPARTILHADO: é por ele
             // que `cancelar_agente` alcança o `kill`. Guardá-lo só nesta
             // thread deixaria o botão de interromper sem nada pra matar.
-            *filho_slot.lock().map_err(|_| "registro travado".to_string())? = Some(filho);
+            *filho_slot
+                .lock()
+                .map_err(|_| "registro travado".to_string())? = Some(filho);
 
             let inicio = std::time::Instant::now();
             let status = loop {
@@ -629,8 +674,7 @@ fn gravar_resposta(vault_path: &str, conversa_path: &str, texto: &str) -> Result
     // encheu `pages/` de arquivo solto.
     let atual = anotadinho_ipc::handle_read_page(vault_path.to_string(), conversa_path.to_string())
         .map_err(|_| format!("a conversa \"{conversa_path}\" não existe mais"))?;
-    let (frontmatter, corpo) =
-        anotadinho_core::MarkdownCodec::split_frontmatter_text(&atual);
+    let (frontmatter, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&atual);
     let mensagem = anotadinho_core::conversa::Mensagem {
         autor: anotadinho_core::conversa::Autor::Agente,
         quando: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
@@ -652,9 +696,7 @@ fn gravar_resposta(vault_path: &str, conversa_path: &str, texto: &str) -> Result
 /// perguntou é quem grava a resposta na conversa, então deixá-lo ali
 /// faria a mesma resposta ser escrita de novo a cada consulta.
 #[tauri::command]
-fn estado_agente(
-    conversa_path: String,
-) -> Option<anotadinho_core::agente::EstadoJob> {
+fn estado_agente(conversa_path: String) -> Option<anotadinho_core::agente::EstadoJob> {
     let mut mapa = JOBS.lock().ok()?;
     let job = mapa.get(&conversa_path)?;
     match &job.fim {
@@ -708,22 +750,18 @@ fn search_content(
 #[tauri::command]
 async fn escolher_pasta(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog()
-        .file()
-        .pick_folder(move |file_path| {
-            let _ = tx.send(file_path.map(|p| p.to_string()));
-        });
+    app.dialog().file().pick_folder(move |file_path| {
+        let _ = tx.send(file_path.map(|p| p.to_string()));
+    });
     rx.await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn open_vault_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog()
-        .file()
-        .pick_folder(move |file_path| {
-            let _ = tx.send(file_path.map(|p| p.to_string()));
-        });
+    app.dialog().file().pick_folder(move |file_path| {
+        let _ = tx.send(file_path.map(|p| p.to_string()));
+    });
     rx.await.map_err(|e| e.to_string())
 }
 
@@ -825,6 +863,8 @@ fn main() {
             copy_to_assets,
             read_asset_data_url,
             save_pasted_asset,
+            save_image_assets,
+            pick_images,
             list_assets_info,
             delete_asset,
             search_content,

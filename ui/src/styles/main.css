@@ -951,6 +951,27 @@ body {
     min-height: 0;
 }
 
+.editor__drop-target {
+    position: absolute;
+    inset: var(--sp-3);
+    z-index: 9;
+    display: grid;
+    place-items: center;
+    border: 2px dashed var(--accent-blue);
+    border-radius: var(--r-md);
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-surface));
+    pointer-events: none;
+}
+
+.inserted-image { margin: var(--sp-4) 0; max-width: 100%; }
+.inserted-image--left { margin-right: auto; }
+.inserted-image--center { margin-inline: auto; text-align: center; }
+.inserted-image--right { margin-left: auto; text-align: right; }
+.inserted-image__media { max-width: 100%; border-radius: var(--r-md); }
+.inserted-image__media--keep-aspect { object-fit: contain; }
+.inserted-image figcaption { color: var(--text-muted); font-size: var(--text-sm); margin-top: var(--sp-1); }
+
 .editor__overlay {
     position: absolute;
     inset: 0;

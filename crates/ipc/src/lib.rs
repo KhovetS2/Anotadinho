@@ -96,7 +96,9 @@ pub fn handle_scan_vault(vault_path: String) -> Result<Vec<PageIndexEntry>, Stri
                 continue;
             }
         }
-        let Ok(content) = vault.read_page(&p.path) else { continue };
+        let Ok(content) = vault.read_page(&p.path) else {
+            continue;
+        };
         let entry = PageIndexEntry::from_content(&p.path, &p.title, &p.section, &content);
         if let Some(versao) = versao {
             cache.guardar(&p.path, versao, entry.clone());
@@ -132,7 +134,9 @@ pub fn handle_read_page_versioned(
     page_path: String,
 ) -> Result<VersionedPage, String> {
     let vault = VaultIo::open(&vault_path);
-    let (content, version) = vault.read_page_versioned(&page_path).map_err(|e| e.to_string())?;
+    let (content, version) = vault
+        .read_page_versioned(&page_path)
+        .map_err(|e| e.to_string())?;
     Ok(VersionedPage { content, version })
 }
 
@@ -322,7 +326,11 @@ pub fn handle_list_templates(vault_path: String) -> Result<Vec<PageMeta>, String
     let templates = vault.list_templates().map_err(|e| e.to_string())?;
     Ok(templates
         .into_iter()
-        .map(|t| PageMeta { path: t.path, title: t.title, section: t.section })
+        .map(|t| PageMeta {
+            path: t.path,
+            title: t.title,
+            section: t.section,
+        })
         .collect())
 }
 
@@ -364,7 +372,13 @@ pub struct AssetInfo {
 pub fn handle_list_assets_info(vault_path: String) -> Result<Vec<AssetInfo>, String> {
     let vault = VaultIo::open(&vault_path);
     let assets = vault.list_assets_info().map_err(|e| e.to_string())?;
-    Ok(assets.into_iter().map(|a| AssetInfo { path: a.path, size: a.size }).collect())
+    Ok(assets
+        .into_iter()
+        .map(|a| AssetInfo {
+            path: a.path,
+            size: a.size,
+        })
+        .collect())
 }
 
 /// Handler de delete_asset: remove um arquivo de assets/.
@@ -386,7 +400,79 @@ pub fn handle_save_pasted_asset(
         .decode(base64_data)
         .map_err(|e| format!("base64 inválido: {}", e))?;
     let vault = VaultIo::open(&vault_path);
-    vault.save_asset_bytes(&extension, &bytes).map_err(|e| e.to_string())
+    vault
+        .save_asset_bytes(&extension, &bytes)
+        .map_err(|e| e.to_string())
+}
+
+/// Imagem enviada pelo frontend para uma gravação em lote.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageAssetPayload {
+    /// Nome original, usado apenas para preencher a interface.
+    #[serde(default)]
+    pub name: String,
+    /// Extensão sem ponto.
+    pub extension: String,
+    /// Conteúdo codificado em base64.
+    pub base64_data: String,
+}
+
+/// Grava um lote como uma única operação lógica: tudo é validado antes
+/// e qualquer arquivo já publicado é removido se uma etapa posterior falhar.
+pub fn handle_save_image_assets(
+    vault_path: String,
+    images: Vec<ImageAssetPayload>,
+) -> Result<Vec<String>, String> {
+    use base64::Engine;
+    if images.is_empty() {
+        return Err("o lote de imagens está vazio".into());
+    }
+    let mut decoded = Vec::with_capacity(images.len());
+    for image in images {
+        let ext = image.extension.trim_start_matches('.').to_ascii_lowercase();
+        if !matches!(
+            ext.as_str(),
+            "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg"
+        ) {
+            return Err(format!("tipo de imagem não aceito: {ext}"));
+        }
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(image.base64_data)
+            .map_err(|e| format!("base64 inválido: {e}"))?;
+        validate_image_bytes(&ext, &bytes)?;
+        decoded.push((ext, bytes));
+    }
+    let vault = VaultIo::open(&vault_path);
+    let mut paths = Vec::with_capacity(decoded.len());
+    for (ext, bytes) in decoded {
+        match vault.save_asset_bytes(&ext, &bytes) {
+            Ok(path) => paths.push(path),
+            Err(error) => {
+                for path in &paths {
+                    let _ = vault.delete_asset(path);
+                }
+                return Err(error.to_string());
+            }
+        }
+    }
+    Ok(paths)
+}
+
+fn validate_image_bytes(ext: &str, bytes: &[u8]) -> Result<(), String> {
+    let valid = match ext {
+        "png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "jpg" | "jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
+        "gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+        "webp" => bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP",
+        "svg" => std::str::from_utf8(bytes)
+            .map(|s| s.contains("<svg"))
+            .unwrap_or(false),
+        _ => false,
+    };
+    valid
+        .then_some(())
+        .ok_or_else(|| format!("conteúdo não corresponde a uma imagem {ext}"))
 }
 
 /// Handler de read_asset_data_url: lê um arquivo de `assets/` (ou
@@ -395,10 +481,15 @@ pub fn handle_save_pasted_asset(
 /// contra a origem do webview, não contra a pasta real do vault no
 /// disco, então imagens/PDFs embutidos precisam desse passo pra
 /// aparecer de verdade.
-pub fn handle_read_asset_data_url(vault_path: String, asset_path: String) -> Result<String, String> {
+pub fn handle_read_asset_data_url(
+    vault_path: String,
+    asset_path: String,
+) -> Result<String, String> {
     use base64::Engine;
     let vault = VaultIo::open(&vault_path);
-    let bytes = vault.read_asset_bytes(&asset_path).map_err(|e| e.to_string())?;
+    let bytes = vault
+        .read_asset_bytes(&asset_path)
+        .map_err(|e| e.to_string())?;
     let mime = guess_mime(&asset_path);
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok(format!("data:{};base64,{}", mime, b64))
@@ -424,7 +515,9 @@ fn guess_mime(path: &str) -> &'static str {
 /// Handler de copy_to_assets: copia arquivo para assets/.
 pub fn handle_copy_to_assets(vault_path: String, source_path: String) -> Result<String, String> {
     let vault = VaultIo::open(&vault_path);
-    vault.copy_to_assets(&source_path).map_err(|e| e.to_string())
+    vault
+        .copy_to_assets(&source_path)
+        .map_err(|e| e.to_string())
 }
 
 /// Handler de search_content: busca texto no conteúdo das páginas.
@@ -442,7 +535,9 @@ pub fn handle_search_content(
     let pages = vault.list_pages().map_err(|e| e.to_string())?;
     let mut index = SearchIndex::new().map_err(|e| e.to_string())?;
     for page in &pages {
-        let Ok(content) = vault.read_page(&page.path) else { continue };
+        let Ok(content) = vault.read_page(&page.path) else {
+            continue;
+        };
         let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&content);
         let segmentos = anotadinho_core::embed::segment(corpo);
 
@@ -462,7 +557,9 @@ pub fn handle_search_content(
             .map_err(|e| e.to_string())?;
 
         for (i, seg) in segmentos.iter().enumerate() {
-            let anotadinho_core::embed::DocSegment::Embed(data) = seg else { continue };
+            let anotadinho_core::embed::DocSegment::Embed(data) = seg else {
+                continue;
+            };
             for hit in data.search_entries() {
                 let origem = format!("{} · {}", hit.kind.label(), hit.contexto);
                 index
@@ -534,8 +631,8 @@ mod tests {
         let dir = vault_temp();
         let vault = dir.path().to_string_lossy().to_string();
         let pagina = "pages/importante.md".to_string();
-        let v = handle_write_page_checked(vault.clone(), pagina.clone(), "texto".into(), None)
-            .unwrap();
+        let v =
+            handle_write_page_checked(vault.clone(), pagina.clone(), "texto".into(), None).unwrap();
         assert!(
             handle_write_page_checked(vault, pagina, String::new(), Some(v)).is_err(),
             "o caminho com versão passou por cima da trava"
@@ -550,9 +647,49 @@ mod tests {
         dir
     }
 
-    fn proposta_de(alvo: &str, op: anotadinho_core::proposta::Operacao, conteudo: &str)
-        -> anotadinho_core::proposta::Proposta
-    {
+    fn png_payload(name: &str) -> ImageAssetPayload {
+        use base64::Engine;
+        ImageAssetPayload {
+            name: name.into(),
+            extension: "png".into(),
+            base64_data: base64::engine::general_purpose::STANDARD
+                .encode(b"\x89PNG\r\n\x1a\nresto"),
+        }
+    }
+
+    #[test]
+    fn lote_cria_um_asset_novo_por_insercao_identica() {
+        let dir = vault_temp();
+        let paths = handle_save_image_assets(
+            dir.path().to_string_lossy().to_string(),
+            vec![png_payload("a.png"), png_payload("a.png")],
+        )
+        .unwrap();
+        assert_eq!(paths, vec!["assets/colado-1.png", "assets/colado-2.png"]);
+        assert!(paths.iter().all(|p| dir.path().join(p).exists()));
+    }
+
+    #[test]
+    fn lote_invalido_nao_publica_nada() {
+        let dir = vault_temp();
+        let mut invalid = png_payload("quebrada.png");
+        invalid.base64_data = "bmFvLWUtdW1hLWltYWdlbQ==".into();
+        assert!(handle_save_image_assets(
+            dir.path().to_string_lossy().to_string(),
+            vec![png_payload("ok.png"), invalid]
+        )
+        .is_err());
+        assert!(
+            !dir.path().join("assets").exists(),
+            "validou parcialmente antes de gravar"
+        );
+    }
+
+    fn proposta_de(
+        alvo: &str,
+        op: anotadinho_core::proposta::Operacao,
+        conteudo: &str,
+    ) -> anotadinho_core::proposta::Proposta {
         anotadinho_core::proposta::Proposta {
             id: "p1".into(),
             autor: "teste".into(),
@@ -569,12 +706,19 @@ mod tests {
         use anotadinho_core::proposta::Operacao;
         let dir = vault_temp();
         let v = dir.path().to_string_lossy().to_string();
-        let p = proposta_de("pages/nova.md", Operacao::Criar, "---\ntitle: N\n---\ncorpo\n");
+        let p = proposta_de(
+            "pages/nova.md",
+            Operacao::Criar,
+            "---\ntitle: N\n---\ncorpo\n",
+        );
 
         handle_propor(v.clone(), p).unwrap();
 
         // A página NÃO foi escrita — é o ponto inteiro.
-        assert!(!dir.path().join("pages/nova.md").exists(), "escreveu sem aprovação");
+        assert!(
+            !dir.path().join("pages/nova.md").exists(),
+            "escreveu sem aprovação"
+        );
         assert!(dir.path().join(".anotadinho/propostas/p1.json").exists());
         assert_eq!(handle_listar_propostas(v).unwrap().len(), 1);
     }
@@ -584,13 +728,24 @@ mod tests {
         use anotadinho_core::proposta::Operacao;
         let dir = vault_temp();
         let v = dir.path().to_string_lossy().to_string();
-        handle_propor(v.clone(), proposta_de("pages/nova.md", Operacao::Criar, "---\ntitle: N\n---\ncorpo\n")).unwrap();
+        handle_propor(
+            v.clone(),
+            proposta_de(
+                "pages/nova.md",
+                Operacao::Criar,
+                "---\ntitle: N\n---\ncorpo\n",
+            ),
+        )
+        .unwrap();
 
         handle_aplicar_proposta(v.clone(), "p1".into()).unwrap();
 
         let escrito = std::fs::read_to_string(dir.path().join("pages/nova.md")).unwrap();
         assert!(escrito.contains("corpo"), "{escrito}");
-        assert!(handle_listar_propostas(v).unwrap().is_empty(), "a proposta ficou pendurada");
+        assert!(
+            handle_listar_propostas(v).unwrap().is_empty(),
+            "a proposta ficou pendurada"
+        );
     }
 
     #[test]
@@ -598,7 +753,11 @@ mod tests {
         use anotadinho_core::proposta::Operacao;
         let dir = vault_temp();
         let v = dir.path().to_string_lossy().to_string();
-        handle_propor(v.clone(), proposta_de("pages/nova.md", Operacao::Criar, "---\ntitle: N\n---\nx\n")).unwrap();
+        handle_propor(
+            v.clone(),
+            proposta_de("pages/nova.md", Operacao::Criar, "---\ntitle: N\n---\nx\n"),
+        )
+        .unwrap();
 
         handle_recusar_proposta(v.clone(), "p1".into()).unwrap();
 
@@ -620,7 +779,11 @@ mod tests {
         use anotadinho_core::proposta::Operacao;
         let dir = vault_temp();
         let v = dir.path().to_string_lossy().to_string();
-        handle_propor(v.clone(), proposta_de("pages/nova.md", Operacao::Criar, "---\ntitle: N\n---\nx\n")).unwrap();
+        handle_propor(
+            v.clone(),
+            proposta_de("pages/nova.md", Operacao::Criar, "---\ntitle: N\n---\nx\n"),
+        )
+        .unwrap();
 
         // Alguém criou a página no intervalo entre propor e aprovar.
         std::fs::write(dir.path().join("pages/nova.md"), "escrito por outra pessoa").unwrap();
@@ -628,7 +791,10 @@ mod tests {
         let erro = handle_aplicar_proposta(v, "p1".into()).unwrap_err();
         assert!(erro.contains("mudou"), "{erro}");
         let atual = std::fs::read_to_string(dir.path().join("pages/nova.md")).unwrap();
-        assert_eq!(atual, "escrito por outra pessoa", "sobrescreveu o trabalho de outro");
+        assert_eq!(
+            atual, "escrito por outra pessoa",
+            "sobrescreveu o trabalho de outro"
+        );
     }
 
     #[test]
@@ -636,8 +802,16 @@ mod tests {
         use anotadinho_core::proposta::Operacao;
         let dir = vault_temp();
         let v = dir.path().to_string_lossy().to_string();
-        handle_propor(v.clone(), proposta_de("pages/a.md", Operacao::Criar, "---\ntitle: A\n---\nx\n")).unwrap();
-        std::fs::write(dir.path().join(".anotadinho/propostas/corrompida.json"), "{ nao json").unwrap();
+        handle_propor(
+            v.clone(),
+            proposta_de("pages/a.md", Operacao::Criar, "---\ntitle: A\n---\nx\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join(".anotadinho/propostas/corrompida.json"),
+            "{ nao json",
+        )
+        .unwrap();
 
         assert_eq!(handle_listar_propostas(v).unwrap().len(), 1);
     }
@@ -691,7 +865,10 @@ mod tests {
         let entries = handle_scan_vault(dir.path().to_string_lossy().to_string()).unwrap();
         assert_eq!(entries.len(), 2);
 
-        let spec = entries.iter().find(|e| e.path.ends_with("uma-spec.md")).unwrap();
+        let spec = entries
+            .iter()
+            .find(|e| e.path.ends_with("uma-spec.md"))
+            .unwrap();
         assert_eq!(spec.title, "Uma Spec");
         assert_eq!(spec.section, "pages");
         assert_eq!(spec.tags, vec!["spec"]);
@@ -737,7 +914,11 @@ mod tests {
     fn segunda_varredura_usa_o_cache_e_enxerga_mudanca() {
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(dir.path().join("pages")).unwrap();
-        std::fs::write(dir.path().join("pages/a.md"), "---\ntitle: A\nstatus: backlog\n---\n").unwrap();
+        std::fs::write(
+            dir.path().join("pages/a.md"),
+            "---\ntitle: A\nstatus: backlog\n---\n",
+        )
+        .unwrap();
         let vault = dir.path().to_string_lossy().to_string();
 
         let primeira = handle_scan_vault(vault.clone()).unwrap();
@@ -753,7 +934,11 @@ mod tests {
 
         // Arquivo muda → o cache não pode devolver o valor velho.
         std::thread::sleep(std::time::Duration::from_millis(10));
-        std::fs::write(dir.path().join("pages/a.md"), "---\ntitle: A\nstatus: done\n---\n").unwrap();
+        std::fs::write(
+            dir.path().join("pages/a.md"),
+            "---\ntitle: A\nstatus: done\n---\n",
+        )
+        .unwrap();
         let terceira = handle_scan_vault(vault.clone()).unwrap();
         assert_eq!(terceira[0].field("status").as_deref(), Some("done"));
 
@@ -786,7 +971,11 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(r.len(), 1, "devia achar UMA vez, não uma pelo YAML e outra pelo registro: {r:?}");
+        assert_eq!(
+            r.len(),
+            1,
+            "devia achar UMA vez, não uma pelo YAML e outra pelo registro: {r:?}"
+        );
         assert_eq!(r[0].path, "pages/board.md");
         assert_eq!(r[0].origem.as_deref(), Some("Kanban · coluna Backlog"));
         assert_eq!(r[0].ancora.as_deref(), Some("1:0"));
@@ -849,7 +1038,8 @@ pub fn handle_propor(
         return Err(r.mensagem());
     }
     let pasta = raiz.join(anotadinho_core::proposta::PASTA);
-    std::fs::create_dir_all(&pasta).map_err(|e| format!("erro criando {}: {e}", pasta.display()))?;
+    std::fs::create_dir_all(&pasta)
+        .map_err(|e| format!("erro criando {}: {e}", pasta.display()))?;
     let arquivo = raiz.join(proposta.arquivo());
     let json = serde_json::to_string_pretty(&proposta).map_err(|e| e.to_string())?;
     std::fs::write(&arquivo, json).map_err(|e| format!("erro gravando proposta: {e}"))?;
@@ -870,7 +1060,9 @@ pub fn handle_listar_propostas(
         if e.path().extension().and_then(|x| x.to_str()) != Some("json") {
             continue;
         }
-        let Ok(texto) = std::fs::read_to_string(e.path()) else { continue };
+        let Ok(texto) = std::fs::read_to_string(e.path()) else {
+            continue;
+        };
         // Proposta ilegível é PULADA, não fatal: uma sozinha corrompida
         // não pode esconder as outras da revisão.
         if let Ok(p) = serde_json::from_str::<anotadinho_core::proposta::Proposta>(&texto) {
@@ -888,7 +1080,8 @@ pub fn handle_listar_propostas(
 pub fn handle_aplicar_proposta(vault_path: String, id: String) -> Result<String, String> {
     let raiz = std::path::Path::new(&vault_path);
     let arquivo = raiz.join(format!("{}/{id}.json", anotadinho_core::proposta::PASTA));
-    let texto = std::fs::read_to_string(&arquivo).map_err(|_| format!("proposta {id} não existe"))?;
+    let texto =
+        std::fs::read_to_string(&arquivo).map_err(|_| format!("proposta {id} não existe"))?;
     let proposta: anotadinho_core::proposta::Proposta =
         serde_json::from_str(&texto).map_err(|e| format!("proposta ilegível: {e}"))?;
 

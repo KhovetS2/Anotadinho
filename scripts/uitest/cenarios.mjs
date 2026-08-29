@@ -370,6 +370,117 @@ cenarios.push({
   },
 });
 
+// ── ciclo 226: imagens persistidas e personalizáveis ───────────────
+
+const PNG_IMAGEM_226 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+const ARQUIVO_226 = (nome, tipo = "image/png") => `(() => { const bin=atob(${JSON.stringify(PNG_IMAGEM_226)}); const b=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)b[i]=bin.charCodeAt(i); return new File([b], ${JSON.stringify(nome)}, {type:${JSON.stringify(tipo)}}); })()`;
+
+cenarios.push({
+  nome: "imagens: drop múltiplo abre modal, personaliza e persiste sem blob (226)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
+    await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+    const antes = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
+    await bridge.js(`(() => { const alvo=document.querySelector('.editor__bloco'); alvo.focus(); const r=document.createRange();r.selectNodeContents(alvo);r.collapse(false);getSelection().removeAllRanges();getSelection().addRange(r); const dt=new DataTransfer();dt.items.add((${ARQUIVO_226("primeira.png")}));dt.items.add((${ARQUIVO_226("segunda.png")})); alvo.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:dt})); alvo.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt})); return true;})()`);
+    await ctx.esperar(bridge, "document.querySelectorAll('.image-modal__item').length===2", "o modal receber as duas imagens");
+    // A ordem do arrasto tem que sobreviver até o modal: personalizar a
+    // primeira e ver os campos irem parar na segunda seria pior do que
+    // não personalizar.
+    ctx.assertEq(
+      await bridge.js("[...document.querySelectorAll('.image-modal__item strong')].map(e=>e.textContent).join(',')"),
+      "primeira.png,segunda.png",
+      "a ordem do lote não foi preservada",
+    );
+    for (const [indice, valor] of [
+      [0, "Alt escolhido"],
+      [1, "Legenda escolhida"],
+      [3, "320"],
+    ]) {
+      await bridge.js(`(() => { const input=document.querySelectorAll('.image-modal__item')[0].querySelectorAll('input')[${indice}]; const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(input,${JSON.stringify(valor)});input.dispatchEvent(new InputEvent('input',{bubbles:true}));return true;})()`);
+      await PAUSA(100);
+    }
+    await bridge.js(`(() => { const s=document.querySelector('.image-modal__item:first-child select');s.value='center';s.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
+    await PAUSA(100);
+    await bridge.js(`([...document.querySelectorAll('.modal__actions button')].find(b=>b.textContent.includes('Inserir')).click(), true)`);
+    await ctx.esperar(bridge, "document.querySelectorAll('.editor figure.inserted-image').length===2", "as imagens serem inseridas");
+    await bridge.js(SALVAR); await PAUSA(900);
+    let novos = [];
+    try {
+      const depois = fs.readdirSync(`${ctx.vault}/assets`); novos = depois.filter(f => !antes.includes(f));
+      ctx.assertEq(novos.length, 2, "cada imagem deve criar um asset novo");
+      const md = ctx.ler() || "";
+      ctx.assert(md.includes('<figure class="inserted-image inserted-image--center">'), `alinhamento não persistiu:\n${md}`);
+      ctx.assert(md.includes('alt="Alt escolhido"') && md.includes('<figcaption>Legenda escolhida</figcaption>') && md.includes('width="320"'), `campos não persistiram:\n${md}`);
+      ctx.assert(!md.includes('blob:'), `blob persistido:\n${md}`);
+      await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await ctx.esperar(bridge, "document.querySelectorAll('.editor figure.inserted-image img').length===2", "as imagens reabrirem");
+    } finally { novos.forEach(f => fs.rmSync(`${ctx.vault}/assets/${f}`, {force:true})); }
+  },
+});
+
+cenarios.push({
+  nome: "imagens: drop não-imagem e paste de texto não alteram o editor (226)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto\n"); await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+    const result = await bridge.js(`(() => { const alvo=document.querySelector('.editor__bloco'); const dt=new DataTransfer();dt.items.add(new File(['abc'],'x.txt',{type:'text/plain'}));alvo.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt})); const texto=new DataTransfer();texto.setData('text/plain','normal');const ev=new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:texto});alvo.dispatchEvent(ev);return {modal:!!document.querySelector('.image-modal'),cancelado:ev.defaultPrevented};})()`);
+    ctx.assertEq(result.modal, false, "arquivo não-imagem abriu o modal"); ctx.assertEq(result.cancelado, false, "paste de texto foi interceptado");
+  },
+});
+
+cenarios.push({
+  nome: "imagens: paste grava direto e undo remove a referência (226)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs"); ctx.escrever("---\ntitle: __uitest\n---\ntexto\n"); await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+    const antes = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
+    await bridge.js(`(() => {const alvo=document.querySelector('.editor__bloco');alvo.focus();const r=document.createRange();r.selectNodeContents(alvo);r.collapse(false);getSelection().removeAllRanges();getSelection().addRange(r);const dt=new DataTransfer();dt.items.add((${ARQUIVO_226("colada.png")}));alvo.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:dt}));return true;})()`);
+    await ctx.esperar(bridge, "document.querySelector('.editor figure.inserted-image')", "o paste inserir diretamente");
+    await bridge.js(`document.querySelector('.editor__bloco').dispatchEvent(new KeyboardEvent('keydown',{key:'z',ctrlKey:true,bubbles:true,cancelable:true}));true`); await PAUSA(500);
+    ctx.assertEq(await bridge.js("!!document.querySelector('.editor figure.inserted-image')"), false, "undo não removeu a inserção");
+    const depois = fs.readdirSync(`${ctx.vault}/assets`); depois.filter(f=>!antes.includes(f)).forEach(f=>fs.rmSync(`${ctx.vault}/assets/${f}`,{force:true}));
+  },
+});
+
+cenarios.push({
+  nome: "imagens: cancelar o modal não grava asset nem toca no editor (226)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
+    await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+    const antes = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
+    await bridge.js(`(() => { const alvo=document.querySelector('.editor__bloco'); alvo.focus(); const r=document.createRange();r.selectNodeContents(alvo);r.collapse(false);getSelection().removeAllRanges();getSelection().addRange(r); const dt=new DataTransfer();dt.items.add((${ARQUIVO_226("descartada.png")})); alvo.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt})); return true;})()`);
+    await ctx.esperar(bridge, "document.querySelectorAll('.image-modal__item').length===1", "o modal abrir");
+    await bridge.js(`([...document.querySelectorAll('.modal__actions button')].find(b=>b.textContent.includes('Cancelar')).click(), true)`);
+    await ctx.esperar(bridge, "!document.querySelector('.image-modal')", "o modal fechar");
+    // O asset só nasce ao confirmar: desistir não pode deixar lixo em
+    // `assets/`, senão cada arrasto arrependido vira arquivo órfão.
+    const depois = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
+    ctx.assertEq(depois.filter(f => !antes.includes(f)).length, 0, "cancelar gravou asset");
+    ctx.assertEq(await bridge.js("!!document.querySelector('.editor figure.inserted-image')"), false, "cancelar inseriu imagem");
+  },
+});
+
+cenarios.push({
+  nome: "imagens: arquivo que mente o tipo é recusado e nada é inserido (226)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
+    await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+    const antes = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
+    // Diz `image/png` no nome e no tipo, mas o conteúdo não é PNG. Quem
+    // decide é o byte mágico no backend, não a extensão — é o que impede
+    // um arquivo qualquer de entrar em `assets/` com cara de imagem.
+    await bridge.js(`(() => { const alvo=document.querySelector('.editor__bloco'); alvo.focus(); const r=document.createRange();r.selectNodeContents(alvo);r.collapse(false);getSelection().removeAllRanges();getSelection().addRange(r); const dt=new DataTransfer();dt.items.add(new File(['isto nao e um png'],'mentirosa.png',{type:'image/png'})); alvo.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt})); return true;})()`);
+    await ctx.esperar(bridge, "document.querySelectorAll('.image-modal__item').length===1", "o modal abrir");
+    await bridge.js(`([...document.querySelectorAll('.modal__actions button')].find(b=>b.textContent.includes('Inserir')).click(), true)`);
+    await ctx.esperar(bridge, "!!document.querySelector('.image-modal__error')", "o erro aparecer no modal");
+    ctx.assertEq(await bridge.js("!!document.querySelector('.editor figure.inserted-image')"), false, "imagem inválida foi inserida");
+    const depois = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
+    ctx.assertEq(depois.filter(f => !antes.includes(f)).length, 0, "imagem inválida virou asset");
+    await bridge.js(`([...document.querySelectorAll('.modal__actions button')].find(b=>b.textContent.includes('Cancelar')).click(), true)`);
+  },
+});
+
 // ── ciclo 167: operar kanban e cronograma pelo teclado ───────────────
 
 cenarios.push({
