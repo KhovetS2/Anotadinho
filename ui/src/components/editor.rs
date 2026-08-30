@@ -2412,14 +2412,31 @@ pub fn editor(props: &EditorProps) -> Html {
                     // SISTEMA, e aí o WebKitGTK entrega só o caminho em
                     // `text/uri-list`. Os bytes não existem aqui — quem
                     // lê é o backend (ciclo 245).
-                    let caminhos = caminhos_arrastados(&e);
-                    if caminhos.is_empty() {
+                    // As promessas precisam nascer AQUI, síncronas: o
+                    // `dataTransfer` só vale durante o despacho do evento.
+                    let pendentes = textos_arrastados(&e);
+                    let caminhos_sincronos = caminhos_arrastados(&e);
+                    if caminhos_sincronos.is_empty() && pendentes.is_empty() {
                         return;
                     }
                     let image_range = image_range.clone();
                     let image_drafts = image_drafts.clone();
                     let image_error = image_error.clone();
                     wasm_bindgen_futures::spawn_local(async move {
+                        let mut caminhos = caminhos_sincronos;
+                        for p in pendentes {
+                            if let Some(texto) = wasm_bindgen_futures::JsFuture::from(p)
+                                .await
+                                .ok()
+                                .and_then(|v| v.as_string())
+                            {
+                                caminhos.extend(extrair_caminhos(&texto));
+                            }
+                        }
+                        caminhos.dedup();
+                        if caminhos.is_empty() {
+                            return;
+                        }
                         match api::ler_imagens_locais(&caminhos).await {
                             Ok(payloads) if !payloads.is_empty() => {
                                 *image_range.borrow_mut() = range;
@@ -4034,6 +4051,81 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
 ///    vault no disco, então SEM ISSO nenhuma imagem embutida jamais
 ///    aparecia — bug pré-existente (provavelmente desde a introdução
 ///    do slash command `/img`), corrigido de quebra aqui.
+/// As promessas de leitura dos textos que o arrasto carrega.
+///
+/// O gerenciador de arquivos anuncia `text/uri-list` e o deixa VAZIO — a
+/// leitura síncrona e a assíncrona devolvem string vazia. O caminho vem
+/// no `text/html`, como texto de uma âncora:
+/// `<a style="…">file:///home/eu/foto.png</a>`. Descoberto sondando um
+/// arrasto de verdade, porque nenhum evento sintético reproduz isso.
+///
+/// `getAsString` é assíncrono, mas precisa ser CHAMADO durante o
+/// despacho do evento: o `dataTransfer` deixa de valer depois dele. Por
+/// isso aqui só se criam as promessas; quem espera é o chamador.
+fn textos_arrastados(e: &DragEvent) -> Vec<js_sys::Promise> {
+    let Ok(dt) = js_sys::Reflect::get(e, &wasm_bindgen::JsValue::from_str("dataTransfer")) else {
+        return Vec::new();
+    };
+    let Ok(itens) = js_sys::Reflect::get(&dt, &wasm_bindgen::JsValue::from_str("items")) else {
+        return Vec::new();
+    };
+    let Some(itens) = itens.dyn_ref::<js_sys::Object>() else {
+        return Vec::new();
+    };
+    let comprimento = js_sys::Reflect::get(itens, &wasm_bindgen::JsValue::from_str("length"))
+        .ok()
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0) as u32;
+
+    let mut promessas = Vec::new();
+    for i in 0..comprimento {
+        let Ok(item) = js_sys::Reflect::get_u32(itens, i) else { continue };
+        let tipo = js_sys::Reflect::get(&item, &wasm_bindgen::JsValue::from_str("type"))
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
+        if tipo != "text/uri-list" && tipo != "text/html" && tipo != "text/plain" {
+            continue;
+        }
+        let Ok(get) = js_sys::Reflect::get(&item, &wasm_bindgen::JsValue::from_str("getAsString"))
+        else {
+            continue;
+        };
+        let Ok(get) = get.dyn_into::<js_sys::Function>() else { continue };
+        let item_clone = item.clone();
+        promessas.push(js_sys::Promise::new(&mut |resolver, _| {
+            let cb = wasm_bindgen::closure::Closure::once_into_js(
+                move |s: wasm_bindgen::JsValue| {
+                    let _ = resolver.call1(&wasm_bindgen::JsValue::NULL, &s);
+                },
+            );
+            let _ = get.call1(&item_clone, &cb);
+        }));
+    }
+    promessas
+}
+
+/// Os `file://` que houver num texto, virados em caminho de disco.
+///
+/// Serve pro `text/uri-list` (uma URI por linha) e pro `text/html` (a URI
+/// no meio da marcação), porque o que interessa nos dois é o mesmo.
+fn extrair_caminhos(texto: &str) -> Vec<String> {
+    let mut achados = Vec::new();
+    let mut resto = texto;
+    while let Some(pos) = resto.find("file://") {
+        let depois = &resto[pos + "file://".len()..];
+        let fim = depois
+            .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == '<' || c == '>')
+            .unwrap_or(depois.len());
+        let bruto = &depois[..fim];
+        if !bruto.is_empty() {
+            achados.push(decodificar_percent(bruto));
+        }
+        resto = &depois[fim..];
+    }
+    achados
+}
+
 /// Os caminhos de arquivo que um arrasto do sistema trouxe.
 ///
 /// O WebKitGTK entrega o arrasto vindo de fora como `text/uri-list`, não
@@ -4054,13 +4146,7 @@ fn caminhos_arrastados(e: &DragEvent) -> Vec<String> {
     else {
         return Vec::new();
     };
-    lista
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .filter_map(|uri| uri.strip_prefix("file://"))
-        .map(decodificar_percent)
-        .collect()
+    extrair_caminhos(&lista)
 }
 
 /// `%20` vira espaço. Sem isto, "minha foto.png" chegaria com o caminho

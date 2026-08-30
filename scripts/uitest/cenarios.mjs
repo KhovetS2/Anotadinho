@@ -1112,6 +1112,57 @@ cenarios.push({
   },
 });
 
+cenarios.push({
+  nome: "imagens: caminho vindo no text/html do gerenciador de arquivos (246)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    // Como o gerenciador de arquivos REALMENTE entrega, medido por sonda
+    // num arrasto de verdade: `text/uri-list` anunciado e VAZIO, e o
+    // caminho dentro do `text/html`, como texto de uma âncora. Nenhum
+    // evento sintético anterior reproduzia isso — por isso o gesto
+    // falhava com a suíte inteira verde.
+    const origem = `${os.tmpdir()}/uitest via html ${Date.now()}.png`;
+    fs.writeFileSync(origem, Buffer.from(PNG_IMAGEM_226, "base64"));
+    const antes = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
+    let novos = [];
+    try {
+      ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
+      await recarregar(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+      const uri = "file://" + origem.split("/").map(encodeURIComponent).join("/");
+      const html = `<a style="color: rgb(255, 255, 255);">${uri}</a>`;
+      await bridge.js(`(() => {
+        const alvo = document.querySelector('.editor__bloco');
+        alvo.focus();
+        const r = document.createRange();
+        r.selectNodeContents(alvo); r.collapse(false);
+        getSelection().removeAllRanges(); getSelection().addRange(r);
+        const dt = new DataTransfer();
+        dt.setData('text/uri-list', '');
+        dt.setData('text/html', ${JSON.stringify(html)});
+        alvo.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        return true;
+      })()`);
+
+      await ctx.esperar(bridge, "document.querySelectorAll('.image-modal__item').length===1", "o modal abrir pelo html");
+      await bridge.js(`([...document.querySelectorAll('.modal__actions button')].find(b=>b.textContent.includes('Inserir')).click(), true)`);
+      await ctx.esperar(bridge, "document.querySelector('.editor figure.inserted-image img')", "a imagem entrar");
+
+      await bridge.js(SALVAR);
+      await PAUSA(900);
+      ctx.assert((ctx.ler() || "").includes('src="assets/'), "não gravou o asset");
+      novos = fs.readdirSync(`${ctx.vault}/assets`).filter(f => !antes.includes(f));
+      ctx.assertEq(novos.length, 1, "devia ter criado um asset");
+    } finally {
+      fs.rmSync(origem, { force: true });
+      novos.forEach(f => fs.rmSync(`${ctx.vault}/assets/${f}`, { force: true }));
+    }
+  },
+});
+
 // ── ciclo 167: operar kanban e cronograma pelo teclado ───────────────
 
 cenarios.push({

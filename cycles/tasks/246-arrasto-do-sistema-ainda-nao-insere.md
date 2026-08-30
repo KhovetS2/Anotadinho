@@ -1,7 +1,7 @@
 ---
 id: "246"
 titulo: "Arrastar imagem do sistema ainda não insere"
-status: pending
+status: done
 criado: 2026-08-30
 autor: agente
 prioridade: alta
@@ -35,7 +35,14 @@ arquivos: 0
 
 Ou seja: o evento **chega no elemento certo** e anuncia ter `text/uri-list`.
 
-## Hipótese principal
+## Critérios de aceite
+
+- [x] O arrasto do gerenciador de arquivos insere a imagem
+- [x] A leitura cobre `text/uri-list`, `text/html` e `text/plain`
+- [x] Caminho com espaço é decodificado
+- [x] Cenário reproduz o formato REAL: uri-list vazio e caminho no html
+
+## Hipótese principal (ERRADA — ver o status)
 
 `dataTransfer.getData("text/uri-list")` devolve string vazia no drop
 real, mesmo com o tipo anunciado. O WebKitGTK entrega o conteúdo só por
