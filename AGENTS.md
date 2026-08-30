@@ -163,6 +163,22 @@ O app instalado usa a porta 9323, então ele e o dev convivem — mas
 **nunca deixe dois apps abertos no mesmo vault**: os dois escrevem nos
 mesmos arquivos.
 
+### Gesto que vem de fora do app
+
+Arrastar arquivo do gerenciador, colar do sistema, diálogo nativo, atalho
+global: **cenário sintético não prova a fronteira**, só o caminho depois
+dela. Quem monta o evento é o teste, e ele monta o formato que quem
+escreveu imaginou — o sistema operacional não consultou ninguém.
+
+Meça antes de consertar: sonda na janela de verdade, gesto de verdade,
+payload gravado INTEIRO. Escreva o cenário reproduzindo o que mediu. E
+confirme à mão — verde no harness não conclui um ciclo que mexe na
+fronteira.
+
+Custou três ciclos aprendendo isso com o arrasto de imagem. O padrão está
+em `pages/padroes/fronteira-do-sistema.md`; anexe-o quando o assunto
+encostar aí.
+
 ### Snapshot visual
 
 `node scripts/uitest/run.mjs` confere o estilo computado dos embeds

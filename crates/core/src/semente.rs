@@ -62,6 +62,7 @@ pub fn arquivos() -> Vec<Arquivo> {
         Arquivo { caminho: "pages/padroes/agente-e-execucao.md", conteudo: include_str!("../seeds/padroes/agente-e-execucao.md") },
         Arquivo { caminho: "pages/padroes/spec-proposta-execucao.md", conteudo: include_str!("../seeds/padroes/spec-proposta-execucao.md") },
         Arquivo { caminho: "pages/padroes/validacao.md", conteudo: include_str!("../seeds/padroes/validacao.md") },
+        Arquivo { caminho: "pages/padroes/fronteira-do-sistema.md", conteudo: include_str!("../seeds/padroes/fronteira-do-sistema.md") },
 
         Arquivo { caminho: "pages/prompts-default/investigar-comportamento-errado.md", conteudo: include_str!("../seeds/prompts-default/investigar-comportamento-errado.md") },
         Arquivo { caminho: "pages/prompts-default/revisar-spec.md", conteudo: include_str!("../seeds/prompts-default/revisar-spec.md") },
