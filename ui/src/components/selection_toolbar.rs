@@ -48,6 +48,10 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
     let posicao = use_state(|| None::<(f64, f64)>);
     // A paleta fica fechada por padrão: sete cores de texto e sete de
     // fundo abertas o tempo todo virariam uma parede na frente do texto.
+    //
+    // E fecha sozinha quando a seleção some: sem isso, selecionar outro
+    // trecho trazia a barra já com a paleta aberta por cima do texto, de
+    // uma interação anterior que a pessoa nem lembrava.
     let mostrar_cores = use_state(|| false);
     // A seleção de antes de abrir um modal. Abrir diálogo tira o foco do
     // editor e a seleção se perde; sem guardar, o link seria aplicado
@@ -68,6 +72,7 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
     {
         let posicao = posicao.clone();
         let ultimo = ultimo.clone();
+        let mostrar_cores = mostrar_cores.clone();
         use_effect_with((), move |_| {
             let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
                 return Box::new(|| ()) as Box<dyn FnOnce()>;
@@ -76,6 +81,11 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
                 let agora = medir_selecao();
                 if *ultimo.borrow() == agora {
                     return;
+                }
+                // A barra sumindo é o fim de uma interação: o que estava
+                // aberto nela não deve reaparecer na próxima.
+                if agora.is_none() {
+                    mostrar_cores.set(false);
                 }
                 *ultimo.borrow_mut() = agora;
                 posicao.set(agora);
@@ -262,14 +272,151 @@ fn medir_selecao() -> Option<(f64, f64)> {
     Some((r.x() + r.width() / 2.0, r.y() - FOLGA))
 }
 
-/// Envolve a seleção na marca, ou tira a marca se já estiver dentro dela.
+/// O bloco editável onde a seleção está.
+fn bloco_da_selecao(range: &Range) -> Option<Element> {
+    let no = range.common_ancestor_container().ok()?;
+    let de = match no.dyn_ref::<Element>() {
+        Some(e) => e.clone(),
+        None => no.parent_element()?,
+    };
+    de.closest("[contenteditable=\"true\"]").ok()?
+}
+
+/// Todos os nós de texto do bloco, com onde cada um começa e termina em
+/// caracteres.
+///
+/// É a régua de tudo aqui. Guardar a seleção como um `Range` não serve:
+/// aplicar ou tirar uma marca reconstrói os nós, e o `Range` antigo passa
+/// a apontar pra nada. Já "do caractere 4 ao 9 deste bloco" continua
+/// significando a mesma coisa depois da cirurgia.
+fn nos_de_texto(bloco: &Element) -> Vec<(web_sys::Node, u32, u32)> {
+    fn andar(no: &web_sys::Node, pos: &mut u32, saida: &mut Vec<(web_sys::Node, u32, u32)>) {
+        if no.node_type() == web_sys::Node::TEXT_NODE {
+            let tamanho = no.text_content().unwrap_or_default().chars().count() as u32;
+            saida.push((no.clone(), *pos, *pos + tamanho));
+            *pos += tamanho;
+            return;
+        }
+        let filhos = no.child_nodes();
+        for i in 0..filhos.length() {
+            if let Some(f) = filhos.item(i) {
+                andar(&f, pos, saida);
+            }
+        }
+    }
+    let mut saida = Vec::new();
+    let mut pos = 0;
+    andar(bloco, &mut pos, &mut saida);
+    saida
+}
+
+/// Onde a seleção começa e termina, em caracteres do bloco.
+fn intervalo(bloco: &Element, range: &Range) -> Option<(u32, u32)> {
+    let doc = web_sys::window()?.document()?;
+    let antes = doc.create_range().ok()?;
+    antes.select_node_contents(bloco).ok()?;
+    antes
+        .set_end(&range.start_container().ok()?, range.start_offset().ok()?)
+        .ok()?;
+    let ini = antes.to_string().as_string().unwrap_or_default().chars().count() as u32;
+    let tam = range.to_string().as_string().unwrap_or_default().chars().count() as u32;
+    Some((ini, ini + tam))
+}
+
+/// Refaz a seleção a partir dos caracteres — é o que faz a barra
+/// continuar servindo depois de aplicar ou tirar uma marca.
+fn selecionar_intervalo(bloco: &Element, ini: u32, fim: u32) -> Option<()> {
+    let doc = web_sys::window()?.document()?;
+    let nos = nos_de_texto(bloco);
+    let range = doc.create_range().ok()?;
+    let mut comecou = false;
+    for (no, de, ate) in &nos {
+        if !comecou && ini >= *de && ini <= *ate {
+            range.set_start(no, ini - de).ok()?;
+            comecou = true;
+        }
+        if comecou && fim >= *de && fim <= *ate {
+            range.set_end(no, fim - de).ok()?;
+            let sel = web_sys::window()?.get_selection().ok()??;
+            sel.remove_all_ranges().ok()?;
+            sel.add_range(&range).ok()?;
+            return Some(());
+        }
+    }
+    None
+}
+
+/// Os elementos da marca que tocam a seleção.
+fn marcas_na_selecao(bloco: &Element, tag: &str, ini: u32, fim: u32) -> Vec<Element> {
+    let mut achados: Vec<Element> = Vec::new();
+    for (no, de, ate) in nos_de_texto(bloco) {
+        // Toca de verdade — encostar na borda não conta.
+        if ate <= ini || de >= fim {
+            continue;
+        }
+        let Some(pai) = no.parent_element() else { continue };
+        let Ok(Some(marca)) = pai.closest(tag) else { continue };
+        if !bloco.contains(Some(&marca)) {
+            continue;
+        }
+        if !achados.iter().any(|a| a.is_same_node(Some(&marca))) {
+            achados.push(marca);
+        }
+    }
+    achados
+}
+
+/// A seleção INTEIRA já está marcada?
+///
+/// Perguntar pelo ancestral comum não servia: ao reselecionar arrastando,
+/// o range costuma começar fora do `<strong>` e o ancestral vira o bloco.
+/// A marca existia, a busca não achava, e o clique aninhava outra —
+/// depois disso não saía mais (relatado no uso real).
+fn tudo_marcado(bloco: &Element, tag: &str, ini: u32, fim: u32) -> bool {
+    let mut viu_texto = false;
+    for (no, de, ate) in nos_de_texto(bloco) {
+        if ate <= ini || de >= fim {
+            continue;
+        }
+        if no.text_content().unwrap_or_default().trim().is_empty() {
+            continue;
+        }
+        viu_texto = true;
+        let dentro = no
+            .parent_element()
+            .and_then(|p| p.closest(tag).ok().flatten())
+            .is_some_and(|m| bloco.contains(Some(&m)));
+        if !dentro {
+            return false;
+        }
+    }
+    viu_texto
+}
+
+/// Envolve a seleção na marca, ou tira a marca se ela já estiver lá.
+///
+/// A seleção é preservada nos dois caminhos: quem marcou uma palavra
+/// costuma querer marcar outra coisa nela em seguida, e perder a seleção
+/// no meio obriga a selecionar de novo a cada clique.
 fn aplicar_marca(tag: &str) -> Option<()> {
     let doc = web_sys::window()?.document()?;
     let range = selecao_atual()?;
+    let bloco = bloco_da_selecao(&range)?;
+    let (ini, fim) = intervalo(&bloco, &range)?;
 
-    if let Some(existente) = ancestral_da_marca(&range, tag) {
-        desembrulhar(&existente)?;
+    if tudo_marcado(&bloco, tag, ini, fim) {
+        for marca in marcas_na_selecao(&bloco, tag, ini, fim) {
+            desembrulhar(&marca);
+        }
     } else {
+        // Tira as marcas parciais antes de envolver: sem isto,
+        // `<strong>meia</strong> palavra` viraria `<strong>` dentro de
+        // `<strong>`.
+        for marca in marcas_na_selecao(&bloco, tag, ini, fim) {
+            desembrulhar(&marca);
+        }
+        bloco.normalize();
+        let range = refazer(&bloco, ini, fim)?;
         let el = doc.create_element(tag).ok()?;
         // `extract_contents` + `insert_node` em vez de
         // `surround_contents`: este último falha quando a seleção
@@ -278,69 +425,48 @@ fn aplicar_marca(tag: &str) -> Option<()> {
         let conteudo = range.extract_contents().ok()?;
         el.append_child(&conteudo).ok()?;
         range.insert_node(&el).ok()?;
-        selecionar_conteudo(&doc, &el);
     }
-    avisar_edicao(&range)
+    bloco.normalize();
+    selecionar_intervalo(&bloco, ini, fim);
+    avisar_edicao_no_bloco(&bloco)
+}
+
+/// Refaz a seleção e devolve o `Range` correspondente.
+fn refazer(bloco: &Element, ini: u32, fim: u32) -> Option<Range> {
+    selecionar_intervalo(bloco, ini, fim)?;
+    selecao_atual()
 }
 
 fn aplicar_link(url: &str) -> Option<()> {
     let doc = web_sys::window()?.document()?;
     let range = selecao_atual()?;
+    let bloco = bloco_da_selecao(&range)?;
+    let (ini, fim) = intervalo(&bloco, &range)?;
     let el = doc.create_element("a").ok()?;
     el.set_attribute("href", url).ok()?;
     let conteudo = range.extract_contents().ok()?;
     el.append_child(&conteudo).ok()?;
     range.insert_node(&el).ok()?;
-    selecionar_conteudo(&doc, &el);
-    avisar_edicao(&range)
-}
-
-/// O elemento da marca que já envolve a seleção inteira, se houver.
-fn ancestral_da_marca(range: &Range, tag: &str) -> Option<Element> {
-    let no = range.common_ancestor_container().ok()?;
-    let de = match no.dyn_ref::<Element>() {
-        Some(e) => e.clone(),
-        None => no.parent_element()?,
-    };
-    let achado = de.closest(tag).ok()??;
-    // Não sai do bloco editável procurando marca.
-    achado.closest("[contenteditable=\"true\"]").ok()??;
-    Some(achado)
+    bloco.normalize();
+    selecionar_intervalo(&bloco, ini, fim);
+    avisar_edicao_no_bloco(&bloco)
 }
 
 /// Troca o elemento pelos filhos dele, preservando o texto.
-fn desembrulhar(el: &Element) -> Option<()> {
-    let pai = el.parent_node()?;
+fn desembrulhar(el: &Element) {
+    let Some(pai) = el.parent_node() else { return };
     while let Some(filho) = el.first_child() {
-        pai.insert_before(&filho, Some(el)).ok()?;
+        if pai.insert_before(&filho, Some(el)).is_err() {
+            return;
+        }
     }
-    pai.remove_child(el).ok()?;
-    Some(())
-}
-
-fn selecionar_conteudo(doc: &web_sys::Document, el: &Element) {
-    let (Ok(novo), Some(Ok(Some(sel)))) = (
-        doc.create_range(),
-        web_sys::window().map(|w| w.get_selection()),
-    ) else {
-        return;
-    };
-    if novo.select_node_contents(el).is_ok() {
-        let _ = sel.remove_all_ranges();
-        let _ = sel.add_range(&novo);
-    }
+    let _ = pai.remove_child(el);
 }
 
 /// Dispara um `input` no bloco, pra a edição seguir o MESMO caminho de
 /// quando a pessoa digita — autosave, undo e recomposição do markdown já
 /// estão pendurados ali, e duplicá-los seria pedir pra divergirem.
-fn avisar_edicao(range: &Range) -> Option<()> {
-    let no = range.common_ancestor_container().ok()?;
-    let de = match no.dyn_ref::<Element>() {
-        Some(e) => e.clone(),
-        None => no.parent_element()?,
-    };
-    let bloco = de.closest("[contenteditable=\"true\"]").ok()??;
+fn avisar_edicao_no_bloco(bloco: &Element) -> Option<()> {
     let ev = web_sys::Event::new_with_event_init_dict(
         "input",
         web_sys::EventInit::new().bubbles(true),
@@ -364,31 +490,31 @@ enum Cor {
 fn aplicar_cor(cor: Cor) -> Option<()> {
     let doc = web_sys::window()?.document()?;
     let range = selecao_atual()?;
+    let bloco = bloco_da_selecao(&range)?;
+    let (ini, fim) = intervalo(&bloco, &range)?;
 
-    // Se a seleção já está dentro de um span de cor, ele é reaproveitado
-    // em vez de aninhar outro. Sem isso, trocar de cor cinco vezes
-    // deixaria cinco spans encaixados, e o arquivo viraria sopa.
-    let existente = ancestral_da_marca(&range, "span")
-        .filter(|el| cor_do_span_existe(el));
+    // Se a seleção já está num span de cor, ele é reaproveitado em vez de
+    // aninhar outro. Sem isso, trocar de cor cinco vezes deixaria cinco
+    // spans encaixados, e o arquivo viraria sopa.
+    let existente = marcas_na_selecao(&bloco, "span", ini, fim)
+        .into_iter()
+        .find(cor_do_span_existe);
 
     match (&cor, existente) {
-        (Cor::Nenhuma, Some(el)) => {
-            desembrulhar(&el)?;
-        }
+        (Cor::Nenhuma, Some(el)) => desembrulhar(&el),
         (Cor::Nenhuma, None) => return None,
-        (_, Some(el)) => {
-            aplicar_no_elemento(&el, &cor);
-        }
+        (_, Some(el)) => aplicar_no_elemento(&el, &cor),
         (_, None) => {
             let el = doc.create_element("span").ok()?;
             aplicar_no_elemento(&el, &cor);
             let conteudo = range.extract_contents().ok()?;
             el.append_child(&conteudo).ok()?;
             range.insert_node(&el).ok()?;
-            selecionar_conteudo(&doc, &el);
         }
     }
-    avisar_edicao(&range)
+    bloco.normalize();
+    selecionar_intervalo(&bloco, ini, fim);
+    avisar_edicao_no_bloco(&bloco)
 }
 
 fn aplicar_no_elemento(el: &Element, cor: &Cor) {

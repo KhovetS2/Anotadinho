@@ -1940,3 +1940,12 @@
   .agente-config { grid-template-columns: 1fr; }
   .agente-config__lista { border-right: 0; padding-right: 0; }
 }
+
+/* Aviso da configuração de agente (ciclo 241): fica visível, mas não
+   desabilita nada. A máquina é de quem configura. */
+.agente-config__aviso {
+  margin: 0;
+  color: var(--warning);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}

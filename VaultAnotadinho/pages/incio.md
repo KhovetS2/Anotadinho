@@ -7,7 +7,6 @@ tags: [inicio]
 
 Editor de notas markdown que também é o painel do próprio
 desenvolvimento. Tudo abaixo se atualiza sozinho a partir do vault.
-
 {{ type: "actions" }}
 layout: row
 buttons:
@@ -37,11 +36,9 @@ buttons:
   action: new-from-template
   template: templates/nota-de-reuniao.md
 {{ /actions }}
-
 ## Esperando você
 
 O que está pronto pra alguém ler e decidir. Nada aqui avança sozinho.
-
 {{ type: "query" }}
 where:
 - field: status
@@ -55,9 +52,7 @@ columns:
 - type
 - prioridade
 {{ /query }}
-
 ## Specs esperando decisão
-
 {{ type: "query" }}
 from: pages/specs
 where:
@@ -72,9 +67,7 @@ columns:
 - prioridade
 - date
 {{ /query }}
-
 ## O que o vault tem
-
 {{ type: "query" }}
 view: list
 group_by: type
@@ -84,9 +77,7 @@ collapsed:
 - ciclo
 - conversa
 {{ /query }}
-
 ## Trabalho recente
-
 {{ type: "query" }}
 from: pages/ciclos
 sort:
@@ -97,7 +88,6 @@ view: cards
 columns:
 - prioridade
 {{ /query }}
-
 ## Por onde começar
 
 - [[Como usar o modo agêntico]] — operar o app com um modelo

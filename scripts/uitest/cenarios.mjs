@@ -65,6 +65,10 @@ export const cenarios = [
       ctx.escrever("---\ntitle: __uitest\n---\n\n");
       await recarregar(bridge);
       await ctx.abrirPagina(bridge, ctx.nomePagina);
+      // `abrirPagina` espera o CABEÇALHO; os blocos nascem depois, num
+      // efeito. Digitar antes disso é digitar no vazio, e era o que
+      // deixava este cenário vermelho de vez em quando na suíte cheia.
+      await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco existir");
 
       await bridge.js(DIGITAR("/"));
       await ctx.esperar(bridge, "document.querySelectorAll('.slash-menu__item').length > 0", "o menu / abrir");
@@ -483,13 +487,24 @@ cenarios.push({
 
 // ── ciclo 234: barra flutuante de formatação ─────────────────────────
 
-// Seleciona um trecho do primeiro bloco, por índices de caractere.
+// Seleciona um trecho do primeiro bloco por índice de CARACTERE, sem
+// supor a estrutura: depois de marcar algo, o primeiro filho do bloco
+// deixa de ser um nó de texto e passa a ser o `<strong>`.
 const SELECIONAR = (de, ate) => `(() => {
   const bloco = document.querySelector('.editor__bloco');
-  const no = bloco.firstChild;
+  const textos = [];
+  (function andar(no) {
+    if (no.nodeType === Node.TEXT_NODE) { textos.push(no); return; }
+    for (const f of no.childNodes) andar(f);
+  })(bloco);
   const r = document.createRange();
-  r.setStart(no, ${de});
-  r.setEnd(no, ${ate});
+  let pos = 0, comecou = false;
+  for (const t of textos) {
+    const fim = pos + t.length;
+    if (!comecou && ${de} >= pos && ${de} <= fim) { r.setStart(t, ${de} - pos); comecou = true; }
+    if (comecou && ${ate} >= pos && ${ate} <= fim) { r.setEnd(t, ${ate} - pos); break; }
+    pos = fim;
+  }
   const s = getSelection();
   s.removeAllRanges();
   s.addRange(r);
@@ -718,6 +733,142 @@ cenarios.push({
       await bridge.js(`document.querySelectorAll('.editor input[type=checkbox]').length >= 2`),
       "a faxina comeu as caixinhas da checklist",
     );
+  },
+});
+
+// ── ciclo 240: a barra continua servindo depois de cada clique ───────
+
+cenarios.push({
+  nome: "formatação: reselecionar e clicar de novo TIRA a marca, não aninha (240)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto para marcar\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    await bridge.js(SELECIONAR(0, 5));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra");
+    await bridge.js(CLICAR_MARCA("Negrito"));
+    await PAUSA(400);
+
+    // Desfaz a seleção e seleciona de novo — é o gesto real: a pessoa
+    // marca, clica fora, muda de ideia e volta.
+    await bridge.js("getSelection().removeAllRanges(); true");
+    await ctx.esperar(bridge, "!document.querySelector('.selecao-barra')", "a barra sumir");
+    await bridge.js(SELECIONAR(0, 5));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra voltar");
+    await bridge.js(CLICAR_MARCA("Negrito"));
+    await PAUSA(400);
+
+    // Reselecionar arrastando faz o range começar FORA do <strong>, e a
+    // busca pelo ancestral comum não achava a marca: o clique aninhava
+    // outra, e depois não saía mais.
+    ctx.assertEq(await bridge.js("document.querySelectorAll('.editor__bloco strong').length"), 0,
+      "a marca não saiu na segunda passagem");
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const md = ctx.ler() || "";
+    ctx.assert(!md.includes("**"), `sobrou marca no arquivo:\n${md}`);
+    ctx.assert(md.includes("texto para marcar"), `o texto se perdeu:\n${md}`);
+  },
+});
+
+cenarios.push({
+  nome: "formatação: a seleção sobrevive a aplicar e a tirar (240)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto para marcar\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    await bridge.js(SELECIONAR(0, 5));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra");
+
+    // Quem marcou uma palavra costuma querer marcar outra coisa nela em
+    // seguida. Perder a seleção obriga a selecionar de novo a cada clique.
+    await bridge.js(CLICAR_MARCA("Negrito"));
+    await PAUSA(400);
+    ctx.assertEq(await bridge.js("getSelection().toString()"), "texto", "a seleção se perdeu ao aplicar");
+
+    await bridge.js(CLICAR_MARCA("Itálico"));
+    await PAUSA(400);
+    ctx.assertEq(await bridge.js("getSelection().toString()"), "texto", "a seleção se perdeu na segunda marca");
+
+    await bridge.js(CLICAR_MARCA("Negrito"));
+    await PAUSA(400);
+    ctx.assertEq(await bridge.js("getSelection().toString()"), "texto", "a seleção se perdeu ao TIRAR");
+    ctx.assertEq(await bridge.js("!!document.querySelector('.selecao-barra')"), true, "a barra sumiu");
+
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const md = ctx.ler() || "";
+    ctx.assert(md.includes("*texto*") && !md.includes("**texto**"),
+      `devia ter sobrado só o itálico:\n${md}`);
+  },
+});
+
+cenarios.push({
+  nome: "formatação: a paleta de cor não reaparece aberta na seleção seguinte (240)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto para marcar\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    await bridge.js(SELECIONAR(0, 5));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra");
+    await bridge.js(ABRIR_CORES);
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra__paleta')", "a paleta");
+
+    await bridge.js("getSelection().removeAllRanges(); true");
+    await ctx.esperar(bridge, "!document.querySelector('.selecao-barra')", "a barra sumir");
+    await bridge.js(SELECIONAR(6, 10));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra voltar");
+
+    // Uma paleta aberta por cima do texto, de uma interação que a pessoa
+    // nem lembra, atrapalha em vez de ajudar.
+    ctx.assertEq(await bridge.js("!!document.querySelector('.selecao-barra__paleta')"), false,
+      "a paleta voltou aberta");
+  },
+});
+
+cenarios.push({
+  nome: "imagens: a inserida aparece na hora, sem precisar recarregar (242)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
+    await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+    const antes = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
+    let novos = [];
+    try {
+      await bridge.js(`(() => { const alvo=document.querySelector('.editor__bloco'); alvo.focus(); const r=document.createRange();r.selectNodeContents(alvo);r.collapse(false);getSelection().removeAllRanges();getSelection().addRange(r); const dt=new DataTransfer();dt.items.add((${ARQUIVO_226("agora.png")})); alvo.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt})); return true;})()`);
+      await ctx.esperar(bridge, "document.querySelectorAll('.image-modal__item').length===1", "o modal");
+      await bridge.js(`([...document.querySelectorAll('.modal__actions button')].find(b=>b.textContent.includes('Inserir')).click(), true)`);
+      await ctx.esperar(bridge, "document.querySelector('.editor figure.inserted-image img')", "a imagem entrar");
+
+      // O `src` inserido é relativo (`assets/x.png`) e o webview não
+      // resolve isso: a imagem ficava em branco até alguém recarregar.
+      await ctx.esperar(
+        bridge,
+        "document.querySelector('.editor figure.inserted-image img').src.startsWith('data:')",
+        "a imagem ser resolvida na hora",
+      );
+      // E o caminho relativo continua guardado, senão o markdown levaria
+      // a data URL inteira para o arquivo.
+      ctx.assert(
+        (await bridge.js("document.querySelector('.editor figure.inserted-image img').getAttribute('data-asset-src')") || "").startsWith("assets/"),
+        "perdeu o caminho relativo do asset",
+      );
+
+      await bridge.js(SALVAR); await PAUSA(900);
+      const md = ctx.ler() || "";
+      ctx.assert(!md.includes("data:image"), `a data URL vazou pro arquivo:\n${md.slice(0, 300)}`);
+      ctx.assert(md.includes('src="assets/'), `o caminho do asset não foi gravado:\n${md}`);
+      novos = fs.readdirSync(`${ctx.vault}/assets`).filter(f => !antes.includes(f));
+    } finally {
+      novos.forEach(f => fs.rmSync(`${ctx.vault}/assets/${f}`, { force: true }));
+    }
   },
 });
 
@@ -1516,7 +1667,9 @@ cenarios.push({
     ctx.escrever("---\ntitle: __uitest\n---\nlinha um\nlinha dois\nlinha tres\n");
     await recarregar(bridge);
     await ctx.abrirPagina(bridge, ctx.nomePagina);
-    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg')", "o editor abrir");
+    // O contêiner existe antes dos blocos: esperar por ele e digitar em
+    // seguida é corrida, e aparecia como "a página não ficou suja".
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco existir");
 
     await bridge.js(DIGITAR_NO_FIM(" MEU TEXTO"));
     await ctx.esperar(bridge, "document.querySelector('.editor__dirty')", "a página ficar suja");
