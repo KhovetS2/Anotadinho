@@ -2402,12 +2402,35 @@ pub fn editor(props: &EditorProps) -> Html {
                 let mut accepted = Vec::new();
                 for i in 0..files.length() {
                     if let Some(file) = files.item(i) {
-                        if file.type_().starts_with("image/") {
+                        if parece_imagem(&file) {
                             accepted.push(file);
                         }
                     }
                 }
                 if accepted.is_empty() {
+                    // Sem `File` nenhum: o arrasto pode ter vindo do
+                    // SISTEMA, e aí o WebKitGTK entrega só o caminho em
+                    // `text/uri-list`. Os bytes não existem aqui — quem
+                    // lê é o backend (ciclo 245).
+                    let caminhos = caminhos_arrastados(&e);
+                    if caminhos.is_empty() {
+                        return;
+                    }
+                    let image_range = image_range.clone();
+                    let image_drafts = image_drafts.clone();
+                    let image_error = image_error.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        match api::ler_imagens_locais(&caminhos).await {
+                            Ok(payloads) if !payloads.is_empty() => {
+                                *image_range.borrow_mut() = range;
+                                image_drafts
+                                    .set(payloads.into_iter().map(ImageDraft::new).collect());
+                            }
+                            Ok(_) => {}
+                            Err(erro) => image_error
+                                .set(Some(format!("Não consegui ler a imagem solta: {erro}"))),
+                        }
+                    });
                     return;
                 }
                 wasm_bindgen_futures::spawn_local(async move {
@@ -4011,6 +4034,74 @@ fn apply_inline_formatting(win: &web_sys::Window, doc: &web_sys::Document) {
 ///    vault no disco, então SEM ISSO nenhuma imagem embutida jamais
 ///    aparecia — bug pré-existente (provavelmente desde a introdução
 ///    do slash command `/img`), corrigido de quebra aqui.
+/// Os caminhos de arquivo que um arrasto do sistema trouxe.
+///
+/// O WebKitGTK entrega o arrasto vindo de fora como `text/uri-list`, não
+/// como `File`: uma URI por linha, com `%20` no lugar dos espaços e
+/// linhas iniciadas por `#` que são comentário, pelo formato.
+fn caminhos_arrastados(e: &DragEvent) -> Vec<String> {
+    // Via `Reflect`, como o resto deste manipulador: `data_transfer()`
+    // tipado não está nas features de `web-sys` aqui.
+    let Some(lista) = js_sys::Reflect::get(e, &wasm_bindgen::JsValue::from_str("dataTransfer"))
+        .ok()
+        .and_then(|dt| {
+            let f = js_sys::Reflect::get(&dt, &wasm_bindgen::JsValue::from_str("getData")).ok()?;
+            let f = f.dyn_into::<js_sys::Function>().ok()?;
+            f.call1(&dt, &wasm_bindgen::JsValue::from_str("text/uri-list"))
+                .ok()?
+                .as_string()
+        })
+    else {
+        return Vec::new();
+    };
+    lista
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .filter_map(|uri| uri.strip_prefix("file://"))
+        .map(decodificar_percent)
+        .collect()
+}
+
+/// `%20` vira espaço. Sem isto, "minha foto.png" chegaria com o caminho
+/// errado e o backend não acharia o arquivo.
+fn decodificar_percent(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut saida: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                saida.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        saida.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&saida).to_string()
+}
+
+/// O arquivo é uma imagem?
+///
+/// Perguntar só ao `type` não serve pro arrasto vindo do SISTEMA: o
+/// WebKitGTK costuma entregar tipo vazio nesse caminho, e a checagem
+/// `type.starts_with("image/")` recusava a imagem em silêncio — o modal
+/// nem abria, e parecia que arrastar não fazia nada (ciclo 245).
+///
+/// Quando o tipo vem, ele manda. Quando não vem, a extensão decide.
+fn parece_imagem(file: &web_sys::File) -> bool {
+    let tipo = file.type_();
+    if !tipo.is_empty() {
+        return tipo.starts_with("image/");
+    }
+    let nome = file.name().to_ascii_lowercase();
+    ["png", "jpg", "jpeg", "gif", "webp", "svg"]
+        .iter()
+        .any(|ext| nome.ends_with(&format!(".{ext}")))
+}
+
 fn upgrade_embedded_assets_at(el: &web_sys::Element, vault_path: String) {
     let doc = el.owner_document();
 

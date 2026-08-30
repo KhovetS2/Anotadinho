@@ -451,6 +451,7 @@ cenarios.push({
     const fs = await import("node:fs");
     ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
     await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
     const antes = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
     await bridge.js(`(() => { const alvo=document.querySelector('.editor__bloco'); alvo.focus(); const r=document.createRange();r.selectNodeContents(alvo);r.collapse(false);getSelection().removeAllRanges();getSelection().addRange(r); const dt=new DataTransfer();dt.items.add((${ARQUIVO_226("descartada.png")})); alvo.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt})); return true;})()`);
     await ctx.esperar(bridge, "document.querySelectorAll('.image-modal__item').length===1", "o modal abrir");
@@ -991,6 +992,123 @@ cenarios.push({
     ctx.assertEq((md.match(/cor--ambar/g) || []).length, 2, `as bordas perderam a cor de antes:\n${md}`);
     ctx.assert(md.includes("uma") && md.includes("frase") && md.includes("inteira aqui"),
       `o texto se perdeu:\n${md}`);
+  },
+});
+
+// ── ciclo 245: arrastar imagem não pode derrubar o app ───────────────
+
+cenarios.push({
+  nome: "imagens: soltar fora do editor não navega o webview pro arquivo (245)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    // Um `drop` que ninguém trata tem comportamento padrão: o webview
+    // NAVEGA para o arquivo solto, a página do app é substituída e a
+    // janela fica em branco pra sempre. Aconteceu de verdade — a janela
+    // acabou em `file:///home/.../anotadinho-icon.png`.
+    const r = await bridge.js(`(() => {
+      const dt = new DataTransfer();
+      dt.items.add((${ARQUIVO_226("solta-fora.png")}));
+      const eventos = ['dragover', 'drop'].map(tipo => {
+        const ev = new DragEvent(tipo, { bubbles: true, cancelable: true, dataTransfer: dt });
+        document.querySelector('.sidebar-section').dispatchEvent(ev);
+        return { tipo, barrado: ev.defaultPrevented };
+      });
+      return eventos;
+    })()`);
+    for (const e of r) {
+      ctx.assertEq(e.barrado, true, `${e.tipo} fora do editor não foi barrado`);
+    }
+    // E o app continua no ar, que é o ponto.
+    ctx.assert(await bridge.js("location.href.startsWith('http')"), "o webview saiu do app");
+    ctx.assert(await bridge.js("!!document.querySelector('.editor__bloco')"), "o editor sumiu");
+  },
+});
+
+cenarios.push({
+  nome: "imagens: arquivo sem tipo MIME é aceito pela extensão (245)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    // No arrasto vindo do SISTEMA o WebKitGTK costuma entregar o arquivo
+    // com `type` vazio. A checagem `type.startsWith('image/')` recusava a
+    // imagem em silêncio: o modal nem abria, e parecia que arrastar não
+    // fazia nada.
+    await bridge.js(`(() => {
+      const bin = atob(${JSON.stringify(PNG_IMAGEM_226)});
+      const b = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+      const semTipo = new File([b], 'sem-tipo.png', { type: '' });
+      const alvo = document.querySelector('.editor__bloco');
+      alvo.focus();
+      const r = document.createRange();
+      r.selectNodeContents(alvo); r.collapse(false);
+      getSelection().removeAllRanges(); getSelection().addRange(r);
+      const dt = new DataTransfer();
+      dt.items.add(semTipo);
+      alvo.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      return true;
+    })()`);
+    await ctx.esperar(bridge, "document.querySelectorAll('.image-modal__item').length===1", "o modal abrir mesmo sem tipo");
+    await bridge.js(`([...document.querySelectorAll('.modal__actions button')].find(b=>b.textContent.includes('Cancelar')).click(), true)`);
+  },
+});
+
+cenarios.push({
+  nome: "imagens: arrasto do sistema chega como caminho, e mesmo assim insere (245)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    // É ASSIM que o arrasto vindo de fora chega no WebKitGTK: sem `File`
+    // nenhum, só `text/uri-list` com o caminho. A sonda na janela de
+    // verdade mostrou exatamente isto — `files: 0`, `types:
+    // ["text/uri-list", "text/html"]` —, e era por isso que arrastar não
+    // inseria nada.
+    const origem = `${os.tmpdir()}/uitest imagem ${Date.now()}.png`;
+    fs.writeFileSync(origem, Buffer.from(PNG_IMAGEM_226, "base64"));
+    const antes = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
+    let novos = [];
+    try {
+      ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
+      await recarregar(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+      // O nome tem espaço de propósito: a URI vem com %20, e sem decodificar
+      // o backend procuraria um arquivo que não existe.
+      const uri = "file://" + origem.split("/").map(encodeURIComponent).join("/");
+      await bridge.js(`(() => {
+        const alvo = document.querySelector('.editor__bloco');
+        alvo.focus();
+        const r = document.createRange();
+        r.selectNodeContents(alvo); r.collapse(false);
+        getSelection().removeAllRanges(); getSelection().addRange(r);
+        const dt = new DataTransfer();
+        dt.setData('text/uri-list', ${JSON.stringify(uri)});
+        alvo.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        return true;
+      })()`);
+
+      await ctx.esperar(bridge, "document.querySelectorAll('.image-modal__item').length===1", "o modal abrir pelo caminho");
+      await bridge.js(`([...document.querySelectorAll('.modal__actions button')].find(b=>b.textContent.includes('Inserir')).click(), true)`);
+      await ctx.esperar(bridge, "document.querySelector('.editor figure.inserted-image img')", "a imagem entrar");
+
+      await bridge.js(SALVAR);
+      await PAUSA(900);
+      const md = ctx.ler() || "";
+      ctx.assert(md.includes('src="assets/'), `não gravou o asset:\n${md}`);
+      novos = fs.readdirSync(`${ctx.vault}/assets`).filter(f => !antes.includes(f));
+      ctx.assertEq(novos.length, 1, "devia ter criado um asset");
+    } finally {
+      fs.rmSync(origem, { force: true });
+      novos.forEach(f => fs.rmSync(`${ctx.vault}/assets/${f}`, { force: true }));
+    }
   },
 });
 

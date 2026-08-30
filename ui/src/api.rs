@@ -708,6 +708,24 @@ pub async fn pick_images() -> Result<Vec<ImageAssetPayload>, String> {
     serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {e}"))
 }
 
+/// Lê imagens do disco por caminho (ciclo 245).
+///
+/// O arrasto vindo do sistema entrega `text/uri-list`, não `File`: não há
+/// bytes no navegador, só o caminho, e o webview não abre `file://`.
+pub async fn ler_imagens_locais(caminhos: &[String]) -> Result<Vec<ImageAssetPayload>, String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &args,
+        &JsValue::from_str("caminhos"),
+        &serde_wasm_bindgen::to_value(caminhos).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    let result = tauri_invoke("ler_imagens_locais", &JsValue::from(args))
+        .await
+        .map_err(|e| format!("{:?}", e))?;
+    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {e}"))
+}
+
 /// Publica um lote de assets; o backend desfaz arquivos parciais em erro.
 pub async fn save_image_assets(
     vault_path: &str,

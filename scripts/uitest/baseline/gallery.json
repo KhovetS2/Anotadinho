@@ -209,7 +209,7 @@
       "font-size": "15px",
       "font-weight": "400",
       "gap": "12px",
-      "grid-template-columns": "444.328125px 444.328125px 444.328125px",
+      "grid-template-columns": "0.333 0.333 0.333 (proporção)",
       "margin-top": "0px",
       "opacity": "1",
       "overflow-x": "visible",

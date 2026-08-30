@@ -335,6 +335,41 @@ async fn pick_images(app: tauri::AppHandle) -> Result<Vec<ImageAssetPayload>, St
     rx.await.map_err(|e| e.to_string())
 }
 
+/// Lê imagens do disco por CAMINHO, pro arrasto vindo do sistema
+/// (ciclo 245).
+///
+/// O WebKitGTK não entrega o arquivo arrastado como `File`: o
+/// `dataTransfer` chega com `text/uri-list` e `files` vazio. Não há bytes
+/// no navegador pra ler — só o caminho. E o webview não pode abrir
+/// `file://` por conta própria, então quem lê é aqui.
+///
+/// Só imagens, e só o que existe: um caminho que não seja arquivo, ou
+/// tenha extensão de outra coisa, é ignorado em silêncio — arrastar uma
+/// pasta junto com duas fotos deve inserir as duas fotos.
+#[tauri::command]
+fn ler_imagens_locais(caminhos: Vec<String>) -> Result<Vec<ImageAssetPayload>, String> {
+    use base64::Engine;
+    const ACEITAS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg"];
+    let mut saida = Vec::new();
+    for caminho in caminhos {
+        let path = std::path::Path::new(&caminho);
+        let Some(ext) = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()) else {
+            continue;
+        };
+        if !ACEITAS.contains(&ext.as_str()) || !path.is_file() {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(path) else { continue };
+        let Some(nome) = path.file_name() else { continue };
+        saida.push(ImageAssetPayload {
+            name: nome.to_string_lossy().to_string(),
+            extension: ext,
+            base64_data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        });
+    }
+    Ok(saida)
+}
+
 #[tauri::command]
 fn list_assets_info(vault_path: String) -> Result<Vec<AssetInfo>, String> {
     handle_list_assets_info(vault_path)
@@ -877,6 +912,7 @@ fn main() {
             save_pasted_asset,
             save_image_assets,
             pick_images,
+            ler_imagens_locais,
             list_assets_info,
             delete_asset,
             search_content,

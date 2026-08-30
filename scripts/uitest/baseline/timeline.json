@@ -19,7 +19,7 @@
       "padding-top": "0px",
       "text-align": "start"
     },
-    "n": 1
+    "n": 2
   },
   "icon": {
     "estilos": {
@@ -195,7 +195,7 @@
       "padding-top": "0px",
       "text-align": "start"
     },
-    "n": 1
+    "n": 2
   },
   "timeline__handle.timeline__handle--start": {
     "estilos": {
@@ -217,7 +217,7 @@
       "padding-top": "0px",
       "text-align": "start"
     },
-    "n": 1
+    "n": 2
   },
   "timeline__label": {
     "estilos": {
@@ -239,7 +239,7 @@
       "padding-top": "0px",
       "text-align": "start"
     },
-    "n": 1
+    "n": 2
   },
   "timeline__range": {
     "estilos": {
@@ -283,7 +283,7 @@
       "padding-top": "0px",
       "text-align": "start"
     },
-    "n": 1
+    "n": 2
   },
   "timeline__scale": {
     "estilos": {

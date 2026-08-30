@@ -41,10 +41,7 @@ const BASELINE = join(AQUI, "baseline");
 const VAULT = process.env.ANOTADINHO_VAULT || "VaultAnotadinho";
 const ARQUIVO = join(VAULT, "pages/__uisnap.md");
 
-/// Tamanho fixo de janela. Sem isso a largura entra na impressão digital
-/// e a baseline vira loteria.
-const LARGURA = 1280;
-const ALTURA = 900;
+
 
 /// Propriedades que decidem como a coisa PARECE. Deliberadamente sem
 /// `width`/`height` absolutos: eles dependem de conteúdo e de data (uma
@@ -220,6 +217,26 @@ function scriptImpressao(seletor, props) {
   return `(() => {
     const raiz = document.querySelector(${JSON.stringify(seletor)});
     if (!raiz) return null;
+    // Vários px sequenciais numa propriedade só significam divisão de
+    // espaço: grid-template-columns de um grid em fr resolve pra pixels,
+    // e esses pixels dependem da LARGURA DA JANELA.
+    //
+    // A janela não é fixável: a ponte responde sucesso ao redimensionar e
+    // não redimensiona, e mesmo que redimensionasse a baseline pede um
+    // tamanho que não cabe em toda tela. O que a baseline quer afirmar é
+    // "as colunas dividem o espaço nesta proporção" — então é a proporção
+    // que fica guardada, e ela vale em qualquer largura.
+    const emProporcao = (valor) => {
+      // Classe de dígitos escrita à mão de propósito: isto vive dentro
+      // de um template literal, onde a barra invertida de \\d é comida na
+      // interpolação e a regex deixa de casar número nenhum.
+      const numeros = valor.match(/-?[0-9.]+px/g);
+      if (!numeros || numeros.length < 2) return valor;
+      const vals = numeros.map(n => parseFloat(n));
+      const soma = vals.reduce((a, b) => a + b, 0);
+      if (!soma) return valor;
+      return vals.map(v => (v / soma).toFixed(3)).join(" ") + " (proporção)";
+    };
     const props = ${JSON.stringify(props)};
     const porClasse = {};
     const visitar = (el, prof) => {
@@ -231,7 +248,7 @@ function scriptImpressao(seletor, props) {
         if (!porClasse[chave]) {
           const cs = getComputedStyle(el);
           const estilos = {};
-          for (const p of props) estilos[p] = cs.getPropertyValue(p).trim();
+          for (const p of props) estilos[p] = emProporcao(cs.getPropertyValue(p).trim());
           porClasse[chave] = { estilos, n: 0 };
         }
         porClasse[chave].n++;
@@ -273,7 +290,6 @@ function comparar(tipo, base, atual) {
 /// rodar isso como um cenário a mais.
 export async function conferirSnapshots(bridge, { atualizar = false, filtro = null } = {}) {
   if (!existsSync(BASELINE)) mkdirSync(BASELINE, { recursive: true });
-  await bridge.redimensionar(LARGURA, ALTURA);
 
   writeFileSync(ARQUIVO, fixture());
   try {

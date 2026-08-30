@@ -99,7 +99,7 @@
       "font-size": "15px",
       "font-weight": "400",
       "gap": "16px",
-      "grid-template-columns": "455.65625px 911.34375px",
+      "grid-template-columns": "0.333 0.667 (proporção)",
       "margin-top": "0px",
       "opacity": "1",
       "overflow-x": "visible",

@@ -148,6 +148,44 @@ pub fn app() -> Html {
     // Página aberta ANTES da atual — é o contexto que a conversa manda
     // junto (ciclo 202). Quem sabe a ordem de navegação é quem troca de
     // página, então isto mora aqui e não dentro do painel.
+    // Rede de segurança contra o arrasto solto fora de lugar (ciclo 245).
+    //
+    // Um `drop` que ninguém trata tem comportamento padrão: o webview
+    // NAVEGA para o arquivo solto. A página do app é substituída, e a
+    // janela fica em branco pra sempre — não há como voltar, porque o
+    // que sumiu foi a própria aplicação.
+    //
+    // Aconteceu de verdade: arrastar uma imagem e soltar um pouco fora da
+    // área do editor derrubava o app. Só passou a ser possível quando o
+    // ciclo 242 devolveu o arrasto nativo ao webview (`dragDropEnabled:
+    // false`) — antes o Tauri engolia tudo, inclusive isto.
+    //
+    // O editor continua tratando o que cai nele; isto aqui só garante que
+    // o que cai FORA não faça nada.
+    use_effect_with((), |_| {
+        let doc = web_sys::window().and_then(|w| w.document());
+        let engolir = wasm_bindgen::closure::Closure::<dyn Fn(web_sys::DragEvent)>::new(
+            |e: web_sys::DragEvent| e.prevent_default(),
+        );
+        if let Some(doc) = &doc {
+            for evento in ["dragover", "drop"] {
+                let _ = doc
+                    .add_event_listener_with_callback(evento, engolir.as_ref().unchecked_ref());
+            }
+        }
+        move || {
+            if let Some(doc) = doc {
+                for evento in ["dragover", "drop"] {
+                    let _ = doc.remove_event_listener_with_callback(
+                        evento,
+                        engolir.as_ref().unchecked_ref(),
+                    );
+                }
+            }
+            drop(engolir);
+        }
+    });
+
     let pagina_anterior = use_state(|| None::<String>);
     // Pergunta que uma conversa deve trazer já escrita (ciclo 209) — é
     // como o botão "Planejar implementação" entrega o pedido pronto sem a
