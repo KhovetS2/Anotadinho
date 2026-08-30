@@ -73,7 +73,21 @@ pub enum ProblemaConfig {
     SemBinario,
     SemMarcador,
     MarcadorRepetido,
-    BinarioParecComandoDeShell,
+}
+
+/// Uma ressalva sobre a configuração. Não impede nada (ciclo 241).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AvisoConfig {
+    /// O executável parece uma linha de comando inteira.
+    ParecComandoDeShell,
+}
+
+impl AvisoConfig {
+    pub fn mensagem(&self) -> &'static str {
+        "isto parece uma linha de comando. Aqui vai só o executável, e o resto \
+         em argumentos separados — não existe shell no meio, então uma linha \
+         inteira não vai iniciar"
+    }
 }
 
 impl ProblemaConfig {
@@ -82,10 +96,6 @@ impl ProblemaConfig {
             Self::SemBinario => "informe o executável do agente",
             Self::SemMarcador => "um dos argumentos precisa conter {prompt}",
             Self::MarcadorRepetido => "{prompt} pode aparecer em um argumento só",
-            Self::BinarioParecComandoDeShell => {
-                "isto parece uma linha de comando inteira: aqui vai só o executável, \
-                 e o resto em argumentos separados"
-            }
         }
     }
 }
@@ -162,23 +172,30 @@ impl Adaptador {
         if self.binario.trim().is_empty() {
             return Some(ProblemaConfig::SemBinario);
         }
-        // A trava é contra colar uma LINHA DE COMANDO inteira aqui —
-        // aceitar isso viraria execução de shell pela porta dos fundos.
-        //
-        // Antes a regra era "não pode ter espaço", o que também recusava
-        // caminho legítimo: `/home/eu/My Tools/claude` no Linux e
-        // qualquer `C:\Program Files\...` no Windows. Caminho com espaço
-        // é caminho; o que denuncia uma linha de comando é ter operador
-        // de shell ou um argumento no meio (ciclo 239).
-        if parece_comando_de_shell(self.binario.trim()) {
-            return Some(ProblemaConfig::BinarioParecComandoDeShell);
-        }
         let com_marcador = self.args.iter().filter(|a| a.contains(MARCADOR_PROMPT)).count();
         match com_marcador {
             0 => Some(ProblemaConfig::SemMarcador),
             1 => None,
             _ => Some(ProblemaConfig::MarcadorRepetido),
         }
+    }
+
+    /// Um aviso sobre a configuração — que NÃO impede de usar.
+    ///
+    /// A separação importa (ciclo 241). O que `validar` recusa é o que
+    /// torna a execução impossível: sem executável, sem `{prompt}`, ou
+    /// com o marcador repetido. O resto é escolha de quem configura, na
+    /// máquina de quem configura.
+    ///
+    /// Isto aqui já foi bloqueio, com o argumento de impedir "execução de
+    /// shell pela porta dos fundos". Não impedia nada: **não existe shell
+    /// no caminho**. O binário vai pra `Command::new` e os argumentos vão
+    /// separados, então um executável chamado `sh -c 'claude'`
+    /// simplesmente não existe e falha ao iniciar. O bloqueio só tirava
+    /// da pessoa a chance de apontar o que ela quisesse.
+    pub fn aviso(&self) -> Option<AvisoConfig> {
+        parece_comando_de_shell(self.binario.trim())
+            .then_some(AvisoConfig::ParecComandoDeShell)
     }
 
     /// Monta os argumentos finais com o prompt no lugar do marcador.
@@ -715,11 +732,15 @@ mod tests {
     }
 
     #[test]
-    fn recusa_linha_de_shell_no_binario() {
-        // Aceitar isso seria execução de shell pela porta dos fundos.
+    fn linha_de_shell_no_binario_avisa_mas_nao_impede() {
+        // Não existe shell no caminho: o binário vai pra `Command::new` e
+        // os argumentos vão separados. Uma linha inteira não vira
+        // execução de shell — vira executável inexistente. Avisar serve;
+        // bloquear só tirava a escolha de quem configura (ciclo 241).
         let mut a = base();
         a.binario = "sh -c".into();
-        assert_eq!(a.validar(), Some(ProblemaConfig::BinarioParecComandoDeShell));
+        assert_eq!(a.validar(), None, "impediu o que é escolha da pessoa");
+        assert_eq!(a.aviso(), Some(AvisoConfig::ParecComandoDeShell));
     }
 
     #[test]
@@ -1036,20 +1057,22 @@ mod testes_config {
     }
 
     #[test]
-    fn linha_de_comando_continua_recusada() {
-        // A trava existe pra shell não entrar pela porta dos fundos.
-        for linha in [
-            "claude -p",
-            "sh -c 'claude'",
-            "claude && rm -rf /",
-            "claude | tee log",
-            "echo $(whoami)",
-        ] {
+    fn linha_de_comando_avisa_sem_impedir() {
+        for linha in ["claude -p", "sh -c 'claude'", "claude && rm -rf /", "echo $(whoami)"] {
+            let a = com_binario(linha);
+            assert_eq!(a.validar(), None, "impediu de salvar: {linha}");
             assert_eq!(
-                com_binario(linha).validar(),
-                Some(ProblemaConfig::BinarioParecComandoDeShell),
-                "aceitou linha de comando: {linha}"
+                a.aviso(),
+                Some(AvisoConfig::ParecComandoDeShell),
+                "não avisou sobre: {linha}"
             );
+        }
+    }
+
+    #[test]
+    fn caminho_normal_nao_gera_aviso() {
+        for caminho in ["claude", "/opt/My Tools/claude", "C:\\Program Files\\c.cmd"] {
+            assert_eq!(com_binario(caminho).aviso(), None, "avisou à toa: {caminho}");
         }
     }
 

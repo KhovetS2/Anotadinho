@@ -57,6 +57,9 @@ pub fn agente_config(props: &AgenteConfigProps) -> Html {
 
     let atual = (*rascunho).clone();
     let problema = atual.validar();
+    // Aviso não impede de salvar: é a máquina de quem configura, e o que
+    // dá errado ali é responsabilidade de quem escreveu (ciclo 241).
+    let aviso = atual.aviso();
     let e_preset = crate::state::e_preset(&nome_original);
 
     let editar = |aplicar: fn(&mut Adaptador, String)| {
@@ -251,6 +254,8 @@ pub fn agente_config(props: &AgenteConfigProps) -> Html {
 
                     if let Some(p) = &problema {
                         <p class="agente-config__erro" role="alert">{ p.mensagem() }</p>
+                    } else if let Some(a) = &aviso {
+                        <p class="agente-config__aviso">{ a.mensagem() }</p>
                     }
 
                     <div class="modal__actions">

@@ -241,20 +241,36 @@ fluxo.push({
 });
 
 fluxo.push({
-  nome: "agente: configuração com shell no binário é recusada (202)",
+  nome: "agente: shell no binário não vira shell — vira erro de execução (202)",
   async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    // A garantia que importa não é recusar a configuração (isso é escolha
+    // de quem configura, ciclo 241): é que NÃO EXISTE shell no caminho.
+    // O binário vai pra `Command::new` e os argumentos vão separados,
+    // então `sh -c` como executável não abre shell nenhum.
+    //
+    // A prova é pelo EFEITO: se um shell rodasse, o arquivo apareceria.
+    const marca = `${os.tmpdir()}/uitest-shell-${Date.now()}`;
+    fs.rmSync(marca, { force: true });
     const r = await bridge.js(`(async () => {
-      try {
-        await window.__TAURI_INTERNALS__.invoke('iniciar_agente', {
-          conversaPath: 'pages/__uitest-agente-invalido.md',
-          adaptador: { nome: 'x', binario: 'sh -c', args: ['{prompt}'], cwd: '', timeout_s: 10, formato: 'texto' },
-          prompt: 'oi', vaultPath: ${JSON.stringify(RAIZ)},
-        });
-        return { ok: true };
-      } catch (e) { return { ok: false, erro: String(e) }; }
+      const conversa = 'pages/__uitest-agente-' + Math.random().toString(36).slice(2) + '.md';
+      await window.__TAURI_INTERNALS__.invoke('iniciar_agente', {
+        conversaPath: conversa,
+        adaptador: { nome: 'x', binario: "sh -c 'touch ${marca}'", args: ['{prompt}'], cwd: '', timeout_s: 10, formato: 'texto' },
+        prompt: 'oi', vaultPath: ${JSON.stringify(RAIZ)},
+      });
+      const limite = Date.now() + 8000;
+      while (Date.now() < limite) {
+        const e = await window.__TAURI_INTERNALS__.invoke('estado_agente', { conversaPath: conversa });
+        if (!e) return { estado: 'sumiu' };
+        if (e.estado === 'rodando') { await new Promise(r => setTimeout(r, 150)); continue; }
+        return { estado: e.estado, erro: e.erro || '', texto: e.texto || '' };
+      }
+      return { estado: 'demorou' };
     })()`);
-    ctx.assertEq(r.ok, false, "linha de shell no binário devia ser recusada");
-    ctx.assert(/espaço|shell/i.test(r.erro), `mensagem inesperada: ${r.erro}`);
+    ctx.assertEq(r.estado, "falhou", `devia falhar ao executar, veio ${r.estado}`);
+    ctx.assertEq(fs.existsSync(marca), false, "um shell foi executado");
   },
 });
 
@@ -1164,7 +1180,7 @@ fluxo.push({
 });
 
 fluxo.push({
-  nome: "agente: linha de comando colada no executável é recusada (239)",
+  nome: "agente: linha de comando no executável avisa, mas não impede (239)",
   async fn(bridge, ctx) {
     ctx.escrever("---\ntitle: __uitest\ntype: conversa\n---\n");
     await recarregarEstavel(bridge);
@@ -1174,18 +1190,35 @@ fluxo.push({
 
     await bridge.js(`document.querySelector('.agente-config__novo').click(); true`);
     await PAUSA(200);
-    // Aceitar isto seria execução de shell pela porta dos fundos.
+    // Não existe shell no caminho: o binário vai pra `Command::new` e os
+    // argumentos vão separados. Uma linha inteira não vira execução de
+    // shell — vira executável inexistente. Avisar serve; bloquear só
+    // tirava a escolha de quem configura (ciclo 241).
     await bridge.js(PREENCHER("Executável", "sh -c 'claude'"));
+    await PAUSA(300);
+    ctx.assertEq(
+      await bridge.js(`!!document.querySelector('.agente-config__aviso')`),
+      true,
+      "não avisou sobre a linha de comando",
+    );
+    ctx.assertEq(
+      await bridge.js(`document.querySelector('.agente-config__salvar').disabled`),
+      false,
+      "impediu de salvar o que é escolha da pessoa",
+    );
+
+    // O que continua bloqueado é o que torna a execução impossível.
+    await bridge.js(PREENCHER("Argumentos", "run"));
     await PAUSA(300);
     ctx.assertEq(
       await bridge.js(`!!document.querySelector('.agente-config__erro')`),
       true,
-      "aceitou uma linha de shell",
+      "aceitou configuração sem {prompt}",
     );
     ctx.assertEq(
       await bridge.js(`document.querySelector('.agente-config__salvar').disabled`),
       true,
-      "deixou salvar uma configuração inválida",
+      "deixou salvar sem {prompt}",
     );
     await bridge.js(`[...document.querySelectorAll('.modal__actions button')].find(b => b.textContent === 'Fechar').click(); true`);
   },
