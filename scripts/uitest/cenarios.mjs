@@ -892,6 +892,108 @@ cenarios.push({
   },
 });
 
+// ── ciclo 244: tirar a marca só do trecho selecionado ────────────────
+
+cenarios.push({
+  nome: "formatação: tirar negrito de uma palavra não desmarca a frase (244)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\numa frase inteira aqui\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    // A frase toda em negrito.
+    await bridge.js(SELECIONAR(0, 22));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra");
+    await bridge.js(CLICAR_MARCA("Negrito"));
+    await PAUSA(400);
+
+    // Agora só a palavra "frase" (4..9).
+    await bridge.js(SELECIONAR(4, 9));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra de novo");
+    await bridge.js(CLICAR_MARCA("Negrito"));
+    await PAUSA(400);
+
+    // O que se pede ao clicar em negrito com uma palavra selecionada é
+    // sobre AQUELA palavra: as bordas continuam em negrito.
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const md = ctx.ler() || "";
+    // As bordas continuam em negrito, e o espaço fica FORA da marca:
+    // `**uma **` não é markdown válido.
+    ctx.assert(md.includes("**uma** frase **inteira aqui**"), `resultado inesperado:\n${md}`);
+    // O texto continua inteiro, e "frase" ficou de fora do negrito.
+    ctx.assert(md.includes("uma") && md.includes("frase") && md.includes("inteira aqui"),
+      `o texto se perdeu:\n${md}`);
+    const dom = await bridge.js(`document.querySelector('.editor__bloco').innerHTML`);
+    ctx.assertEq(await bridge.js(`document.querySelectorAll('.editor__bloco strong').length`), 2,
+      `devia sobrar negrito nas duas bordas: ${dom}`);
+    ctx.assert(!(await bridge.js(`[...document.querySelectorAll('.editor__bloco strong')].some(s => s.textContent.includes('frase'))`)),
+      `a palavra continuou em negrito: ${dom}`);
+  },
+});
+
+cenarios.push({
+  nome: "formatação: marcar por cima de marca parcial não fragmenta (244)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\numa frase inteira aqui\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    await bridge.js(SELECIONAR(0, 9));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra");
+    await bridge.js(CLICAR_MARCA("Negrito"));
+    await PAUSA(400);
+
+    // Selecionar dali até o fim e clicar de novo deve dar UM trecho, não
+    // dois grudados que o markdown renderizaria torto.
+    await bridge.js(SELECIONAR(4, 22));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra de novo");
+    await bridge.js(CLICAR_MARCA("Negrito"));
+    await PAUSA(400);
+
+    ctx.assertEq(await bridge.js(`document.querySelectorAll('.editor__bloco strong').length`), 1,
+      "fragmentou em vez de estender");
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    ctx.assert((ctx.ler() || "").includes("**uma frase inteira aqui**"), `não estendeu:\n${ctx.ler()}`);
+  },
+});
+
+cenarios.push({
+  nome: "cor: tirar a cor de uma palavra preserva a cor das bordas (244)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\numa frase inteira aqui\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
+
+    await bridge.js(SELECIONAR(0, 22));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra");
+    await bridge.js(ABRIR_CORES);
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra__paleta')", "a paleta");
+    await bridge.js(PINTAR("cor--ambar"));
+    await PAUSA(400);
+
+    // Pinta só "frase" de outra cor: as bordas têm que continuar âmbar.
+    await bridge.js(SELECIONAR(4, 9));
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra')", "a barra de novo");
+    await bridge.js(ABRIR_CORES);
+    await ctx.esperar(bridge, "document.querySelector('.selecao-barra__paleta')", "a paleta de novo");
+    await bridge.js(PINTAR("cor--azul"));
+    await PAUSA(500);
+
+    await bridge.js(SALVAR);
+    await PAUSA(900);
+    const md = ctx.ler() || "";
+    ctx.assert(md.includes("cor--azul"), `a cor nova não entrou:\n${md}`);
+    ctx.assertEq((md.match(/cor--ambar/g) || []).length, 2, `as bordas perderam a cor de antes:\n${md}`);
+    ctx.assert(md.includes("uma") && md.includes("frase") && md.includes("inteira aqui"),
+      `o texto se perdeu:\n${md}`);
+  },
+});
+
 // ── ciclo 167: operar kanban e cronograma pelo teclado ───────────────
 
 cenarios.push({

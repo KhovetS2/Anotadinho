@@ -23,6 +23,35 @@ use crate::dialog::PendingDialog;
 /// Quanto a barra fica acima da seleção.
 const FOLGA: f64 = 10.0;
 
+thread_local! {
+    /// Ligado enquanto a barra está mexendo no DOM.
+    ///
+    /// Aplicar uma marca esvazia a seleção no meio do caminho —
+    /// `extract_contents` dispara `selectionchange` com nada
+    /// selecionado —, e sem distinguir isso a paleta se fechava sozinha
+    /// no meio de um clique nela. O que fecha a paleta é a pessoa
+    /// selecionar outra coisa, não a gente reconstruir os nós.
+    ///
+    /// `thread_local` e não estado do componente porque quem precisa
+    /// consultar é o ouvinte global de `selectionchange`, e o WASM roda
+    /// numa thread só.
+    static MUTANDO: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Roda a cirurgia com o ouvinte avisado de que a mexida é nossa.
+///
+/// A bandeira baixa no PRÓXIMO tique, não aqui: `selectionchange` é
+/// entregue de forma assíncrona, e a cirurgia esvazia a seleção antes de
+/// refazê-la. Baixando na hora, o evento da nossa própria mexida chegava
+/// com a bandeira já baixada, era lido como "a pessoa selecionou outra
+/// coisa", e a paleta se fechava no meio de um clique nela.
+fn mexendo<T>(f: impl FnOnce() -> T) -> T {
+    MUTANDO.with(|m| m.set(true));
+    let r = f();
+    gloo_timers::callback::Timeout::new(0, || MUTANDO.with(|m| m.set(false))).forget();
+    r
+}
+
 /// A paleta nomeada (ciclo 235). Vira `class="cor--X"` / `fundo--X`, que
 /// são tokens do tema — a cor escolhida no escuro continua legível no
 /// claro. Gravar `#ffee00` no arquivo não teria essa propriedade.
@@ -82,9 +111,11 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
                 if *ultimo.borrow() == agora {
                     return;
                 }
-                // A barra sumindo é o fim de uma interação: o que estava
-                // aberto nela não deve reaparecer na próxima.
-                if agora.is_none() {
+                // Seleção nova é interação nova: o que estava aberto na
+                // anterior não deve reaparecer por cima do texto. Só que
+                // isso vale pra seleção que a PESSOA mudou — a nossa
+                // própria cirurgia também mexe na seleção.
+                if !MUTANDO.with(|m| m.get()) {
                     mostrar_cores.set(false);
                 }
                 *ultimo.borrow_mut() = agora;
@@ -119,7 +150,7 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
         Callback::from(move |e: MouseEvent| {
             // O clique não pode roubar a seleção antes de a gente usá-la.
             e.prevent_default();
-            aplicar_marca(tag);
+            mexendo(|| aplicar_marca(tag));
         })
     };
 
@@ -141,7 +172,7 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
                     if let Some(r) = guardada.borrow().clone() {
                         restaurar(&r);
                     }
-                    aplicar_link(&url);
+                    mexendo(|| aplicar_link(&url));
                 }),
             });
         })
@@ -154,16 +185,16 @@ pub fn selection_toolbar(props: &SelectionToolbarProps) -> Html {
     let pintar = move |eixo: &'static str, slug: &'static str| {
         Callback::from(move |e: MouseEvent| {
             e.prevent_default();
-            aplicar_cor(Cor::DaPaleta { eixo, slug });
+            mexendo(|| aplicar_cor(Cor::DaPaleta { eixo, slug }));
         })
     };
     let cor_livre = Callback::from(|e: Event| {
         let Some(input) = e.target_dyn_into::<web_sys::HtmlInputElement>() else { return };
-        aplicar_cor(Cor::Livre(input.value()));
+        mexendo(|| aplicar_cor(Cor::Livre(input.value())));
     });
     let limpar_cor = Callback::from(|e: MouseEvent| {
         e.prevent_default();
-        aplicar_cor(Cor::Nenhuma);
+        mexendo(|| aplicar_cor(Cor::Nenhuma));
     });
 
     let estilo = format!("left: {x}px; top: {y}px;");
@@ -393,48 +424,116 @@ fn tudo_marcado(bloco: &Element, tag: &str, ini: u32, fim: u32) -> bool {
     viu_texto
 }
 
+/// Onde um elemento começa e termina, em caracteres do bloco.
+fn span_do_elemento(bloco: &Element, el: &Element) -> Option<(u32, u32)> {
+    let mut ini = None;
+    let mut fim = 0;
+    for (no, de, ate) in nos_de_texto(bloco) {
+        if el.contains(Some(&no)) {
+            if ini.is_none() {
+                ini = Some(de);
+            }
+            fim = ate;
+        }
+    }
+    ini.map(|i| (i, fim))
+}
+
+/// Tira a marca só do TRECHO selecionado, devolvendo as bordas que
+/// continuam marcadas (ciclo 244).
+///
+/// Antes eu desembrulhava a marca inteira: selecionar uma palavra de uma
+/// frase em negrito tirava o negrito da frase toda. O que se pede ao
+/// clicar em negrito com uma palavra selecionada é sobre AQUELA palavra.
+fn tirar_marca_do_trecho(bloco: &Element, tag: &str, ini: u32, fim: u32) -> Vec<(u32, u32)> {
+    let mut sobras = Vec::new();
+    for marca in marcas_na_selecao(bloco, tag, ini, fim) {
+        if let Some((mi, mf)) = span_do_elemento(bloco, &marca) {
+            if mi < ini {
+                sobras.push((mi, ini));
+            }
+            if fim < mf {
+                sobras.push((fim, mf));
+            }
+        }
+        desembrulhar(&marca);
+    }
+    bloco.normalize();
+    sobras
+}
+
+/// Encolhe o trecho até ele não começar nem terminar em espaço.
+///
+/// Marca com espaço na borda não é markdown válido: `**uma **` não vira
+/// negrito em lugar nenhum. Ao partir uma frase marcada, a sobra vira
+/// exatamente isso — "uma " e " inteira aqui" —, e o arquivo saía com o
+/// negrito grudado na palavra seguinte.
+fn aparar(bloco: &Element, ini: u32, fim: u32) -> (u32, u32) {
+    let texto: Vec<char> = bloco.text_content().unwrap_or_default().chars().collect();
+    let mut a = ini as usize;
+    let mut b = (fim as usize).min(texto.len());
+    while a < b && texto[a].is_whitespace() {
+        a += 1;
+    }
+    while b > a && texto[b - 1].is_whitespace() {
+        b -= 1;
+    }
+    (a as u32, b as u32)
+}
+
+/// Envolve um trecho do bloco na marca, sem levar espaço nas bordas.
+fn envolver_intervalo(bloco: &Element, tag: &str, ini: u32, fim: u32) -> Option<()> {
+    let (ini, fim) = aparar(bloco, ini, fim);
+    if ini >= fim {
+        return None;
+    }
+    let doc = web_sys::window()?.document()?;
+    selecionar_intervalo(bloco, ini, fim)?;
+    let range = selecao_atual()?;
+    let el = doc.create_element(tag).ok()?;
+    // `extract_contents` + `insert_node` em vez de `surround_contents`:
+    // este último falha quando a seleção atravessa a borda de um
+    // elemento, que é o caso comum de selecionar arrastando.
+    let conteudo = range.extract_contents().ok()?;
+    el.append_child(&conteudo).ok()?;
+    range.insert_node(&el).ok()?;
+    Some(())
+}
+
 /// Envolve a seleção na marca, ou tira a marca se ela já estiver lá.
 ///
 /// A seleção é preservada nos dois caminhos: quem marcou uma palavra
 /// costuma querer marcar outra coisa nela em seguida, e perder a seleção
 /// no meio obriga a selecionar de novo a cada clique.
 fn aplicar_marca(tag: &str) -> Option<()> {
-    let doc = web_sys::window()?.document()?;
     let range = selecao_atual()?;
     let bloco = bloco_da_selecao(&range)?;
     let (ini, fim) = intervalo(&bloco, &range)?;
 
     if tudo_marcado(&bloco, tag, ini, fim) {
-        for marca in marcas_na_selecao(&bloco, tag, ini, fim) {
-            desembrulhar(&marca);
+        // Tira só do trecho; as bordas voltam marcadas.
+        for (a, b) in tirar_marca_do_trecho(&bloco, tag, ini, fim) {
+            envolver_intervalo(&bloco, tag, a, b);
         }
     } else {
-        // Tira as marcas parciais antes de envolver: sem isto,
-        // `<strong>meia</strong> palavra` viraria `<strong>` dentro de
-        // `<strong>`.
+        // Marcar por cima de uma marca parcial ESTENDE a existente em vez
+        // de fragmentar: selecionar metade em negrito e a metade seguinte
+        // e clicar negrito deve dar um trecho só, não dois grudados.
+        let mut de = ini;
+        let mut ate = fim;
         for marca in marcas_na_selecao(&bloco, tag, ini, fim) {
+            if let Some((mi, mf)) = span_do_elemento(&bloco, &marca) {
+                de = de.min(mi);
+                ate = ate.max(mf);
+            }
             desembrulhar(&marca);
         }
         bloco.normalize();
-        let range = refazer(&bloco, ini, fim)?;
-        let el = doc.create_element(tag).ok()?;
-        // `extract_contents` + `insert_node` em vez de
-        // `surround_contents`: este último falha quando a seleção
-        // atravessa a borda de um elemento, que é o caso comum de
-        // selecionar arrastando.
-        let conteudo = range.extract_contents().ok()?;
-        el.append_child(&conteudo).ok()?;
-        range.insert_node(&el).ok()?;
+        envolver_intervalo(&bloco, tag, de, ate)?;
     }
     bloco.normalize();
     selecionar_intervalo(&bloco, ini, fim);
     avisar_edicao_no_bloco(&bloco)
-}
-
-/// Refaz a seleção e devolve o `Range` correspondente.
-fn refazer(bloco: &Element, ini: u32, fim: u32) -> Option<Range> {
-    selecionar_intervalo(bloco, ini, fim)?;
-    selecao_atual()
 }
 
 fn aplicar_link(url: &str) -> Option<()> {
@@ -487,31 +586,97 @@ enum Cor {
 }
 
 /// Pinta a seleção, trocando a cor anterior se já houver uma.
+/// Uma borda de cor que precisa voltar depois da cirurgia.
+struct Borda {
+    ini: u32,
+    fim: u32,
+    classe: String,
+    estilo: String,
+}
+
+/// Tira os spans de cor do TRECHO, devolvendo as bordas com a cor que
+/// cada uma tinha (ciclo 244).
+///
+/// Mesma história das outras marcas, com um agravante: aqui a borda
+/// precisa voltar com a MESMA cor. Reaplicar sem guardar a identidade
+/// pintaria a frase inteira da cor nova.
+fn tirar_cor_do_trecho(bloco: &Element, ini: u32, fim: u32) -> (Vec<Borda>, Option<Borda>) {
+    let mut bordas = Vec::new();
+    // O que estava pintado DENTRO da seleção. Texto e realce são eixos
+    // independentes: pintar o fundo de um trecho já azul não pode apagar
+    // o azul, e o span novo nasce do zero — então ele herda daqui.
+    let mut dentro = None;
+    for span in marcas_na_selecao(bloco, "span", ini, fim) {
+        if !cor_do_span_existe(&span) {
+            continue;
+        }
+        let classe = span.get_attribute("class").unwrap_or_default();
+        let estilo = span.get_attribute("style").unwrap_or_default();
+        if dentro.is_none() {
+            dentro = Some(Borda { ini, fim, classe: classe.clone(), estilo: estilo.clone() });
+        }
+        if let Some((mi, mf)) = span_do_elemento(bloco, &span) {
+            if mi < ini {
+                bordas.push(Borda { ini: mi, fim: ini, classe: classe.clone(), estilo: estilo.clone() });
+            }
+            if fim < mf {
+                bordas.push(Borda { ini: fim, fim: mf, classe, estilo });
+            }
+        }
+        desembrulhar(&span);
+    }
+    bloco.normalize();
+    (bordas, dentro)
+}
+
+/// Devolve as bordas ao que elas eram.
+fn repor_bordas(bloco: &Element, bordas: &[Borda]) {
+    for b in bordas {
+        if envolver_intervalo(bloco, "span", b.ini, b.fim).is_none() {
+            continue;
+        }
+        // O span recém-criado é o que contém o trecho: acha por posição.
+        if let Some(el) = marcas_na_selecao(bloco, "span", b.ini, b.fim).into_iter().next() {
+            if !b.classe.is_empty() {
+                let _ = el.set_attribute("class", &b.classe);
+            }
+            if !b.estilo.is_empty() {
+                let _ = el.set_attribute("style", &b.estilo);
+            }
+        }
+    }
+}
+
 fn aplicar_cor(cor: Cor) -> Option<()> {
     let doc = web_sys::window()?.document()?;
     let range = selecao_atual()?;
     let bloco = bloco_da_selecao(&range)?;
     let (ini, fim) = intervalo(&bloco, &range)?;
 
-    // Se a seleção já está num span de cor, ele é reaproveitado em vez de
-    // aninhar outro. Sem isso, trocar de cor cinco vezes deixaria cinco
-    // spans encaixados, e o arquivo viraria sopa.
-    let existente = marcas_na_selecao(&bloco, "span", ini, fim)
-        .into_iter()
-        .find(cor_do_span_existe);
+    // O que já estava pintado e sobra FORA da seleção volta com a cor de
+    // antes; dentro dela vale o que se pediu agora, por cima do que já
+    // havia.
+    let (bordas, dentro) = tirar_cor_do_trecho(&bloco, ini, fim);
 
-    match (&cor, existente) {
-        (Cor::Nenhuma, Some(el)) => desembrulhar(&el),
-        (Cor::Nenhuma, None) => return None,
-        (_, Some(el)) => aplicar_no_elemento(&el, &cor),
-        (_, None) => {
-            let el = doc.create_element("span").ok()?;
-            aplicar_no_elemento(&el, &cor);
-            let conteudo = range.extract_contents().ok()?;
-            el.append_child(&conteudo).ok()?;
-            range.insert_node(&el).ok()?;
+    if !matches!(cor, Cor::Nenhuma) {
+        if envolver_intervalo(&bloco, "span", ini, fim).is_some() {
+            if let Some(el) = marcas_na_selecao(&bloco, "span", ini, fim).into_iter().next() {
+                // Herda o que estava lá antes de aplicar o eixo novo:
+                // `aplicar_no_elemento` troca só o eixo que foi pedido.
+                if let Some(antes) = &dentro {
+                    if !antes.classe.is_empty() {
+                        let _ = el.set_attribute("class", &antes.classe);
+                    }
+                    if !antes.estilo.is_empty() {
+                        let _ = el.set_attribute("style", &antes.estilo);
+                    }
+                }
+                aplicar_no_elemento(&el, &cor);
+            }
         }
     }
+    repor_bordas(&bloco, &bordas);
+
     bloco.normalize();
     selecionar_intervalo(&bloco, ini, fim);
     avisar_edicao_no_bloco(&bloco)
