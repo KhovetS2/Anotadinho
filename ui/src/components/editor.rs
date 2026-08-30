@@ -2804,7 +2804,22 @@ pub fn editor(props: &EditorProps) -> Html {
                                 .and_then(|m| m.to_html())
                                 .ok()
                                 .and_then(|html| parse_single_element(&html))
-                                .map(|el| insert_element_at_cursor(&el, true))
+                                .map(|el| {
+                                    let ok = insert_element_at_cursor(&el, true);
+                                    if ok {
+                                        // O `src` é relativo (`assets/x.png`), e o
+                                        // webview não resolve isso: a imagem ficava
+                                        // em branco até alguém recarregar a página,
+                                        // que era quando a conversão rodava. Aqui
+                                        // ela roda na hora da inserção.
+                                        //
+                                        // Também é o que grava `data-asset-src`, de
+                                        // onde o `html_to_md` tira o caminho — sem
+                                        // isso o markdown levaria a data URL inteira.
+                                        upgrade_embedded_assets_at(&el, vault_path.clone());
+                                    }
+                                    ok
+                                })
                                 .unwrap_or(false);
                         }
                         if inserted {
