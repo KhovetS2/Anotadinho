@@ -7,9 +7,16 @@
     <link data-trunk rel="rust" data-wasm-opt="z" data-target-triple="wasm32-unknown-unknown" data-target-name="anotadinho-ui"/>
     <link data-trunk rel="css" href="src/styles/main.css"/>
     <link data-trunk rel="css" href="src/styles/components.css"/>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/atom-one-dark.min.css">
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>
+    <!-- Mermaid e highlight.js vêm de `ui/vendor/`, não de CDN (ciclo 243).
+         Buscá-los na internet a cada abertura deixava diagrama e realce de
+         sintaxe dependendo de conexão — num app de notas locais — e punha
+         código de terceiros entrando na janela em tempo de execução. -->
+    <link data-trunk rel="copy-file" href="vendor/mermaid.min.js"/>
+    <link data-trunk rel="copy-file" href="vendor/highlight.min.js"/>
+    <link data-trunk rel="copy-file" href="vendor/atom-one-dark.min.css"/>
+    <script src="/mermaid.min.js"></script>
+    <link rel="stylesheet" href="/atom-one-dark.min.css">
+    <script src="/highlight.min.js"></script>
 </head>
 <body>
     <div id="app"></div>

@@ -872,6 +872,26 @@ cenarios.push({
   },
 });
 
+cenarios.push({
+  nome: "offline: nada de script ou estilo vem da internet (243)",
+  async fn(bridge, ctx) {
+    // Um app de notas locais que precisa de conexão pra desenhar um
+    // diagrama não é local. E script de terceiro entrando na janela a
+    // cada abertura é superfície que não se controla.
+    const externos = await bridge.js(`(() => {
+      const url = (e) => e.getAttribute('src') || e.getAttribute('href') || '';
+      return [...document.querySelectorAll('script[src], link[href]')]
+        .map(url)
+        .filter(u => /^(https?:)?\\/\\//.test(u));
+    })()`);
+    ctx.assertEq(externos.length, 0, `veio de fora: ${externos.join(", ")}`);
+
+    // E continuam funcionando vindo de casa.
+    ctx.assertEq(await bridge.js("typeof window.mermaid"), "object", "mermaid não carregou");
+    ctx.assertEq(await bridge.js("typeof window.hljs"), "object", "highlight.js não carregou");
+  },
+});
+
 // ── ciclo 167: operar kanban e cronograma pelo teclado ───────────────
 
 cenarios.push({
