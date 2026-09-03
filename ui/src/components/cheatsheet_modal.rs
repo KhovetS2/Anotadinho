@@ -198,6 +198,35 @@ pub fn cheatsheet_modal(props: &CheatsheetModalProps) -> Html {
                             </li>
                         </ul>
                     </div>
+                    <div class="cheatsheet__section">
+                        // O vocabulário do ciclo 254. Fixos: o `VimKeymap`
+                        // mapeia teclas de comandos simples, e estes são
+                        // gramática (contagem + operador + movimento).
+                        <h4 class="cheatsheet__heading">{ "Vim mode (contagem, operadores e movimentos)" }</h4>
+                        <ul class="cheatsheet__list">
+                            { for [
+                                ("Repetir o comando N vezes", "3j · 5w · 2dd"),
+                                ("Palavra pra frente / pra trás / fim", "w · b · e"),
+                                ("Início / fim da linha", "0 · $"),
+                                ("Topo / fim do documento", "gg · G"),
+                                ("Apagar até o movimento", "dw · d$ · dgg"),
+                                ("Apagar a linha / até o fim dela", "dd · D"),
+                                ("Mudar (apaga e insere)", "cw · cc · C"),
+                                ("Copiar", "yy · yw · Y"),
+                                ("Colar depois / antes", "p · P"),
+                                ("Apagar caractere depois / antes", "x · X"),
+                                ("Substituir um caractere", "r<tecla>"),
+                                ("Juntar com a linha de baixo", "J"),
+                                ("Inverter a caixa", "~"),
+                                ("Desfazer / refazer", "u · Ctrl+R"),
+                            ].iter().map(|(rotulo, teclas)| html! {
+                                <li class="cheatsheet__row">
+                                    <span class="cheatsheet__label">{ *rotulo }</span>
+                                    <kbd class="cheatsheet__key">{ *teclas }</kbd>
+                                </li>
+                            }) }
+                        </ul>
+                    </div>
                 }
             </div>
         </Modal>

@@ -429,3 +429,246 @@ teclado("com vim ligado, o modo de navegação continua sendo dono das teclas de
     );
     ctx.assertEq(selecionados, 2, "a seleção de blocos devia funcionar com o vim ligado");
   });
+
+// ── 254: todo comando que altera o arquivo tem que sobreviver ao ciclo
+//         completo — aplicar, salvar, trocar de aba e voltar ─────────
+//
+// Nasceu de um bug real: no modo visual, `d` não apagava nada na tela e,
+// ao salvar ou trocar de página, aparecia "gravação recusada: isso
+// apagaria as N letras". Um cenário que só conferisse o efeito na tela
+// não pegaria isso — o estrago aparecia dois passos depois.
+//
+// Então cada comando aqui passa pelo caminho INTEIRO: aplica, salva,
+// abre outra página, volta, e confere que (a) nenhum overlay de erro
+// apareceu, (b) o arquivo no disco continua com corpo de verdade, e
+// (c) o que estava lá antes e não devia sumir continua lá.
+
+/// Página de rascunho com três linhas de conteúdo reconhecível.
+const TRES_MARCADAS =
+  "---\ntitle: __uitest\n---\nalfa um dois\n\nbeta tres quatro\n\ngama cinco seis\n";
+
+/// Põe o cursor no começo do bloco `i`.
+const CURSOR_NO_BLOCO = (i) => `(() => {
+  const b = document.querySelectorAll('.editor__bloco')[${i}];
+  if (!b || !b.firstChild) return false;
+  b.focus();
+  const r = document.createRange();
+  r.setStart(b.firstChild, 0);
+  r.collapse(true);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  return true;
+})()`;
+
+const SALVAR_RASCUNHO = `(() => {
+  // Mesma trava das outras baterias (ciclo 197): só grava na página de
+  // teste. Um cenário que navegou pra uma página real e mandou salvar
+  // reescreve o arquivo do usuário.
+  const titulo = (document.querySelector('.editor__title') || {}).textContent || '';
+  if (!titulo.includes('__uitest')) {
+    throw new Error('Salvar bloqueado: a página aberta é "' + titulo + '"');
+  }
+  const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith('Salvar'));
+  if (b) b.click();
+  return !!b;
+})()`;
+
+const OVERLAY_DE_ERRO = `(() => {
+  const el = document.querySelector('.editor__overlay--error, [class*="editor__erro"]');
+  return el ? el.textContent.trim() : null;
+})()`;
+
+/// Corpo do `.md`, sem frontmatter.
+function corpoDe(texto) {
+  if (!texto) return "";
+  const m = texto.match(/^---\n[\s\S]*?\n---\n?([\s\S]*)$/);
+  return (m ? m[1] : texto).trim();
+}
+
+/// O ciclo completo de um comando que MEXE no arquivo.
+///
+/// `teclas` é a sequência do vim; `sobrou` são trechos que precisam
+/// continuar no arquivo depois de tudo (o que o comando não devia ter
+/// tocado).
+function comandoQueAltera(nome, teclas, { bloco = 1, sobrou = [] }) {
+  teclado(
+    `${nome} sobrevive a salvar e trocar de aba`,
+    { md: TRES_MARCADAS, vim: true },
+    async (bridge, ctx) => {
+      await bridge.js(CURSOR_NO_BLOCO(bloco));
+      await PAUSA(200);
+
+      for (const t of teclas) {
+        await bridge.js(TECLA(t));
+        await PAUSA(160);
+      }
+      await PAUSA(300);
+
+      const erroDepoisDoComando = await bridge.js(OVERLAY_DE_ERRO);
+      ctx.assert(!erroDepoisDoComando, `o comando já deu erro na tela: ${erroDepoisDoComando}`);
+
+      await bridge.js(SALVAR_RASCUNHO);
+      await PAUSA(1000);
+      const erroDepoisDoSave = await bridge.js(OVERLAY_DE_ERRO);
+      ctx.assert(!erroDepoisDoSave, `salvar deu erro: ${erroDepoisDoSave}`);
+
+      // O disco não pode ter ficado sem corpo. É esta a asserção que
+      // pega a "gravação recusada": ela é o backend BARRANDO uma
+      // gravação vazia, e o cenário tem que reprovar antes disso, não
+      // depender da trava.
+      const corpo = corpoDe(ctx.ler());
+      ctx.assert(corpo.length > 0, `o arquivo ficou sem corpo depois de ${nome}`);
+      for (const trecho of sobrou) {
+        ctx.assert(
+          corpo.includes(trecho),
+          `"${trecho}" sumiu do arquivo depois de ${nome}:\n${corpo}`,
+        );
+      }
+
+      // Trocar de página é o outro caminho que dispara gravação (o
+      // flush de segurança da troca de aba).
+      await abrirPaginaEstavel(bridge, "incio");
+      await PAUSA(800);
+      await abrirPaginaEstavel(bridge, ctx.nomePagina);
+      await PAUSA(800);
+
+      const erroDepoisDaTroca = await bridge.js(OVERLAY_DE_ERRO);
+      ctx.assert(!erroDepoisDaTroca, `trocar de página deu erro: ${erroDepoisDaTroca}`);
+      const corpoFinal = corpoDe(ctx.ler());
+      ctx.assert(
+        corpoFinal.length > 0,
+        `o arquivo ficou sem corpo depois de trocar de página (${nome})`,
+      );
+      for (const trecho of sobrou) {
+        ctx.assert(
+          corpoFinal.includes(trecho),
+          `"${trecho}" sumiu depois da troca de página (${nome}):\n${corpoFinal}`,
+        );
+      }
+    },
+    254,
+  );
+}
+
+// Um por comando que altera o arquivo. `sobrou` é sempre o que o comando
+// NÃO devia ter tocado — é o que separa "apagou o pedido" de "apagou
+// tudo".
+comandoQueAltera("x (apagar caractere)", ["x"], { sobrou: ["alfa um dois", "gama cinco seis"] });
+comandoQueAltera("3x (com contagem)", ["3", "x"], { sobrou: ["alfa um dois", "gama cinco seis"] });
+comandoQueAltera("dw (apagar palavra)", ["d", "w"], { sobrou: ["alfa um dois", "gama cinco seis"] });
+comandoQueAltera("dd (apagar linha)", ["d", "d"], { sobrou: ["alfa um dois", "gama cinco seis"] });
+comandoQueAltera("D (apagar até o fim)", ["D"], { sobrou: ["alfa um dois", "gama cinco seis"] });
+comandoQueAltera("cw (mudar palavra)", ["c", "w"], { sobrou: ["alfa um dois", "gama cinco seis"] });
+comandoQueAltera("yy depois p (copiar e colar linha)", ["y", "y", "p"], {
+  sobrou: ["alfa um dois", "beta tres quatro", "gama cinco seis"],
+});
+comandoQueAltera("P (colar antes)", ["y", "y", "P"], {
+  sobrou: ["alfa um dois", "beta tres quatro", "gama cinco seis"],
+});
+comandoQueAltera("o (abrir linha abaixo)", ["o"], {
+  sobrou: ["alfa um dois", "beta tres quatro", "gama cinco seis"],
+});
+comandoQueAltera("O (abrir linha acima)", ["O"], {
+  sobrou: ["alfa um dois", "beta tres quatro", "gama cinco seis"],
+});
+comandoQueAltera("rZ (substituir caractere)", ["r", "Z"], {
+  sobrou: ["alfa um dois", "gama cinco seis"],
+});
+comandoQueAltera("J (juntar linhas)", ["J"], { sobrou: ["alfa um dois"] });
+comandoQueAltera("~ (trocar caixa)", ["~"], { sobrou: ["alfa um dois", "gama cinco seis"] });
+
+// O bug que originou esta bateria: no visual, `d` não apagava nada na
+// tela e o estrago só aparecia ao salvar ou trocar de página. A causa
+// era o helper de área de transferência: ele criava um `<textarea>`,
+// chamava `select()` — o que SUBSTITUI a seleção do documento — e o
+// removia em seguida, deixando a seleção pendurada num nó desconectado.
+// O delete seguinte não tinha mais o que apagar.
+teclado(
+  "visual d apaga o que estava selecionado, e o arquivo sobrevive",
+  { md: TRES_MARCADAS, vim: true },
+  async (bridge, ctx) => {
+    await bridge.js(CURSOR_NO_BLOCO(1));
+    await PAUSA(200);
+    await bridge.js(TECLA("v"));
+    await PAUSA(200);
+    for (let i = 0; i < 4; i++) {
+      await bridge.js(TECLA("l"));
+      await PAUSA(100);
+    }
+    const selecionado = await bridge.js(`String(getSelection())`);
+    ctx.assert(
+      selecionado.length >= 4,
+      `o visual não estendeu a seleção (veio "${selecionado}")`,
+    );
+
+    await bridge.js(TECLA("d"));
+    await PAUSA(500);
+
+    const texto = await bridge.js(
+      `[...document.querySelectorAll('.editor__bloco')].map(b => b.textContent)`,
+    );
+    ctx.assert(
+      !texto.some((t) => t.includes("beta tres quatro")),
+      `o d do visual não apagou nada na tela: ${JSON.stringify(texto)}`,
+    );
+
+    await bridge.js(SALVAR_RASCUNHO);
+    await PAUSA(1000);
+    const erro = await bridge.js(OVERLAY_DE_ERRO);
+    ctx.assert(!erro, `salvar depois do d visual deu erro: ${erro}`);
+
+    const corpo = corpoDe(ctx.ler());
+    ctx.assert(corpo.includes("alfa um dois"), `o resto do arquivo sumiu:\n${corpo}`);
+    ctx.assert(corpo.includes("gama cinco seis"), `o resto do arquivo sumiu:\n${corpo}`);
+  },
+  254,
+);
+
+teclado(
+  "a contagem aparece na barra enquanto o comando não fecha",
+  { md: TRES_MARCADAS, vim: true },
+  async (bridge, ctx) => {
+    await bridge.js(CURSOR_NO_BLOCO(0));
+    await PAUSA(200);
+    await bridge.js(TECLA("2"));
+    await PAUSA(200);
+    await bridge.js(TECLA("d"));
+    await PAUSA(300);
+    const eco = await bridge.js(
+      `(document.querySelector('.editor__vim-eco') || {}).textContent || ''`,
+    );
+    ctx.assertEq(eco, "2d", "a barra não mostrou o comando pela metade");
+
+    // Escape cancela o que estava pela metade.
+    await bridge.js(TECLA("Escape"));
+    await PAUSA(300);
+    const depois = await bridge.js(
+      `(document.querySelector('.editor__vim-eco') || {}).textContent || ''`,
+    );
+    ctx.assertEq(depois, "", "o comando pela metade não foi cancelado");
+  },
+  254,
+);
+
+teclado(
+  "3j desce três blocos de uma vez",
+  {
+    md: "---\ntitle: __uitest\n---\num\n\ndois\n\ntres\n\nquatro\n",
+    vim: true,
+  },
+  async (bridge, ctx) => {
+    await bridge.js(CURSOR_NO_BLOCO(0));
+    await PAUSA(200);
+    await bridge.js(TECLA("3"));
+    await bridge.js(TECLA("j"));
+    await PAUSA(400);
+    const onde = await bridge.js(`(() => {
+      const s = getSelection();
+      const n = s.anchorNode;
+      const el = n && (n.nodeType === 1 ? n : n.parentElement);
+      const b = el && el.closest('.editor__bloco');
+      return b ? b.textContent : null;
+    })()`);
+    ctx.assertEq(onde, "quatro", "3j devia ter descido três blocos");
+  },
+  254,
+);

@@ -282,7 +282,15 @@ pub fn editor(props: &EditorProps) -> Html {
     // teclado sem precisar disparar re-render a cada tecla motion.
     let vim_modo = use_state(VimModo::default);
     let vim_register = use_mut_ref(String::new);
-    let vim_pending = use_mut_ref(|| None::<String>);
+    // A máquina de estados da gramática (ciclo 254). `use_mut_ref` e não
+    // `use_state` porque ela é LIDA e escrita de dentro do handler de
+    // tecla: um handle de `use_state` capturado congelaria no valor de
+    // quando a closure foi criada, e a contagem de `3j` nunca chegaria
+    // inteira no `j`.
+    let vim_pendente = use_mut_ref(crate::vim_comandos::Pendente::default);
+    // O eco do que está pela metade, só pra tela. Aqui `use_state` é o
+    // certo: é o render que precisa reagir.
+    let vim_eco = use_state(String::new);
 
     let slash_open = use_state(|| false);
     let slash_text = use_state(String::new);
@@ -1465,7 +1473,9 @@ pub fn editor(props: &EditorProps) -> Html {
         let on_search_vim = props.on_search.clone();
         let on_entrar_nav = props.on_enter_block_nav.clone();
         let vim_register = vim_register.clone();
-        let vim_pending = vim_pending.clone();
+        let vim_pendente = vim_pendente.clone();
+        let vim_eco = vim_eco.clone();
+        let do_redo_vim = do_redo.clone();
         let doc_exec_vim = doc_exec.clone();
         let content_md_vim = content_md.clone();
         let editor_ref_vim = editor_ref.clone();
@@ -1793,110 +1803,170 @@ pub fn editor(props: &EditorProps) -> Html {
                     return;
                 }
 
-                if let Some(pending) = vim_pending.borrow_mut().take() {
-                    let matched = (pending == "delete_line" && key == vim_keymap.delete_line)
-                        || (pending == "yank_line" && key == vim_keymap.yank_line);
-                    if matched {
-                        if pending == "delete_line" {
-                            if vim_delete_line(&vim_register) {
-                                let new_md = recompute_markdown_from_dom(
-                                    &content_md_vim,
-                                    &editor_ref_vim,
-                                    &segment_refs_vim,
-                                );
-                                content_md_vim.set(new_md.clone());
-                                mark_edited_vim(new_md);
-                            }
+                // A gramática do vim mora em `vim_comandos` (ciclo 254);
+                // aqui só se executa o que ela devolve. Antes era uma
+                // cadeia de `else if` por tecla, que comportava `j` e `x`
+                // e não comportava `3j`, `dw` nem `d3w` — nesses a tecla
+                // não é o comando, é uma PARTE dele.
+                use crate::vim_comandos::{Comando, Insercao, Movimento, Passo};
+
+                let passo = {
+                    let mut pendente = vim_pendente.borrow_mut();
+                    crate::vim_comandos::tecla_normal(&mut pendente, &key, e.ctrl_key())
+                };
+                // Espelha o que está pela metade na barra (o "2d3" do
+                // canto), pra a pessoa saber que o vim está esperando.
+                vim_eco.set(vim_pendente.borrow().rotulo());
+
+                let comando = match passo {
+                    Passo::Pronto(c) => c,
+                    // Aguardando: consumida, comando ainda aberto.
+                    // Ignorada: não significa nada aqui — e no modo
+                    // Normal isso é engolir mesmo, senão a letra vira
+                    // texto no meio do documento.
+                    Passo::Aguardando | Passo::Ignorada => return,
+                };
+
+                // Recalcula e marca como editado. Só quem MEXEU no DOM
+                // chama: movimento não suja a página.
+                let aplicar = {
+                    let content_md_vim = content_md_vim.clone();
+                    let editor_ref_vim = editor_ref_vim.clone();
+                    let segment_refs_vim = segment_refs_vim.clone();
+                    let mark_edited_vim = mark_edited_vim.clone();
+                    move || {
+                        let novo = recompute_markdown_from_dom(
+                            &content_md_vim,
+                            &editor_ref_vim,
+                            &segment_refs_vim,
+                        );
+                        content_md_vim.set(novo.clone());
+                        mark_edited_vim(novo);
+                    }
+                };
+
+                match comando {
+                    Comando::Mover(mov, vezes) => {
+                        crate::vim_visual::aplicar_movimento(mov, vezes, false);
+                        vim_scroll_caret_into_view();
+                    }
+                    Comando::Copiar(mov, vezes) => {
+                        let texto = if mov == Movimento::LinhaInteira {
+                            crate::vim_visual::bloco_atual()
+                                .map(|b| b.text_content().unwrap_or_default())
+                                .unwrap_or_default()
                         } else {
-                            vim_yank_line(&vim_register);
+                            // Guarda de onde saiu pra devolver o cursor:
+                            // copiar não move o cursor no vim.
+                            let volta = crate::vim_visual::cursor();
+                            let t = crate::vim_visual::selecionar_alcance(mov, vezes)
+                                .unwrap_or_default();
+                            if let Some(c) = volta {
+                                if let Some(b) =
+                                    crate::selecao_blocos::blocos_do_documento().get(c.bloco)
+                                {
+                                    crate::components::selection_toolbar::selecionar_intervalo(
+                                        b, c.coluna, c.coluna,
+                                    );
+                                }
+                            }
+                            t
+                        };
+                        if !texto.is_empty() {
+                            *vim_register.borrow_mut() = texto.clone();
+                            copiar_para_area_de_transferencia(&texto);
                         }
-                        return;
                     }
-                    // não confirmou o par — cai pro tratamento normal da
-                    // tecla atual abaixo (não perde o input do usuário)
-                }
-
-                if key == vim_keymap.delete_line {
-                    *vim_pending.borrow_mut() = Some("delete_line".to_string());
-                    return;
-                }
-                if key == vim_keymap.yank_line {
-                    *vim_pending.borrow_mut() = Some("yank_line".to_string());
-                    return;
-                }
-
-                if key == vim_keymap.left {
-                    vim_move("backward", "character");
-                } else if key == vim_keymap.right {
-                    vim_move("forward", "character");
-                } else if key == vim_keymap.down {
-                    // Atravessa blocos (ciclo 252) — ver `mover_linha`.
-                    crate::vim_visual::mover_linha(true);
-                    vim_scroll_caret_into_view();
-                } else if key == vim_keymap.up {
-                    crate::vim_visual::mover_linha(false);
-                    vim_scroll_caret_into_view();
-                } else if key == vim_keymap.word_forward {
-                    vim_move("forward", "word");
-                } else if key == vim_keymap.word_backward {
-                    vim_move("backward", "word");
-                } else if key == vim_keymap.line_start {
-                    vim_move("backward", "lineboundary");
-                } else if key == vim_keymap.line_end {
-                    vim_move("forward", "lineboundary");
-                } else if key == vim_keymap.doc_start {
-                    vim_move("backward", "documentboundary");
-                } else if key == vim_keymap.doc_end {
-                    vim_move("forward", "documentboundary");
-                } else if key == vim_keymap.insert_before {
-                    vim_modo.set(VimModo::Insercao);
-                } else if key == vim_keymap.insert_after {
-                    vim_move("forward", "character");
-                    vim_modo.set(VimModo::Insercao);
-                } else if key == vim_keymap.open_below {
-                    if vim_open_line(false) {
+                    Comando::Apagar(mov, vezes) | Comando::Mudar(mov, vezes) => {
+                        let mudando = matches!(comando, Comando::Mudar(_, _));
+                        let mexeu = if mov == Movimento::LinhaInteira {
+                            let mut algo = false;
+                            for _ in 0..vezes.max(1) {
+                                algo |= vim_delete_line(&vim_register);
+                            }
+                            algo
+                        } else {
+                            let texto = crate::vim_visual::selecionar_alcance(mov, vezes)
+                                .unwrap_or_default();
+                            if texto.is_empty() {
+                                false
+                            } else {
+                                *vim_register.borrow_mut() = texto;
+                                crate::vim_visual::apagar_selecao()
+                            }
+                        };
+                        if mexeu {
+                            aplicar();
+                        }
+                        if mudando {
+                            vim_modo.set(VimModo::Insercao);
+                        }
+                    }
+                    Comando::ApagarCaractere { antes, vezes } => {
+                        for _ in 0..vezes.max(1) {
+                            doc_exec_vim(if antes { "delete" } else { "forwardDelete" }, "");
+                        }
+                        aplicar();
+                    }
+                    Comando::Colar { antes } => {
+                        let colou = if antes {
+                            vim_paste_before(&vim_register)
+                        } else {
+                            vim_paste_after(&vim_register)
+                        };
+                        if colou {
+                            aplicar();
+                        }
+                    }
+                    Comando::Entrar(onde) => {
+                        match onde {
+                            Insercao::LinhaAbaixo | Insercao::LinhaAcima => {
+                                if vim_open_line(onde == Insercao::LinhaAcima) {
+                                    aplicar();
+                                }
+                            }
+                            outro => {
+                                crate::vim_visual::posicionar_para_inserir(outro);
+                            }
+                        }
                         vim_modo.set(VimModo::Insercao);
-                        let new_md = recompute_markdown_from_dom(
-                            &content_md_vim,
-                            &editor_ref_vim,
-                            &segment_refs_vim,
-                        );
-                        content_md_vim.set(new_md.clone());
-                        mark_edited_vim(new_md);
                     }
-                } else if key == vim_keymap.open_above {
-                    if vim_open_line(true) {
-                        vim_modo.set(VimModo::Insercao);
-                        let new_md = recompute_markdown_from_dom(
-                            &content_md_vim,
-                            &editor_ref_vim,
-                            &segment_refs_vim,
-                        );
-                        content_md_vim.set(new_md.clone());
-                        mark_edited_vim(new_md);
+                    Comando::Substituir(c) => {
+                        if crate::vim_visual::substituir_caractere(c) {
+                            aplicar();
+                        }
                     }
-                } else if key == vim_keymap.delete_char {
-                    doc_exec_vim("forwardDelete", "");
-                } else if key == vim_keymap.paste {
-                    if vim_paste_after(&vim_register) {
-                        let new_md = recompute_markdown_from_dom(
-                            &content_md_vim,
-                            &editor_ref_vim,
-                            &segment_refs_vim,
-                        );
-                        content_md_vim.set(new_md.clone());
-                        mark_edited_vim(new_md);
+                    Comando::JuntarLinhas => {
+                        if crate::vim_visual::juntar_linhas() {
+                            aplicar();
+                        }
                     }
-                } else if key == vim_keymap.undo {
+                    Comando::TrocarCaixa => {
+                        if crate::vim_visual::trocar_caixa() {
+                            aplicar();
+                        }
+                    }
                     // Reusa o MESMO undo de documento do Ctrl+Z (não
                     // `execCommand("undo")` nativo) — o undo nativo do
                     // contenteditable opera fora do controle de
-                    // `content_md`/`undo_stack`, podia desincronizar os
-                    // dois (o DOM voltava um passo que `content_md`
-                    // nunca soube que aconteceu) e produzir conteúdo
-                    // duplicado/preso na próxima vez que algo
-                    // reinjetasse HTML a partir de `content_md`.
-                    do_undo.emit(());
+                    // `content_md`/histórico, podia desincronizar os dois
+                    // e produzir conteúdo duplicado na próxima vez que
+                    // algo reinjetasse HTML a partir de `content_md`.
+                    Comando::Desfazer => do_undo.emit(()),
+                    Comando::Refazer => do_redo_vim.emit(()),
+                    Comando::Busca => on_search_vim.emit(String::new()),
+                    Comando::Visual => vim_modo.set(VimModo::Visual),
+                    Comando::VisualLinha => {
+                        if let Some(bloco) = bloco_do_cursor() {
+                            crate::selecao_blocos::iniciar(&bloco);
+                        }
+                        vim_modo.set(VimModo::VisualLinha);
+                    }
+                    Comando::VisualBloco => {
+                        crate::vim_visual::ancorar();
+                        crate::vim_visual::realcar();
+                        vim_modo.set(VimModo::VisualBloco);
+                    }
                 }
                 return;
             }
@@ -3527,6 +3597,12 @@ pub fn editor(props: &EditorProps) -> Html {
                 if props.vim_mode_enabled {
                     // RF7: a barra mostra QUAL modo do vim está ativo,
                     // não só normal/inserção.
+                    if !vim_eco.is_empty() {
+                        // O comando pela metade (ciclo 254): sem isto,
+                        // digitar `2d` e parar deixava a pessoa sem saber
+                        // que o vim estava esperando o resto.
+                        <span class="editor__vim-eco">{ (*vim_eco).clone() }</span>
+                    }
                     <span class={vim_modo.classe()}>
                         { vim_modo.rotulo() }
                     </span>
@@ -4044,7 +4120,41 @@ fn vim_paste_after(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
         return false;
     };
     let next = block.next_sibling();
-    parent.insert_before(&new_el, next.as_ref()).is_ok()
+    let ok = parent.insert_before(&new_el, next.as_ref()).is_ok();
+    if ok {
+        marcar_blocos(&parent.unchecked_into::<web_sys::Element>());
+    }
+    ok
+}
+
+/// `P`: cola a linha do registrador ANTES da atual.
+///
+/// Mesmo corpo do `p` com o vizinho trocado — separar em duas funções
+/// quase iguais seria pior que o parâmetro, mas a diferença é exatamente
+/// esta linha, e é ela que distingue os dois comandos do vim.
+fn vim_paste_before(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
+    let text = register.borrow().clone();
+    if text.is_empty() {
+        return false;
+    }
+    let Some(block) = vim_current_block() else {
+        return false;
+    };
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return false;
+    };
+    let Ok(new_el) = doc.create_element(sibling_line_tag(&block)) else {
+        return false;
+    };
+    new_el.set_text_content(Some(&text));
+    let Some(parent) = block.parent_node() else {
+        return false;
+    };
+    let ok = parent.insert_before(&new_el, Some(&block)).is_ok();
+    if ok {
+        marcar_blocos(&parent.unchecked_into::<web_sys::Element>());
+    }
+    ok
 }
 
 /// `o`/`O`: insere uma linha vazia abaixo (`before=false`)/acima
@@ -4991,7 +5101,10 @@ fn copiar_referencia(
 /// `web-sys`; este caminho usa o mesmo `execCommand` que o editor já
 /// usa e funciona no WebView do Tauri.
 fn copiar_para_area_de_transferencia(texto: &str) {
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+    let Some(win) = web_sys::window() else {
+        return;
+    };
+    let Some(doc) = win.document() else {
         return;
     };
     let Ok(el) = doc.create_element("textarea") else {
@@ -5000,6 +5113,24 @@ fn copiar_para_area_de_transferencia(texto: &str) {
     let Ok(area) = el.dyn_into::<web_sys::HtmlTextAreaElement>() else {
         return;
     };
+    // Guarda a seleção e o foco de quem chamou (ciclo 254).
+    //
+    // `area.select()` SUBSTITUI a seleção do documento, e o `<textarea>`
+    // é removido logo depois — a seleção fica pendurada num nó
+    // desconectado. Quem copiava e não mexia em mais nada não notava;
+    // quem copiava pra em seguida APAGAR (o `d` do modo visual) perdia o
+    // alvo no meio do caminho: o delete seguinte não tinha mais o que
+    // apagar, e nada acontecia na tela.
+    let selecao = win
+        .get_selection()
+        .ok()
+        .flatten()
+        .filter(|s| s.range_count() > 0)
+        .and_then(|s| s.get_range_at(0).ok());
+    let focado = doc
+        .active_element()
+        .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
+
     area.set_value(texto);
     let _ = area.style().set_property("position", "fixed");
     let _ = area.style().set_property("opacity", "0");
@@ -5008,6 +5139,14 @@ fn copiar_para_area_de_transferencia(texto: &str) {
         area.select();
         exec_cmd(&doc, "copy", "");
         let _ = body.remove_child(&area);
+    }
+
+    if let Some(el) = focado {
+        let _ = el.focus();
+    }
+    if let (Some(range), Some(sel)) = (selecao, win.get_selection().ok().flatten()) {
+        let _ = sel.remove_all_ranges();
+        let _ = sel.add_range(&range);
     }
 }
 

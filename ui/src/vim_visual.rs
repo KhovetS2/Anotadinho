@@ -230,3 +230,200 @@ pub fn mover_linha(frente: bool) -> bool {
     };
     pousar(alvo, antes.coluna)
 }
+
+// ── Execução dos comandos do modo Normal (ciclo 254) ────────────────
+
+use crate::vim_comandos::Movimento;
+
+/// O bloco onde o cursor está.
+pub fn bloco_atual() -> Option<web_sys::Element> {
+    let sel = web_sys::window()?.get_selection().ok()??;
+    let no = sel.anchor_node()?;
+    let el = no
+        .dyn_ref::<web_sys::Element>()
+        .cloned()
+        .or_else(|| no.parent_element())?;
+    el.closest(&format!("[{}]", crate::nav_mode::ATTR_BLOCO_TEXTO))
+        .ok()
+        .flatten()
+}
+
+/// Traduz um movimento pro par (direção, granularidade) da
+/// `Selection.modify`. `None` quando o movimento não é expressável
+/// assim e precisa de tratamento próprio.
+fn granularidade(mov: Movimento) -> Option<(&'static str, &'static str)> {
+    Some(match mov {
+        Movimento::Esquerda => ("backward", "character"),
+        Movimento::Direita => ("forward", "character"),
+        Movimento::PalavraFrente => ("forward", "word"),
+        Movimento::PalavraTras => ("backward", "word"),
+        Movimento::FimDaPalavra => ("forward", "word"),
+        Movimento::InicioDaLinha => ("backward", "lineboundary"),
+        Movimento::FimDaLinha => ("forward", "lineboundary"),
+        Movimento::InicioDoDocumento => ("backward", "documentboundary"),
+        Movimento::FimDoDocumento => ("forward", "documentboundary"),
+        // Cima/Baixo atravessam blocos e não podem sair da
+        // `Selection.modify`, que não deixa o host de edição.
+        Movimento::Cima | Movimento::Baixo | Movimento::LinhaInteira => return None,
+    })
+}
+
+/// Aplica um movimento `vezes` vezes. `estender` alarga a seleção em vez
+/// de mover o cursor — é o que separa o modo Normal do Visual.
+pub fn aplicar_movimento(mov: Movimento, vezes: u32, estender: bool) -> bool {
+    let acao = if estender { "extend" } else { "move" };
+    match mov {
+        Movimento::Cima | Movimento::Baixo => {
+            let frente = mov == Movimento::Baixo;
+            let mut andou = false;
+            for _ in 0..vezes.max(1) {
+                andou |= mover_linha(frente);
+            }
+            andou
+        }
+        Movimento::LinhaInteira => false,
+        _ => {
+            let Some((dir, gran)) = granularidade(mov) else {
+                return false;
+            };
+            let Some(sel) = web_sys::window()
+                .and_then(|w| w.get_selection().ok())
+                .flatten()
+            else {
+                return false;
+            };
+            // O documento inteiro é um salto só: repetir não faz sentido
+            // e ainda custaria `vezes` chamadas à toa.
+            let repeticoes = if matches!(
+                mov,
+                Movimento::InicioDoDocumento | Movimento::FimDoDocumento
+            ) {
+                1
+            } else {
+                vezes.max(1)
+            };
+            for _ in 0..repeticoes {
+                let _ = sel.modify(acao, dir, gran);
+            }
+            true
+        }
+    }
+}
+
+/// Estende a seleção pelo movimento e devolve o texto abrangido, sem
+/// apagar nada. É a metade comum de `d`, `c` e `y`.
+pub fn selecionar_alcance(mov: Movimento, vezes: u32) -> Option<String> {
+    if mov == Movimento::LinhaInteira {
+        return None; // quem chama trata a linha inteira por bloco
+    }
+    aplicar_movimento(mov, vezes, true);
+    Some(texto_selecionado())
+}
+
+/// Apaga a seleção atual pela API de `Range`, não por `execCommand`.
+///
+/// A regra do projeto (AGENTS.md) é preferir `Range` — o `execCommand`
+/// fragmenta HTML de forma imprevisível no WebKitGTK. Aqui vale também
+/// por um motivo mais simples: `delete_contents` faz exatamente uma
+/// coisa, e dá pra saber se fez.
+pub fn apagar_selecao() -> bool {
+    let Some(sel) = web_sys::window()
+        .and_then(|w| w.get_selection().ok())
+        .flatten()
+    else {
+        return false;
+    };
+    if sel.is_collapsed() || sel.range_count() == 0 {
+        return false;
+    }
+    let Ok(range) = sel.get_range_at(0) else {
+        return false;
+    };
+    if range.delete_contents().is_err() {
+        return false;
+    }
+    let _ = sel.remove_all_ranges();
+    let _ = sel.add_range(&range);
+    true
+}
+
+/// Junta o bloco seguinte no atual (`J`), com um espaço no meio.
+pub fn juntar_linhas() -> bool {
+    let Some(bloco) = bloco_atual() else {
+        return false;
+    };
+    let Some(proximo) = bloco.next_element_sibling() else {
+        return false;
+    };
+    let atual = bloco.text_content().unwrap_or_default();
+    let seguinte = proximo.text_content().unwrap_or_default();
+    let junto = format!("{} {}", atual.trim_end(), seguinte.trim_start());
+    bloco.set_text_content(Some(junto.trim_end()));
+    proximo.remove();
+    true
+}
+
+/// Inverte a caixa do caractere sob o cursor e anda um pra frente (`~`).
+pub fn trocar_caixa() -> bool {
+    let Some(bloco) = bloco_atual() else {
+        return false;
+    };
+    let Some(pos) = cursor().map(|c| c.coluna as usize) else {
+        return false;
+    };
+    let texto: Vec<char> = bloco.text_content().unwrap_or_default().chars().collect();
+    if pos >= texto.len() {
+        return false;
+    }
+    let c = texto[pos];
+    let trocado: String = if c.is_uppercase() {
+        c.to_lowercase().collect()
+    } else {
+        c.to_uppercase().collect()
+    };
+    let novo: String = texto[..pos]
+        .iter()
+        .collect::<String>()
+        .chars()
+        .chain(trocado.chars())
+        .chain(texto[pos + 1..].iter().copied())
+        .collect();
+    bloco.set_text_content(Some(&novo));
+    let fim = (pos as u32 + 1).min(novo.chars().count() as u32);
+    crate::components::selection_toolbar::selecionar_intervalo(&bloco, fim, fim);
+    true
+}
+
+/// Substitui o caractere sob o cursor (`r`), sem sair do modo Normal.
+pub fn substituir_caractere(novo: char) -> bool {
+    let Some(bloco) = bloco_atual() else {
+        return false;
+    };
+    let Some(pos) = cursor().map(|c| c.coluna as usize) else {
+        return false;
+    };
+    let texto: Vec<char> = bloco.text_content().unwrap_or_default().chars().collect();
+    if pos >= texto.len() {
+        return false;
+    }
+    let mut saida: String = texto[..pos].iter().collect();
+    saida.push(novo);
+    saida.extend(texto[pos + 1..].iter());
+    bloco.set_text_content(Some(&saida));
+    crate::components::selection_toolbar::selecionar_intervalo(&bloco, pos as u32, pos as u32);
+    true
+}
+
+/// Põe o cursor onde a inserção começa, e devolve se conseguiu.
+pub fn posicionar_para_inserir(onde: crate::vim_comandos::Insercao) -> bool {
+    use crate::vim_comandos::Insercao;
+    match onde {
+        Insercao::Antes => true,
+        Insercao::Depois => aplicar_movimento(Movimento::Direita, 1, false),
+        Insercao::InicioDaLinha => aplicar_movimento(Movimento::InicioDaLinha, 1, false),
+        Insercao::FimDaLinha => aplicar_movimento(Movimento::FimDaLinha, 1, false),
+        // As duas que criam bloco são tratadas por quem chama, porque
+        // mexem na estrutura e precisam recalcular o markdown.
+        Insercao::LinhaAbaixo | Insercao::LinhaAcima => true,
+    }
+}
