@@ -175,6 +175,34 @@ pendente("consultas", "o bloco de consulta tem altura limitada e rola", PAGINA_C
   ctx.assertEq(r.rolaDentro, true, "a consulta não rola internamente");
 });
 
+// ─────────────────────────────────────────────────────────────────────
+// Spec: Imagens coladas e arrastadas
+// ─────────────────────────────────────────────────────────────────────
+
+/// PNG 1×1 transparente, em base64 — o menor arquivo válido possível.
+const PNG_1X1 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+const COLAR_IMAGEM = `(async () => {
+  const bin = atob(${JSON.stringify(PNG_1X1)});
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  const file = new File([buf], 'colada.png', { type: 'image/png' });
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  const alvo = document.querySelector('.editor__bloco');
+  alvo.focus();
+  // A inserção acontece na SELEÇÃO — sem um range de verdade, o
+  // editor não tem onde escrever e o arquivo fica no acervo sem
+  // referência na nota.
+  const r = document.createRange();
+  r.selectNodeContents(alvo); r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  alvo.dispatchEvent(new ClipboardEvent('paste', {
+    bubbles: true, cancelable: true, clipboardData: dt }));
+  return true;
+})()`;
+
 pendente("imagens", "arrastar imagem grava no acervo, não uma URL de sessão",
   RASCUNHO, async (bridge, ctx) => {
     const fs = await import("node:fs");
@@ -321,42 +349,3 @@ pendente("imagens", "colar imagem grava no acervo (guarda do ciclo 118)",
 // ─────────────────────────────────────────────────────────────────────
 // Spec: Tema configurável
 // ─────────────────────────────────────────────────────────────────────
-
-pendente("tema", "há configuração de tema, além do alternador claro/escuro",
-  async (bridge, ctx) => {
-    const abriu = await bridge.js(`(() => {
-      const b = document.querySelector('[data-nav-item="header-menu"]');
-      if (!b) return 'sem botão de configurações no header';
-      b.click();
-      return true;
-    })()`);
-    ctx.assertEq(abriu, true, String(abriu));
-    await PAUSA(500);
-
-    const itens = await bridge.js(`(() => [...document.querySelectorAll('button, [role=menuitem]')]
-      .map(e => e.textContent.trim()).filter(t => /tema|aparência|aparencia/i.test(t)))()`);
-    // "Tema escuro"/"Tema claro" é o alternador que já existe — não
-    // conta como configuração.
-    const config = itens.filter((i) => !/^tema (escuro|claro)$/i.test(i.replace(/\s+/g, " ")));
-    ctx.assert(config.length > 0,
-      `o menu só tem o alternador claro/escuro: ${JSON.stringify(itens)}`);
-  });
-
-pendente("tema", "a escolha de tema sobrevive ao recarregar", async (bridge, ctx) => {
-  const temas = await bridge.js(`(() => {
-    const b = document.querySelector('[data-nav-item="header-menu"]');
-    if (b) b.click();
-    return [...document.querySelectorAll('[data-tema]')].map(e => e.getAttribute('data-tema'));
-  })()`);
-  ctx.assert(temas.length > 1,
-    `esperava vários temas pra escolher, achei ${JSON.stringify(temas)}`);
-
-  await bridge.js(`(() => {
-    document.querySelector('[data-tema="' + ${JSON.stringify(temas)}[1] + '"]').click();
-    return true;
-  })()`);
-  await PAUSA(600);
-  await recarregarEstavel(bridge);
-  const atual = await bridge.js(`document.documentElement.getAttribute('data-theme')`);
-  ctx.assertEq(atual, temas[1], "o tema escolhido não sobreviveu ao recarregar");
-});

@@ -1,5 +1,6 @@
 //! Componentes Yew reutilizáveis.
 
+pub mod aparencia_modal;
 pub mod assets_page;
 pub mod calendar;
 pub mod cheatsheet_modal;

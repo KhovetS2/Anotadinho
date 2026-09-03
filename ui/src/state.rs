@@ -678,3 +678,108 @@ pub fn remover_adaptador(nome: &str) {
         let _ = store.set_item(CHAVE_ADAPTADORES, &lista);
     }
 }
+
+// ── Aparência (ciclo 253) ────────────────────────────────────────────
+
+const KEY_APARENCIA: &str = "anotadinho.aparencia";
+
+/// As três escolhas de aparência, juntas num registro só.
+///
+/// Preferência do APP, não conteúdo (RNF2 da spec): mora no
+/// `localStorage`, nunca no vault. Um tema no vault viraria diff em toda
+/// máquina que abrisse a mesma pasta.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Aparencia {
+    /// Id do tema — vira `data-theme` no `<html>`.
+    pub tema: String,
+    /// Id da cor de destaque, ou vazio pra usar a do tema.
+    pub destaque: String,
+    /// Id do estilo de botão — vira `data-botoes` no `<html>`.
+    pub botoes: String,
+}
+
+impl Default for Aparencia {
+    fn default() -> Self {
+        Self {
+            tema: "escuro".into(),
+            destaque: String::new(),
+            botoes: "arredondado".into(),
+        }
+    }
+}
+
+/// Um tema oferecido pela tela de aparência.
+///
+/// `amostra` são as três cores que a prévia mostra (fundo, texto,
+/// destaque) — é o que deixa escolher SEM aplicar (RF2).
+pub struct TemaOferecido {
+    pub id: &'static str,
+    pub nome: &'static str,
+    pub amostra: [&'static str; 3],
+}
+
+/// Os temas disponíveis.
+///
+/// Todos foram escolhidos com contraste de leitura suficiente entre
+/// texto e fundo (RNF1) — não é possível escolher uma combinação
+/// ilegível porque não existe uma na lista. Tema escrito pelo usuário é
+/// fora de escopo justamente por isso: aí a garantia acabaria.
+pub const TEMAS: &[TemaOferecido] = &[
+    TemaOferecido {
+        id: "escuro",
+        nome: "Escuro",
+        amostra: ["#272930", "#E4E8F5", "#00B5FF"],
+    },
+    TemaOferecido {
+        id: "claro",
+        nome: "Claro",
+        amostra: ["#FFFFFF", "#21232A", "#00B5FF"],
+    },
+    TemaOferecido {
+        id: "papel",
+        nome: "Papel",
+        amostra: ["#F6F1E7", "#2B2924", "#A2612F"],
+    },
+    TemaOferecido {
+        id: "contraste",
+        nome: "Alto contraste",
+        amostra: ["#000000", "#FFFFFF", "#4DD2FF"],
+    },
+];
+
+/// Cores de destaque, aplicáveis por cima de qualquer tema (RF3).
+pub const DESTAQUES: &[(&str, &str, &str)] = &[
+    ("azul", "Azul", "#00B5FF"),
+    ("roxo", "Roxo", "#9327FF"),
+    ("verde", "Verde", "#1FA97C"),
+    ("ambar", "Âmbar", "#DB7E21"),
+    ("rosa", "Rosa", "#E7418C"),
+];
+
+/// Estilos de botão (RF4).
+pub const BOTOES: &[(&str, &str)] = &[
+    ("arredondado", "Arredondado"),
+    ("reto", "Reto"),
+    ("pilula", "Pílula"),
+];
+
+pub fn load_aparencia() -> Aparencia {
+    // Migra a preferência antiga (`anotadinho.theme` = light/dark), pra
+    // quem já tinha escolhido claro não voltar pro escuro sozinho.
+    if let Ok(a) = gloo_storage::LocalStorage::get::<Aparencia>(KEY_APARENCIA) {
+        return a;
+    }
+    let antigo: Option<String> = gloo_storage::LocalStorage::get("anotadinho.theme").ok();
+    Aparencia {
+        tema: if antigo.as_deref() == Some("light") {
+            "claro".into()
+        } else {
+            "escuro".into()
+        },
+        ..Default::default()
+    }
+}
+
+pub fn save_aparencia(a: &Aparencia) {
+    let _ = gloo_storage::LocalStorage::set(KEY_APARENCIA, a);
+}

@@ -40,6 +40,10 @@ pub struct HeaderBarProps {
     pub on_abrir_propostas: Callback<()>,
     pub on_toggle_sidebar: Callback<()>,
     pub on_toggle_theme: Callback<()>,
+    /// Abre a tela de aparência (ciclo 253) — tema, cor de destaque e
+    /// forma dos botões. O alternador claro/escuro continua ao lado: ele
+    /// é o atalho de um clique, isto é a escolha completa.
+    pub on_open_aparencia: Callback<()>,
     pub on_toggle_autosave: Callback<()>,
     pub on_toggle_vim_mode: Callback<()>,
     pub on_open_vim_settings: Callback<()>,
@@ -387,6 +391,13 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                                 } else {
                                     <Icon name="sun" />{ " Tema claro" }
                                 }
+                            </button>
+                            <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
+                                let menu_open = menu_open.clone();
+                                let on_open_aparencia = props.on_open_aparencia.clone();
+                                Callback::from(move |_| { menu_open.set(false); on_open_aparencia.emit(()); })
+                            }}>
+                                <Icon name="settings" />{ " Aparência..." }
                             </button>
                             <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
                                 let menu_open = menu_open.clone();

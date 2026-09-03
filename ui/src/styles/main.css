@@ -12,8 +12,14 @@
     --bg-elevated: #3D404F;
     --text-primary: #E4E8F5;
     --text-muted: #989EB7;
-    --accent-blue: #00B5FF;
-    --accent-blue-hover: #0092D6;
+    /* O nome do token é histórico: `--accent-blue` é a cor de DESTAQUE
+       do app, e desde o ciclo 253 ela pode não ser azul. Renomear os
+       ~400 usos espalhados pelo CSS seria um refactor maior do que o
+       ciclo, e com mais risco do que valor. `--destaque` é o gancho: a
+       tela de aparência define ele, e todo o resto continua lendo o
+       token de sempre. */
+    --accent-blue: var(--destaque, #00B5FF);
+    --accent-blue-hover: var(--destaque-hover, #0092D6);
     --accent-purple: #9327FF;
     --accent-purple-hover: #8427E0;
     --border: #3D404F;
@@ -80,7 +86,107 @@
     border-radius: 0.2em;
 }
 
-/* Light theme override */
+/* ── Temas do ciclo 253 ────────────────────────────────────────────
+
+   Cada tema redefine SÓ os tokens de cor. Nada de regra por componente:
+   a disciplina de tokens + BEM que o app já seguia é o que torna isto
+   possível em quatro blocos, e é por isso que a spec chamava o sistema
+   de tokens de "a metade difícil".
+
+   Contraste (RNF1): as combinações texto/fundo aqui foram escolhidas
+   pra passar em leitura corrida. Tema escrito pelo usuário é fora de
+   escopo justamente porque aí a garantia acabaria. */
+
+/* Papel: claro e quente, pra leitura longa. */
+:root[data-theme="papel"] {
+    color-scheme: light;
+
+    --bg-base: #F6F1E7;
+    --bg-surface: #FBF7EF;
+    --bg-elevated: #EDE4D4;
+    --text-primary: #2B2924;
+    --text-muted: #6B6355;
+    --accent-blue: var(--destaque, #A2612F);
+    --accent-blue-hover: var(--destaque-hover, #8A5027);
+    --accent-purple: #7A4E9E;
+    --accent-purple-hover: #674185;
+    --border: #E0D5C0;
+    --success: #3E6B45;
+    --warning: #A2612F;
+    --error: #A8332B;
+
+    --cor-vermelho: #A8332B;
+    --cor-ambar: #8A5027;
+    --cor-verde: #3E6B45;
+    --cor-azul: #2C5C86;
+    --cor-roxo: #674185;
+    --cor-rosa: #9C3567;
+    --cor-cinza: #6B6355;
+
+    --fundo-vermelho: #F5DED9;
+    --fundo-ambar: #F3E4CB;
+    --fundo-verde: #DFEBDD;
+    --fundo-azul: #DAE6F0;
+    --fundo-roxo: #E7DEF0;
+    --fundo-rosa: #F3DCE6;
+    --fundo-cinza: #E8E1D4;
+}
+
+/* Alto contraste: preto puro e texto branco. Existe pra quem precisa,
+   não pra quem prefere — por isso as bordas são visíveis de verdade em
+   vez de sugeridas. */
+:root[data-theme="contraste"] {
+    color-scheme: dark;
+
+    --bg-base: #000000;
+    --bg-surface: #0D0D0D;
+    --bg-elevated: #1A1A1A;
+    --text-primary: #FFFFFF;
+    --text-muted: #C9C9C9;
+    --accent-blue: var(--destaque, #4DD2FF);
+    --accent-blue-hover: var(--destaque-hover, #7FDFFF);
+    --accent-purple: #C89BFF;
+    --accent-purple-hover: #D9B8FF;
+    --border: #6A6A6A;
+    --success: #3FD9A4;
+    --warning: #FFB454;
+    --error: #FF6B6B;
+
+    --cor-vermelho: #FF9A9A;
+    --cor-ambar: #FFC777;
+    --cor-verde: #7DE8BE;
+    --cor-azul: #8ED9FF;
+    --cor-roxo: #D3AEFF;
+    --cor-rosa: #FF9EC7;
+    --cor-cinza: #C9C9C9;
+
+    --fundo-vermelho: #4A1A1A;
+    --fundo-ambar: #4A3410;
+    --fundo-verde: #10402F;
+    --fundo-azul: #103247;
+    --fundo-roxo: #2E1A4A;
+    --fundo-rosa: #45152C;
+    --fundo-cinza: #2A2A2A;
+}
+
+/* Estilo dos botões (RF4). Só o raio: a forma é a única variação que
+   não briga com nenhum tema. */
+:root[data-botoes="reto"] .btn {
+    border-radius: 0;
+}
+
+:root[data-botoes="pilula"] .btn {
+    border-radius: 999px;
+}
+
+/* Tema claro.
+
+   Dois seletores (ciclo 253): `data-theme="claro"` é o mecanismo novo —
+   é ele que a spec pede manter, e é por ele que o snapshot visual do
+   harness distingue um tema do outro. A classe `.theme-light` fica
+   porque o alternador claro/escuro do cabeçalho ainda a usa, e tirar as
+   duas de uma vez seria trocar o mecanismo e o gatilho no mesmo passo. */
+:root[data-theme="claro"],
 .theme-light {
     color-scheme: light;
 
@@ -89,8 +195,8 @@
     --bg-elevated: #E4E8F5;
     --text-primary: #21232A;
     --text-muted: #6F748C;
-    --accent-blue: #00B5FF;
-    --accent-blue-hover: #0092D6;
+    --accent-blue: var(--destaque, #00B5FF);
+    --accent-blue-hover: var(--destaque-hover, #0092D6);
     --accent-purple: #9327FF;
     --border: #E4E8F5;
     --success: #248569;

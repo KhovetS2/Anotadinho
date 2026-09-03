@@ -1968,3 +1968,135 @@
   font-size: 0.75rem;
   line-height: 1.4;
 }
+
+/* Tela de aparência (ciclo 253).
+
+   Só tokens, como o resto: a tela que troca o tema seria o pior lugar
+   possível pra um hex solto. */
+.aparencia {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+.aparencia__titulo {
+  margin: 0 0 var(--sp-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.aparencia__nota {
+  margin: 0 0 var(--sp-3);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.aparencia__temas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+
+.aparencia__tema {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.aparencia__tema:hover {
+  border-color: color-mix(in srgb, var(--accent-blue) 50%, var(--border));
+}
+
+.aparencia__tema--atual {
+  border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-surface));
+}
+
+/* A prévia: as três cores do tema lado a lado. É o que permite escolher
+   sem aplicar — as cores vêm inline porque são DADOS do tema, não
+   estilo da tela. */
+.aparencia__amostra {
+  display: inline-flex;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  flex: none;
+}
+
+.aparencia__cor {
+  width: 14px;
+  height: 20px;
+}
+
+.aparencia__nome {
+  flex: 1;
+  text-align: left;
+}
+
+.aparencia__destaques,
+.aparencia__botoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.aparencia__destaque {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.aparencia__destaque--atual {
+  border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-surface));
+}
+
+.aparencia__bolinha {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--amostra, var(--accent-blue));
+  border: 1px solid color-mix(in srgb, var(--text-primary) 25%, transparent);
+}
+
+/* Cada opção de forma é desenhada COM a forma que oferece — o botão é a
+   própria prévia. */
+.aparencia__forma {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.aparencia__forma--arredondado { border-radius: var(--r-md); }
+.aparencia__forma--reto { border-radius: 0; }
+.aparencia__forma--pilula { border-radius: 999px; }
+
+.aparencia__forma--atual {
+  border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-surface));
+}
+
+.aparencia__rodape {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-3);
+}

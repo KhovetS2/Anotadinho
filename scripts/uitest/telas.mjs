@@ -278,3 +278,142 @@ tela("sidebar tem os botões de criar página e pasta", async (b, ctx) => {
     `sem botão de nova pasta: ${botoes.join(" | ")}`,
   );
 });
+
+// ── Aparência (ciclo 253) ───────────────────────────────────────────
+//
+// Migrados da bateria `--pendentes`, que os guardava enquanto a spec
+// "Tema configurável" não existia em código.
+
+/// Abre o menu do cabeçalho e, dali, a tela de aparência.
+///
+/// Assíncrono de propósito: o menu é renderizado pelo Yew depois do
+/// clique, então procurar o item na MESMA volta síncrona não acha nada.
+const ABRIR_APARENCIA = `(async () => {
+  const menu = document.querySelector('[data-nav-item="header-menu"]');
+  if (!menu) return 'sem botão de configurações no cabeçalho';
+  menu.click();
+  await new Promise(r => setTimeout(r, 300));
+  const item = [...document.querySelectorAll('.header-menu__item')]
+    .find(e => /apar[êe]ncia/i.test(e.textContent || ''));
+  if (!item) return 'o menu não oferece Aparência';
+  item.click();
+  await new Promise(r => setTimeout(r, 300));
+  return true;
+})()`;
+
+const ESTADO_APARENCIA = `(() => ({
+  tema: document.documentElement.getAttribute('data-theme'),
+  botoes: document.documentElement.getAttribute('data-botoes'),
+  destaque: getComputedStyle(document.documentElement).getPropertyValue('--accent-blue').trim(),
+  fundo: getComputedStyle(document.body).backgroundColor,
+}))()`;
+
+telas.push({
+  nome: "aparência: a tela oferece temas, destaque e forma de botão (253)",
+  async fn(bridge, ctx) {
+    await recarregarEstavel(bridge);
+    const abriu = await bridge.js(ABRIR_APARENCIA);
+    ctx.assertEq(abriu, true, String(abriu));
+    await PAUSA(500);
+
+    const temas = await bridge.js(
+      `[...document.querySelectorAll('button[data-tema]')].map(e => e.getAttribute('data-tema'))`,
+    );
+    ctx.assert(temas.length > 1, `esperava vários temas pra escolher, achei ${JSON.stringify(temas)}`);
+
+    // A prévia é o que permite escolher SEM aplicar (RF2): cada tema
+    // mostra as próprias cores antes de o clique acontecer.
+    const previas = await bridge.js(
+      `[...document.querySelectorAll('button[data-tema] .aparencia__cor')].length`,
+    );
+    ctx.assert(previas >= temas.length * 2, `os temas não mostram prévia (${previas} amostras)`);
+
+    const destaques = await bridge.js(
+      `[...document.querySelectorAll('button[data-destaque]')].length`,
+    );
+    ctx.assert(destaques > 1, "não há cor de destaque pra escolher");
+    const formas = await bridge.js(
+      `[...document.querySelectorAll('button[data-botoes]')].length`,
+    );
+    ctx.assert(formas > 1, "não há estilo de botão pra escolher");
+  },
+});
+
+telas.push({
+  nome: "aparência: aplicar muda a tela na hora, e sobrevive ao recarregar (253)",
+  async fn(bridge, ctx) {
+    await recarregarEstavel(bridge);
+    ctx.assertEq(await bridge.js(ABRIR_APARENCIA), true, "a tela de aparência não abriu");
+    await PAUSA(400);
+
+    const antes = await bridge.js(ESTADO_APARENCIA);
+
+    // Aplicar não recarrega a janela nem perde trabalho (RNF3): é só um
+    // atributo no `<html>`.
+    await bridge.js(`(() => { document.querySelector('button[data-tema="papel"]').click(); return true; })()`);
+    await PAUSA(400);
+    await bridge.js(`(() => { document.querySelector('button[data-destaque="verde"]').click(); return true; })()`);
+    await PAUSA(400);
+    await bridge.js(`(() => { document.querySelector('button[data-botoes="pilula"]').click(); return true; })()`);
+    await PAUSA(400);
+
+    const depois = await bridge.js(ESTADO_APARENCIA);
+    ctx.assertEq(depois.tema, "papel", "o tema não foi aplicado");
+    ctx.assertEq(depois.botoes, "pilula", "a forma dos botões não foi aplicada");
+    ctx.assert(depois.fundo !== antes.fundo, "o fundo não mudou com o tema");
+    ctx.assert(
+      depois.destaque !== antes.destaque,
+      `a cor de destaque não mudou (${antes.destaque} → ${depois.destaque})`,
+    );
+
+    // Persistência (RF5).
+    await recarregarEstavel(bridge);
+    const recarregado = await bridge.js(ESTADO_APARENCIA);
+    ctx.assertEq(recarregado.tema, "papel", "o tema não sobreviveu ao recarregar");
+    ctx.assertEq(recarregado.botoes, "pilula", "a forma dos botões não sobreviveu");
+    ctx.assertEq(recarregado.destaque, depois.destaque, "o destaque não sobreviveu");
+
+    // Voltar ao padrão (RF6).
+    ctx.assertEq(await bridge.js(ABRIR_APARENCIA), true, "a tela não reabriu");
+    await PAUSA(400);
+    await bridge.js(`(() => {
+      const b = [...document.querySelectorAll('.aparencia__rodape button')][0];
+      if (b) b.click();
+      return !!b;
+    })()`);
+    await PAUSA(400);
+    const padrao = await bridge.js(ESTADO_APARENCIA);
+    ctx.assertEq(padrao.tema, "escuro", "voltar ao padrão não restaurou o tema");
+    ctx.assertEq(padrao.botoes, "arredondado", "voltar ao padrão não restaurou os botões");
+    ctx.assertEq(padrao.destaque, antes.destaque, "voltar ao padrão não restaurou o destaque");
+  },
+});
+
+telas.push({
+  nome: "aparência: o tema não entra no vault (253)",
+  async fn(bridge, ctx) {
+    // RNF2: tema é preferência do APP. Um tema gravado no vault viraria
+    // diff em toda máquina que abrisse a mesma pasta.
+    await recarregarEstavel(bridge);
+    ctx.assertEq(await bridge.js(ABRIR_APARENCIA), true, "a tela de aparência não abriu");
+    await PAUSA(400);
+    await bridge.js(`(() => { document.querySelector('button[data-tema="contraste"]').click(); return true; })()`);
+    await PAUSA(600);
+
+    const fs = await import("node:fs");
+    const suspeitos = fs
+      .readdirSync(ctx.vault)
+      .filter((f) => /tema|aparencia|theme/i.test(f));
+    ctx.assertEq(
+      suspeitos.length,
+      0,
+      `o tema escreveu no vault: ${JSON.stringify(suspeitos)}`,
+    );
+
+    await bridge.js(`(() => {
+      localStorage.setItem('anotadinho.aparencia', JSON.stringify({tema:'escuro',destaque:'',botoes:'arredondado'}));
+      return true;
+    })()`);
+    await recarregarEstavel(bridge);
+  },
+});

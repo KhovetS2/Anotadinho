@@ -260,7 +260,14 @@ function scriptImpressao(seletor, props) {
   })()`;
 }
 
-function comparar(tipo, base, atual) {
+/// As propriedades que um TEMA pode legitimamente mudar.
+///
+/// Comparar um tema contra a baseline de outro só faz sentido ignorando
+/// estas: o tema existe pra mudar cor. O que ele NÃO pode mudar é a
+/// geometria — e é isso que a comparação restante afirma.
+const PROPS_DE_COR = new Set(["color", "background-color", "border-top-color", "opacity"]);
+
+function comparar(tipo, base, atual, { soGeometria = false } = {}) {
   const problemas = [];
   const classes = new Set([...Object.keys(base), ...Object.keys(atual)]);
   for (const c of [...classes].sort()) {
@@ -275,6 +282,7 @@ function comparar(tipo, base, atual) {
       continue;
     }
     for (const p of Object.keys(b.estilos)) {
+      if (soGeometria && PROPS_DE_COR.has(p)) continue;
       if (b.estilos[p] !== a.estilos[p]) {
         problemas.push(`.${c} → ${p}: "${b.estilos[p]}" virou "${a.estilos[p]}"`);
       }
@@ -288,13 +296,29 @@ function comparar(tipo, base, atual) {
 
 /// Tira a impressão digital de todos os tipos. Exportado pra `run.mjs`
 /// rodar isso como um cenário a mais.
-export async function conferirSnapshots(bridge, { atualizar = false, filtro = null } = {}) {
+/// `tema` (ciclo 253) mede o MESMO fixture com outro `data-theme`
+/// aplicado, contra a MESMA baseline.
+///
+/// A afirmação é justamente essa: um tema muda cor, nunca geometria. Se
+/// trocar o tema desloca ou redimensiona um embed, o tema está quebrado
+/// — e é o tipo de coisa que ninguém percebe olhando a tela clara
+/// depois de ter desenhado tudo na escura.
+export async function conferirSnapshots(
+  bridge,
+  { atualizar = false, filtro = null, tema = null } = {},
+) {
   if (!existsSync(BASELINE)) mkdirSync(BASELINE, { recursive: true });
 
   writeFileSync(ARQUIVO, fixture());
   try {
     await bridge.js("location.reload()");
     await new Promise((r) => setTimeout(r, 2500));
+    if (tema) {
+      await bridge.js(
+        `(() => { document.documentElement.setAttribute('data-theme', ${JSON.stringify(tema)}); return true; })()`,
+      );
+      await new Promise((r) => setTimeout(r, 300));
+    }
     await abrirPagina(bridge, "__uisnap");
     await esperar(bridge, "document.querySelector('.callout')", "os embeds renderizarem");
     // Consulta e galeria carregam assíncrono.
@@ -309,13 +333,19 @@ export async function conferirSnapshots(bridge, { atualizar = false, filtro = nu
         continue;
       }
       const caminho = join(BASELINE, `${tipo}.json`);
-      if (atualizar || !existsSync(caminho)) {
+      // Num tema alternativo a baseline nunca é regravada: ela é a do
+      // tema padrão, e o ponto é comparar contra ela.
+      if (!tema && (atualizar || !existsSync(caminho))) {
         writeFileSync(caminho, JSON.stringify(atual, null, 2) + "\n");
         resultados.push({ tipo, problemas: [], gravado: true });
         continue;
       }
+      if (!existsSync(caminho)) continue;
       const base = JSON.parse(readFileSync(caminho, "utf8"));
-      resultados.push({ tipo, problemas: comparar(tipo, base, atual) });
+      resultados.push({
+        tipo,
+        problemas: comparar(tipo, base, atual, { soGeometria: Boolean(tema) }),
+      });
     }
     return resultados;
   } finally {

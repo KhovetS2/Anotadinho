@@ -178,6 +178,26 @@ if (!filtro && !soPendentes && !process.argv.includes("--sem-snapshot")) {
     console.log(`      ${e.message.replace(/\n/g, "\n      ")}`);
   }
   selecionados.push({ nome: "snapshot visual dos embeds (187)" });
+
+  // O mesmo fixture, medido noutro tema, contra a MESMA baseline
+  // (ciclo 253): tema muda cor, nunca geometria.
+  const t1 = Date.now();
+  try {
+    const resultados = await conferirSnapshots(bridge, { tema: "claro" });
+    const ruins = resultados.filter((r) => r.problemas.length);
+    if (ruins.length) {
+      throw new Error(
+        ruins.map((r) => `${r.tipo}:\n    ${r.problemas.join("\n    ")}`).join("\n  "),
+      );
+    }
+    passaram++;
+    console.log(`  ✓ snapshot visual no tema claro, só geometria (253) (${Date.now() - t1}ms)`);
+  } catch (e) {
+    falharam.push({ nome: "snapshot visual no tema claro, só geometria (253)", erro: e.message });
+    console.log(`  ✗ snapshot visual no tema claro, só geometria (253) (${Date.now() - t1}ms)`);
+    console.log(`      ${e.message.replace(/\n/g, "\n      ")}`);
+  }
+  selecionados.push({ nome: "snapshot visual no tema claro, só geometria (253)" });
 }
 
 // Devolve o adaptador do usuário.

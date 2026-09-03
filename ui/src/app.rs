@@ -445,13 +445,59 @@ pub fn app() -> Html {
         })
     };
 
+    // Aparência configurável (ciclo 253): tema, cor de destaque e forma
+    // dos botões. Preferência do APP, nunca do vault (RNF2).
+    let aparencia = use_state(state::load_aparencia);
+    let aparencia_aberta = use_state(|| false);
+    let mudar_aparencia = {
+        let aparencia = aparencia.clone();
+        let theme_light = theme_light.clone();
+        Callback::from(move |nova: state::Aparencia| {
+            state::save_aparencia(&nova);
+            // Mantém o alternador claro/escuro do cabeçalho coerente com
+            // o tema escolhido: sem isso o ícone de sol/lua passaria a
+            // mentir assim que alguém escolhesse "Papel".
+            theme_light.set(matches!(nova.tema.as_str(), "claro" | "papel"));
+            aparencia.set(nova);
+        })
+    };
+
     // Apply theme
     {
         let light = *theme_light;
-        use_effect_with(light, move |_| {
+        let ap = (*aparencia).clone();
+        use_effect_with((light, ap), move |(light, ap)| {
             if let Some(html) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element()) {
-                if light { html.class_list().add_1("theme-light").ok(); }
+                // `data-theme` é o mecanismo (RNF4) — é por ele que o
+                // snapshot visual distingue um tema do outro. A classe
+                // continua acompanhando o alternador claro/escuro, que
+                // ainda é o caminho mais rápido pra quem só quer isso.
+                let _ = html.set_attribute("data-theme", &ap.tema);
+                let _ = html.set_attribute("data-botoes", &ap.botoes);
+                if *light { html.class_list().add_1("theme-light").ok(); }
                 else { html.class_list().remove_1("theme-light").ok(); }
+                if let Some(el) = html.dyn_ref::<web_sys::HtmlElement>() {
+                    let estilo = el.style();
+                    match crate::state::DESTAQUES.iter().find(|(id, _, _)| *id == ap.destaque) {
+                        Some((_, _, cor)) => {
+                            let _ = estilo.set_property("--destaque", cor);
+                            // O hover sai da mesma cor, escurecida por
+                            // `color-mix` — uma segunda constante por cor
+                            // seria mais uma coisa pra sair de sincronia.
+                            let _ = estilo.set_property(
+                                "--destaque-hover",
+                                &format!("color-mix(in srgb, {cor} 82%, black)"),
+                            );
+                        }
+                        // Vazio = usa a cor que veio com o tema, então as
+                        // variáveis saem de cena e o `var(..., padrão)`
+                        // do CSS volta a valer.
+                        None => {
+                            let _ = estilo.remove_property("--destaque");
+                            let _ = estilo.remove_property("--destaque-hover");
+                        }
+                    }
+                }
             }
             || {}
         });
@@ -1715,6 +1761,10 @@ pub fn app() -> Html {
                 on_abrir_propostas={abrir_propostas.clone()}
                 on_toggle_sidebar={toggle_sidebar}
                 on_toggle_theme={toggle_theme}
+                on_open_aparencia={{
+                    let aparencia_aberta = aparencia_aberta.clone();
+                    Callback::from(move |_: ()| aparencia_aberta.set(true))
+                }}
                 on_toggle_autosave={toggle_autosave}
                 on_toggle_vim_mode={toggle_vim_mode}
                 on_open_vim_settings={{
@@ -1811,6 +1861,15 @@ pub fn app() -> Html {
                 </div>
             } else {
                 <EmptyState on_vault_selected={on_vault_selected} />
+            }
+            if *aparencia_aberta {
+                <crate::components::aparencia_modal::AparenciaModal
+                    aparencia={(*aparencia).clone()}
+                    on_change={mudar_aparencia.clone()}
+                    on_close={{
+                        let aparencia_aberta = aparencia_aberta.clone();
+                        Callback::from(move |_: ()| aparencia_aberta.set(false))
+                    }} />
             }
             <DialogHost pending={(*pending_dialog).clone()} on_dismiss={dismiss_dialog} />
             if *vim_settings_open {
