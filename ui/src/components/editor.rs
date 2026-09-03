@@ -280,7 +280,7 @@ pub fn editor(props: &EditorProps) -> Html {
     // tecla configurada precisa ser pressionada 2x seguidas) usam
     // `use_mut_ref` por serem lidos/escritos de dentro do handler de
     // teclado sem precisar disparar re-render a cada tecla motion.
-    let vim_insert = use_state(|| false);
+    let vim_modo = use_state(VimModo::default);
     let vim_register = use_mut_ref(String::new);
     let vim_pending = use_mut_ref(|| None::<String>);
 
@@ -1461,7 +1461,9 @@ pub fn editor(props: &EditorProps) -> Html {
         let select_wikilink = select_wikilink.clone();
         let vim_mode_enabled = props.vim_mode_enabled;
         let vim_keymap = props.vim_keymap.clone();
-        let vim_insert = vim_insert.clone();
+        let vim_modo = vim_modo.clone();
+        let on_search_vim = props.on_search.clone();
+        let on_entrar_nav = props.on_enter_block_nav.clone();
         let vim_register = vim_register.clone();
         let vim_pending = vim_pending.clone();
         let doc_exec_vim = doc_exec.clone();
@@ -1499,6 +1501,25 @@ pub fn editor(props: &EditorProps) -> Html {
                 e.stop_propagation();
                 do_save.emit(());
                 return;
+            }
+
+            // RF6 (ciclo 252): com o vim ligado, Escape pertence ao vim
+            // (Inserção→Normal) e nunca chega no caminho que entra em
+            // navegação — quem usa vim ficava sem porta pra ela. Alt+N é
+            // a porta dedicada, e não disputa tecla com comando nenhum
+            // do vim.
+            //
+            // Pelo `code` e não pelo `key`: com Alt pressionado o layout
+            // pode devolver outro caractere, e a tecla física é o que
+            // interessa aqui.
+            if e.alt_key() && e.code() == "KeyN" {
+                if let Some(bloco) = bloco_do_cursor() {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    crate::nav_mode::focus_item(&bloco);
+                    on_entrar_nav.emit(());
+                    return;
+                }
             }
 
             // Ctrl+Z/Ctrl+Shift+Z funcionam independente do vim mode
@@ -1616,10 +1637,161 @@ pub fn editor(props: &EditorProps) -> Html {
             // Escape de Insert→Normal) pela mesma razão do menu `/`:
             // sem isso, Escape borbulharia pro atalho global de
             // `app.rs` que desseleciona a página inteira.
-            if vim_mode_enabled && !*vim_insert {
+            // `!em_navegacao` (RNF1, ciclo 252): as teclas de um modo não
+            // disparam ações de outro. Sem isto, com o vim ligado o ramo
+            // do vim rodava ANTES dos atalhos de bloco e engolia `hjkl`,
+            // `d`, `y`, `v` — o modo de navegação virava letra morta
+            // exatamente pra quem usa vim.
+            if vim_mode_enabled && vim_modo.comanda() && !em_navegacao {
                 e.prevent_default();
                 e.stop_propagation();
                 let key = e.key();
+
+                // ── Modos visuais (ciclo 252) ─────────────────────
+                //
+                // Entram ANTES dos movimentos porque, num visual, a
+                // mesma tecla de movimento ESTENDE em vez de andar.
+                let visual = vim_modo.visual();
+
+                // Escape larga o visual e volta pro normal — um nível por
+                // vez, mesma regra do ciclo 250.
+                if visual && key == "Escape" {
+                    crate::vim_visual::largar();
+                    vim_modo.set(VimModo::Normal);
+                    return;
+                }
+
+                // `/` fora da edição abre a busca (RF5). É o comando do
+                // vim que todo mundo usa mais depois dos movimentos, e
+                // aqui ele cai na paleta que o app já tem.
+                if key == "/" && !visual {
+                    on_search_vim.emit(String::new());
+                    return;
+                }
+
+                // Ctrl+V ANTES do `v` sozinho: `e.key()` de Ctrl+V é
+                // "v", então testar o `v` primeiro engolia o retângulo e
+                // caía no visual comum.
+                if e.ctrl_key() && key.eq_ignore_ascii_case("v") {
+                    crate::vim_visual::ancorar();
+                    crate::vim_visual::realcar();
+                    vim_modo.set(VimModo::VisualBloco);
+                    return;
+                }
+                if !visual {
+                    if key == "v" {
+                        vim_modo.set(VimModo::Visual);
+                        return;
+                    }
+                    if key == "V" {
+                        if let Some(bloco) = bloco_do_cursor() {
+                            crate::selecao_blocos::iniciar(&bloco);
+                        }
+                        vim_modo.set(VimModo::VisualLinha);
+                        return;
+                    }
+                }
+
+                if visual {
+                    let modo_visual = *vim_modo;
+                    // Movimento: estende em vez de andar. Cada visual
+                    // estende na sua unidade.
+                    let mover = |direcao: &str, granularidade: &str| match modo_visual {
+                        VimModo::VisualLinha => {
+                            if let Some(bloco) = bloco_do_cursor() {
+                                crate::selecao_blocos::mover_e_estender(
+                                    &bloco,
+                                    direcao == "forward",
+                                );
+                            }
+                        }
+                        VimModo::VisualBloco => {
+                            if granularidade == "line" {
+                                crate::vim_visual::mover_linha(direcao == "forward");
+                            } else {
+                                vim_move(direcao, granularidade);
+                            }
+                            crate::vim_visual::realcar();
+                        }
+                        _ => crate::vim_visual::estender(direcao, granularidade),
+                    };
+                    if key == vim_keymap.left {
+                        mover("backward", "character");
+                        return;
+                    } else if key == vim_keymap.right {
+                        mover("forward", "character");
+                        return;
+                    } else if key == vim_keymap.down {
+                        mover("forward", "line");
+                        return;
+                    } else if key == vim_keymap.up {
+                        mover("backward", "line");
+                        return;
+                    } else if key == vim_keymap.word_forward {
+                        mover("forward", "word");
+                        return;
+                    } else if key == vim_keymap.word_backward {
+                        mover("backward", "word");
+                        return;
+                    } else if key == vim_keymap.line_start {
+                        mover("backward", "lineboundary");
+                        return;
+                    } else if key == vim_keymap.line_end {
+                        mover("forward", "lineboundary");
+                        return;
+                    }
+
+                    // `y` copia o selecionado, `d` apaga. Uma tecla só
+                    // pros três visuais: o que muda é o que "selecionado"
+                    // quer dizer em cada um.
+                    let copiando = key == vim_keymap.yank_line;
+                    let apagando = key == vim_keymap.delete_line;
+                    if copiando || apagando {
+                        let texto = match modo_visual {
+                            VimModo::VisualLinha => {
+                                crate::selecao_blocos::markdown_dos_selecionados()
+                            }
+                            VimModo::VisualBloco => crate::vim_visual::texto_do_retangulo(),
+                            _ => crate::vim_visual::texto_selecionado(),
+                        };
+                        *vim_register.borrow_mut() = texto.clone();
+                        copiar_para_area_de_transferencia(&texto);
+                        let mexeu = if apagando {
+                            match modo_visual {
+                                VimModo::VisualLinha => {
+                                    if let Some(bloco) = bloco_do_cursor() {
+                                        aplicar_acao_no_conjunto(&bloco, AcaoBloco::Apagar)
+                                            .is_some()
+                                    } else {
+                                        false
+                                    }
+                                }
+                                VimModo::VisualBloco => crate::vim_visual::apagar_retangulo(),
+                                _ => {
+                                    doc_exec_vim("delete", "");
+                                    true
+                                }
+                            }
+                        } else {
+                            false
+                        };
+                        crate::vim_visual::largar();
+                        vim_modo.set(VimModo::Normal);
+                        if mexeu {
+                            let new_md = recompute_markdown_from_dom(
+                                &content_md_vim,
+                                &editor_ref_vim,
+                                &segment_refs_vim,
+                            );
+                            content_md_vim.set(new_md.clone());
+                            mark_edited_vim(new_md);
+                        }
+                        return;
+                    }
+                    // Qualquer outra tecla no visual não faz nada — não
+                    // cai nos comandos do normal por acidente.
+                    return;
+                }
 
                 if let Some(pending) = vim_pending.borrow_mut().take() {
                     let matched = (pending == "delete_line" && key == vim_keymap.delete_line)
@@ -1658,9 +1830,12 @@ pub fn editor(props: &EditorProps) -> Html {
                 } else if key == vim_keymap.right {
                     vim_move("forward", "character");
                 } else if key == vim_keymap.down {
-                    vim_move("forward", "line");
+                    // Atravessa blocos (ciclo 252) — ver `mover_linha`.
+                    crate::vim_visual::mover_linha(true);
+                    vim_scroll_caret_into_view();
                 } else if key == vim_keymap.up {
-                    vim_move("backward", "line");
+                    crate::vim_visual::mover_linha(false);
+                    vim_scroll_caret_into_view();
                 } else if key == vim_keymap.word_forward {
                     vim_move("forward", "word");
                 } else if key == vim_keymap.word_backward {
@@ -1674,13 +1849,13 @@ pub fn editor(props: &EditorProps) -> Html {
                 } else if key == vim_keymap.doc_end {
                     vim_move("forward", "documentboundary");
                 } else if key == vim_keymap.insert_before {
-                    vim_insert.set(true);
+                    vim_modo.set(VimModo::Insercao);
                 } else if key == vim_keymap.insert_after {
                     vim_move("forward", "character");
-                    vim_insert.set(true);
+                    vim_modo.set(VimModo::Insercao);
                 } else if key == vim_keymap.open_below {
                     if vim_open_line(false) {
-                        vim_insert.set(true);
+                        vim_modo.set(VimModo::Insercao);
                         let new_md = recompute_markdown_from_dom(
                             &content_md_vim,
                             &editor_ref_vim,
@@ -1691,7 +1866,7 @@ pub fn editor(props: &EditorProps) -> Html {
                     }
                 } else if key == vim_keymap.open_above {
                     if vim_open_line(true) {
-                        vim_insert.set(true);
+                        vim_modo.set(VimModo::Insercao);
                         let new_md = recompute_markdown_from_dom(
                             &content_md_vim,
                             &editor_ref_vim,
@@ -1725,10 +1900,10 @@ pub fn editor(props: &EditorProps) -> Html {
                 }
                 return;
             }
-            if vim_mode_enabled && *vim_insert && e.key() == "Escape" {
+            if vim_mode_enabled && !vim_modo.comanda() && e.key() == "Escape" {
                 e.prevent_default();
                 e.stop_propagation();
-                vim_insert.set(false);
+                vim_modo.set(VimModo::Normal);
                 return;
             }
 
@@ -2854,7 +3029,11 @@ pub fn editor(props: &EditorProps) -> Html {
         })
     };
 
-    let modo = Modo::atual(props.nav_mode_active, props.vim_mode_enabled, *vim_insert);
+    let modo = Modo::atual(
+        props.nav_mode_active,
+        props.vim_mode_enabled,
+        !vim_modo.comanda(),
+    );
 
     let close_image_modal = {
         let drafts = image_drafts.clone();
@@ -3333,12 +3512,23 @@ pub fn editor(props: &EditorProps) -> Html {
                 // meio de uma frase e ver um bloco sumir — sem nada na
                 // tela dizendo que `d` era um comando naquele momento.
                 <span class={classes!("editor__modo", modo.classe())} title={modo.dica()}>
-                    { modo.rotulo() }
+                    // Com o vim ligado, a barra de modo mostra o modo do
+                    // VIM (RF7, ciclo 252). Antes ela dizia só "NORMAL"
+                    // enquanto o visual estava ativo, e a pessoa tinha que
+                    // olhar o outro badge pra saber onde estava — duas
+                    // respostas pra "em que modo eu estou" é uma a mais.
+                    { if props.vim_mode_enabled && !props.nav_mode_active {
+                        vim_modo.rotulo_curto()
+                    } else {
+                        modo.rotulo()
+                    } }
                 </span>
                 <span>{ format!("{} palavras · {} caracteres", word_count, char_count) }</span>
                 if props.vim_mode_enabled {
-                    <span class={ if *vim_insert { "editor__vim-mode editor__vim-mode--insert" } else { "editor__vim-mode editor__vim-mode--normal" } }>
-                        { if *vim_insert { "-- INSERT --" } else { "-- NORMAL --" } }
+                    // RF7: a barra mostra QUAL modo do vim está ativo,
+                    // não só normal/inserção.
+                    <span class={vim_modo.classe()}>
+                        { vim_modo.rotulo() }
                     </span>
                 }
                 <span class="editor__statusbar-hint">{ modo.atalhos() }</span>
@@ -5435,6 +5625,72 @@ impl Atalho {
 /// Procura o atalho de uma tecla, se ela for comando em algum modo.
 pub fn atalho_de(tecla: &str, alt: bool) -> Option<&'static Atalho> {
     ATALHOS.iter().find(|a| a.tecla == tecla && a.alt == alt)
+}
+
+/// Os modos do vim (ciclo 252).
+///
+/// Antes existia só `vim_insert: bool` — o par normal/inserção. A spec
+/// pede os quatro principais, e um booleano não comporta quatro estados
+/// sem virar uma coleção de flags que podem se contradizer.
+///
+/// `VisualBloco` é retangular DE VERDADE: âncora e foco guardam bloco E
+/// coluna, e copiar/apagar agem sobre a fatia `[coluna_ini, coluna_fim)`
+/// de cada bloco no intervalo. `VisualLinha` é o modo que trabalha com
+/// blocos inteiros, e reusa a seleção do ciclo 251.
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub enum VimModo {
+    #[default]
+    Normal,
+    Insercao,
+    /// `v` — seleção por caractere, dentro do bloco.
+    Visual,
+    /// `V` — blocos inteiros (o "linewise" do vim; aqui a linha é o bloco).
+    VisualLinha,
+    /// `Ctrl+V` — retângulo: as mesmas colunas em vários blocos.
+    VisualBloco,
+}
+
+impl VimModo {
+    pub fn rotulo(&self) -> &'static str {
+        match self {
+            Self::Normal => "-- NORMAL --",
+            Self::Insercao => "-- INSERT --",
+            Self::Visual => "-- VISUAL --",
+            Self::VisualLinha => "-- VISUAL LINHA --",
+            Self::VisualBloco => "-- VISUAL BLOCO --",
+        }
+    }
+
+    /// Sem os travessões — pra barra de MODO, que é uma etiqueta curta.
+    pub fn rotulo_curto(&self) -> &'static str {
+        match self {
+            Self::Normal => "NORMAL",
+            Self::Insercao => "INSERÇÃO",
+            Self::Visual => "VISUAL",
+            Self::VisualLinha => "VISUAL LINHA",
+            Self::VisualBloco => "VISUAL BLOCO",
+        }
+    }
+
+    pub fn classe(&self) -> &'static str {
+        match self {
+            Self::Normal => "editor__vim-mode editor__vim-mode--normal",
+            Self::Insercao => "editor__vim-mode editor__vim-mode--insert",
+            Self::Visual | Self::VisualLinha | Self::VisualBloco => {
+                "editor__vim-mode editor__vim-mode--visual"
+            }
+        }
+    }
+
+    /// Está num dos visuais? É a pergunta que quase todo comando faz.
+    pub fn visual(&self) -> bool {
+        matches!(self, Self::Visual | Self::VisualLinha | Self::VisualBloco)
+    }
+
+    /// Teclas são comando? (Tudo menos inserção.)
+    pub fn comanda(&self) -> bool {
+        !matches!(self, Self::Insercao)
+    }
 }
 
 /// Modo da aplicação (ciclo 194).

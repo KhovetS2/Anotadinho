@@ -96,8 +96,24 @@ pub fn cheatsheet_modal(props: &CheatsheetModalProps) -> Html {
                             <kbd class="cheatsheet__key">{ "Backspace" }</kbd>
                         </li>
                         <li class="cheatsheet__row">
-                            <span class="cheatsheet__label">{ "Voltar pros wrappers principais / sair da sessão" }</span>
+                            <span class="cheatsheet__label">{ "Subir um nível; na raiz, sair da sessão" }</span>
                             <kbd class="cheatsheet__key">{ "Escape" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Mover entre itens (igual às setas)" }</span>
+                            <kbd class="cheatsheet__key">{ "h j k l" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Selecionar vários blocos" }</span>
+                            <kbd class="cheatsheet__key">{ "v · Shift+↑↓" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Copiar os blocos selecionados" }</span>
+                            <kbd class="cheatsheet__key">{ "Ctrl+C" }</kbd>
+                        </li>
+                        <li class="cheatsheet__row">
+                            <span class="cheatsheet__label">{ "Entrar na navegação com o vim ligado" }</span>
+                            <kbd class="cheatsheet__key">{ "Alt+N" }</kbd>
                         </li>
                     </ul>
                 </div>
@@ -148,6 +164,38 @@ pub fn cheatsheet_modal(props: &CheatsheetModalProps) -> Html {
                                     <kbd class="cheatsheet__key">{ *key }</kbd>
                                 </li>
                             }) }
+                        </ul>
+                    </div>
+                    <div class="cheatsheet__section">
+                        // Os modos que o ciclo 252 acrescentou. Fixos, não
+                        // remapeáveis — o `VimKeymap` mapeia comandos do
+                        // modo Normal, e estes são entradas de MODO.
+                        <h4 class="cheatsheet__heading">{ "Vim mode (modos visuais e comando)" }</h4>
+                        <ul class="cheatsheet__list">
+                            <li class="cheatsheet__row">
+                                <span class="cheatsheet__label">{ "Visual (por caractere, dentro do bloco)" }</span>
+                                <kbd class="cheatsheet__key">{ "v" }</kbd>
+                            </li>
+                            <li class="cheatsheet__row">
+                                <span class="cheatsheet__label">{ "Visual linha (blocos inteiros)" }</span>
+                                <kbd class="cheatsheet__key">{ "V" }</kbd>
+                            </li>
+                            <li class="cheatsheet__row">
+                                <span class="cheatsheet__label">{ "Visual bloco (retângulo de colunas)" }</span>
+                                <kbd class="cheatsheet__key">{ "Ctrl+V" }</kbd>
+                            </li>
+                            <li class="cheatsheet__row">
+                                <span class="cheatsheet__label">{ "Copiar / apagar o selecionado" }</span>
+                                <kbd class="cheatsheet__key">{ "y · d" }</kbd>
+                            </li>
+                            <li class="cheatsheet__row">
+                                <span class="cheatsheet__label">{ "Abrir a busca de comando" }</span>
+                                <kbd class="cheatsheet__key">{ "/" }</kbd>
+                            </li>
+                            <li class="cheatsheet__row">
+                                <span class="cheatsheet__label">{ "Entrar no modo de navegação (vim ligado)" }</span>
+                                <kbd class="cheatsheet__key">{ "Alt+N" }</kbd>
+                            </li>
                         </ul>
                     </div>
                 }

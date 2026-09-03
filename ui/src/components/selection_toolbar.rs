@@ -320,7 +320,7 @@ fn bloco_da_selecao(range: &Range) -> Option<Element> {
 /// aplicar ou tirar uma marca reconstrói os nós, e o `Range` antigo passa
 /// a apontar pra nada. Já "do caractere 4 ao 9 deste bloco" continua
 /// significando a mesma coisa depois da cirurgia.
-fn nos_de_texto(bloco: &Element) -> Vec<(web_sys::Node, u32, u32)> {
+pub(crate) fn nos_de_texto(bloco: &Element) -> Vec<(web_sys::Node, u32, u32)> {
     fn andar(no: &web_sys::Node, pos: &mut u32, saida: &mut Vec<(web_sys::Node, u32, u32)>) {
         if no.node_type() == web_sys::Node::TEXT_NODE {
             let tamanho = no.text_content().unwrap_or_default().chars().count() as u32;
@@ -342,7 +342,7 @@ fn nos_de_texto(bloco: &Element) -> Vec<(web_sys::Node, u32, u32)> {
 }
 
 /// Onde a seleção começa e termina, em caracteres do bloco.
-fn intervalo(bloco: &Element, range: &Range) -> Option<(u32, u32)> {
+pub(crate) fn intervalo(bloco: &Element, range: &Range) -> Option<(u32, u32)> {
     let doc = web_sys::window()?.document()?;
     let antes = doc.create_range().ok()?;
     antes.select_node_contents(bloco).ok()?;
@@ -356,7 +356,7 @@ fn intervalo(bloco: &Element, range: &Range) -> Option<(u32, u32)> {
 
 /// Refaz a seleção a partir dos caracteres — é o que faz a barra
 /// continuar servindo depois de aplicar ou tirar uma marca.
-fn selecionar_intervalo(bloco: &Element, ini: u32, fim: u32) -> Option<()> {
+pub(crate) fn selecionar_intervalo(bloco: &Element, ini: u32, fim: u32) -> Option<()> {
     let doc = web_sys::window()?.document()?;
     let nos = nos_de_texto(bloco);
     let range = doc.create_range().ok()?;

@@ -1483,13 +1483,33 @@ pub fn app() -> Html {
                                 // nível; a diferença é que Escape na raiz
                                 // ENCERRA a sessão, e Backspace não.
                                 let mut stack = (*nav_stack).clone();
-                                stack.pop();
+                                let saindo = stack.pop();
                                 let novo = stack.last().cloned().unwrap_or_else(|| "root".to_string());
                                 nav_stack.set(stack);
                                 if let Some(doc) = doc {
-                                    let items = crate::nav_mode::items_in_group(&doc, &novo);
-                                    if let Some(first) = items.first() {
-                                        crate::nav_mode::focus_item(first);
+                                    // Volta pro item de ONDE se saiu, não pro
+                                    // primeiro do nível de cima: subir devia
+                                    // devolver a pessoa ao lugar em que ela
+                                    // estava, e não jogá-la no começo da lista.
+                                    // O item que representa um grupo é o que
+                                    // tem `data-nav-group` igual a ele — a
+                                    // mesma relação que o Enter usou pra
+                                    // descer.
+                                    let de_volta = saindo.as_ref().and_then(|g| {
+                                        doc.query_selector(&format!(
+                                            "[data-nav-group=\"{}\"]",
+                                            g.replace('"', "")
+                                        ))
+                                        .ok()
+                                        .flatten()
+                                    });
+                                    let alvo = de_volta.or_else(|| {
+                                        crate::nav_mode::items_in_group(&doc, &novo)
+                                            .into_iter()
+                                            .next()
+                                    });
+                                    if let Some(el) = alvo {
+                                        crate::nav_mode::focus_item(&el);
                                     }
                                 }
                             }

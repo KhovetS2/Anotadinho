@@ -1383,7 +1383,7 @@ body {
 }
 
 .editor__wysiwyg a[href^="anotadinho://page/"] {
-    color: var(--accent-purple, var(--accent-blue));
+    color: var(--accent-purple);
     text-decoration: none;
     background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
     padding: 1px 4px;
@@ -1663,6 +1663,14 @@ body {
 .editor__vim-mode--insert {
     background: color-mix(in srgb, var(--success) 20%, transparent);
     color: var(--success);
+}
+
+/* Os três visuais dividem uma cor (ciclo 252): o que muda entre eles é
+   a UNIDADE, e isso o rótulo já diz por extenso. Cor própria pra cada um
+   faria a barra virar semáforo sem informar mais nada. */
+.editor__vim-mode--visual {
+    background: color-mix(in srgb, var(--accent-purple) 22%, transparent);
+    color: var(--accent-purple);
 }
 
 /* Modo de navegação hierárquico (ciclo 133) — badge de canto sempre

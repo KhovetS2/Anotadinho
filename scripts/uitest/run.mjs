@@ -22,6 +22,7 @@ import { Bridge, esperar, abrirPagina } from "./bridge.mjs";
 import { cenarios } from "./cenarios.mjs";
 import { digitacao } from "./digitacao.mjs";
 import { blocos } from "./blocos.mjs";
+import { teclados as teclado } from "./teclado.mjs";
 import { interacoes } from "./interacoes.mjs";
 import { telas } from "./telas.mjs";
 import { fluxo } from "./fluxo.mjs";
@@ -64,7 +65,15 @@ ctx.assertEq = assertEq;
 
 // A bateria de digitação (ciclo 193) entra junto: é rede de segurança
 // permanente, não um cenário pontual.
-const todos = [...cenarios, ...digitacao, ...blocos, ...interacoes, ...telas, ...fluxo];
+const todos = [
+  ...cenarios,
+  ...digitacao,
+  ...blocos,
+  ...teclado,
+  ...interacoes,
+  ...telas,
+  ...fluxo,
+];
 
 // `--pendentes` roda a bateria escrita a partir das specs ainda não
 // implementadas (`pendentes.mjs`). Ela fica FORA de `todos` de
