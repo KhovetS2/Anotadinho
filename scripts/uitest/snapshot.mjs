@@ -350,6 +350,16 @@ export async function conferirSnapshots(
     return resultados;
   } finally {
     if (existsSync(ARQUIVO)) unlinkSync(ARQUIVO);
+    // Devolve o tema que o app tinha escolhido. O atributo foi escrito
+    // direto no DOM, por fora do estado do Yew — sem desfazer aqui, a
+    // janela do usuário fica no tema do teste até alguém recarregar.
+    if (tema) {
+      await bridge.js(`(() => {
+        const guardado = JSON.parse(localStorage.getItem('anotadinho.aparencia') || '{}');
+        document.documentElement.setAttribute('data-theme', guardado.tema || 'escuro');
+        return true;
+      })()`);
+    }
   }
 }
 
