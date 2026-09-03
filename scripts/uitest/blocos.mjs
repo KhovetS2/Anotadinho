@@ -504,3 +504,154 @@ bloco("a dica de bloco vazio não aparece por cima de texto", TRES, async (b, ct
     `a dica apareceu num bloco COM texto: ${dicaEmBlocoComTexto}`,
   );
 }, 249);
+
+// ── 7. seleção de vários blocos (ciclo 251) ─────────────────────────
+//
+// A pendência que o ciclo 175 deixou de propósito: com um
+// `contenteditable` por bloco o navegador não estende seleção entre
+// blocos. Aqui a seleção é por bloco INTEIRO — seleção parcial
+// atravessando blocos continua fora, é não-objetivo declarado na spec.
+
+const SELECIONADOS = `[...document.querySelectorAll('.editor__bloco--selecionado')].map(b => b.textContent.trim())`;
+
+/// Espia o que VAI pra área de transferência.
+///
+/// Ler o clipboard do sistema não é possível no WebView sem permissão, e
+/// `execCommand('paste')` não devolve nada. O que o cenário precisa
+/// provar é o PAYLOAD — e ele passa por `document.execCommand('copy')`
+/// com um `<textarea>` selecionado (ver `copiar_para_area_de_transferencia`).
+/// Interceptar ali prova exatamente o que seria colado.
+const ESPIAR_COPIA = `(() => {
+  if (window.__copiado === undefined) {
+    const orig = document.execCommand.bind(document);
+    document.execCommand = function (cmd, ...resto) {
+      if (cmd === 'copy') {
+        const a = document.activeElement;
+        window.__copiado = a && 'value' in a ? a.value : (getSelection() || '').toString();
+      }
+      return orig(cmd, ...resto);
+    };
+  }
+  window.__copiado = null;
+  return true;
+})()`;
+
+const LER_COPIA = `window.__copiado`;
+
+bloco("Shift+seta seleciona vários blocos, e Escape larga a seleção", TRES, async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("alfa"));
+  await PAUSA(500);
+  ctx.assertEq((await b.js(SELECIONADOS)).length, 0, "não podia começar com nada selecionado");
+
+  await b.js(TECLA("ArrowDown", { shiftKey: true }));
+  await PAUSA(400);
+  ctx.assertEq(
+    (await b.js(SELECIONADOS)).join(","),
+    "alfa,beta",
+    "Shift+seta devia ter selecionado os dois primeiros",
+  );
+
+  await b.js(TECLA("ArrowDown", { shiftKey: true }));
+  await PAUSA(400);
+  ctx.assertEq((await b.js(SELECIONADOS)).join(","), "alfa,beta,gama", "devia crescer pro terceiro");
+
+  // Encolher: a seleção vai da ÂNCORA até o foco, então voltar diminui
+  // em vez de continuar acumulando.
+  await b.js(TECLA("ArrowUp", { shiftKey: true }));
+  await PAUSA(400);
+  ctx.assertEq((await b.js(SELECIONADOS)).join(","), "alfa,beta", "voltar devia ter encolhido");
+
+  await b.js(TECLA("Escape"));
+  await PAUSA(400);
+  ctx.assertEq((await b.js(SELECIONADOS)).length, 0, "Escape devia largar a seleção");
+  ctx.assertEq((await h.estado()).modo, "NAVEGAÇÃO", "e sem sair da navegação");
+}, 251);
+
+bloco("copiar vários blocos produz markdown legível", TRES, async (b, ctx, h) => {
+  ctx.escrever(`---\ntitle: __uitest\n---\n# Um título\n\nalfa\n\n- item um\n- item dois\n`);
+  await recarregarEstavel(b);
+  await abrirPaginaEstavel(b, ctx.nomePagina);
+  await esperar(b, "document.querySelector('.editor__bloco')", "o bloco existir");
+
+  await b.js(IR_PRA_NAVEGACAO("Um título"));
+  await PAUSA(500);
+  await b.js(TECLA("ArrowDown", { shiftKey: true }));
+  await PAUSA(300);
+  await b.js(TECLA("ArrowDown", { shiftKey: true }));
+  await PAUSA(300);
+  ctx.assertEq(
+    (await b.js(SELECIONADOS)).length,
+    3,
+    "precisava dos três blocos selecionados pra valer o teste",
+  );
+
+  await b.js(ESPIAR_COPIA);
+  await b.js(TECLA("c", { ctrlKey: true }));
+  await PAUSA(500);
+  const copiado = (await b.js(LER_COPIA)) || "";
+  ctx.assert(/^# Um título/m.test(copiado), `o título não saiu como markdown:\n${copiado}`);
+  ctx.assert(/^alfa$/m.test(copiado), `o parágrafo não saiu:\n${copiado}`);
+  ctx.assert(/^- item um$/m.test(copiado), `a lista não saiu como markdown:\n${copiado}`);
+}, 251);
+
+bloco("apagar remove exatamente os blocos realçados", TRES, async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("alfa"));
+  await PAUSA(500);
+  await b.js(TECLA("ArrowDown", { shiftKey: true }));
+  await PAUSA(400);
+  ctx.assertEq((await b.js(SELECIONADOS)).join(","), "alfa,beta", "precisava dos dois selecionados");
+
+  await b.js(TECLA("d"));
+  await PAUSA(600);
+  const est = await h.estado();
+  ctx.assertEq(est.blocos.join(","), "gama", "devia ter sobrado só o bloco não selecionado");
+  ctx.assertEq((await b.js(SELECIONADOS)).length, 0, "a seleção não podia sobreviver ao apagar");
+
+  const md = await h.salvarELer();
+  ctx.assert(!/alfa|beta/.test(md), `os blocos apagados voltaram do disco:\n${md}`);
+}, 251);
+
+bloco("mover um conjunto de blocos mantém a ordem interna", TRES, async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("beta"));
+  await PAUSA(500);
+  await b.js(TECLA("ArrowDown", { shiftKey: true }));
+  await PAUSA(400);
+  ctx.assertEq((await b.js(SELECIONADOS)).join(","), "beta,gama", "precisava de beta+gama");
+
+  // Sobe o conjunto: o par passa por cima de alfa, junto e na ordem.
+  // Aplicar de trás pra frente embaralharia ("gama,beta").
+  await b.js(TECLA("K"));
+  await PAUSA(700);
+  ctx.assertEq(
+    (await h.estado()).blocos.join(","),
+    "beta,gama,alfa",
+    "o conjunto devia ter subido inteiro e na ordem",
+  );
+
+  // Na borda, o conjunto não se desmancha.
+  await b.js(TECLA("K"));
+  await PAUSA(700);
+  ctx.assertEq(
+    (await h.estado()).blocos.join(","),
+    "beta,gama,alfa",
+    "no limite nada devia mudar",
+  );
+}, 251);
+
+bloco("v começa a seleção e as setas continuam estendendo", TRES, async (b, ctx, h) => {
+  await b.js(IR_PRA_NAVEGACAO("alfa"));
+  await PAUSA(500);
+  await b.js(TECLA("v"));
+  await PAUSA(300);
+  ctx.assertEq((await b.js(SELECIONADOS)).join(","), "alfa", "v devia ancorar no bloco atual");
+
+  // Com âncora posta, seta SEM shift continua estendendo — é o que faz
+  // o modo visual do vim (ciclo 252) cair aqui de graça.
+  await b.js(TECLA("ArrowDown"));
+  await PAUSA(400);
+  ctx.assertEq((await b.js(SELECIONADOS)).join(","), "alfa,beta", "a seta devia ter estendido");
+
+  await b.js(TECLA("v"));
+  await PAUSA(300);
+  ctx.assertEq((await b.js(SELECIONADOS)).length, 0, "v de novo devia desfazer");
+}, 251);

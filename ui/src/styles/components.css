@@ -998,6 +998,17 @@
    sem passar por lá pra mensagem ficar impressa por cima da frase do
    usuário. Com o vazio no seletor a dica some no primeiro caractere,
    qualquer que seja o estado da classe. */
+/* Seleção de vários blocos (ciclo 251).
+
+   Precisa ser visível SEM depender de foco: o foco fica num bloco só, e
+   o que a pessoa precisa enxergar é o conjunto inteiro. Fundo em vez de
+   borda porque a borda esquerda do bloco já é do nav-mode, e duas
+   linguagens no mesmo lugar competiriam. */
+.editor__bloco--selecionado {
+  background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  border-radius: var(--r-sm);
+}
+
 .editor__bloco--convite:empty::before,
 .editor__bloco--convite:has(> br:only-child)::before,
 .editor__bloco:hover:has(> br:only-child)::before,

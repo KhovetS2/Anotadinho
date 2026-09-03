@@ -1732,6 +1732,68 @@ pub fn editor(props: &EditorProps) -> Html {
                 return;
             }
 
+            // ── Seleção de vários blocos (ciclo 251) ──────────────
+            //
+            // Tudo aqui é do modo de NAVEGAÇÃO. Vem antes dos atalhos de
+            // bloco de um item só porque, havendo seleção, `d`/`y`/`J`/`K`
+            // passam a valer pro CONJUNTO.
+            if modo_atual == Modo::Navegacao {
+                // Shift+seta cresce e encolhe a seleção; `v` a começa e
+                // desfaz (com âncora posta, as setas e `hjkl` continuam
+                // estendendo sem precisar do Shift, que é o que faz o
+                // modo visual do vim cair aqui de graça).
+                let direcao = crate::nav_mode::direcao_de_navegacao(&e.key());
+                let estendendo = e.shift_key() || crate::selecao_blocos::ativa();
+                if let (Some(frente), true) = (direcao, estendendo) {
+                    if let Some(bloco) = bloco_focado() {
+                        e.prevent_default();
+                        e.stop_propagation();
+                        crate::selecao_blocos::mover_e_estender(&bloco, frente);
+                        return;
+                    }
+                }
+
+                if comando_vale(&e, "v", false, modo_atual) {
+                    if let Some(bloco) = bloco_focado() {
+                        e.prevent_default();
+                        e.stop_propagation();
+                        if crate::selecao_blocos::ativa() {
+                            crate::selecao_blocos::limpar();
+                        } else {
+                            crate::selecao_blocos::iniciar(&bloco);
+                        }
+                        return;
+                    }
+                }
+
+                // Escape desfaz a SELEÇÃO antes de subir de nível. É um
+                // nível como qualquer outro (RF2 do ciclo 250): quem
+                // selecionou não quer sair da página, quer largar a
+                // seleção.
+                if e.key() == "Escape" && crate::selecao_blocos::ativa() {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    crate::selecao_blocos::limpar();
+                    return;
+                }
+
+                // Copiar o conjunto como markdown (RF1). Ctrl+C e não uma
+                // letra: é o gesto que já existe na cabeça de todo mundo,
+                // e `c` sozinho já copia a REFERÊNCIA de um bloco.
+                if (e.ctrl_key() || e.meta_key())
+                    && e.key().eq_ignore_ascii_case("c")
+                    && crate::selecao_blocos::ativa()
+                {
+                    let md = crate::selecao_blocos::markdown_dos_selecionados();
+                    if !md.is_empty() {
+                        e.prevent_default();
+                        e.stop_propagation();
+                        copiar_para_area_de_transferencia(&md);
+                        return;
+                    }
+                }
+            }
+
             // "c" com um BLOCO focado (nav-mode, ciclo 174) copia a
             // referência dele: grava um `^id` naquela linha — e só nela
             // — e põe `![[Página^id]]` na área de transferência
@@ -1794,7 +1856,12 @@ pub fn editor(props: &EditorProps) -> Html {
                 if let (Some(acao), Some(bloco)) = (acao, bloco_focado()) {
                     e.prevent_default();
                     e.stop_propagation();
-                    if let Some(indice) = aplicar_acao_de_bloco(&bloco, acao) {
+                    // Havendo seleção múltipla (ciclo 251), a ação vale
+                    // pro CONJUNTO — apagar e mover um grupo de blocos de
+                    // uma vez é o RF2 da spec.
+                    if let Some(indice) = aplicar_acao_no_conjunto(&bloco, acao)
+                        .or_else(|| aplicar_acao_de_bloco(&bloco, acao))
+                    {
                         let novo = recompute_markdown_from_dom(
                             &content_md_esc,
                             &editor_ref_esc,
@@ -4783,6 +4850,10 @@ fn segmento_do_embed_focado() -> Option<usize> {
 /// aceso no bloco de origem.
 fn sair_do_nav_mode(on_sair: &Callback<()>) {
     crate::nav_mode::clear_item_highlight();
+    // Seleção de blocos é do modo de navegação (ciclo 251): deixá-la
+    // acesa depois de voltar pra digitação daria um realce que nenhuma
+    // tecla mais desfaz.
+    crate::selecao_blocos::limpar();
     on_sair.emit(());
 }
 
@@ -4948,6 +5019,64 @@ enum AcaoBloco {
 /// O foco é mantido no bloco (ou no vizinho, quando ele é apagado) pra
 /// dar pra encadear as ações — subir um bloco três posições é `K K K`,
 /// não `K`, achar de novo, `K`.
+/// A mesma ação, mas sobre a SELEÇÃO múltipla (ciclo 251).
+///
+/// Devolve `None` quando não há seleção — aí quem responde é
+/// `aplicar_acao_de_bloco`, o caminho de um bloco só de sempre.
+///
+/// A ordem de aplicação importa e é o que este wrapper existe pra
+/// acertar: descer um conjunto começando pelo primeiro faria cada bloco
+/// pular por cima do seguinte da própria seleção, e o grupo chegaria
+/// embaralhado do outro lado. Descendo de trás pra frente (e subindo da
+/// frente pra trás) cada um passa por cima de quem NÃO está selecionado,
+/// que é o movimento que se espera.
+fn aplicar_acao_no_conjunto(bloco: &web_sys::Element, acao: AcaoBloco) -> Option<usize> {
+    if !crate::selecao_blocos::ativa() {
+        return None;
+    }
+    let mut selecionados = crate::selecao_blocos::selecionados();
+    if selecionados.len() < 2 {
+        return None;
+    }
+    // Um conjunto que já encosta na borda não se move: sem isto, os
+    // blocos do meio subiriam e o primeiro ficaria, desmanchando o grupo.
+    if matches!(acao, AcaoBloco::Subir | AcaoBloco::Descer) && !pode_mover(&selecionados, acao) {
+        return Some(indice_do_bloco(bloco));
+    }
+    if matches!(acao, AcaoBloco::Descer | AcaoBloco::Duplicar) {
+        selecionados.reverse();
+    }
+    let apagando = matches!(acao, AcaoBloco::Apagar);
+    let mut ultimo = None;
+    for alvo in &selecionados {
+        ultimo = aplicar_acao_de_bloco(alvo, acao);
+    }
+    if apagando {
+        crate::selecao_blocos::limpar();
+        return Some(ultimo.unwrap_or(0));
+    }
+    // Mover/duplicar preserva a seleção: quem moveu um grupo geralmente
+    // quer movê-lo de novo.
+    let foco = crate::selecao_blocos::selecionados();
+    let alvo = foco.first().cloned().unwrap_or_else(|| bloco.clone());
+    Some(indice_do_bloco(&alvo))
+}
+
+/// O conjunto inteiro tem pra onde ir naquele sentido?
+fn pode_mover(selecionados: &[web_sys::Element], acao: AcaoBloco) -> bool {
+    let borda = match acao {
+        AcaoBloco::Subir => selecionados.first(),
+        _ => selecionados.last(),
+    };
+    let Some(borda) = borda else { return false };
+    let vizinho = match acao {
+        AcaoBloco::Subir => borda.previous_element_sibling(),
+        _ => borda.next_element_sibling(),
+    };
+    // Vizinho que também está selecionado não conta como espaço livre.
+    vizinho.is_some_and(|v| !v.class_list().contains(crate::selecao_blocos::CLASSE_SELECIONADO))
+}
+
 fn aplicar_acao_de_bloco(bloco: &web_sys::Element, acao: AcaoBloco) -> Option<usize> {
     let doc = web_sys::window().and_then(|w| w.document())?;
     let pai = bloco.parent_element()?;
@@ -5263,6 +5392,12 @@ pub const ATALHOS: &[Atalho] = &[
         alt: false,
         modo: Modo::Navegacao,
         descricao: "duplicar bloco",
+    },
+    Atalho {
+        tecla: "v",
+        alt: false,
+        modo: Modo::Navegacao,
+        descricao: "selecionar vários blocos",
     },
     Atalho {
         tecla: "K",

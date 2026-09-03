@@ -17,6 +17,7 @@ pub mod keyboard_activate;
 pub mod markdown_render;
 pub mod menu_keyboard;
 pub mod nav_mode;
+pub mod selecao_blocos;
 /// Motor de consulta do vault — reexportado do `anotadinho-core` (mora
 /// lá pro `anotadinho-cli` executar a mesma consulta que o embed
 /// mostra, sem passar por WASM).
