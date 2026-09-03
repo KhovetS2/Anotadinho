@@ -3476,13 +3476,106 @@ fn insert_element_at_cursor(el: &web_sys::Element, break_out_of_block: bool) -> 
         return false;
     }
 
-    // Move o cursor pra depois do nó inserido, senão continuaria "dentro"
-    // dele — próxima tecla digitada iria pro lugar errado.
+    // O bloco entrou no DOM CRU: sem `contenteditable`, sem
+    // `data-nav-block`, sem `editor__bloco`, sem `tabindex`. Desde que o
+    // editável desceu pro bloco (ciclo 175) quem dá essas marcas é
+    // `marcar_blocos`, e este caminho nunca o chamava — o bloco recém
+    // inserido pelo menu `/` não aceitava cursor nem teclado, e só
+    // "voltava a existir" ao sair da página e entrar de novo (aí sim o
+    // efeito de render remarcava tudo). Ciclo 249.
+    //
+    // Só quando `el` é filho DIRETO do segmento: com
+    // `break_out_of_block: false` (imagem inline) o pai é o `<p>` de
+    // texto, e marcar os filhos dele como blocos partiria o parágrafo.
+    let container = el
+        .parent_element()
+        .filter(|pai| pai.class_list().contains("editor__wysiwyg"));
+    if let Some(pai) = &container {
+        marcar_blocos(pai);
+    }
+
+    // Cursor DEPOIS do nó inserido cai direto no contêiner do segmento,
+    // que é `contenteditable="false"` — ou seja, em lugar nenhum: o
+    // editor inteiro parava de aceitar tecla, não só o bloco novo. O
+    // destino certo é um bloco de verdade.
+    if container.is_some() {
+        if el.has_attribute("data-embed-insert") {
+            // Marcador de embed: no próximo render ele vira componente
+            // Yew e o DOM inteiro do segmento é refeito, então qualquer
+            // foco posto agora se perde. O jeito de não terminar com o
+            // foco no `<body>` é o mesmo do ciclo 195 — pousar num bloco
+            // DEPOIS do render. O índice é a contagem de blocos que
+            // ficaram antes do marcador, que é onde o texto continua.
+            refocar_bloco_apos_render(blocos_antes(el));
+            return true;
+        }
+        if aceita_texto(el) {
+            entrar_no_bloco(el);
+            return true;
+        }
+        // Bloco que NÃO recebe texto (figura de imagem, linha
+        // horizontal): o cursor tem que ficar DEPOIS dele, como sempre
+        // ficou. Não é só estética — colar várias imagens de uma vez
+        // insere uma a uma num laço, e cada volta usa o cursor deixado
+        // pela anterior como âncora. Pôr o cursor DENTRO da figura
+        // aninhava a segunda imagem na primeira.
+    }
+
+    // Inserção inline (imagem dentro de um parágrafo): o cursor continua
+    // dentro do bloco editável, então basta sair de dentro do nó.
     range.set_start_after(el).ok();
     range.collapse();
     sel.remove_all_ranges().ok();
     let _ = sel.add_range(&range);
     true
+}
+
+/// O bloco recebe texto digitado?
+///
+/// Só quem recebe é que merece o cursor dentro. Uma `<figure>` de imagem
+/// ou um `<hr>` são blocos de primeiro nível como os outros, mas não têm
+/// onde pôr o caret.
+fn aceita_texto(el: &web_sys::Element) -> bool {
+    matches!(
+        el.tag_name().to_lowercase().as_str(),
+        "p" | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "ul"
+            | "ol"
+            | "li"
+            | "blockquote"
+            | "pre"
+            | "table"
+    )
+}
+
+/// Quantos blocos de texto da PÁGINA vêm antes de `el`.
+///
+/// Serve de índice de pouso pro foco depois de um re-render que refaz o
+/// DOM (ver `refocar_bloco_apos_render`), quando guardar o elemento em
+/// si não adianta porque ele deixa de existir.
+fn blocos_antes(el: &web_sys::Element) -> usize {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return 0;
+    };
+    let Ok(blocos) = doc.query_selector_all(&format!("[{}]", crate::nav_mode::ATTR_BLOCO_TEXTO))
+    else {
+        return 0;
+    };
+    let mut n = 0;
+    for i in 0..blocos.length() {
+        let Some(bloco) = blocos.item(i) else { continue };
+        // `compare_document_position` com o bit PRECEDING (0x02): o
+        // bloco vem antes do marcador na ordem do documento.
+        if el.compare_document_position(&bloco) & 0x02 != 0 {
+            n += 1;
+        }
+    }
+    n
 }
 
 fn current_range() -> Option<web_sys::Range> {

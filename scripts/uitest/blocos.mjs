@@ -380,3 +380,127 @@ bloco("setas voltam a andar depois do foco cair no genérico", TRES, async (b, c
     "a seta devia ter reancorado a navegação em vez de não fazer nada",
   );
 }, 197);
+
+// ── 6. o que o menu / INSERE ────────────────────────────────────────
+//
+// Existia cenário provando que o menu `/` ABRE, e nenhum provando o que
+// acontece depois de escolher um item. Foi nesse vão que o ciclo 249
+// morou: `insert_element_at_cursor` punha o elemento no DOM cru — sem
+// `contenteditable`, sem `data-nav-block`, sem `editor__bloco` — e
+// mandava o cursor pra DEPOIS dele, ou seja, pro contêiner do segmento,
+// que é `contenteditable="false"`. O bloco novo não aceitava tecla e o
+// editor inteiro parecia travado, até sair da página e voltar (aí o
+// efeito de render remarcava tudo).
+//
+// Por isso estes cenários não param em "inseriu": eles DIGITAM depois.
+
+/// Abre o menu `/` num bloco novo no fim da página e escolhe um item.
+const ESCOLHER_NO_MENU = (rotulo) => `(() => {
+  const item = [...document.querySelectorAll('.slash-menu__item')]
+    .find(i => (i.querySelector('.slash-menu__item-label') || {}).textContent === ${JSON.stringify(rotulo)});
+  if (!item) throw new Error('item "' + ${JSON.stringify(rotulo)} + '" não está no menu');
+  item.click();
+  return true;
+})()`;
+
+/// Onde o cursor está DE VERDADE: num bloco editável, ou em lugar nenhum.
+const ONDE_ESTA_O_CURSOR = `(() => {
+  const s = getSelection();
+  if (!s.anchorNode) return null;
+  const el = s.anchorNode.nodeType === 1 ? s.anchorNode : s.anchorNode.parentElement;
+  const editavel = el && el.closest('[contenteditable="true"]');
+  if (!editavel) return null;
+  return { tag: editavel.tagName, bloco: editavel.classList.contains('editor__bloco') };
+})()`;
+
+bloco("bloco escolhido no menu / aceita digitação na hora", TRES, async (b, ctx, h) => {
+  await b.js(CURSOR_NO_FIM_DO_BLOCO("gama"));
+  await b.js(TECLA("Enter", { shiftKey: true }));
+  await PAUSA(400);
+  await b.js(ESCREVER("/"));
+  await esperar(b, "document.querySelector('.slash-menu')", "o menu / abrir");
+  await b.js(ESCOLHER_NO_MENU("Título 1"));
+  await PAUSA(500);
+
+  // 1. O cursor tem que ter sobrado DENTRO de um bloco editável. Sem
+  //    isto, nenhuma tecla chega em lugar nenhum.
+  const cursor = await b.js(ONDE_ESTA_O_CURSOR);
+  ctx.assert(cursor !== null, "o cursor ficou fora de qualquer bloco editável");
+  ctx.assertEq(cursor.tag, "H1", "o cursor devia estar dentro do título inserido");
+  ctx.assert(cursor.bloco, "o bloco inserido não recebeu a classe editor__bloco");
+
+  // 2. E digitar tem que entrar no bloco novo, não sumir. O item do
+  //    menu já vem com o texto de exemplo ("Título"), então o que se
+  //    prova aqui é que o digitado se junta a ELE — não que o bloco
+  //    fique só com o texto novo.
+  await b.js(ESCREVER("meu título"));
+  await PAUSA(400);
+  const est = await h.estado();
+  ctx.assert(
+    est.blocos.some((t) => t.endsWith("meu título")),
+    `o texto digitado não entrou no bloco novo: ${JSON.stringify(est.blocos)}`,
+  );
+
+  // 3. E chega no disco como título de verdade.
+  const md = await h.salvarELer();
+  ctx.assert(/^# .*meu título$/m.test(md), `o título não chegou no disco:\n${md}`);
+}, 249);
+
+bloco("bloco do menu / entra marcado pra navegação", TRES, async (b, ctx, h) => {
+  await b.js(CURSOR_NO_FIM_DO_BLOCO("gama"));
+  await b.js(TECLA("Enter", { shiftKey: true }));
+  await PAUSA(400);
+  await b.js(ESCREVER("/"));
+  await esperar(b, "document.querySelector('.slash-menu')", "o menu / abrir");
+  await b.js(ESCOLHER_NO_MENU("Citação"));
+  await PAUSA(500);
+
+  // O nav-mode só enxerga o que tem `data-nav-block`: um bloco inserido
+  // sem a marca é invisível pras setas, mesmo estando na tela.
+  const marcados = await b.js(
+    `[...document.querySelectorAll('[data-nav-block]')].map(e => e.tagName)`,
+  );
+  ctx.assert(
+    marcados.includes("BLOCKQUOTE"),
+    `a citação inserida não entrou na navegação: ${JSON.stringify(marcados)}`,
+  );
+}, 249);
+
+bloco("embed do menu / não deixa o foco no body", TRES, async (b, ctx, h) => {
+  await b.js(CURSOR_NO_FIM_DO_BLOCO("gama"));
+  await b.js(TECLA("Enter", { shiftKey: true }));
+  await PAUSA(400);
+  await b.js(ESCREVER("/"));
+  await esperar(b, "document.querySelector('.slash-menu')", "o menu / abrir");
+  await b.js(ESCOLHER_NO_MENU("Tabela de Tarefas"));
+  // O marcador vira componente Yew num render seguinte, que refaz o DOM
+  // do segmento — o pouso do foco é DEPOIS disso (ciclo 195).
+  await PAUSA(900);
+
+  const foco = await b.js(
+    `(() => { const a = document.activeElement; return a ? a.tagName + '/' + a.className : null; })()`,
+  );
+  ctx.assert(
+    !/^BODY/.test(foco || "BODY"),
+    `o foco não pode terminar no body depois de inserir um embed (ficou em ${foco})`,
+  );
+}, 249);
+
+bloco("a dica de bloco vazio não aparece por cima de texto", TRES, async (b, ctx, h) => {
+  // A classe `--convite` só é revista quando `marcar_blocos` roda. Se o
+  // CSS pintar a dica sem exigir vazio, basta o bloco marcado ganhar
+  // texto por outro caminho pra mensagem ficar impressa por cima da
+  // frase do usuário (ciclo 249).
+  const dicaEmBlocoComTexto = await b.js(`(() => {
+    const alvo = [...document.querySelectorAll('.editor__bloco')]
+      .find(x => x.textContent.includes('beta'));
+    alvo.classList.add('editor__bloco--convite');
+    const antes = getComputedStyle(alvo, '::before').content;
+    alvo.classList.remove('editor__bloco--convite');
+    return antes;
+  })()`);
+  ctx.assert(
+    !/Digite ou use/.test(dicaEmBlocoComTexto || ""),
+    `a dica apareceu num bloco COM texto: ${dicaEmBlocoComTexto}`,
+  );
+}, 249);

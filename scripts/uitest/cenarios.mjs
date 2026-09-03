@@ -2264,3 +2264,57 @@ cenarios.push({
     );
   },
 });
+
+cenarios.push({
+  nome: "highlight.js não pode assar language-undefined no arquivo (249)",
+  async fn(bridge, ctx) {
+    // Dano real, encontrado em `pages/arquitetura.md`: uma fence sem
+    // linguagem (```) voltou do disco como ```undefined. O highlight.js
+    // roda EM CIMA do DOM editável e escreve `class="language-undefined"`
+    // no `<code>` quando não reconhece a linguagem; o round-trip de
+    // `html_to_md` lia essa classe como se fosse a linguagem do usuário
+    // e a gravava. Uma vez no arquivo, nunca mais saía sozinho.
+    ctx.escrever(
+      `---\ntitle: __uitest\n---\n\ntexto antes\n\n\`\`\`\numa linha de código\n\`\`\`\n\ntexto depois\n`,
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('pre code')", "o bloco de código existir");
+    // O hljs roda depois do render; sem essa folga o teste passaria por
+    // ele não ter mexido no DOM ainda, não por o conserto funcionar.
+    await PAUSA(1200);
+
+    const classe = await bridge.js(
+      `(document.querySelector('pre code') || {}).className || ''`,
+    );
+
+    // Uma edição qualquer, pra forçar o round-trip pelo `html_to_md`.
+    await bridge.js(`(() => {
+      const alvo = [...document.querySelectorAll('.editor__bloco')]
+        .find(b => b.textContent.includes('texto depois'));
+      alvo.focus();
+      const r = document.createRange();
+      r.selectNodeContents(alvo); r.collapse(false);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      document.execCommand('insertText', false, '!');
+      return true;
+    })()`);
+    await PAUSA(400);
+    await bridge.js(`(() => {
+      const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith('Salvar'));
+      if (b) b.click();
+      return !!b;
+    })()`);
+    await PAUSA(1200);
+
+    const disco = ctx.ler();
+    ctx.assert(
+      !/```undefined/.test(disco),
+      `a classe do hljs (${classe}) virou linguagem no arquivo:\n${disco}`,
+    );
+    ctx.assert(
+      disco.includes("uma linha de código"),
+      `o conteúdo do bloco de código sumiu:\n${disco}`,
+    );
+  },
+});

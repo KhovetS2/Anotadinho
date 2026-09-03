@@ -60,6 +60,13 @@ fn walk(node: &Element, _depth: usize) -> String {
                         .split_whitespace()
                         .find_map(|c| c.strip_prefix("language-").map(|s| s.to_string()))
                 })
+                // `language-undefined` não é linguagem: é o que o
+                // highlight.js escreve na classe do `<code>` quando não
+                // reconhece nada. Como ele roda EM CIMA do DOM editável,
+                // o próximo round-trip assava isso no arquivo e a fence
+                // do usuário virava ```undefined — dano real, achado em
+                // `pages/arquitetura.md` (ciclo 249).
+                .filter(|l| l != "undefined")
                 .unwrap_or_default();
             // Pega o texto CRU do <code> direto via `text_content` (não
             // via `walk`/`text_of`) — descer pelo `walk` reentraria no
@@ -253,7 +260,7 @@ fn walk(node: &Element, _depth: usize) -> String {
                 .unwrap_or_else(|| "inserted-image__media".into());
             let mut raw = format!(
                 "<figure class=\"{}\"><img src=\"{}\" alt=\"{}\"",
-                html_attr(&node.class_name()),
+                html_attr(&classes_de_conteudo(&node.class_name())),
                 html_attr(&src),
                 html_attr(&alt)
             );
@@ -426,3 +433,25 @@ fn inline_children(node: &Element) -> String {
     }
     out
 }
+
+/// Tira as classes que o APP põe em tempo de execução, deixando só as
+/// que descrevem o conteúdo.
+///
+/// `marcar_blocos` carimba `editor__bloco` em todo filho de primeiro
+/// nível do segmento — inclusive numa `<figure>` de imagem. Como a
+/// figura é o único HTML que sobrevive ao round-trip (a classe dela é
+/// gravada literal), qualquer save posterior assava esse marcador de
+/// runtime dentro do arquivo do usuário, e ele nunca mais saía. Ciclo
+/// 249.
+fn classes_de_conteudo(classes: &str) -> String {
+    classes
+        .split_whitespace()
+        .filter(|c| !CLASSES_DE_RUNTIME.contains(c))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Classes que existem só enquanto a página está aberta. Lista curta e
+/// explícita: uma faxina por prefixo arriscaria comer classe de
+/// conteúdo que ainda vai ser inventada.
+const CLASSES_DE_RUNTIME: &[&str] = &["editor__bloco", "editor__bloco--convite", "hljs"];

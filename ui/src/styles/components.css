@@ -990,8 +990,16 @@
      mensagem aparecia no meio da escrita.
    - `:hover` do mouse num bloco vazio. Não vale foco: quem está
      digitando não precisa da instrução, e todo bloco recém-criado passa
-     por "vazio e focado". */
-.editor__bloco--convite::before,
+     por "vazio e focado".
+
+   Os dois gatilhos exigem VAZIO no próprio seletor (ciclo 249). Antes
+   `--convite` pintava sozinho, e a classe só é revista quando
+   `marcar_blocos` roda de novo: bastava o bloco marcado ganhar texto
+   sem passar por lá pra mensagem ficar impressa por cima da frase do
+   usuário. Com o vazio no seletor a dica some no primeiro caractere,
+   qualquer que seja o estado da classe. */
+.editor__bloco--convite:empty::before,
+.editor__bloco--convite:has(> br:only-child)::before,
 .editor__bloco:hover:has(> br:only-child)::before,
 .editor__bloco:hover:empty::before {
   content: "Digite ou use / para inserir";
