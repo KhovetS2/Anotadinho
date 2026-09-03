@@ -318,3 +318,46 @@ pub fn reancorar_se_perdido(doc: &web_sys::Document, grupo: &str) -> bool {
         },
     }
 }
+
+/// Reancora a sessão de navegação nos BLOCOS da página recém-aberta.
+///
+/// Abrir uma página de dentro de um grupo (um card de "Trabalho
+/// recente", por exemplo) troca o conteúdo inteiro, mas a pilha
+/// continuava apontando pro grupo ANTIGO — que não existe mais. As setas
+/// então caíam no resgate de `reancorar_se_perdido`, cujo último recurso
+/// é a raiz: por isso o teclado terminava preso na barra superior, longe
+/// do que a pessoa acabou de abrir (ciclo 250).
+///
+/// O conteúdo chega assíncrono (a página é lida do disco), então isto
+/// tenta algumas vezes antes de desistir em vez de apostar num único
+/// `sleep`. Devolve na callback se achou os blocos.
+pub fn focar_blocos_da_pagina(pronto: impl Fn(bool) + 'static) {
+    wasm_bindgen_futures::spawn_local(async move {
+        for _ in 0..20 {
+            gloo_timers::future::sleep(std::time::Duration::from_millis(50)).await;
+            let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+                continue;
+            };
+            let itens = items_in_group(&doc, GRUPO_BLOCOS);
+            if let Some(primeiro) = itens.first() {
+                focus_item(primeiro);
+                pronto(true);
+                return;
+            }
+        }
+        pronto(false);
+    });
+}
+
+/// A tecla é um movimento de navegação? Devolve `true` pra frente.
+///
+/// `hjkl` valem onde as setas valem (RF3 da spec de teclado): quem navega
+/// pelo teclado não devia ter que tirar a mão de casa. Maiúsculas ficam
+/// de fora de propósito — `J`/`K` já movem o bloco, e são outra ação.
+pub fn direcao_de_navegacao(tecla: &str) -> Option<bool> {
+    match tecla {
+        "ArrowDown" | "ArrowRight" | "j" | "l" => Some(true),
+        "ArrowUp" | "ArrowLeft" | "k" | "h" => Some(false),
+        _ => None,
+    }
+}

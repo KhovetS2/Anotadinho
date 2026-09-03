@@ -1860,7 +1860,16 @@ pub fn editor(props: &EditorProps) -> Html {
             // (ciclo 174) em vez de desselecionar a página, que era o
             // que o handler global fazia. Sem `stop_propagation` os dois
             // aconteceriam na mesma tecla.
-            if e.key() == "Escape" {
+            //
+            // `!em_navegacao` pelo mesmo motivo do Enter logo abaixo
+            // (ciclo 250): JÁ estando em navegação, Escape significa
+            // SUBIR um nível, e quem trata isso é o `app.rs`. Sem a
+            // guarda, `bloco_do_cursor()` ainda achava um bloco (a
+            // seleção de texto continua onde estava), dava
+            // `stop_propagation` e o Escape nunca chegava lá: a pessoa
+            // ficava presa no nível dos blocos, e só Backspace subia —
+            // exatamente o que a spec relatou.
+            if e.key() == "Escape" && !em_navegacao {
                 if let Some(bloco) = bloco_do_cursor() {
                     e.prevent_default();
                     e.stop_propagation();

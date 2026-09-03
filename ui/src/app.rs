@@ -315,6 +315,45 @@ pub fn app() -> Html {
     };
     let nav_mode_active = use_state(|| false);
     let nav_stack = use_state(Vec::<String>::new);
+    // Espelho do `nav_mode_active` pra ser LIDO de dentro de efeito
+    // (ciclos 155, 157, 201, 213, 218): o handle de `use_state` capturado
+    // numa closure congela no valor de quando ela foi criada. Aqui o
+    // efeito depende da PÁGINA, não do modo — se o modo entrasse nas
+    // dependências, ligar/desligar navegação reancoraria a pilha sozinho.
+    let nav_mode_active_ref = use_mut_ref(|| false);
+    {
+        let nav_mode_active_ref = nav_mode_active_ref.clone();
+        use_effect_with(*nav_mode_active, move |ativo| {
+            *nav_mode_active_ref.borrow_mut() = *ativo;
+            || ()
+        });
+    }
+
+    // Abrir uma página REANCORA a sessão nos blocos dela (RF1 da spec de
+    // teclado, ciclo 250).
+    //
+    // O caminho relatado: home → "Trabalho recente" → Enter num card → a
+    // página abre. A pilha continuava apontando pro grupo do embed, que
+    // não existe mais na página nova; a próxima seta caía no resgate de
+    // `reancorar_se_perdido`, cujo último recurso é a raiz — e a raiz
+    // começa na barra superior. Daí o teclado terminar preso lá em cima,
+    // longe do que a pessoa acabou de abrir.
+    //
+    // Agora a pilha passa a ser exatamente um nível: os blocos da página
+    // aberta. Escape dali sobe pra raiz, um nível, como manda o RF2.
+    {
+        let nav_mode_active_ref = nav_mode_active_ref.clone();
+        let nav_stack = nav_stack.clone();
+        let caminho = selected_page.as_ref().map(|p: &api::PageMeta| p.path.clone());
+        use_effect_with(caminho, move |caminho| {
+            if caminho.is_some() && *nav_mode_active_ref.borrow() {
+                nav_stack.set(vec![crate::nav_mode::GRUPO_BLOCOS.to_string()]);
+                // O conteúdo chega assíncrono; o helper tenta até achar.
+                crate::nav_mode::focar_blocos_da_pagina(|_| {});
+            }
+            || ()
+        });
+    }
     // Destaque visual do GRUPO atual (não só do item focado — o
     // usuário pediu especificamente pra saber "em qual wrapper está",
     // e `:focus-visible` já cuida do item em si). Imperativo porque o
@@ -1262,7 +1301,10 @@ pub fn app() -> Html {
                         // `<body>` já é feita de forma mais geral pelo
                         // polling do ciclo 138, então não precisa mais desse
                         // autocuro aqui.
-                        "ArrowDown" | "ArrowRight" | "ArrowUp" | "ArrowLeft" => {
+                        // `hjkl` entram aqui junto das setas (RF3 da
+                        // spec de teclado, ciclo 250). Só minúsculas:
+                        // `J`/`K` já MOVEM o bloco, que é outra ação.
+                        _ if crate::nav_mode::direcao_de_navegacao(&key).is_some() => {
                             if !focus_is_nav_tracked {
                                 // Antes de desistir, tenta reancorar
                                 // (ciclo 197) — mas SÓ se o foco não for
@@ -1285,7 +1327,8 @@ pub fn app() -> Html {
                                 if !items.is_empty() {
                                     let active = doc.active_element();
                                     let idx = crate::nav_mode::index_of(&items, active.as_ref());
-                                    let forward = matches!(key.as_str(), "ArrowDown" | "ArrowRight");
+                                    let forward =
+                                        crate::nav_mode::direcao_de_navegacao(&key).unwrap_or(true);
                                     let next_idx = match idx {
                                         Some(i) if forward => (i + 1) % items.len(),
                                         Some(i) => (i + items.len() - 1) % items.len(),
@@ -1431,9 +1474,20 @@ pub fn app() -> Html {
                                     }
                                 }
                             } else {
-                                nav_stack.set(Vec::new());
+                                // Sobe UM nível, não a pilha inteira (RF2,
+                                // ciclo 250). Antes isto voltava direto pra
+                                // raiz de qualquer profundidade: descer três
+                                // níveis e dar Escape jogava a pessoa pro
+                                // topo, e o único jeito de subir de um em um
+                                // era Backspace. Agora os dois sobem um
+                                // nível; a diferença é que Escape na raiz
+                                // ENCERRA a sessão, e Backspace não.
+                                let mut stack = (*nav_stack).clone();
+                                stack.pop();
+                                let novo = stack.last().cloned().unwrap_or_else(|| "root".to_string());
+                                nav_stack.set(stack);
                                 if let Some(doc) = doc {
-                                    let items = crate::nav_mode::items_in_group(&doc, "root");
+                                    let items = crate::nav_mode::items_in_group(&doc, &novo);
                                     if let Some(first) = items.first() {
                                         crate::nav_mode::focus_item(first);
                                     }

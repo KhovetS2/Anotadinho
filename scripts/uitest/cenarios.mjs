@@ -2318,3 +2318,157 @@ cenarios.push({
     );
   },
 });
+
+// ── Ciclo 250: a pilha de navegação e a página que ela abre ─────────
+
+/// O que está focado agora, do jeito que o nav-mode enxerga.
+const FOCO_NAV = `(() => {
+  const a = document.activeElement;
+  if (!a) return null;
+  return {
+    item: a.getAttribute('data-nav-item'),
+    tag: a.tagName,
+    texto: (a.textContent || '').trim().slice(0, 40),
+    sessao: !!document.querySelector('.nav-mode__item-active'),
+  };
+})()`;
+
+const TECLA_NO_FOCO = (key) => `(() => {
+  document.activeElement.dispatchEvent(
+    new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }));
+  return true;
+})()`;
+
+/// Começa uma sessão de navegação na raiz, do jeito que o usuário
+/// começa: a primeira seta com a capacidade ligada.
+const COMECAR_NAVEGACAO = `(() => {
+  const raiz = document.querySelector('.app-root');
+  raiz.focus();
+  raiz.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+  return true;
+})()`;
+
+/// Anda no nível atual até o item pedido (ou desiste).
+const IR_ATE_O_ITEM = (item, passos = 6) => `(async () => {
+  for (let i = 0; i < ${passos}; i++) {
+    if (document.activeElement.getAttribute('data-nav-item') === ${JSON.stringify(item)}) return true;
+    document.activeElement.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
+    await new Promise(r => setTimeout(r, 180));
+  }
+  return document.activeElement.getAttribute('data-nav-item') === ${JSON.stringify(item)};
+})()`;
+
+cenarios.push({
+  nome: "navegação: hjkl anda onde as setas andam (250)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\n\nalfa\n\nbeta\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco existir");
+
+    await bridge.js(COMECAR_NAVEGACAO);
+    await PAUSA(400);
+    const inicio = await bridge.js(FOCO_NAV);
+    ctx.assert(inicio && inicio.sessao, "a sessão de navegação não começou");
+
+    await bridge.js(TECLA_NO_FOCO("j"));
+    await PAUSA(300);
+    const depoisJ = await bridge.js(FOCO_NAV);
+    ctx.assert(depoisJ.item !== inicio.item, `j não moveu (${inicio.item} → ${depoisJ.item})`);
+
+    await bridge.js(TECLA_NO_FOCO("k"));
+    await PAUSA(300);
+    const depoisK = await bridge.js(FOCO_NAV);
+    ctx.assertEq(depoisK.item, inicio.item, "k devia ter voltado pro item anterior");
+  },
+});
+
+cenarios.push({
+  nome: "navegação: Escape sobe UM nível por vez (250)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\n\nalfa\n\nbeta\n");
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco existir");
+
+    await bridge.js(COMECAR_NAVEGACAO);
+    await PAUSA(400);
+    await bridge.js(IR_ATE_O_ITEM("editor"));
+    await PAUSA(200);
+    await bridge.js(TECLA_NO_FOCO("Enter")); // desce pros blocos
+    await PAUSA(500);
+    const nosBlocos = await bridge.js(FOCO_NAV);
+    ctx.assert(
+      (nosBlocos.item || "").startsWith("bloco-"),
+      `devia estar num bloco, está em ${nosBlocos.item}`,
+    );
+
+    // Primeiro Escape: sobe UM nível (blocos → raiz), sessão VIVA.
+    // Antes ia direto pra raiz de qualquer profundidade, e a partir do
+    // texto o handler do editor engolia a tecla — só Backspace subia.
+    await bridge.js(TECLA_NO_FOCO("Escape"));
+    await PAUSA(400);
+    const esc1 = await bridge.js(FOCO_NAV);
+    ctx.assert(esc1.sessao, "o primeiro Escape não podia encerrar a sessão");
+    ctx.assert(
+      !(esc1.item || "").startsWith("bloco-"),
+      `o primeiro Escape devia ter saído dos blocos (ficou em ${esc1.item})`,
+    );
+
+    // Segundo Escape: na raiz, encerra.
+    await bridge.js(TECLA_NO_FOCO("Escape"));
+    await PAUSA(400);
+    const esc2 = await bridge.js(FOCO_NAV);
+    ctx.assert(!esc2.sessao, "o segundo Escape devia ter encerrado a sessão");
+  },
+});
+
+cenarios.push({
+  nome: "navegação: abrir página de dentro de um grupo pousa nos blocos dela (250)",
+  async fn(bridge, ctx) {
+    // O caminho relatado na spec: navegar até um embed de ações, entrar
+    // nele, acionar um botão que abre outra página. A pilha ficava
+    // apontando pro grupo do embed — que não existe mais na página nova
+    // — e a próxima seta caía no resgate, cujo último recurso é a RAIZ:
+    // o teclado terminava preso na barra superior.
+    ctx.escrever(
+      `---\ntitle: __uitest\n---\n\nalfa\n\n{{ type: "actions" }}\nbuttons:\n- label: Abrir arquitetura\n  action: open-page\n  path: pages/arquitetura.md\n{{ /actions }}\n`,
+    );
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco existir");
+    await ctx.esperar(bridge, "document.querySelector('[data-nav-group]')", "o embed existir");
+
+    await bridge.js(COMECAR_NAVEGACAO);
+    await PAUSA(400);
+    await bridge.js(IR_ATE_O_ITEM("editor"));
+    await bridge.js(TECLA_NO_FOCO("Enter"));
+    await PAUSA(500);
+
+    // Anda pelos blocos até o embed (o item que TAMBÉM é grupo).
+    await bridge.js(`(async () => {
+      for (let i = 0; i < 8; i++) {
+        if (document.activeElement.hasAttribute('data-nav-group')) return true;
+        document.activeElement.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
+        await new Promise(r => setTimeout(r, 180));
+      }
+      return false;
+    })()`);
+    await PAUSA(200);
+    await bridge.js(TECLA_NO_FOCO("Enter")); // desce no embed
+    await PAUSA(400);
+    await bridge.js(TECLA_NO_FOCO("Enter")); // aciona o botão
+    await PAUSA(2500);
+
+    const titulo = await bridge.js(`(document.querySelector('.editor__title') || {}).textContent || ''`);
+    ctx.assert(/arquitetura/i.test(titulo), `a página não abriu (título: "${titulo}")`);
+
+    const foco = await bridge.js(FOCO_NAV);
+    ctx.assert(
+      (foco.item || "").startsWith("bloco-"),
+      `o teclado devia ter pousado no conteúdo da página aberta, não em "${foco.item}"`,
+    );
+  },
+});
