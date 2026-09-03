@@ -2231,3 +2231,36 @@ cenarios.push({
     );
   },
 });
+
+cenarios.push({
+  nome: "abrir uma página com conteúdo não dispara gravação vazia sozinha (248)",
+  async fn(bridge, ctx) {
+    // Reprodução do que apareceu de verdade: abrir QUALQUER página com
+    // conteúdo real, sem tocar em nada, e esperar passar da janela do
+    // autosave (3s) — nenhuma edição do usuário no meio. Se algo (troca
+    // de página, reinjeção de segmento) disparar um `oninput` espúrio
+    // com markdown vazio nesse intervalo, o autosave tentava gravar por
+    // cima: o backend recusa (`recusar_esvaziamento`), mas o usuário via
+    // o erro cru (`JsValue("...")`) sem ter feito nada.
+    const conteudo = "Conteúdo real que não pode sumir sozinho.\n\nSegunda linha, só pra ter mais de um bloco.\n";
+    ctx.escrever(`---\ntitle: __uitest\n---\n\n${conteudo}`);
+    await recarregar(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco existir");
+
+    // 3s do debounce + folga pro round-trip com o backend.
+    await PAUSA(4500);
+
+    const erro = await bridge.js(`(() => {
+      const el = document.querySelector('.editor__overlay--error');
+      return el ? el.textContent : null;
+    })()`);
+    ctx.assert(!erro, `overlay de erro apareceu sem nenhuma edição: ${erro}`);
+
+    const disco = ctx.ler();
+    ctx.assert(
+      disco.includes("Conteúdo real que não pode sumir sozinho."),
+      `o conteúdo sumiu do disco sozinho:\n${disco}`,
+    );
+  },
+});

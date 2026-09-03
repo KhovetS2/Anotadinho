@@ -155,17 +155,33 @@ pub fn handle_read_page_versioned(
 /// Apagar uma nota inteira nunca é o resultado certo de um save: quem
 /// quer esvaziar uma página apaga a página. Uma página nova (que ainda
 /// não existe no disco) continua podendo nascer vazia.
+///
+/// Compara o CORPO (sem frontmatter), não a string inteira (ciclo 248):
+/// numa página com `---\ntitle: x\n---`, um corpo apagado por engano
+/// ainda deixa esse bloco no `content`, então `content.trim()` nunca
+/// fica vazio — e a trava, comparando a string toda, deixava passar uma
+/// gravação que zerava o corpo inteiro e só sobrava o frontmatter.
+/// Reproduzido ao vivo: um `input` disparado com o contenteditable
+/// limpo gravou `---\ntitle: __uitest\n---\n` por cima de uma página
+/// com conteúdo, sem erro nenhum.
 fn recusar_esvaziamento(vault: &VaultIo, page_path: &str, content: &str) -> Result<(), String> {
-    if !content.trim().is_empty() {
+    let (_, corpo_novo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(content);
+    if !corpo_novo.trim().is_empty() {
         return Ok(());
     }
     match vault.read_page(page_path) {
-        Ok(atual) if !atual.trim().is_empty() => Err(format!(
-            "gravação recusada: isso apagaria as {} letras de \"{}\". \
-             Pra esvaziar de propósito, apague a página.",
-            atual.trim().chars().count(),
-            page_path
-        )),
+        Ok(atual) => {
+            let (_, corpo_atual) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&atual);
+            if corpo_atual.trim().is_empty() {
+                return Ok(());
+            }
+            Err(format!(
+                "gravação recusada: isso apagaria as {} letras de \"{}\". \
+                 Pra esvaziar de propósito, apague a página.",
+                corpo_atual.trim().chars().count(),
+                page_path
+            ))
+        }
         _ => Ok(()),
     }
 }
@@ -687,6 +703,37 @@ mod tests {
         let dir = vault_temp();
         let vault = dir.path().to_string_lossy().to_string();
         handle_write_page(vault, "pages/nova.md".into(), String::new()).unwrap();
+    }
+
+    #[test]
+    fn esvaziar_so_o_corpo_e_deixar_o_frontmatter_tambem_e_recusado() {
+        // Reproduzido ao vivo (ciclo 248): uma gravação que zera o CORPO
+        // mas mantém o bloco de frontmatter não é string vazia — a trava
+        // antiga comparava `content.trim()` inteiro e deixava passar.
+        let dir = vault_temp();
+        let vault = dir.path().to_string_lossy().to_string();
+        let pagina = "pages/importante.md".to_string();
+        handle_write_page(
+            vault.clone(),
+            pagina.clone(),
+            "---\ntitle: importante\n---\n\ntexto que importa\n".into(),
+        )
+        .unwrap();
+
+        let erro = handle_write_page(
+            vault.clone(),
+            pagina.clone(),
+            "---\ntitle: importante\n---\n".into(),
+        )
+        .unwrap_err();
+        assert!(erro.contains("recusada"), "erro não explica: {erro}");
+
+        assert!(
+            handle_read_page(vault, pagina)
+                .unwrap()
+                .contains("texto que importa"),
+            "o corpo sumiu apesar da trava"
+        );
     }
 
     #[test]

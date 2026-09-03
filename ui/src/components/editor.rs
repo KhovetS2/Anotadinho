@@ -1070,7 +1070,17 @@ pub fn editor(props: &EditorProps) -> Html {
             let persist = persist.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 gloo_timers::future::sleep(std::time::Duration::from_secs(3)).await;
-                if *save_counter == id {
+                // Vazio nunca dispara o autosave (ciclo 248): um `oninput`
+                // espúrio lido no meio de uma troca/carregamento de
+                // página (contenteditable ainda sem o conteúdo injetado)
+                // marca `edited` com markdown vazio, e 3s depois isso
+                // tentava gravar por cima de uma página com conteúdo —
+                // o backend recusa (`recusar_esvaziamento`), mas o susto
+                // (e o erro cru na tela) já rolou sem o usuário ter feito
+                // nada. Esvaziar de propósito continua funcionando: só
+                // não pelo automático — o Salvar manual passa pela trava
+                // do backend do mesmo jeito.
+                if *save_counter == id && !md.trim().is_empty() {
                     persist(md);
                 }
             });

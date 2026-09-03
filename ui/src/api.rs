@@ -294,7 +294,11 @@ pub async fn write_page_checked(
     }
     let result = tauri_invoke("write_page_checked", &JsValue::from(args))
         .await
-        .map_err(|e| format!("{:?}", e))?;
+        // O backend rejeita com uma `String` (ex: a trava de
+        // esvaziamento, ciclo 248); `format!("{:?}", e)` puro imprimia o
+        // wrapper do wasm-bindgen por cima (`JsValue("mensagem")`) em vez
+        // da mensagem sozinha.
+        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{:?}", e)))?;
     result
         .as_string()
         .ok_or_else(|| "versão retornada não é string".to_string())
