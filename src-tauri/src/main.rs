@@ -495,12 +495,24 @@ fn iniciar_agente(
         use std::process::{Command, Stdio};
 
         let resultado = (|| -> Result<String, String> {
-            let mut filho = Command::new(&binario)
+            let mut comando = Command::new(&binario);
+            comando
                 .args(&args)
                 .current_dir(&cwd)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
+                .stderr(Stdio::piped());
+            // Sem isso, o Windows abre uma janela de console pro
+            // processo filho a cada disparo — o app é `windows_subsystem
+            // = "windows"` (sem console próprio), então herdar um novo é
+            // o comportamento padrão do SO pra filho de console (git,
+            // claude/codex/opencode).
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                comando.creation_flags(0x0800_0000);
+            }
+            let mut filho = comando
                 .spawn()
                 .map_err(|e| format!("não consegui executar \"{binario}\": {e}"))?;
 

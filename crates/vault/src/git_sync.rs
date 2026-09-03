@@ -32,7 +32,7 @@ pub fn git_commit_and_push(vault_path: &Path, message: &str) -> Result<String> {
 }
 
 fn run_git(vault_path: &Path, args: &[&str]) -> Result<String> {
-    let output = std::process::Command::new("git")
+    let output = crate::comando("git")
         .arg("-C")
         .arg(vault_path)
         .args(args)

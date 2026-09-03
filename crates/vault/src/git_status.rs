@@ -25,7 +25,7 @@ pub struct GitFileEntry {
 /// path não for um repositório git, ou qualquer outro erro — nunca
 /// propaga erro pro chamador, só "não tem git pra mostrar aqui".
 pub fn git_status(vault_path: &Path) -> Option<Vec<GitFileEntry>> {
-    let output = std::process::Command::new("git")
+    let output = crate::comando("git")
         .arg("-C")
         .arg(vault_path)
         .arg("status")
@@ -66,7 +66,7 @@ pub struct GitLogEntry {
 /// `git_status` (sem `git`, vault não é um repo). Lista vazia (não
 /// `None`) se é um repo git mas o arquivo nunca foi commitado.
 pub fn git_log(vault_path: &Path, relative_path: &str) -> Option<Vec<GitLogEntry>> {
-    let output = std::process::Command::new("git")
+    let output = crate::comando("git")
         .arg("-C")
         .arg(vault_path)
         .arg("log")
