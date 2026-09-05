@@ -2538,7 +2538,47 @@ pub fn editor(props: &EditorProps) -> Html {
         let frontmatter_text = frontmatter_text.clone();
         let mark_edited_estrutural = mark_edited_estrutural.clone();
         let on_sair_blocos = props.on_leave_block_nav.clone();
+        let vim_mode_enabled = props.vim_mode_enabled;
+        let em_navegacao = props.nav_mode_active;
+        let vim_modo_seg = vim_modo.clone();
         Callback::from(move |e: KeyboardEvent| {
+            // Sair de um bloco ATÔMICO com `j`/`k`.
+            //
+            // Este handler é o único que ESCUTA teclas vindas de um
+            // embed: o `on_keydown` do vim mora nos `div.editor__wysiwyg`,
+            // e o embed é IRMÃO deles, não filho — o evento nunca chega
+            // lá.
+            //
+            // Sem isto, o ciclo 263 trocou um defeito por outro pior: o
+            // `j` passava a ENTRAR no embed e não saía mais. A sondagem
+            // manual pegou (três `j` seguidos ficavam parados); o
+            // cenário não, porque apertava uma tecla só.
+            //
+            // É também a primeira aplicação real da cadeia do ciclo 262:
+            // o embed não declara interesse em `Movimento`, então a
+            // tecla sobe e quem anda é o documento.
+            if vim_mode_enabled
+                && !em_navegacao
+                && *vim_modo_seg == VimModo::Normal
+                && !e.ctrl_key()
+                && !e.meta_key()
+                && !e.alt_key()
+            {
+                let frente = match e.key().as_str() {
+                    "j" | "ArrowDown" => Some(true),
+                    "k" | "ArrowUp" => Some(false),
+                    _ => None,
+                };
+                if let Some(frente) = frente {
+                    if crate::vim_visual::em_bloco_atomico()
+                        && crate::vim_visual::mover_linha(frente)
+                    {
+                        e.prevent_default();
+                        e.stop_propagation();
+                        return;
+                    }
+                }
+            }
             if e.key() != "n" || e.ctrl_key() || e.meta_key() || e.alt_key() {
                 return;
             }

@@ -99,16 +99,30 @@ const ITEM_ACTIVE_CLASS: &str = "nav-mode__item-active";
 /// isso, na mesma cor do nível atual (`--nav-mode-depth-color`,
 /// ciclo 136). Limpa a marca do item anterior antes — mesmo padrão de
 /// "consultar e substituir" já usado pro destaque de região.
-pub fn focus_item(el: &web_sys::Element) {
-    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-        if let Ok(stale) = doc.query_selector_all(&format!(".{}", ITEM_ACTIVE_CLASS)) {
-            for i in 0..stale.length() {
-                if let Some(stale_el) = stale.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) {
-                    let _ = stale_el.class_list().remove_1(ITEM_ACTIVE_CLASS);
-                }
-            }
+/// Apaga o realce de item ativo, onde quer que ele esteja.
+///
+/// Extraído de `focus_item` porque quem SAI de um bloco realçado (o
+/// cursor indo de um embed pra um parágrafo) precisa limpar sem acender
+/// nada — e sem isto o embed ficava aceso depois de o cursor já ter ido.
+pub fn limpar_item_ativo() {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Ok(antigos) = doc.query_selector_all(&format!(".{}", ITEM_ACTIVE_CLASS)) else {
+        return;
+    };
+    for i in 0..antigos.length() {
+        if let Some(el) = antigos
+            .item(i)
+            .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        {
+            let _ = el.class_list().remove_1(ITEM_ACTIVE_CLASS);
         }
     }
+}
+
+pub fn focus_item(el: &web_sys::Element) {
+    limpar_item_ativo();
     let _ = el.class_list().add_1(ITEM_ACTIVE_CLASS);
 
     if let Some(html_el) = el.dyn_ref::<web_sys::HtmlElement>() {

@@ -167,6 +167,30 @@ pub fn texto_selecionado() -> String {
         .unwrap_or_default()
 }
 
+/// O índice do bloco ATÔMICO que está com o foco, se for esse o caso.
+///
+/// Devolve `None` quando o foco está num bloco de texto — ali quem manda
+/// é o `cursor()`, que sabe a coluna. Isto existe só pro caso em que não
+/// há caret nenhum pra consultar.
+pub fn em_bloco_atomico() -> bool {
+    indice_do_bloco_focado().is_some()
+}
+
+fn indice_do_bloco_focado() -> Option<usize> {
+    let doc = web_sys::window()?.document()?;
+    let ativo = doc.active_element()?;
+    let bloco = ativo
+        .closest(&format!("[{}]", crate::nav_mode::ATTR_BLOCO_TEXTO))
+        .ok()
+        .flatten()?;
+    if !crate::selecao_blocos::e_atomico(&bloco) {
+        return None;
+    }
+    crate::selecao_blocos::blocos_do_documento()
+        .iter()
+        .position(|b| b.is_same_node(Some(&bloco)))
+}
+
 /// Põe o cursor no bloco `i`, na coluna `coluna` (ou no fim, se o bloco
 /// for mais curto).
 fn pousar(i: usize, coluna: u32) -> bool {
@@ -182,6 +206,12 @@ fn pousar(i: usize, coluna: u32) -> bool {
         crate::nav_mode::focus_item(bloco);
         return true;
     }
+    // Sair de um bloco atômico tem que APAGAR o realce dele. `focus_item`
+    // limpa os antigos, mas ele só é chamado ao pousar num atômico —
+    // então, sem isto, o embed ficava aceso depois de o cursor já ter
+    // ido embora. A sondagem mostrou `marcados: 1` com o foco já num
+    // parágrafo.
+    crate::nav_mode::limpar_item_ativo();
     let tamanho = bloco.text_content().unwrap_or_default().chars().count() as u32;
     let col = coluna.min(tamanho);
     if let Some(html) = bloco.dyn_ref::<web_sys::HtmlElement>() {
@@ -203,6 +233,25 @@ fn pousar(i: usize, coluna: u32) -> bool {
 /// do mesmo bloco, é porque não havia linha pra aquele lado — aí pula pro
 /// bloco vizinho na mesma coluna.
 pub fn mover_linha(frente: bool) -> bool {
+    // Saindo de um bloco ATÔMICO não há caret pra consultar, e
+    // `cursor()` devolve `None`. Sem este ramo o `j` ENTRAVA no embed e
+    // não saía mais — troca pior que o defeito original, porque antes
+    // pelo menos dava pra passar por ele.
+    //
+    // Foi o que a sondagem manual pegou depois do ciclo 263: o cenário
+    // apertava `j` UMA vez e via o pouso; três vezes seguidas mostram
+    // que ele não avança.
+    if let Some(i) = indice_do_bloco_focado() {
+        let alvo = if frente {
+            i + 1
+        } else {
+            match i.checked_sub(1) {
+                Some(a) => a,
+                None => return false,
+            }
+        };
+        return pousar(alvo, 0);
+    }
     let Some(antes) = cursor() else { return false };
     let direcao = if frente { "forward" } else { "backward" };
     if let Some(sel) = web_sys::window()

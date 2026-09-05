@@ -847,12 +847,40 @@ teclado(
     await b.js(TECLA("j"));
     await PAUSA(500);
 
-    const onde = await b.js(`(() => {
+    const ONDE = `(() => {
       const ativo = document.activeElement;
       const bloco = ativo && ativo.closest('[data-nav-block]');
-      return bloco ? bloco.getAttribute('data-nav-block') : null;
-    })()`);
-    ctx.assertEq(onde, "embed", "o `j` passou por cima do embed");
+      return {
+        tipo: bloco ? bloco.getAttribute('data-nav-block') : null,
+        texto: bloco ? (bloco.textContent || '').trim().slice(0, 16) : null,
+        acesos: document.querySelectorAll('.nav-mode__item-active').length,
+      };
+    })()`;
+
+    const noEmbed = await b.js(ONDE);
+    ctx.assertEq(noEmbed.tipo, "embed", "o `j` passou por cima do embed");
+
+    // O SEGUNDO `j` é a metade que faltava na primeira versão deste
+    // cenário — e foi por isso que ela deixou passar um defeito pior que
+    // o original: o `j` entrava no embed e não saía mais, porque o
+    // handler do vim mora nos `div.editor__wysiwyg` e o embed é IRMÃO
+    // deles, não filho. Um cenário que aperta a tecla uma vez só não
+    // distingue "pousou" de "travou".
+    await b.js(TECLA("j"));
+    await PAUSA(500);
+    const depois = await b.js(ONDE);
+    ctx.assertEq(depois.tipo, "texto", "o `j` ficou preso no embed");
+    ctx.assert(
+      depois.texto.startsWith("gama"),
+      `esperava o parágrafo depois do embed, veio ${JSON.stringify(depois.texto)}`,
+    );
+    // E o realce do embed tem que ter apagado ao sair dele.
+    ctx.assertEq(depois.acesos, 0, "o embed continuou aceso depois de o cursor sair");
+
+    // De volta pra cima: o caminho inverso também atravessa.
+    await b.js(TECLA("k"));
+    await PAUSA(500);
+    ctx.assertEq((await b.js(ONDE)).tipo, "embed", "o `k` não voltou pro embed");
   },
   263,
 );
