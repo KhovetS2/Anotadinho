@@ -59,6 +59,30 @@ pub fn blocos_do_documento() -> Vec<web_sys::Element> {
     out
 }
 
+/// Este bloco opera como um todo? (é um embed)
+///
+/// Lê o VALOR de `data-nav-block`: `"texto"` pros blocos de markdown,
+/// `"embed"` pros embeds. É o `Politica::atomica` do núcleo
+/// (`anotadinho_core::unidade`) chegando ao DOM — a mesma distinção,
+/// no lugar onde a navegação consegue vê-la.
+pub fn e_atomico(el: &web_sys::Element) -> bool {
+    el.get_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO)
+        .as_deref()
+        == Some("embed")
+}
+
+/// Só os blocos que comportam um cursor de texto.
+///
+/// Existe pra quem PRECISA de caret (dividir bloco, fundir, digitar). A
+/// navegação e a seleção usam `blocos_do_documento`, que inclui os
+/// embeds — é a lista única do RF1.
+pub fn blocos_de_texto() -> Vec<web_sys::Element> {
+    blocos_do_documento()
+        .into_iter()
+        .filter(|el| !e_atomico(el))
+        .collect()
+}
+
 /// Os blocos marcados agora, em ordem de documento.
 pub fn selecionados() -> Vec<web_sys::Element> {
     blocos_do_documento()
@@ -164,6 +188,17 @@ pub fn markdown_dos_selecionados() -> String {
     // que se colava não era markdown válido.
     blocos
         .iter()
+        // Embed fica de fora POR ENQUANTO (ciclo 263). O markdown dele
+        // não está no DOM — o DOM tem a tabela desenhada, não o
+        // `{{ type: "table" }}` que a gerou —, então
+        // `html_to_markdown` devolveria o HTML renderizado como se
+        // fosse o conteúdo. Copiar um embed é o ciclo 264, e ele vai
+        // buscar o markdown no `content_md`, não na tela.
+        //
+        // Até lá, selecionar um trecho com embed no meio copia os
+        // blocos de texto e PULA o embed — que é menos errado do que
+        // colar uma tabela HTML achatada.
+        .filter(|el| !e_atomico(el))
         .map(|el| crate::html_to_md::html_to_markdown(el))
         .filter(|md| !md.is_empty())
         .collect::<Vec<_>>()

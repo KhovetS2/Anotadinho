@@ -3473,7 +3473,26 @@ pub fn editor(props: &EditorProps) -> Html {
                                     // outro embed) não tinha nenhum lugar clicável
                                     // pra digitar texto ali.
                                     html! {
-                                        <div class="embed-hover-wrapper" {key}>
+                                        // `data-nav-block="embed"` (ciclo 263): o embed passa a ser um
+                                        // BLOCO pra todo mundo, não só pro modo de
+                                        // navegação. O valor distingue do `"texto"`
+                                        // que `marcar_blocos` põe — é o `atomica` da
+                                        // `Politica` chegando ao DOM, e é o que faz
+                                        // `j` pousar aqui em vez de pular por cima.
+                                        //
+                                        // Uma linha só, no wrapper, porque os dez
+                                        // embeds passam por ele. Marcar componente a
+                                        // componente seria dez lugares pra esquecer
+                                        // um.
+                                        //
+                                        // `tabindex="-1"` pelo mesmo motivo que
+                                        // `marcar_blocos` põe nos blocos de texto:
+                                        // sem ele o `focus()` do `focus_item` é
+                                        // no-op, o foco fica no bloco anterior e o
+                                        // `j` PARECE ter pulado o embed de novo —
+                                        // foi assim que o cenário reprovou na
+                                        // primeira tentativa.
+                                        <div class="embed-hover-wrapper" {key} data-nav-block="embed" tabindex="-1">
                                             <button class="embed-hover-wrapper__add-line embed-hover-wrapper__add-line--top"
                                                 onclick={insert_blank_line(i)} title="Adicionar linha acima">{ "+" }</button>
                                             <div class="embed-hover-wrapper__toolbar">

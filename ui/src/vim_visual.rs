@@ -174,6 +174,14 @@ fn pousar(i: usize, coluna: u32) -> bool {
     let Some(bloco) = blocos.get(i) else {
         return false;
     };
+    // Embed não comporta caret (RF3 da spec): pousar nele é dar FOCO e
+    // realce, não pôr cursor. Sem isto, `selecionar_intervalo` falharia
+    // por não achar nó de texto e o `j` pararia no bloco anterior —
+    // exatamente o "pula por cima do embed" que este ciclo corrige.
+    if crate::selecao_blocos::e_atomico(bloco) {
+        crate::nav_mode::focus_item(bloco);
+        return true;
+    }
     let tamanho = bloco.text_content().unwrap_or_default().chars().count() as u32;
     let col = coluna.min(tamanho);
     if let Some(html) = bloco.dyn_ref::<web_sys::HtmlElement>() {

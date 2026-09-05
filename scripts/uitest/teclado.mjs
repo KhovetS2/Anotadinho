@@ -802,3 +802,77 @@ teclado(
   },
   260,
 );
+
+// ── o embed é um bloco (ciclo 263, RF1 da spec `o-que-e-um-bloco`) ───
+//
+// Até aqui existiam DUAS respostas pra "o que é um bloco" na mesma tela:
+// o modo de navegação incluía os embeds, o vim e a seleção não. O `j`
+// pulava por cima de uma tabela como se ela não estivesse ali.
+
+const COM_EMBED = `---
+title: __uitest
+---
+alfa um dois
+
+{{ type: "callout" }}
+variant: info
+title: Nota
+body: |
+  corpo
+{{ /callout }}
+
+gama cinco seis
+`;
+
+teclado(
+  "j pousa no embed em vez de pular por cima",
+  { md: COM_EMBED, vim: true },
+  async (b, ctx) => {
+    await esperar(b, `!!document.querySelector('.embed-hover-wrapper')`,
+      "o embed renderizar", 15000);
+
+    // A lista única do RF1: texto e embed na mesma régua, em ordem de
+    // documento.
+    const lista = await b.js(`[...document.querySelectorAll('[data-nav-block]')]
+      .map(e => e.getAttribute('data-nav-block'))`);
+    ctx.assert(
+      lista.includes("embed"),
+      `o embed não entrou na lista de blocos: ${JSON.stringify(lista)}`,
+    );
+
+    // Cursor no primeiro bloco de texto, e um `j`: tem que parar NO
+    // embed, não no parágrafo depois dele.
+    await b.js(CURSOR_EM(0, 0));
+    await PAUSA(300);
+    await b.js(TECLA("j"));
+    await PAUSA(500);
+
+    const onde = await b.js(`(() => {
+      const ativo = document.activeElement;
+      const bloco = ativo && ativo.closest('[data-nav-block]');
+      return bloco ? bloco.getAttribute('data-nav-block') : null;
+    })()`);
+    ctx.assertEq(onde, "embed", "o `j` passou por cima do embed");
+  },
+  263,
+);
+
+teclado(
+  "a lista de blocos de TEXTO continua sem o embed",
+  { md: COM_EMBED, vim: true },
+  async (b, ctx) => {
+    // A outra metade: quem precisa de caret (dividir, fundir, digitar)
+    // tem que continuar vendo só os blocos que comportam cursor. Uma
+    // lista só serviria pra navegar e quebraria a edição.
+    await esperar(b, `!!document.querySelector('.embed-hover-wrapper')`,
+      "o embed renderizar", 15000);
+
+    const todos = await b.js(`document.querySelectorAll('[data-nav-block]').length`);
+    const texto = await b.js(
+      `document.querySelectorAll('[data-nav-block="texto"]').length`,
+    );
+    ctx.assert(todos > texto, `esperava embed fora da lista de texto: ${todos} vs ${texto}`);
+    ctx.assertEq(todos - texto, 1, "devia haver exatamente um bloco atômico");
+  },
+  263,
+);
