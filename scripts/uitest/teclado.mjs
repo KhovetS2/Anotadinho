@@ -1204,3 +1204,157 @@ teclado(
   },
   267,
 );
+
+// ── movimento dentro de qualquer embed (ciclo 268) ───────────────────
+//
+// O ciclo 265 calou o vim dentro do embed, e isso abriu um beco: um
+// embed que não declara nada não tratava nada, e só o Escape respondia.
+// Um callout tem cinco controles e nenhuma tecla os alcançava.
+//
+// O padrão que todos herdam: `j`/`k` andam entre PARES (cartão a
+// cartão), `h`/`l` andam item a item. Quem quer melhor consome antes —
+// é o que o calendário faz com os dias.
+
+const COM_KANBAN = `---
+title: __uitest
+---
+alfa
+
+{{ type: "kanban" }}
+columns:
+- Fazendo
+- Feito
+items:
+- title: Card A
+  column: Fazendo
+- title: Card B
+  column: Fazendo
+- title: Card C
+  column: Fazendo
+{{ /kanban }}
+
+gama
+`;
+
+const ITEM_FOCADO = `(() => {
+  const a = document.activeElement;
+  return a ? a.getAttribute('data-nav-item') : null;
+})()`;
+
+async function entrarNoEmbed(b) {
+  await b.js(CURSOR_EM(0, 0));
+  await PAUSA(300);
+  await b.js(TECLA("j"));
+  await PAUSA(450);
+  await b.js(TECLA("Enter"));
+  await PAUSA(450);
+}
+
+teclado(
+  "dentro de um embed sem declaração, j anda entre os controles",
+  { md: COM_EMBED, vim: true },
+  async (b, ctx) => {
+    // O callout não declara nada. Antes deste ciclo, entrar nele era
+    // beco sem saída.
+    await esperar(b, `!!document.querySelector('.embed-hover-wrapper')`, "o embed", 15000);
+    await entrarNoEmbed(b);
+
+    const inicio = await b.js(ITEM_FOCADO);
+    await b.js(TECLA("j"));
+    await PAUSA(400);
+    const depois = await b.js(ITEM_FOCADO);
+    ctx.assert(
+      depois !== inicio,
+      `o \`j\` não andou dentro do embed: continuou em ${JSON.stringify(inicio)}`,
+    );
+  },
+  268,
+);
+
+teclado(
+  "no kanban, j anda de cartão em cartão e não pelos botões deles",
+  { md: COM_KANBAN, vim: true },
+  async (b, ctx) => {
+    await esperar(b, `!!document.querySelector('.embed-kanban')`, "o kanban", 15000);
+    await entrarNoEmbed(b);
+
+    // Desce até um cartão. A escolha é geométrica, então `j` desce a
+    // COLUNA: cabeçalho -> cartão -> cartão.
+    let achou = false;
+    for (let i = 0; i < 8 && !achou; i++) {
+      await b.js(TECLA("j"));
+      await PAUSA(250);
+      achou = (await b.js(ITEM_FOCADO)) === "kanban-card";
+    }
+    ctx.assert(achou, "não cheguei num cartão descendo com `j`");
+
+    // De um cartão, `j` vai pro cartão de BAIXO — na mesma coluna.
+    // Andando por ordem de documento passaria pelos botões de editar e
+    // apagar; andando "entre pares" iria pra outra coluna.
+    const primeiro = await b.js(`document.activeElement.textContent.trim().slice(0, 12)`);
+    await b.js(TECLA("j"));
+    await PAUSA(400);
+    ctx.assertEq(
+      await b.js(ITEM_FOCADO),
+      "kanban-card",
+      "o `j` caiu num botão do cartão em vez do cartão de baixo",
+    );
+    const segundo = await b.js(`document.activeElement.textContent.trim().slice(0, 12)`);
+    ctx.assert(segundo !== primeiro, "o `j` não saiu do mesmo cartão");
+
+    // `l` troca de COLUNA — é o que "pra direita" significa num kanban.
+    await b.js(TECLA("l"));
+    await PAUSA(400);
+    const aoLado = await b.js(`(() => {
+      const a = document.activeElement;
+      const col = a.closest('[data-nav-item="kanban-column"], .kanban__column');
+      return { item: a.getAttribute('data-nav-item'),
+               texto: a.textContent.trim().slice(0, 12) };
+    })()`);
+    ctx.assert(
+      aoLado.texto !== segundo,
+      `o \`l\` não saiu do cartão: continuou em ${JSON.stringify(segundo)}`,
+    );
+  },
+  268,
+);
+
+teclado(
+  "Escape sobe um nível por vez dentro do embed",
+  { md: COM_KANBAN, vim: true },
+  async (b, ctx) => {
+    // Andar entre controles leva a campos de texto, e num campo as
+    // letras DIGITAM. Se o Escape saltasse do campo pra fora do embed,
+    // sair de um campo custaria entrar tudo de novo.
+    await esperar(b, `!!document.querySelector('.embed-kanban')`, "o kanban", 15000);
+    await entrarNoEmbed(b);
+
+    await b.js(TECLA("j"));
+    await PAUSA(300);
+    await b.js(TECLA("j"));
+    await PAUSA(300);
+    const fundo = await b.js(ITEM_FOCADO);
+    ctx.assert(fundo, "não desci pra nenhum controle");
+
+    // Primeiro Escape: volta pra RAIZ do embed, ainda dentro dele.
+    await b.js(TECLA("Escape"));
+    await PAUSA(400);
+    const naRaiz = await b.js(`(() => {
+      const a = document.activeElement;
+      return { dentro: !!a.closest('.embed-hover-wrapper') && !a.classList.contains('embed-hover-wrapper'),
+               ehRaiz: a.classList.contains('embed-kanban') };
+    })()`);
+    ctx.assertEq(naRaiz.dentro, true, "o primeiro Escape saiu do embed inteiro");
+    ctx.assertEq(naRaiz.ehRaiz, true, "o primeiro Escape não parou na raiz do embed");
+
+    // Segundo Escape: aí sim sai pro bloco.
+    await b.js(TECLA("Escape"));
+    await PAUSA(400);
+    ctx.assertEq(
+      await b.js(`document.activeElement.classList.contains('embed-hover-wrapper')`),
+      true,
+      "o segundo Escape não saiu pro bloco",
+    );
+  },
+  268,
+);

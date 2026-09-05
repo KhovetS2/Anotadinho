@@ -320,6 +320,17 @@ commit.
 "travou".** Foi assim que o 263 passou verde com um defeito pior que o
 original.
 
+**Nenhuma regra estrutural responde "pra baixo".** O movimento dentro
+de um embed foi tentado por ordem de documento (passava pelos botões de
+cada cartão) e por pares do mesmo nome (fazia `j` andar entre colunas
+lado a lado). "Pra baixo" é pergunta sobre a TELA, e a resposta é
+geometria — que rendeu o melhor efeito colateral da série: **nenhum dos
+nove embeds restantes precisou declarar nada** pra ganhar movimento.
+
+**Item aninhado não é vizinho, é conteúdo.** A raiz de um embed contém
+todos os itens dele e um cartão contém os próprios botões; sem tirar
+ancestrais e descendentes dos candidatos, descer cai dentro de si mesmo.
+
 ## Não-objetivos
 
 - Reescrever os dez embeds. A base entra e eles migram um a um.

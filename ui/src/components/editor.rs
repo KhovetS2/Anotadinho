@@ -1522,16 +1522,55 @@ pub fn editor(props: &EditorProps) -> Html {
             // Escape é a exceção: é a porta de SAÍDA, e ela é do
             // documento.
             if dentro_de_um_embed() && e.key() != "Escape" {
+                // ...mas movimento tem um PADRÃO: andar entre os
+                // controles do embed (ciclo 268).
+                //
+                // Sem isto, entrar num embed que não declara nada era
+                // beco sem saída: o vim se calava, o embed não tratava,
+                // e só o Escape respondia. Um callout tem cinco itens
+                // navegáveis e nenhuma tecla os alcançava — buraco que o
+                // ciclo 265 abriu e que a sondagem manual encontrou.
+                //
+                // É o padrão que TODOS herdam, e é o que sobra depois da
+                // cadeia: um embed que quer algo melhor consome a tecla
+                // antes (o calendário anda entre dias); o que não
+                // consome ganha isto de graça.
+                if !e.ctrl_key() && !e.meta_key() && !e.alt_key() {
+                    use anotadinho_core::espacial::Direcao;
+                    let passo = match e.key().as_str() {
+                        "j" | "ArrowDown" => Some(Direcao::Baixo),
+                        "k" | "ArrowUp" => Some(Direcao::Cima),
+                        "l" | "ArrowRight" => Some(Direcao::Direita),
+                        "h" | "ArrowLeft" => Some(Direcao::Esquerda),
+                        _ => None,
+                    };
+                    if let Some(direcao) = passo {
+                        if mover_entre_itens_do_embed(direcao) {
+                            e.prevent_default();
+                            e.stop_propagation();
+                        }
+                        return;
+                    }
+                }
                 return;
             }
 
-            // Escape com o foco dentro de um embed devolve o foco pro
-            // bloco — o nível de fora, com o embed realçado.
+            // Escape sobe UM nível, não sai de tudo (ciclo 268).
+            //
+            // Dentro de um embed há dois níveis: os controles dele e a
+            // raiz. Andar entre os controles leva a campos de texto, e
+            // num campo as letras DIGITAM em vez de navegar — como tem
+            // que ser. Se o Escape saltasse do campo pra fora do embed,
+            // sair de um campo custaria entrar tudo de novo.
+            //
+            // Primeiro Escape: volta pra raiz do embed. Segundo: sai
+            // pro bloco. É o "dois Escapes sobem dois níveis" que a
+            // spec do vim já pedia, agora dentro do embed.
             if e.key() == "Escape" {
-                if let Some(wrapper) = embed_que_contem_o_foco() {
+                if let Some(alvo) = subir_um_nivel_do_embed() {
                     e.prevent_default();
                     e.stop_propagation();
-                    crate::nav_mode::focus_item(&wrapper);
+                    crate::nav_mode::focus_item(&alvo);
                     return;
                 }
             }
@@ -6399,4 +6438,133 @@ fn primeiro_item_do_embed_focado() -> Option<web_sys::Element> {
         .query_selector("[data-nav-item], [tabindex=\"0\"]")
         .ok()
         .flatten()
+}
+
+/// Anda entre os controles do embed que está com o foco.
+///
+/// É o comportamento PADRÃO de movimento dentro de um embed (ciclo 268):
+/// o que sobra depois de a cadeia oferecer a tecla ao embed e ele não
+/// querer. Um embed com estrutura própria (o calendário e seus dias)
+/// consome antes e nunca chega aqui.
+///
+/// A escolha é GEOMÉTRICA, e a decisão mora no núcleo
+/// (`anotadinho_core::espacial`), que a tem sob teste. Aqui só se medem
+/// as caixas.
+///
+/// Duas regras estruturais foram tentadas antes e as duas erraram:
+/// ordem de documento fazia `j` passar pelos botões de cada cartão do
+/// kanban, e "entre pares do mesmo nome" fazia `j` andar entre COLUNAS,
+/// que estão lado a lado. Nenhuma regra que ignora onde as coisas estão
+/// na tela responde "pra baixo".
+///
+/// `[data-nav-item]` é a marca que todos os embeds já põem nos seus
+/// controles desde o ciclo 165 — então isto vale nos dez sem que nenhum
+/// precise mudar.
+fn mover_entre_itens_do_embed(direcao: anotadinho_core::espacial::Direcao) -> bool {
+    use anotadinho_core::espacial::{vizinho, Caixa, Direcao};
+
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return false;
+    };
+    let Some(ativo) = doc.active_element() else {
+        return false;
+    };
+    let Some(wrapper) = ativo.closest(".embed-hover-wrapper").ok().flatten() else {
+        return false;
+    };
+    let Ok(lista) = wrapper.query_selector_all("[data-nav-item]") else {
+        return false;
+    };
+    let caixa_de = |el: &web_sys::Element| {
+        let r = el.get_bounding_client_rect();
+        Caixa::nova(r.x(), r.y(), r.width(), r.height())
+    };
+
+    let mut irmaos: Vec<web_sys::Element> = Vec::new();
+    let mut caixas: Vec<Caixa> = Vec::new();
+    let mut dentro: Vec<web_sys::Element> = Vec::new();
+    for i in 0..lista.length() {
+        let Some(el) = lista.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) else {
+            continue;
+        };
+        if el.is_same_node(Some(&ativo)) {
+            continue;
+        }
+        // Item invisível (coluna recolhida, cartão fora da vista) tem
+        // caixa de área zero e não é destino — cairia como "vizinho" em
+        // (0,0), longe de tudo.
+        let c = caixa_de(&el);
+        if c.largura <= 0.0 || c.altura <= 0.0 {
+            continue;
+        }
+        // ANINHAMENTO: um item que está DENTRO do atual não é vizinho
+        // dele, é conteúdo dele. Sem esta separação, descer de um cartão
+        // de kanban caía no botão de apagar do PRÓPRIO cartão (ele fica
+        // logo abaixo do centro), e descer da raiz do embed caía em
+        // qualquer coisa lá dentro — foi assim que a primeira versão
+        // ficou presa no `kanban-card-delete`.
+        if ativo.contains(Some(&el)) {
+            dentro.push(el);
+            continue;
+        }
+        // E um item que CONTÉM o atual é o nível de fora, não um
+        // vizinho: descer de dentro dele não pode voltar pra ele.
+        if el.contains(Some(&ativo)) {
+            continue;
+        }
+        irmaos.push(el);
+        caixas.push(c);
+    }
+
+    // Foco no wrapper (ou em algo que não é item): entra pelo primeiro.
+    let atual = if ativo.has_attribute("data-nav-item") {
+        caixa_de(&ativo)
+    } else if let Some(primeiro) = irmaos.first().or_else(|| dentro.first()) {
+        crate::nav_mode::focus_item(primeiro);
+        return true;
+    } else {
+        return false;
+    };
+
+    if let Some(i) = vizinho(&atual, &caixas, direcao) {
+        crate::nav_mode::focus_item(&irmaos[i]);
+        return true;
+    }
+    // Descer só a partir de um contêiner PURO — um item que não tem
+    // vizinho nenhum, só conteúdo. É o caso da raiz do embed, que
+    // envolve tudo.
+    //
+    // A versão anterior descia sempre que faltasse vizinho NA DIREÇÃO,
+    // e ficava incoerente: do primeiro cartão o `j` ia pro segundo
+    // (irmão), e do último descia pros botões do próprio cartão. Duas
+    // respostas diferentes pra mesma tecla no mesmo tipo de item.
+    if irmaos.is_empty() && matches!(direcao, Direcao::Baixo | Direcao::Direita) {
+        if let Some(primeiro) = dentro.first() {
+            crate::nav_mode::focus_item(primeiro);
+            return true;
+        }
+    }
+    false
+}
+
+/// Para onde o Escape leva, a partir de dentro de um embed.
+///
+/// Um nível por vez: de um controle vai pra RAIZ do embed; da raiz vai
+/// pro wrapper (o bloco). `None` quando o foco não está num embed — aí o
+/// Escape é de outra pessoa.
+fn subir_um_nivel_do_embed() -> Option<web_sys::Element> {
+    let ativo = web_sys::window()?.document()?.active_element()?;
+    let wrapper = ativo.closest(".embed-hover-wrapper").ok().flatten()?;
+    if wrapper.is_same_node(Some(&ativo)) {
+        return None; // já está no bloco: o Escape não é daqui
+    }
+    // A raiz do embed é o primeiro item marcado dentro do wrapper — o
+    // mesmo elemento que o Enter foca ao entrar.
+    let raiz = wrapper.query_selector("[data-nav-item]").ok().flatten();
+    match raiz {
+        // Está num controle, e a raiz é outra coisa: sobe pra raiz.
+        Some(raiz) if !raiz.is_same_node(Some(&ativo)) => Some(raiz),
+        // Está na raiz (ou não há raiz): sai pro bloco.
+        _ => Some(wrapper),
+    }
 }
