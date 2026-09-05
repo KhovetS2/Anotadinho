@@ -5,12 +5,14 @@
 
 #![warn(missing_docs)]
 
+pub mod caminho;
 pub mod git_status;
 pub mod git_sync;
 pub mod index_cache;
 pub mod io;
 pub mod watcher;
 
+pub use caminho::{normalizar, relativo};
 pub use git_status::{git_log, git_status, GitFileEntry, GitLogEntry};
 pub use git_sync::{git_commit_and_push, git_pull};
 pub use index_cache::IndexCache;

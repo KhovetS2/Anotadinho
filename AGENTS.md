@@ -130,6 +130,21 @@ cd ui && trunk build
 cargo build --manifest-path src-tauri/Cargo.toml
 ```
 
+Mexeu em algo que fala com o sistema — processo, caminho, arquivo? Some
+o alvo do Windows também. Não é empacotamento: é checagem de tipos, e
+compila os ramos `#[cfg(windows)]` que o build do Linux nem lê.
+
+```bash
+rustup target add x86_64-pc-windows-gnu   # uma vez
+cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-gnu
+```
+
+E a regra que vem junto: quando o comportamento depende do sistema, o
+sistema entra por **parâmetro**, não por `cfg!` no meio da lógica. Um
+`cfg!` embutido faz o teste medir a máquina de quem roda, e aí o caminho
+do Windows nunca é exercido. `agente::resolver_executavel` e
+`vault::caminho::recortar` são os dois modelos.
+
 Mexeu em UI? O harness também. Ele roda contra o app DE VERDADE, porque
 bug de DOM não aparece em `cargo test`:
 

@@ -67,11 +67,7 @@ impl VaultIo {
             for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
                 let path = entry.path();
                 if path.extension().map_or(false, |ext| ext == "md") {
-                    let relative = path
-                        .strip_prefix(&self.root)
-                        .unwrap_or(path)
-                        .to_string_lossy()
-                        .to_string();
+                    let relative = crate::caminho::relativo(&self.root, path);
                     let title = path
                         .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
@@ -319,11 +315,7 @@ impl VaultIo {
         for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
             if path.extension().map_or(false, |ext| ext == "md") {
-                let relative = path
-                    .strip_prefix(&self.root)
-                    .unwrap_or(path)
-                    .to_string_lossy()
-                    .to_string();
+                let relative = crate::caminho::relativo(&self.root, path);
                 let title = path
                     .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
@@ -401,12 +393,7 @@ impl VaultIo {
             .filter_map(|e| e.ok())
         {
             if entry.path().is_dir() {
-                let relative = entry
-                    .path()
-                    .strip_prefix(&self.root)
-                    .unwrap_or(entry.path())
-                    .to_string_lossy()
-                    .to_string();
+                let relative = crate::caminho::relativo(&self.root, entry.path());
                 folders.push(relative);
             }
         }
@@ -455,11 +442,7 @@ impl VaultIo {
         let mut files = Vec::new();
         for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
             if entry.path().is_file() {
-                let relative = entry.path()
-                    .strip_prefix(&self.root)
-                    .unwrap_or(entry.path())
-                    .to_string_lossy()
-                    .to_string();
+                let relative = crate::caminho::relativo(&self.root, entry.path());
                 files.push(relative);
             }
         }
@@ -479,11 +462,7 @@ impl VaultIo {
         let mut files = Vec::new();
         for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
             if entry.path().is_file() {
-                let relative = entry.path()
-                    .strip_prefix(&self.root)
-                    .unwrap_or(entry.path())
-                    .to_string_lossy()
-                    .to_string();
+                let relative = crate::caminho::relativo(&self.root, entry.path());
                 let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
                 files.push(AssetInfo { path: relative, size });
             }
@@ -521,11 +500,7 @@ impl VaultIo {
             if !dest.exists() {
                 std::fs::write(&dest, bytes)
                     .map_err(|e| anyhow::anyhow!("erro ao gravar {}: {}", filename, e))?;
-                let relative = dest
-                    .strip_prefix(&self.root)
-                    .unwrap_or(&dest)
-                    .to_string_lossy()
-                    .to_string();
+                let relative = crate::caminho::relativo(&self.root, &dest);
                 return Ok(relative);
             }
             n += 1;
@@ -551,11 +526,7 @@ impl VaultIo {
         let dest = dest_dir.join(&file_name);
         std::fs::copy(src, &dest)
             .map_err(|e| anyhow::anyhow!("erro ao copiar {}: {}", source_path, e))?;
-        let relative = dest
-            .strip_prefix(&self.root)
-            .unwrap_or(&dest)
-            .to_string_lossy()
-            .to_string();
+        let relative = crate::caminho::relativo(&self.root, &dest);
         Ok(relative)
     }
 

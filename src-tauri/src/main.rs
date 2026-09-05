@@ -5,6 +5,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod grupo_de_processos;
+
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -495,7 +497,13 @@ fn iniciar_agente(
         use std::process::{Command, Stdio};
 
         let resultado = (|| -> Result<String, String> {
-            let mut comando = Command::new(&binario);
+            // No Windows o nome cru não basta: `claude` e `codex` são
+            // shims `.cmd` do npm, e o `CreateProcessW` só resolve
+            // `.exe`. Fora do Windows isto devolve o nome intacto e
+            // quem procura no `PATH` continua sendo o sistema.
+            let executavel = anotadinho_core::agente::executavel_para_spawn(&binario);
+            let mut comando = Command::new(&executavel);
+            grupo_de_processos::preparar(&mut comando);
             comando
                 .args(&args)
                 .current_dir(&cwd)
@@ -590,7 +598,7 @@ fn iniciar_agente(
                     return Err("__CANCELADO__".to_string());
                 };
                 if cancelado.load(Ordering::Relaxed) {
-                    let _ = proc.kill();
+                    grupo_de_processos::encerrar_arvore(proc);
                     let _ = proc.wait();
                     return Err("__CANCELADO__".to_string());
                 }
@@ -598,7 +606,7 @@ fn iniciar_agente(
                     Ok(Some(s)) => break s,
                     Ok(None) => {
                         if limite > 0 && inicio.elapsed().as_secs() >= limite {
-                            let _ = proc.kill();
+                            grupo_de_processos::encerrar_arvore(proc);
                             let _ = proc.wait();
                             let minutos = limite / 60;
                             return Err(format!(
@@ -773,7 +781,7 @@ fn cancelar_agente(conversa_path: String) -> Result<(), String> {
     job.cancelado.store(true, Ordering::Relaxed);
     if let Ok(mut f) = job.filho.lock() {
         if let Some(ref mut c) = *f {
-            let _ = c.kill();
+            grupo_de_processos::encerrar_arvore(c);
         }
     }
     Ok(())
@@ -847,6 +855,7 @@ fn vault_esta_vazio(vault_path: String) -> Result<bool, String> {
 /// Só age quando há NVIDIA proprietária carregada, e nunca por cima de
 /// uma escolha explícita — quem definiu a variável decidiu, e a decisão
 /// é dela.
+#[cfg(target_os = "linux")]
 fn contornar_travamento_nvidia() {
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some() {
         return;
@@ -862,6 +871,11 @@ fn contornar_travamento_nvidia() {
     // processo de renderização.
     std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
 }
+
+/// Fora do Linux não existe o travamento nem o `/sys` onde ele se
+/// detecta — a variável do WebKit não teria a quem servir.
+#[cfg(not(target_os = "linux"))]
+fn contornar_travamento_nvidia() {}
 
 fn main() {
     contornar_travamento_nvidia();

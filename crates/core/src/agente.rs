@@ -375,9 +375,268 @@ impl Default for Adaptador {
     }
 }
 
+/// Extensões que o Windows considera executáveis quando o `PATHEXT` não
+/// diz nada. É o valor de fábrica do sistema, na mesma ordem.
+const PATHEXT_PADRAO: &str = ".COM;.EXE;.BAT;.CMD";
+
+/// Encontra o executável de verdade por trás do nome configurado.
+///
+/// No Linux e no macOS isto é trabalho do sistema: `execvp` procura no
+/// `PATH` sozinho, e o nome cru serve. No Windows não serve, e é o item
+/// B1 do diagnóstico de portabilidade:
+///
+/// `claude`, `codex` e `opencode` são instalados pelo npm como **shims**
+/// — `claude.cmd`, não `claude.exe`. O `CreateProcessW`, que é quem o
+/// `Command::new` chama, resolve `.exe` e `.com` e mais nada. Buscar
+/// `claude` no `PATH` acha `claude.cmd`, mas o spawn falha antes de
+/// qualquer coisa, com "programa não encontrado" — a mensagem menos útil
+/// possível, porque o programa ESTÁ lá.
+///
+/// Resolvendo aqui, o que chega no `Command::new` é o caminho completo
+/// com extensão. A partir do Rust 1.77.2 a biblioteca padrão reconhece
+/// `.bat`/`.cmd` e cuida de passar pelo `cmd.exe` com o escape correto,
+/// então não precisamos (nem queremos) montar essa linha à mão.
+///
+/// `existe` entra por parâmetro para o teste rodar na máquina de quem
+/// desenvolve, que é Linux: o comportamento do Windows é decidido pelo
+/// conteúdo do `PATH` e do `PATHEXT`, não pelo sistema em que o código
+/// está compilando.
+pub fn resolver_executavel(
+    nome: &str,
+    path_env: &str,
+    pathext: &str,
+    windows: bool,
+    existe: impl Fn(&std::path::Path) -> bool,
+) -> Option<String> {
+    let nome = nome.trim();
+    if nome.is_empty() {
+        return None;
+    }
+    // O sistema entra por parâmetro, não por `cfg!`, pelo mesmo motivo
+    // que `existe`: `C:\bin;C:\Windows` só se separa direito sabendo
+    // que o separador é `;`, e num teste rodando no Linux o `cfg!`
+    // responderia `:` — que corta o `C:` ao meio.
+    let sep_lista = if windows { ';' } else { ':' };
+    let sep_dir = if windows { '\\' } else { '/' };
+
+    let extensoes: Vec<&str> = {
+        let bruto = if pathext.trim().is_empty() { PATHEXT_PADRAO } else { pathext };
+        bruto
+            .split(';')
+            .map(str::trim)
+            .filter(|e| !e.is_empty())
+            .collect()
+    };
+
+    // Caminho já dado por inteiro: não se procura no `PATH`, só se
+    // completa a extensão que faltar. É o que faz `C:\Program Files\Meu
+    // Agente\claude` achar `claude.cmd` sem a pessoa precisar saber que
+    // a extensão existe.
+    if nome.contains('/') || nome.contains('\\') {
+        return completar(nome, &extensoes, &existe);
+    }
+
+    for dir in path_env.split(sep_lista).filter(|d| !d.trim().is_empty()) {
+        // As aspas que o Windows deixa entrar no `PATH` não fazem parte
+        // do caminho — `"C:\ferramentas"` é a pasta `C:\ferramentas`.
+        let dir = dir.trim().trim_matches('"').trim_end_matches(['/', '\\']);
+        let base = format!("{dir}{sep_dir}{nome}");
+        if let Some(achado) = completar(&base, &extensoes, &existe) {
+            return Some(achado);
+        }
+    }
+    None
+}
+
+/// Tenta o caminho como está e, se não houver arquivo, com cada extensão.
+///
+/// Duas decisões:
+///
+/// - O nome exato ganha do nome com extensão, senão um `claude` de
+///   verdade perderia pra um `claude.bat` na mesma pasta.
+/// - A extensão é ACRESCENTADA, nunca trocada. É o que o `PATHEXT` faz,
+///   e é a diferença entre `meu.agente` virar `meu.agente.cmd` (certo)
+///   ou `meu.cmd` (que é outro programa, ou nenhum).
+fn completar(
+    base: &str,
+    extensoes: &[&str],
+    existe: &impl Fn(&std::path::Path) -> bool,
+) -> Option<String> {
+    if existe(std::path::Path::new(base)) {
+        return Some(base.to_string());
+    }
+    for ext in extensoes {
+        let com_ext = format!("{base}{ext}");
+        if existe(std::path::Path::new(&com_ext)) {
+            return Some(com_ext);
+        }
+    }
+    None
+}
+
+/// O que passar pro `Command::new`, lido do ambiente do processo.
+///
+/// Fora do Windows devolve o nome cru de propósito: quem resolve `PATH`
+/// lá é o sistema, e ele faz isso melhor do que nós (respeita links,
+/// permissão de execução, `PATH` alterado depois que o app subiu).
+/// Devolve o nome cru no Windows também quando a busca não acha nada —
+/// aí o erro de spawn é do sistema, e a mensagem cita o nome que a
+/// pessoa configurou, não um caminho inventado por nós.
+pub fn executavel_para_spawn(binario: &str) -> String {
+    if !cfg!(windows) {
+        return binario.to_string();
+    }
+    let path_env = std::env::var("PATH").unwrap_or_default();
+    let pathext = std::env::var("PATHEXT").unwrap_or_default();
+    resolver_executavel(binario, &path_env, &pathext, true, |p| p.is_file())
+        .unwrap_or_else(|| binario.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Sistema de arquivos de mentira, com um conjunto fixo de arquivos.
+    ///
+    /// Ignora caixa de propósito: o `PATHEXT` de verdade vem em
+    /// MAIÚSCULAS (`.COM;.EXE;.BAT;.CMD`) e o npm instala `claude.cmd`
+    /// em minúsculas. No Windows os dois são o mesmo arquivo, e um
+    /// fixture sensível a caixa reprovaria um código que funciona.
+    fn arvore<'a>(arquivos: &'a [&'a str]) -> impl Fn(&std::path::Path) -> bool + 'a {
+        move |p| {
+            let alvo = p.to_string_lossy().replace('\\', "/");
+            arquivos
+                .iter()
+                .any(|a| a.replace('\\', "/").eq_ignore_ascii_case(&alvo))
+        }
+    }
+
+    const PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
+
+    /// Confere o caminho achado ignorando a caixa da extensão.
+    ///
+    /// A extensão volta como está no `PATHEXT` (`.EXE`), não como está
+    /// no disco (`.exe`). No Windows os dois abrem o mesmo arquivo, e
+    /// exigir a caixa do disco seria cobrar do código uma consulta que
+    /// ele não precisa fazer.
+    #[track_caller]
+    fn achou(resultado: Option<String>, esperado: &str) {
+        let r = resultado.expect("não achou o executável");
+        assert!(
+            r.eq_ignore_ascii_case(esperado),
+            "achou `{r}`, esperava `{esperado}`"
+        );
+    }
+
+    #[test]
+    fn acha_o_shim_cmd_que_o_npm_instala() {
+        // O caso B1 inteiro: `claude` existe no PATH, mas como `.cmd`.
+        let achado = resolver_executavel(
+            "claude",
+            r"C:\Windows\system32;C:\Users\e\AppData\Roaming\npm",
+            PATHEXT,
+            true,
+            arvore(&[r"C:\Users\e\AppData\Roaming\npm\claude.cmd"]),
+        );
+        achou(achado, r"C:\Users\e\AppData\Roaming\npm\claude.cmd");
+    }
+
+    #[test]
+    fn o_nome_exato_ganha_da_extensao() {
+        // Com `claude` e `claude.bat` na mesma pasta, quem a pessoa
+        // pediu foi `claude`.
+        let achado = resolver_executavel(
+            "claude",
+            "/usr/bin",
+            PATHEXT,
+            false,
+            arvore(&["/usr/bin/claude", "/usr/bin/claude.bat"]),
+        );
+        achou(achado, "/usr/bin/claude");
+    }
+
+    #[test]
+    fn respeita_a_ordem_do_path() {
+        let achado = resolver_executavel(
+            "codex",
+            r"C:\primeiro;C:\segundo",
+            PATHEXT,
+            true,
+            arvore(&[r"C:\primeiro\codex.exe", r"C:\segundo\codex.exe"]),
+        );
+        achou(achado, r"C:\primeiro\codex.exe");
+    }
+
+    #[test]
+    fn respeita_a_ordem_do_pathext() {
+        let achado = resolver_executavel(
+            "opencode",
+            r"C:\bin",
+            PATHEXT,
+            true,
+            arvore(&[r"C:\bin\opencode.cmd", r"C:\bin\opencode.exe"]),
+        );
+        achou(achado, r"C:\bin\opencode.exe");
+    }
+
+    #[test]
+    fn caminho_com_espaco_completa_a_extensao_sem_procurar_no_path() {
+        // B2 já não bloqueia a configuração; falta o caminho com espaço
+        // funcionar de verdade quando o executável é um shim.
+        let achado = resolver_executavel(
+            r"C:\Program Files\Meu Agente\claude",
+            r"C:\Windows\system32",
+            PATHEXT,
+            true,
+            arvore(&[r"C:\Program Files\Meu Agente\claude.cmd"]),
+        );
+        achou(achado, r"C:\Program Files\Meu Agente\claude.cmd");
+    }
+
+    #[test]
+    fn caminho_absoluto_que_existe_passa_intacto() {
+        let achado = resolver_executavel(
+            "/opt/agentes/claude",
+            "/usr/bin",
+            PATHEXT,
+            false,
+            arvore(&["/opt/agentes/claude"]),
+        );
+        achou(achado, "/opt/agentes/claude");
+    }
+
+    #[test]
+    fn aspas_no_path_nao_viram_parte_da_pasta() {
+        let achado = resolver_executavel(
+            "claude",
+            r#""C:\ferramentas";C:\Windows"#,
+            PATHEXT,
+            true,
+            arvore(&[r"C:\ferramentas\claude.cmd"]),
+        );
+        achou(achado, r"C:\ferramentas\claude.cmd");
+    }
+
+    #[test]
+    fn pathext_vazio_cai_no_padrao_do_sistema() {
+        let achado = resolver_executavel(
+            "claude",
+            r"C:\bin",
+            "",
+            true,
+            arvore(&[r"C:\bin\claude.cmd"]),
+        );
+        achou(achado, r"C:\bin\claude.cmd");
+    }
+
+    #[test]
+    fn nao_achar_devolve_nada_em_vez_de_um_caminho_inventado() {
+        assert_eq!(
+            resolver_executavel("claude", r"C:\bin", PATHEXT, true, arvore(&[])),
+            None
+        );
+        assert_eq!(resolver_executavel("   ", r"C:\bin", PATHEXT, true, arvore(&[])), None);
+    }
 
     fn base() -> Adaptador {
         Adaptador {

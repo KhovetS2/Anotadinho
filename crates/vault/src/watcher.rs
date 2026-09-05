@@ -65,11 +65,19 @@ impl VaultWatcher {
                                         if p.extension().map_or(true, |e| e != "md") {
                                             continue;
                                         }
-                                        let relativo = p
-                                            .strip_prefix(&raiz_para_evento)
-                                            .unwrap_or(p)
-                                            .to_string_lossy()
-                                            .to_string();
+                                        // Pela fronteira, não por
+                                        // `strip_prefix` direto: no
+                                        // Windows a raiz vem de
+                                        // `canonicalize` como
+                                        // `\\?\C:\Vault` e o `notify`
+                                        // entrega `C:\Vault\...`. O
+                                        // recorte falhava sempre, e o
+                                        // caminho ABSOLUTO saía daqui no
+                                        // lugar do relativo (item D2).
+                                        let relativo = crate::caminho::relativo(
+                                            &raiz_para_evento,
+                                            p,
+                                        );
                                         fila.push(VaultEvent {
                                             path: relativo,
                                             kind: tipo.to_string(),

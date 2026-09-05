@@ -1,0 +1,7 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "build": {
+    "beforeDevCommand": "cd ui && trunk serve --port 1420",
+    "beforeBuildCommand": "cd ui && trunk build --release"
+  }
+}

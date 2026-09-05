@@ -32,3 +32,8 @@ anyhow = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Só pelo `setpgid`/`killpg` de `grupo_de_processos`: cancelar o agente
+# precisa alcançar os netos, e o wrapper Node dos agentes sempre tem um.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

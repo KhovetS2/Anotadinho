@@ -2,7 +2,7 @@
 title: Rodar no Windows
 type: spec
 date: 2026-08-29
-status: rascunho
+status: concluida
 prioridade: media
 tags:
 - spec
@@ -10,24 +10,46 @@ tags:
 ---
 {{ type: "fluxo" }}
 artefato: spec
-etapa: rascunho
+etapa: concluida
 {{ /fluxo }}
 ## Por que isto existe
 
 A configuração de agentes foi construída e testada só no Linux. Esta spec
-registra o levantamento do que impede o Anotadinho de rodar no Windows,
-para a decisão de portar ser tomada com o custo à vista em vez de no
-escuro. **Não é um pedido de implementação** — é o mapa.
+nasceu como o levantamento do que impede o Anotadinho de rodar no
+Windows, para a decisão de portar ser tomada com o custo à vista em vez
+de no escuro.
 
 macOS foi levantado junto: nada bloqueia lá.
+
+## O que foi feito
+
+Todos os itens levantados estão resolvidos. Dois deles saíram pelo
+caminho, em ciclos que miravam outra coisa:
+
+| Item | Onde foi resolvido |
+|---|---|
+| B1 — shim `.cmd` do npm | ciclo 255, `agente::resolver_executavel` |
+| B2 — caminho com espaço recusado | ciclo 241 |
+| B3 — sem campo pra editar o binário | ciclo 239 |
+| B4 — separador de caminho | ciclo 255, `vault::caminho` |
+| B5 — `beforeDevCommand` POSIX | ciclo 255, `tauri.windows.conf.json` |
+| D1 — `kill` não alcança os netos | ciclo 255, `grupo_de_processos` |
+| D2 — `strip_prefix` de caminho UNC | ciclo 255, `vault::caminho` |
+| Cosmético — `contornar_travamento_nvidia` | ciclo 255 |
 {{ type: "callout" }}
 variant: warning
 title: Nada disto foi testado numa máquina Windows
 body: |
-  O levantamento é por leitura de código. Os bloqueios listados são
-  consequências diretas do que está escrito, mas a ordem em que aparecem
-  na prática, e o que mais surge depois de resolvê-los, só se descobre
-  rodando de verdade.
+  Nem o levantamento nem as correções passaram por uma máquina Windows —
+  o projeto não tem uma. O que existe é `cargo check` cruzado para
+  `x86_64-pc-windows-gnu`, que compila os ramos `#[cfg(windows)]` de
+  verdade e por isso pega erro de API, e teste unitário da lógica pura,
+  com o sistema entrando por PARÂMETRO em vez de `cfg!` — é o que faz o
+  comportamento do Windows ser exercido numa máquina Linux.
+
+  Isso cobre "compila" e "a regra está certa". Não cobre "roda". O que
+  aparece só rodando — ordem dos problemas, permissões, antivírus,
+  console — continua por descobrir.
 {{ /callout }}
 ## O que bloqueia
 
