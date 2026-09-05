@@ -904,3 +904,118 @@ teclado(
   },
   263,
 );
+
+// ── copiar e apagar embed (ciclo 264, RF2) ──────────────────────────
+
+/// Intercepta o `document.execCommand('copy')` pra ler o payload.
+///
+/// Ler o clipboard do sistema não é possível no WebView sem permissão, e
+/// o que o cenário precisa provar é o CONTEÚDO que seria colado.
+const ESPIAR_COPIA_TECLADO = `(() => {
+  if (window.__espiaoTeclado === undefined) {
+    window.__espiaoTeclado = true;
+    const orig = document.execCommand.bind(document);
+    document.execCommand = function (cmd, ...resto) {
+      if (cmd === 'copy') {
+        const a = document.activeElement;
+        window.__copiadoTeclado = a && 'value' in a ? a.value : (getSelection() || '').toString();
+      }
+      return orig(cmd, ...resto);
+    };
+  }
+  window.__copiadoTeclado = null;
+  return true;
+})()`;
+
+const CONFIRMAR = `(() => {
+  const b = [...document.querySelectorAll('button')]
+    .find(b => b.textContent.trim() === 'Apagar');
+  if (!b) return false;
+  b.click();
+  return true;
+})()`;
+
+/// Põe o foco no embed descendo com `j` a partir do primeiro bloco.
+async function irAteOEmbed(b) {
+  await b.js(CURSOR_EM(0, 0));
+  await PAUSA(300);
+  await b.js(TECLA("j"));
+  await PAUSA(500);
+  return b.js(`(() => {
+    const a = document.activeElement;
+    const bl = a && a.closest('[data-nav-block]');
+    return bl ? bl.getAttribute('data-nav-block') : null;
+  })()`);
+}
+
+teclado(
+  "yy num embed copia o markdown dele, não o HTML desenhado",
+  { md: COM_EMBED, vim: true },
+  async (b, ctx) => {
+    await esperar(b, `!!document.querySelector('.embed-hover-wrapper')`, "o embed", 15000);
+    ctx.assertEq(await irAteOEmbed(b), "embed", "não cheguei no embed");
+
+    await b.js(ESPIAR_COPIA_TECLADO);
+    await b.js(TECLA("y"));
+    await PAUSA(150);
+    await b.js(TECLA("y"));
+    await PAUSA(600);
+
+    const copiado = await b.js(`window.__copiadoTeclado`);
+    ctx.assert(copiado, "nada foi copiado");
+    // O que importa: veio o MARKDOWN do embed, não a tabela desenhada.
+    // O DOM tem `<div class="callout">…`; o arquivo tem o fence.
+    ctx.assert(
+      copiado.includes('{{ type: "callout" }}'),
+      `copiou o desenho em vez do markdown:\n${copiado}`,
+    );
+    ctx.assert(
+      !/<div|<table|class=/.test(copiado),
+      `veio HTML no que foi copiado:\n${copiado}`,
+    );
+  },
+  264,
+);
+
+teclado(
+  "dd num embed pergunta antes, e apaga o segmento",
+  { md: COM_EMBED, vim: true },
+  async (b, ctx) => {
+    await esperar(b, `!!document.querySelector('.embed-hover-wrapper')`, "o embed", 15000);
+    ctx.assertEq(await irAteOEmbed(b), "embed", "não cheguei no embed");
+
+    await b.js(TECLA("d"));
+    await PAUSA(150);
+    await b.js(TECLA("d"));
+    await PAUSA(600);
+
+    // O embed AINDA está lá: a pergunta veio antes.
+    ctx.assert(
+      await b.js(`!!document.querySelector('.embed-hover-wrapper')`),
+      "o embed foi apagado sem perguntar",
+    );
+    const perguntou = await b.js(
+      `[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Apagar')`,
+    );
+    ctx.assertEq(perguntou, true, "não apareceu a confirmação");
+
+    await b.js(CONFIRMAR);
+    await PAUSA(800);
+    ctx.assertEq(
+      await b.js(`!!document.querySelector('.embed-hover-wrapper')`),
+      false,
+      "confirmei e o embed continuou lá",
+    );
+
+    // E o arquivo perde o fence, mantendo os parágrafos.
+    const corpo = corpoDe(await (async () => {
+      await b.js(SALVAR_RASCUNHO);
+      await PAUSA(1000);
+      return ctx.ler();
+    })());
+    ctx.assert(!corpo.includes("callout"), `o fence sobreviveu no arquivo:\n${corpo}`);
+    ctx.assert(corpo.includes("alfa"), `perdeu o parágrafo de cima:\n${corpo}`);
+    ctx.assert(corpo.includes("gama"), `perdeu o parágrafo de baixo:\n${corpo}`);
+  },
+  264,
+);

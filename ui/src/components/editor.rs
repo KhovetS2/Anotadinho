@@ -1498,6 +1498,10 @@ pub fn editor(props: &EditorProps) -> Html {
         let mark_edited_copia = mark_edited_estrutural.clone();
         let render_gen_copia = render_gen.clone();
         let mark_edited_vim = mark_edited.clone();
+        let content_md_vim_del = content_md.clone();
+        let frontmatter_vim_del = frontmatter_text.clone();
+        let mark_edited_vim_del = mark_edited_estrutural.clone();
+        let open_dialog_vim = props.open_dialog.clone();
         let do_undo = do_undo.clone();
         let do_redo = do_redo.clone();
         Callback::from(move |e: KeyboardEvent| {
@@ -1859,9 +1863,16 @@ pub fn editor(props: &EditorProps) -> Html {
                     }
                     Comando::Copiar(mov, vezes) => {
                         let texto = if mov == Movimento::LinhaInteira {
+                            // Embed em foco: o markdown vem do `content_md`,
+                            // não da tela (ciclo 264).
+                            if let Some(i) = segmento_do_bloco_atomico() {
+                                markdown_do_segmento(&content_md_ref_copia, i)
+                                    .unwrap_or_default()
+                            } else {
                             crate::vim_visual::bloco_atual()
                                 .map(|b| b.text_content().unwrap_or_default())
                                 .unwrap_or_default()
+                            }
                         } else {
                             // Guarda de onde saiu pra devolver o cursor:
                             // copiar não move o cursor no vim.
@@ -1890,6 +1901,38 @@ pub fn editor(props: &EditorProps) -> Html {
                     }
                     Comando::Apagar(mov, vezes) | Comando::Mudar(mov, vezes) => {
                         let mudando = matches!(comando, Comando::Mudar(_, _));
+                        // Apagar um embed inteiro PERGUNTA antes (decisão
+                        // registrada na spec `o-que-e-um-bloco`).
+                        //
+                        // Não é excesso de zelo: o desfazer aqui é o do
+                        // navegador, e ele não alcança um componente Yew.
+                        // Enquanto não houver um desfazer que chegue ao
+                        // modelo (o `Command` previsto na spec), a
+                        // confirmação é a única rede — e uma tabela de 600
+                        // linhas sai com duas teclas.
+                        if mov == Movimento::LinhaInteira && !mudando {
+                            if let Some(i) = segmento_do_bloco_atomico() {
+                                let md = markdown_do_segmento(&content_md_vim_del, i)
+                                    .unwrap_or_default();
+                                *vim_register.borrow_mut() = Registrador::linha(md);
+                                let conteudo = (*content_md_vim_del).clone();
+                                let fm = frontmatter_vim_del.clone();
+                                let content_md_ok = content_md_vim_del.clone();
+                                let marcar = mark_edited_vim_del.clone();
+                                open_dialog_vim.emit(crate::dialog::PendingDialog::Confirm {
+                                    message: "Apagar este bloco inteiro? O desfazer não alcança embeds."
+                                        .to_string(),
+                                    confirm_label: "Apagar".to_string(),
+                                    on_confirm: Callback::from(move |_| {
+                                        if let Some(novo) = sem_o_segmento(&conteudo, &fm, i) {
+                                            content_md_ok.set(novo.clone());
+                                            marcar(novo);
+                                        }
+                                    }),
+                                });
+                                return;
+                            }
+                        }
                         // `cw` age como `ce` — o caso especial do vim.
                         //
                         // `:help cw` explica o quê: "cw" não inclui o
@@ -2538,47 +2581,7 @@ pub fn editor(props: &EditorProps) -> Html {
         let frontmatter_text = frontmatter_text.clone();
         let mark_edited_estrutural = mark_edited_estrutural.clone();
         let on_sair_blocos = props.on_leave_block_nav.clone();
-        let vim_mode_enabled = props.vim_mode_enabled;
-        let em_navegacao = props.nav_mode_active;
-        let vim_modo_seg = vim_modo.clone();
         Callback::from(move |e: KeyboardEvent| {
-            // Sair de um bloco ATÔMICO com `j`/`k`.
-            //
-            // Este handler é o único que ESCUTA teclas vindas de um
-            // embed: o `on_keydown` do vim mora nos `div.editor__wysiwyg`,
-            // e o embed é IRMÃO deles, não filho — o evento nunca chega
-            // lá.
-            //
-            // Sem isto, o ciclo 263 trocou um defeito por outro pior: o
-            // `j` passava a ENTRAR no embed e não saía mais. A sondagem
-            // manual pegou (três `j` seguidos ficavam parados); o
-            // cenário não, porque apertava uma tecla só.
-            //
-            // É também a primeira aplicação real da cadeia do ciclo 262:
-            // o embed não declara interesse em `Movimento`, então a
-            // tecla sobe e quem anda é o documento.
-            if vim_mode_enabled
-                && !em_navegacao
-                && *vim_modo_seg == VimModo::Normal
-                && !e.ctrl_key()
-                && !e.meta_key()
-                && !e.alt_key()
-            {
-                let frente = match e.key().as_str() {
-                    "j" | "ArrowDown" => Some(true),
-                    "k" | "ArrowUp" => Some(false),
-                    _ => None,
-                };
-                if let Some(frente) = frente {
-                    if crate::vim_visual::em_bloco_atomico()
-                        && crate::vim_visual::mover_linha(frente)
-                    {
-                        e.prevent_default();
-                        e.stop_propagation();
-                        return;
-                    }
-                }
-            }
             if e.key() != "n" || e.ctrl_key() || e.meta_key() || e.alt_key() {
                 return;
             }
@@ -2596,6 +2599,24 @@ pub fn editor(props: &EditorProps) -> Html {
             );
         })
     };
+
+    // Um handler de teclado pro DOCUMENTO, não um por segmento (ciclo 264).
+    //
+    // O `n` do `on_segments_keydown` vem primeiro porque é específico (só
+    // dispara com um embed em foco); se ele consumir a tecla, o vim não a
+    // vê. É a cadeia de responsabilidade do ciclo 262 aplicada ao próprio
+    // editor: o mais específico tem a primeira chance, o resto sobe.
+    let on_keydown_documento = {
+        let vim = on_keydown.clone();
+        let segmentos = on_segments_keydown.clone();
+        Callback::from(move |e: KeyboardEvent| {
+            segmentos.emit(e.clone());
+            if !e.default_prevented() {
+                vim.emit(e);
+            }
+        })
+    };
+
 
     // Grava um campo do frontmatter da página aberta (ciclo 201).
     //
@@ -3449,7 +3470,19 @@ pub fn editor(props: &EditorProps) -> Html {
                     // ficava "grudado" ali, aparecendo duplicado ao lado
                     // do conteúdo novo de verdade.
                     <div class="editor__wysiwyg-segments" key="segments" onclick={on_wysiwyg_click.clone()}
-                        onkeydown={on_segments_keydown.clone()}>
+                        // Os DOIS handlers ficam aqui, no contêiner, e não
+                        // nos segmentos (ciclo 264).
+                        //
+                        // O `on_keydown` estava em cada `div.editor__wysiwyg`,
+                        // e o embed é IRMÃO desses divs — então nenhuma tecla
+                        // apertada com um embed em foco chegava ao vim. Foi o
+                        // que fez o `j` do ciclo 263 entrar no embed e não sair.
+                        //
+                        // Subir funciona porque `on_keydown` não consulta o
+                        // alvo do evento: ele decide pelo FOCO e pela seleção.
+                        // O evento de um bloco de texto borbulha até aqui
+                        // igual, e agora o de um embed também.
+                        onkeydown={on_keydown_documento.clone()}>
                         { for segments.iter().enumerate().map(|(i, seg)| {
                             // `key` inclui o TIPO do segmento (`md`/`embed`), não
                             // só a posição: o caso que realmente quebrava era um
@@ -3476,12 +3509,18 @@ pub fn editor(props: &EditorProps) -> Html {
                                     html! {
                                         // Ciclo 175: o contêiner NÃO é mais
                                         // editável — cada bloco dentro dele é
-                                        // (ver `marcar_blocos`). Os handlers
-                                        // ficam aqui mesmo: eventos borbulham
-                                        // do bloco, então um handler só continua
-                                        // servindo pra todos.
+                                        // (ver `marcar_blocos`).
+                                        //
+                                        // O `onkeydown` saiu daqui no ciclo 264 e
+                                        // subiu pro contêiner de segmentos: aqui
+                                        // ele só alcançava os blocos de TEXTO, e
+                                        // o embed é irmão deste div. Os outros
+                                        // continuam por segmento porque dependem
+                                        // do `data-segment-index` — colar e
+                                        // soltar precisam saber em QUAL segmento
+                                        // aconteceram; uma tecla não.
                                         <div class="editor__wysiwyg" {key} data-segment-index={i.to_string()} ref={node_ref} contenteditable="false"
-                                            spellcheck="false" onkeydown={on_keydown.clone()} oninput={on_edit.clone()}
+                                            spellcheck="false" oninput={on_edit.clone()}
                                             ondrop={on_drop.clone()} ondragover={on_dragover.clone()} ondragleave={on_dragleave.clone()} onpaste={on_paste.clone()} />
                                     }
                                 }
@@ -3532,7 +3571,7 @@ pub fn editor(props: &EditorProps) -> Html {
                                         // `j` PARECE ter pulado o embed de novo —
                                         // foi assim que o cenário reprovou na
                                         // primeira tentativa.
-                                        <div class="embed-hover-wrapper" {key} data-nav-block="embed" tabindex="-1">
+                                        <div class="embed-hover-wrapper" {key} data-nav-block="embed" tabindex="-1" data-segment-index={i.to_string()}>
                                             <button class="embed-hover-wrapper__add-line embed-hover-wrapper__add-line--top"
                                                 onclick={insert_blank_line(i)} title="Adicionar linha acima">{ "+" }</button>
                                             <div class="embed-hover-wrapper__toolbar">
@@ -5310,6 +5349,53 @@ fn copiar_para_area_de_transferencia(texto: &str) {
 ///
 /// O id do grupo é `embed-<índice do segmento>` (ciclo 165), então o
 /// número sai dali em vez de precisar de outro atributo.
+/// O índice de segmento do BLOCO atômico em foco.
+///
+/// Diferente de `segmento_do_embed_focado`, que procura pelo
+/// `data-nav-group` posto pelo componente lá dentro: aqui o foco está no
+/// WRAPPER (é onde o `j` do ciclo 263 pousa), e o componente é um
+/// descendente — `closest` não o alcança.
+fn segmento_do_bloco_atomico() -> Option<usize> {
+    let ativo = web_sys::window()?.document()?.active_element()?;
+    let bloco = ativo
+        .closest(&format!("[{}]", crate::nav_mode::ATTR_BLOCO_TEXTO))
+        .ok()
+        .flatten()?;
+    if !crate::selecao_blocos::e_atomico(&bloco) {
+        return None;
+    }
+    bloco.get_attribute("data-segment-index")?.parse().ok()
+}
+
+/// O markdown de um embed, buscado no `content_md` — não no DOM.
+///
+/// É a diferença que o ciclo 263 deixou registrada: o DOM tem a tabela
+/// DESENHADA, não o `{{ type: "table" }}` que a gerou. Serializar a
+/// partir da tela devolveria HTML achatado no lugar do embed.
+fn markdown_do_segmento(content_md: &str, indice: usize) -> Option<String> {
+    let (_, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(content_md);
+    match crate::embed::segment(body).get(indice)? {
+        DocSegment::Embed(data) => Some(data.to_fence_text()),
+        DocSegment::Markdown(texto) => Some(texto.clone()),
+    }
+}
+
+/// Devolve o markdown da página sem o segmento `indice`.
+fn sem_o_segmento(content_md: &str, frontmatter: &str, indice: usize) -> Option<String> {
+    let (_, body) = anotadinho_core::MarkdownCodec::split_frontmatter_text(content_md);
+    let mut segs = crate::embed::segment(body);
+    if indice >= segs.len() {
+        return None;
+    }
+    segs.remove(indice);
+    let novo_corpo = crate::embed::join(&segs);
+    Some(if frontmatter.is_empty() {
+        novo_corpo
+    } else {
+        format!("{frontmatter}\n{novo_corpo}")
+    })
+}
+
 fn segmento_do_embed_focado() -> Option<usize> {
     let ativo = web_sys::window()?.document()?.active_element()?;
     let raiz = ativo
