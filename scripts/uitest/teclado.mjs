@@ -672,3 +672,133 @@ teclado(
   },
   254,
 );
+
+// ── semântica vinda da fonte do Neovim (ciclo 260) ──────────────────
+//
+// Estes três não checam se a tecla "faz alguma coisa" — checam se ela
+// faz a coisa que o vim faz. Os três reprovavam antes do ciclo 260, com
+// o vocabulário inteiro já implementado: o que faltava era a semântica,
+// e ela não está em cheat sheet nenhum.
+//
+// A fonte de cada regra está no comentário do cenário, citável.
+
+/// O texto do bloco `i`, como está na tela.
+const TEXTO_DO_BLOCO = (i) => `(() => {
+  const b = document.querySelectorAll('.editor__bloco')[${i}];
+  return b ? b.textContent : null;
+})()`;
+
+teclado(
+  "de inclui a última letra da palavra, dw não",
+  { md: TRES_MARCADAS, vim: true },
+  async (b, ctx) => {
+    // `motion.txt`: "e  Forward to the end of word [count] |inclusive|"
+    // contra "w  [count] words forward. |exclusive| motion."
+    //
+    // Com o cursor em "alfa um dois", `de` tem que deixar " um dois" (a
+    // palavra inteira sai, o espaço fica) e `dw` tem que deixar
+    // "um dois" (a palavra E o espaço saem).
+    await b.js(CURSOR_EM(0, 0));
+    await PAUSA(200);
+    await b.js(TECLA("d"));
+    await PAUSA(120);
+    await b.js(TECLA("e"));
+    await PAUSA(400);
+    const depoisDeDe = await b.js(TEXTO_DO_BLOCO(0));
+    ctx.assertEq(depoisDeDe, " um dois", "`de` não é inclusivo — sobrou letra da palavra");
+
+    // Agora `dw` no bloco seguinte, para o contraste ficar medido e não
+    // suposto: se os dois derem o mesmo resultado, a tabela de alcance
+    // não está sendo aplicada.
+    await b.js(CURSOR_EM(1, 0));
+    await PAUSA(200);
+    await b.js(TECLA("d"));
+    await PAUSA(120);
+    await b.js(TECLA("w"));
+    await PAUSA(400);
+    const depoisDeDw = await b.js(TEXTO_DO_BLOCO(1));
+    ctx.assertEq(depoisDeDw, "tres quatro", "`dw` devia levar o espaço junto");
+  },
+  260,
+);
+
+teclado(
+  "yw depois p cola dentro da linha, não cria bloco",
+  { md: TRES_MARCADAS, vim: true },
+  async (b, ctx) => {
+    // `ops.c` guarda no registrador o texto E a motion type (`MCHAR` ou
+    // `MLINE`), e é ela que decide o que `p` faz. `yw` é charwise, então
+    // `p` cola DENTRO da linha.
+    //
+    // Antes do ciclo 260 o registrador era um `String` puro e `p`
+    // sempre criava um bloco irmão: `yw` seguido de `p` quebrava o
+    // parágrafo em dois.
+    const antes = await b.js(`document.querySelectorAll('.editor__bloco').length`);
+
+    await b.js(CURSOR_EM(0, 0));
+    await PAUSA(200);
+    await b.js(TECLA("y"));
+    await PAUSA(120);
+    await b.js(TECLA("w"));
+    await PAUSA(300);
+    await b.js(TECLA("p"));
+    await PAUSA(500);
+
+    const depois = await b.js(`document.querySelectorAll('.editor__bloco').length`);
+    ctx.assertEq(depois, antes, "`p` depois de `yw` criou um bloco — colou por linha");
+
+    const texto = await b.js(TEXTO_DO_BLOCO(0));
+    ctx.assert(
+      texto.includes("alfa") && texto.length > "alfa um dois".length,
+      `o texto não foi colado dentro da linha: ${JSON.stringify(texto)}`,
+    );
+  },
+  260,
+);
+
+teclado(
+  "yy depois p continua criando um bloco",
+  { md: TRES_MARCADAS, vim: true },
+  async (b, ctx) => {
+    // A outra metade da mesma regra, e a guarda de que o conserto do
+    // charwise não quebrou o linewise: `yy` é `MLINE`, então `p` põe o
+    // texto numa linha NOVA abaixo.
+    const antes = await b.js(`document.querySelectorAll('.editor__bloco').length`);
+
+    await b.js(CURSOR_EM(0, 0));
+    await PAUSA(200);
+    await b.js(TECLA("y"));
+    await PAUSA(120);
+    await b.js(TECLA("y"));
+    await PAUSA(300);
+    await b.js(TECLA("p"));
+    await PAUSA(500);
+
+    const depois = await b.js(`document.querySelectorAll('.editor__bloco').length`);
+    ctx.assertEq(depois, antes + 1, "`p` depois de `yy` devia criar um bloco novo");
+  },
+  260,
+);
+
+teclado(
+  "cw age como ce, mas só fora de espaço",
+  { md: "---\ntitle: __uitest\n---\nalfa um dois\n\n  beta tres\n", vim: true },
+  async (b, ctx) => {
+    // `:help cw` diz o quê; o `normal.c` (`nv_wordcmd`) diz a condição:
+    // `if (n != NUL && !ascii_iswhite(n))`. Sobre letra, `cw` vira `ce`
+    // e o espaço seguinte FICA. Sobre espaço, `cw` segue sendo `dw`.
+    await b.js(CURSOR_EM(0, 0));
+    await PAUSA(200);
+    await b.js(TECLA("c"));
+    await PAUSA(120);
+    await b.js(TECLA("w"));
+    await PAUSA(400);
+    const sobreLetra = await b.js(TEXTO_DO_BLOCO(0));
+    ctx.assertEq(
+      sobreLetra,
+      " um dois",
+      "`cw` sobre letra devia parar no fim da palavra, deixando o espaço",
+    );
+  },
+  260,
+);

@@ -36,6 +36,50 @@ pub enum Movimento {
     LinhaInteira,
 }
 
+/// Como um operador abrange o texto que o movimento cobriu.
+///
+/// A tabela vem de `runtime/doc/motion.txt` do Neovim, seção
+/// `*exclusive*` `*inclusive*` — não de dedução nossa. A regra em uma
+/// linha: **inclusivo** inclui a posição final na operação,
+/// **exclusivo** para um caractere antes dela, e **por linha** pega as
+/// linhas inteiras entre início e fim.
+///
+/// Isto é o que separa `de` de `dw` estando sobre a mesma palavra, e é
+/// exatamente a distinção que faltava aqui (ciclo 260): os dois passavam
+/// pelo mesmo caminho, então `de` deixava o último caractere pra trás.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Alcance {
+    /// Vai até a posição final, sem incluí-la (`w`, `b`, `h`, `l`, `0`).
+    Exclusivo,
+    /// Inclui a posição final (`e`, `$`).
+    Inclusivo,
+    /// Linhas inteiras (`j`, `k`, `gg`, `G`, e o `dd`/`yy`/`cc`).
+    PorLinha,
+}
+
+impl Movimento {
+    /// O alcance deste movimento, conforme `motion.txt`.
+    pub fn alcance(&self) -> Alcance {
+        match self {
+            // `|exclusive| motion` no motion.txt, um por um.
+            Self::Esquerda
+            | Self::Direita
+            | Self::PalavraFrente
+            | Self::PalavraTras
+            | Self::InicioDaLinha => Alcance::Exclusivo,
+            // `e`: "Forward to the end of word [count] |inclusive|".
+            // `$`: "To the end of the line. [...] |inclusive| motion".
+            Self::FimDaPalavra | Self::FimDaLinha => Alcance::Inclusivo,
+            // "Generally, motions that move between lines affect lines".
+            Self::Cima
+            | Self::Baixo
+            | Self::InicioDoDocumento
+            | Self::FimDoDocumento
+            | Self::LinhaInteira => Alcance::PorLinha,
+        }
+    }
+}
+
 /// Onde o modo de inserção começa.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Insercao {
@@ -286,6 +330,39 @@ fn movimento_de(tecla: &str) -> Option<Movimento> {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn a_tabela_de_alcance_bate_com_o_motion_txt() {
+        use Alcance::*;
+        // Cada linha aqui tem uma contraparte citável no
+        // `runtime/doc/motion.txt`. Se alguma mudar, é porque alguém
+        // decidiu divergir do vim — e aí a divergência tem que ser
+        // deliberada, não um acidente de implementação.
+        for (mov, esperado) in [
+            (Movimento::Esquerda, Exclusivo),
+            (Movimento::Direita, Exclusivo),
+            (Movimento::PalavraFrente, Exclusivo),
+            (Movimento::PalavraTras, Exclusivo),
+            (Movimento::InicioDaLinha, Exclusivo),
+            (Movimento::FimDaPalavra, Inclusivo),
+            (Movimento::FimDaLinha, Inclusivo),
+            (Movimento::Cima, PorLinha),
+            (Movimento::Baixo, PorLinha),
+            (Movimento::InicioDoDocumento, PorLinha),
+            (Movimento::FimDoDocumento, PorLinha),
+            (Movimento::LinhaInteira, PorLinha),
+        ] {
+            assert_eq!(mov.alcance(), esperado, "alcance de {mov:?}");
+        }
+    }
+
+    #[test]
+    fn de_e_dw_nao_alcancam_o_mesmo() {
+        // O sintoma que a tabela existe pra corrigir: sobre a mesma
+        // palavra, `e` inclui o último caractere e `w` não.
+        assert_eq!(Movimento::FimDaPalavra.alcance(), Alcance::Inclusivo);
+        assert_eq!(Movimento::PalavraFrente.alcance(), Alcance::Exclusivo);
+    }
 
     fn passo(p: &mut Pendente, teclas: &[&str]) -> Passo {
         let mut ultimo = Passo::Ignorada;

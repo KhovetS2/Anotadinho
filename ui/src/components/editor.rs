@@ -281,7 +281,7 @@ pub fn editor(props: &EditorProps) -> Html {
     // `use_mut_ref` por serem lidos/escritos de dentro do handler de
     // teclado sem precisar disparar re-render a cada tecla motion.
     let vim_modo = use_state(VimModo::default);
-    let vim_register = use_mut_ref(String::new);
+    let vim_register = use_mut_ref(Registrador::default);
     // A máquina de estados da gramática (ciclo 254). `use_mut_ref` e não
     // `use_state` porque ela é LIDA e escrita de dentro do handler de
     // tecla: um handle de `use_state` capturado congelaria no valor de
@@ -1764,7 +1764,14 @@ pub fn editor(props: &EditorProps) -> Html {
                             VimModo::VisualBloco => crate::vim_visual::texto_do_retangulo(),
                             _ => crate::vim_visual::texto_selecionado(),
                         };
-                        *vim_register.borrow_mut() = texto.clone();
+                        // Só o visual-LINHA produz registrador por
+                        // linha; `v` e Ctrl+V copiam caracteres, e um
+                        // `p` depois deles cola dentro da linha.
+                        *vim_register.borrow_mut() = if modo_visual == VimModo::VisualLinha {
+                            Registrador::linha(texto.clone())
+                        } else {
+                            Registrador::caractere(texto.clone())
+                        };
                         copiar_para_area_de_transferencia(&texto);
                         let mexeu = if apagando {
                             match modo_visual {
@@ -1873,12 +1880,36 @@ pub fn editor(props: &EditorProps) -> Html {
                             t
                         };
                         if !texto.is_empty() {
-                            *vim_register.borrow_mut() = texto.clone();
+                            *vim_register.borrow_mut() = if mov == Movimento::LinhaInteira {
+                                Registrador::linha(texto.clone())
+                            } else {
+                                Registrador::caractere(texto.clone())
+                            };
                             copiar_para_area_de_transferencia(&texto);
                         }
                     }
                     Comando::Apagar(mov, vezes) | Comando::Mudar(mov, vezes) => {
                         let mudando = matches!(comando, Comando::Mudar(_, _));
+                        // `cw` age como `ce` — o caso especial do vim.
+                        //
+                        // `:help cw` explica o quê: "cw" não inclui o
+                        // espaço depois da palavra, porque uma palavra
+                        // não inclui o espaço que a segue. O que só a
+                        // fonte diz (`normal.c`, `nv_wordcmd`) é a
+                        // CONDIÇÃO: a troca vale apenas com o cursor
+                        // sobre um caractere que não é espaço. Sobre um
+                        // espaço, `cw` continua sendo `dw` + inserção.
+                        //
+                        // Sem a condição, `cw` no meio de um recuo
+                        // comeria a palavra seguinte inteira.
+                        let mov = if mudando
+                            && mov == Movimento::PalavraFrente
+                            && !crate::vim_visual::cursor_sobre_espaco()
+                        {
+                            Movimento::FimDaPalavra
+                        } else {
+                            mov
+                        };
                         let mexeu = if mov == Movimento::LinhaInteira {
                             let mut algo = false;
                             for _ in 0..vezes.max(1) {
@@ -1891,7 +1922,7 @@ pub fn editor(props: &EditorProps) -> Html {
                             if texto.is_empty() {
                                 false
                             } else {
-                                *vim_register.borrow_mut() = texto;
+                                *vim_register.borrow_mut() = Registrador::caractere(texto);
                                 crate::vim_visual::apagar_selecao()
                             }
                         };
@@ -4065,22 +4096,22 @@ fn vim_current_block() -> Option<web_sys::Element> {
 }
 
 /// `yy`: copia o texto da linha atual pro registrador, sem mutar nada.
-fn vim_yank_line(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
+fn vim_yank_line(register: &RegRef) -> bool {
     let Some(block) = vim_current_block() else {
         return false;
     };
-    *register.borrow_mut() = block.text_content().unwrap_or_default();
+    *register.borrow_mut() = Registrador::linha(block.text_content().unwrap_or_default());
     true
 }
 
 /// `dd`: copia a linha pro registrador (igual `yy`) e remove ela do DOM.
 /// Mutação direta (não passa por `execCommand`), então quem chama
 /// precisa recalcular o markdown e chamar `mark_edited` depois.
-fn vim_delete_line(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
+fn vim_delete_line(register: &RegRef) -> bool {
     let Some(block) = vim_current_block() else {
         return false;
     };
-    *register.borrow_mut() = block.text_content().unwrap_or_default();
+    *register.borrow_mut() = Registrador::linha(block.text_content().unwrap_or_default());
     block.remove();
     true
 }
@@ -4101,8 +4132,70 @@ fn sibling_line_tag(block: &web_sys::Element) -> &'static str {
 
 /// `p`: insere o conteúdo do registrador como uma linha nova logo depois
 /// da linha atual.
-fn vim_paste_after(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
-    let text = register.borrow().clone();
+/// O que está no registrador, e COMO ele foi copiado.
+///
+/// No vim o registrador guarda o texto e a "motion type" que o produziu
+/// (`MCHAR` ou `MLINE`, em `ops.c`), e é ela que decide o que `p` faz:
+/// texto copiado por linha (`yy`, `dd`) entra numa linha NOVA; texto
+/// copiado por caractere (`yw`, `x`, `d$`) entra DENTRO da linha, depois
+/// do cursor.
+///
+/// Aqui isso não existia: o registrador era um `String` puro e o `p`
+/// sempre criava um bloco irmão. `yw` seguido de `p` quebrava o
+/// parágrafo em dois e punha a palavra sozinha no meio (ciclo 260).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Registrador {
+    pub texto: String,
+    /// `true` quando o yank foi por linha (`yy`, `dd`, `Y`, `S`, e o
+    /// visual-linha).
+    pub por_linha: bool,
+}
+
+impl Registrador {
+    fn caractere(texto: impl Into<String>) -> Self {
+        Self { texto: texto.into(), por_linha: false }
+    }
+    fn linha(texto: impl Into<String>) -> Self {
+        Self { texto: texto.into(), por_linha: true }
+    }
+}
+
+type RegRef = std::rc::Rc<std::cell::RefCell<Registrador>>;
+
+/// Cola dentro da linha, depois do cursor (`p` com registrador de
+/// caractere) ou antes dele (`P`).
+///
+/// `insertText` e não manipulação de nó: o texto entra na posição do
+/// cursor como se tivesse sido digitado, que é exatamente a semântica do
+/// `p` charwise.
+fn vim_paste_inline(register: &RegRef, antes: bool) -> bool {
+    let texto = register.borrow().texto.clone();
+    if texto.is_empty() {
+        return false;
+    }
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return false;
+    };
+    // `p` cola DEPOIS do caractere sob o cursor; `P`, antes dele. O
+    // cursor do navegador fica entre caracteres, então "depois" é um
+    // passo à direita antes de inserir.
+    if !antes {
+        if let Some(sel) = web_sys::window()
+            .and_then(|w| w.get_selection().ok())
+            .flatten()
+        {
+            let _ = sel.modify("move", "forward", "character");
+        }
+    }
+    exec_cmd(&doc, "insertText", &texto);
+    true
+}
+
+fn vim_paste_after(register: &RegRef) -> bool {
+    if !register.borrow().por_linha {
+        return vim_paste_inline(register, false);
+    }
+    let text = register.borrow().texto.clone();
     if text.is_empty() {
         return false;
     }
@@ -4132,8 +4225,11 @@ fn vim_paste_after(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
 /// Mesmo corpo do `p` com o vizinho trocado — separar em duas funções
 /// quase iguais seria pior que o parâmetro, mas a diferença é exatamente
 /// esta linha, e é ela que distingue os dois comandos do vim.
-fn vim_paste_before(register: &std::rc::Rc<std::cell::RefCell<String>>) -> bool {
-    let text = register.borrow().clone();
+fn vim_paste_before(register: &RegRef) -> bool {
+    if !register.borrow().por_linha {
+        return vim_paste_inline(register, true);
+    }
+    let text = register.borrow().texto.clone();
     if text.is_empty() {
         return false;
     }

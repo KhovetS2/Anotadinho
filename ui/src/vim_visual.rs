@@ -316,8 +316,173 @@ pub fn selecionar_alcance(mov: Movimento, vezes: u32) -> Option<String> {
     if mov == Movimento::LinhaInteira {
         return None; // quem chama trata a linha inteira por bloco
     }
+    // `e` sai do texto, não do `Selection.modify`.
+    //
+    // Aqui estava o defeito e a tentativa errada de conserto. `w` e `e`
+    // mapeavam os DOIS pra `("forward", "word")` do navegador — são o
+    // mesmo movimento na origem, então nenhum ajuste de alcance por cima
+    // podia separá-los. Somar um caractere no fim produzia `w`+1, que é
+    // pior que o erro original.
+    //
+    // A granularidade `word` do WebKit para no INÍCIO da palavra
+    // seguinte (comportamento de `w`); `e` precisa parar no ÚLTIMO
+    // caractere da palavra atual, e a definição de palavra do vim
+    // (`iskeyword` contra pontuação contra branco) não é a do navegador.
+    // Calcular sobre o texto do bloco resolve os dois de uma vez.
+    // Os TRÊS movimentos de palavra saem do texto, não do navegador.
+    //
+    // Comecei corrigindo só o `e`, e o cenário do harness mostrou que o
+    // `w` estava errado também — para o outro lado: a granularidade
+    // `word` do WebKit parava no FIM da palavra, então `dw` deixava o
+    // espaço pra trás, quando no vim ele vai junto. Deixar `e` certo e
+    // `w` errado seria pior que os dois errados, porque aí eles
+    // discordariam sobre o que é uma palavra.
+    if let Some(alvo) = alvo_de_palavra(mov, vezes) {
+        return alvo;
+    }
     aplicar_movimento(mov, vezes, true);
+    // Movimento INCLUSIVO leva a posição final junto (`motion.txt`,
+    // seção `*inclusive*`). O `Selection.modify` para sempre ANTES do
+    // caractere final, que é o comportamento exclusivo.
+    if mov.alcance() == crate::vim_comandos::Alcance::Inclusivo {
+        if let Some(sel) = web_sys::window()
+            .and_then(|w| w.get_selection().ok())
+            .flatten()
+        {
+            let _ = sel.modify("extend", "forward", "character");
+        }
+    }
     Some(texto_selecionado())
+}
+
+/// Classe de um caractere, na divisão que o vim usa pra decidir onde uma
+/// palavra termina (`:help word`): letras/dígitos/`_` são uma coisa,
+/// pontuação é outra, e branco separa as duas.
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum Classe {
+    Branco,
+    Palavra,
+    Pontuacao,
+}
+
+fn classe(c: char) -> Classe {
+    if c.is_whitespace() {
+        Classe::Branco
+    } else if c.is_alphanumeric() || c == '_' {
+        Classe::Palavra
+    } else {
+        Classe::Pontuacao
+    }
+}
+
+/// Coluna do último caractere da palavra alcançada por `e`, a partir de
+/// `col`, repetido `vezes` vezes.
+///
+/// Função pura sobre os caracteres do bloco — é o que permite testar a
+/// regra sem DOM. Devolve `None` quando não há para onde ir (já no fim).
+fn fim_da_palavra(chars: &[char], col: usize, vezes: u32) -> Option<usize> {
+    let mut i = col;
+    for _ in 0..vezes.max(1) {
+        // Um passo à frente antes de procurar: parado no fim de uma
+        // palavra, `e` vai pro fim da SEGUINTE, não fica onde está.
+        i += 1;
+        while i < chars.len() && classe(chars[i]) == Classe::Branco {
+            i += 1;
+        }
+        if i >= chars.len() {
+            return None;
+        }
+        let alvo = classe(chars[i]);
+        while i + 1 < chars.len() && classe(chars[i + 1]) == alvo {
+            i += 1;
+        }
+    }
+    Some(i)
+}
+
+/// Coluna do início da próxima palavra (`w`), a partir de `col`.
+///
+/// Exclusivo: a operação vai ATÉ essa coluna sem incluí-la, que é o que
+/// faz `dw` levar o branco depois da palavra e parar antes da seguinte.
+///
+/// Sem próxima palavra no bloco, devolve o fim do texto — é o caso de
+/// `dw` na última palavra da linha, que no vim apaga até o fim e não
+/// atravessa pra linha seguinte.
+fn inicio_da_proxima_palavra(chars: &[char], col: usize, vezes: u32) -> Option<usize> {
+    let mut i = col;
+    for _ in 0..vezes.max(1) {
+        if i >= chars.len() {
+            return None;
+        }
+        // Sai da corrida de caracteres da mesma classe em que está...
+        let atual = classe(chars[i]);
+        if atual != Classe::Branco {
+            while i < chars.len() && classe(chars[i]) == atual {
+                i += 1;
+            }
+        }
+        // ...e depois pula o branco até a próxima palavra.
+        while i < chars.len() && classe(chars[i]) == Classe::Branco {
+            i += 1;
+        }
+    }
+    Some(i)
+}
+
+/// Coluna do início da palavra anterior (`b`), a partir de `col`.
+///
+/// Exclusivo, e simétrico do `w`: recua o branco e depois a corrida de
+/// caracteres da mesma classe, parando no primeiro deles.
+fn inicio_da_palavra_anterior(chars: &[char], col: usize, vezes: u32) -> Option<usize> {
+    let mut i = col;
+    for _ in 0..vezes.max(1) {
+        if i == 0 {
+            return None;
+        }
+        i -= 1;
+        while i > 0 && classe(chars[i]) == Classe::Branco {
+            i -= 1;
+        }
+        if classe(chars[i]) == Classe::Branco {
+            return Some(0);
+        }
+        let atual = classe(chars[i]);
+        while i > 0 && classe(chars[i - 1]) == atual {
+            i -= 1;
+        }
+    }
+    Some(i)
+}
+
+/// Seleciona do cursor até o alvo de um movimento de palavra.
+///
+/// `None` quando `mov` não é de palavra — quem chama segue pro caminho
+/// do `Selection.modify`.
+fn alvo_de_palavra(mov: Movimento, vezes: u32) -> Option<Option<String>> {
+    let (para_frente, calcular): (bool, fn(&[char], usize, u32) -> Option<usize>) = match mov {
+        Movimento::FimDaPalavra => (true, fim_da_palavra),
+        Movimento::PalavraFrente => (true, inicio_da_proxima_palavra),
+        Movimento::PalavraTras => (false, inicio_da_palavra_anterior),
+        _ => return None,
+    };
+    Some((|| {
+        let c = cursor()?;
+        let bloco = crate::selecao_blocos::blocos_do_documento()
+            .into_iter()
+            .nth(c.bloco)?;
+        let chars: Vec<char> = bloco.text_content().unwrap_or_default().chars().collect();
+        let alvo = calcular(&chars, c.coluna as usize, vezes)?;
+        // `e` é o único INCLUSIVO dos três (`motion.txt`): leva o
+        // caractere final junto, e o intervalo é aberto no fim.
+        let fim = if mov == Movimento::FimDaPalavra { alvo + 1 } else { alvo };
+        let (ini, fim) = if para_frente {
+            (c.coluna, fim as u32)
+        } else {
+            (fim as u32, c.coluna)
+        };
+        crate::components::selection_toolbar::selecionar_intervalo(&bloco, ini, fim)?;
+        Some(texto_selecionado())
+    })())
 }
 
 /// Apaga a seleção atual pela API de `Range`, não por `execCommand`.
@@ -425,5 +590,154 @@ pub fn posicionar_para_inserir(onde: crate::vim_comandos::Insercao) -> bool {
         // As duas que criam bloco são tratadas por quem chama, porque
         // mexem na estrutura e precisam recalcular o markdown.
         Insercao::LinhaAbaixo | Insercao::LinhaAcima => true,
+    }
+}
+
+/// O caractere sob o cursor é um espaço em branco?
+///
+/// Existe pro caso especial de `cw` (ciclo 260): o `normal.c` do Neovim
+/// só mapeia `cw` pra `ce` quando o cursor NÃO está sobre espaço ou
+/// tabulação — `if (n != NUL && !ascii_iswhite(n))`. Fora do texto, ou
+/// no fim da linha, a resposta honesta é "não sei", e `false` mantém o
+/// comportamento de `cw` como `ce`, que é o caso comum.
+pub fn cursor_sobre_espaco() -> bool {
+    let Some(c) = cursor() else { return false };
+    let Some(bloco) = crate::selecao_blocos::blocos_do_documento()
+        .into_iter()
+        .nth(c.bloco)
+    else {
+        return false;
+    };
+    bloco
+        .text_content()
+        .unwrap_or_default()
+        .chars()
+        .nth(c.coluna as usize)
+        .is_some_and(|ch| ch.is_whitespace())
+}
+
+#[cfg(test)]
+mod testes_palavra {
+    use super::*;
+
+    fn cs(s: &str) -> Vec<char> {
+        s.chars().collect()
+    }
+
+    #[test]
+    fn e_para_no_ultimo_caractere_da_palavra() {
+        // "alfa um dois", cursor em 0 -> o `a` final de "alfa" é o
+        // índice 3. É esta a diferença pra `w`, que iria pro 5.
+        assert_eq!(fim_da_palavra(&cs("alfa um dois"), 0, 1), Some(3));
+    }
+
+    #[test]
+    fn e_no_fim_de_uma_palavra_vai_pra_seguinte() {
+        // Documentado no `normal.c`: "When standing on the end of a word
+        // 'ce' will change until the end of the next word".
+        assert_eq!(fim_da_palavra(&cs("alfa um dois"), 3, 1), Some(6));
+    }
+
+    #[test]
+    fn a_contagem_repete() {
+        assert_eq!(fim_da_palavra(&cs("alfa um dois"), 0, 2), Some(6));
+        assert_eq!(fim_da_palavra(&cs("alfa um dois"), 0, 3), Some(11));
+    }
+
+    #[test]
+    fn pontuacao_e_uma_palavra_separada() {
+        // Regra do `:help word`: pontuação forma palavra por si. Em
+        // "foo.bar", `e` do começo para no `o` do "foo" (índice 2), não
+        // no fim do token inteiro.
+        assert_eq!(fim_da_palavra(&cs("foo.bar"), 0, 1), Some(2));
+        assert_eq!(fim_da_palavra(&cs("foo.bar"), 2, 1), Some(3));
+        assert_eq!(fim_da_palavra(&cs("foo.bar"), 3, 1), Some(6));
+    }
+
+    #[test]
+    fn branco_no_meio_e_pulado() {
+        assert_eq!(fim_da_palavra(&cs("a    bb"), 0, 1), Some(6));
+    }
+
+    #[test]
+    fn sem_para_onde_ir_devolve_nada() {
+        assert_eq!(fim_da_palavra(&cs("alfa"), 3, 1), None);
+        assert_eq!(fim_da_palavra(&cs("alfa   "), 3, 1), None);
+        assert_eq!(fim_da_palavra(&cs(""), 0, 1), None);
+    }
+
+    #[test]
+    fn sublinhado_faz_parte_da_palavra() {
+        // `iskeyword` inclui `_` por padrão, então `meu_nome` é uma
+        // palavra só.
+        assert_eq!(fim_da_palavra(&cs("meu_nome x"), 0, 1), Some(7));
+    }
+}
+
+#[cfg(test)]
+mod testes_w_e_b {
+    use super::*;
+
+    fn cs(s: &str) -> Vec<char> {
+        s.chars().collect()
+    }
+
+    #[test]
+    fn w_para_no_inicio_da_proxima_palavra() {
+        // É a diferença que o harness pegou: o `w` do navegador parava
+        // no FIM de "beta" (índice 4), então `dw` deixava o espaço. O
+        // `w` do vim vai pro `t` de "tres" (índice 5), e o espaço sai
+        // junto.
+        assert_eq!(inicio_da_proxima_palavra(&cs("beta tres quatro"), 0, 1), Some(5));
+        assert_eq!(inicio_da_proxima_palavra(&cs("beta tres quatro"), 5, 1), Some(10));
+    }
+
+    #[test]
+    fn w_e_e_nao_param_no_mesmo_lugar() {
+        // A guarda contra a regressão de origem: os dois mapeavam pro
+        // mesmo `("forward", "word")` do navegador e eram indistinguíveis.
+        let t = cs("beta tres quatro");
+        assert_ne!(
+            inicio_da_proxima_palavra(&t, 0, 1),
+            fim_da_palavra(&t, 0, 1),
+            "`w` e `e` voltaram a ser o mesmo movimento"
+        );
+    }
+
+    #[test]
+    fn w_na_ultima_palavra_vai_ate_o_fim_da_linha() {
+        // `dw` na última palavra apaga até o fim e não atravessa pra
+        // linha seguinte.
+        assert_eq!(inicio_da_proxima_palavra(&cs("beta tres"), 5, 1), Some(9));
+    }
+
+    #[test]
+    fn w_com_contagem() {
+        assert_eq!(inicio_da_proxima_palavra(&cs("um dois tres quatro"), 0, 2), Some(8));
+    }
+
+    #[test]
+    fn w_trata_pontuacao_como_palavra() {
+        assert_eq!(inicio_da_proxima_palavra(&cs("foo.bar"), 0, 1), Some(3));
+        assert_eq!(inicio_da_proxima_palavra(&cs("foo.bar"), 3, 1), Some(4));
+    }
+
+    #[test]
+    fn b_volta_pro_inicio_da_palavra() {
+        // Do meio de "quatro" volta pro começo dela; do começo, pra
+        // palavra anterior.
+        assert_eq!(inicio_da_palavra_anterior(&cs("beta tres quatro"), 12, 1), Some(10));
+        assert_eq!(inicio_da_palavra_anterior(&cs("beta tres quatro"), 10, 1), Some(5));
+    }
+
+    #[test]
+    fn b_com_contagem_e_no_comeco() {
+        assert_eq!(inicio_da_palavra_anterior(&cs("beta tres quatro"), 10, 2), Some(0));
+        assert_eq!(inicio_da_palavra_anterior(&cs("beta"), 0, 1), None);
+    }
+
+    #[test]
+    fn b_pula_branco_antes_da_palavra() {
+        assert_eq!(inicio_da_palavra_anterior(&cs("um    dois"), 6, 1), Some(0));
     }
 }
