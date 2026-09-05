@@ -279,7 +279,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                 on_change.emit(new_data);
                                             });
                                             html! {
-                                                <td class="task-table__td">
+                                                <td class="task-table__td" data-nav-item="table-cell" data-nav-parent={props.nav_group.clone()} tabindex="-1">
                                                     <input class="checkbox" type="checkbox" {checked} onclick={toggle} />
                                                 </td>
                                             }
@@ -317,7 +317,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                 })
                                             };
                                             html! {
-                                                <td class="task-table__td task-table__td--number">
+                                                <td class="task-table__td task-table__td--number" data-nav-item="table-cell" data-nav-parent={props.nav_group.clone()} tabindex="-1">
                                                     <div class="task-table__number-cell">
                                                         <input ref={input_ref.clone()} class="task-table__number-input" type="number" value={cell.clone()} {onblur} />
                                                         <div class="task-table__number-spin">
@@ -364,7 +364,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                 Callback::from(move |_: ()| open_cell_menu.set(None))
                                             };
                                             html! {
-                                                <td class="task-table__td task-table__td--menu">
+                                                <td class="task-table__td task-table__td--menu" data-nav-item="table-cell" data-nav-parent={props.nav_group.clone()} tabindex="-1">
                                                     <span class="task-table__date-chip" tabindex="0" onclick={toggle_open} onkeydown={toggle_onkeydown}>
                                                         if cell_value.is_empty() { { "+ data" } } else { { cell_value.clone() } }
                                                     </span>
@@ -393,7 +393,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                 });
                                             });
                                             html! {
-                                                <td class="task-table__td task-table__td--url">
+                                                <td class="task-table__td task-table__td--url" data-nav-item="table-cell" data-nav-parent={props.nav_group.clone()} tabindex="-1">
                                                     <div class="task-table__url-cell">
                                                         if cell.is_empty() {
                                                             <button class="task-table__link-add" onclick={edit}>{ "+ url" }</button>
@@ -437,7 +437,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                 })
                                             };
                                             html! {
-                                                <td class="task-table__td task-table__td--menu">
+                                                <td class="task-table__td task-table__td--menu" data-nav-item="table-cell" data-nav-parent={props.nav_group.clone()} tabindex="-1">
                                                     if cell_value.is_empty() {
                                                         <button class="task-table__page-link-add" onclick={toggle_open} onkeydown={toggle_onkeydown}>{ "+ página" }</button>
                                                     } else {
@@ -520,7 +520,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                 })
                                             };
                                             html! {
-                                                <td class="task-table__td task-table__td--menu task-table__td--tags">
+                                                <td class="task-table__td task-table__td--menu task-table__td--tags" data-nav-item="table-cell" data-nav-parent={props.nav_group.clone()} tabindex="-1">
                                                     <span class="task-table__tags" tabindex="0" onclick={toggle_open} onkeydown={toggle_onkeydown}>
                                                         { for selected.iter().map(|t| html! {
                                                             <span class={classes!("badge", badge_class(&options, t))}>{ t }</span>
@@ -604,7 +604,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                             };
                                             let toggle_onkeydown = crate::keyboard_activate::activate_on_enter_or_space(toggle_activate);
                                             html! {
-                                                <td class="task-table__td task-table__td--menu">
+                                                <td class="task-table__td task-table__td--menu" data-nav-item="table-cell" data-nav-parent={props.nav_group.clone()} tabindex="-1">
                                                     <span class={classes!("badge", badge_class(&options, &cell_value))} tabindex="0" onclick={toggle_open} onkeydown={toggle_onkeydown}>
                                                         { if cell_value.is_empty() { "—".to_string() } else { cell_value.clone() } }
                                                     </span>
@@ -665,7 +665,7 @@ pub fn inline_table(props: &InlineTableProps) -> Html {
                                                 }
                                             });
                                             html! {
-                                                <td class="task-table__td">
+                                                <td class="task-table__td" data-nav-item="table-cell" data-nav-parent={props.nav_group.clone()} tabindex="-1">
                                                     <textarea class="task-table__text-input" rows="1" value={cell.clone()} {onblur} {oninput} {onfocus} />
                                                 </td>
                                             }

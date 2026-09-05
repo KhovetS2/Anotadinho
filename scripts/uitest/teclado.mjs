@@ -1358,3 +1358,113 @@ teclado(
   },
   268,
 );
+
+// ── a tabela: células navegáveis (ciclo 269) ────────────────────────
+//
+// A tabela era o único embed onde o padrão do ciclo 268 não alcançava
+// tudo: as CÉLULAS não eram `[data-nav-item]`, só os botões. Dava pra
+// chegar no "+ coluna" e no "excluir linha", e não numa célula.
+
+const COM_TABELA = `---
+title: __uitest
+---
+alfa
+
+{{ type: "table" }}
+columns:
+- name: Tarefa
+- name: Status
+  type: select
+  options: [todo, done]
+---
+| Tarefa | Status |
+| --- | --- |
+| Um | todo |
+| Dois | done |
+{{ /table }}
+
+gama
+`;
+
+const CELULA = `(() => {
+  const a = document.activeElement;
+  return { item: a.getAttribute('data-nav-item'), tag: a.tagName,
+           txt: (a.value !== undefined ? a.value : a.textContent).trim().slice(0, 10) };
+})()`;
+
+teclado(
+  "as células da tabela são destinos, e i desce pro campo",
+  { md: COM_TABELA, vim: true },
+  async (b, ctx) => {
+    await esperar(b, `!!document.querySelector('.task-table__table')`, "a tabela", 15000);
+    await entrarNoEmbed(b);
+
+    // Andar até uma célula. A escolha é geométrica, então basta ir pro
+    // lado/baixo — não importa a ordem em que os itens estão no HTML.
+    await b.js(TECLA("l"));
+    await PAUSA(400);
+    const primeira = await b.js(CELULA);
+    ctx.assertEq(primeira.item, "table-cell", "o `l` não chegou numa célula");
+
+    // `j` desce a COLUNA: outra célula, não o botão de excluir linha
+    // (que fica à direita, na mesma altura).
+    await b.js(TECLA("j"));
+    await PAUSA(400);
+    ctx.assertEq((await b.js(CELULA)).item, "table-cell", "o `j` saiu das células");
+
+    // `i` desce pro campo — é onde se digita. Se a navegação pousasse
+    // direto no campo, o `j` teria digitado "j" em vez de andar.
+    await b.js(TECLA("i"));
+    await PAUSA(400);
+    const campo = await b.js(CELULA);
+    ctx.assert(
+      ["TEXTAREA", "INPUT", "SELECT"].includes(campo.tag),
+      `o \`i\` não desceu pro campo: ${JSON.stringify(campo)}`,
+    );
+  },
+  269,
+);
+
+teclado(
+  "Escape sobe um nível por vez também na tabela",
+  { md: COM_TABELA, vim: true },
+  async (b, ctx) => {
+    // A tabela tem TRÊS níveis (campo, célula, raiz), e é o caso que
+    // mostrou o defeito: com "a raiz do embed" fixa como destino, o
+    // primeiro Escape pulava a célula e saltava dois de uma vez.
+    await esperar(b, `!!document.querySelector('.task-table__table')`, "a tabela", 15000);
+    await entrarNoEmbed(b);
+    await b.js(TECLA("l"));
+    await PAUSA(350);
+    await b.js(TECLA("i"));
+    await PAUSA(400);
+    ctx.assert(
+      ["TEXTAREA", "INPUT", "SELECT"].includes((await b.js(CELULA)).tag),
+      "não cheguei no campo",
+    );
+
+    await b.js(TECLA("Escape"));
+    await PAUSA(400);
+    ctx.assertEq(
+      (await b.js(CELULA)).item,
+      "table-cell",
+      "o primeiro Escape pulou a célula",
+    );
+
+    await b.js(TECLA("Escape"));
+    await PAUSA(400);
+    ctx.assert(
+      await b.js(`!!document.activeElement.closest('.embed-table')`),
+      "o segundo Escape saiu da tabela cedo demais",
+    );
+
+    await b.js(TECLA("Escape"));
+    await PAUSA(400);
+    ctx.assertEq(
+      await b.js(`document.activeElement.classList.contains('embed-hover-wrapper')`),
+      true,
+      "o terceiro Escape não saiu pro bloco",
+    );
+  },
+  269,
+);

@@ -88,6 +88,24 @@ pub fn vizinho(atual: &Caixa, candidatos: &[Caixa], direcao: Direcao) -> Option<
         .map(|(i, _)| i)
 }
 
+/// O item mais próximo do canto superior esquerdo de `area`.
+///
+/// É por onde se ENTRA num contêiner. Ordem de documento não serve: numa
+/// tabela, o primeiro item marcado é o botão "+ coluna" do cabeçalho, lá
+/// na direita — entrar na tabela pousava nele em vez de na primeira
+/// célula.
+pub fn mais_proximo_do_inicio(area: &Caixa, candidatos: &[Caixa]) -> Option<usize> {
+    candidatos
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let (dx, dy) = (c.x - area.x, c.y - area.y);
+            (i, dx * dx + dy * dy)
+        })
+        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(i, _)| i)
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -180,6 +198,26 @@ mod testes {
         assert_eq!(vizinho(&g[1], &g, Direcao::Baixo), Some(4));
         assert_eq!(vizinho(&g[4], &g, Direcao::Cima), Some(1));
         assert_eq!(vizinho(&g[0], &g, Direcao::Direita), Some(1));
+    }
+
+    #[test]
+    fn entra_pela_primeira_celula_e_nao_pelo_botao_do_cabecalho() {
+        // O caso da tabela: em ordem de documento o primeiro item
+        // marcado é o "+ coluna", no canto superior DIREITO. Quem entra
+        // numa tabela espera a primeira célula.
+        let area = Caixa::nova(0.0, 0.0, 600.0, 200.0);
+        let mais_coluna = Caixa::nova(560.0, 4.0, 30.0, 20.0);
+        let primeira_celula = Caixa::nova(0.0, 40.0, 250.0, 30.0);
+        assert_eq!(
+            mais_proximo_do_inicio(&area, &[mais_coluna, primeira_celula]),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn sem_candidatos_o_inicio_tambem_devolve_nada() {
+        let area = Caixa::nova(0.0, 0.0, 10.0, 10.0);
+        assert_eq!(mais_proximo_do_inicio(&area, &[]), None);
     }
 
     #[test]

@@ -1536,6 +1536,28 @@ pub fn editor(props: &EditorProps) -> Html {
                 // antes (o calendário anda entre dias); o que não
                 // consome ganha isto de graça.
                 if !e.ctrl_key() && !e.meta_key() && !e.alt_key() {
+                    // DESCER pro campo do item focado (ciclo 269).
+                    //
+                    // Uma célula de tabela é o destino da navegação, e o
+                    // `<textarea>` dentro dela é onde se digita. Se a
+                    // navegação pousasse direto no campo, o `j` digitaria
+                    // "j" em vez de andar; se não houvesse como descer, a
+                    // célula seria decorativa.
+                    //
+                    // `i`/`a` porque é o vim: são as teclas de entrar em
+                    // inserção. Enter também, mas SÓ se ninguém já tratou
+                    // — um cartão de kanban abre o modal no Enter, e ele
+                    // marca `prevent_default` sem parar a propagação.
+                    let quer_editar = matches!(e.key().as_str(), "i" | "a")
+                        || (e.key() == "Enter" && !e.default_prevented());
+                    if quer_editar {
+                        if let Some(campo) = campo_do_item_focado() {
+                            e.prevent_default();
+                            e.stop_propagation();
+                            let _ = campo.focus();
+                            return;
+                        }
+                    }
                     use anotadinho_core::espacial::Direcao;
                     let passo = match e.key().as_str() {
                         "j" | "ArrowDown" => Some(Direcao::Baixo),
@@ -6483,6 +6505,7 @@ fn mover_entre_itens_do_embed(direcao: anotadinho_core::espacial::Direcao) -> bo
     let mut irmaos: Vec<web_sys::Element> = Vec::new();
     let mut caixas: Vec<Caixa> = Vec::new();
     let mut dentro: Vec<web_sys::Element> = Vec::new();
+    let mut caixas_dentro: Vec<Caixa> = Vec::new();
     for i in 0..lista.length() {
         let Some(el) = lista.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) else {
             continue;
@@ -6505,6 +6528,7 @@ fn mover_entre_itens_do_embed(direcao: anotadinho_core::espacial::Direcao) -> bo
         // ficou presa no `kanban-card-delete`.
         if ativo.contains(Some(&el)) {
             dentro.push(el);
+            caixas_dentro.push(c);
             continue;
         }
         // E um item que CONTÉM o atual é o nível de fora, não um
@@ -6519,11 +6543,20 @@ fn mover_entre_itens_do_embed(direcao: anotadinho_core::espacial::Direcao) -> bo
     // Foco no wrapper (ou em algo que não é item): entra pelo primeiro.
     let atual = if ativo.has_attribute("data-nav-item") {
         caixa_de(&ativo)
-    } else if let Some(primeiro) = irmaos.first().or_else(|| dentro.first()) {
-        crate::nav_mode::focus_item(primeiro);
-        return true;
     } else {
-        return false;
+        // Foco no wrapper: entra pelo item mais próximo do canto de cima
+        // à esquerda, não pelo primeiro em ordem de documento.
+        let area = caixa_de(&wrapper);
+        let (lista, cxs) = if irmaos.is_empty() {
+            (&dentro, &caixas_dentro)
+        } else {
+            (&irmaos, &caixas)
+        };
+        let Some(i) = anotadinho_core::espacial::mais_proximo_do_inicio(&area, cxs) else {
+            return false;
+        };
+        crate::nav_mode::focus_item(&lista[i]);
+        return true;
     };
 
     if let Some(i) = vizinho(&atual, &caixas, direcao) {
@@ -6539,8 +6572,13 @@ fn mover_entre_itens_do_embed(direcao: anotadinho_core::espacial::Direcao) -> bo
     // (irmão), e do último descia pros botões do próprio cartão. Duas
     // respostas diferentes pra mesma tecla no mesmo tipo de item.
     if irmaos.is_empty() && matches!(direcao, Direcao::Baixo | Direcao::Direita) {
-        if let Some(primeiro) = dentro.first() {
-            crate::nav_mode::focus_item(primeiro);
+        // Entrar num contêiner é pelo canto, não pela ordem do
+        // documento: numa tabela o primeiro item marcado é o "+ coluna"
+        // do cabeçalho, na direita, e descer nele em vez de na primeira
+        // célula era o que a sondagem mostrava.
+        let area = caixa_de(&ativo);
+        if let Some(i) = anotadinho_core::espacial::mais_proximo_do_inicio(&area, &caixas_dentro) {
+            crate::nav_mode::focus_item(&dentro[i]);
             return true;
         }
     }
@@ -6549,22 +6587,46 @@ fn mover_entre_itens_do_embed(direcao: anotadinho_core::espacial::Direcao) -> bo
 
 /// Para onde o Escape leva, a partir de dentro de um embed.
 ///
-/// Um nível por vez: de um controle vai pra RAIZ do embed; da raiz vai
-/// pro wrapper (o bloco). `None` quando o foco não está num embed — aí o
-/// Escape é de outra pessoa.
+/// Um nível por vez, e "um nível" é o ANCESTRAL MARCADO mais próximo —
+/// não a raiz do embed. A diferença aparece na tabela: de dentro do
+/// `<textarea>` de uma célula, o Escape volta pra CÉLULA; da célula pra
+/// raiz da tabela; da raiz pro bloco. Com "a raiz do embed" fixa, o
+/// primeiro Escape pulava a célula e saltava dois níveis.
+///
+/// `None` quando o foco não está num embed — aí o Escape é de outra
+/// pessoa.
 fn subir_um_nivel_do_embed() -> Option<web_sys::Element> {
     let ativo = web_sys::window()?.document()?.active_element()?;
     let wrapper = ativo.closest(".embed-hover-wrapper").ok().flatten()?;
     if wrapper.is_same_node(Some(&ativo)) {
         return None; // já está no bloco: o Escape não é daqui
     }
-    // A raiz do embed é o primeiro item marcado dentro do wrapper — o
-    // mesmo elemento que o Enter foca ao entrar.
-    let raiz = wrapper.query_selector("[data-nav-item]").ok().flatten();
-    match raiz {
-        // Está num controle, e a raiz é outra coisa: sobe pra raiz.
-        Some(raiz) if !raiz.is_same_node(Some(&ativo)) => Some(raiz),
-        // Está na raiz (ou não há raiz): sai pro bloco.
-        _ => Some(wrapper),
+    // Do PAI pra cima, pra não achar o próprio item quando ele já é
+    // marcado.
+    let acima = ativo
+        .parent_element()
+        .and_then(|pai| pai.closest("[data-nav-item]").ok().flatten())
+        .filter(|el| wrapper.contains(Some(el)));
+    // Sem ancestral marcado dentro do embed, o nível de cima é o bloco.
+    Some(acima.unwrap_or(wrapper))
+}
+
+/// O campo editável DENTRO do item focado, se houver.
+///
+/// Serve pra descer da célula pro `<textarea>` dela (ciclo 269): a
+/// navegação pousa na célula, e a edição acontece um nível abaixo.
+///
+/// Devolve `None` quando o próprio foco já é o campo — descer de novo
+/// não faz sentido, e sem esta guarda um `i` digitado dentro do campo
+/// tentaria descer em vez de escrever a letra `i`.
+fn campo_do_item_focado() -> Option<web_sys::HtmlElement> {
+    let ativo = web_sys::window()?.document()?.active_element()?;
+    if !ativo.has_attribute("data-nav-item") {
+        return None; // já está num campo, ou em algo que não é destino
     }
+    ativo
+        .query_selector("input, textarea, select, [contenteditable=\"true\"]")
+        .ok()
+        .flatten()
+        .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
 }
