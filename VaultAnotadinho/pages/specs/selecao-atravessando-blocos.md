@@ -2,7 +2,7 @@
 title: "Seleção e cópia atravessando blocos"
 type: spec
 date: 2026-08-22
-status: em-revisao
+status: concluida
 prioridade: media
 tags:
 - spec
@@ -12,7 +12,7 @@ tags:
 
 {{ type: "fluxo" }}
 artefato: spec
-etapa: em-revisao
+etapa: concluida
 origem: pages/ciclos/175-edicao-estruturada-por-bloco.md
 {{ /fluxo }}
 
@@ -58,10 +58,10 @@ existia.
 
 ## Critérios de aceite
 
-- [ ] Selecionar três blocos e copiar produz markdown legível ao colar
+- [x] Selecionar três blocos e copiar produz markdown legível ao colar
       num editor comum.
-- [ ] Selecionar e apagar remove exatamente os blocos realçados.
-- [ ] A bateria de digitação continua verde.
+- [x] Selecionar e apagar remove exatamente os blocos realçados.
+- [x] A bateria de digitação continua verde.
 
 ## Notas de escopo
 
@@ -82,3 +82,14 @@ existia.
 
 - [[Ciclo 175 — Edição estruturada por bloco]] — onde a decisão foi tomada
 - [[Ciclos]]
+
+
+## Onde cada requisito foi entregue
+
+Tudo no ciclo 251, em `ui/src/selecao_blocos.rs`: seleção por conjunto de
+blocos inteiros, `markdown_dos_selecionados` (unidos por linha em branco,
+porque `html_to_markdown` termina em `trim()`), apagar e mover o conjunto
+com a ordem de aplicação invertida quando o movimento é pra frente.
+
+O não-objetivo declarado na spec — seleção PARCIAL atravessando blocos —
+segue fora, e é o que dispensou reescrever a engine de seleção do zero.

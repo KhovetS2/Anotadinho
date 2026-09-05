@@ -141,16 +141,25 @@ pub const PALETA_CONSULTA_LEN: usize = 6;
 
 /// Índice estável da cor de um valor de propriedade numa consulta.
 ///
-/// A chave inclui coluna, campo e valor para que escalas diferentes na
-/// mesma tabela não se confundam. A normalização é a mesma comparação
-/// sem distinção entre maiúsculas e minúsculas usada por `QueryOp::Eq`.
-pub fn indice_cor_consulta(coluna: &str, campo: &str, valor: &str) -> usize {
-    let chave = format!(
-        "{}\u{1f}{}\u{1f}{}",
-        coluna.trim().to_ascii_lowercase(),
-        campo.trim().to_ascii_lowercase(),
-        valor.to_ascii_lowercase(),
-    );
+/// A chave é o VALOR e nada mais, e isso é uma decisão, não um descuido.
+///
+/// A primeira versão incluía coluna e campo, para que escalas diferentes
+/// na mesma tabela não se confundissem. O efeito era o contrário do que
+/// a cor existe pra fazer: `ciclo` em `type` e `ciclo` em `tags` saíam
+/// de cores diferentes na mesma linha, e a página inteira virava ruído
+/// colorido em vez de um vocabulário que se reconhece. Quem lê não
+/// procura "o valor desta coluna" — procura `ciclo`, onde quer que ele
+/// esteja. Foram 39 conflitos numa única tabela do vault real.
+///
+/// O preço é assumido: `alta` numa escala de prioridade e `alta` numa
+/// escala de qualquer outra coisa ganham a mesma cor. Duas escalas
+/// dividindo a mesma palavra é raro; a mesma palavra mudando de cor de
+/// coluna em coluna era o tempo todo.
+///
+/// A normalização é a mesma comparação sem distinção entre maiúsculas e
+/// minúsculas usada por `QueryOp::Eq`.
+pub fn indice_cor_consulta(valor: &str) -> usize {
+    let chave = valor.trim().to_ascii_lowercase();
     // FNV-1a: pequeno, determinístico e independente do hasher aleatório
     // da std, cuja saída não pode ser usada como apresentação persistente.
     let hash = chave.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
@@ -687,9 +696,32 @@ mod tests {
 
     #[test]
     fn indice_de_cor_e_estavel_normalizado_e_dentro_da_paleta() {
-        let alto = indice_cor_consulta("Prioridade", "priority", "Alta");
-        assert_eq!(alto, indice_cor_consulta(" prioridade ", "PRIORITY", "alta"));
+        let alto = indice_cor_consulta("Alta");
+        assert_eq!(alto, indice_cor_consulta(" alta "));
         assert!(alto < PALETA_CONSULTA_LEN);
+    }
+
+    #[test]
+    fn o_mesmo_valor_tem_a_mesma_cor_em_qualquer_coluna() {
+        // RF2 da spec `leitura-de-consultas`: o que a cor identifica é o
+        // VALOR, não a célula onde ele calhou de aparecer.
+        assert_eq!(indice_cor_consulta("ciclo"), indice_cor_consulta("ciclo"));
+        assert_ne!(indice_cor_consulta("ciclo"), indice_cor_consulta("spec"));
+    }
+
+    #[test]
+    fn valores_diferentes_espalham_pela_paleta() {
+        // Uma paleta que na prática só usa uma cor não distingue nada.
+        let usados: std::collections::HashSet<usize> =
+            ["spec", "ciclo", "proposta", "conversa", "execucao", "landing", "kanban", "prompt"]
+                .iter()
+                .map(|v| indice_cor_consulta(v))
+                .collect();
+        assert!(
+            usados.len() >= 4,
+            "8 tipos comuns caíram em só {} cores",
+            usados.len()
+        );
     }
 
     #[test]

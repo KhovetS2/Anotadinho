@@ -523,3 +523,233 @@ caso("paleta: abre com Ctrl+K, filtra e abre a página escolhida", null, async (
   );
   ctx.assert(itens.length > 0, "a paleta não filtrou nada");
 });
+
+// ── consultas: leitura (spec `leitura-de-consultas`, ciclo 256) ─────
+
+/// Página com uma consulta em tabela de 3 colunas — usada pelos três
+/// cenários abaixo.
+const PAGINA_CONSULTA = `# consulta
+
+{{ type: "query" }}
+from: pages
+where:
+- field: type
+  op: exists
+view: table
+columns:
+- type
+- tags
+- status
+{{ /query }}
+`;
+
+caso("consulta: valores ficam alinhados com o cabeçalho", PAGINA_CONSULTA, async (bridge, ctx) => {
+  await esperar(bridge, `!!document.querySelector('.query-embed__table td')`,
+    "a tabela da consulta não renderizou");
+
+  const desalinhadas = await bridge.js(`(() => {
+    const tab = document.querySelector('.query-embed__table');
+    const ths = [...tab.querySelectorAll('th')].map(e => Math.round(e.getBoundingClientRect().left));
+    const linha = tab.querySelector('tbody tr');
+    const tds = [...linha.querySelectorAll('td')].map(e => Math.round(e.getBoundingClientRect().left));
+    return ths.map((x, i) => (tds[i] === undefined || Math.abs(tds[i] - x) > 2)
+      ? { coluna: i, th: x, td: tds[i] } : null).filter(Boolean);
+  })()`);
+  ctx.assertEq(desalinhadas.length, 0,
+    `colunas desalinhadas: ${JSON.stringify(desalinhadas)}`);
+});
+
+caso("consulta: o mesmo valor tem sempre a mesma cor", PAGINA_CONSULTA, async (bridge, ctx) => {
+  await esperar(bridge, `!!document.querySelector('.query-embed__table td')`,
+    "a tabela da consulta não renderizou");
+
+  const r = await bridge.js(`(() => {
+    const cores = new Map();
+    const conflitos = [];
+    for (const td of document.querySelectorAll('.query-embed__table tbody td')) {
+      const txt = td.textContent.trim();
+      if (!txt) continue;
+      const alvo = td.firstElementChild || td;
+      const cor = getComputedStyle(alvo).color + '|' + getComputedStyle(alvo).backgroundColor;
+      if (cores.has(txt) && cores.get(txt) !== cor) conflitos.push(txt);
+      cores.set(txt, cor);
+    }
+    const distintas = new Set(cores.values());
+    return { conflitos, valores: cores.size, distintas: distintas.size };
+  })()`);
+  ctx.assertEq(r.conflitos.length, 0,
+    `mesmo valor com cores diferentes: ${JSON.stringify(r.conflitos)}`);
+  ctx.assert(r.distintas > 1,
+    `todos os ${r.valores} valores saíram com a mesma cor — não há cor por valor`);
+});
+
+caso("consulta: o bloco de consulta tem altura limitada e rola", PAGINA_CONSULTA, async (bridge, ctx) => {
+  await esperar(bridge, `!!document.querySelector('.query-embed__table td')`,
+    "a tabela da consulta não renderizou");
+
+  const r = await bridge.js(`(() => {
+    const el = document.querySelector('.query-embed');
+    const rola = [el, ...el.querySelectorAll('*')].find(
+      n => n.scrollHeight > n.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(n).overflowY));
+    return { altura: Math.round(el.getBoundingClientRect().height),
+             janela: Math.round(window.innerHeight),
+             rolaDentro: !!rola };
+  })()`);
+  ctx.assert(r.altura <= r.janela,
+    `a consulta ocupa ${r.altura}px, mais que a janela (${r.janela}px)`);
+  ctx.assertEq(r.rolaDentro, true, "a consulta não rola internamente");
+});
+
+// ── imagens: gravar no acervo (spec `imagens-coladas-e-arrastadas`) ──
+//
+// O que estes cenários cobram é o critério da spec — "uma referência
+// VÁLIDA, nenhum `blob:` chega ao arquivo" — e não uma sintaxe. A forma
+// gravada é `<figure class="inserted-image">`, escolhida no ciclo 226
+// para carregar alinhamento, tamanho e legenda; `![](…)` não tem onde
+// guardar isso. Ela é markdown legível fora do app, que é o que a RNF1
+// pede.
+//
+// O arraste abre o modal de personalização em vez de inserir na hora.
+// Isso também é escolha registrada: é a resposta que a spec traz na sua
+// própria seção de perguntas em aberto, implementada no ciclo 242.
+
+/// PNG 1×1 transparente, em base64 — o menor arquivo válido possível.
+const PNG_1X1 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+/// Monta um `DataTransfer` com um arquivo e despacha o evento pedido no
+/// primeiro bloco, com a seleção posta lá dentro.
+///
+/// A seleção é obrigatória: a inserção acontece NELA, e sem um range de
+/// verdade o arquivo é gravado no acervo sem referência na nota.
+const SOLTAR = (evento, nome, tipo = "image/png", dados = PNG_1X1) => `(() => {
+  const bin = atob(${JSON.stringify(dados)});
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  const file = new File([buf], ${JSON.stringify(nome)}, { type: ${JSON.stringify(tipo)} });
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  const alvo = document.querySelector('.editor__bloco');
+  alvo.focus();
+  const r = document.createRange();
+  r.selectNodeContents(alvo); r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  const ev = ${JSON.stringify(evento)} === 'paste'
+    ? new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt })
+    : new DragEvent(${JSON.stringify(evento)}, { bubbles: true, cancelable: true, dataTransfer: dt });
+  alvo.dispatchEvent(ev);
+  return true;
+})()`;
+
+const MODAL_ABERTO = `!!document.querySelector('.image-modal')`;
+
+const CONFIRMAR_INSERCAO = `(() => {
+  const b = [...document.querySelectorAll('.modal__actions button')]
+    .find(b => b.textContent.trim() === 'Inserir');
+  if (!b) return false;
+  b.click();
+  return true;
+})()`;
+
+/// Roda `fn` e apaga do acervo o que ela tiver gravado.
+async function comAcervoLimpo(ctx, fn) {
+  const fs = await import("node:fs");
+  const dir = `${ctx.vault}/assets`;
+  const antes = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+  const novos = () =>
+    (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((f) => !antes.includes(f));
+  try {
+    await fn(novos);
+  } finally {
+    novos().forEach((f) => fs.rmSync(`${dir}/${f}`, { force: true }));
+  }
+}
+
+/// As duas asserções que valem pro arquivo, venha a imagem de onde vier.
+function conferirReferencia(ctx, md, arquivo) {
+  ctx.assert(!/blob:/.test(md), `um endereço de sessão chegou ao arquivo:\n${md}`);
+  ctx.assert(
+    md.includes(`assets/${arquivo}`),
+    `a nota não aponta pro acervo (esperava assets/${arquivo}):\n${md}`,
+  );
+}
+
+caso("imagem: arrastar abre o modal e grava no acervo", "texto", async (b, ctx, h) => {
+  await comAcervoLimpo(ctx, async (novos) => {
+    await b.js(SOLTAR("drop", "arrastada.png"));
+    await esperar(b, MODAL_ABERTO, "o modal de inserir imagens abrir");
+    await b.js(CONFIRMAR_INSERCAO);
+    await PAUSA(1500);
+
+    ctx.assertEq(novos().length, 1, `esperava 1 arquivo novo no acervo, vieram ${novos().length}`);
+    conferirReferencia(ctx, await h.salvarELer(), novos()[0]);
+  });
+});
+
+caso("imagem: a arrastada sobrevive ao recarregar", "texto", async (b, ctx, h) => {
+  await comAcervoLimpo(ctx, async (novos) => {
+    await b.js(SOLTAR("drop", "persiste.png"));
+    await esperar(b, MODAL_ABERTO, "o modal de inserir imagens abrir");
+    await b.js(CONFIRMAR_INSERCAO);
+    await PAUSA(1500);
+    conferirReferencia(ctx, await h.salvarELer(), novos()[0]);
+
+    await recarregarEstavel(b);
+    await abrirPaginaEstavel(b, ctx.nomePagina);
+
+    // `naturalWidth` e não a presença do `<img>`: uma referência
+    // quebrada também renderiza uma tag, só não carrega nada. É a
+    // diferença entre "está escrito" e "a imagem voltou".
+    const visivel = await b.js(`(() => {
+      const img = document.querySelector('.editor img');
+      return img ? { src: img.getAttribute('src'), largura: img.naturalWidth } : null;
+    })()`);
+    ctx.assert(visivel, "depois de recarregar não há imagem nenhuma na página");
+    ctx.assert(!visivel.src.startsWith("blob:"),
+      `a referência gravada é um endereço de sessão morto: ${visivel.src}`);
+    ctx.assert(visivel.largura > 0,
+      "a imagem está na página mas não carrega — referência quebrada");
+  });
+});
+
+caso("imagem: colar grava no acervo (guarda do ciclo 118)", "texto", async (b, ctx, h) => {
+  await comAcervoLimpo(ctx, async (novos) => {
+    await b.js(SOLTAR("paste", "colada.png"));
+    await PAUSA(2000);
+    ctx.assertEq(novos().length, 1, `colar imagem devia gravar 1 arquivo, gravou ${novos().length}`);
+    conferirReferencia(ctx, await h.salvarELer(), novos()[0]);
+  });
+});
+
+caso("imagem: arrastar um .txt não mexe na nota", "texto", async (b, ctx, h) => {
+  await comAcervoLimpo(ctx, async (novos) => {
+    await b.js(SOLTAR("drop", "notas.txt", "text/plain", btoa("nada a ver")));
+    await PAUSA(1200);
+    ctx.assertEq(await b.js(MODAL_ABERTO), false, "um .txt abriu o modal de imagens");
+    ctx.assertEq(novos().length, 0, "um .txt foi parar no acervo");
+    ctx.assertEq(await h.salvarELer(), "texto", "um .txt alterou a nota");
+  });
+});
+
+// Guarda do RNF2: colar TEXTO é o caminho mais usado do editor e não
+// pode morrer junto quando o de imagem mudar.
+//
+// Um `ClipboardEvent` sintético não é confiável, então o navegador não
+// executa a inserção nativa — não dá pra conferir o TEXTO colado. O que
+// dá, e é o que importa, é conferir que o app não CANCELA o paste: se a
+// implementação passar a `preventDefault()` em todo paste, o de texto
+// morre junto.
+caso("imagem: o app não cancela o paste de texto", "inicio", async (b, ctx) => {
+  const cancelado = await b.js(`(() => {
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'colado');
+    const alvo = document.querySelector('.editor__bloco');
+    alvo.focus();
+    const ev = new ClipboardEvent('paste', {
+      bubbles: true, cancelable: true, clipboardData: dt });
+    alvo.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  })()`);
+  ctx.assertEq(cancelado, false,
+    "o app cancelou um paste que só tinha texto — o caminho de texto quebrou");
+});

@@ -2,7 +2,7 @@
 title: "Navegação por teclado consistente e modo vim completo"
 type: spec
 date: 2026-08-23
-status: em-revisao
+status: concluida
 prioridade: alta
 tags:
 - spec
@@ -12,7 +12,7 @@ tags:
 
 {{ type: "fluxo" }}
 artefato: spec
-etapa: em-revisao
+etapa: concluida
 {{ /fluxo }}
 
 ## Contexto
@@ -62,15 +62,15 @@ de navegação — o que é fonte de conflito.
 
 ## Critérios de aceite
 
-- [ ] O caminho relatado (home → trabalho recente → card → página) deixa
+- [x] O caminho relatado (home → trabalho recente → card → página) deixa
       as setas navegando o conteúdo, não a barra superior.
-- [ ] Dois Escapes seguidos sobem dois níveis, sem precisar de Backspace.
-- [ ] `hjkl` movem onde as setas movem.
-- [ ] Visual seleciona por caractere e visual em bloco por retângulo;
+- [x] Dois Escapes seguidos sobem dois níveis, sem precisar de Backspace.
+- [x] `hjkl` movem onde as setas movem.
+- [x] Visual seleciona por caractere e visual em bloco por retângulo;
       copiar o selecionado produz markdown legível.
-- [ ] `/` fora da edição abre a busca de comando.
-- [ ] O atalho de navegação não colide com nenhum comando do vim.
-- [ ] Cenários de harness pra cada modo e pra cada transição entre eles.
+- [x] `/` fora da edição abre a busca de comando.
+- [x] O atalho de navegação não colide com nenhum comando do vim.
+- [x] Cenários de harness pra cada modo e pra cada transição entre eles.
 
 ## Fora de escopo
 
@@ -88,3 +88,18 @@ planejadas juntas, ou a visual nasce só funcionando dentro de um bloco.
 
 - [[Seleção e cópia atravessando blocos]]
 - [[Ciclo 199 — Keymap por modo em tabela]]
+
+
+## Onde cada requisito foi entregue
+
+| | Ciclo |
+|---|---|
+| Pilha de navegação previsível depois de abrir uma página | 250 |
+| Dois Escapes sobem dois níveis | 250 |
+| `hjkl` onde as setas movem | 250 |
+| Modos do vim: visual, visual-linha, visual-bloco | 252 |
+| `j`/`k` atravessando blocos mantendo a coluna | 252 |
+| `/` fora da edição abre a busca de comando | 252 |
+| Atalho de navegação sem colisão (`Alt+N`, guarda `!em_navegacao`) | 252 |
+| Vocabulário completo: contagem, operador + movimento, registrador | 254 |
+| 26 cenários em `scripts/uitest/teclado.mjs` | 252, 254 |

@@ -6,12 +6,12 @@ tags:
 type: spec
 date: 2026-08-23
 prioridade: alta
-status: aprovada
+status: concluida
 ---
 # Imagens arrastadas: persistir como as coladas
 {{ type: "fluxo" }}
 artefato: spec
-etapa: aprovada
+etapa: concluida
 
 {{ /fluxo }}
 ## Contexto
@@ -73,17 +73,17 @@ origem de bugs de DOM já pagos.
 
 ## Critérios de aceite
 
-- [ ] Arrastar um `.png` grava o arquivo no acervo e insere a
+- [x] Arrastar um `.png` grava o arquivo no acervo e insere a
 referência.
-- [ ] Fechar e reabrir a página mostra a imagem.
-- [ ] O `.md` aberto num editor comum mostra uma referência válida —
+- [x] Fechar e reabrir a página mostra a imagem.
+- [x] O `.md` aberto num editor comum mostra uma referência válida —
 nenhum `blob:` chega ao arquivo.
-- [ ] Arrastar duas vezes a mesma imagem não sobrescreve a primeira.
-- [ ] Soltar um `.txt` não altera a nota.
-- [ ] Colar uma imagem real grava o arquivo no acervo e insere uma
+- [x] Arrastar duas vezes a mesma imagem não sobrescreve a primeira.
+- [x] Soltar um `.txt` não altera a nota.
+- [x] Colar uma imagem real grava o arquivo no acervo e insere uma
 referência durável, inclusive dentro do editor por bloco.
-- [ ] Colar texto continua intacto.
-- [ ] Cenários de harness pra arrastar e pra colar, incluindo colar uma
+- [x] Colar texto continua intacto.
+- [x] Cenários de harness pra arrastar e pra colar, incluindo colar uma
 imagem real.
 
 ## Fora de escopo
@@ -92,15 +92,33 @@ imagem real.
 - Arrastar vídeo, áudio ou PDF.
 - Baixar imagem de uma URL colada.
 
-## Perguntas em aberto
+## Perguntas em aberto — respondidas
 
-- Uma imagem inserida duas vezes deve virar dois arquivos ou reusar o
-primeiro? Reusar economiza espaço mas acopla notas. Fica pra
-proposta. virar arquivos diferentes a não ser que passe a mesma referencia
-- Ao arrastar uma imagem, ela deve ser salva e inserida imediatamente,
-como exige o RF1, ou o arraste deve abrir a inserção do comando
-`/imagem` para uma ação posterior? As duas experiências são diferentes
-e precisam ser escolhidas antes da proposta de implementação. acho que abrir um comando de inserçao com possíveis personalziaçẽs pode ser interessante
+- **Uma imagem inserida duas vezes vira dois arquivos ou reusa o
+primeiro?** Dois arquivos, a não ser que se passe a mesma referência.
+`save_asset_bytes` numera até achar um nome livre e nunca sobrescreve.
+- **O arraste insere na hora ou abre a inserção com personalizações?**
+Abre o modal de personalização (alinhamento, tamanho, legenda, texto
+alternativo), implementado no ciclo 242. Isso diverge da letra do RF1
+("insere uma referência durável" — a inserção passou a exigir uma
+confirmação), e a divergência é deliberada: foi a resposta dada aqui
+mesmo, e é o que separa arrastar de colar.
+
+## Duas notas sobre o que foi entregue
+
+**A referência gravada é `<figure class="inserted-image">`, não
+`![](…)`.** O RNF1 pede um `.md` legível fora do app apontando pro
+acervo, e a `<figure>` é isso — markdown com HTML inline, que qualquer
+leitor renderiza. O que ela tem a mais é onde guardar alinhamento,
+tamanho, proporção e legenda, que a sintaxe curta não tem. Essa escolha
+é do ciclo 226, posterior a esta spec.
+
+**Os cenários de harness ficaram velhos antes de rodar.** Foram escritos
+da letra do RF1 (gravação imediata) e da leitura mais estreita do RNF1
+(`![](…)`), e reprovavam um app que já fazia o combinado por outro
+caminho. Reescritos no ciclo 257 contra o critério de aceite de verdade
+— referência válida, nenhum `blob:` no arquivo — e movidos pra bateria
+permanente.
 
 ## Relacionado
 

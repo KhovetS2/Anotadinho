@@ -51,12 +51,12 @@ outras.
 
 ## Critérios de aceite
 
-- [ ] Com uma home definida, ela abre na primeira posição e não oferece
+- [x] Com uma home definida, ela abre na primeira posição e não oferece
 fechar.
-- [ ] Trocar a home reordena as abas sem perder o que estava aberto.
-- [ ] `conversa` aparece na família de tipos do menu de criação e
+- [x] Trocar a home reordena as abas sem perder o que estava aberto.
+- [x] `conversa` aparece na família de tipos do menu de criação e
 produz uma página utilizável.
-- [ ] Cenário de harness pra cada um dos dois.
+- [x] Cenário de harness pra cada um dos dois.
 
 ## Fora de escopo
 

@@ -6,13 +6,13 @@ tags:
 type: spec
 date: 2026-08-22
 prioridade: media
-status: aprovada
+status: concluida
 ---
 # Prompts padrão reutilizáveis
 
 {{ type: "fluxo" }}
 artefato: spec
-etapa: aprovada
+etapa: concluida
 
 {{ /fluxo }}
 
@@ -69,22 +69,22 @@ recorrente — quem sabe quais são é quem usa.
 
 ## Critérios de aceite
 
-- [ ] Criar uma página `type: prompt` em `pages/prompts-default/`,
+- [x] Criar uma página `type: prompt` em `pages/prompts-default/`,
       escolhê-la no seletor da conversa e ver o texto digitado aparecer
       no lugar de `{{title}}` no prompt final.
-- [ ] Páginas fora de `pages/prompts-default/` e de suas subpastas não
+- [x] Páginas fora de `pages/prompts-default/` e de suas subpastas não
       aparecem no seletor, mesmo que tenham `type: prompt`.
-- [ ] A opção vazia do seletor permite escrever e enviar uma mensagem
+- [x] A opção vazia do seletor permite escrever e enviar uma mensagem
       sem aplicar um prompt padrão.
-- [ ] Um prompt com três variáveis diferentes pede as três na ordem em
+- [x] Um prompt com três variáveis diferentes pede as três na ordem em
       que aparecem no prompt.
-- [ ] Duas ocorrências de `{{title}}` pedem um único valor e repetem esse
+- [x] Duas ocorrências de `{{title}}` pedem um único valor e repetem esse
       valor nos dois lugares.
-- [ ] Um marcador esquecido é apontado antes do envio, não depois.
-- [ ] Um prompt que declara contexto anexa as páginas ao ser escolhido.
-- [ ] O modal de visualização mostra o prompt final com todos os valores
+- [x] Um marcador esquecido é apontado antes do envio, não depois.
+- [x] Um prompt que declara contexto anexa as páginas ao ser escolhido.
+- [x] O modal de visualização mostra o prompt final com todos os valores
       substituídos e não envia a mensagem automaticamente.
-- [ ] Cenários de harness cobrem marcador único, múltiplas variáveis,
+- [x] Cenários de harness cobrem marcador único, múltiplas variáveis,
       variável repetida, marcador faltando, opção vazia e preview.
 
 ## Fora de escopo
@@ -117,3 +117,20 @@ conversa. Essas decisões precisam ser registradas antes da implementação.
 - [[Como usar o modo agêntico]]
 - [[Capacidades de agente]]
 - [[Uso agêntico do Anotadinho no dia a dia]]
+
+
+## Onde cada requisito foi entregue
+
+`crates/core/src/prompt_padrao.rs` (molde, variáveis na ordem da primeira
+ocorrência, expansão que RECUSA marcador vazio em vez de deixá-lo passar
+literal, `descobrir` filtrando por `type: prompt` **e** pelo prefixo da
+pasta) e o compositor em `conversa_view.rs`.
+
+O ciclo 224 fez o motor, o 227 tirou a faixa fixa e pôs a lista num
+popover que não gasta linha quando não há prompt nenhum, e o 231 semeou
+`pages/prompts-default/` com cinco prompts reais — sem eles o seletor
+existia e dizia "Nenhum" pra sempre.
+
+Cobertura: `conversa: prompt padrão filtra, preenche, repete, prevê e
+anexa contexto (224)` e `conversa: o compositor não gasta linha com o
+prompt padrão (227)`.

@@ -6,12 +6,12 @@ tags:
 type: spec
 date: 2026-08-22
 prioridade: alta
-status: aprovada
+status: concluida
 ---
 # Uso agêntico do Anotadinho no dia a dia
 {{ type: "fluxo" }}
 artefato: spec
-etapa: aprovada
+etapa: concluida
 
 {{ /fluxo }}
 ## Problema
@@ -66,3 +66,15 @@ desenho, ver [[Capacidades de agente]].
 - [[Como usar o modo agêntico]] — o passo a passo
 - [[Capacidades de agente]] — limites e configuração
 - [[Guia do Agent OS]] — o esquema do vault
+
+
+## Onde cada requisito foi entregue
+
+O caminho inteiro está de pé: começar conversa em um passo, o `contexto:`
+que sobrevive a fechar o app, a proposta pendente visível de qualquer
+página, disparar a execução a partir da conversa (ciclo 227) e o agente
+propondo o fechamento da etapa em vez de escrever no vault (ciclo 229).
+
+A RNF1 — nenhuma escrita do agente chega ao vault sem revisão humana —
+continua valendo por construção: o agente escreve `Proposta` em JSON
+fora de `pages/`, e só a aprovação move o conteúdo pra página.

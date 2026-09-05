@@ -277,8 +277,8 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
         let gravar = gravar.clone();
         let sugestoes = sugestoes.clone();
         let nav_group = nav_group.clone();
-        move |path: String, campo: String, valor: String, coluna: String, classe: &'static str| -> Html {
-            let cor = format!("query-embed__chip--cor-{}", anotadinho_core::query::indice_cor_consulta(&coluna, &campo, &valor));
+        move |path: String, campo: String, valor: String, classe: &'static str| -> Html {
+            let cor = format!("query-embed__chip--cor-{}", anotadinho_core::query::indice_cor_consulta(&valor));
             let classes = classes!(classe, cor);
             let em_edicao = editando.as_ref().is_some_and(|(p, c)| *p == path && *c == campo);
             if em_edicao {
@@ -422,7 +422,7 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                                                 <span class="query-embed__meta">
                                                     { for columns.iter().map(|c| celula(
                                                         entry.path.clone(), c.clone(),
-                                                        entry.field(c).unwrap_or_default(), String::new(), "query-embed__chip")) }
+                                                        entry.field(c).unwrap_or_default(), "query-embed__chip")) }
                                                 </span>
                                             </li>
                                         }
@@ -453,7 +453,7 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                                 <span class="query-embed__meta">
                                     { for columns.iter().map(|c| celula(
                                         entry.path.clone(), c.clone(),
-                                        entry.field(c).unwrap_or_default(), String::new(), "query-embed__chip")) }
+                                        entry.field(c).unwrap_or_default(), "query-embed__chip")) }
                                 </span>
                             </li>
                         }
@@ -486,7 +486,7 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                                     <td class="query-embed__title" title={entry.title.clone()}>{ entry.title.clone() }</td>
                                     { for columns.iter().map(|c| html! {
                                         <td>{ celula(entry.path.clone(), c.clone(),
-                                            entry.field(c).unwrap_or_default(), c.clone(), "query-embed__chip") }</td>
+                                            entry.field(c).unwrap_or_default(), "query-embed__chip") }</td>
                                     }) }
                                 </tr>
                             }
@@ -514,7 +514,7 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
                                         // (ciclo 168) segue restrita a lista e tabela.
                                         entry.field(c).filter(|v| !v.is_empty()).map(|v| {
                                             let cor = format!("query-embed__chip--cor-{}",
-                                                anotadinho_core::query::indice_cor_consulta("", c, &v));
+                                                anotadinho_core::query::indice_cor_consulta(&v));
                                             html! { <span class={classes!("query-embed__chip", cor)}>{ v }</span> }
                                         })
                                     }) }

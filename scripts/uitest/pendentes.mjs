@@ -9,18 +9,36 @@
 //
 // À medida que cada spec for implementada, o cenário correspondente
 // migra pra bateria permanente (`interacoes.mjs`, `telas.mjs`, etc) e
-// sai daqui. Quando este arquivo esvaziar, o backlog de UI acabou.
+// sai daqui.
 //
-// Cada cenário nomeia a spec que o originou, pra a ligação sobreviver.
+// ─────────────────────────────────────────────────────────────────────
+//
+// ESTÁ VAZIA (ciclo 257), e é a primeira vez.
+//
+// Os últimos sete cenários saíram assim:
+//
+// - `consultas` (3): o RF2 estava implementado com a chave errada; a
+//   correção foi de uma linha e eles migraram pra `interacoes.mjs`
+//   (ciclo 256).
+// - `imagens` (4): o produto já fazia o que a spec pedia, por um
+//   caminho que a spec não previa — o arraste abre o modal de
+//   personalização, e a referência gravada é `<figure>` e não `![](…)`.
+//   Os cenários é que estavam velhos, não o app. Reescritos contra o
+//   critério real ("referência válida, nenhum `blob:`") e migrados
+//   (ciclo 257).
+//
+// A lição do segundo grupo vale pra quem escrever aqui depois: um
+// cenário pendente envelhece. Ele nasce de uma spec e passa a valer
+// como se fosse a spec, mas o produto pode ter respondido a mesma
+// pergunta de outro jeito no caminho — inclusive respondendo a uma
+// "pergunta em aberto" que a própria spec deixou. Antes de tratar um
+// vermelho daqui como bug, confira se ele não é só desatualização.
+//
+// O helper abaixo fica de pé pro próximo uso.
 
-import { recarregarEstavel, abrirPaginaEstavel, esperar } from "./bridge.mjs";
-
-const PAUSA = (ms) => new Promise((r) => setTimeout(r, ms));
+import { recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
 
 export const pendentes = [];
-
-/// Markdown mínimo da página de rascunho.
-const RASCUNHO = "---\ntitle: __uitest\n---\ntexto\n";
 
 /// `setup` pode ser o markdown da página de rascunho, ou
 /// `{ md, vim }`.
@@ -28,7 +46,9 @@ const RASCUNHO = "---\ntitle: __uitest\n---\ntexto\n";
 /// O markdown é escrito e o vim é ligado ANTES do reload: a sidebar é
 /// montada na carga (escrever depois deixa a página invisível pro
 /// `abrirPaginaEstavel`) e o vim só entra em vigor no mount.
-function pendente(spec, nome, setup, fn) {
+///
+/// Cada cenário nomeia a spec que o originou, pra a ligação sobreviver.
+export function pendente(spec, nome, setup, fn) {
   if (typeof setup === "function") {
     fn = setup;
     setup = null;
@@ -59,293 +79,3 @@ function pendente(spec, nome, setup, fn) {
     },
   });
 }
-
-/// Dispara um atalho global (o listener vive em `.app-root`).
-const ATALHO = (key, extra = {}) => `(() => {
-  const raiz = document.querySelector('.app-root') || document.body;
-  raiz.dispatchEvent(new KeyboardEvent('keydown', Object.assign(
-    { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }, ${JSON.stringify(extra)})));
-  return true;
-})()`;
-
-/// Manda uma tecla pro elemento que está com o foco de navegação.
-const TECLA = (key, extra = {}) => `(() => {
-  const alvo = document.querySelector('.nav-mode__item-active')
-    || document.activeElement
-    || document.body;
-  alvo.dispatchEvent(new KeyboardEvent('keydown', Object.assign(
-    { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }, ${JSON.stringify(extra)})));
-  return true;
-})()`;
-
-/// Clica em Salvar. A trava é a mesma das outras baterias (ciclo 197):
-/// um cenário que navegou pra uma página real e mandou salvar reescreve
-/// o arquivo do usuário.
-const SALVAR = `(() => {
-  const titulo = (document.querySelector('.editor__title') || {}).textContent || '';
-  if (!titulo.includes('__uitest')) {
-    throw new Error('Salvar bloqueado: a página aberta é "' + titulo + '"');
-  }
-  const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith('Salvar'));
-  if (b) b.click();
-  return !!b;
-})()`;
-
-const ITEM_ATIVO = `(document.querySelector('.nav-mode__item-active')
-  ?.getAttribute('data-nav-item') ?? null)`;
-
-// ─────────────────────────────────────────────────────────────────────
-// Spec: Leitura de consultas
-// ─────────────────────────────────────────────────────────────────────
-
-/// Página com uma consulta em tabela de 3 colunas — usada pelos três
-/// cenários abaixo.
-const PAGINA_CONSULTA = `---
-title: __uitest
----
-# consulta
-
-{{ type: "query" }}
-from: pages
-where:
-- field: type
-  op: exists
-view: table
-columns:
-- type
-- tags
-- status
-{{ /query }}
-`;
-
-pendente("consultas", "valores ficam alinhados com o cabeçalho", PAGINA_CONSULTA, async (bridge, ctx) => {
-  await esperar(bridge, `!!document.querySelector('.query-embed__table td')`,
-    "a tabela da consulta não renderizou");
-
-  const desalinhadas = await bridge.js(`(() => {
-    const tab = document.querySelector('.query-embed__table');
-    const ths = [...tab.querySelectorAll('th')].map(e => Math.round(e.getBoundingClientRect().left));
-    const linha = tab.querySelector('tbody tr');
-    const tds = [...linha.querySelectorAll('td')].map(e => Math.round(e.getBoundingClientRect().left));
-    return ths.map((x, i) => (tds[i] === undefined || Math.abs(tds[i] - x) > 2)
-      ? { coluna: i, th: x, td: tds[i] } : null).filter(Boolean);
-  })()`);
-  ctx.assertEq(desalinhadas.length, 0,
-    `colunas desalinhadas: ${JSON.stringify(desalinhadas)}`);
-});
-
-pendente("consultas", "o mesmo valor tem sempre a mesma cor", PAGINA_CONSULTA, async (bridge, ctx) => {
-  await esperar(bridge, `!!document.querySelector('.query-embed__table td')`,
-    "a tabela da consulta não renderizou");
-
-  const r = await bridge.js(`(() => {
-    const cores = new Map();
-    const conflitos = [];
-    for (const td of document.querySelectorAll('.query-embed__table tbody td')) {
-      const txt = td.textContent.trim();
-      if (!txt) continue;
-      const alvo = td.firstElementChild || td;
-      const cor = getComputedStyle(alvo).color + '|' + getComputedStyle(alvo).backgroundColor;
-      if (cores.has(txt) && cores.get(txt) !== cor) conflitos.push(txt);
-      cores.set(txt, cor);
-    }
-    const distintas = new Set(cores.values());
-    return { conflitos, valores: cores.size, distintas: distintas.size };
-  })()`);
-  ctx.assertEq(r.conflitos.length, 0,
-    `mesmo valor com cores diferentes: ${JSON.stringify(r.conflitos)}`);
-  ctx.assert(r.distintas > 1,
-    `todos os ${r.valores} valores saíram com a mesma cor — não há cor por valor`);
-});
-
-pendente("consultas", "o bloco de consulta tem altura limitada e rola", PAGINA_CONSULTA, async (bridge, ctx) => {
-  await esperar(bridge, `!!document.querySelector('.query-embed__table td')`,
-    "a tabela da consulta não renderizou");
-
-  const r = await bridge.js(`(() => {
-    const el = document.querySelector('.query-embed');
-    const rola = [el, ...el.querySelectorAll('*')].find(
-      n => n.scrollHeight > n.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(n).overflowY));
-    return { altura: Math.round(el.getBoundingClientRect().height),
-             janela: Math.round(window.innerHeight),
-             rolaDentro: !!rola };
-  })()`);
-  ctx.assert(r.altura <= r.janela,
-    `a consulta ocupa ${r.altura}px, mais que a janela (${r.janela}px)`);
-  ctx.assertEq(r.rolaDentro, true, "a consulta não rola internamente");
-});
-
-// ─────────────────────────────────────────────────────────────────────
-// Spec: Imagens coladas e arrastadas
-// ─────────────────────────────────────────────────────────────────────
-
-/// PNG 1×1 transparente, em base64 — o menor arquivo válido possível.
-const PNG_1X1 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
-
-const COLAR_IMAGEM = `(async () => {
-  const bin = atob(${JSON.stringify(PNG_1X1)});
-  const buf = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-  const file = new File([buf], 'colada.png', { type: 'image/png' });
-  const dt = new DataTransfer();
-  dt.items.add(file);
-  const alvo = document.querySelector('.editor__bloco');
-  alvo.focus();
-  // A inserção acontece na SELEÇÃO — sem um range de verdade, o
-  // editor não tem onde escrever e o arquivo fica no acervo sem
-  // referência na nota.
-  const r = document.createRange();
-  r.selectNodeContents(alvo); r.collapse(false);
-  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-  alvo.dispatchEvent(new ClipboardEvent('paste', {
-    bubbles: true, cancelable: true, clipboardData: dt }));
-  return true;
-})()`;
-
-pendente("imagens", "arrastar imagem grava no acervo, não uma URL de sessão",
-  RASCUNHO, async (bridge, ctx) => {
-    const fs = await import("node:fs");
-    const antes = fs.existsSync(`${ctx.vault}/assets`)
-      ? fs.readdirSync(`${ctx.vault}/assets`) : [];
-
-    await bridge.js(`(() => {
-      const bin = atob(${JSON.stringify(PNG_1X1)});
-      const buf = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-      const file = new File([buf], 'arrastada.png', { type: 'image/png' });
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      const alvo = document.querySelector('.editor__bloco');
-      alvo.focus();
-      const r = document.createRange();
-      r.selectNodeContents(alvo); r.collapse(false);
-      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-      for (const tipo of ['dragenter', 'dragover', 'drop']) {
-        alvo.dispatchEvent(new DragEvent(tipo, {
-          bubbles: true, cancelable: true, dataTransfer: dt }));
-      }
-      return true;
-    })()`);
-    await PAUSA(1500);
-    await bridge.js(SALVAR);
-    await PAUSA(1000);
-
-    // O sintoma que a pessoa vê: a imagem aparece na tela apontando
-    // pra uma URL `blob:`, que morre com a sessão.
-    const blob = await bridge.js(`(() => {
-      const img = document.querySelector('.editor__bloco img, .editor img');
-      return img ? img.getAttribute('src') : null;
-    })()`);
-    ctx.assert(!blob || !blob.startsWith("blob:"),
-      `a imagem entrou como URL de sessão (${blob}) — some ao recarregar`);
-
-    const depois = fs.existsSync(`${ctx.vault}/assets`)
-      ? fs.readdirSync(`${ctx.vault}/assets`) : [];
-    const novos = depois.filter((f) => !antes.includes(f));
-    try {
-      ctx.assertEq(novos.length, 1,
-        `esperava 1 arquivo novo no acervo, vieram ${novos.length}`);
-      const md = ctx.ler() || "";
-      ctx.assert(/!\[[^\]]*\]\([^)]+\)/.test(md),
-        `a nota não ganhou referência de imagem:\n${md}`);
-    } finally {
-      novos.forEach((f) => fs.rmSync(`${ctx.vault}/assets/${f}`, { force: true }));
-    }
-  });
-
-pendente("imagens", "a imagem arrastada sobrevive ao recarregar",
-  RASCUNHO, async (bridge, ctx) => {
-    const fs = await import("node:fs");
-    const antes = fs.existsSync(`${ctx.vault}/assets`)
-      ? fs.readdirSync(`${ctx.vault}/assets`) : [];
-
-    await bridge.js(`(() => {
-      const bin = atob(${JSON.stringify(PNG_1X1)});
-      const buf = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-      const file = new File([buf], 'persiste.png', { type: 'image/png' });
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      const alvo = document.querySelector('.editor__bloco');
-      alvo.focus();
-      alvo.dispatchEvent(new DragEvent('drop', {
-        bubbles: true, cancelable: true, dataTransfer: dt }));
-      return true;
-    })()`);
-    await PAUSA(2000);
-    await bridge.js(SALVAR);
-    await PAUSA(1000);
-    await recarregarEstavel(bridge);
-    await abrirPaginaEstavel(bridge, ctx.nomePagina);
-
-    const depois = fs.existsSync(`${ctx.vault}/assets`)
-      ? fs.readdirSync(`${ctx.vault}/assets`) : [];
-    const novos = depois.filter((f) => !antes.includes(f));
-    try {
-      const visivel = await bridge.js(`(() => {
-        const img = document.querySelector('.editor img');
-        return img ? { src: img.getAttribute('src'), largura: img.naturalWidth } : null;
-      })()`);
-      ctx.assert(visivel, "depois de recarregar não há imagem nenhuma na página");
-      ctx.assert(!visivel.src.startsWith("blob:"),
-        `a referência gravada no .md é uma URL de sessão morta: ${visivel.src}`);
-      ctx.assert(visivel.largura > 0,
-        "a imagem está na página mas não carrega — referência quebrada");
-    } finally {
-      novos.forEach((f) => fs.rmSync(`${ctx.vault}/assets/${f}`, { force: true }));
-    }
-  });
-
-// Guarda de regressão do RNF2: o caminho mais usado do editor não pode
-// quebrar quando o arraste for consertado.
-//
-// Um `ClipboardEvent` sintético não é confiável, então o navegador não
-// executa a inserção nativa — não dá pra conferir o TEXTO. O que dá, e
-// é o que importa aqui, é conferir que o app não CANCELA o paste de
-// texto: se a implementação passar a `preventDefault()` em todo paste,
-// o de texto morre junto.
-pendente("imagens", "o app não cancela o paste de texto",
-  "---\ntitle: __uitest\n---\ninicio\n", async (bridge, ctx) => {
-  const cancelado = await bridge.js(`(() => {
-    const dt = new DataTransfer();
-    dt.setData('text/plain', 'colado');
-    const alvo = document.querySelector('.editor__bloco');
-    alvo.focus();
-    const ev = new ClipboardEvent('paste', {
-      bubbles: true, cancelable: true, clipboardData: dt });
-    alvo.dispatchEvent(ev);
-    return ev.defaultPrevented;
-  })()`);
-  ctx.assertEq(cancelado, false,
-    "o app cancelou um paste que só tinha texto — o caminho de texto quebrou");
-});
-
-pendente("imagens", "colar imagem grava no acervo (guarda do ciclo 118)",
-  RASCUNHO, async (bridge, ctx) => {
-    const fs = await import("node:fs");
-    const antes = fs.existsSync(`${ctx.vault}/assets`)
-      ? fs.readdirSync(`${ctx.vault}/assets`) : [];
-    await bridge.js(COLAR_IMAGEM);
-    await PAUSA(2000);
-    // Sem salvar, a nota no disco ainda é a de antes — o autosave está
-    // desligado nos testes.
-    await bridge.js(SALVAR);
-    await PAUSA(1000);
-    const depois = fs.existsSync(`${ctx.vault}/assets`)
-      ? fs.readdirSync(`${ctx.vault}/assets`) : [];
-    const novos = depois.filter((f) => !antes.includes(f));
-    try {
-      ctx.assertEq(novos.length, 1,
-        `colar imagem devia gravar 1 arquivo, gravou ${novos.length}`);
-      const md = ctx.ler() || "";
-      ctx.assert(/!\[[^\]]*\]\([^)]+\)/.test(md),
-        `a nota não ganhou a referência da imagem colada:\n${md}`);
-    } finally {
-      novos.forEach((f) => fs.rmSync(`${ctx.vault}/assets/${f}`, { force: true }));
-    }
-  });
-
-// ─────────────────────────────────────────────────────────────────────
-// Spec: Tema configurável
-// ─────────────────────────────────────────────────────────────────────

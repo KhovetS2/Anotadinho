@@ -6,12 +6,12 @@ tags:
 type: spec
 date: 2026-08-23
 prioridade: alta
-status: aprovada
+status: concluida
 ---
 # Leitura de consultas: alinhamento, cor e altura
 {{ type: "fluxo" }}
 artefato: spec
-etapa: aprovada
+etapa: concluida
 
 {{ /fluxo }}
 ## Contexto
@@ -56,13 +56,13 @@ guardado: a mesma propriedade não pode mudar de cor entre sessões.
 
 ## Critérios de aceite
 
-- [ ] Numa consulta com quatro colunas, todos os valores ficam sob o
+- [x] Numa consulta com quatro colunas, todos os valores ficam sob o
 título correto.
-- [ ] Dois valores iguais em consultas diferentes da mesma página têm a
+- [x] Dois valores iguais em consultas diferentes da mesma página têm a
 mesma cor.
-- [ ] Uma consulta com 168 resultados ocupa altura limitada e rola
+- [x] Uma consulta com 168 resultados ocupa altura limitada e rola
 dentro de si.
-- [ ] O snapshot visual dos embeds continua passando (ou é atualizado de
+- [x] O snapshot visual dos embeds continua passando (ou é atualizado de
 propósito, com a mudança registrada na task).
 
 ## Fora de escopo
