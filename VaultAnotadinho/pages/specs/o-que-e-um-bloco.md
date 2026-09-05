@@ -48,6 +48,35 @@ com convenções parecidas mas não idênticas. Um embed novo não herda nada
 — copia de um vizinho, e as diferenças acumulam por cópia. É o mesmo
 padrão que a ponte IPC tinha antes do ciclo 259.
 
+## O achado que muda o desenho
+
+Existem **dois modelos de bloco no projeto, e eles não se conhecem.**
+
+`crates/core/src/block.rs` define `Block { id, content, kind,
+properties, depth }`, e `Page` tem `blocks: Vec<Block>`. O `markdown.rs`
+parseia pra ele. É um modelo de dados, testável, sem DOM.
+
+O editor **não usa nada disso**. A única ocorrência de "Block" em
+`ui/src` é a string `"formatBlock"` de um `execCommand`. Para o editor,
+um bloco é um `web_sys::Element` que recebeu `data-nav-block`,
+`contenteditable` e uma classe — e "ser um bloco" é o efeito de
+`marcar_blocos()` ter passado por ali.
+
+Daí saem duas consequências que já custaram ciclos:
+
+- **O bloco pode nascer sem ser bloco.** Foi o ciclo 249: o menu `/`
+  inseria o elemento e ninguém carimbava os atributos, então ele nascia
+  morto. Num modelo, um bloco inserido É um bloco; não há estado
+  intermediário em que ele existe mas não conta.
+- **A verdade do documento é o DOM.** `recompute_markdown_from_dom` lê a
+  árvore e produz markdown na hora de salvar. O ciclo 248 precisou de uma
+  trava no backend contra gravar vazio justamente porque o DOM pode estar
+  transitoriamente vazio e ninguém tem um modelo pra confrontar.
+
+E é também por isso que o `depth: u8` do `Block` do core não resolve
+sozinho: profundidade é um número ao lado, não uma árvore. Um card de
+kanban que contém blocos não se expressa com `depth`.
+
 ## Objetivo
 
 Uma definição só de bloco, com uma base comum que bloco de texto e embed
@@ -84,10 +113,10 @@ Cada embed refina a partir dali em vez de começar do zero.
 
 ## Perguntas a decidir ANTES da proposta
 
-- **`dd` num embed pede confirmação?** Apagar uma tabela de 600 linhas
-  com duas teclas é destrutivo. No vim, `u` desfaz e ninguém pergunta;
-  aqui o desfazer é o do navegador, e ele não alcança um componente Yew.
-  Se não houver desfazer confiável, a confirmação deixa de ser opcional.
+- ~~**`dd` num embed pede confirmação?**~~ **DECIDIDO: sim**, quando o
+  alvo é um embed INTEIRO. Enquanto o desfazer não alcançar o modelo, a
+  confirmação é a única rede. Quando o `Command`/desfazer entrar, a
+  pergunta volta à mesa.
 - **O que `yy` num embed põe no registrador?** O markdown do embed
   (colável em qualquer editor) ou uma referência interna? O markdown
   parece certo, e é o que `markdown_dos_selecionados` já faz.
@@ -95,6 +124,70 @@ Cada embed refina a partir dali em vez de começar do zero.
   card) deve responder a comandos vim?** Hoje não responde, porque o
   handler está preso ao `.editor__wysiwyg` — e isso é uma proteção, não
   um acidente: digitar `dd` num campo não pode apagar a linha.
+
+## O modelo, e os padrões que ele instancia
+
+A ideia é a do **Composite** (GoF), e a intenção original do padrão
+descreve o pedido com precisão: *"compose objects into tree structures to
+represent part-whole hierarchies; Composite lets clients treat individual
+objects and compositions of objects uniformly"*. `dd` tratando um
+parágrafo e um card de kanban do mesmo jeito é literalmente isso.
+
+Um bloco é a unidade; um embed é um bloco cujo tipo carrega estrutura e
+cujos filhos são blocos. Um card de kanban vira um bloco com filhos
+(título, descrição), e aí a composição responde sozinha a pergunta que
+motivou esta spec: `dd` no título apaga o bloco do título, `dd` com o
+card selecionado apaga o card. Não são dois comandos — é o mesmo comando
+em dois níveis.
+
+**Onde o Composite clássico atrapalha, e como Rust escapa.** O GoF
+discute o dilema entre a versão "transparente" (pôr `add`/`remove` na
+base, e leaf herda operação sem sentido) e a "segura" (só o composto
+tem, e o cliente precisa testar tipo). Num `enum` com `filhos:
+Vec<Bloco>` o dilema não existe: o teste de tipo é exaustivo, verificado
+pelo compilador, e "este bloco aceita filhos?" vira dado, não herança.
+
+**Visitor**, para as operações. Serializar pra markdown, renderizar pra
+DOM, aplicar um operador do vim e — o ponto que interessa — renderizar
+pra terminal viram travessias da MESMA árvore. Em Rust isso costuma ser
+um `match` sobre o enum, não a maquinaria de duplo despacho do livro; o
+que vale do padrão é a separação, não a implementação.
+
+**Command**, para o desfazer. Hoje o desfazer é o do navegador e ele não
+alcança um componente Yew — é por isso que `dd` num embed PRECISA de
+confirmação. Com os operadores como comandos sobre o modelo, `u` passa a
+funcionar de verdade, e a confirmação vira escolha em vez de obrigação.
+
+**Prior art direta:** o `NodeSpec` do ProseMirror (MIT). Cada tipo de nó
+declara `content` (o que ele pode conter), `atom` (não tem conteúdo
+editável diretamente — que é exatamente o que um embed é), `selectable`
+e `isolating` (a seleção não atravessa esta fronteira). É o mesmo
+desenho de "unidade base + camadas que trazem a intenção", já resolvido
+por um editor que vive no DOM.
+
+## O teste de fogo: e se o Anotadinho fosse um CLI?
+
+A pergunta serve de régua porque separa o que é modelo do que é pintura.
+
+**O backend já passa.** `crates/` — core, vault, ipc, search, cli, ~16
+mil linhas — tem ZERO referências a `web_sys` ou `wasm_bindgen`. Um
+Anotadinho de terminal reusaria tudo isso sem tocar numa linha.
+
+**O que reprova é o modelo de movimento.** Os quatro arquivos que
+definem o que é um bloco e como se anda entre eles — `nav_mode` (20
+referências a `web_sys`), `selection_toolbar` (16), `vim_visual` (12),
+`selecao_blocos` (10) — são inteiramente tipados contra
+`web_sys::Element`. Não é lógica que *usa* o DOM: é lógica *escrita em
+termos* de DOM. Portar significaria reescrevê-la, inclusive as partes
+que são raciocínio puro.
+
+Ou seja: o que impede o Anotadinho de virar um lazygit não é a
+renderização — é o modelo morar dentro dela.
+
+E há prova de que a direção funciona, feita sem querer: `vim_comandos.rs`
+(a gramática de comandos) e as funções de palavra do ciclo 260 têm ZERO
+`web_sys`. Foram extraídas pra serem testáveis, e o efeito colateral é
+que portariam sem alteração. `markdown_render.rs` também está em zero.
 
 ## Não-objetivos
 
