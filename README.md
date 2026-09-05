@@ -83,4 +83,4 @@ Detalhes em [`docs/cycles.md`](docs/cycles.md).
 
 ## Licença
 
-MIT — ver [`LICENSE`](LICENSE).
+GPL-3.0-or-later — ver [`LICENSE`](LICENSE).
