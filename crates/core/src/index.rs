@@ -96,9 +96,16 @@ impl PageIndexEntry {
                 // o painel de backlinks precisam enxergar `![[X]]` igual
                 // enxergam `[[X]]`.
                 let mut alvos = crate::links::extract_wikilink_targets(body);
+                // Conjunto de `String` (e não de `&str`) porque `alvos`
+                // cresce dentro do laço: emprestar dele e escrever nele
+                // ao mesmo tempo não compila, e contornar isso
+                // reconstruindo o conjunto a cada inserção traria de
+                // volta o quadrático que este trecho existe pra evitar.
+                let mut vistos: std::collections::HashSet<String> =
+                    alvos.iter().cloned().collect();
                 for t in crate::links::extract_transclusion_targets(body) {
                     let alvo = t.split('#').next().unwrap_or("").trim().to_string();
-                    if !alvo.is_empty() && !alvos.contains(&alvo) {
+                    if !alvo.is_empty() && vistos.insert(alvo.clone()) {
                         alvos.push(alvo);
                     }
                 }

@@ -153,6 +153,24 @@ node scripts/uitest/run.mjs      # sai != 0 se quebrou
 node scripts/uitest/run.mjs foo  # só cenários que casam com "foo"
 ```
 
+Mexeu em algo que roda sobre o vault inteiro, ou no caminho de render de
+um embed? As duas baterias de ESCALA respondem a outra pergunta —
+"continua respondendo quando o conteúdo cresce?" — e ficam fora das
+suítes normais porque medem tempo:
+
+```bash
+cargo test -p anotadinho-ipc --test estresse -- --ignored --nocapture
+node scripts/uitest/run.mjs --estresse
+```
+
+Os tetos delas não são metas de desempenho: são alarmes de mudança de
+ORDEM. E a regra que veio junto (ciclo 259): **um teto que nunca foi
+visto reprovando não vale nada.** Ao escrever um, quebre de propósito o
+que ele deveria pegar e confirme que ele reprova. O primeiro limite de
+linearidade que escrevi deixou passar a regressão que eu já sabia estar
+lá; e dois cenários de UI mediam zero elemento em zero milissegundo e
+passavam com folga, porque conferiam o TEMPO sem conferir o EFEITO.
+
 **Não tente subir o app você mesmo.** `./scripts/dev.sh` abre uma janela
 e fica rodando pra sempre; num comando não-interativo isso trava, e num
 sandbox costuma nem começar. Quem deixa o app de pé é a pessoa, num

@@ -181,19 +181,23 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
     // Valores já usados em cada campo, no recorte atual — viram sugestão
     // (`<datalist>`) em vez de o usuário ter que decorar
     // `in-progress`/`in-review`.
+    //
+    // `BTreeSet` e não `Vec` + `contains`: a versão anterior varria a
+    // lista já vista a cada página, pra cada coluna, e ORDENAVA no fim —
+    // então o trabalho de manter a ordem de chegada ia pro lixo de
+    // qualquer jeito. `entries` é o índice INTEIRO do vault, não o
+    // recorte da consulta, e isto roda a cada render: num vault de 4 mil
+    // páginas com uma coluna de valores distintos eram 8 milhões de
+    // comparações de string por coluna, a cada tecla digitada numa
+    // célula em edição.
     let sugestoes = {
         let mut mapa: std::collections::BTreeMap<String, Vec<String>> = Default::default();
         for campo in &props.data.columns {
-            let mut vistos: Vec<String> = Vec::new();
-            for e in entries.iter() {
-                if let Some(v) = e.field(campo).filter(|v| !v.trim().is_empty()) {
-                    if !vistos.contains(&v) {
-                        vistos.push(v);
-                    }
-                }
-            }
-            vistos.sort();
-            mapa.insert(campo.clone(), vistos);
+            let vistos: std::collections::BTreeSet<String> = entries
+                .iter()
+                .filter_map(|e| e.field(campo).filter(|v| !v.trim().is_empty()))
+                .collect();
+            mapa.insert(campo.clone(), vistos.into_iter().collect());
         }
         mapa
     };
@@ -242,11 +246,16 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
 
     // Campos oferecidos no modal: os fixos + toda chave de frontmatter/
     // property vista no vault, pra configurar sem precisar decorar nome.
+    //
+    // A ordem é a de descoberta (fixos primeiro, depois como aparecem no
+    // vault) e fica como estava — quem muda é só o teste de pertinência,
+    // que era uma varredura linear da lista a cada chave de cada página.
     let known_fields = {
         let mut fields: Vec<String> = BASE_FIELDS.iter().map(|f| f.to_string()).collect();
+        let mut vistos: std::collections::HashSet<String> = fields.iter().cloned().collect();
         for entry in entries.iter() {
             for key in entry.properties.keys() {
-                if !fields.contains(key) {
+                if vistos.insert(key.clone()) {
                     fields.push(key.clone());
                 }
             }
@@ -395,13 +404,18 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
         }
     };
 
-    let grupos = props.data.run_grouped(&entries);
+    // Agrupado SÓ quando a visão agrupa. `run_grouped` chama `run` por
+    // dentro, então calculá-lo aqui em cima rodava o filtro e a
+    // ordenação uma segunda vez a cada render, inclusive nas consultas
+    // que nunca mostram grupo nenhum.
+    let agrupado = props.data.group_by.is_some() || !props.data.aggregate.is_empty();
 
     let body = if *loading {
         html! { <p class="query-embed__empty">{ "Consultando o vault..." }</p> }
     } else if results.is_empty() {
         html! { <p class="query-embed__empty">{ "Nenhuma página bate com esta consulta." }</p> }
-    } else if props.data.group_by.is_some() || !props.data.aggregate.is_empty() {
+    } else if agrupado {
+        let grupos = props.data.run_grouped(&entries);
         html! {
             <div class="query-embed__grupos">
                 { for grupos.iter().map(|grupo| {

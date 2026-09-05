@@ -27,6 +27,7 @@ import { interacoes } from "./interacoes.mjs";
 import { telas } from "./telas.mjs";
 import { fluxo } from "./fluxo.mjs";
 import { pendentes } from "./pendentes.mjs";
+import { estresse } from "./estresse.mjs";
 import { conferirSnapshots } from "./snapshot.mjs";
 
 const VAULT = process.env.ANOTADINHO_VAULT || "VaultAnotadinho";
@@ -80,8 +81,12 @@ const todos = [
 // propósito: é vermelha por definição, e a suíte principal precisa
 // continuar sendo o sinal confiável de "está tudo certo?".
 const soPendentes = process.argv.includes("--pendentes");
+// `--estresse` roda a bateria de escala (`estresse.mjs`). Fica fora de
+// `todos` porque leva minutos e MEDE TEMPO — e uma suíte que às vezes
+// falha por a máquina estar ocupada deixa de ser sinal confiável.
+const soEstresse = process.argv.includes("--estresse");
 const filtro = process.argv.slice(2).find((a) => !a.startsWith("--"));
-const base = soPendentes ? pendentes : todos;
+const base = soPendentes ? pendentes : soEstresse ? estresse : todos;
 let selecionados = filtro
   ? base.filter((c) => c.nome.toLowerCase().includes(filtro.toLowerCase()))
   : base;
@@ -158,7 +163,7 @@ for (const cenario of selecionados) {
 // pra `run.mjs` continuar sendo o comando único de "está tudo certo?".
 // `--sem-snapshot` pula (útil quando você está no meio de um redesenho e
 // ainda não quer regravar a baseline).
-if (!filtro && !soPendentes && !process.argv.includes("--sem-snapshot")) {
+if (!filtro && !soPendentes && !soEstresse && !process.argv.includes("--sem-snapshot")) {
   const t0 = Date.now();
   try {
     const resultados = await conferirSnapshots(bridge);

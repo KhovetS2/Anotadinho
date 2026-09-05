@@ -66,58 +66,150 @@ async fn tauri_invoke(cmd: &str, args: &JsValue) -> Result<JsValue, JsValue> {
     JsFuture::from(promise).await
 }
 
-/// Abre o dialog nativo de seleção de pasta via comando Tauri.
-pub async fn open_folder_dialog() -> Result<Option<String>, String> {
-    let args = JsValue::from(js_sys::Object::new());
+/// Argumentos de uma chamada IPC, montados em cadeia.
+///
+/// Existe porque as 48 funções deste módulo repetiam o mesmo bloco:
+/// criar o objeto, `Reflect::set` de cada argumento com o mesmo
+/// `map_err` e converter pra `JsValue`. Eram 46 `Object::new`, 72
+/// `Reflect::set` e 94 `map_err` idênticos — e cada função nova copiava
+/// o bloco de uma vizinha, o que fez as inconsistências abaixo se
+/// espalharem por cópia.
+#[derive(Default)]
+struct Args(Option<js_sys::Object>);
 
-    let result = tauri_invoke("open_vault_dialog", &args)
-        .await
-        .map_err(|e| format!("dialog error: {:?}", e))?;
-
-    if result.is_null() || result.is_undefined() {
-        return Ok(None);
+impl Args {
+    fn novo() -> Self {
+        Self(Some(js_sys::Object::new()))
     }
 
-    let path = result
-        .as_string()
-        .ok_or_else(|| "caminho retornado não é string".to_string())?;
-    Ok(Some(path))
+    /// Argumento de texto — o caso de longe mais comum.
+    fn texto(self, chave: &str, valor: &str) -> Self {
+        self.bruto(chave, JsValue::from_str(valor))
+    }
+
+    /// Argumento que só entra quando existe.
+    ///
+    /// A diferença importa: mandar `folderPath: null` não é o mesmo que
+    /// não mandar `folderPath`, e o backend distingue os dois.
+    fn texto_opcional(self, chave: &str, valor: Option<&str>) -> Self {
+        match valor {
+            Some(v) => self.texto(chave, v),
+            None => self,
+        }
+    }
+
+    /// Argumento que vira JSON pelo `serde`.
+    ///
+    /// Falha de serialização derruba o argumento inteiro e a chamada
+    /// segue sem ele, em vez de propagar: o backend recusa a chamada
+    /// incompleta com a mensagem dele, que é mais útil pra quem lê do
+    /// que um erro de serialização vazado da ponte.
+    fn serde<T: Serialize + ?Sized>(self, chave: &str, valor: &T) -> Self {
+        match serde_wasm_bindgen::to_value(valor) {
+            Ok(v) => self.bruto(chave, v),
+            Err(_) => self,
+        }
+    }
+
+    fn bruto(self, chave: &str, valor: JsValue) -> Self {
+        if let Some(obj) = &self.0 {
+            // `Reflect::set` num objeto simples recém-criado não falha —
+            // só falharia num objeto congelado ou num `Proxy`, e não há
+            // nenhum dos dois aqui. Por isso o resultado é descartado em
+            // vez de virar um `Result` que 48 funções teriam de carregar.
+            let _ = js_sys::Reflect::set(obj, &JsValue::from_str(chave), &valor);
+        }
+        self
+    }
+
+    fn valor(self) -> JsValue {
+        self.0.map(JsValue::from).unwrap_or_else(|| JsValue::from(js_sys::Object::new()))
+    }
+}
+
+/// A mensagem de erro que o backend mandou, e não o `Debug` do `JsValue`.
+///
+/// Um comando Tauri que devolve `Err(String)` chega aqui como um
+/// `JsValue` de string. `format!("{:?}", e)` nele produz
+/// `JsValue("não consegui gravar: permissão negada")` — com as aspas, o
+/// nome do tipo e os escapes — e isso ia PRA TELA. Oito das funções
+/// tratavam isso direito e as outras não, então a mesma falha aparecia
+/// legível ou como despejo de depuração dependendo de por onde tivesse
+/// passado.
+fn erro(cmd: &str, e: JsValue) -> String {
+    e.as_string()
+        .unwrap_or_else(|| format!("{cmd} falhou: {e:?}"))
+}
+
+/// Chama um comando e desserializa a resposta.
+async fn chamar<T: serde::de::DeserializeOwned>(cmd: &str, args: Args) -> Result<T, String> {
+    let r = tauri_invoke(cmd, &args.valor())
+        .await
+        .map_err(|e| erro(cmd, e))?;
+    serde_wasm_bindgen::from_value(r).map_err(|e| format!("{cmd}: resposta ilegível ({e})"))
+}
+
+/// Chama um comando que responde com texto.
+async fn chamar_texto(cmd: &str, args: Args) -> Result<String, String> {
+    let r = tauri_invoke(cmd, &args.valor())
+        .await
+        .map_err(|e| erro(cmd, e))?;
+    r.as_string()
+        .ok_or_else(|| format!("{cmd}: a resposta não é texto"))
+}
+
+/// Chama um comando que responde com um booleano.
+///
+/// Resposta ausente ou de outro tipo vira `padrao` em vez de erro: os
+/// usos disto perguntam sobre o ESTADO da janela, e uma janela que não
+/// sabe dizer se está maximizada não é motivo pra derrubar a interface.
+async fn chamar_bool(cmd: &str, args: Args, padrao: bool) -> Result<bool, String> {
+    let r = tauri_invoke(cmd, &args.valor())
+        .await
+        .map_err(|e| erro(cmd, e))?;
+    Ok(r.as_bool().unwrap_or(padrao))
+}
+
+/// Chama um comando que pode responder com nada.
+///
+/// `null`/`undefined` viram `None` — é como um diálogo cancelado e uma
+/// execução inexistente chegam aqui, e nenhum dos dois é erro.
+async fn chamar_opcional<T: serde::de::DeserializeOwned>(
+    cmd: &str,
+    args: Args,
+) -> Result<Option<T>, String> {
+    let r = tauri_invoke(cmd, &args.valor())
+        .await
+        .map_err(|e| erro(cmd, e))?;
+    if r.is_null() || r.is_undefined() {
+        return Ok(None);
+    }
+    serde_wasm_bindgen::from_value(r).map_err(|e| format!("{cmd}: resposta ilegível ({e})"))
+}
+
+/// Chama um comando cujo retorno não interessa.
+async fn chamar_sem_retorno(cmd: &str, args: Args) -> Result<(), String> {
+    tauri_invoke(cmd, &args.valor())
+        .await
+        .map(|_| ())
+        .map_err(|e| erro(cmd, e))
+}
+
+/// Abre o dialog nativo de seleção de pasta via comando Tauri.
+pub async fn open_folder_dialog() -> Result<Option<String>, String> {
+    chamar_opcional("open_vault_dialog", Args::novo()).await
 }
 
 /// Obtém informações do vault a partir do path.
 pub async fn get_vault_info(path: &str) -> Result<VaultInfo, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(&args, &JsValue::from_str("path"), &JsValue::from_str(path))
-        .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
 
-    let result = tauri_invoke("get_vault_info", &args)
-        .await
-        .map_err(|e| format!("get_vault_info error: {:?}", e))?;
-
-    let info: VaultInfo =
-        serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))?;
-    Ok(info)
+    chamar("get_vault_info", Args::novo().texto("path", path)).await
 }
 
 /// Lista todas as páginas `.md` do vault.
 pub async fn list_pages(vault_path: &str) -> Result<Vec<PageMeta>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
 
-    let result = tauri_invoke("list_pages", &args)
-        .await
-        .map_err(|e| format!("list_pages error: {:?}", e))?;
-
-    let pages: Vec<PageMeta> =
-        serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))?;
-    Ok(pages)
+    chamar("list_pages", Args::novo().texto("vaultPath", vault_path)).await
 }
 
 /// Varredura única do vault (ciclo 150): metadados de TODAS as páginas
@@ -128,98 +220,41 @@ pub async fn list_pages(vault_path: &str) -> Result<Vec<PageMeta>, String> {
 /// que a informação necessária for metadado: o laço faz uma travessia
 /// WASM↔Tauri por página, carregando o arquivo inteiro em cada uma.
 pub async fn scan_vault(vault_path: &str) -> Result<Vec<PageIndexEntry>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
 
-    let result = tauri_invoke("scan_vault", &args)
-        .await
-        .map_err(|e| format!("scan_vault error: {:?}", e))?;
-
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("scan_vault", Args::novo().texto("vaultPath", vault_path)).await
 }
 
 /// Lê o conteúdo bruto de uma página.
 pub async fn read_page(vault_path: &str, page_path: &str) -> Result<String, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("pagePath"),
-        &JsValue::from_str(page_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
 
-    let result = tauri_invoke("read_page", &args)
-        .await
-        .map_err(|e| format!("read_page error: {:?}", e))?;
-
-    result
-        .as_string()
-        .ok_or_else(|| "conteúdo retornado não é string".to_string())
+    chamar_texto("read_page", Args::novo().texto("vaultPath", vault_path).texto("pagePath", page_path)).await
 }
 
 /// Controles da janela (ciclo 180) — a barra de título é do próprio
 /// app, então minimizar/maximizar/fechar passam por aqui.
 pub async fn window_minimize() -> Result<(), String> {
-    tauri_invoke("window_minimize", &JsValue::from(js_sys::Object::new()))
-        .await
-        .map(|_| ())
-        .map_err(|e| format!("{:?}", e))
+    chamar_sem_retorno("window_minimize", Args::novo()).await
 }
 
 /// Alterna maximizado e devolve o estado NOVO.
 pub async fn window_toggle_maximize() -> Result<bool, String> {
-    let r = tauri_invoke(
-        "window_toggle_maximize",
-        &JsValue::from(js_sys::Object::new()),
-    )
-    .await
-    .map_err(|e| format!("{:?}", e))?;
-    Ok(r.as_bool().unwrap_or(false))
+    chamar_bool("window_toggle_maximize", Args::novo(), false).await
 }
 
 /// Fecha a janela.
 pub async fn window_close() -> Result<(), String> {
-    tauri_invoke("window_close", &JsValue::from(js_sys::Object::new()))
-        .await
-        .map(|_| ())
-        .map_err(|e| format!("{:?}", e))
+    chamar_sem_retorno("window_close", Args::novo()).await
 }
 
 /// Começa a redimensionar pela borda indicada (`n`, `s`, `w`, `e`,
 /// `nw`, `ne`, `sw`, `se`).
 pub async fn window_start_resize(direcao: &str) -> Result<(), String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("direcao"),
-        &JsValue::from_str(direcao),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    tauri_invoke("window_start_resize", &JsValue::from(args))
-        .await
-        .map(|_| ())
-        .map_err(|e| format!("{:?}", e))
+    chamar_sem_retorno("window_start_resize", Args::novo().texto("direcao", direcao)).await
 }
 
 /// Se a janela está maximizada agora.
 pub async fn window_is_maximized() -> Result<bool, String> {
-    let r = tauri_invoke("window_is_maximized", &JsValue::from(js_sys::Object::new()))
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    Ok(r.as_bool().unwrap_or(false))
+    chamar_bool("window_is_maximized", Args::novo(), false).await
 }
 
 /// Conteúdo + marca de versão do arquivo (ciclo 173).
@@ -237,23 +272,13 @@ pub async fn read_page_versioned(
     vault_path: &str,
     page_path: &str,
 ) -> Result<VersionedPage, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
+    chamar(
+        "read_page_versioned",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .texto("pagePath", page_path),
     )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("pagePath"),
-        &JsValue::from_str(page_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let result = tauri_invoke("read_page_versioned", &JsValue::from(args))
-        .await
-        .map_err(|e| format!("read_page_versioned error: {:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    .await
 }
 
 /// Grava só se o arquivo ainda estiver na versão `expected_version`.
@@ -265,43 +290,20 @@ pub async fn write_page_checked(
     content: &str,
     expected_version: Option<&str>,
 ) -> Result<String, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
+    // A mensagem de erro que sobe daqui é lida por quem chama (a trava
+    // de esvaziamento do ciclo 248, o prefixo `CONFLITO: ` do 173), e
+    // por isso ela precisa chegar limpa. Era esta a única função que
+    // tratava isso; hoje é `erro()` que trata, pra todas.
+    let result: String = chamar_texto(
+        "write_page_checked",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .texto("pagePath", page_path)
+            .texto("content", content)
+            .texto_opcional("expectedVersion", expected_version),
     )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("pagePath"),
-        &JsValue::from_str(page_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("content"),
-        &JsValue::from_str(content),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    if let Some(v) = expected_version {
-        js_sys::Reflect::set(
-            &args,
-            &JsValue::from_str("expectedVersion"),
-            &JsValue::from_str(v),
-        )
-        .map_err(|e| format!("{:?}", e))?;
-    }
-    let result = tauri_invoke("write_page_checked", &JsValue::from(args))
-        .await
-        // O backend rejeita com uma `String` (ex: a trava de
-        // esvaziamento, ciclo 248); `format!("{:?}", e)` puro imprimia o
-        // wrapper do wasm-bindgen por cima (`JsValue("mensagem")`) em vez
-        // da mensagem sozinha.
-        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{:?}", e)))?;
-    result
-        .as_string()
-        .ok_or_else(|| "versão retornada não é string".to_string())
+    .await?;
+    Ok(result)
 }
 
 /// Prefixo do erro de conflito de escrita — o editor reconhece por ele.
@@ -309,63 +311,29 @@ pub const CONFLICT_PREFIX: &str = "CONFLITO: ";
 
 /// Exclui uma página do vault.
 pub async fn delete_page(vault_path: &str, page_path: &str) -> Result<(), String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
+    chamar_sem_retorno(
+        "delete_page",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .texto("pagePath", page_path),
     )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("pagePath"),
-        &JsValue::from_str(page_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-
-    tauri_invoke("delete_page", &args)
-        .await
-        .map_err(|e| format!("delete_page error: {:?}", e))?;
-    Ok(())
+    .await
 }
 
 /// Cria uma pasta (subdiretório) sob `pages/`.
 pub async fn create_folder(vault_path: &str, folder_path: &str) -> Result<(), String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
+    chamar_sem_retorno(
+        "create_folder",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .texto("folderPath", folder_path),
     )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("folderPath"),
-        &JsValue::from_str(folder_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    tauri_invoke("create_folder", &args)
-        .await
-        .map_err(|e| format!("create_folder error: {:?}", e))?;
-    Ok(())
+    .await
 }
 
 /// Lista pastas (incluindo vazias) sob `pages/`.
 pub async fn list_folders(vault_path: &str) -> Result<Vec<String>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("list_folders", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("list_folders", Args::novo().texto("vaultPath", vault_path)).await
 }
 
 /// Move (renomeia) uma página — usado pra organizar em pastas.
@@ -374,30 +342,7 @@ pub async fn move_page(
     from_path: &str,
     to_path: &str,
 ) -> Result<PageMeta, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("fromPath"),
-        &JsValue::from_str(from_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("toPath"),
-        &JsValue::from_str(to_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("move_page", &args)
-        .await
-        .map_err(|e| format!("move_page error: {:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("move_page", Args::novo().texto("vaultPath", vault_path).texto("fromPath", from_path).texto("toPath", to_path)).await
 }
 
 /// Cria página dentro de uma pasta.
@@ -407,36 +352,7 @@ pub async fn create_page_in_folder(
     title: &str,
     page_type: &str,
 ) -> Result<PageMeta, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("folderPath"),
-        &JsValue::from_str(folder_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("title"),
-        &JsValue::from_str(title),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("pageType"),
-        &JsValue::from_str(page_type),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("create_page_in_folder", &args)
-        .await
-        .map_err(|e| format!("create_page_in_folder error: {:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("create_page_in_folder", Args::novo().texto("vaultPath", vault_path).texto("folderPath", folder_path).texto("title", title).texto("pageType", page_type)).await
 }
 
 /// Lista arquivos modificados/não rastreados via `git status
@@ -444,18 +360,7 @@ pub async fn create_page_in_folder(
 /// repositório git ou `git` não estiver instalado — a UI deve tratar
 /// isso como "não mostrar indicador", não como erro.
 pub async fn git_status(vault_path: &str) -> Result<Option<Vec<GitFileEntry>>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("git_status", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("git_status", Args::novo().texto("vaultPath", vault_path)).await
 }
 
 /// Histórico de commits que tocaram uma página específica (ciclo 117,
@@ -464,109 +369,32 @@ pub async fn git_log(
     vault_path: &str,
     page_path: &str,
 ) -> Result<Option<Vec<GitLogEntry>>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("pagePath"),
-        &JsValue::from_str(page_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("git_log", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("git_log", Args::novo().texto("vaultPath", vault_path).texto("pagePath", page_path)).await
 }
 
 /// `git pull` — ação explícita do usuário (ciclo 119). Retorna a
 /// saída do git em sucesso, ou `Err` com a mensagem de erro (conflito,
 /// sem remote, etc) tal qual.
 pub async fn git_pull(vault_path: &str) -> Result<String, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("git_pull", &args)
-        .await
-        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{:?}", e)))?;
-    result
-        .as_string()
-        .ok_or_else(|| "resposta inválida".to_string())
+    chamar_texto("git_pull", Args::novo().texto("vaultPath", vault_path)).await
 }
 
 /// `git add -A && commit -m <message> && push` — ação explícita do
 /// usuário (ciclo 119).
 pub async fn git_commit_and_push(vault_path: &str, message: &str) -> Result<String, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("message"),
-        &JsValue::from_str(message),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("git_commit_and_push", &args)
-        .await
-        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{:?}", e)))?;
-    result
-        .as_string()
-        .ok_or_else(|| "resposta inválida".to_string())
+    chamar_texto("git_commit_and_push", Args::novo().texto("vaultPath", vault_path).texto("message", message)).await
 }
 
 /// Concatena o markdown fonte de todas as páginas dentro de uma pasta
 /// (recursivo) num dump único. `folder_path` vazio exporta o vault
 /// inteiro (`pages/` + `journals/`).
 pub async fn export_folder(vault_path: &str, folder_path: &str) -> Result<String, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("folderPath"),
-        &JsValue::from_str(folder_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("export_folder", &args)
-        .await
-        .map_err(|e| format!("export_folder error: {:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("export_folder", Args::novo().texto("vaultPath", vault_path).texto("folderPath", folder_path)).await
 }
 
 /// Lista templates em `templates/`.
 pub async fn list_templates(vault_path: &str) -> Result<Vec<PageMeta>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("list_templates", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("list_templates", Args::novo().texto("vaultPath", vault_path)).await
 }
 
 /// Cria página a partir de um template, substituindo `{{title}}`.
@@ -579,78 +407,25 @@ pub async fn create_page_from_template(
     title: &str,
     folder_path: Option<&str>,
 ) -> Result<PageMeta, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
+    chamar(
+        "create_page_from_template",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .texto("templatePath", template_path)
+            .texto("title", title)
+            .texto_opcional("folderPath", folder_path),
     )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("templatePath"),
-        &JsValue::from_str(template_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("title"),
-        &JsValue::from_str(title),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    if let Some(folder) = folder_path {
-        js_sys::Reflect::set(
-            &args,
-            &JsValue::from_str("folderPath"),
-            &JsValue::from_str(folder),
-        )
-        .map_err(|e| format!("{:?}", e))?;
-    }
-    let args = JsValue::from(args);
-    let result = tauri_invoke("create_page_from_template", &args)
-        .await
-        .map_err(|e| format!("create_page_from_template error: {:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    .await
 }
 
 /// Lista arquivos no diretório assets/.
 pub async fn list_assets(vault_path: &str) -> Result<Vec<String>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("list_assets", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("list_assets", Args::novo().texto("vaultPath", vault_path)).await
 }
 
 /// Copia um arquivo para assets/ e retorna o path relativo.
 pub async fn copy_to_assets(vault_path: &str, source_path: &str) -> Result<String, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("sourcePath"),
-        &JsValue::from_str(source_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("copy_to_assets", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    result
-        .as_string()
-        .ok_or_else(|| "path inválido".to_string())
+    chamar_texto("copy_to_assets", Args::novo().texto("vaultPath", vault_path).texto("sourcePath", source_path)).await
 }
 
 /// Grava bytes (já em base64) em `assets/` com nome único — usado pelo
@@ -662,32 +437,7 @@ pub async fn save_pasted_asset(
     extension: &str,
     base64_data: &str,
 ) -> Result<String, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("extension"),
-        &JsValue::from_str(extension),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("base64Data"),
-        &JsValue::from_str(base64_data),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("save_pasted_asset", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    result
-        .as_string()
-        .ok_or_else(|| "path inválido".to_string())
+    chamar_texto("save_pasted_asset", Args::novo().texto("vaultPath", vault_path).texto("extension", extension).texto("base64Data", base64_data)).await
 }
 
 /// Arquivo de imagem mantido em memória até a confirmação do modal.
@@ -705,11 +455,7 @@ pub struct ImageAssetPayload {
 
 /// Abre o seletor nativo e lê as imagens escolhidas sem gravá-las no vault.
 pub async fn pick_images() -> Result<Vec<ImageAssetPayload>, String> {
-    let args = JsValue::from(js_sys::Object::new());
-    let result = tauri_invoke("pick_images", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {e}"))
+    chamar("pick_images", Args::novo()).await
 }
 
 /// Lê imagens do disco por caminho (ciclo 245).
@@ -717,17 +463,7 @@ pub async fn pick_images() -> Result<Vec<ImageAssetPayload>, String> {
 /// O arrasto vindo do sistema entrega `text/uri-list`, não `File`: não há
 /// bytes no navegador, só o caminho, e o webview não abre `file://`.
 pub async fn ler_imagens_locais(caminhos: &[String]) -> Result<Vec<ImageAssetPayload>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("caminhos"),
-        &serde_wasm_bindgen::to_value(caminhos).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let result = tauri_invoke("ler_imagens_locais", &JsValue::from(args))
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {e}"))
+    chamar("ler_imagens_locais", Args::novo().serde("caminhos", caminhos)).await
 }
 
 /// Publica um lote de assets; o backend desfaz arquivos parciais em erro.
@@ -735,20 +471,13 @@ pub async fn save_image_assets(
     vault_path: &str,
     images: &[ImageAssetPayload],
 ) -> Result<Vec<String>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
+    chamar(
+        "save_image_assets",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .serde("images", images),
     )
-    .map_err(|e| format!("{:?}", e))?;
-    let value = serde_wasm_bindgen::to_value(images).map_err(|e| e.to_string())?;
-    js_sys::Reflect::set(&args, &JsValue::from_str("images"), &value)
-        .map_err(|e| format!("{:?}", e))?;
-    let result = tauri_invoke("save_image_assets", &JsValue::from(args))
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {e}"))
+    .await
 }
 
 /// Lê um arquivo do vault (ex: `assets/x.png`, `assets/x.pdf`) como
@@ -756,26 +485,7 @@ pub async fn save_image_assets(
 /// relativo cru resolve contra a origem do webview, não contra a
 /// pasta real do vault no disco.
 pub async fn read_asset_data_url(vault_path: &str, asset_path: &str) -> Result<String, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("assetPath"),
-        &JsValue::from_str(asset_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("read_asset_data_url", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    result
-        .as_string()
-        .ok_or_else(|| "resposta inválida".to_string())
+    chamar_texto("read_asset_data_url", Args::novo().texto("vaultPath", vault_path).texto("assetPath", asset_path)).await
 }
 
 /// Metadados de um arquivo em `assets/`.
@@ -789,40 +499,18 @@ pub struct AssetInfo {
 
 /// Lista arquivos em assets/ com tamanho.
 pub async fn list_assets_info(vault_path: &str) -> Result<Vec<AssetInfo>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("list_assets_info", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("list_assets_info", Args::novo().texto("vaultPath", vault_path)).await
 }
 
 /// Remove um arquivo de assets/.
 pub async fn delete_asset(vault_path: &str, asset_path: &str) -> Result<(), String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
+    chamar_sem_retorno(
+        "delete_asset",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .texto("assetPath", asset_path),
     )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("assetPath"),
-        &JsValue::from_str(asset_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    tauri_invoke("delete_asset", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    Ok(())
+    .await
 }
 
 /// Busca texto no conteúdo de todas as páginas.
@@ -830,60 +518,18 @@ pub async fn search_content(
     vault_path: &str,
     query: &str,
 ) -> Result<Vec<anotadinho_core::embed::SearchHit>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("query"),
-        &JsValue::from_str(query),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-    let result = tauri_invoke("search_content", &args)
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("search_content", Args::novo().texto("vaultPath", vault_path).texto("query", query)).await
 }
 
 /// Verifica se houve mudanças no vault desde a última verificação.
 pub async fn check_changes(vault_path: &str) -> Result<bool, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-
-    let result = tauri_invoke("check_changes", &args)
-        .await
-        .map_err(|e| format!("check_changes error: {:?}", e))?;
-
-    Ok(result.as_bool().unwrap_or(false))
+    chamar_bool("check_changes", Args::novo().texto("vaultPath", vault_path), false).await
 }
 
 /// Abre ou cria o journal do dia.
 pub async fn open_today_journal(vault_path: &str) -> Result<PageMeta, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
 
-    let result = tauri_invoke("open_today_journal", &args)
-        .await
-        .map_err(|e| format!("open_today_journal error: {:?}", e))?;
-
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("open_today_journal", Args::novo().texto("vaultPath", vault_path)).await
 }
 
 /// Cria uma nova página em pages/.
@@ -897,61 +543,20 @@ pub async fn create_page_with_type(
     title: &str,
     page_type: &str,
 ) -> Result<PageMeta, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("title"),
-        &JsValue::from_str(title),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("pageType"),
-        &JsValue::from_str(page_type),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
 
-    let result = tauri_invoke("create_page_with_type", &args)
-        .await
-        .map_err(|e| format!("create_page_with_type error: {:?}", e))?;
-
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("deserialize: {}", e))
+    chamar("create_page_with_type", Args::novo().texto("vaultPath", vault_path).texto("title", title).texto("pageType", page_type)).await
 }
 
 /// Grava o conteúdo de uma página no disco.
 pub async fn write_page(vault_path: &str, page_path: &str, content: &str) -> Result<(), String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
+    chamar_sem_retorno(
+        "write_page",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .texto("pagePath", page_path)
+            .texto("content", content),
     )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("pagePath"),
-        &JsValue::from_str(page_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("content"),
-        &JsValue::from_str(content),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let args = JsValue::from(args);
-
-    tauri_invoke("write_page", &args)
-        .await
-        .map_err(|e| format!("write_page error: {:?}", e))?;
-    Ok(())
+    .await
 }
 
 /// Dispara o agente e volta na hora (ciclo 213).
@@ -965,32 +570,15 @@ pub async fn iniciar_agente(
     vault_path: &str,
     conversa_path: &str,
 ) -> Result<(), String> {
-    let args = js_sys::Object::new();
-    let ad = serde_wasm_bindgen::to_value(adaptador).map_err(|e| format!("{e:?}"))?;
-    js_sys::Reflect::set(&args, &JsValue::from_str("adaptador"), &ad)
-        .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("prompt"),
-        &JsValue::from_str(prompt),
+    chamar_sem_retorno(
+        "iniciar_agente",
+        Args::novo()
+            .serde("adaptador", adaptador)
+            .texto("prompt", prompt)
+            .texto("vaultPath", vault_path)
+            .texto("conversaPath", conversa_path),
     )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("conversaPath"),
-        &JsValue::from_str(conversa_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    tauri_invoke("iniciar_agente", &JsValue::from(args))
-        .await
-        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))?;
-    Ok(())
+    .await
 }
 
 /// Como está a execução desta conversa.
@@ -1001,46 +589,17 @@ pub async fn iniciar_agente(
 pub async fn estado_agente(
     conversa_path: &str,
 ) -> Result<Option<anotadinho_core::agente::EstadoJob>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("conversaPath"),
-        &JsValue::from_str(conversa_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let result = tauri_invoke("estado_agente", &JsValue::from(args))
-        .await
-        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))?;
-    if result.is_null() || result.is_undefined() {
-        return Ok(None);
-    }
-    serde_wasm_bindgen::from_value(result).map_err(|e| format!("{e:?}"))
+    chamar_opcional("estado_agente", Args::novo().texto("conversaPath", conversa_path)).await
 }
 
 /// Interrompe a execução desta conversa.
 pub async fn cancelar_agente(conversa_path: &str) -> Result<(), String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("conversaPath"),
-        &JsValue::from_str(conversa_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    tauri_invoke("cancelar_agente", &JsValue::from(args))
-        .await
-        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))?;
-    Ok(())
+    chamar_sem_retorno("cancelar_agente", Args::novo().texto("conversaPath", conversa_path)).await
 }
 
 /// Abre o seletor de pasta e devolve o caminho escolhido (ciclo 216).
 pub async fn escolher_pasta() -> Result<Option<String>, String> {
-    let result = tauri_invoke("escolher_pasta", &JsValue::from(js_sys::Object::new()))
-        .await
-        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))?;
-    if result.is_null() || result.is_undefined() {
-        return Ok(None);
-    }
-    Ok(result.as_string())
+    chamar_opcional("escolher_pasta", Args::novo()).await
 }
 
 // ── propostas (ciclo 204) ────────────────────────────────────────────
@@ -1049,17 +608,7 @@ pub async fn escolher_pasta() -> Result<Option<String>, String> {
 pub async fn listar_propostas(
     vault_path: &str,
 ) -> Result<Vec<anotadinho_core::proposta::Proposta>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let r = tauri_invoke("listar_propostas", &JsValue::from(args))
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(r).map_err(|e| format!("deserialize: {e}"))
+    chamar("listar_propostas", Args::novo().texto("vaultPath", vault_path)).await
 }
 
 /// Aplica uma proposta e devolve o path escrito.
@@ -1073,48 +622,16 @@ pub async fn recusar_proposta(vault_path: &str, id: &str) -> Result<String, Stri
 }
 
 async fn chamar_proposta(cmd: &str, vault_path: &str, id: &str) -> Result<String, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    js_sys::Reflect::set(&args, &JsValue::from_str("id"), &JsValue::from_str(id))
-        .map_err(|e| format!("{:?}", e))?;
-    let r = tauri_invoke(cmd, &JsValue::from(args))
-        .await
-        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))?;
-    Ok(r.as_string().unwrap_or_default())
+    chamar_texto(cmd, Args::novo().texto("vaultPath", vault_path).texto("id", id)).await
 }
 
 /// Prepara uma pasta pra ser um vault (ciclo 233). Devolve os caminhos
 /// criados; o que já existia é deixado em paz.
 pub async fn criar_vault(vault_path: &str) -> Result<Vec<String>, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let result = tauri_invoke("criar_vault", &JsValue::from(args))
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+    chamar("criar_vault", Args::novo().texto("vaultPath", vault_path)).await
 }
 
 /// A pasta aberta ainda não tem página nenhuma? (ciclo 233)
 pub async fn vault_esta_vazio(vault_path: &str) -> Result<bool, String> {
-    let args = js_sys::Object::new();
-    js_sys::Reflect::set(
-        &args,
-        &JsValue::from_str("vaultPath"),
-        &JsValue::from_str(vault_path),
-    )
-    .map_err(|e| format!("{:?}", e))?;
-    let result = tauri_invoke("vault_esta_vazio", &JsValue::from(args))
-        .await
-        .map_err(|e| format!("{:?}", e))?;
-    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+    chamar("vault_esta_vazio", Args::novo().texto("vaultPath", vault_path)).await
 }

@@ -82,7 +82,17 @@ impl IndexCache {
     /// se o cache fosse lido sem confronto.
     pub fn manter_apenas(&mut self, paths: &[String]) {
         let antes = self.paginas.len();
-        self.paginas.retain(|p, _| paths.iter().any(|atual| atual == p));
+        // Conjunto, e não `paths.iter().any(...)` dentro do `retain`.
+        //
+        // A busca linear fazia disto um `O(n²)` no caminho MAIS quente
+        // que existe: cada embed de consulta da página chama
+        // `scan_vault` por conta própria, e toda varredura termina
+        // aqui. Num vault de 4 mil páginas eram 16 milhões de
+        // comparações de string por varredura, várias vezes por página
+        // aberta.
+        let atuais: std::collections::HashSet<&str> =
+            paths.iter().map(String::as_str).collect();
+        self.paginas.retain(|p, _| atuais.contains(p.as_str()));
         if self.paginas.len() != antes {
             self.sujo = true;
         }

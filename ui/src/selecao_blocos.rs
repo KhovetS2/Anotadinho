@@ -98,11 +98,22 @@ pub fn iniciar(bloco: &web_sys::Element) {
 /// Marca tudo entre a âncora e `ate`, nos dois sentidos.
 pub fn estender_para(ate: &web_sys::Element) {
     let blocos = blocos_do_documento();
-    let Some(ancora) = ancora() else { return };
-    let Some(i_ancora) = blocos.iter().position(|b| b.is_same_node(Some(&ancora))) else {
+    let Some(i_ate) = blocos.iter().position(|b| b.is_same_node(Some(ate))) else {
         return;
     };
-    let Some(i_ate) = blocos.iter().position(|b| b.is_same_node(Some(ate))) else {
+    estender_ate_indice(&blocos, i_ate);
+}
+
+/// O mesmo, com a lista e o índice já em mãos.
+///
+/// Existe porque `mover_e_estender` já varreu o documento e já achou o
+/// índice pra decidir qual é o próximo bloco. Chamar `estender_para`
+/// dali refazia as duas coisas: numa página de 1200 blocos eram duas
+/// `query_selector_all` completas e três buscas lineares por tecla, cada
+/// comparação atravessando a fronteira WASM↔JS.
+fn estender_ate_indice(blocos: &[web_sys::Element], i_ate: usize) {
+    let Some(ancora) = ancora() else { return };
+    let Some(i_ancora) = blocos.iter().position(|b| b.is_same_node(Some(&ancora))) else {
         return;
     };
     let (ini, fim) = if i_ancora <= i_ate {
@@ -130,12 +141,9 @@ pub fn mover_e_estender(atual: &web_sys::Element, frente: bool) -> Option<web_sy
     }
     let blocos = blocos_do_documento();
     let i = blocos.iter().position(|b| b.is_same_node(Some(atual)))?;
-    let proximo = if frente {
-        blocos.get(i + 1)?
-    } else {
-        blocos.get(i.checked_sub(1)?)?
-    };
-    estender_para(proximo);
+    let i_proximo = if frente { i + 1 } else { i.checked_sub(1)? };
+    let proximo = blocos.get(i_proximo)?;
+    estender_ate_indice(&blocos, i_proximo);
     crate::nav_mode::focus_item(proximo);
     Some(proximo.clone())
 }

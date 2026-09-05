@@ -84,10 +84,20 @@ pub fn escapar_barra(alvo: &str) -> String {
 /// com o título de uma página de verdade.
 pub fn extract_wikilink_targets(markdown: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
+    // Conjunto só pro teste de pertinência; a ORDEM continua a de
+    // aparição no texto, que é o que o painel de backlinks mostra.
+    //
+    // Antes o teste era `out.contains(&target)`, varrendo tudo que já
+    // saiu a cada link novo. Numa página de índice — uma lista apontando
+    // pra todas as outras, que é uso comum e é o que uma consulta
+    // colada produz — 5 mil links distintos custavam 12,5 milhões de
+    // comparações de string, e essa página é reindexada a cada
+    // varredura do vault.
+    let mut vistos: std::collections::HashSet<String> = std::collections::HashSet::new();
     for raw in extract_wikilink_raw(markdown) {
         let (alvo, _) = split_wikilink(&raw);
         let target = alvo.split('#').next().unwrap_or("").trim().to_string();
-        if !target.is_empty() && !out.contains(&target) {
+        if !target.is_empty() && vistos.insert(target.clone()) {
             out.push(target);
         }
     }
