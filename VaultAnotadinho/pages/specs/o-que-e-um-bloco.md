@@ -117,13 +117,15 @@ Cada embed refina a partir dali em vez de começar do zero.
   alvo é um embed INTEIRO. Enquanto o desfazer não alcançar o modelo, a
   confirmação é a única rede. Quando o `Command`/desfazer entrar, a
   pergunta volta à mesa.
-- **O que `yy` num embed põe no registrador?** O markdown do embed
-  (colável em qualquer editor) ou uma referência interna? O markdown
-  parece certo, e é o que `markdown_dos_selecionados` já faz.
-- **Um embed com texto editável dentro (célula de tabela, título de
-  card) deve responder a comandos vim?** Hoje não responde, porque o
-  handler está preso ao `.editor__wysiwyg` — e isso é uma proteção, não
-  um acidente: digitar `dd` num campo não pode apagar a linha.
+- ~~**O que `yy` num embed põe no registrador?**~~ **DECIDIDO:** uma
+  forma serializada, com a colagem parseando de volta. Ver a seção do
+  registrador acima.
+- ~~**Um embed deve responder a comandos vim?**~~ **DECIDIDO: sim, no
+  que for cabível**, e "cabível" deixa de ser julgamento nosso pra ser
+  declaração de cada unidade, resolvida pela cadeia de
+  responsabilidade. A proteção de hoje (digitar `dd` num campo de texto
+  não pode apagar a linha) continua valendo: um campo em edição trata a
+  tecla e ela não sobe.
 
 ## O modelo, e os padrões que ele instancia
 
@@ -165,9 +167,114 @@ e `isolating` (a seleção não atravessa esta fronteira). É o mesmo
 desenho de "unidade base + camadas que trazem a intenção", já resolvido
 por um editor que vive no DOM.
 
+## O tmux aninhado, e o padrão que o descreve
+
+O modelo pedido é: painéis dentro de painéis, foco que desce e sobe, e a
+tecla vai pro painel mais interno que souber o que fazer com ela. Não se
+"desliga o vim pra usar o calendário" — o calendário simplesmente
+responde às teclas que fazem sentido nele.
+
+Isso tem nome, e é o **Chain of Responsibility**: *"lets you pass
+requests along a chain of handlers"*, aplicável *"quando o programa
+precisa processar tipos diferentes de requisição de várias formas, mas
+os tipos exatos e sua sequência não são conhecidos de antemão"*.
+
+E não é invenção nossa juntá-lo ao Composite — a página do Composite diz
+que os dois *"são frequentemente usados em conjunto"*, com os
+componentes-folha passando requisições pelos pais até a raiz. É
+exatamente o desenho.
+
+Na prática, dentro de um embed de calendário:
+
+| tecla | quem trata | resultado |
+|---|---|---|
+| `j` | o calendário | próximo dia |
+| `w` | ninguém no calendário → sobe | próximo bloco |
+| `dd` | ninguém no calendário → sobe | apaga o bloco do calendário |
+| `i` | o calendário, se tiver campo | edita; senão sobe e é ignorado |
+
+O que hoje é uma decisão binária ("vim ligado ou desligado") vira uma
+propriedade de cada unidade: **o que EU sei tratar**. Um embed que não
+declara nada continua funcionando — tudo sobe, e o comportamento é o de
+hoje. É o que torna a migração dos dez embeds incremental de verdade.
+
+## Os outros padrões, e onde cada um encaixa
+
+O Composite sozinho não resolve; o catálogo aponta os companheiros dele.
+
+**Iterator** — *"você pode usar Iterators pra percorrer árvores
+Composite"*. É o RF1: uma travessia só, com variantes (só visíveis, só
+os que aceitam texto, profundidade primeiro) em vez dos
+`query_selector_all` + filtro espalhados de hoje.
+
+**Visitor** — *"pra executar uma operação sobre uma árvore Composite
+inteira"*. Serializar pra markdown, pintar no DOM, pintar no terminal.
+
+**Adapter** — o padrão da migração. Os dez embeds não viram blocos no
+mesmo commit (RNF3); um adaptador deixa um embed ainda não migrado
+apresentar a interface nova enquanto por dentro continua como está.
+
+**Command** e/ou **Memento** — o desfazer. É o que hoje obriga a
+confirmação no `dd` sobre embed.
+
+**State** — os modos (Normal, Inserção, Visual, Navegação). Já existe
+como `VimModo` + `match`, e em Rust isso costuma ser melhor que objetos
+de estado: o compilador confere que todo modo trata toda tecla.
+
+**Rejeitados, com motivo:**
+
+- **Decorator.** A própria página o distingue: *"Decorator acrescenta
+  responsabilidades ao objeto embrulhado, enquanto Composite apenas soma
+  os resultados dos filhos"*. Um card de kanban soma seus blocos; não
+  embrulha um.
+- **Flyweight, Proxy, Singleton.** Resolvem problemas que não temos.
+
+## O eixo CLI/GUI: Bridge, e não Strategy
+
+A intuição de separar o comportamento base atrás de uma interface
+genérica está certa, e o ganho apontado — testar os dois lados — é o
+ganho real. Sobre o nome, o catálogo é específico, e a diferença ajuda a
+decidir ONDE cortar.
+
+**Strategy** é *"uma família de algoritmos... intercambiáveis"*, pra
+*"trocar de algoritmo em tempo de execução"*.
+
+**Bridge** é *"separar uma classe grande em duas hierarquias —
+abstração e implementação — que podem evoluir independentemente"*, e a
+sua segunda aplicabilidade é literalmente *"quando você precisa estender
+uma classe em várias dimensões ortogonais (independentes)"*.
+
+Aqui há duas dimensões que crescem sozinhas: **os tipos de bloco**
+(parágrafo, título, tabela, kanban, calendário...) × **os renderizadores**
+(DOM, terminal). Toda vez que nasce um tipo de bloco ele precisa existir
+nos dois; toda vez que nasce um renderizador ele precisa dar conta de
+todos. Isso é Bridge pela definição.
+
+O Strategy encaixa noutra junta, mais fina: a POLÍTICA de cada tipo de
+bloco — o que ele trata, se é atômico, se aceita cursor. São
+comportamentos plugáveis por tipo, não uma segunda hierarquia.
+
+O catálogo avisa que os dois têm estrutura quase igual e que *"um padrão
+é mais do que um jeito de estruturar classes; ele comunica intenção e o
+problema que endereça"*. Na prática o que importa mais que o nome é a
+**direção da dependência**: o modelo não pode conhecer o renderizador.
+Com isso, os testes do modelo rodam sem DOM e sem terminal — que é
+exatamente o que já aconteceu por acidente com `vim_comandos.rs`.
+
+## O registrador: forma serializada + parser na colagem
+
+Decidido: o registrador guarda uma forma serializada e a colagem
+PARSEIA. Markdown é o candidato natural (colável fora do app, e
+`markdown_dos_selecionados` já faz), mas a escolha fica pra
+implementação — se o modelo de bloco pedir outra forma, ela ganha, desde
+que a colagem saiba reconstruir a partir dela.
+
 ## O teste de fogo: e se o Anotadinho fosse um CLI?
 
-A pergunta serve de régua porque separa o que é modelo do que é pintura.
+A pergunta começou como régua — serve pra separar o que é modelo do que
+é pintura — e virou objetivo declarado: uma versão de porte totalmente
+CLI é desejada no futuro. Isso muda o peso do Bridge acima de
+"organização elegante" pra "requisito".
 
 **O backend já passa.** `crates/` — core, vault, ipc, search, cli, ~16
 mil linhas — tem ZERO referências a `web_sys` ou `wasm_bindgen`. Um
@@ -194,7 +301,8 @@ que portariam sem alteração. `markdown_render.rs` também está em zero.
 - Reescrever os dez embeds. A base entra e eles migram um a um.
 - Seleção PARCIAL atravessando blocos — segue não-objetivo, herdado da
   spec de seleção.
-- Vim dentro dos campos de texto de um embed.
+- Vim dentro dos campos de TEXTO de um embed (célula em edição, título
+  de card sendo digitado): ali a tecla é do campo e não sobe.
 
 ## Relacionado
 
