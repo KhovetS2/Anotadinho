@@ -1091,3 +1091,116 @@ teclado(
   },
   265,
 );
+
+// ── o calendário migrado (ciclo 267) ────────────────────────────────
+//
+// O primeiro embed a DECLARAR o que consome. Ele quer `Movimento` e
+// nada mais, e é essa declaração que faz `j` andar entre dias aqui e
+// `dd` subir pro documento — sem ninguém julgar o que é "cabível".
+
+const COM_CALENDARIO = `---
+title: __uitest
+---
+alfa um dois
+
+{{ type: "calendar" }}
+entries:
+- title: Reunião
+  date: 2026-09-10
+{{ /calendar }}
+
+gama cinco seis
+`;
+
+const DIA_SOB_CURSOR = `(() => {
+  const el = document.querySelector('.calendar-grid__cell-bg--cursor');
+  if (!el) return null;
+  const n = el.querySelector('.calendar-grid__day-num');
+  return n ? n.textContent.trim() : null;
+})()`;
+
+teclado(
+  "j e k andam entre dias dentro do calendário",
+  { md: COM_CALENDARIO, vim: true },
+  async (b, ctx) => {
+    await esperar(b, `!!document.querySelector('.calendar-grid')`, "o calendário", 15000);
+
+    // Desce até o embed e ENTRA nele.
+    await b.js(CURSOR_EM(0, 0));
+    await PAUSA(300);
+    await b.js(TECLA("j"));
+    await PAUSA(500);
+    await b.js(TECLA("Enter"));
+    await PAUSA(500);
+
+    const inicial = await b.js(DIA_SOB_CURSOR);
+    ctx.assert(inicial !== null, "não há dia sob o cursor — o realce não existe");
+
+    // `j` no mês desce uma LINHA da grade: 7 dias.
+    await b.js(TECLA("j"));
+    await PAUSA(400);
+    const depoisDeJ = await b.js(DIA_SOB_CURSOR);
+    ctx.assert(
+      depoisDeJ !== inicial,
+      `o \`j\` não moveu o cursor: continuou no dia ${inicial}`,
+    );
+
+    // `k` volta pro mesmo lugar — é a prova de que anda nos dois
+    // sentidos e de que o passo é simétrico.
+    await b.js(TECLA("k"));
+    await PAUSA(400);
+    ctx.assertEq(await b.js(DIA_SOB_CURSOR), inicial, "o `k` não desfez o `j`");
+
+    // `l` anda UM dia (a grade é semana × dia: `j` desce linha, `l` anda
+    // coluna).
+    await b.js(TECLA("l"));
+    await PAUSA(400);
+    const depoisDeL = await b.js(DIA_SOB_CURSOR);
+    ctx.assertEq(
+      Number(depoisDeL),
+      Number(inicial) + 1,
+      `o \`l\` devia andar um dia: ${inicial} -> ${depoisDeL}`,
+    );
+  },
+  267,
+);
+
+teclado(
+  "dd dentro do calendário sobe, porque ele só declara movimento",
+  { md: COM_CALENDARIO, vim: true },
+  async (b, ctx) => {
+    // A outra metade da declaração, e a que dá sentido a ela: o
+    // calendário NÃO quer `Operador`, então a tecla sobe e quem trata é
+    // o documento — que pergunta antes de apagar o bloco.
+    await esperar(b, `!!document.querySelector('.calendar-grid')`, "o calendário", 15000);
+
+    await b.js(CURSOR_EM(0, 0));
+    await PAUSA(300);
+    await b.js(TECLA("j"));
+    await PAUSA(500);
+    await b.js(TECLA("Enter"));
+    await PAUSA(500);
+    ctx.assert(
+      await b.js(`!!document.activeElement.closest('.calendar-grid')`),
+      "não entrei no calendário",
+    );
+
+    await b.js(TECLA("d"));
+    await PAUSA(150);
+    await b.js(TECLA("d"));
+    await PAUSA(700);
+
+    // O `dd` de DENTRO não pode apagar: quem está lá dentro é o teclado
+    // do embed, e o vim do documento se cala (ciclo 265).
+    ctx.assert(
+      await b.js(`!!document.querySelector('.calendar-grid')`),
+      "o `dd` de dentro do calendário apagou o bloco",
+    );
+    ctx.assertEq(
+      await b.js(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Apagar')`),
+      false,
+      "o `dd` de dentro abriu a confirmação",
+    );
+  },
+  267,
+);

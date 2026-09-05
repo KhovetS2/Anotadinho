@@ -39,10 +39,8 @@ o teste puro dela.
 - [ ] `Enter` num bloco atômico entra no embed
 - [x] Dentro do embed, o vim do documento NÃO age
 - [x] `Escape` volta pro wrapper, com o embed realçado
-- [~] O calendário anda entre dias com `j`/`k` quando está dentro — o
-      MECANISMO está de pé (o vim se cala e as teclas são do embed), mas
-      o calendário ainda não liga `j`/`k` ao seu `anchor`. Fica pro
-      ciclo que migrar o primeiro embed de verdade.
+- [x] O calendário anda entre dias com `j`/`k` quando está dentro —
+      fechado no ciclo 267, que migrou o primeiro embed de verdade.
 - [x] Os outros nove embeds seguem sem mudança e com o comportamento de
       hoje — é a migração incremental prometida pelo desenho
 - [x] Cenários pra entrar, agir dentro, e sair

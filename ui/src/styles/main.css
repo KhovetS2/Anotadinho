@@ -3412,6 +3412,16 @@ body {
     color: var(--text-primary);
     align-self: flex-end;
 }
+/* O dia sob o cursor do teclado (ciclo 267).
+   Contorno e não fundo: o dia de hoje já usa fundo no número, e os dois
+   precisam poder coexistir na mesma célula — é comum o cursor estar em
+   cima de hoje. */
+.calendar-grid__cell-bg--cursor {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: -2px;
+    border-radius: var(--radius-sm, 4px);
+}
+
 .calendar-grid__cell-bg--today .calendar-grid__day-num {
     background: var(--accent-blue);
     color: #fff;

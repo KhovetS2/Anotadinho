@@ -46,6 +46,30 @@ pub enum Interesse {
     Saida,
 }
 
+impl Interesse {
+    /// A categoria de uma tecla, pelo nome do `KeyboardEvent.key`.
+    ///
+    /// Existe pra uma unidade poder declarar interesse sem listar tecla
+    /// por tecla — o vim ganha comando a cada ciclo, e a categoria é
+    /// estável. `None` quer dizer "esta tecla não pertence a nenhuma
+    /// categoria roteável": ela segue o caminho de sempre.
+    ///
+    /// Só as teclas do modo NORMAL entram aqui. Letras que só significam
+    /// algo em inserção são digitação, não comando.
+    pub fn da_tecla(tecla: &str) -> Option<Self> {
+        Some(match tecla {
+            "h" | "j" | "k" | "l" | "w" | "b" | "e" | "0" | "$" | "G" | "ArrowLeft"
+            | "ArrowRight" | "ArrowUp" | "ArrowDown" | "Home" | "End" | "PageUp"
+            | "PageDown" => Self::Movimento,
+            "i" | "a" | "o" | "O" | "I" | "A" => Self::Edicao,
+            "d" | "y" | "c" | "x" | "D" | "C" | "Y" => Self::Operador,
+            "Enter" | " " => Self::Ativacao,
+            "Escape" => Self::Saida,
+            _ => return None,
+        })
+    }
+}
+
 /// O que uma unidade declara consumir.
 ///
 /// Vazio (o padrão) quer dizer "não trato nada" — e é justamente o que
@@ -234,6 +258,46 @@ mod testes {
             ])),
             Destino::Documento
         );
+    }
+
+    #[test]
+    fn a_tecla_vira_categoria() {
+        use Interesse::*;
+        for (tecla, esperado) in [
+            ("j", Movimento),
+            ("k", Movimento),
+            ("ArrowDown", Movimento),
+            ("w", Movimento),
+            ("i", Edicao),
+            ("o", Edicao),
+            ("d", Operador),
+            ("y", Operador),
+            ("Enter", Ativacao),
+            (" ", Ativacao),
+            ("Escape", Saida),
+        ] {
+            assert_eq!(Interesse::da_tecla(tecla), Some(esperado), "tecla {tecla:?}");
+        }
+    }
+
+    #[test]
+    fn tecla_sem_categoria_nao_e_roteavel() {
+        // Uma letra que só significa algo em inserção é digitação, não
+        // comando — e não pode ser roteada como se fosse.
+        for tecla in ["z", "1", "F5", "Tab", "Shift"] {
+            assert_eq!(Interesse::da_tecla(tecla), None, "tecla {tecla:?}");
+        }
+    }
+
+    #[test]
+    fn um_calendario_quer_movimento_e_nao_quer_operador() {
+        // A declaração que o embed de calendário faz (ciclo 267), como
+        // teste puro: `j` é dele, `d` não é.
+        let cal = Interesses::de(&[Interesse::Movimento]);
+        assert!(cal.quer(Interesse::da_tecla("j").unwrap()));
+        assert!(cal.quer(Interesse::da_tecla("ArrowUp").unwrap()));
+        assert!(!cal.quer(Interesse::da_tecla("d").unwrap()));
+        assert!(!cal.quer(Interesse::da_tecla("Escape").unwrap()));
     }
 
     #[test]

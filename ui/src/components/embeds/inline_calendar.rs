@@ -561,7 +561,7 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
     } else {
         match *view_mode {
             ViewMode::Month => render_month_grid(
-                props, ay, am, &today_str, &dragging, &hover_day, &editing_entry, &existing_tags, &open_dialog_clone(props),
+                props, ay, am, &today_str, &anchor_str, &dragging, &hover_day, &editing_entry, &existing_tags, &open_dialog_clone(props),
                 &suppress_click_ref,
             ),
             ViewMode::Week | ViewMode::Day => render_day_columns(
@@ -572,8 +572,61 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
     };
     let displayed_count = if is_vault { vault_entries.len() } else { props.data.entries.len() };
 
+    // O calendário declara o que consome (ciclo 267).
+    //
+    // `Movimento` e nada mais — e é essa declaração que faz o resto se
+    // resolver sozinho: `j`/`k` andam entre dias AQUI, e `dd` sobe pro
+    // documento e apaga o bloco do calendário. Ninguém precisou decidir
+    // "o que é cabível"; o embed disse.
+    //
+    // `stop_propagation` no que ele consome é a cadeia acontecendo: o
+    // handler do documento nem chega a rodar.
+    let onkeydown_cal = {
+        let anchor = anchor.clone();
+        let view_mode = view_mode.clone();
+        Callback::from(move |e: KeyboardEvent| {
+            use anotadinho_core::roteamento::{Interesse, Interesses};
+            const CONSOME: &[Interesse] = &[Interesse::Movimento];
+            if e.ctrl_key() || e.meta_key() || e.alt_key() {
+                return;
+            }
+            let Some(categoria) = Interesse::da_tecla(&e.key()) else {
+                return;
+            };
+            if !Interesses::de(CONSOME).quer(categoria) {
+                return;
+            }
+            // Quantos dias cada tecla anda.
+            //
+            // No mês a grade é semana × dia, então `j`/`k` descem e
+            // sobem uma LINHA (7 dias) e `h`/`l` andam um dia — é o
+            // mapeamento que a grade desenha. Na semana e no dia não há
+            // linha, então tudo é um dia.
+            let passo = match *view_mode {
+                ViewMode::Month => 7,
+                ViewMode::Week | ViewMode::Day => 1,
+            };
+            let dias = match e.key().as_str() {
+                "j" | "ArrowDown" => passo,
+                "k" | "ArrowUp" => -passo,
+                "l" | "ArrowRight" => 1,
+                "h" | "ArrowLeft" => -1,
+                _ => return,
+            };
+            e.prevent_default();
+            e.stop_propagation();
+            let (ay, am, ad) = *anchor;
+            let atual = date_util::format_date(ay, am, ad);
+            if let Some(nova) = date_util::add_days(&atual, dias) {
+                if let Some(d) = date_util::parse_date(&nova) {
+                    anchor.set(d);
+                }
+            }
+        })
+    };
+
     html! {
-        <div class="calendar-grid" data-nav-group={props.nav_group.clone()} data-nav-item={props.nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
+        <div class="calendar-grid" onkeydown={onkeydown_cal} data-nav-group={props.nav_group.clone()} data-nav-item={props.nav_group.clone()} data-nav-parent={crate::nav_mode::GRUPO_BLOCOS} tabindex="-1">
             <div class="calendar-grid__header">
                 <button class="calendar-grid__nav-btn" onclick={go_prev} data-nav-item="cal-prev" data-nav-parent={props.nav_group.clone()}>{ "‹" }</button>
                 <span class="calendar-grid__month-label">{ header_label }</span>
@@ -790,6 +843,8 @@ fn render_month_grid(
     vy: i32,
     vm: u32,
     today_str: &str,
+    // O dia sob o cursor do teclado — realçado com contorno.
+    anchor_str: &str,
     dragging: &UseStateHandle<Option<usize>>,
     hover_day: &UseStateHandle<Option<String>>,
     editing_entry: &UseStateHandle<Option<usize>>,
@@ -830,10 +885,17 @@ fn render_month_grid(
                     let date_str = date_util::format_date(y, m, d);
                     let is_today = date_str == today_str;
                     let is_drop_target = dragging.is_some() && **hover_day == Some(date_str.clone());
+                    // O dia sob o cursor (ciclo 267). Sem ele, andar com
+                    // `j`/`k` dentro do mesmo mês não mudava NADA na
+                    // tela — o `anchor` só era visível quando a virada
+                    // trocava de mês, e o movimento parecia não
+                    // funcionar.
+                    let sob_cursor = date_str == anchor_str;
                     let class = classes!(
                         "calendar-grid__cell-bg",
                         (!in_month).then_some("calendar-grid__cell-bg--muted"),
                         is_today.then_some("calendar-grid__cell-bg--today"),
+                        sob_cursor.then_some("calendar-grid__cell-bg--cursor"),
                         is_drop_target.then_some("calendar-grid__cell-bg--drop-target"),
                     );
                     let style = format!("grid-column: {} / {};", col + 1, col + 2);
