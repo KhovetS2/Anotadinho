@@ -296,6 +296,30 @@ E há prova de que a direção funciona, feita sem querer: `vim_comandos.rs`
 `web_sys`. Foram extraídas pra serem testáveis, e o efeito colateral é
 que portariam sem alteração. `markdown_render.rs` também está em zero.
 
+## O que a implementação ensinou (ciclos 261-266)
+
+**A cadeia não precisou de despacho próprio.** O ciclo 262 modelou o
+roteamento como função pura esperando construir o roteador na UI. Não
+precisou: o DOM já borbulha, e isso É a cadeia. Um evento nascido dentro
+do componente já passou por ele antes de chegar ao documento. A regra
+que faltava era de uma linha — com o foco DENTRO de um embed, o vim do
+documento se cala. O `Interesses` segue valendo como a forma declarativa
+e testável da mesma regra.
+
+**"No bloco" e "dentro do bloco" são estados diferentes**, e é essa
+distinção que separa `j` andar entre blocos de `j` andar entre dias de
+um calendário. Sem ela, não há como escrever a regra acima.
+
+**Entrar sem poder sair é o defeito recorrente desta série.** Aconteceu
+com o `j` no ciclo 263 (entrava no embed e travava) e teria acontecido
+com o Enter no 265 se o Escape não tivesse sido tratado como exceção
+explícita. Todo gesto que DESCE precisa do gesto que SOBE no mesmo
+commit.
+
+**Um cenário que aperta a tecla uma vez não distingue "funcionou" de
+"travou".** Foi assim que o 263 passou verde com um defeito pior que o
+original.
+
 ## Não-objetivos
 
 - Reescrever os dez embeds. A base entra e eles migram um a um.

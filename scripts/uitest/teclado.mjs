@@ -1019,3 +1019,75 @@ teclado(
   },
   264,
 );
+
+// ── entrar e sair do embed com o vim ligado (ciclo 265) ─────────────
+//
+// O modelo é o do tmux: `j`/`k` andam ENTRE blocos, `Enter` ENTRA no
+// bloco, dentro dele as teclas são dele, `Escape` sai. Antes disso era
+// preciso DESLIGAR o vim pra mexer num embed.
+
+const FOCO = `(() => {
+  const a = document.activeElement;
+  if (!a) return null;
+  const w = a.closest('.embed-hover-wrapper');
+  return {
+    dentro: !!w && w !== a,
+    noBloco: !!w && w === a,
+    tag: a.tagName,
+  };
+})()`;
+
+teclado(
+  "Enter entra no embed, Escape volta, e o vim não age lá dentro",
+  { md: COM_EMBED, vim: true },
+  async (b, ctx) => {
+    await esperar(b, `!!document.querySelector('.embed-hover-wrapper')`, "o embed", 15000);
+
+    // Chega no embed pelo `j`.
+    await b.js(CURSOR_EM(0, 0));
+    await PAUSA(300);
+    await b.js(TECLA("j"));
+    await PAUSA(500);
+    ctx.assertEq((await b.js(FOCO)).noBloco, true, "o `j` não pousou no bloco do embed");
+
+    // Enter DESCE.
+    await b.js(TECLA("Enter"));
+    await PAUSA(500);
+    const dentro = await b.js(FOCO);
+    ctx.assertEq(dentro.dentro, true, "o Enter não entrou no embed");
+
+    // Lá dentro, um `dd` NÃO pode apagar o bloco — é o teclado do embed
+    // que manda. Sem esta guarda, cada tecla dispararia comando de vim
+    // por cima da navegação do embed.
+    await b.js(TECLA("d"));
+    await PAUSA(120);
+    await b.js(TECLA("d"));
+    await PAUSA(600);
+    ctx.assert(
+      await b.js(`!!document.querySelector('.embed-hover-wrapper')`),
+      "o `dd` de dentro do embed apagou o próprio embed",
+    );
+    ctx.assertEq(
+      await b.js(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Apagar')`),
+      false,
+      "o `dd` de dentro do embed abriu a confirmação de apagar bloco",
+    );
+
+    // Escape SOBE de volta pro bloco.
+    await b.js(TECLA("Escape"));
+    await PAUSA(500);
+    const fora = await b.js(FOCO);
+    ctx.assertEq(fora.noBloco, true, "o Escape não voltou pro bloco do embed");
+
+    // E de volta no nível de fora, o `j` volta a andar entre blocos.
+    await b.js(TECLA("j"));
+    await PAUSA(500);
+    const depois = await b.js(`(() => {
+      const a = document.activeElement;
+      const bl = a && a.closest('[data-nav-block]');
+      return bl ? bl.getAttribute('data-nav-block') : null;
+    })()`);
+    ctx.assertEq(depois, "texto", "depois de sair, o `j` não voltou a andar entre blocos");
+  },
+  265,
+);

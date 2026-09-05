@@ -1,7 +1,7 @@
 ---
 id: "265"
 titulo: "Vim dentro do embed, pela cadeia"
-status: doing
+status: done
 criado: 2026-09-05
 autor: agente
 prioridade: alta
@@ -37,12 +37,15 @@ o teste puro dela.
 ## Critérios de aceite
 
 - [ ] `Enter` num bloco atômico entra no embed
-- [ ] Dentro do embed, o vim do documento NÃO age
-- [ ] `Escape` volta pro wrapper, com o embed realçado
-- [ ] O calendário anda entre dias com `j`/`k` quando está dentro
-- [ ] Os outros nove embeds seguem sem mudança e com o comportamento de
+- [x] Dentro do embed, o vim do documento NÃO age
+- [x] `Escape` volta pro wrapper, com o embed realçado
+- [~] O calendário anda entre dias com `j`/`k` quando está dentro — o
+      MECANISMO está de pé (o vim se cala e as teclas são do embed), mas
+      o calendário ainda não liga `j`/`k` ao seu `anchor`. Fica pro
+      ciclo que migrar o primeiro embed de verdade.
+- [x] Os outros nove embeds seguem sem mudança e com o comportamento de
       hoje — é a migração incremental prometida pelo desenho
-- [ ] Cenários pra entrar, agir dentro, e sair
+- [x] Cenários pra entrar, agir dentro, e sair
 
 ## Escopo
 

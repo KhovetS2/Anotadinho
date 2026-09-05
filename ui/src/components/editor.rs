@@ -1505,6 +1505,50 @@ pub fn editor(props: &EditorProps) -> Html {
         let do_undo = do_undo.clone();
         let do_redo = do_redo.clone();
         Callback::from(move |e: KeyboardEvent| {
+            // DENTRO de um embed, o vim do documento se cala (ciclo 265).
+            //
+            // É a cadeia de responsabilidade do ciclo 262 realizada pelo
+            // próprio DOM: um evento nascido dentro do componente já
+            // passou por ele antes de chegar aqui. Se o embed quis a
+            // tecla, ele parou a propagação e este handler nem roda; se
+            // deixou subir, ele NÃO quer — mas quem está lá dentro é o
+            // teclado do embed, não o do documento.
+            //
+            // Sem isto, entrar num calendário com o vim ligado fazia
+            // cada tecla disparar comando de vim por cima da navegação
+            // do embed — que é o "tenho que desligar o vim pra usar o
+            // calendário" que esta série existe pra acabar.
+            //
+            // Escape é a exceção: é a porta de SAÍDA, e ela é do
+            // documento.
+            if dentro_de_um_embed() && e.key() != "Escape" {
+                return;
+            }
+
+            // Escape com o foco dentro de um embed devolve o foco pro
+            // bloco — o nível de fora, com o embed realçado.
+            if e.key() == "Escape" {
+                if let Some(wrapper) = embed_que_contem_o_foco() {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    crate::nav_mode::focus_item(&wrapper);
+                    return;
+                }
+            }
+
+            // Enter num bloco atômico ENTRA nele: foca o primeiro item
+            // navegável lá dentro. É o `Ativacao` da cadeia, e o mesmo
+            // gesto que o modo de navegação já usa — a diferença é que
+            // agora vale com o vim ligado.
+            if e.key() == "Enter" && !e.shift_key() && !e.ctrl_key() && !e.meta_key() {
+                if let Some(primeiro) = primeiro_item_do_embed_focado() {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    crate::nav_mode::focus_item(&primeiro);
+                    return;
+                }
+            }
+
             // `stop_propagation` nos dois blocos abaixo (ciclo 105): sem
             // isso, o evento borbulha até `.app-root` e o `GlobalKeymap`
             // (que também reconhece Ctrl+S/Ctrl+Z como Salvar/Desfazer
@@ -6318,4 +6362,41 @@ mod testes_atalhos {
             assert!(!a.descricao.trim().is_empty(), "{} sem descrição", a.tecla);
         }
     }
+}
+
+/// O wrapper do embed que contém o foco — `None` se o foco está NO
+/// wrapper (e não dentro dele) ou fora de qualquer embed.
+///
+/// A distinção é o que separa "estou no bloco" de "estou dentro do
+/// bloco", que é a diferença entre o `j` andar entre blocos e andar
+/// entre dias de um calendário.
+fn embed_que_contem_o_foco() -> Option<web_sys::Element> {
+    let ativo = web_sys::window()?.document()?.active_element()?;
+    let wrapper = ativo.closest(".embed-hover-wrapper").ok().flatten()?;
+    if wrapper.is_same_node(Some(&ativo)) {
+        return None; // o foco é o próprio bloco, não algo dentro dele
+    }
+    Some(wrapper)
+}
+
+fn dentro_de_um_embed() -> bool {
+    embed_que_contem_o_foco().is_some()
+}
+
+/// O primeiro item focável dentro do embed que está com o foco.
+///
+/// `[tabindex]` e não `data-nav-item`: os embeds marcam os controles
+/// deles de formas um pouco diferentes (é a duplicação que a spec
+/// aponta), e o que todos têm em comum é serem focáveis.
+fn primeiro_item_do_embed_focado() -> Option<web_sys::Element> {
+    let doc = web_sys::window()?.document()?;
+    let ativo = doc.active_element()?;
+    let wrapper = ativo.closest(".embed-hover-wrapper").ok().flatten()?;
+    if !wrapper.is_same_node(Some(&ativo)) {
+        return None; // já está dentro
+    }
+    wrapper
+        .query_selector("[data-nav-item], [tabindex=\"0\"]")
+        .ok()
+        .flatten()
 }
