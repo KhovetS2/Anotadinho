@@ -112,6 +112,25 @@ pub enum Tipo {
     Vazia,
     /// Um embed, pelo nome.
     Embed(String),
+    /// Uma parte INTERNA de um embed: a coluna de um kanban, a linha de
+    /// uma tabela, o item de uma galeria (ciclo 283).
+    ///
+    /// Existe porque o embed é atômico e mesmo assim tem estrutura. A
+    /// GUI nunca vê estas unidades — `navegaveis()` para no atômico e
+    /// continua parando — mas o renderizador de terminal desce
+    /// (`desce_no_atomico`), e até este ciclo ele descia e não achava
+    /// nada.
+    ///
+    /// O nome é o vocabulário do próprio embed (`column`, `card`,
+    /// `row`, `cell`, `item`, `button`, `pane`), não um tipo de
+    /// markdown: uma coluna de kanban não é uma lista, e chamá-la disso
+    /// faria `resumo()` mentir.
+    Parte {
+        /// O que ela é, no vocabulário do embed.
+        nome: String,
+        /// Comporta outras partes.
+        grupo: bool,
+    },
 }
 
 impl Tipo {
@@ -132,6 +151,7 @@ impl Tipo {
             Self::Item => "item".into(),
             Self::Vazia => "vazia".into(),
             Self::Embed(nome) => format!("embed:{nome}"),
+            Self::Parte { nome, .. } => format!("parte:{nome}"),
         }
     }
 
@@ -149,6 +169,10 @@ impl Tipo {
                 atomica: true,
             },
             Self::Embed(_) => Politica::EMBED,
+            // Parte que comporta partes é grupo; parte folha carrega
+            // texto, como um item de lista.
+            Self::Parte { grupo: true, .. } => Politica::GRUPO,
+            Self::Parte { grupo: false, .. } => Politica::TEXTO,
         }
     }
 
@@ -202,7 +226,9 @@ impl Tipo {
             Self::ListaOrdenada => "ol",
             Self::Item => "li",
             Self::Vazia => "hr",
-            Self::Embed(_) => return None,
+            // Nenhum dos dois é bloco de markdown: o embed é marcado por
+            // atributo no DOM, e a parte só existe dentro dele.
+            Self::Embed(_) | Self::Parte { .. } => return None,
         })
     }
 }

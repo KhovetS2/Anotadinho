@@ -41,14 +41,21 @@ pub fn analisar(corpo: &str) -> Unidade {
                 // fonte aqui também não custa, e mantém a árvore fiel
                 // pra quem só lê.
                 let texto = dados.to_fence_text();
-                filhos.push(
-                    Unidade::com_texto(
-                        Tipo::Embed(dados.kind().type_name().to_string()),
-                        texto,
-                    )
-                    .da_fonte(corpo[faixa.clone()].to_string())
-                    .no_intervalo(faixa),
-                );
+                let mut unidade = Unidade::com_texto(
+                    Tipo::Embed(dados.kind().type_name().to_string()),
+                    texto,
+                )
+                .da_fonte(corpo[faixa.clone()].to_string())
+                .no_intervalo(faixa);
+                // O embed declara o CONTEÚDO dele (ciclo 283).
+                //
+                // Continua atômico: `navegaveis()` para nele e a GUI não
+                // vê nada disto. Quem desce é o renderizador de terminal
+                // (`desce_no_atomico`), que até aqui descia e achava
+                // vazio — a página inteira do porte CLI parava na borda
+                // de cada embed.
+                unidade.filhos = partes_do_embed(&dados);
+                filhos.push(unidade);
             }
             DocSegment::Markdown(texto) => {
                 // As unidades de um segmento nascem com o intervalo
@@ -338,6 +345,134 @@ fn e_linha_horizontal(linha: &str) -> bool {
 ///
 /// Reusa o `render::Markdown` do ciclo 266 — que existia sem consumidor
 /// e agora tem um.
+/// O conteúdo de um embed, como unidades.
+///
+/// **Conteúdo, não controle.** O DOM de um embed mistura as duas coisas:
+/// o cartão de um kanban e o botão de apagar aquele cartão são os dois
+/// `[data-nav-item]`. Só o primeiro existe no markdown; o segundo é
+/// cromo da GUI, e um terminal desenharia o seu próprio. Medi isso antes
+/// de escrever: dos 16 itens navegáveis da galeria, 2 são as imagens.
+///
+/// **O que é dinâmico não entra.** As linhas de uma consulta vêm do
+/// vault, não do texto da página, e `analisar` é função pura do corpo.
+/// A consulta declara o que ESTÁ escrito — de onde, filtro, visão — e as
+/// linhas são runtime. O mesmo vale pro calendário em modo vault.
+fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
+    use embed::EmbedData;
+
+    /// Uma parte folha: carrega texto, não comporta filhos.
+    fn item(nome: &str, texto: impl Into<String>) -> Unidade {
+        Unidade::com_texto(
+            Tipo::Parte {
+                nome: nome.to_string(),
+                grupo: false,
+            },
+            texto,
+        )
+    }
+    /// Uma parte que comporta outras.
+    fn grupo(nome: &str, texto: impl Into<String>, filhos: Vec<Unidade>) -> Unidade {
+        let mut u = Unidade::com_filhos(
+            Tipo::Parte {
+                nome: nome.to_string(),
+                grupo: true,
+            },
+            filhos,
+        );
+        u.texto = texto.into();
+        u
+    }
+
+    match dados {
+        // Coluna é grupo, cartão é folha — é a forma que o board tem, e
+        // é o que faz `j` dentro de uma coluna significar "próximo
+        // cartão" e não "próxima coluna".
+        EmbedData::Kanban(d) => d
+            .columns
+            .iter()
+            .map(|coluna| {
+                let cartoes = d
+                    .items
+                    .iter()
+                    .filter(|c| &c.column == coluna)
+                    .map(|c| item("card", c.title.clone()))
+                    .collect();
+                grupo("column", coluna.clone(), cartoes)
+            })
+            .collect(),
+
+        // Linha é grupo, célula é folha. A célula guarda o valor, não o
+        // nome da coluna: o cabeçalho é uma linha à parte.
+        EmbedData::Table(d) => {
+            let cabecalho = grupo(
+                "header",
+                String::new(),
+                d.columns.iter().map(|c| item("cell", c.name.clone())).collect(),
+            );
+            std::iter::once(cabecalho)
+                .chain(d.rows.iter().map(|linha| {
+                    grupo(
+                        "row",
+                        String::new(),
+                        linha.iter().map(|v| item("cell", v.clone())).collect(),
+                    )
+                }))
+                .collect()
+        }
+
+        // O corpo de um callout É markdown, então ele vira unidades de
+        // markdown de verdade — não partes. É o único embed em que o
+        // conteúdo interno é do mesmo tecido da página.
+        EmbedData::Callout(d) => unidades_de_texto(&d.body),
+
+        // Cada painel é um grupo cujo conteúdo também é markdown.
+        EmbedData::Columns(d) => d
+            .columns
+            .iter()
+            .map(|painel| grupo("pane", String::new(), unidades_de_texto(&painel.body)))
+            .collect(),
+
+        EmbedData::Gallery(d) => d
+            .items
+            .iter()
+            .map(|i| {
+                item(
+                    "item",
+                    if i.caption.is_empty() {
+                        i.path.clone()
+                    } else {
+                        i.caption.clone()
+                    },
+                )
+            })
+            .collect(),
+
+        EmbedData::Timeline(d) => d.items.iter().map(|i| item("item", i.title.clone())).collect(),
+
+        EmbedData::Actions(d) => d
+            .buttons
+            .iter()
+            .map(|b| item("button", b.label.clone()))
+            .collect(),
+
+        // Só os eventos ESCRITOS no embed. No modo vault a lista vem de
+        // fora e não pertence à árvore desta página.
+        EmbedData::Calendar(d) => d
+            .entries
+            .iter()
+            .map(|e| item("entry", format!("{} {}", e.date.as_deref().unwrap_or(""), e.title).trim().to_string()))
+            .collect(),
+
+        // A consulta declara a definição, que é o que está escrito; as
+        // linhas são runtime.
+        EmbedData::Query(q) => vec![item("from", q.from.clone().unwrap_or_default())],
+
+        // O fluxo é uma etapa, não uma coleção: o estado dele já está no
+        // texto do embed.
+        EmbedData::Fluxo(_) => Vec::new(),
+    }
+}
+
 pub fn escrever(raiz: &Unidade) -> String {
     let mut r = crate::render::Markdown::default();
     crate::render::desenhar(raiz, &mut r);
@@ -1077,5 +1212,155 @@ mod comparacao {
             .join("\n");
         let fora = costurar_mudancas(&original, &novo);
         assert_eq!(fora, novo);
+    }
+}
+
+/// O conteúdo declarado por cada embed (ciclo 283).
+#[cfg(test)]
+mod partes_de_embed {
+    use super::*;
+
+    /// Os resumos dos filhos diretos, em ordem.
+    fn partes(u: &Unidade) -> Vec<String> {
+        u.filhos.iter().map(|f| f.tipo.resumo()).collect()
+    }
+
+    /// O embed sozinho numa página, já expandido.
+    fn embed_de(md: &str) -> Unidade {
+        let d = analisar(md);
+        assert_eq!(d.filhos.len(), 1, "esperava um embed só: {:?}", partes(&d));
+        d.filhos[0].clone()
+    }
+
+
+
+    #[test]
+    fn o_embed_continua_atomico_depois_de_ganhar_filhos() {
+        // A garantia que torna este ciclo seguro: `navegaveis()` para no
+        // atômico, então a GUI não vê nada disto e nenhum caminho muda.
+        // Quem desce é `percorrer`, e é o terminal que a usa.
+        let e = embed_de(
+            "{{ type: \"gallery\" }}\nitems:\n- path: a.png\n  caption: A\n{{ /gallery }}\n",
+        );
+        assert!(e.politica().atomica);
+        assert_eq!(e.filhos.len(), 1);
+
+        let d = analisar(
+            "{{ type: \"gallery\" }}\nitems:\n- path: a.png\n  caption: A\n{{ /gallery }}\n",
+        );
+        // Um destino só: o embed. A imagem está na árvore e não na
+        // navegação.
+        assert_eq!(d.navegaveis().len(), 1);
+        assert_eq!(d.percorrer().len(), 2);
+    }
+
+    #[test]
+    fn o_kanban_declara_colunas_com_seus_cartoes() {
+        let e = embed_de(
+            "{{ type: \"kanban\" }}\ncolumns:\n- Backlog\n- Feito\nitems:\n- title: Card A\n  column: Backlog\n- title: Card B\n  column: Feito\n{{ /kanban }}\n",
+        );
+        assert_eq!(partes(&e), ["parte:column", "parte:column"]);
+        assert_eq!(e.filhos[0].texto, "Backlog");
+        assert_eq!(partes(&e.filhos[0]), ["parte:card"]);
+        assert_eq!(e.filhos[0].filhos[0].texto, "Card A");
+        assert_eq!(e.filhos[1].filhos[0].texto, "Card B");
+    }
+
+    #[test]
+    fn a_tabela_declara_cabecalho_e_linhas() {
+        let e = embed_de(
+            "{{ type: \"table\" }}\ncolumns:\n- name: Tarefa\n- name: Status\n---\n| Tarefa | Status |\n| --- | --- |\n| API | done |\n{{ /table }}\n",
+        );
+        assert_eq!(partes(&e), ["parte:header", "parte:row"]);
+        assert_eq!(
+            e.filhos[0]
+                .filhos
+                .iter()
+                .map(|c| c.texto.clone())
+                .collect::<Vec<_>>(),
+            ["Tarefa", "Status"]
+        );
+        assert_eq!(
+            e.filhos[1]
+                .filhos
+                .iter()
+                .map(|c| c.texto.clone())
+                .collect::<Vec<_>>(),
+            ["API", "done"]
+        );
+    }
+
+    #[test]
+    fn o_callout_traz_markdown_de_verdade() {
+        // O corpo dele é do mesmo tecido da página, então vira unidade
+        // de markdown — não "parte".
+        let e = embed_de(
+            "{{ type: \"callout\" }}\nvariant: info\nbody: |\n  # Título\n\n  Um parágrafo.\n{{ /callout }}\n",
+        );
+        assert_eq!(partes(&e), ["titulo1", "paragrafo"]);
+    }
+
+    #[test]
+    fn as_colunas_sao_paineis_de_markdown() {
+        let e = embed_de(
+            "{{ type: \"columns\" }}\ncolumns:\n- width: 1\n  body: |\n    Esquerda.\n- width: 2\n  body: |\n    Direita.\n{{ /columns }}\n",
+        );
+        assert_eq!(partes(&e), ["parte:pane", "parte:pane"]);
+        assert_eq!(partes(&e.filhos[0]), ["paragrafo"]);
+        assert_eq!(e.filhos[0].filhos[0].texto, "Esquerda.");
+    }
+
+    #[test]
+    fn timeline_galeria_e_acoes_declaram_seus_itens() {
+        let t = embed_de(
+            "{{ type: \"timeline\" }}\nitems:\n- title: Etapa um\n  start: '2026-01-01'\n- title: Etapa dois\n  start: '2026-02-01'\n{{ /timeline }}\n",
+        );
+        assert_eq!(partes(&t), ["parte:item", "parte:item"]);
+        assert_eq!(t.filhos[0].texto, "Etapa um");
+
+        let g = embed_de(
+            "{{ type: \"gallery\" }}\nitems:\n- path: a.png\n  caption: Legenda\n- path: b.png\n{{ /gallery }}\n",
+        );
+        // Sem legenda, o caminho identifica.
+        assert_eq!(
+            g.filhos.iter().map(|i| i.texto.clone()).collect::<Vec<_>>(),
+            ["Legenda", "b.png"]
+        );
+
+        let a = embed_de(
+            "{{ type: \"actions\" }}\nbuttons:\n- label: Abrir\n  action: open-page\n{{ /actions }}\n",
+        );
+        assert_eq!(partes(&a), ["parte:button"]);
+        assert_eq!(a.filhos[0].texto, "Abrir");
+    }
+
+    #[test]
+    fn a_consulta_declara_o_que_esta_escrito_nao_o_resultado() {
+        // As linhas vêm do vault, e `analisar` é função pura do corpo da
+        // página. Declarar linhas aqui seria inventar.
+        let e = embed_de("{{ type: \"query\" }}\nfrom: pages\nview: list\n{{ /query }}\n");
+        assert_eq!(partes(&e), ["parte:from"]);
+        assert_eq!(e.filhos[0].texto, "pages");
+    }
+
+    #[test]
+    fn o_controle_da_gui_nao_entra_na_arvore() {
+        // O DOM da galeria tem 16 itens navegáveis; 2 são as imagens, o
+        // resto é botão (tamanho, mover, remover, adicionar). Nenhum
+        // deles existe no markdown, e um terminal desenharia os seus.
+        let e = embed_de(
+            "{{ type: \"gallery\" }}\nitems:\n- path: a.png\n- path: b.png\n{{ /gallery }}\n",
+        );
+        assert_eq!(e.filhos.len(), 2, "entrou controle na árvore: {:?}", partes(&e));
+    }
+
+    #[test]
+    fn a_expansao_nao_muda_o_markdown_de_volta() {
+        // A garantia de fidelidade: o embed volta pela fonte, e os
+        // filhos não são reescritos (`desce_no_atomico` é falso no
+        // Markdown).
+        let md = "antes\n\n{{ type: \"kanban\" }}\ncolumns:\n- Backlog\nitems:\n- title: Card\n  column: Backlog\n{{ /kanban }}\n\ndepois\n";
+        let volta = escrever_costurando(md, &analisar(md));
+        assert_eq!(volta, md);
     }
 }

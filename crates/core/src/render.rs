@@ -109,6 +109,12 @@ impl Renderizador for Markdown {
             return;
         }
         match &u.tipo {
+            // Parte de embed NÃO vira markdown: o texto de um embed é o
+            // dele, escrito de uma vez pela fonte, e `desce_no_atomico`
+            // é `false` aqui justamente pra os filhos não serem
+            // reescritos. Chegar aqui significaria uma parte solta fora
+            // de um embed, que não é coisa que `analisar` produza.
+            Tipo::Parte { .. } => {}
             Tipo::Titulo(n) => {
                 let marca = "#".repeat((*n).clamp(1, 6) as usize);
                 self.saida.push_str(&format!("{marca} {}\n\n", u.texto));
@@ -223,6 +229,17 @@ impl Terminal {
             Tipo::Item => "•".to_string(),
             Tipo::Vazia => "───".to_string(),
             Tipo::Embed(nome) => format!("[{nome}]"),
+            // A parte se anuncia pelo vocabulário do embed. É o que o
+            // terminal tem pra mostrar a estrutura de dentro de um
+            // kanban ou de uma tabela — até o ciclo 283 ele descia no
+            // atômico e não achava nada.
+            Tipo::Parte { nome, grupo } => {
+                if *grupo {
+                    format!("┌{nome}")
+                } else {
+                    format!("│{nome}")
+                }
+            }
         }
     }
 }
@@ -316,6 +333,30 @@ mod testes {
             term.resultado().contains("dentro do embed"),
             "o terminal devia ABRIR o embed"
         );
+    }
+
+    #[test]
+    fn o_terminal_desenha_o_conteudo_de_um_kanban_de_verdade() {
+        // O ciclo 266 fez o terminal descer no atômico; o 283 deu ao
+        // embed o que descer. Entre um e outro, ele descia e achava
+        // vazio — a página do porte CLI parava na borda de cada embed.
+        //
+        // Este teste liga as duas pontas: o markdown de um kanban entra
+        // pelo `analisar` e sai desenhado, coluna por coluna.
+        let d = crate::analise::analisar(
+            "{{ type: \"kanban\" }}\ncolumns:\n- Backlog\n- Feito\nitems:\n- title: Card A\n  column: Backlog\n{{ /kanban }}\n",
+        );
+        let mut term = Terminal::default();
+        desenhar(&d, &mut term);
+        let saida = term.resultado();
+
+        assert!(saida.contains("[kanban]"), "faltou o embed:\n{saida}");
+        assert!(saida.contains("┌column Backlog"), "faltou a coluna:\n{saida}");
+        assert!(saida.contains("│card Card A"), "faltou o cartão:\n{saida}");
+        // E o markdown continua não descendo: o fence é o conteúdo dele.
+        let mut md = Markdown::default();
+        desenhar(&d, &mut md);
+        assert!(!md.resultado().contains("┌column"));
     }
 
     #[test]

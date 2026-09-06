@@ -12,6 +12,11 @@ use crate::components::icon::Icon;
 use crate::components::modal::Modal;
 use crate::components::properties_panel::PropertiesPanel;
 use crate::dialog::PendingDialog;
+// A árvore descreve o CONTEÚDO de cada embed desde o ciclo 283 (coluna
+// de kanban, linha de tabela, item de galeria). Isso não chega aqui de
+// propósito: o embed continua atômico, `navegaveis()` para nele, e a
+// navegação da GUI segue exatamente como estava. Quem desce é o
+// renderizador de terminal.
 use crate::embed::DocSegment;
 use crate::state;
 
