@@ -465,7 +465,15 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
 
         // A consulta declara a definição, que é o que está escrito; as
         // linhas são runtime.
-        EmbedData::Query(q) => vec![item("from", q.from.clone().unwrap_or_default())],
+        // Parte vazia é ruído: uma consulta sem `from` não tem o que
+        // declarar, e declarar `from: ""` fazia o renderizador achar que
+        // havia conteúdo (achado pelo teste da caixa, ciclo 293).
+        EmbedData::Query(q) => q
+            .from
+            .as_ref()
+            .filter(|f| !f.trim().is_empty())
+            .map(|f| vec![item("from", f.clone())])
+            .unwrap_or_default(),
 
         // O fluxo não é coleção, e por isso eu o deixei sem filhos no
         // ciclo 283 — raciocinando que o estado dele já estava no texto.

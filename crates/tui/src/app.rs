@@ -145,10 +145,13 @@ impl Estado {
     /// setas andariam sem nada mudar na tela.
     pub fn corrigir_cursor(&mut self) {
         let visiveis = self.visiveis();
-        if visiveis.iter().any(|l| l.caminho == self.cursor) {
+        if visiveis
+            .iter()
+            .any(|l| !l.enfeite && l.caminho == self.cursor)
+        {
             return;
         }
-        if let Some(primeira) = visiveis.first() {
+        if let Some(primeira) = visiveis.iter().find(|l| !l.enfeite) {
             self.cursor = primeira.caminho.clone();
         }
         self.topo = 0;
@@ -178,7 +181,10 @@ impl Estado {
         // completa não é a posição na tela, e a janela rolaria pro lugar
         // errado.
         let visiveis = self.visiveis();
-        if let Some(l) = visiveis.iter().position(|l| l.caminho == self.cursor) {
+        if let Some(l) = visiveis
+            .iter()
+            .position(|l| !l.enfeite && l.caminho == self.cursor)
+        {
             self.topo = tela::rolar(self.topo, self.altura, l);
         }
     }
@@ -370,7 +376,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         .map(|l| {
             linha_estilizada(
                 l,
-                l.caminho == e.cursor && e.foco == Foco::Conteudo,
+                !l.enfeite && l.caminho == e.cursor && e.foco == Foco::Conteudo,
                 e.dobrados.contains(&l.caminho),
                 &e.tema,
                 largura_util,
@@ -417,6 +423,19 @@ fn linha_estilizada<'a>(
     largura: usize,
 ) -> Line<'a> {
     let recuo = "  ".repeat(l.nivel);
+    // O fecho da caixa vai até a borda, e vem ANTES de qualquer outra
+    // decisão: ele não tem texto nem trechos, então sairia pelos
+    // atalhos abaixo sem nunca chegar no preenchimento.
+    if l.enfeite && l.marca == "└" {
+        let traco = largura.saturating_sub(l.nivel * 2 + 1);
+        return Line::from(vec![
+            Span::styled(recuo, Style::default()),
+            Span::styled(
+                format!("└{}", "─".repeat(traco)),
+                tema.estilo(Realce::Embed),
+            ),
+        ]);
+    }
     let marca = marca_com_dobra(l, dobrada);
     // O resumo só entra quando o nível está FECHADO — aberto, os filhos
     // já dizem o que ele tem, e `· 1 item` em cima do único item é
@@ -434,7 +453,12 @@ fn linha_estilizada<'a>(
         ));
     }
 
-    let base = tema.estilo(papel_do_bloco(&l.tipo));
+    // Enfeite de embed veste a cor do embed: ele é parte do cartão.
+    let base = if l.enfeite {
+        tema.estilo(Realce::Embed)
+    } else {
+        tema.estilo(papel_do_bloco(&l.tipo))
+    };
     let mut spans = vec![Span::styled(recuo, Style::default())];
     if !marca.trim().is_empty() {
         // A marca costuma ser estrutura e fica apagada pra não competir
@@ -527,7 +551,7 @@ fn comando_de_vim(e: &mut Estado, c: Comando) {
         Movimento::InicioDoDocumento => ir_para_linha(e, 0),
         // `G` sozinho é o fim; `10G` é a décima linha, como no vim.
         Movimento::FimDoDocumento => {
-            let ultima = e.visiveis().len().saturating_sub(1);
+            let ultima = e.visiveis().iter().filter(|l| !l.enfeite).count().saturating_sub(1);
             let alvo = if vezes > 1 {
                 (vezes as usize - 1).min(ultima)
             } else {
@@ -574,7 +598,9 @@ fn repetir(e: &mut Estado, passo: Passo, vezes: u32) {
 
 /// Anda pelas linhas que estão na tela, parando nas pontas.
 fn andar_na_lista(e: &mut Estado, adiante: bool, vezes: u32) {
-    let visiveis = e.visiveis();
+    // Enfeite não é destino: a borda de uma caixa ocupa linha e não
+    // recebe cursor.
+    let visiveis: Vec<_> = e.visiveis().into_iter().filter(|l| !l.enfeite).collect();
     let Some(atual) = visiveis.iter().position(|l| l.caminho == e.cursor) else {
         return;
     };
@@ -591,7 +617,8 @@ fn andar_na_lista(e: &mut Estado, adiante: bool, vezes: u32) {
 
 /// Põe o cursor na n-ésima linha VISÍVEL.
 fn ir_para_linha(e: &mut Estado, indice: usize) {
-    if let Some(l) = e.visiveis().get(indice) {
+    let reais: Vec<_> = e.visiveis().into_iter().filter(|l| !l.enfeite).collect();
+    if let Some(l) = reais.get(indice) {
         e.cursor = l.caminho.clone();
     }
     e.seguir_cursor();

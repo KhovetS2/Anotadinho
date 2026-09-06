@@ -16,8 +16,18 @@ use anotadinho_core::unidade::{Caminho, Tipo, Unidade};
 /// Uma linha desenhável, com o endereço de quem a produziu.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Linha {
-    /// A unidade que virou esta linha.
+    /// A unidade a que esta linha pertence.
     pub caminho: Caminho,
+    /// Linha DECORATIVA: a borda de uma caixa, uma régua (ciclo 293).
+    ///
+    /// Ocupa espaço na tela e NÃO é destino — o cursor nunca pousa nela.
+    /// Carrega o caminho do dono mesmo assim, pra sumir junto quando ele
+    /// dobra.
+    ///
+    /// Sem esta distinção não dá pra desenhar caixa em volta de embed:
+    /// cada borda desalinharia cursor e rolagem, que são contados em
+    /// índice de linha visível.
+    pub enfeite: bool,
     /// Profundidade na árvore — vira recuo na tela.
     pub nivel: usize,
     /// O que se lê, já sem os marcadores de markdown.
@@ -40,6 +50,8 @@ pub struct Linha {
     pub trechos: Vec<Trecho>,
     /// O tipo de quem produziu a linha — o desenho estiliza por ele.
     pub tipo: Tipo,
+    /// A fileira de etapas, quando esta linha é um embed de fluxo.
+    pub trilha: Option<String>,
 }
 
 /// Renderizador que produz linhas endereçadas.
@@ -82,9 +94,13 @@ impl Renderizador for Linhas {
         };
         self.fora.push(Linha {
             caminho: self.caminho.clone(),
+            enfeite: false,
             nivel,
             texto,
             resumo: contagem(u),
+            trilha: matches!(&u.tipo, Tipo::Embed(n) if n == "fluxo")
+                .then(|| trilha_do_fluxo(u))
+                .flatten(),
             marca: marca(&u.tipo),
             trechos,
             tipo: u.tipo.clone(),
@@ -212,11 +228,117 @@ fn marca(tipo: &Tipo) -> String {
     }
 }
 
+/// A trilha de etapas de um fluxo, como a GUI desenha (ciclo 293).
+///
+/// Na janela isso é uma fileira de pílulas com a atual acesa. No
+/// terminal é a mesma fileira, com a atual entre colchetes — a pessoa
+/// precisa ver EM QUE PONTO o artefato está, e "Concluída" sozinho não
+/// diz de onde ele veio nem pra onde vai.
+fn trilha_do_fluxo(u: &Unidade) -> Option<String> {
+    use anotadinho_core::fluxo::Etapa;
+    let atual = u
+        .filhos
+        .iter()
+        .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "etapa"))?
+        .texto
+        .clone();
+    let fileira: Vec<String> = Etapa::all()
+        .iter()
+        .map(|e| {
+            let r = e.label();
+            if r == atual {
+                format!("[{r}]")
+            } else {
+                r.to_string()
+            }
+        })
+        .collect();
+    Some(fileira.join("  "))
+}
+
 /// A página inteira em linhas, na ordem em que se lê.
 pub fn linhas(raiz: &Unidade) -> Vec<Linha> {
     let mut r = Linhas::default();
     desenhar(raiz, &mut r);
-    r.fora
+    encaixotar_embeds(r.fora)
+}
+
+/// Põe uma borda de fechamento embaixo de cada embed (ciclo 293).
+///
+/// Um embed na GUI é um CARTÃO — tem moldura, e é ela que diz onde ele
+/// começa e acaba. No terminal a moldura é uma linha decorativa: o
+/// rótulo `[kanban]` abre, e esta fecha.
+///
+/// Só quando o embed tem conteúdo à vista. Um embed dobrado é uma linha
+/// só, e emoldurar uma linha só é enfeite sem função.
+fn encaixotar_embeds(linhas: Vec<Linha>) -> Vec<Linha> {
+    let mut fora: Vec<Linha> = Vec::with_capacity(linhas.len());
+    // O embed aberto agora, e se ele já teve conteúdo.
+    //
+    // Estado explícito, e não varredura pra trás: a primeira versão
+    // procurava "o último embed em `fora`" a cada linha, e depois de
+    // fechar a caixa continuava achando o mesmo embed — saía um `└`
+    // sobrando a cada bloco seguinte. Apareceu na tela em três segundos.
+    let mut aberto: Option<(Caminho, usize, bool)> = None;
+
+    for l in linhas {
+        if let Some((dono, nivel, teve)) = &aberto {
+            let ainda_dentro = l.caminho.len() > dono.len() && l.caminho.starts_with(dono);
+            if !ainda_dentro {
+                if *teve {
+                    fora.push(fecho(dono, *nivel));
+                }
+                aberto = None;
+            } else {
+                aberto = Some((dono.clone(), *nivel, true));
+            }
+        }
+        if matches!(l.tipo, Tipo::Embed(_)) && !l.enfeite {
+            aberto = Some((l.caminho.clone(), l.nivel, false));
+        }
+
+        let trilha = (!l.enfeite).then(|| l.trilha.clone()).flatten();
+        let dono = l.caminho.clone();
+        let nivel = l.nivel;
+        fora.push(l);
+        if let Some(t) = trilha {
+            // A trilha é conteúdo do embed pra efeito de caixa.
+            if let Some((_, _, teve)) = aberto.as_mut() {
+                *teve = true;
+            }
+            fora.push(Linha {
+                caminho: dono,
+                enfeite: true,
+                nivel: nivel + 1,
+                texto: t,
+                resumo: String::new(),
+                marca: "│".to_string(),
+                trechos: Vec::new(),
+                tipo: Tipo::Vazia,
+                trilha: None,
+            });
+        }
+    }
+    // O embed pode ser a última coisa da página.
+    if let Some((dono, nivel, true)) = aberto {
+        fora.push(fecho(&dono, nivel));
+    }
+    fora
+}
+
+/// A linha que fecha a caixa de um embed.
+fn fecho(dono: &Caminho, nivel: usize) -> Linha {
+    Linha {
+        caminho: dono.clone(),
+        enfeite: true,
+        nivel,
+        texto: String::new(),
+        resumo: String::new(),
+        marca: "└".to_string(),
+        trechos: Vec::new(),
+        tipo: Tipo::Vazia,
+        trilha: None,
+    }
 }
 
 /// Em que linha está a unidade endereçada.
@@ -448,6 +570,74 @@ mod testes {
         let d = analisar("- só um\n");
         let lista = linhas(&d).into_iter().find(|l| l.marca == "·").unwrap();
         assert_eq!(lista.resumo, "1 item");
+    }
+
+    #[test]
+    fn o_embed_com_conteudo_ganha_caixa() {
+        let d = analisar(
+            "antes\n\n{{ type: \"callout\" }}\nvariant: info\nbody: |\n  oi\n{{ /callout }}\n\ndepois\n",
+        );
+        let ls = linhas(&d);
+        let fechos: Vec<&Linha> = ls.iter().filter(|l| l.enfeite && l.marca == "└").collect();
+        assert_eq!(fechos.len(), 1, "esperava UMA caixa fechada");
+        // Fecha depois do conteúdo e antes do bloco seguinte.
+        let i = ls.iter().position(|l| l.enfeite && l.marca == "└").unwrap();
+        assert_eq!(ls[i - 1].texto, "oi");
+        assert_eq!(ls[i + 1].texto, "depois");
+    }
+
+    #[test]
+    fn a_caixa_nao_sobra_depois_do_embed() {
+        // A primeira versão procurava "o último embed" varrendo pra trás
+        // e, depois de fechar, continuava achando o mesmo — saía um `└`
+        // a cada bloco seguinte. Apareceu na tela em três segundos.
+        let d = analisar(
+            "{{ type: \"callout\" }}\nvariant: info\nbody: |\n  oi\n{{ /callout }}\n\na\n\nb\n\nc\n",
+        );
+        let fechos = linhas(&d).iter().filter(|l| l.enfeite && l.marca == "└").count();
+        assert_eq!(fechos, 1, "sobrou fecho de caixa");
+    }
+
+    #[test]
+    fn embed_sem_conteudo_nao_ganha_caixa() {
+        // Emoldurar uma linha só é enfeite sem função.
+        let d = analisar("{{ type: \"query\" }}\nview: list\n{{ /query }}\n");
+        let com_from = linhas(&d).iter().any(|l| l.texto == "pages");
+        assert!(!com_from, "a consulta sem `from` não devia ter parte");
+        let fechos = linhas(&d).iter().filter(|l| l.enfeite).count();
+        assert_eq!(fechos, 0);
+    }
+
+    #[test]
+    fn o_fluxo_desenha_a_trilha_de_etapas() {
+        // Como a GUI: a fileira inteira, com a atual destacada. "Concluída"
+        // sozinho não diz de onde veio nem pra onde vai.
+        let d = analisar(
+            "{{ type: \"fluxo\" }}\nartefato: spec\netapa: aprovada\n{{ /fluxo }}\n",
+        );
+        let trilha = linhas(&d)
+            .into_iter()
+            .find(|l| l.enfeite && l.marca == "│")
+            .expect("faltou a trilha");
+        assert!(trilha.texto.contains("Rascunho"), "{:?}", trilha.texto);
+        assert!(trilha.texto.contains("[Aprovada]"), "a atual não está marcada: {:?}", trilha.texto);
+        assert!(trilha.texto.contains("Concluída"), "{:?}", trilha.texto);
+    }
+
+    #[test]
+    fn enfeite_nao_e_destino() {
+        // A borda ocupa linha e não recebe cursor: o modelo não sabe que
+        // ela existe, e pousar nela seria pousar em nada.
+        let d = analisar(
+            "{{ type: \"callout\" }}\nvariant: info\nbody: |\n  oi\n{{ /callout }}\n",
+        );
+        for l in linhas(&d).iter().filter(|l| l.enfeite) {
+            assert!(
+                d.em(&l.caminho).is_some(),
+                "enfeite com caminho que não existe: {:?}",
+                l.caminho
+            );
+        }
     }
 
     #[test]
