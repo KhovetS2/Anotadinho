@@ -108,8 +108,8 @@ fn quanto_a_arvore_perde() {
             if e.path().extension().is_some_and(|x| x == "md") {
                 let Ok(texto) = std::fs::read_to_string(e.path()) else { continue };
                 let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
-                let volta = anotadinho_core::analise::escrever(
-                    &anotadinho_core::analise::analisar(corpo));
+                let volta = anotadinho_core::analise::escrever_costurando(
+                    corpo, &anotadinho_core::analise::analisar(corpo));
                 total += 1;
                 if volta.trim() == corpo.trim() { iguais += 1; }
                 else if exemplos.len() < 6 {

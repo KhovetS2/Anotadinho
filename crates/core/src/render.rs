@@ -99,7 +99,11 @@ impl Renderizador for Markdown {
         // 242 páginas do vault voltavam idênticas, e cada detalhe
         // corrigido revelava o seguinte.
         if let Some(fonte) = &u.fonte {
-            self.saida.push_str(fonte.trim_end());
+            // Apara só QUEBRAS, nunca espaços: dois espaços no fim de
+            // uma linha são quebra forte em markdown, e `trim_end()`
+            // os comia. Era a única das 242 páginas do vault que ainda
+            // mudava de árvore na ida e volta (ciclo 275).
+            self.saida.push_str(fonte.trim_end_matches('\n'));
             self.saida.push_str("\n\n");
             self.pulando_de = Some(nivel);
             return;
@@ -264,6 +268,7 @@ mod testes {
                     texto: "{{ type: \"callout\" }}\nbody: oi\n{{ /callout }}".into(),
                     filhos: vec![Unidade::com_texto(Tipo::Paragrafo, "dentro do embed")],
                     fonte: None,
+                    intervalo: None,
                 },
             ],
         )

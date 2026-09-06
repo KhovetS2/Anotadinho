@@ -29,7 +29,7 @@ use crate::unidade::{Tipo, Unidade};
 /// A raiz é o documento; os filhos são as unidades de primeiro nível.
 pub fn analisar(corpo: &str) -> Unidade {
     let mut filhos = Vec::new();
-    for seg in embed::segment(corpo) {
+    for (faixa, seg) in embed::segment_com_intervalos(corpo) {
         match seg {
             DocSegment::Embed(dados) => {
                 // O embed é UMA unidade atômica. O conteúdo dele não é
@@ -44,79 +44,127 @@ pub fn analisar(corpo: &str) -> Unidade {
                 filhos.push(
                     Unidade::com_texto(
                         Tipo::Embed(dados.kind().type_name().to_string()),
-                        texto.clone(),
+                        texto,
                     )
-                    .da_fonte(texto),
+                    .da_fonte(corpo[faixa.clone()].to_string())
+                    .no_intervalo(faixa),
                 );
             }
-            DocSegment::Markdown(texto) => filhos.extend(unidades_de_texto(&texto)),
+            DocSegment::Markdown(texto) => {
+                // As unidades de um segmento nascem com o intervalo
+                // RELATIVO a ele; somar o início do segmento leva pro
+                // corpo inteiro, que é a régua da costura.
+                for mut u in unidades_de_texto(&texto) {
+                    if let Some(r) = u.intervalo.take() {
+                        u.intervalo = Some((faixa.start + r.start)..(faixa.start + r.end));
+                    }
+                    filhos.push(u);
+                }
+            }
         }
     }
     Unidade::com_filhos(Tipo::Paragrafo, filhos)
 }
 
 /// Divide um trecho de markdown puro em unidades.
+///
+/// Cada unidade sai sabendo a faixa de bytes de onde veio (relativa a
+/// `texto`) — é o que permite a costura do ciclo 275.
 fn unidades_de_texto(texto: &str) -> Vec<Unidade> {
-    let mut fora: Vec<Unidade> = Vec::new();
-    let mut paragrafo: Vec<&str> = Vec::new();
-    let mut lista: Vec<Unidade> = Vec::new();
-    let mut lista_ordenada = false;
-    let mut linhas_da_lista: Vec<&str> = Vec::new();
-    let mut citacao: Vec<&str> = Vec::new();
-    let mut linhas_da_citacao: Vec<&str> = Vec::new();
-    let mut codigo: Option<(Option<String>, Vec<&str>, Vec<&str>)> = None;
+    /// O que está sendo acumulado, e desde onde.
+    struct Aberto {
+        inicio: usize,
+        fim: usize,
+        linhas: Vec<String>,
+    }
+    impl Aberto {
+        fn novo(inicio: usize, fim: usize, linha: &str) -> Self {
+            Self { inicio, fim, linhas: vec![linha.to_string()] }
+        }
+        fn mais(&mut self, fim: usize, linha: &str) {
+            self.fim = fim;
+            self.linhas.push(linha.to_string());
+        }
+    }
 
-    // Fecha o que estiver aberto antes de começar outra coisa.
+    let mut fora: Vec<Unidade> = Vec::new();
+    let mut paragrafo: Option<Aberto> = None;
+    let mut citacao: Option<Aberto> = None;
+    let mut itens: Vec<Unidade> = Vec::new();
+    let mut lista: Option<Aberto> = None;
+    let mut lista_ordenada = false;
+    let mut codigo: Option<(Option<String>, Aberto)> = None;
+
     macro_rules! fechar_paragrafo {
         () => {
-            if !paragrafo.is_empty() {
-                let cru = paragrafo.join("\n");
-                fora.push(Unidade::com_texto(Tipo::Paragrafo, cru.clone()).da_fonte(cru));
-                paragrafo.clear();
+            if let Some(a) = paragrafo.take() {
+                let cru = a.linhas.join("\n");
+                fora.push(
+                    Unidade::com_texto(Tipo::Paragrafo, cru.clone())
+                        .da_fonte(cru)
+                        .no_intervalo(a.inicio..a.fim),
+                );
+            }
+        };
+    }
+    macro_rules! fechar_citacao {
+        () => {
+            if let Some(a) = citacao.take() {
+                // O texto perde o `>` de cada linha; a fonte o mantém.
+                let limpo: Vec<&str> = a
+                    .linhas
+                    .iter()
+                    .map(|l| {
+                        let sem = l.trim_start().strip_prefix('>').unwrap_or(l);
+                        sem.strip_prefix(' ').unwrap_or(sem)
+                    })
+                    .collect();
+                fora.push(
+                    Unidade::com_texto(Tipo::Citacao, limpo.join("\n"))
+                        .da_fonte(a.linhas.join("\n"))
+                        .no_intervalo(a.inicio..a.fim),
+                );
             }
         };
     }
     macro_rules! fechar_lista {
         () => {
-            if !lista.is_empty() {
+            if let Some(a) = lista.take() {
                 let tipo = if lista_ordenada { Tipo::ListaOrdenada } else { Tipo::Lista };
-                let cru = std::mem::take(&mut linhas_da_lista).join("\n");
                 fora.push(
-                    Unidade::com_filhos(tipo, std::mem::take(&mut lista)).da_fonte(cru),
+                    Unidade::com_filhos(tipo, std::mem::take(&mut itens))
+                        .da_fonte(a.linhas.join("\n"))
+                        .no_intervalo(a.inicio..a.fim),
                 );
-            }
-        };
-    }
-    // Linhas `>` seguidas são UMA citação, não uma por linha. Emitir uma
-    // por linha inseria linha em branco entre elas, e o markdown que
-    // saía já não era o que entrou (ciclo 274).
-    macro_rules! fechar_citacao {
-        () => {
-            if !citacao.is_empty() {
-                let cru = std::mem::take(&mut linhas_da_citacao).join("\n");
-                fora.push(
-                    Unidade::com_texto(Tipo::Citacao, citacao.join("\n")).da_fonte(cru),
-                );
-                citacao.clear();
             }
         };
     }
 
-    for linha in texto.lines() {
+    let mut pos = 0usize;
+    for linha_bruta in texto.split_inclusive('\n') {
+        let linha = linha_bruta.strip_suffix('\n').unwrap_or(linha_bruta);
+        let comeco = pos;
+        pos += linha_bruta.len();
+        // O fim da unidade é o fim do CONTEÚDO, sem a quebra final — a
+        // quebra pertence à separação entre unidades, e é ela que a
+        // costura preserva verbatim.
+        let fim = comeco + linha.len();
+
         // Dentro de uma cerca, TUDO é conteúdo — inclusive linhas que
-        // pareceriam título ou item. É a razão de o código ser tratado
-        // antes de qualquer outro teste.
-        if let Some((lingua, acumulado, cru)) = &mut codigo {
-            cru.push(linha);
-            if linha.trim_start().starts_with("```") {
-                let fonte = cru.join("\n");
+        // pareceriam título ou item.
+        if let Some((_, aberto)) = &mut codigo {
+            aberto.mais(fim, linha);
+            let fechou = linha.trim_start().starts_with("```");
+            if fechou {
+                let (lingua, aberto) = codigo.take().expect("acabou de existir");
+                // O conteúdo é o miolo: sem a linha de abertura nem a de
+                // fechamento. A fonte guarda as três partes.
+                let interno = aberto.linhas[1..aberto.linhas.len() - 1].join("\n");
                 fora.push(
-                    Unidade::com_texto(Tipo::Codigo(lingua.clone()), acumulado.join("\n"))
-                        .da_fonte(fonte),
+                    Unidade::com_texto(Tipo::Codigo(lingua), interno)
+                        .da_fonte(aberto.linhas.join("\n"))
+                        .no_intervalo(aberto.inicio..aberto.fim),
                 );
-                codigo = None;
-            } else {
-                acumulado.push(linha);
             }
             continue;
         }
@@ -127,8 +175,7 @@ fn unidades_de_texto(texto: &str) -> Vec<Unidade> {
             let lingua = resto.trim();
             codigo = Some((
                 (!lingua.is_empty()).then(|| lingua.to_string()),
-                Vec::new(),
-                vec![linha],
+                Aberto::novo(comeco, fim, linha),
             ));
             continue;
         }
@@ -145,50 +192,86 @@ fn unidades_de_texto(texto: &str) -> Vec<Unidade> {
             fechar_paragrafo!();
             fechar_citacao!();
             fechar_lista!();
-            let texto = sem_espaco[nivel as usize..].trim_start().to_string();
-            fora.push(Unidade::com_texto(Tipo::Titulo(nivel), texto).da_fonte(linha));
+            let t = sem_espaco[nivel as usize..].trim_start().to_string();
+            fora.push(
+                Unidade::com_texto(Tipo::Titulo(nivel), t)
+                    .da_fonte(linha)
+                    .no_intervalo(comeco..fim),
+            );
             continue;
         }
 
-        // A régua vem ANTES da lista: `- - -` é régua, não um item cujo
-        // texto é "- -".
+        // A régua vem ANTES da lista: `- - -` é régua, não um item.
         if e_linha_horizontal(sem_espaco) {
             fechar_paragrafo!();
             fechar_citacao!();
             fechar_lista!();
-            fora.push(Unidade::nova(Tipo::Vazia).da_fonte(linha));
+            fora.push(Unidade::nova(Tipo::Vazia).da_fonte(linha).no_intervalo(comeco..fim));
             continue;
         }
 
         if let Some((item, ordenada)) = item_de_lista(sem_espaco) {
             fechar_paragrafo!();
             fechar_citacao!();
-            if lista.is_empty() {
+            if itens.is_empty() {
                 lista_ordenada = ordenada;
             }
-            linhas_da_lista.push(linha);
-            lista.push(Unidade::com_texto(Tipo::Item, item.to_string()).da_fonte(linha));
+            itens.push(
+                Unidade::com_texto(Tipo::Item, item.to_string())
+                    .da_fonte(linha)
+                    .no_intervalo(comeco..fim),
+            );
+            match &mut lista {
+                Some(a) => a.mais(fim, linha),
+                None => lista = Some(Aberto::novo(comeco, fim, linha)),
+            }
             continue;
         }
 
-        if let Some(linha_citada) = sem_espaco.strip_prefix('>') {
+        // Continuação INDENTADA de um item: pertence ao item, não é
+        // parágrafo novo. Sem isto, a lista era cortada no meio e a
+        // linha em branco que entrava no lugar mudava o arquivo — é a
+        // perda que o ciclo 274 mediu e não conseguiu fechar.
+        if lista.is_some() && linha.starts_with(char::is_whitespace) {
+            if let (Some(a), Some(ultimo)) = (&mut lista, itens.last_mut()) {
+                a.mais(fim, linha);
+                ultimo.texto.push('\n');
+                ultimo.texto.push_str(sem_espaco);
+                if let Some(f) = &mut ultimo.fonte {
+                    f.push('\n');
+                    f.push_str(linha);
+                }
+                if let Some(r) = &mut ultimo.intervalo {
+                    r.end = fim;
+                }
+            }
+            continue;
+        }
+
+        if linha.trim_start().starts_with('>') {
             fechar_paragrafo!();
             fechar_lista!();
-            citacao.push(linha_citada.strip_prefix(' ').unwrap_or(linha_citada));
-            linhas_da_citacao.push(linha);
+            match &mut citacao {
+                Some(a) => a.mais(fim, linha),
+                None => citacao = Some(Aberto::novo(comeco, fim, linha)),
+            }
             continue;
         }
         fechar_citacao!();
-
         fechar_lista!();
-        paragrafo.push(linha);
+        match &mut paragrafo {
+            Some(a) => a.mais(fim, linha),
+            None => paragrafo = Some(Aberto::novo(comeco, fim, linha)),
+        }
     }
 
     // Cerca que o arquivo não fechou: o conteúdo não pode sumir.
-    if let Some((lingua, acumulado, cru)) = codigo {
-        let fonte = cru.join("\n");
+    if let Some((lingua, aberto)) = codigo.take() {
+        let interno = aberto.linhas[1..].join("\n");
         fora.push(
-            Unidade::com_texto(Tipo::Codigo(lingua), acumulado.join("\n")).da_fonte(fonte),
+            Unidade::com_texto(Tipo::Codigo(lingua), interno)
+                .da_fonte(aberto.linhas.join("\n"))
+                .no_intervalo(aberto.inicio..aberto.fim),
         );
     }
     fechar_paragrafo!();
@@ -259,6 +342,76 @@ pub fn escrever(raiz: &Unidade) -> String {
     let mut r = crate::render::Markdown::default();
     crate::render::desenhar(raiz, &mut r);
     r.resultado()
+}
+
+/// Escreve a árvore de volta COSTURANDO com o corpo original.
+///
+/// A diferença pra `escrever` é o que acontece com o que ninguém tocou:
+/// aqui ele volta pelos BYTES, e o que está ENTRE as unidades — linhas
+/// em branco, indentação, o que o analisador não entendeu — volta junto.
+///
+/// É isso que dá fidelidade sem analisador perfeito (ciclo 275). O ciclo
+/// 274 tentou com o texto de cada unidade e chegou a 35 de 242 páginas
+/// idênticas: guardar o texto não bastava porque a perda estava nas
+/// FRONTEIRAS, que não pertencem a unidade nenhuma.
+///
+/// Uma unidade sem intervalo é uma unidade que o editor criou ou mudou —
+/// essa é serializada, que é o certo: não há original pra devolver.
+pub fn escrever_costurando(corpo: &str, raiz: &Unidade) -> String {
+    let mut fora = String::new();
+    let mut cursor = 0usize;
+
+    // Os dois campos respondem perguntas diferentes, e é isso que faz a
+    // costura funcionar:
+    //
+    // - `intervalo` diz ONDE a unidade estava — serve pra posicionar, e
+    //   sobrevive à edição;
+    // - `fonte` diz SE ela continua como estava — some quando o editor
+    //   mexe nela.
+    //
+    // Na primeira versão eu limpava os dois ao editar, e o texto velho
+    // ficava no arquivo: sem o intervalo não havia o que substituir, só
+    // onde inserir.
+    let serializar = |u: &Unidade| {
+        let mut r = crate::render::Markdown::default();
+        crate::render::desenhar(&Unidade::com_filhos(Tipo::Paragrafo, vec![u.clone()]), &mut r);
+        r.resultado()
+    };
+
+    for filho in &raiz.filhos {
+        let posicionada = filho
+            .intervalo
+            .as_ref()
+            .filter(|f| f.end <= corpo.len() && f.start >= cursor);
+
+        match (posicionada, &filho.fonte) {
+            // Intacta: volta pelos bytes, e o que vinha antes dela junto.
+            (Some(faixa), Some(_)) => {
+                fora.push_str(&corpo[cursor..faixa.start]);
+                fora.push_str(&corpo[faixa.clone()]);
+                cursor = faixa.end;
+            }
+            // Editada: o lugar é o mesmo, o conteúdo é novo.
+            (Some(faixa), None) => {
+                fora.push_str(&corpo[cursor..faixa.start]);
+                fora.push_str(serializar(filho).trim_end());
+                cursor = faixa.end;
+            }
+            // Nova: não tem lugar de origem.
+            _ => {
+                if !fora.is_empty() && !fora.ends_with('\n') {
+                    fora.push('\n');
+                }
+                fora.push_str(&serializar(filho));
+                fora.push('\n');
+            }
+        }
+    }
+    // E o rabo do arquivo — o que vinha depois da última unidade.
+    if cursor < corpo.len() {
+        fora.push_str(&corpo[cursor..]);
+    }
+    fora
 }
 
 #[cfg(test)]
@@ -496,5 +649,72 @@ mod ida_e_volta {
     fn corpo_vazio_e_estavel() {
         estavel("");
         assert_eq!(escrever(&analisar("")), "");
+    }
+}
+
+#[cfg(test)]
+mod costura {
+    use super::*;
+
+    #[test]
+    fn o_que_ninguem_tocou_volta_byte_a_byte() {
+        // Formatação que o analisador NÃO entende — recuo de
+        // continuação, três espaços, linha em branco dupla — volta
+        // igual, porque volta copiada.
+        let corpo = "# T\n\n\n- item\n   continuação indentada\n- outro\n\n\ntexto   \n";
+        let arvore = analisar(corpo);
+        assert_eq!(escrever_costurando(corpo, &arvore), corpo);
+    }
+
+    #[test]
+    fn so_a_unidade_mudada_e_reescrita() {
+        // O caso que o passo 4 precisa: editar UM bloco não pode
+        // reformatar os vizinhos.
+        let corpo = "# Título\n\n- a\n   recuo estranho\n- b\n\nfim\n";
+        let mut arvore = analisar(corpo);
+        // "edita" o parágrafo final: perde o intervalo, como faria o
+        // editor ao mexer nele.
+        // Editar limpa a FONTE e mantém o intervalo: o lugar continua
+        // sendo o mesmo, só o conteúdo mudou.
+        let ultimo = arvore.filhos.last_mut().unwrap();
+        ultimo.texto = "outro fim".into();
+        ultimo.fonte = None;
+
+        let saida = escrever_costurando(corpo, &arvore);
+        assert!(saida.contains("   recuo estranho"), "o vizinho foi reformatado:\n{saida}");
+        assert!(saida.contains("# Título"), "o título sumiu:\n{saida}");
+        assert!(saida.contains("outro fim"), "a edição não entrou:\n{saida}");
+        assert!(!saida.contains("\nfim\n"), "o texto velho ficou:\n{saida}");
+    }
+
+    #[test]
+    fn embed_intocado_volta_com_o_yaml_original() {
+        // `to_fence_text` normaliza o YAML. Costurando, um embed que
+        // ninguém editou volta como estava — o que o editor de hoje NÃO
+        // faz (ele reserializa tudo ao salvar).
+        let corpo = "antes\n\n{{ type: \"callout\" }}\ntitle: Nota\nvariant: info\n{{ /callout }}\n\ndepois\n";
+        let arvore = analisar(corpo);
+        assert_eq!(escrever_costurando(corpo, &arvore), corpo);
+    }
+
+    #[test]
+    fn arvore_sem_intervalo_nenhum_ainda_escreve() {
+        // Documento montado do zero (sem original): a costura cai na
+        // serialização e não perde nada.
+        let arvore = Unidade::com_filhos(
+            Tipo::Paragrafo,
+            vec![
+                Unidade::com_texto(Tipo::Titulo(1), "Novo"),
+                Unidade::com_texto(Tipo::Paragrafo, "corpo"),
+            ],
+        );
+        let saida = escrever_costurando("", &arvore);
+        assert!(saida.contains("# Novo"), "{saida}");
+        assert!(saida.contains("corpo"), "{saida}");
+    }
+
+    #[test]
+    fn corpo_vazio_continua_vazio() {
+        assert_eq!(escrever_costurando("", &analisar("")), "");
     }
 }

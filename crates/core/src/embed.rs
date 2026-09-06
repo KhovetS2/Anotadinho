@@ -225,6 +225,22 @@ fn parse_close_tag(line: &str, kind: EmbedKind) -> bool {
 /// wrappers reconhecidos. Um wrapper aberto sem fechamento correspondente
 /// consome até o fim do texto (sem pânico, degrada de forma previsível).
 pub fn segment(body: &str) -> Vec<DocSegment> {
+    segment_com_intervalos(body)
+        .into_iter()
+        .map(|(_, seg)| seg)
+        .collect()
+}
+
+/// O mesmo que `segment`, dizendo também DE ONDE cada segmento veio.
+///
+/// O intervalo é a faixa de bytes no `body`, e é o que permite escrever
+/// de volta sem reformatar: quem não mudou volta pelos bytes originais
+/// (ciclo 275).
+///
+/// Os offsets sempre existiram aqui dentro — a varredura já é por
+/// cursor de byte. Só não eram devolvidos, e por isso `analisar` tinha
+/// que trabalhar com `String`s soltas e perdia a posição.
+pub fn segment_com_intervalos(body: &str) -> Vec<(std::ops::Range<usize>, DocSegment)> {
     let mut segments = Vec::new();
     let mut cursor = 0usize;
     let mut pos = 0usize;
@@ -237,7 +253,10 @@ pub fn segment(body: &str) -> Vec<DocSegment> {
         let Some(kind) = parse_open_tag(line) else { continue };
 
         if cursor < line_start {
-            segments.push(DocSegment::Markdown(body[cursor..line_start].to_string()));
+            segments.push((
+                cursor..line_start,
+                DocSegment::Markdown(body[cursor..line_start].to_string()),
+            ));
         }
 
         let content_start = pos;
@@ -252,12 +271,18 @@ pub fn segment(body: &str) -> Vec<DocSegment> {
         }
 
         let raw = &body[content_start..content_end];
-        segments.push(DocSegment::Embed(EmbedData::parse(kind, raw)));
+        // O intervalo do embed vai da linha de ABERTURA até depois da de
+        // fechamento — o fence inteiro, que é o que precisa voltar
+        // verbatim.
+        segments.push((line_start..pos, DocSegment::Embed(EmbedData::parse(kind, raw))));
         cursor = pos;
     }
 
     if cursor < body.len() {
-        segments.push(DocSegment::Markdown(body[cursor..].to_string()));
+        segments.push((
+            cursor..body.len(),
+            DocSegment::Markdown(body[cursor..].to_string()),
+        ));
     }
 
     segments

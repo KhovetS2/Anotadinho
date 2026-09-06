@@ -163,7 +163,7 @@ impl Tipo {
 pub type Caminho = Vec<usize>;
 
 /// Uma unidade da página.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Unidade {
     pub tipo: Tipo,
     /// Texto próprio da unidade. Vazio num grupo ou num embed.
@@ -187,15 +187,43 @@ pub struct Unidade {
     /// serializar é o certo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fonte: Option<String>,
+    /// A faixa de bytes de onde esta unidade veio, no corpo original.
+    ///
+    /// É o que a `fonte` sozinha não deu (ciclo 274): guardar o TEXTO de
+    /// cada unidade não bastava, porque a perda estava nas FRONTEIRAS —
+    /// o que existe ENTRE as unidades (linhas em branco, indentação de
+    /// continuação) não pertencia a nenhuma e sumia na volta.
+    ///
+    /// Com o intervalo, escrever vira costura: os pedaços que ninguém
+    /// tocou voltam pelos bytes, e o que está entre eles volta junto
+    /// (ciclo 275).
+    ///
+    /// Só o PRIMEIRO nível tem intervalo — é a granularidade em que a
+    /// costura acontece.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intervalo: Option<std::ops::Range<usize>>,
+}
+
+/// Igualdade por ESTRUTURA, ignorando procedência.
+///
+/// `fonte` e `intervalo` dizem de onde a unidade veio, não o que ela é.
+/// Duas unidades com o mesmo tipo, texto e filhos são a mesma unidade
+/// venham de onde vierem — e sem esta regra o teste de ida e volta
+/// comparava endereços de bytes e acusava 203 páginas de "mudarem"
+/// quando nada nelas tinha mudado (ciclo 275).
+impl PartialEq for Unidade {
+    fn eq(&self, outra: &Self) -> bool {
+        self.tipo == outra.tipo && self.texto == outra.texto && self.filhos == outra.filhos
+    }
 }
 
 impl Unidade {
     pub fn nova(tipo: Tipo) -> Self {
-        Self { tipo, texto: String::new(), filhos: Vec::new(), fonte: None }
+        Self { tipo, texto: String::new(), filhos: Vec::new(), fonte: None, intervalo: None }
     }
 
     pub fn com_texto(tipo: Tipo, texto: impl Into<String>) -> Self {
-        Self { tipo, texto: texto.into(), filhos: Vec::new(), fonte: None }
+        Self { tipo, texto: texto.into(), filhos: Vec::new(), fonte: None, intervalo: None }
     }
 
     /// A mesma unidade, lembrando de onde veio.
@@ -204,8 +232,14 @@ impl Unidade {
         self
     }
 
+    /// A mesma unidade, lembrando em QUE FAIXA do corpo ela estava.
+    pub fn no_intervalo(mut self, intervalo: std::ops::Range<usize>) -> Self {
+        self.intervalo = Some(intervalo);
+        self
+    }
+
     pub fn com_filhos(tipo: Tipo, filhos: Vec<Unidade>) -> Self {
-        Self { tipo, texto: String::new(), filhos, fonte: None }
+        Self { tipo, texto: String::new(), filhos, fonte: None, intervalo: None }
     }
 
     pub fn politica(&self) -> Politica {
