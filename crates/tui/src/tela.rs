@@ -8,6 +8,7 @@
 //! tudo que dá pra testar do desenho, e é de propósito: um laço de
 //! eventos não se testa, uma função de janela se testa.
 
+use anotadinho_core::inline::{self, Trecho};
 use anotadinho_core::navegacao::{mover, Cursor, Passo};
 use anotadinho_core::render::{desenhar, Renderizador};
 use anotadinho_core::unidade::{Caminho, Tipo, Unidade};
@@ -19,8 +20,18 @@ pub struct Linha {
     pub caminho: Caminho,
     /// Profundidade na árvore — vira recuo na tela.
     pub nivel: usize,
-    /// O que se lê.
+    /// O que se lê, já sem os marcadores de markdown.
     pub texto: String,
+    /// A marca que abre a linha (`##`, `-`, `[kanban]`).
+    pub marca: String,
+    /// O texto quebrado em trechos com estilo (ciclo 287).
+    ///
+    /// Vazio quando não há nada a estilizar — bloco de código, embed,
+    /// grupo. Nesses o `texto` já basta, e quebrar seria mentir: dentro
+    /// de código um asterisco é asterisco.
+    pub trechos: Vec<Trecho>,
+    /// O tipo de quem produziu a linha — o desenho estiliza por ele.
+    pub tipo: Tipo,
 }
 
 /// Renderizador que produz linhas endereçadas.
@@ -49,10 +60,25 @@ impl Renderizador for Linhas {
         self.caminho.push(self.contadores[nivel]);
         self.contadores[nivel] += 1;
 
+        // Dentro de código nada é interpretado — a mesma regra que a
+        // costura do ciclo 276 já seguia pra espaço em branco.
+        let trechos = if literal(&u.tipo) {
+            Vec::new()
+        } else {
+            inline::trechos(&corpo(u))
+        };
+        let texto = if trechos.is_empty() {
+            corpo(u)
+        } else {
+            inline::visivel(&trechos)
+        };
         self.fora.push(Linha {
             caminho: self.caminho.clone(),
             nivel,
-            texto: format!("{} {}", marca(&u.tipo), corpo(u)).trim_end().to_string(),
+            texto,
+            marca: marca(&u.tipo),
+            trechos,
+            tipo: u.tipo.clone(),
         });
     }
 
@@ -84,6 +110,11 @@ fn corpo(u: &Unidade) -> String {
         return String::new();
     }
     u.texto.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Tipo cujo texto é literal: nada dentro dele vira estilo.
+fn literal(tipo: &Tipo) -> bool {
+    matches!(tipo, Tipo::Codigo(_) | Tipo::Embed(_))
 }
 
 /// A marca que abre a linha de cada tipo.
@@ -176,11 +207,16 @@ mod testes {
     fn a_lista_aparece_com_os_itens_dentro() {
         let d = analisar(PAGINA);
         let linhas = linhas(&d);
-        let textos: Vec<&str> = linhas.iter().map(|l| l.texto.as_str()).collect();
-        assert!(textos.contains(&"# Título"), "{textos:?}");
-        assert!(textos.iter().any(|t| t.contains("- um")), "{textos:?}");
+        // A marca é campo próprio desde o ciclo 287, pra o desenho poder
+        // estilizá-la à parte do conteúdo.
+        let pares: Vec<String> = linhas
+            .iter()
+            .map(|l| format!("{} {}", l.marca, l.texto).trim().to_string())
+            .collect();
+        assert!(pares.contains(&"# Título".to_string()), "{pares:?}");
+        assert!(pares.iter().any(|t| t == "- um"), "{pares:?}");
         // O item é um nível abaixo da lista.
-        let item = linhas.iter().find(|l| l.texto.contains("- um")).unwrap();
+        let item = linhas.iter().find(|l| l.texto == "um").unwrap();
         assert_eq!(item.nivel, 1);
     }
 
@@ -191,9 +227,12 @@ mod testes {
         let d = analisar(
             "{{ type: \"kanban\" }}\ncolumns:\n- Backlog\nitems:\n- title: Card A\n  column: Backlog\n{{ /kanban }}\n",
         );
-        let textos: Vec<String> = linhas(&d).into_iter().map(|l| l.texto).collect();
-        assert!(textos.iter().any(|t| t.contains("┌column Backlog")), "{textos:?}");
-        assert!(textos.iter().any(|t| t.contains("│card Card A")), "{textos:?}");
+        let pares: Vec<String> = linhas(&d)
+            .into_iter()
+            .map(|l| format!("{} {}", l.marca, l.texto).trim().to_string())
+            .collect();
+        assert!(pares.iter().any(|t| t == "┌column Backlog"), "{pares:?}");
+        assert!(pares.iter().any(|t| t == "│card Card A"), "{pares:?}");
     }
 
     #[test]
@@ -205,7 +244,8 @@ mod testes {
             "{{ type: \"callout\" }}\nvariant: info\nbody: |\n  oi\n{{ /callout }}\n",
         );
         let primeira = &linhas(&d)[0];
-        assert_eq!(primeira.texto, "[callout]", "o fence vazou pro desenho");
+        assert_eq!(primeira.marca, "[callout]");
+        assert_eq!(primeira.texto, "", "o fence vazou pro desenho");
     }
 
     #[test]
@@ -216,6 +256,41 @@ mod testes {
         for l in linhas(&d) {
             assert!(!l.texto.contains('\n'), "linha com quebra: {:?}", l.texto);
         }
+    }
+
+    #[test]
+    fn o_marcador_de_markdown_some_e_vira_marca() {
+        // O ponto do ciclo 287: `**forte**` deixa de aparecer com
+        // asteriscos e vira um trecho com a marca Negrito.
+        use anotadinho_core::inline::Marca;
+        let d = analisar("um **forte** e `cod` aqui\n");
+        let l = &linhas(&d)[0];
+        assert_eq!(l.texto, "um forte e cod aqui", "o marcador ficou na tela");
+
+        let forte = l.trechos.iter().find(|t| t.texto == "forte").unwrap();
+        assert!(forte.tem(Marca::Negrito));
+        let cod = l.trechos.iter().find(|t| t.texto == "cod").unwrap();
+        assert!(cod.tem(Marca::Codigo));
+    }
+
+    #[test]
+    fn dentro_de_codigo_o_asterisco_continua_asterisco() {
+        // Bloco de código é literal: quebrar em trechos ali mentiria, e
+        // é a mesma regra que a costura do ciclo 276 já seguia pra
+        // espaço em branco.
+        let d = analisar("```\numa **coisa** só\n```\n");
+        let bloco = linhas(&d).into_iter().find(|l| l.marca == "```").unwrap();
+        assert!(bloco.trechos.is_empty(), "quebrou código em trechos");
+        assert!(bloco.texto.contains("**coisa**"), "{:?}", bloco.texto);
+    }
+
+    #[test]
+    fn o_wikilink_mostra_o_texto_e_nao_os_colchetes() {
+        use anotadinho_core::inline::Marca;
+        let d = analisar("veja [[Sobre|a página]] hoje\n");
+        let l = &linhas(&d)[0];
+        assert_eq!(l.texto, "veja a página hoje");
+        assert!(l.trechos.iter().any(|t| t.tem(Marca::Wikilink)));
     }
 
     #[test]

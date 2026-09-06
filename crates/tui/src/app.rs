@@ -3,7 +3,9 @@
 //! Separado do laço de eventos de propósito: laço não se testa, transição
 //! de estado se testa. `main.rs` só lê tecla, chama `tecla()` e desenha.
 
+use anotadinho_core::inline::Marca;
 use anotadinho_core::navegacao::Passo;
+use anotadinho_core::unidade::Tipo;
 use anotadinho_core::unidade::{Caminho, Unidade};
 use anotadinho_ipc::PageMeta;
 use ratatui::layout::{Constraint, Direction, Layout};
@@ -176,17 +178,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         .iter()
         .skip(e.topo)
         .take(e.altura)
-        .map(|l| {
-            let estilo = if l.caminho == e.cursor {
-                realce(e.foco == Foco::Conteudo)
-            } else {
-                Style::default()
-            };
-            Line::from(Span::styled(
-                format!("{}{}", "  ".repeat(l.nivel), l.texto),
-                estilo,
-            ))
-        })
+        .map(|l| linha_estilizada(l, l.caminho == e.cursor && e.foco == Foco::Conteudo))
         .collect();
     let titulo = e
         .paginas
@@ -197,6 +189,74 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         Paragraph::new(visiveis).block(borda(&titulo, e.foco == Foco::Conteudo)),
         colunas[1],
     );
+}
+
+/// Uma linha do conteúdo, com o estilo do BLOCO e o dos trechos.
+///
+/// Dois níveis, e eles se somam: o bloco dá a cor de fundo do papel
+/// (título forte e colorido, citação apagada, código em outra cor), e o
+/// trecho dá o negrito/itálico/código de dentro (ciclo 287).
+///
+/// Sob o cursor, tudo cede: a linha inteira recebe o realce, porque
+/// duas ênfases competindo fazem a pessoa não saber onde está.
+fn linha_estilizada<'a>(l: &'a crate::tela::Linha, sob_cursor: bool) -> Line<'a> {
+    let recuo = "  ".repeat(l.nivel);
+    if sob_cursor {
+        let plano = format!("{recuo}{} {}", l.marca, l.texto);
+        return Line::from(Span::styled(plano.trim_end().to_string(), realce(true)));
+    }
+
+    let base = estilo_do_bloco(&l.tipo);
+    let mut spans = vec![Span::styled(recuo, Style::default())];
+    if !l.marca.trim().is_empty() {
+        // A marca costuma ser estrutura e fica apagada pra não competir
+        // com o conteúdo — o `##` de um título, o `-` de um item.
+        //
+        // Menos quando ela É o conteúdo: um embed, uma régua, um grupo
+        // de lista não têm texto próprio, e apagar a marca deles apaga a
+        // linha inteira. Visto no painel de tmux: `[fluxo]` saía em
+        // cinza-escuro, como se fosse enfeite.
+        let estilo_marca = if l.texto.trim().is_empty() {
+            base
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        spans.push(Span::styled(format!("{} ", l.marca), estilo_marca));
+    }
+    if l.trechos.is_empty() {
+        spans.push(Span::styled(l.texto.clone(), base));
+        return Line::from(spans);
+    }
+    for t in &l.trechos {
+        spans.push(Span::styled(t.texto.clone(), estilo_do_trecho(&t.marcas, base)));
+    }
+    Line::from(spans)
+}
+
+/// O estilo que o TIPO do bloco dá à linha inteira.
+fn estilo_do_bloco(tipo: &Tipo) -> Style {
+    match tipo {
+        // Título: quanto mais alto, mais forte. O h1 é o nome da página.
+        Tipo::Titulo(1) => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        Tipo::Titulo(_) => Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
+        Tipo::Citacao => Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC),
+        Tipo::Codigo(_) => Style::default().fg(Color::LightGreen),
+        Tipo::Embed(_) => Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+        Tipo::Parte { .. } => Style::default().fg(Color::Yellow),
+        _ => Style::default(),
+    }
+}
+
+/// O estilo que as marcas de um trecho somam ao do bloco.
+fn estilo_do_trecho(marcas: &[Marca], base: Style) -> Style {
+    marcas.iter().fold(base, |e, m| match m {
+        Marca::Negrito => e.add_modifier(Modifier::BOLD),
+        Marca::Italico => e.add_modifier(Modifier::ITALIC),
+        Marca::Tachado => e.add_modifier(Modifier::CROSSED_OUT),
+        Marca::Codigo => e.fg(Color::LightGreen),
+        Marca::Link => e.fg(Color::Blue).add_modifier(Modifier::UNDERLINED),
+        Marca::Wikilink => e.fg(Color::Cyan).add_modifier(Modifier::UNDERLINED),
+    })
 }
 
 /// Realce do item sob o cursor. Fora do painel com foco ele fica
@@ -368,6 +428,79 @@ mod testes {
             .collect();
         assert_eq!(realcadas.len(), 1, "esperava UMA linha realçada: {realcadas:?}");
         assert!(realcadas[0].contains("Título"), "{realcadas:?}");
+    }
+
+    /// As células de uma linha da tela que têm um modificador.
+    fn com_modificador(
+        e: &mut Estado,
+        m: Modifier,
+    ) -> Vec<String> {
+        let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
+        term.draw(|f| desenhar(f, e)).unwrap();
+        let buf = term.backend().buffer().clone();
+        (0..buf.area.height)
+            .filter_map(|y| {
+                let texto: String = (0..buf.area.width)
+                    .filter(|x| buf[(*x, y)].style().add_modifier.contains(m))
+                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .collect();
+                (!texto.trim().is_empty()).then(|| texto.trim().to_string())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn o_titulo_sai_em_negrito_e_o_marcador_nao_aparece() {
+        // É o que o ciclo 287 entrega: o `#` vira estilo, não texto.
+        let mut e = Estado::novo(paginas(), analisar("# Um título\n\nplano\n"));
+        e.foco = Foco::Paginas; // o cursor não pode roubar o realce
+        let negrito = com_modificador(&mut e, Modifier::BOLD);
+        assert!(
+            negrito.iter().any(|l| l.contains("Um título")),
+            "o título não saiu em negrito: {negrito:?}"
+        );
+        // O parágrafo comum não.
+        assert!(
+            !negrito.iter().any(|l| l.contains("plano")),
+            "o parágrafo veio em negrito: {negrito:?}"
+        );
+    }
+
+    #[test]
+    fn o_negrito_de_dentro_da_linha_pega_so_a_palavra() {
+        let mut e = Estado::novo(paginas(), analisar("um **forte** e nada\n"));
+        e.foco = Foco::Paginas;
+        let negrito = com_modificador(&mut e, Modifier::BOLD);
+        assert_eq!(negrito, ["forte"], "o negrito pegou o que não devia");
+    }
+
+    #[test]
+    fn a_marca_de_quem_nao_tem_texto_nao_fica_apagada() {
+        // Achado olhando o painel de tmux: `[fluxo]` saía em
+        // cinza-escuro, porque a marca é apagada por ser "estrutura" —
+        // só que num embed a marca É o conteúdo.
+        let mut e = Estado::novo(
+            paginas(),
+            analisar("{{ type: \"callout\" }}\nvariant: info\nbody: |\n  oi\n{{ /callout }}\n"),
+        );
+        e.foco = Foco::Paginas;
+        let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
+        term.draw(|f| desenhar(f, &mut e)).unwrap();
+        let buf = term.backend().buffer().clone();
+
+        let apagado: Vec<String> = (0..buf.area.height)
+            .filter_map(|y| {
+                let t: String = (0..buf.area.width)
+                    .filter(|x| buf[(*x, y)].style().fg == Some(Color::DarkGray))
+                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .collect();
+                (!t.trim().is_empty()).then(|| t.trim().to_string())
+            })
+            .collect();
+        assert!(
+            !apagado.iter().any(|l| l.contains("callout")),
+            "o rótulo do embed saiu apagado: {apagado:?}"
+        );
     }
 
     #[test]

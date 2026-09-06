@@ -1,4 +1,9 @@
 //! Renderizador Markdown → HTML usando pulldown-cmark.
+//!
+//! O núcleo ganhou o seu próprio analisador inline no ciclo 287
+//! (`anotadinho_core::inline`), que a TUI consome. Este caminho continua
+//! sendo o da janela: consolidar os dois é ciclo próprio, e só vale
+//! quando alguém medir que eles discordam.
 
 use pulldown_cmark::{html, Options, Parser};
 
