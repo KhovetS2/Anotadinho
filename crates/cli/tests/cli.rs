@@ -70,6 +70,31 @@ fn read_prints_raw_content() {
 }
 
 #[test]
+fn ver_desenha_a_estrutura_com_o_conteudo_dos_embeds() {
+    // O que este teste prova é o porte: uma página com kanban sai
+    // desenhada num terminal, sem DOM nenhum, pela MESMA árvore que a
+    // janela navega. Até o ciclo 283 o embed era folha vazia e o
+    // desenho parava na borda dele.
+    let dir = setup_vault();
+    fs::write(
+        dir.path().join("pages/board.md"),
+        "---\ntitle: Board\n---\n# Trabalho\n\n{{ type: \"kanban\" }}\ncolumns:\n- Backlog\nitems:\n- title: Card A\n  column: Backlog\n{{ /kanban }}\n\nfim\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .args(["--vault", dir.path().to_str().unwrap(), "ver", "pages/board.md"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("h1 Trabalho"))
+        .stdout(predicates::str::contains("[kanban]"))
+        .stdout(predicates::str::contains("column Backlog"))
+        .stdout(predicates::str::contains("card Card A"))
+        .stdout(predicates::str::contains("¶ fim"));
+}
+
+#[test]
 fn read_missing_page_fails_with_nonzero_exit() {
     let dir = setup_vault();
     Command::cargo_bin("anotadinho-cli")

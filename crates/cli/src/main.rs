@@ -64,6 +64,15 @@ enum Command {
         /// `pages/minha-nota.md^abc123` pra um bloco só.
         page_path: String,
     },
+    /// Desenha a ESTRUTURA de uma página — a árvore, não o markdown.
+    ///
+    /// É a mesma árvore que a janela usa pra navegar (`analise::analisar`
+    /// + `render::Terminal`), então o que aparece aqui é o que o app
+    /// enxerga: bloco a bloco, e dentro de cada embed o conteúdo dele.
+    Ver {
+        /// Path relativo ao vault (ex: pages/minha-nota.md).
+        page_path: String,
+    },
     /// Busca full-text (FTS5) no conteúdo das páginas.
     Search {
         /// Termo de busca.
@@ -365,6 +374,19 @@ fn run(cli: Cli) -> Result<(), String> {
                 let content = handle_read_page(cli.vault, page_path)?;
                 print!("{}", content);
             }
+        }
+        Command::Ver { page_path } => {
+            // Sem `handle_` próprio de propósito: não há regra de vault
+            // aqui, só leitura e travessia. O que este comando prova é
+            // que a árvore basta pra desenhar uma página inteira sem
+            // DOM nenhum — que é o primeiro pedaço do porte pro
+            // terminal (ciclo 284).
+            let conteudo = handle_read_page(cli.vault, page_path)?;
+            let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+            let arvore = anotadinho_core::analise::analisar(corpo);
+            let mut term = anotadinho_core::render::Terminal::default();
+            anotadinho_core::render::desenhar(&arvore, &mut term);
+            println!("{}", term.resultado());
         }
         Command::Search { query } => {
             let results = handle_search_content(cli.vault, query)?;

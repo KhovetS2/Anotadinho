@@ -248,7 +248,15 @@ impl Renderizador for Terminal {
     fn entrar(&mut self, u: &Unidade, nivel: usize) {
         let recuo = "  ".repeat(nivel);
         let rotulo = Self::rotulo(&u.tipo);
-        if u.texto.is_empty() {
+        // O texto de um embed é o FENCE INTEIRO — o YAML de origem, com
+        // quebras de linha. Num desenho de estrutura isso não é
+        // conteúdo, é fonte: despejava dez linhas de `columns:`/`items:`
+        // no meio do desenho, e o conteúdo de verdade vinha depois, nos
+        // filhos que o ciclo 283 deu a ele.
+        //
+        // O rótulo basta. Quem quer o fence tem `read`.
+        let e_embed = matches!(u.tipo, Tipo::Embed(_));
+        if u.texto.is_empty() || e_embed {
             self.saida.push_str(&format!("{recuo}{rotulo}\n"));
         } else {
             self.saida.push_str(&format!("{recuo}{rotulo} {}\n", u.texto));
@@ -351,6 +359,11 @@ mod testes {
         let saida = term.resultado();
 
         assert!(saida.contains("[kanban]"), "faltou o embed:\n{saida}");
+        // O rótulo, e NÃO o fence: o YAML de origem não é conteúdo.
+        assert!(
+            !saida.contains("columns:"),
+            "o terminal despejou o fence do embed:\n{saida}"
+        );
         assert!(saida.contains("┌column Backlog"), "faltou a coluna:\n{saida}");
         assert!(saida.contains("│card Card A"), "faltou o cartão:\n{saida}");
         // E o markdown continua não descendo: o fence é o conteúdo dele.

@@ -16,7 +16,8 @@ use crate::dialog::PendingDialog;
 // de kanban, linha de tabela, item de galeria). Isso não chega aqui de
 // propósito: o embed continua atômico, `navegaveis()` para nele, e a
 // navegação da GUI segue exatamente como estava. Quem desce é o
-// renderizador de terminal.
+// renderizador de terminal — que a janela não usa, e o
+// `anotadinho-cli ver` usa (ciclo 284).
 use crate::embed::DocSegment;
 use crate::state;
 
