@@ -6,3 +6,11 @@ release = false
 port = 1420
 addresses = ["0.0.0.0"]
 open = false
+
+# O binaryen 116, que o trunk escolhe sozinho, não parseia o wasm que o
+# rustc 1.98 gera: `invalid code after misc prefix: 17` — o table.fill
+# de reference-types, que o rustc passou a emitir por padrão. Fixado no
+# 123, que entende. Sem isso o build morre DEPOIS de compilar, no passo
+# de otimização, e o erro não menciona versão nenhuma.
+[tools]
+wasm_opt = "version_123"
