@@ -105,7 +105,8 @@ function comparar(nome, md) {
       await PAUSA(300);
 
       const dom = await bridge.js(DOM_RESUMO);
-      const modelo = await bridge.js(MODELO(ctx.pagina));
+      const unidades = await bridge.js(MODELO(ctx.pagina));
+      const modelo = unidades.map((u) => u.resumo);
 
       const erro = primeiraDivergencia(semDivergenciasConhecidas(modelo), dom);
       ctx.assert(
@@ -185,7 +186,7 @@ for (const nome of REAIS) {
       if (!temEditor) return;
 
       const dom = await bridge.js(DOM_RESUMO);
-      const modelo = await bridge.js(MODELO(caminho));
+      const modelo = (await bridge.js(MODELO(caminho))).map((u) => u.resumo);
       const erro = primeiraDivergencia(semDivergenciasConhecidas(modelo), dom);
       ctx.assert(
         !erro,
@@ -210,7 +211,7 @@ arvore.push({
     await PAUSA(300);
 
     const dom = await bridge.js(DOM_RESUMO);
-    const modelo = await bridge.js(MODELO(ctx.pagina));
+    const modelo = (await bridge.js(MODELO(ctx.pagina))).map((u) => u.resumo);
 
     ctx.assertEq(
       dom.filter((r) => r === "item").length,
@@ -229,3 +230,53 @@ arvore.push({
     );
   },
 });
+
+// ── o ENDEREÇO, não só a lista (ciclo 281) ───────────────────────────
+//
+// Até aqui a bateria conferia que modelo e tela concordam sobre a LISTA
+// de blocos. Concordar na lista e discordar no ENDEREÇO é possível — e é
+// o endereço que `navegacao::mover` consome, então uma divergência ali
+// quebra o movimento sem mudar nada do que se vê.
+//
+// `data-nav-caminho` é o `Caminho` do núcleo escrito no DOM. Estes
+// cenários provam que os dois lados escrevem o mesmo.
+
+const CAMINHOS_DO_DOM = `[...document.querySelectorAll('[data-nav-caminho]')]
+  .map(e => e.getAttribute('data-nav-caminho'))`;
+
+function compararCaminhos(nome, md) {
+  arvore.push({
+    nome: `árvore: endereço — ${nome} (281)`,
+    async fn(bridge, ctx) {
+      ctx.escrever(md);
+      await recarregarEstavel(bridge);
+      await abrirPaginaEstavel(bridge, ctx.nomePagina);
+      await PAUSA(300);
+
+      const dom = await bridge.js(CAMINHOS_DO_DOM);
+      const modelo = (await bridge.js(MODELO(ctx.pagina))).map((u) => u.caminho);
+
+      ctx.assert(dom.length > 0, "a tela não estampou caminho nenhum");
+      const erro = primeiraDivergencia(modelo, dom);
+      ctx.assert(
+        !erro,
+        `${erro}\n  modelo: ${JSON.stringify(modelo)}\n  tela:   ${JSON.stringify(dom)}`,
+      );
+    },
+  });
+}
+
+compararCaminhos("texto comum", FM + "# Título\n\nUm parágrafo.\n\n> citação\n");
+compararCaminhos("lista com itens", FM + "antes\n\n- um\n- dois\n- três\n\ndepois\n");
+compararCaminhos(
+  "lista DEPOIS de um embed — onde o índice por segmento errava",
+  FM + '{{ type: "callout" }}\nvariant: info\nbody: |\n  oi\n{{ /callout }}\n\n- um\n- dois\n',
+);
+compararCaminhos(
+  "duas listas separadas por um embed",
+  FM +
+    "- a\n- b\n\n" +
+    '{{ type: "callout" }}\nvariant: info\nbody: |\n  meio\n{{ /callout }}\n\n' +
+    "- c\n- d\n",
+);
+compararCaminhos("mistura de tudo", FM + "# t\n\np\n\n- i\n- j\n\n> c\n\n```\nx\n```\n\n---\n\nfim\n");

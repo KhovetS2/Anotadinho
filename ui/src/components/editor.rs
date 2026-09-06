@@ -471,6 +471,10 @@ pub fn editor(props: &EditorProps) -> Html {
     let (frontmatter_text, body_text) =
         anotadinho_core::MarkdownCodec::split_frontmatter_text(&full_snapshot);
     let frontmatter_text = frontmatter_text.to_string();
+    // O corpo fica disponível pra quem decide o movimento (ciclo 281).
+    // O handler de navegação vive em `app.rs` e não tem o markdown; sem
+    // isto ele não teria como perguntar nada ao modelo.
+    crate::arvore_atual::publicar(body_text);
     let segments: Vec<DocSegment> = crate::embed::segment(body_text);
     let has_embeds = segments.iter().any(|s| matches!(s, DocSegment::Embed(_)));
     let segment_refs: Vec<NodeRef> = (0..segments.len()).map(|_| NodeRef::default()).collect();
@@ -646,6 +650,10 @@ pub fn editor(props: &EditorProps) -> Html {
                                 }
                             }
                         }
+                        // Uma vez só, com todos os segmentos já marcados
+                        // — dentro do laço seria uma varredura por
+                        // segmento (ciclo 281).
+                        estampar_caminhos();
                         for r in segment_refs_eff.iter() {
                             if let Some(el) = r.cast::<web_sys::Element>() {
                                 wasm_bindgen_futures::spawn_local(async move {
@@ -667,6 +675,7 @@ pub fn editor(props: &EditorProps) -> Html {
                             caminho_para_transclusao.clone(),
                         );
                         marcar_blocos(&div);
+                        estampar_caminhos();
                         let _div = div.clone();
                         wasm_bindgen_futures::spawn_local(async move {
                             gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
@@ -2448,6 +2457,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         e.stop_propagation();
                         if let Some(pai) = bloco.parent_element() {
                             marcar_blocos(&pai);
+                            estampar_caminhos();
                         }
                         let novo = recompute_markdown_from_dom(
                             &content_md_esc,
@@ -4094,6 +4104,7 @@ fn insert_element_at_cursor(el: &web_sys::Element, break_out_of_block: bool) -> 
         .filter(|pai| pai.class_list().contains("editor__wysiwyg"));
     if let Some(pai) = &container {
         marcar_blocos(pai);
+        estampar_caminhos();
     }
 
     // Cursor DEPOIS do nó inserido cai direto no contêiner do segmento,
@@ -4443,6 +4454,7 @@ fn vim_paste_after(register: &RegRef) -> bool {
     let ok = parent.insert_before(&new_el, next.as_ref()).is_ok();
     if ok {
         marcar_blocos(&parent.unchecked_into::<web_sys::Element>());
+        estampar_caminhos();
     }
     ok
 }
@@ -4476,6 +4488,7 @@ fn vim_paste_before(register: &RegRef) -> bool {
     let ok = parent.insert_before(&new_el, Some(&block)).is_ok();
     if ok {
         marcar_blocos(&parent.unchecked_into::<web_sys::Element>());
+        estampar_caminhos();
     }
     ok
 }
@@ -5124,6 +5137,97 @@ fn init_mermaid_at(el: &web_sys::Element) {
 /// Roda logo depois do `set_inner_html`, então pega exatamente os
 /// elementos que o markdown gerou (`<p>`, `<h1..h6>`, `<ul>`, `<ol>`,
 /// `<blockquote>`, `<pre>`, `<table>`, `<hr>`, imagem solta).
+/// Estampa em cada bloco o CAMINHO dele na árvore (ciclo 281).
+///
+/// `data-nav-caminho="2"` é o terceiro bloco do documento;
+/// `data-nav-caminho="2.1"` é o segundo item dele. É o `Caminho` do
+/// núcleo escrito no DOM — o endereço pelo qual o modelo e a tela podem
+/// falar da mesma unidade.
+///
+/// Por que um endereço e não o índice que já existia: `data-nav-item`
+/// nomeia um destino, e o nome não diz onde ele está na árvore. Um
+/// caminho diz, e é o que `navegacao::mover` consome — sem ele, a GUI
+/// não tem como perguntar "qual é o próximo" a quem sabe.
+///
+/// **Roda UMA vez, depois de todos os segmentos marcados.** É uma
+/// varredura do documento inteiro; chamá-la de dentro de `marcar_blocos`
+/// a faria rodar uma vez por segmento, e aí o custo de marcar uma página
+/// com N embeds vira N × blocos — o tipo de laço que o ciclo 259 mediu e
+/// que esta suíte tem teto pra pegar.
+fn estampar_caminhos() {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    // Estampa exatamente quem a navegação PERCORRE, que é
+    // `[data-nav-item][data-nav-parent=...]` — o mesmo seletor de
+    // `items_in_group`.
+    //
+    // A primeira versão usou `data-nav-block` e errou: num embed, o
+    // `data-nav-block` está no wrapper e o `data-nav-item` está num div
+    // INTERNO. O embed ficava de fora da contagem, e a lista seguinte
+    // herdava o índice dele — a bateria pegou, dizendo que a tela
+    // mostrava "1.0" onde o modelo dizia "2".
+    let seletor = format!(
+        "[data-nav-item][data-nav-parent=\"{}\"]",
+        crate::nav_mode::GRUPO_BLOCOS
+    );
+    let Ok(blocos) = doc.query_selector_all(&seletor) else {
+        return;
+    };
+    for i in 0..blocos.length() {
+        let Some(bloco) = blocos
+            .item(i)
+            .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+        else {
+            continue;
+        };
+        let _ = bloco.set_attribute(ATTR_CAMINHO, &i.to_string());
+
+        // A descida PARA no atômico, que é o que o modelo diz.
+        //
+        // Um embed também declara `data-nav-group` — ele tem estrutura
+        // interna e navega dentro de si. Mas na ÁRVORE ele é folha: o
+        // conteúdo dele não é markdown reanalisado, é estrutura própria
+        // que só o componente conhece (`analisar` o guarda como unidade
+        // atômica). Descer aqui inventava endereços "1.0".."1.3" que o
+        // modelo não tem — a bateria pegou exatamente isso.
+        //
+        // `data-nav-block="grupo"` é a marca que `marcar_blocos` põe em
+        // quem comporta filhos NA ÁRVORE; o embed leva `"embed"`, que é
+        // o `atomica` da `Politica` chegando ao DOM (ciclo 263).
+        if bloco
+            .closest("[data-nav-block]")
+            .ok()
+            .flatten()
+            .and_then(|b| b.get_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO))
+            .as_deref()
+            != Some("grupo")
+        {
+            continue;
+        }
+        let Some(grupo) = bloco.get_attribute("data-nav-group") else {
+            continue;
+        };
+        let Ok(filhos) = doc.query_selector_all(&format!(
+            "[data-nav-item][data-nav-parent=\"{}\"]",
+            grupo.replace('"', "")
+        )) else {
+            continue;
+        };
+        for j in 0..filhos.length() {
+            if let Some(filho) = filhos
+                .item(j)
+                .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
+            {
+                let _ = filho.set_attribute(ATTR_CAMINHO, &format!("{i}.{j}"));
+            }
+        }
+    }
+}
+
+/// O atributo que carrega o caminho da árvore (ciclo 281).
+pub const ATTR_CAMINHO: &str = "data-nav-caminho";
+
 fn marcar_blocos(container: &web_sys::Element) {
     // Segmento sem bloco nenhum não teria onde receber cursor desde que
     // o `contenteditable` desceu pro bloco (ciclo 175) — uma página nova
@@ -5898,6 +6002,7 @@ fn aplicar_acao_de_bloco(bloco: &web_sys::Element, acao: AcaoBloco) -> Option<us
     // Os blocos foram reordenados: os `data-nav-item` precisam voltar a
     // bater com a posição, senão a navegação pula na ordem antiga.
     marcar_blocos(&pai);
+    estampar_caminhos();
     crate::nav_mode::focus_item(bloco);
     // Índice DEPOIS da mutação — o DOM já está na ordem nova aqui.
     Some(indice_do_bloco(bloco))

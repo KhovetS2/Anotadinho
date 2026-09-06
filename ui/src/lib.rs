@@ -7,6 +7,7 @@
 
 pub mod api;
 pub mod app;
+pub mod arvore_atual;
 pub mod components;
 pub mod date_util;
 pub mod dialog;

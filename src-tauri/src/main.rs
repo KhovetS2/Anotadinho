@@ -164,7 +164,10 @@ fn scan_vault(vault_path: String) -> Result<Vec<PageIndexEntry>, String> {
 
 /// A visão que o MODELO tem dos blocos de uma página (ciclo 272).
 #[tauri::command]
-fn arvore_da_pagina(vault_path: String, page_path: String) -> Result<Vec<String>, String> {
+fn arvore_da_pagina(
+    vault_path: String,
+    page_path: String,
+) -> Result<Vec<anotadinho_ipc::UnidadeDaPagina>, String> {
     anotadinho_ipc::handle_arvore_da_pagina(vault_path, page_path)
 }
 

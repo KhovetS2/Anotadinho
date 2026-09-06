@@ -1701,3 +1701,52 @@ teclado("Enter na lista desce pros itens, e j anda entre eles",
     ctx.assert(voltou.startsWith("ul:"),
       `Escape não voltou pro nível da lista: foi pra ${voltou}`);
   }, 280);
+
+// ── o modelo é o oráculo, não o DOM (ciclo 281) ──────────────────────
+//
+// Este cenário existe pra DISTINGUIR as duas implementações, porque o
+// comportamento nas páginas normais é o mesmo nas duas — e um ciclo
+// cujo cenário passa dos dois jeitos não provou nada (lição dos ciclos
+// 259 e 276).
+//
+// Ele injeta no editor um bloco que só existe na TELA: tem
+// `data-nav-item` e `data-nav-parent` como qualquer destino, e não tem
+// `data-nav-caminho`, porque o modelo não sabe dele.
+//
+// Com o movimento por índice sobre a lista do DOM, `j` pousaria nele.
+// Com o movimento pela árvore, ele não existe — e é essa a garantia de
+// que o porte CLI precisa: quem decide destino é o markdown, não o que
+// alguém pendurou no DOM.
+
+teclado("um bloco que só existe no DOM não vira destino",
+  "---\ntitle: __uitest\n---\nprimeiro\n\nsegundo\n",
+  async (bridge, ctx) => {
+    await entrarNosBlocos(bridge, ctx);
+    ctx.assert((await bridge.js(BLOCO_FOCADO)).startsWith("p:primeir"),
+      "não comecei no primeiro bloco — cenário sem base de comparação");
+
+    // Um intruso ENTRE os dois blocos, com tudo que o DOM exige de um
+    // destino e nada que o modelo reconheça.
+    const injetou = await bridge.js(`(() => {
+      const blocos = [...document.querySelectorAll(
+        '[data-nav-item][data-nav-parent="editor-blocos"]')];
+      if (blocos.length < 2) return 'esperava dois blocos, achei ' + blocos.length;
+      const intruso = document.createElement('p');
+      intruso.textContent = 'INTRUSO';
+      intruso.setAttribute('data-nav-item', 'intruso');
+      intruso.setAttribute('data-nav-parent', 'editor-blocos');
+      intruso.setAttribute('data-nav-block', 'texto');
+      intruso.setAttribute('tabindex', '-1');
+      blocos[0].after(intruso);
+      return true;
+    })()`);
+    ctx.assertEq(injetou, true, String(injetou));
+
+    await bridge.js(TECLA("j"));
+    await PAUSA(300);
+    const destino = await bridge.js(BLOCO_FOCADO);
+    ctx.assert(!destino.includes("INTRUSO"),
+      `o foco pousou num bloco que o modelo não conhece: ${destino}`);
+    ctx.assert(destino.startsWith("p:segundo"),
+      `esperava o segundo bloco do modelo, veio ${destino}`);
+  }, 281);

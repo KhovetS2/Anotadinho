@@ -126,15 +126,37 @@ pub fn handle_scan_vault(vault_path: String) -> Result<Vec<PageIndexEntry>, Stri
 pub fn handle_arvore_da_pagina(
     vault_path: String,
     page_path: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<UnidadeDaPagina>, String> {
     let vault = VaultIo::open(&vault_path);
     let conteudo = vault.read_page(&page_path).map_err(|e| e.to_string())?;
     let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
     Ok(anotadinho_core::analise::analisar(corpo)
         .navegaveis()
         .iter()
-        .map(|(_, u)| u.tipo.resumo())
+        .map(|(caminho, u)| UnidadeDaPagina {
+            caminho: caminho
+                .iter()
+                .map(usize::to_string)
+                .collect::<Vec<_>>()
+                .join("."),
+            resumo: u.tipo.resumo(),
+        })
         .collect())
+}
+
+/// Uma unidade navegável, como o modelo a vê: o ENDEREÇO e o que ela é.
+///
+/// O caminho entrou no ciclo 281. Sem ele dava pra conferir que modelo e
+/// tela concordam sobre a LISTA de blocos, mas não sobre o endereço de
+/// cada um — e é o endereço que `navegacao::mover` consome. Concordar na
+/// lista e discordar no endereço é o tipo de divergência que só apareceu
+/// porque alguém foi comparar.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnidadeDaPagina {
+    /// O `Caminho` da árvore, com pontos: `"2"`, `"2.1"`.
+    pub caminho: String,
+    /// O `Tipo::resumo` da unidade.
+    pub resumo: String,
 }
 
 /// Handler de read_page: retorna o conteúdo Markdown bruto.

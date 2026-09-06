@@ -1,7 +1,7 @@
 ---
 id: "281"
 titulo: "Passo 4e: o caminho da árvore vira endereço no DOM"
-status: aberto
+status: done
 criado: 2026-09-06
 autor: agente
 prioridade: alta
@@ -54,6 +54,18 @@ dentro, e dentro do calendário o foco ficava preso. `mover` não muda de
 nível nunca, e devolver `None` na borda é "fica onde está" — a regra
 existe no núcleo e a GUI hoje não a usa.
 
+## Duas metades
+
+**A — o endereço.** `data-nav-caminho` no DOM, e a bateria `--arvore`
+conferindo endereço por endereço contra o modelo. Hoje ela confere a
+LISTA de blocos; concordar na lista e discordar no endereço é possível, e
+quebraria o movimento sem mudar nada do que se vê.
+
+**B — o movimento.** O editor PUBLICA a árvore num lugar que o handler
+alcança, e o handler passa a perguntar a `navegacao::mover`. Como o
+caminho já distingue o nível (`"2"` é bloco, `"2.1"` é item), documento e
+lista passam a usar o mesmo código — que é o ponto.
+
 ## Cuidados
 
 - **Elemento invisível.** O filtro por retângulo não existe na árvore.
@@ -67,10 +79,11 @@ existe no núcleo e a GUI hoje não a usa.
 
 ## Critérios de aceite
 
-- [ ] O caminho da árvore está no DOM, e a bateria `--arvore` confere
-- [ ] O movimento entre blocos passa por `navegacao::mover`
-- [ ] Borda é "fica onde está", vindo do núcleo e não da GUI
-- [ ] Um cenário foi visto reprovando antes
+- [x] O caminho da árvore está no DOM, e a bateria `--arvore` confere
+- [x] O movimento entre blocos passa por `navegacao::mover`
+- [x] Borda é "fica onde está", vindo do núcleo e não da GUI
+- [x] Um cenário que DISTINGUE as duas implementações foi visto
+      reprovando com o modelo desligado
 
 ## Comandos de validação
 

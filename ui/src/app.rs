@@ -1375,6 +1375,61 @@ pub fn app() -> Html {
                                     let idx = crate::nav_mode::index_of(&items, active.as_ref());
                                     let forward =
                                         crate::nav_mode::direcao_de_navegacao(&key).unwrap_or(true);
+                                    // Quem decide é a ÁRVORE, quando ela
+                                    // alcança (ciclo 281).
+                                    //
+                                    // O elemento em foco carrega o
+                                    // `data-nav-caminho` que o editor
+                                    // estampou, e `navegacao::mover` sabe
+                                    // o que vem depois dele. Com isso o
+                                    // documento e a lista passam a andar
+                                    // pelo MESMO código — o caminho já
+                                    // distingue o nível ("2" é bloco,
+                                    // "2.1" é item) — e é esse código que
+                                    // o porte CLI vai usar, sem GUI
+                                    // nenhuma por perto.
+                                    //
+                                    // Fora do editor não há caminho
+                                    // estampado (menu, sidebar, barra), e
+                                    // aí vale o índice de sempre.
+                                    let pelo_modelo = active.as_ref().and_then(|el| {
+                                        let caminho = crate::arvore_atual::caminho_do_elemento(el)?;
+                                        let arvore = crate::arvore_atual::arvore()?;
+                                        let passo = if forward {
+                                            anotadinho_core::navegacao::Passo::Proximo
+                                        } else {
+                                            anotadinho_core::navegacao::Passo::Anterior
+                                        };
+                                        let cursor = anotadinho_core::navegacao::Cursor::em(&caminho);
+                                        // `None` é a borda: o cursor fica.
+                                        // Devolver `Some(None)` diz "o
+                                        // modelo respondeu, e a resposta é
+                                        // não andar" — diferente de
+                                        // `None`, que é "o modelo não tem
+                                        // opinião aqui".
+                                        let destino = anotadinho_core::navegacao::mover(
+                                            &arvore, &cursor, passo,
+                                        );
+                                        Some(destino.and_then(|c| {
+                                            let alvo = crate::arvore_atual::caminho_para_texto(
+                                                &c.caminho,
+                                            );
+                                            doc.query_selector(&format!(
+                                                "[{}=\"{}\"]",
+                                                crate::components::editor::ATTR_CAMINHO,
+                                                alvo.replace('"', "")
+                                            ))
+                                            .ok()
+                                            .flatten()
+                                        }))
+                                    });
+                                    if let Some(destino) = pelo_modelo {
+                                        if let Some(el) = destino {
+                                            crate::nav_mode::focus_item(&el);
+                                        }
+                                        return;
+                                    }
+
                                     // O DOCUMENTO não circula (ciclo 279).
                                     //
                                     // A aritmética modular valia pra todo
