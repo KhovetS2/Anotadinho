@@ -48,6 +48,8 @@ pub struct Estado {
     pub sair: bool,
     /// A paleta, lida do CSS da janela (ciclo 288).
     pub tema: Tema,
+    /// Os níveis dobrados, pelo caminho (ciclo 289).
+    pub dobrados: std::collections::HashSet<anotadinho_core::unidade::Caminho>,
 }
 
 impl Estado {
@@ -55,7 +57,9 @@ impl Estado {
     pub fn novo(paginas: Vec<PageMeta>, arvore: Unidade) -> Self {
         let linhas = tela::linhas(&arvore);
         let cursor = tela::primeiro(&arvore).unwrap_or_default();
+        let dobrados = tela::dobras_iniciais(&arvore);
         Self {
+            dobrados,
             paginas,
             pagina: 0,
             arvore,
@@ -79,13 +83,40 @@ impl Estado {
     pub fn abrir(&mut self, arvore: Unidade) {
         self.linhas = tela::linhas(&arvore);
         self.cursor = tela::primeiro(&arvore).unwrap_or_default();
+        self.dobrados = tela::dobras_iniciais(&arvore);
         self.arvore = arvore;
         self.topo = 0;
     }
 
+    /// As linhas que aparecem agora, sem o que está dentro de dobra.
+    pub fn visiveis(&self) -> Vec<&Linha> {
+        tela::visiveis(&self.linhas, &self.dobrados)
+    }
+
+    /// A unidade sob o cursor comporta filhos?
+    fn cursor_e_nivel(&self) -> bool {
+        self.arvore
+            .em(&self.cursor)
+            .is_some_and(|u| u.politica().aceita_filhos && !u.filhos.is_empty())
+    }
+
+    /// Dobra ou desdobra o nível sob o cursor.
+    pub fn dobrar(&mut self) {
+        if !self.cursor_e_nivel() {
+            return;
+        }
+        if !self.dobrados.remove(&self.cursor) {
+            self.dobrados.insert(self.cursor.clone());
+        }
+    }
+
     /// Rola pra deixar o cursor visível — o mínimo, nunca centralizando.
     fn seguir_cursor(&mut self) {
-        if let Some(l) = tela::linha_de(&self.linhas, &self.cursor) {
+        // Conta nas VISÍVEIS: com uma dobra fechada, a posição na lista
+        // completa não é a posição na tela, e a janela rolaria pro lugar
+        // errado.
+        let visiveis = self.visiveis();
+        if let Some(l) = visiveis.iter().position(|l| l.caminho == self.cursor) {
             self.topo = tela::rolar(self.topo, self.altura, l);
         }
     }
@@ -143,6 +174,14 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
 fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
     // Quem decide o destino é o núcleo. Este `match` só diz qual PASSO a
     // tecla pede; a régua de "dá ou não dá" é da árvore (ciclo 281).
+    // Dobrar é do painel, não da árvore: o modelo não sabe o que está
+    // escondido. `za` do vim vem quando a gramática for ligada; por
+    // enquanto uma tecla só.
+    if tecla == "z" || tecla == " " {
+        e.dobrar();
+        e.seguir_cursor();
+        return;
+    }
     let passo = match tecla {
         "j" | "ArrowDown" => Passo::Proximo,
         "k" | "ArrowUp" => Passo::Anterior,
@@ -150,6 +189,11 @@ fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
         "Escape" | "h" | "ArrowLeft" => Passo::Sair,
         _ => return,
     };
+    // Entrar num nível dobrado ABRE ele: pedir pra descer e não descer
+    // seria o "fiquei preso" de novo, agora por outra porta.
+    if passo == Passo::Entrar {
+        e.dobrados.remove(&e.cursor);
+    }
     e.cursor = tela::andar(&e.arvore, &e.cursor, passo);
     e.seguir_cursor();
 }
@@ -183,8 +227,8 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         colunas[0],
     );
 
-    let visiveis: Vec<Line> = e
-        .linhas
+    let linhas_visiveis = e.visiveis();
+    let visiveis: Vec<Line> = linhas_visiveis
         .iter()
         .skip(e.topo)
         .take(e.altura)
@@ -223,16 +267,21 @@ fn linha_estilizada<'a>(l: &'a crate::tela::Linha, sob_cursor: bool, tema: &Tema
     let mut spans = vec![Span::styled(recuo, Style::default())];
     if !l.marca.trim().is_empty() {
         // A marca costuma ser estrutura e fica apagada pra não competir
-        // com o conteúdo — o `##` de um título, o `-` de um item.
+        // com o conteúdo — o `##` de um título, o `-` de um item são
+        // sintaxe de markdown, não o que se lê.
         //
-        // Menos quando ela É o conteúdo: um embed, uma régua, um grupo
-        // de lista não têm texto próprio, e apagar a marca deles apaga a
-        // linha inteira. Visto no painel de tmux: `[fluxo]` saía em
-        // cinza-escuro, como se fosse enfeite.
-        let estilo_marca = if l.texto.trim().is_empty() {
-            base
-        } else {
+        // Menos quando ela É a identidade: `[kanban]`, `·` de uma lista.
+        // Ali apagar a marca apaga o que a linha tem de mais importante.
+        //
+        // Quem responde é o MODELO, não o texto: bloco que aceita texto
+        // tem a marca como sintaxe; quem não aceita (embed, grupo) tem a
+        // marca como nome. A primeira versão perguntava "o texto está
+        // vazio?", e quebrou no mesmo dia em que os níveis passaram a
+        // dizer o que contêm (ciclo 289).
+        let estilo_marca = if l.tipo.politica().aceita_texto {
             tema.estilo(Realce::Marca)
+        } else {
+            base
         };
         spans.push(Span::styled(format!("{} ", l.marca), estilo_marca));
     }
@@ -494,10 +543,11 @@ mod testes {
     }
 
     #[test]
-    fn a_marca_de_quem_nao_tem_texto_nao_fica_apagada() {
+    fn a_marca_que_e_identidade_nao_fica_apagada() {
         // Achado olhando o painel de tmux: `[fluxo]` saía em
         // cinza-escuro, porque a marca é apagada por ser "estrutura" —
-        // só que num embed a marca É o conteúdo.
+        // só que num embed a marca É a identidade. Quem separa os dois
+        // casos é a política do modelo, não o texto estar vazio.
         let mut e = Estado::novo(
             paginas(),
             analisar("{{ type: \"callout\" }}\nvariant: info\nbody: |\n  oi\n{{ /callout }}\n"),
@@ -521,6 +571,87 @@ mod testes {
             !apagado.iter().any(|l| l.contains("callout")),
             "o rótulo do embed saiu apagado: {apagado:?}"
         );
+    }
+
+    #[test]
+    fn dobrar_esconde_o_conteudo_e_mantem_a_linha() {
+        // Quem dobrou precisa continuar vendo ONDE dobrou — é essa linha
+        // que ele vai reabrir.
+        let mut e = Estado::novo(paginas(), analisar("antes\n\n- um\n- dois\n\ndepois\n"));
+        e.foco = Foco::Conteudo;
+        let antes = e.visiveis().len();
+
+        e.cursor = vec![1]; // a lista
+        tecla(&mut e, "z");
+        let depois = e.visiveis();
+        assert_eq!(depois.len(), antes - 2, "os itens não sumiram");
+        assert!(
+            depois.iter().any(|l| l.caminho == vec![1]),
+            "a linha da lista sumiu junto"
+        );
+
+        tecla(&mut e, "z");
+        assert_eq!(e.visiveis().len(), antes, "desdobrar não trouxe de volta");
+    }
+
+    #[test]
+    fn entrar_num_nivel_dobrado_abre_ele() {
+        // Pedir pra descer e não descer seria o "fiquei preso" do ciclo
+        // 280 de novo, por outra porta.
+        let mut e = Estado::novo(paginas(), analisar("antes\n\n- um\n- dois\n"));
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![1];
+        tecla(&mut e, "z");
+        assert!(e.dobrados.contains(&vec![1]));
+
+        tecla(&mut e, "Enter");
+        assert!(!e.dobrados.contains(&vec![1]), "continuou dobrado");
+        assert_eq!(e.cursor, vec![1, 0], "não desceu pro primeiro item");
+    }
+
+    #[test]
+    fn dobrar_num_bloco_de_texto_nao_faz_nada() {
+        let mut e = Estado::novo(paginas(), analisar("um parágrafo\n"));
+        e.foco = Foco::Conteudo;
+        let antes = e.visiveis().len();
+        tecla(&mut e, "z");
+        assert!(e.dobrados.is_empty());
+        assert_eq!(e.visiveis().len(), antes);
+    }
+
+    #[test]
+    fn uma_lista_enorme_nasce_dobrada() {
+        // O caso que a pessoa levantou: mil itens não se percorre de `j`
+        // em `j`. Dobrada, ela ocupa uma linha até alguém abrir.
+        let md: String = std::iter::once("antes\n\n".to_string())
+            .chain((0..1000).map(|i| format!("- item {i}\n")))
+            .collect();
+        let e = Estado::novo(paginas(), analisar(&md));
+        assert_eq!(
+            e.visiveis().len(),
+            2,
+            "a lista de mil itens não nasceu dobrada"
+        );
+        // E a linha dela diz o tamanho.
+        assert_eq!(e.visiveis()[1].texto, "1000 items");
+    }
+
+    #[test]
+    fn a_janela_conta_as_linhas_visiveis_e_nao_todas() {
+        // Com dobra fechada, a posição na lista completa não é a posição
+        // na tela — e a janela rolaria pro lugar errado.
+        let md: String = std::iter::once("topo\n\n".to_string())
+            .chain((0..40).map(|i| format!("- item {i}\n")))
+            .chain(std::iter::once("\nfim\n".to_string()))
+            .collect();
+        let mut e = Estado::novo(paginas(), analisar(&md));
+        e.foco = Foco::Conteudo;
+        e.altura = 10;
+        // A lista nasce dobrada, então só três linhas existem.
+        assert_eq!(e.visiveis().len(), 3);
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        assert_eq!(e.topo, 0, "rolou numa página que cabe inteira");
     }
 
     #[test]

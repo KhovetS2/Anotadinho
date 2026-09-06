@@ -445,6 +445,12 @@ cenarios.push({
   nome: "imagens: drop não-imagem e paste de texto não alteram o editor (226)",
   async fn(bridge, ctx) {
     ctx.escrever("---\ntitle: __uitest\n---\ntexto\n"); await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+    // Espera o BLOCO, não só a página: `abrirPagina` volta quando a
+    // aba abriu, e o editor ainda está renderizando. Tocar no que
+    // não existe estoura em `alvo.focus` — a mesma corrida do ciclo
+    // 277, numa forma que a varredura de lá não pegava, porque o
+    // `querySelector` e o uso estão em instruções diferentes.
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco do editor");
     const result = await bridge.js(`(() => { const alvo=document.querySelector('.editor__bloco'); const dt=new DataTransfer();dt.items.add(new File(['abc'],'x.txt',{type:'text/plain'}));alvo.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt})); const texto=new DataTransfer();texto.setData('text/plain','normal');const ev=new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:texto});alvo.dispatchEvent(ev);return {modal:!!document.querySelector('.image-modal'),cancelado:ev.defaultPrevented};})()`);
     ctx.assertEq(result.modal, false, "arquivo não-imagem abriu o modal"); ctx.assertEq(result.cancelado, false, "paste de texto foi interceptado");
   },
@@ -454,6 +460,12 @@ cenarios.push({
   nome: "imagens: paste grava direto e undo remove a referência (226)",
   async fn(bridge, ctx) {
     const fs = await import("node:fs"); ctx.escrever("---\ntitle: __uitest\n---\ntexto\n"); await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+    // Espera o BLOCO, não só a página: `abrirPagina` volta quando a
+    // aba abriu, e o editor ainda está renderizando. Tocar no que
+    // não existe estoura em `alvo.focus` — a mesma corrida do ciclo
+    // 277, numa forma que a varredura de lá não pegava, porque o
+    // `querySelector` e o uso estão em instruções diferentes.
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco do editor");
     const antes = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
     await bridge.js(`(() => {const alvo=document.querySelector('.editor__bloco');alvo.focus();const r=document.createRange();r.selectNodeContents(alvo);r.collapse(false);getSelection().removeAllRanges();getSelection().addRange(r);const dt=new DataTransfer();dt.items.add((${ARQUIVO_226("colada.png")}));alvo.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:dt}));return true;})()`);
     await ctx.esperar(bridge, "document.querySelector('.editor figure.inserted-image')", "o paste inserir diretamente");
@@ -469,6 +481,12 @@ cenarios.push({
     const fs = await import("node:fs");
     ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
     await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+    // Espera o BLOCO, não só a página: `abrirPagina` volta quando a
+    // aba abriu, e o editor ainda está renderizando. Tocar no que
+    // não existe estoura em `alvo.focus` — a mesma corrida do ciclo
+    // 277, numa forma que a varredura de lá não pegava, porque o
+    // `querySelector` e o uso estão em instruções diferentes.
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco do editor");
     await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco");
     const antes = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
     await bridge.js(`(() => { const alvo=document.querySelector('.editor__bloco'); alvo.focus(); const r=document.createRange();r.selectNodeContents(alvo);r.collapse(false);getSelection().removeAllRanges();getSelection().addRange(r); const dt=new DataTransfer();dt.items.add((${ARQUIVO_226("descartada.png")})); alvo.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt})); return true;})()`);
@@ -489,6 +507,12 @@ cenarios.push({
     const fs = await import("node:fs");
     ctx.escrever("---\ntitle: __uitest\n---\ntexto\n");
     await recarregar(bridge); await ctx.abrirPagina(bridge, ctx.nomePagina);
+    // Espera o BLOCO, não só a página: `abrirPagina` volta quando a
+    // aba abriu, e o editor ainda está renderizando. Tocar no que
+    // não existe estoura em `alvo.focus` — a mesma corrida do ciclo
+    // 277, numa forma que a varredura de lá não pegava, porque o
+    // `querySelector` e o uso estão em instruções diferentes.
+    await ctx.esperar(bridge, "document.querySelector('.editor__bloco')", "o bloco do editor");
     const antes = fs.existsSync(`${ctx.vault}/assets`) ? fs.readdirSync(`${ctx.vault}/assets`) : [];
     // Diz `image/png` no nome e no tipo, mas o conteúdo não é PNG. Quem
     // decide é o byte mágico no backend, não a extensão — é o que impede

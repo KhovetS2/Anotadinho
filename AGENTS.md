@@ -195,7 +195,7 @@ posto um `O(n×m)` no caminho do `oninput` — 1,44 milhão de comparações
 por caractere digitado numa página de 1200 blocos. Nenhum dos dois
 apareceu na suíte principal, cujas páginas têm três parágrafos.
 
-**Espere o elemento que você vai clicar, não um parente dele.** Esperar
+**Espere o elemento que você vai TOCAR, não um parente dele.** Esperar
 por um sinal PRÓXIMO — a aba entrou na barra, o embed renderizou — e
 agir no mesmo instante sobre outro elemento é corrida, e ela reprova com
 cara de defeito do app (`null is not an object`). Três cenários
@@ -204,6 +204,17 @@ de regressão minha por um bom tempo. O que separou foi refazer os passos
 na mão: passaram todos, e a única diferença era uma pausa que eu tinha
 posto sem pensar. Condição, nunca relógio — e `PAUSA` que faz um cenário
 passar é sintoma, não conserto.
+
+E vale nas DUAS formas — a encadeada e a que separa em duas instruções:
+
+```js
+document.querySelector('.x').click();              // pega fácil
+const alvo = document.querySelector('.x');
+alvo.focus();                                      // a mesma corrida
+```
+
+A segunda escapou da varredura do ciclo 277 e voltou a morder no 289,
+com a mesma assinatura (`null is not an object`).
 
 **Não tente subir o app você mesmo.** `./scripts/dev.sh` abre uma janela
 e fica rodando pra sempre; num comando não-interativo isso trava, e num

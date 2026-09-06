@@ -38,3 +38,8 @@ cycles/run-logs/
 
 # Cache do indice do vault (ciclo 171) — e cache, nao fonte da verdade
 .anotadinho/
+
+# A página de rascunho da suíte de UI: criada e apagada pelos testes.
+# Sem isto, um `git add -A` no meio de uma rodada commita o fixture do
+# cenário que estava correndo.
+VaultAnotadinho/pages/__uitest.md

@@ -467,9 +467,25 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
         // linhas são runtime.
         EmbedData::Query(q) => vec![item("from", q.from.clone().unwrap_or_default())],
 
-        // O fluxo é uma etapa, não uma coleção: o estado dele já está no
-        // texto do embed.
-        EmbedData::Fluxo(_) => Vec::new(),
+        // O fluxo não é coleção, e por isso eu o deixei sem filhos no
+        // ciclo 283 — raciocinando que o estado dele já estava no texto.
+        // Só que o ciclo 284 parou de mostrar o texto do embed (era o
+        // fence YAML inteiro), e as duas decisões juntas apagaram a
+        // informação: o arquivo diz `artefato: spec, etapa: concluida` e
+        // a tela não dizia nada.
+        //
+        // Cada decisão certa sozinha, erradas juntas — o mesmo tipo de
+        // composição silenciosa que o ciclo 285 achou na costura.
+        EmbedData::Fluxo(d) => {
+            let mut partes = vec![
+                item("artefato", d.artefato.label()),
+                item("etapa", d.etapa.label()),
+            ];
+            if let Some(nota) = d.nota.as_ref().filter(|n| !n.trim().is_empty()) {
+                partes.push(item("nota", nota.clone()));
+            }
+            partes
+        }
     }
 }
 
@@ -1332,6 +1348,18 @@ mod partes_de_embed {
         );
         assert_eq!(partes(&a), ["parte:button"]);
         assert_eq!(a.filhos[0].texto, "Abrir");
+    }
+
+    #[test]
+    fn o_fluxo_declara_o_artefato_e_a_etapa() {
+        // Ele era o único embed sem filhos, e como o ciclo 284 parou de
+        // mostrar o texto do embed, aparecia como `[fluxo]` e mais nada.
+        let e = embed_de(
+            "{{ type: \"fluxo\" }}\nartefato: spec\netapa: concluida\n{{ /fluxo }}\n",
+        );
+        assert_eq!(partes(&e), ["parte:artefato", "parte:etapa"]);
+        assert_eq!(e.filhos[0].texto, "Spec");
+        assert_eq!(e.filhos[1].texto, "Concluída");
     }
 
     #[test]

@@ -90,6 +90,71 @@ impl Renderizador for Linhas {
     }
 }
 
+/// O que um NÍVEL mostra quando não tem texto próprio (ciclo 289).
+///
+/// Uma lista e um embed são destinos de navegação — entra-se neles com
+/// Enter — e não têm texto. Desenhados só com a marca, saíam como um
+/// `·` solto ou um `[kanban]` mudo, e a pessoa não tinha como saber o
+/// que havia ali sem entrar.
+///
+/// A contagem é o que um nível FECHADO tem a dizer. Não por acaso é
+/// também a representação que o colapso vai usar: a linha do grupo já é
+/// a forma dobrada dele.
+fn contagem(u: &Unidade) -> String {
+    let n = u.filhos.len();
+    if n == 0 {
+        return String::new();
+    }
+    // Partes de nomes DIFERENTES são campos, não coleção: o fluxo tem
+    // um artefato e uma etapa, e contar "2 items" ali não diz nada. O
+    // que serve é o valor deles.
+    let folhas_distintas = u.filhos.len() <= 3
+        && u.filhos.iter().all(|f| {
+            matches!(&f.tipo, Tipo::Parte { grupo: false, .. })
+                && f.filhos.is_empty()
+                && !f.texto.trim().is_empty()
+        })
+        && nomes_das_partes(u).map(|n| n.len()) == Some(u.filhos.len());
+    if folhas_distintas {
+        return u
+            .filhos
+            .iter()
+            .map(|f| f.texto.trim())
+            .collect::<Vec<_>>()
+            .join(" · ");
+    }
+
+    // Nome do que está dentro, quando os filhos concordam — "2 columns"
+    // diz mais que "2 items", e o embed já sabe o nome das partes dele.
+    let nome = match &u.filhos[0].tipo {
+        Tipo::Parte { nome, .. } if u.filhos.iter().all(|f| {
+            matches!(&f.tipo, Tipo::Parte { nome: outro, .. } if outro == nome)
+        }) =>
+        {
+            nome.clone()
+        }
+        _ => "item".to_string(),
+    };
+    // Plural do português: quase tudo aqui termina em consoante ou
+    // vogal, e nenhum nome de parte é irregular.
+    if n == 1 {
+        format!("1 {nome}")
+    } else {
+        format!("{n} {nome}s")
+    }
+}
+
+/// Os nomes distintos das partes filhas, se todas forem partes.
+fn nomes_das_partes(u: &Unidade) -> Option<std::collections::BTreeSet<&str>> {
+    u.filhos
+        .iter()
+        .map(|f| match &f.tipo {
+            Tipo::Parte { nome, .. } => Some(nome.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// O que se mostra de uma unidade, numa linha só.
 ///
 /// Duas coisas acontecem aqui, e as duas foram achadas rodando:
@@ -107,9 +172,14 @@ impl Renderizador for Linhas {
 /// meio dela, e o desenho saía torto.
 fn corpo(u: &Unidade) -> String {
     if matches!(u.tipo, Tipo::Embed(_)) {
-        return String::new();
+        return contagem(u);
     }
-    u.texto.split_whitespace().collect::<Vec<_>>().join(" ")
+    let limpo = u.texto.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Grupo sem texto próprio (a lista) diz quantos itens tem.
+    if limpo.is_empty() && u.politica().aceita_filhos {
+        return contagem(u);
+    }
+    limpo
 }
 
 /// Tipo cujo texto é literal: nada dentro dele vira estilo.
@@ -176,6 +246,40 @@ pub fn andar(raiz: &Unidade, cursor: &Caminho, passo: Passo) -> Caminho {
     mover(raiz, &Cursor::em(cursor), passo)
         .map(|c| c.caminho)
         .unwrap_or_else(|| cursor.clone())
+}
+
+/// Acima disto, um nível nasce DOBRADO.
+///
+/// Responde ao caso que a pessoa levantou: uma consulta com mil itens é
+/// impossível de percorrer de `j` em `j`. Dobrada, ela ocupa uma linha
+/// até alguém abrir — e a linha já diz quantos itens tem (ciclo 289).
+pub const DOBRA_AUTOMATICA: usize = 30;
+
+/// Os caminhos que nascem dobrados numa página.
+pub fn dobras_iniciais(raiz: &Unidade) -> std::collections::HashSet<Caminho> {
+    raiz.percorrer()
+        .into_iter()
+        .filter(|(_, u)| u.filhos.len() > DOBRA_AUTOMATICA)
+        .map(|(c, _)| c)
+        .collect()
+}
+
+/// As linhas que aparecem, escondendo o que está dentro de uma dobra.
+///
+/// Esconde o CONTEÚDO da dobra, nunca a linha dela: quem dobrou precisa
+/// continuar vendo onde dobrou, e é essa linha que ele vai reabrir.
+pub fn visiveis<'a>(
+    linhas: &'a [Linha],
+    dobrados: &std::collections::HashSet<Caminho>,
+) -> Vec<&'a Linha> {
+    linhas
+        .iter()
+        .filter(|l| {
+            !dobrados
+                .iter()
+                .any(|d| d.len() < l.caminho.len() && l.caminho.starts_with(d))
+        })
+        .collect()
 }
 
 /// O primeiro destino de uma página — onde o cursor nasce.
@@ -245,7 +349,9 @@ mod testes {
         );
         let primeira = &linhas(&d)[0];
         assert_eq!(primeira.marca, "[callout]");
-        assert_eq!(primeira.texto, "", "o fence vazou pro desenho");
+        // Não é o fence: é o que ele CONTÉM (ciclo 289).
+        assert_eq!(primeira.texto, "1 item");
+        assert!(!primeira.texto.contains("variant"), "o fence vazou pro desenho");
     }
 
     #[test]
@@ -291,6 +397,50 @@ mod testes {
         let l = &linhas(&d)[0];
         assert_eq!(l.texto, "veja a página hoje");
         assert!(l.trechos.iter().any(|t| t.tem(Marca::Wikilink)));
+    }
+
+    #[test]
+    fn um_nivel_diz_quantos_itens_tem() {
+        // O `·` solto era o defeito: a lista é destino de navegação e
+        // não tinha o que mostrar sem que alguém entrasse nela.
+        let d = analisar("antes\n\n- um\n- dois\n- tres\n");
+        let lista = linhas(&d).into_iter().find(|l| l.marca == "·").unwrap();
+        assert_eq!(lista.texto, "3 items");
+    }
+
+    #[test]
+    fn o_embed_diz_o_nome_do_que_tem_dentro() {
+        // "4 colunas" diz mais que "4 itens", e o embed já sabe o nome
+        // das partes dele desde o ciclo 283.
+        let d = analisar(
+            "{{ type: \"kanban\" }}\ncolumns:\n- A\n- B\nitems:\n- title: X\n  column: A\n{{ /kanban }}\n",
+        );
+        let e = &linhas(&d)[0];
+        assert_eq!(e.marca, "[kanban]");
+        assert_eq!(e.texto, "2 columns");
+    }
+
+    #[test]
+    fn o_fluxo_deixou_de_ser_uma_linha_muda() {
+        // Ele aparecia como `[fluxo]` e mais nada, porque o ciclo 283
+        // não lhe deu filhos e o 284 parou de mostrar o texto do embed.
+        let d = analisar(
+            "{{ type: \"fluxo\" }}\nartefato: spec\netapa: concluida\n{{ /fluxo }}\n",
+        );
+        let ls = linhas(&d);
+        assert_eq!(ls[0].marca, "[fluxo]");
+        assert_eq!(ls[0].texto, "Spec · Concluída");
+        // E o estado aparece nos filhos.
+        let textos: Vec<&str> = ls.iter().map(|l| l.texto.as_str()).collect();
+        assert!(textos.contains(&"Spec"), "{textos:?}");
+        assert!(textos.contains(&"Concluída"), "{textos:?}");
+    }
+
+    #[test]
+    fn um_item_so_nao_vira_plural() {
+        let d = analisar("- só um\n");
+        let lista = linhas(&d).into_iter().find(|l| l.marca == "·").unwrap();
+        assert_eq!(lista.texto, "1 item");
     }
 
     #[test]
