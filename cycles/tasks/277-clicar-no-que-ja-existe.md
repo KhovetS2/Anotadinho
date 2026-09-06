@@ -1,7 +1,7 @@
 ---
 id: "277"
 titulo: "Clicar no que já existe: as 27 corridas latentes da suíte"
-status: aberto
+status: done
 criado: 2026-09-06
 autor: agente
 prioridade: media
@@ -52,10 +52,11 @@ Migrar as 27, uma por vez, rodando o cenário afetado a cada troca.
 
 ## Critérios de aceite
 
-- [ ] `clicar()` existe e falha com mensagem que nomeia o elemento
-- [ ] As 27 ocorrências migradas
-- [ ] Nenhum cenário que passava passou a reprovar
-- [ ] A varredura volta a zero (o script está no status do 276)
+- [x] `clicar()` existe e falha com mensagem que nomeia o elemento
+- [x] As 27 ocorrências tratadas (22 mecânicas, 5 na mão)
+- [x] Nenhum cenário que passava passou a reprovar
+- [x] A varredura cai de 27 para 3, e as 3 são falso positivo
+      (esperam pelo próprio alvo fora da janela de 10 linhas)
 
 ## Cuidado registrado
 

@@ -4,7 +4,7 @@
 // acoplamento com agentes: **nenhuma etapa avança sozinha**, e não
 // existe caminho da UI que pule a revisão.
 
-import { esperar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
+import { esperar, clicar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
 
 const PAUSA = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -117,7 +117,7 @@ caso(
       true,
       "proposta sem botão de origem",
     );
-    await b.js(`(() => { document.querySelector('.fluxo__origem').click(); return true; })()`);
+    await clicar(b, '.fluxo__origem', "a origem do fluxo");
     await esperar(
       b,
       `/miss/i.test((document.querySelector('.editor__title')||{}).textContent || '')`,
@@ -918,7 +918,7 @@ fluxo.push({
     await ctx.abrirPagina(bridge, ctx.nomePagina);
     await esperar(bridge, "document.querySelector('.conversa')", "o painel");
 
-    await bridge.js(`(() => { document.querySelector('.conversa__anexar').click(); return true; })()`);
+    await clicar(bridge, '.conversa__anexar', "o botão de anexar");
     await esperar(bridge, "document.querySelector('.conversa__seletor-busca')", "o seletor");
 
     // Sem filtro a lista é inútil com 200+ páginas.
@@ -936,7 +936,7 @@ fluxo.push({
     );
     ctx.assert(itens.length > 0 && itens.length < 10, `o filtro não reduziu: ${itens.length} itens`);
 
-    await bridge.js(`(() => { document.querySelector('.conversa__seletor-item').click(); return true; })()`);
+    await clicar(bridge, '.conversa__seletor-item', "um item no seletor de anexo");
     await PAUSA(1500);
 
     let md = fs.readFileSync(alvo, "utf8");
@@ -945,7 +945,7 @@ fluxo.push({
     ctx.assert(md.includes("type: conversa"), `o frontmatter foi destruído:\n${md}`);
 
     // Tirar também grava.
-    await bridge.js(`(() => { document.querySelector('.conversa__anexo-x').click(); return true; })()`);
+    await clicar(bridge, '.conversa__anexo-x', "o x do anexo");
     await PAUSA(1500);
     md = fs.readFileSync(alvo, "utf8");
     ctx.assert(!md.includes("nomenclatura"), `tirar o anexo não gravou:\n${md}`);
@@ -958,12 +958,13 @@ fluxo.push({
 // O seletor virou botão + popover no ciclo 227: a faixa fixa comia uma
 // linha do compositor mesmo sem prompt nenhum no vault.
 
-const ABRIR_PROMPTS = `(() => {
-  if (!document.querySelector('.conversa__prompt-popover')) {
-    document.querySelector('.conversa__prompt-botao').click();
-  }
-  return true;
-})()`;
+async function abrirPrompts(bridge) {
+  const aberto = await bridge.js(
+    `!!document.querySelector('.conversa__prompt-popover')`,
+  );
+  if (aberto) return true;
+  return clicar(bridge, ".conversa__prompt-botao", "o botão de prompts");
+}
 
 const ESCOLHER_PROMPT = (texto) => `(() => {
   const alvo = [...document.querySelectorAll('.conversa__prompt-opcao')]
@@ -1003,7 +1004,7 @@ fluxo.push({
       await recarregarEstavel(bridge);
       await ctx.abrirPagina(bridge, ctx.nomePagina);
       await esperar(bridge, "document.querySelector('.conversa__prompt-botao')", "o botão de prompt padrão");
-      await bridge.js(ABRIR_PROMPTS);
+      await abrirPrompts(bridge);
       await esperar(
         bridge,
         "[...document.querySelectorAll('.conversa__prompt-opcao')].some(o => o.textContent.includes('__uitest prompt completo'))",
@@ -1058,12 +1059,12 @@ fluxo.push({
       const preview = await bridge.js(`document.querySelector('.conversa__prompt-final').textContent`);
       ctx.assertEq(preview, final, "preview não mostra o prompt final");
       ctx.assertEq(await bridge.js(`document.querySelectorAll('.conversa__msg').length`), 0, "preview enviou a mensagem");
-      await bridge.js(`document.querySelector('.modal__actions button').click(); true`);
+      await clicar(bridge, '.modal__actions button', "o botão do modal");
       await PAUSA(900);
       const md = fs.readFileSync(conversa, "utf8");
       ctx.assert(md.includes("- pages/produto/missao.md"), `contexto do prompt não persistiu:\n${md}`);
 
-      await bridge.js(ABRIR_PROMPTS);
+      await abrirPrompts(bridge);
       await bridge.js(ESCOLHER_PROMPT("Nenhum"));
       await PAUSA(300);
       ctx.assertEq(
@@ -1072,7 +1073,7 @@ fluxo.push({
         "opção vazia não restaurou a escrita livre",
       );
 
-      await bridge.js(ABRIR_PROMPTS);
+      await abrirPrompts(bridge);
       await bridge.js(ESCOLHER_PROMPT("marcador único"));
       await esperar(bridge, "document.querySelectorAll('.conversa__prompt-campo').length === 1", "o marcador único");
       const unico = await bridge.js(`document.querySelector('.conversa__campo').value`);
@@ -1095,7 +1096,7 @@ fluxo.push({
 // Dois passos de propósito: o popover só existe no quadro SEGUINTE ao
 // clique no chip, e procurar o botão no mesmo tick não acha nada.
 const abrirConfig = async (bridge) => {
-  await bridge.js(`(document.querySelector('.conversa__agente').click(), true)`);
+  await clicar(bridge, '.conversa__agente', "o seletor de agente");
   await esperar(bridge, "document.querySelector('.conversa__agente-config')", "o acesso à configuração");
   await bridge.js(`(document.querySelector('.conversa__agente-config').click(), true)`);
   await esperar(bridge, "document.querySelector('.agente-config')", "a tela de agentes");
@@ -1124,7 +1125,7 @@ fluxo.push({
 
       await abrirConfig(bridge);
 
-      await bridge.js(`document.querySelector('.agente-config__novo').click(); true`);
+      await clicar(bridge, '.agente-config__novo', "o botão de novo agente");
       await PAUSA(200);
       await bridge.js(PREENCHER("Nome", "__uitest agente"));
       await PAUSA(150);
@@ -1146,7 +1147,7 @@ fluxo.push({
         "não deixou salvar uma configuração válida",
       );
 
-      await bridge.js(`document.querySelector('.agente-config__salvar').click(); true`);
+      await clicar(bridge, '.agente-config__salvar', "o botão de salvar agente");
       await PAUSA(500);
 
       // Virou o ativo, e o chip da conversa mostra isso.
@@ -1167,7 +1168,7 @@ fluxo.push({
       );
 
       // Remover devolve para um preset, sem deixar a tela órfã.
-      await bridge.js(`document.querySelector('.agente-config__remover').click(); true`);
+      await clicar(bridge, '.agente-config__remover', "o botão de remover agente");
       await PAUSA(400);
       ctx.assert(
         !(await bridge.js(`(localStorage.getItem('anotadinho.adaptadores_agente')||'')`)).includes("__uitest agente"),
@@ -1193,7 +1194,7 @@ fluxo.push({
     await esperar(bridge, "document.querySelector('.conversa')", "a conversa");
     await abrirConfig(bridge);
 
-    await bridge.js(`document.querySelector('.agente-config__novo').click(); true`);
+    await clicar(bridge, '.agente-config__novo', "o botão de novo agente");
     await PAUSA(200);
     // Não existe shell no caminho: o binário vai pra `Command::new` e os
     // argumentos vão separados. Uma linha inteira não vira execução de
@@ -1304,12 +1305,16 @@ fluxo.push({
       );
 
       // Pedir pra excluir NÃO exclui: pergunta antes.
-      await bridge.js(`(() => {
+      const pediu = await bridge.js(`(() => {
         const item = [...document.querySelectorAll('.sidebar-item')]
           .find(e => (e.querySelector('.sidebar-item__title')||{}).textContent.trim() === '__uitest-descartavel');
-        item.querySelector('.sidebar-item__delete').click();
+        if (!item) return 'a página não está na sidebar';
+        const x = item.querySelector('.sidebar-item__delete');
+        if (!x) return 'o item da sidebar não tem botão de excluir';
+        x.click();
         return true;
       })()`);
+      ctx.assertEq(pediu, true, String(pediu));
       await esperar(bridge, "document.querySelector('.modal')", "a confirmação");
       ctx.assertEq(fs.existsSync(alvo), true, "apagou antes de perguntar");
 
@@ -1341,12 +1346,16 @@ fluxo.push({
         `[...document.querySelectorAll('.sidebar-item__title')].some(e => e.textContent.trim() === '__uitest-fica')`,
         "a página aparecer",
       );
-      await bridge.js(`(() => {
+      const pediu = await bridge.js(`(() => {
         const item = [...document.querySelectorAll('.sidebar-item')]
           .find(e => (e.querySelector('.sidebar-item__title')||{}).textContent.trim() === '__uitest-fica');
-        item.querySelector('.sidebar-item__delete').click();
+        if (!item) return 'a página não está na sidebar';
+        const x = item.querySelector('.sidebar-item__delete');
+        if (!x) return 'o item da sidebar não tem botão de excluir';
+        x.click();
         return true;
       })()`);
+      ctx.assertEq(pediu, true, String(pediu));
       await esperar(bridge, "document.querySelector('.modal')", "a confirmação");
       await bridge.js(`([...document.querySelectorAll('.modal button')]
         .find(b => /Cancelar|Fechar/.test(b.textContent)).click(), true)`);
@@ -1370,12 +1379,16 @@ fluxo.push({
       await esperar(bridge, "document.querySelector('.conversa')", "a conversa abrir");
 
       // Pela paleta: é o caminho de quem já está na página errada.
-      await bridge.js(`(() => {
+      const pediu = await bridge.js(`(() => {
         const item = [...document.querySelectorAll('.sidebar-item')]
           .find(e => (e.querySelector('.sidebar-item__title')||{}).textContent.trim() === '__uitest-aberta');
-        item.querySelector('.sidebar-item__delete').click();
+        if (!item) return 'a página não está na sidebar';
+        const x = item.querySelector('.sidebar-item__delete');
+        if (!x) return 'o item da sidebar não tem botão de excluir';
+        x.click();
         return true;
       })()`);
+      ctx.assertEq(pediu, true, String(pediu));
       await esperar(bridge, "document.querySelector('.modal')", "a confirmação");
       await bridge.js(`([...document.querySelectorAll('.modal button')]
         .find(b => b.textContent.trim() === 'Excluir').click(), true)`);
@@ -1639,7 +1652,7 @@ fluxo.push({
       await recarregarEstavel(bridge);
       await ctx.abrirPagina(bridge, ctx.nomePagina);
       await esperar(bridge, "document.querySelector('.fluxo__planejar')", "a spec aprovada");
-      await bridge.js(`(() => { document.querySelector('.fluxo__planejar button').click(); return true; })()`);
+      await clicar(bridge, '.fluxo__planejar button', "o botão de planejar");
       await esperar(bridge, "document.querySelector('.conversa')", "a conversa de planejamento", 12000);
       await esperar(
         bridge,
@@ -1686,7 +1699,7 @@ fluxo.push({
     // O campo ocupa a largura toda, e a lista abre por cima dele em vez
     // de empurrá-lo para baixo.
     const antes = await bridge.js(`document.querySelector('.conversa__campo').getBoundingClientRect().top`);
-    await bridge.js(ABRIR_PROMPTS);
+    await abrirPrompts(bridge);
     await esperar(bridge, "document.querySelector('.conversa__prompt-popover')", "a lista abrir");
     ctx.assertEq(
       await bridge.js(`document.querySelector('.conversa__campo').getBoundingClientRect().top`),
@@ -1722,7 +1735,7 @@ fluxo.push({
         "spec aprovada devia oferecer planejar a implementação",
       );
 
-      await bridge.js(`(() => { document.querySelector('.fluxo__planejar button').click(); return true; })()`);
+      await clicar(bridge, '.fluxo__planejar button', "o botão de planejar");
       await esperar(bridge, "document.querySelector('.conversa')", "a conversa de planejamento", 12000);
 
       // Os anexos vêm do frontmatter, lido de forma assíncrona: ler os
@@ -1859,7 +1872,7 @@ fluxo.push({
       );
       ctx.assert(/Executar/.test(rotulo), `numa proposta o botão devia ser Executar, veio "${rotulo}"`);
 
-      await bridge.js(`(() => { document.querySelector('.fluxo__planejar button').click(); return true; })()`);
+      await clicar(bridge, '.fluxo__planejar button', "o botão de planejar");
       await esperar(bridge, "document.querySelector('.conversa')", "a conversa de execução", 12000);
 
       const campo = await bridge.js(`(document.querySelector('.conversa__campo')||{}).value || ''`);
@@ -2155,7 +2168,7 @@ fluxo.push({
       ctx.assertEq(codex.nome, "Codex", "não trocou pro Codex");
       ctx.assert(codex.args.includes("--json"), `Codex sem --json: ${JSON.stringify(codex.args)}`);
 
-      await bridge.js(`(() => { document.querySelector('.conversa__agente').click(); return true; })()`);
+      await clicar(bridge, '.conversa__agente', "o seletor de agente");
       await PAUSA(300);
       await bridge.js(`(() => {
         [...document.querySelectorAll('.conversa__agente-op')]

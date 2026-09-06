@@ -7,7 +7,7 @@
 // Escrito depois do ciclo 198, então usa espera por condição desde o
 // começo — nenhum `PAUSA` fixo de setup.
 
-import { esperar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
+import { esperar, clicar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
 
 const PAUSA = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -350,11 +350,11 @@ telas.push({
 
     // Aplicar não recarrega a janela nem perde trabalho (RNF3): é só um
     // atributo no `<html>`.
-    await bridge.js(`(() => { document.querySelector('button[data-tema="papel"]').click(); return true; })()`);
+    await clicar(bridge, 'button[data-tema="papel"]', "o tema papel");
     await PAUSA(400);
-    await bridge.js(`(() => { document.querySelector('button[data-destaque="verde"]').click(); return true; })()`);
+    await clicar(bridge, 'button[data-destaque="verde"]', "o destaque verde");
     await PAUSA(400);
-    await bridge.js(`(() => { document.querySelector('button[data-botoes="pilula"]').click(); return true; })()`);
+    await clicar(bridge, 'button[data-botoes="pilula"]', "os botões pílula");
     await PAUSA(400);
 
     const depois = await bridge.js(ESTADO_APARENCIA);
@@ -397,7 +397,7 @@ telas.push({
     await recarregarEstavel(bridge);
     ctx.assertEq(await bridge.js(ABRIR_APARENCIA), true, "a tela de aparência não abriu");
     await PAUSA(400);
-    await bridge.js(`(() => { document.querySelector('button[data-tema="contraste"]').click(); return true; })()`);
+    await clicar(bridge, 'button[data-tema="contraste"]', "o tema contraste");
     await PAUSA(600);
 
     const fs = await import("node:fs");

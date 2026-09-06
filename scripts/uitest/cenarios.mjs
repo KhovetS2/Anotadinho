@@ -5,7 +5,7 @@
 // (`ctx.escrever`), abre no app, mexe pelo DOM e confere. Nunca toca em
 // página real do vault.
 
-import { esperar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
+import { esperar, clicar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
 
 const PAUSA = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -103,7 +103,7 @@ export const cenarios = [
 
       // Entra em edição e escreve markdown com pontuação que já quebrou
       // serialização montada à mão (ciclo 064).
-      await bridge.js(`(() => { document.querySelector('.embed-md').click(); return true; })()`);
+      await clicar(bridge, '.embed-md', "o embed de markdown");
       await ctx.esperar(bridge, "document.querySelector('.embed-md__input')", "o campo de edição abrir");
       await bridge.js(`(() => {
         const ta = document.querySelector('.embed-md__input');
@@ -1239,12 +1239,16 @@ cenarios.push({
         "a spec aparecer no recorte",
       );
 
-      await bridge.js(`(() => {
+      const abriu = await bridge.js(`(() => {
         const linha = [...document.querySelectorAll('.query-embed__row')]
           .find(r => r.textContent.includes('Spec de teste'));
-        linha.querySelector('.query-embed__editavel').click();
+        if (!linha) return 'a spec não virou linha do recorte';
+        const campo = linha.querySelector('.query-embed__editavel');
+        if (!campo) return 'a linha não tem campo editável';
+        campo.click();
         return true;
       })()`);
+      ctx.assertEq(abriu, true, String(abriu));
       await ctx.esperar(bridge, "document.querySelector('.query-embed__editar')", "o campo abrir");
       await bridge.js(`(() => {
         const inp = document.querySelector('.query-embed__editar');
@@ -1356,7 +1360,7 @@ cenarios.push({
     );
 
     const linhasAntes = await bridge.js(`document.querySelectorAll('.query-embed__row').length`);
-    await bridge.js(`(() => { document.querySelector('.query-embed__grupo').click(); return true; })()`);
+    await clicar(bridge, '.query-embed__grupo', "o grupo da consulta");
     await PAUSA(600);
     const linhasDepois = await bridge.js(`document.querySelectorAll('.query-embed__row').length`);
     ctx.assert(linhasDepois < linhasAntes, "recolher o grupo devia esconder as linhas dele");
@@ -2076,7 +2080,7 @@ cenarios.push({
 
     // Clicar abre a página cujo TÍTULO casa, mesmo com nome de arquivo
     // diferente.
-    await bridge.js(`(() => { document.querySelector('.editor__wysiwyg a').click(); return true; })()`);
+    await clicar(bridge, '.editor__wysiwyg a', "o link no corpo");
     await ctx.esperar(
       bridge,
       `(document.querySelector('.editor__title')||{}).textContent === 'Grafo do Vault'`,
@@ -2117,7 +2121,7 @@ cenarios.push({
     ctx.assert(disco.includes("[[Missão]]"), `o link sem alias mudou:\n${disco}`);
 
     // E clicar leva pro alvo, não pro texto.
-    await bridge.js(`(() => { document.querySelector('.editor__wysiwyg a').click(); return true; })()`);
+    await clicar(bridge, '.editor__wysiwyg a', "o link no corpo");
     await ctx.esperar(
       bridge,
       `(document.querySelector('.editor__title')||{}).textContent === 'Grafo do Vault'`,

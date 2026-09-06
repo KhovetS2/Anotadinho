@@ -137,6 +137,25 @@ export async function esperar(bridge, cond, descricao, limiteMs = 8000) {
   throw new Error(`esperava ${descricao}, mas não aconteceu em ${limiteMs}ms${detalhe}`);
 }
 
+/// Espera o elemento existir e SÓ ENTÃO clica nele.
+///
+/// Clicar direto em `querySelector(...)` é corrida sempre que o cenário
+/// esperou por um sinal PRÓXIMO — a aba entrou na barra, o embed
+/// renderizou — em vez de esperar pelo próprio alvo. Quando o alvo ainda
+/// não chegou, o erro que sai é `null is not an object`, que parece
+/// defeito do app e não é. Custou meio ciclo achar isso no 276.
+///
+/// A mensagem de falha nomeia o seletor, então a próxima vez se lê
+/// sozinha.
+export async function clicar(bridge, seletor, descricao, limiteMs = 8000) {
+  const alvo = descricao || `o elemento ${seletor}`;
+  await esperar(bridge, `!!document.querySelector(${JSON.stringify(seletor)})`,
+    `${alvo} aparecer`, limiteMs);
+  return bridge.js(
+    `(() => { document.querySelector(${JSON.stringify(seletor)}).click(); return true; })()`,
+  );
+}
+
 /// Abre uma página pelo nome que aparece na sidebar.
 ///
 /// TENTA achar o alvo até conseguir (ciclo 270). A versão anterior
