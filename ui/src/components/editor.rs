@@ -1548,6 +1548,22 @@ pub fn editor(props: &EditorProps) -> Html {
                     // inserção. Enter também, mas SÓ se ninguém já tratou
                     // — um cartão de kanban abre o modal no Enter, e ele
                     // marca `prevent_default` sem parar a propagação.
+                    // Enter DESCE UM NÍVEL (ciclo 273): o primeiro item
+                    // filho, se houver. Só quando não há filho é que ele
+                    // vai pro campo de edição.
+                    //
+                    // A ordem importa. Sem ela, um Enter na raiz de uma
+                    // tabela pulava direto pro `<textarea>` da primeira
+                    // célula — dois níveis de uma vez, e o Escape depois
+                    // devolvia pra um lugar que a pessoa nunca visitou.
+                    if e.key() == "Enter" && !e.default_prevented() {
+                        if let Some(filho) = primeiro_filho_do_item_focado() {
+                            e.prevent_default();
+                            e.stop_propagation();
+                            crate::nav_mode::focus_item(&filho);
+                            return;
+                        }
+                    }
                     let quer_editar = matches!(e.key().as_str(), "i" | "a")
                         || (e.key() == "Enter" && !e.default_prevented());
                     if quer_editar {
@@ -5116,6 +5132,28 @@ fn marcar_blocos(container: &web_sys::Element) {
         // um alvo de Tab (que continua andando pelos controles, não
         // pelo texto).
         let _ = bloco.set_attribute("tabindex", "-1");
+
+        // Uma LISTA é um nível, não um bloco de texto (ciclo 273).
+        //
+        // Até aqui o `<ul>` inteiro era um bloco só: `dd` apagava a
+        // lista toda e não havia como alcançar um item. O modelo do
+        // núcleo sempre discordou disso, e a comparação do ciclo 272
+        // mostrou a divergência em número.
+        //
+        // Agora a lista é contêiner: entra-se nela com Enter e anda-se
+        // entre os itens, que são os blocos de verdade — cada um com
+        // seu `contenteditable`, como qualquer parágrafo.
+        let tag = bloco.tag_name().to_lowercase();
+        if tag == "ul" || tag == "ol" {
+            let _ = bloco.set_attribute("contenteditable", "false");
+            let _ = bloco.set_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO, "grupo");
+            // A classe sai junto: `editor__bloco` significa "aqui se
+            // digita", e num contêiner isso é mentira. Deixá-la fazia o
+            // cursor pousar no `<ul>` e a digitação sumir — foi o que a
+            // suíte pegou.
+            let _ = bloco.class_list().remove_1("editor__bloco");
+            marcar_itens_da_lista(&bloco, i);
+        }
     }
 
     marcar_convite();
@@ -6504,6 +6542,8 @@ fn mover_entre_itens_do_embed(direcao: anotadinho_core::espacial::Direcao) -> bo
 
     let mut irmaos: Vec<web_sys::Element> = Vec::new();
     let mut caixas: Vec<Caixa> = Vec::new();
+    // Guardados só pra ENTRAR (quando o foco está no wrapper), nunca
+    // pra mover: ver a nota no fim desta função.
     let mut dentro: Vec<web_sys::Element> = Vec::new();
     let mut caixas_dentro: Vec<Caixa> = Vec::new();
     for i in 0..lista.length() {
@@ -6563,25 +6603,19 @@ fn mover_entre_itens_do_embed(direcao: anotadinho_core::espacial::Direcao) -> bo
         crate::nav_mode::focus_item(&irmaos[i]);
         return true;
     }
-    // Descer só a partir de um contêiner PURO — um item que não tem
-    // vizinho nenhum, só conteúdo. É o caso da raiz do embed, que
-    // envolve tudo.
+    // MOVIMENTO NÃO DESCE. Ponto (ciclo 273).
     //
-    // A versão anterior descia sempre que faltasse vizinho NA DIREÇÃO,
-    // e ficava incoerente: do primeiro cartão o `j` ia pro segundo
-    // (irmão), e do último descia pros botões do próprio cartão. Duas
-    // respostas diferentes pra mesma tecla no mesmo tipo de item.
-    if irmaos.is_empty() && matches!(direcao, Direcao::Baixo | Direcao::Direita) {
-        // Entrar num contêiner é pelo canto, não pela ordem do
-        // documento: numa tabela o primeiro item marcado é o "+ coluna"
-        // do cabeçalho, na direita, e descer nele em vez de na primeira
-        // célula era o que a sondagem mostrava.
-        let area = caixa_de(&ativo);
-        if let Some(i) = anotadinho_core::espacial::mais_proximo_do_inicio(&area, &caixas_dentro) {
-            crate::nav_mode::focus_item(&dentro[i]);
-            return true;
-        }
-    }
+    // Havia aqui uma descida "quando não há vizinho na direção", e ela
+    // era um beco: andando entre blocos, o cursor caía dentro de um
+    // calendário sem ninguém ter pedido, e sair exigia saber que existe
+    // um Escape. Numa interface de terminal, sem mouse pra resgatar,
+    // isso prende quem está usando.
+    //
+    // Descer é um ATO (`Enter`), não uma consequência de andar. A regra
+    // está em `anotadinho_core::navegacao` e vale igual pro editor, pros
+    // dez embeds e pra qualquer interface futura.
+    //
+    // Na borda, o cursor FICA. `false` aqui é resposta, não falha.
     false
 }
 
@@ -6629,4 +6663,82 @@ fn campo_do_item_focado() -> Option<web_sys::HtmlElement> {
         .ok()
         .flatten()
         .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+}
+
+/// Marca cada `<li>` de uma lista como bloco de texto (ciclo 273).
+///
+/// A lista deixou de ser um bloco e virou um NÍVEL; quem recebe cursor,
+/// digitação e operadores são os itens. É a granularidade que o modelo
+/// do núcleo sempre teve e que o editor não tinha — a divergência que a
+/// bateria `--arvore` mediu no ciclo 272.
+///
+/// `data-nav-parent` aponta pra lista e não pro grupo de blocos: é o que
+/// põe os itens um nível abaixo, e é assim que a navegação sabe que
+/// entrar na lista é um ato separado de andar entre listas.
+fn marcar_itens_da_lista(lista: &web_sys::Element, indice_da_lista: u32) {
+    let itens = lista.children();
+    for j in 0..itens.length() {
+        let Some(item) = itens.item(j) else { continue };
+        if item.tag_name().to_lowercase() != "li" {
+            continue;
+        }
+        let _ = item.set_attribute("data-nav-item", &format!("item-{indice_da_lista}-{j}"));
+        let _ = item.set_attribute("data-nav-parent", &format!("bloco-{indice_da_lista}"));
+        let _ = item.set_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO, "texto");
+        let _ = item.set_attribute("contenteditable", "true");
+        let _ = item.class_list().add_1("editor__bloco");
+        let _ = item.set_attribute("tabindex", "-1");
+    }
+}
+
+/// O primeiro item NAVEGÁVEL dentro do item em foco — um nível abaixo.
+///
+/// É o `Passo::Entrar` de `anotadinho_core::navegacao` aplicado ao DOM:
+/// desce um nível e só um. "Um nível" é o primeiro `[data-nav-item]`
+/// descendente que não tenha OUTRO item marcado entre ele e o foco —
+/// senão descer de uma tabela cairia num botão dentro de uma célula,
+/// dois níveis de uma vez.
+///
+/// A escolha entre os candidatos é geométrica (canto de cima à
+/// esquerda), pela mesma razão do ciclo 269: em ordem de documento, o
+/// primeiro item de uma tabela é o "+ coluna" do cabeçalho.
+fn primeiro_filho_do_item_focado() -> Option<web_sys::Element> {
+    use anotadinho_core::espacial::{mais_proximo_do_inicio, Caixa};
+
+    let ativo = web_sys::window()?.document()?.active_element()?;
+    if !ativo.has_attribute("data-nav-item") {
+        return None;
+    }
+    let Ok(lista) = ativo.query_selector_all("[data-nav-item]") else {
+        return None;
+    };
+    let caixa_de = |el: &web_sys::Element| {
+        let r = el.get_bounding_client_rect();
+        Caixa::nova(r.x(), r.y(), r.width(), r.height())
+    };
+
+    let mut filhos: Vec<web_sys::Element> = Vec::new();
+    let mut caixas: Vec<Caixa> = Vec::new();
+    for i in 0..lista.length() {
+        let Some(el) = lista.item(i).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) else {
+            continue;
+        };
+        let c = caixa_de(&el);
+        if c.largura <= 0.0 || c.altura <= 0.0 {
+            continue;
+        }
+        // Só o nível IMEDIATO: se existe outro item marcado entre `ativo`
+        // e `el`, então `el` é neto, não filho.
+        let intermediario = el
+            .parent_element()
+            .and_then(|p| p.closest("[data-nav-item]").ok().flatten())
+            .filter(|meio| !meio.is_same_node(Some(&ativo)));
+        if intermediario.is_some() {
+            continue;
+        }
+        filhos.push(el);
+        caixas.push(c);
+    }
+    let i = mais_proximo_do_inicio(&caixa_de(&ativo), &caixas)?;
+    filhos.get(i).cloned()
 }

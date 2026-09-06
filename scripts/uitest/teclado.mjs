@@ -1241,6 +1241,12 @@ const ITEM_FOCADO = `(() => {
   return a ? a.getAttribute('data-nav-item') : null;
 })()`;
 
+/// Desce até o embed e ENTRA nele.
+///
+/// Desde o ciclo 273, `j` só anda entre blocos — nunca desce. Descer é
+/// um ato, e todo cenário que quer estar DENTRO precisa pedir. Os
+/// cenários abaixo dependiam do movimento descer sozinho, que é
+/// exatamente o beco que aquele ciclo fechou.
 async function entrarNoEmbed(b) {
   await b.js(CURSOR_EM(0, 0));
   await PAUSA(300);
@@ -1248,6 +1254,12 @@ async function entrarNoEmbed(b) {
   await PAUSA(450);
   await b.js(TECLA("Enter"));
   await PAUSA(450);
+}
+
+/// Um Enter a mais, pra descer da raiz do embed até os controles dele.
+async function descerMais(b) {
+  await b.js(TECLA("Enter"));
+  await PAUSA(400);
 }
 
 teclado(
@@ -1258,6 +1270,7 @@ teclado(
     // beco sem saída.
     await esperar(b, `!!document.querySelector('.embed-hover-wrapper')`, "o embed", 15000);
     await entrarNoEmbed(b);
+    await descerMais(b);
 
     const inicio = await b.js(ITEM_FOCADO);
     await b.js(TECLA("j"));
@@ -1278,15 +1291,18 @@ teclado(
     await esperar(b, `!!document.querySelector('.embed-kanban')`, "o kanban", 15000);
     await entrarNoEmbed(b);
 
-    // Desce até um cartão. A escolha é geométrica, então `j` desce a
-    // COLUNA: cabeçalho -> cartão -> cartão.
-    let achou = false;
+    // Desce até um cartão. ENTRAR é por Enter (ciclo 273); dentro do
+    // nível, `j` desce a COLUNA — a escolha é geométrica.
+    await descerMais(b);
+    let achou = (await b.js(ITEM_FOCADO)) === "kanban-card";
     for (let i = 0; i < 8 && !achou; i++) {
       await b.js(TECLA("j"));
       await PAUSA(250);
+      if ((await b.js(ITEM_FOCADO)) === "kanban-card") { achou = true; break; }
+      await descerMais(b);
       achou = (await b.js(ITEM_FOCADO)) === "kanban-card";
     }
-    ctx.assert(achou, "não cheguei num cartão descendo com `j`");
+    ctx.assert(achou, "não cheguei num cartão");
 
     // De um cartão, `j` vai pro cartão de BAIXO — na mesma coluna.
     // Andando por ordem de documento passaria pelos botões de editar e
@@ -1328,9 +1344,8 @@ teclado(
     // sair de um campo custaria entrar tudo de novo.
     await esperar(b, `!!document.querySelector('.embed-kanban')`, "o kanban", 15000);
     await entrarNoEmbed(b);
+    await descerMais(b);
 
-    await b.js(TECLA("j"));
-    await PAUSA(300);
     await b.js(TECLA("j"));
     await PAUSA(300);
     const fundo = await b.js(ITEM_FOCADO);
@@ -1398,13 +1413,11 @@ teclado(
   async (b, ctx) => {
     await esperar(b, `!!document.querySelector('.task-table__table')`, "a tabela", 15000);
     await entrarNoEmbed(b);
-
-    // Andar até uma célula. A escolha é geométrica, então basta ir pro
-    // lado/baixo — não importa a ordem em que os itens estão no HTML.
-    await b.js(TECLA("l"));
-    await PAUSA(400);
+    // Entrar na tabela pousa no item mais próximo do canto de cima à
+    // esquerda — a primeira célula (ciclo 269).
+    await descerMais(b);
     const primeira = await b.js(CELULA);
-    ctx.assertEq(primeira.item, "table-cell", "o `l` não chegou numa célula");
+    ctx.assertEq(primeira.item, "table-cell", "entrar na tabela não pousou numa célula");
 
     // `j` desce a COLUNA: outra célula, não o botão de excluir linha
     // (que fica à direita, na mesma altura).
@@ -1434,8 +1447,7 @@ teclado(
     // primeiro Escape pulava a célula e saltava dois de uma vez.
     await esperar(b, `!!document.querySelector('.task-table__table')`, "a tabela", 15000);
     await entrarNoEmbed(b);
-    await b.js(TECLA("l"));
-    await PAUSA(350);
+    await descerMais(b);
     await b.js(TECLA("i"));
     await PAUSA(400);
     ctx.assert(
@@ -1467,4 +1479,92 @@ teclado(
     );
   },
   269,
+);
+
+// ── níveis de navegação: andar não é entrar (ciclo 273) ─────────────
+//
+// O defeito relatado: andando entre blocos com `j`, o cursor caía DENTRO
+// de um calendário sem ninguém ter pedido — e sair de lá exigia saber
+// que existe um Escape. Numa interface de terminal, sem mouse pra
+// resgatar, isso prende quem está usando.
+//
+// A regra: movimento anda entre irmãos e PARA na borda. Descer é um ato
+// (`Enter`), subir é outro (`Escape`).
+
+const COM_LISTA_E_CALENDARIO = `---
+title: __uitest
+---
+alfa
+
+- um
+- dois
+- três
+
+{{ type: "calendar" }}
+entries:
+- title: Reunião
+  date: 2026-09-10
+{{ /calendar }}
+
+ômega
+`;
+
+const NIVEL = `(() => {
+  const a = document.activeElement;
+  if (!a) return null;
+  return {
+    item: a.getAttribute('data-nav-item'),
+    bloco: a.getAttribute('data-nav-block'),
+    dentroDoEmbed: !!a.closest('.embed-hover-wrapper') && !a.classList.contains('embed-hover-wrapper'),
+    txt: (a.textContent || '').trim().slice(0, 10),
+  };
+})()`;
+
+teclado(
+  "andar até o fim não entra no calendário",
+  { md: COM_LISTA_E_CALENDARIO, vim: true },
+  async (b, ctx) => {
+    await esperar(b, `!!document.querySelector('.calendar-grid')`, "o calendário", 15000);
+    await b.js(CURSOR_EM(0, 0));
+    await PAUSA(300);
+
+    // Desce até o calendário e continua apertando `j`. Antes deste
+    // ciclo, o excedente enfiava o cursor lá dentro.
+    for (let i = 0; i < 8; i++) {
+      await b.js(TECLA("j"));
+      await PAUSA(220);
+    }
+
+    const onde = await b.js(NIVEL);
+    ctx.assertEq(
+      onde.dentroDoEmbed,
+      false,
+      `o movimento entrou no calendário sozinho: ${JSON.stringify(onde)}`,
+    );
+  },
+  273,
+);
+
+teclado(
+  "os itens da lista são blocos, e entrar neles é um ato",
+  { md: COM_LISTA_E_CALENDARIO, vim: true },
+  async (b, ctx) => {
+    await esperar(b, `!!document.querySelector('.editor__bloco')`, "os blocos", 15000);
+
+    // A lista virou NÍVEL: ela é grupo, e os itens são blocos de texto.
+    const marcas = await b.js(`(() => ({
+      grupos: document.querySelectorAll('[data-nav-block="grupo"]').length,
+      itens: document.querySelectorAll('li[data-nav-block="texto"]').length,
+    }))()`);
+    ctx.assertEq(marcas.grupos, 1, "a lista não virou nível");
+    ctx.assertEq(marcas.itens, 3, "os itens da lista não viraram blocos");
+
+    // E cada item recebe cursor, como qualquer parágrafo.
+    const editaveis = await b.js(
+      `[...document.querySelectorAll('li[data-nav-block="texto"]')]
+        .every(e => e.getAttribute('contenteditable') === 'true')`,
+    );
+    ctx.assertEq(editaveis, true, "os itens não aceitam cursor");
+  },
+  273,
 );

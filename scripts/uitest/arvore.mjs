@@ -71,14 +71,13 @@ const MODELO = (caminho) => `window.__TAURI_INTERNALS__.invoke('arvore_da_pagina
 /// embaixo. Quando o editor mudar, aquele cenário falha e avisa que a
 /// permissão aqui pode sair.
 ///
-/// **Itens de lista.** O modelo trata cada `- item` como unidade
-/// navegável; o editor marca o `<ul>` inteiro como um bloco e os `<li>`
-/// não são blocos. É diferença de GRANULARIDADE: hoje `dd` numa lista
-/// apaga a lista toda, e num modelo por item apagaria um item. A versão
-/// do modelo é a que um editor de blocos costuma ter, mas mudar isso é
-/// decisão de produto, não de migração.
-function semItensDeLista(resumos) {
-  return resumos.filter((r) => r !== "item");
+/// **Estava vazia? Não.** Havia uma, e ela SAIU no ciclo 273: o modelo
+/// tratava cada `- item` como unidade e o editor marcava o `<ul>`
+/// inteiro. O cenário que afirmava a divergência reprovou assim que os
+/// itens viraram blocos, com a mensagem dizendo o que fazer. Foi pra
+/// isso que ele existia.
+function semDivergenciasConhecidas(resumos) {
+    return resumos;
 }
 
 /// Compara os dois e devolve a primeira divergência legível.
@@ -105,7 +104,7 @@ function comparar(nome, md) {
       const dom = await bridge.js(DOM_RESUMO);
       const modelo = await bridge.js(MODELO(ctx.pagina));
 
-      const erro = primeiraDivergencia(semItensDeLista(modelo), dom);
+      const erro = primeiraDivergencia(semDivergenciasConhecidas(modelo), dom);
       ctx.assert(
         !erro,
         `${erro}\n  modelo: ${JSON.stringify(modelo)}\n  tela:   ${JSON.stringify(dom)}`,
@@ -184,7 +183,7 @@ for (const nome of REAIS) {
 
       const dom = await bridge.js(DOM_RESUMO);
       const modelo = await bridge.js(MODELO(caminho));
-      const erro = primeiraDivergencia(semItensDeLista(modelo), dom);
+      const erro = primeiraDivergencia(semDivergenciasConhecidas(modelo), dom);
       ctx.assert(
         !erro,
         `${caminho}: ${erro}\n  modelo: ${JSON.stringify(modelo.slice(0, 12))}\n  tela:   ${JSON.stringify(dom.slice(0, 12))}`,
@@ -193,15 +192,15 @@ for (const nome of REAIS) {
   });
 }
 
-// ── as divergências conhecidas, afirmadas ────────────────────────────
-//
-// Uma divergência tolerada em silêncio vira uma divergência esquecida.
-// Estes cenários afirmam que ela AINDA existe: no dia em que o editor
-// mudar, eles falham e lembram de tirar a permissão lá em cima.
+// ── a divergência que fechou ─────────────────────────────────────────
 
 arvore.push({
-  nome: "árvore: o editor ainda trata a lista como UM bloco (272)",
+  nome: "árvore: os itens de lista são blocos nos DOIS lados (273)",
   async fn(bridge, ctx) {
+    // Este cenário nasceu ao contrário: afirmava que o editor NÃO
+    // marcava os itens, pra avisar no dia em que passasse a marcar.
+    // Passou (ciclo 273), ele reprovou com a mensagem certa, e agora
+    // afirma o acordo — que é o que protege contra a regressão.
     ctx.escrever(FM + "- um\n- dois\n- três\n");
     await recarregarEstavel(bridge);
     await abrirPaginaEstavel(bridge, ctx.nomePagina);
@@ -212,14 +211,18 @@ arvore.push({
 
     ctx.assertEq(
       dom.filter((r) => r === "item").length,
-      0,
-      "o editor passou a marcar itens de lista como bloco — dá pra tirar " +
-        "o `semItensDeLista` da comparação",
+      3,
+      "o editor voltou a tratar a lista como um bloco só",
     );
     ctx.assertEq(
       modelo.filter((r) => r === "item").length,
       3,
       "o modelo deixou de enxergar os itens",
+    );
+    ctx.assertEq(
+      JSON.stringify(modelo),
+      JSON.stringify(dom),
+      "modelo e tela discordam sobre a lista",
     );
   },
 });

@@ -79,7 +79,13 @@ pub fn e_atomico(el: &web_sys::Element) -> bool {
 pub fn blocos_de_texto() -> Vec<web_sys::Element> {
     blocos_do_documento()
         .into_iter()
-        .filter(|el| !e_atomico(el))
+        // `"texto"` e não "tudo menos embed": desde o ciclo 273 existe
+        // um terceiro valor, `"grupo"` (a lista), que também não recebe
+        // cursor. Filtrar pelo que É evita ter que lembrar de excluir
+        // cada coisa nova que apareça.
+        .filter(|el| {
+            el.get_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO).as_deref() == Some("texto")
+        })
         .collect()
 }
 

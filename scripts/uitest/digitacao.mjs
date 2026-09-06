@@ -25,9 +25,17 @@ function corpo(texto) {
 }
 
 /// Põe o cursor no fim do último bloco e devolve o editor.
+/// Põe o cursor no fim do último bloco EDITÁVEL.
+///
+/// Era `seg.lastElementChild`, e isso deixou de bastar no ciclo 273:
+/// desde que a lista virou nível, o último filho pode ser um `<ul>`,
+/// que é contêiner e não recebe digitação. No uso real o navegador põe
+/// o caret no `<li>`; era a manipulação sintética daqui que pousava no
+/// lugar errado.
 const IR_PRO_FIM = `(() => {
   const seg = document.querySelector('.editor__wysiwyg');
-  const alvo = seg.lastElementChild || seg;
+  const editaveis = seg.querySelectorAll('[contenteditable="true"]');
+  const alvo = editaveis[editaveis.length - 1] || seg.lastElementChild || seg;
   alvo.focus();
   const r = document.createRange();
   r.selectNodeContents(alvo); r.collapse(false);
