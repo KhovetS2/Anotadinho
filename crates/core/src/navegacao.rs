@@ -70,6 +70,32 @@ pub enum Passo {
 /// Aplica um passo. `None` quer dizer "não dá" — e não dar é uma
 /// resposta legítima: na borda de um nível o cursor FICA, não pula pra
 /// outro lugar.
+/// O índice vizinho dentro de um nível, ou `None` na borda.
+///
+/// É a mesma regra de `mover` — na borda o cursor FICA — dita para quem
+/// só tem uma lista de destinos, que é o caso da GUI: ela navega por
+/// elementos do DOM, não por caminhos da árvore, e antes disso decidia
+/// a borda sozinha, com aritmética modular. Documento circulava: `j` no
+/// último bloco pulava pro primeiro (ciclo 279).
+///
+/// Circular continua certo em MENU, onde a lista é curta e fechada.
+/// Documento não é menu, e quem escolhe é quem chama — o que esta
+/// função garante é que a resposta de "não dá" seja a mesma dos dois
+/// lados do modelo.
+///
+/// `atual` é `None` quando nada está em foco ainda: aí o destino é a
+/// primeira unidade, indo pra frente ou pra trás.
+pub fn proximo_indice(atual: Option<usize>, total: usize, adiante: bool) -> Option<usize> {
+    if total == 0 {
+        return None;
+    }
+    match atual {
+        None => Some(0),
+        Some(i) if adiante => (i + 1 < total).then_some(i + 1),
+        Some(i) => i.checked_sub(1),
+    }
+}
+
 pub fn mover(raiz: &Unidade, cursor: &Cursor, passo: Passo) -> Option<Cursor> {
     match passo {
         Passo::Proximo => irmao(raiz, cursor, 1),
@@ -281,5 +307,36 @@ mod testes {
         let mais = mover(&d, &dentro, Passo::Proximo).unwrap();
         let volta = mover(&d, &mais, Passo::Sair).unwrap();
         assert_eq!(volta, partida);
+    }
+    #[test]
+    fn a_borda_do_nivel_segura_o_indice() {
+        // Quatro destinos. No fim, ir adiante não dá; no começo, voltar
+        // não dá. Era aqui que a GUI circulava.
+        assert_eq!(proximo_indice(Some(3), 4, true), None);
+        assert_eq!(proximo_indice(Some(0), 4, false), None);
+        // No meio, anda normal.
+        assert_eq!(proximo_indice(Some(1), 4, true), Some(2));
+        assert_eq!(proximo_indice(Some(1), 4, false), Some(0));
+    }
+
+    #[test]
+    fn sem_foco_o_destino_e_o_primeiro() {
+        assert_eq!(proximo_indice(None, 4, true), Some(0));
+        assert_eq!(proximo_indice(None, 4, false), Some(0));
+    }
+
+    #[test]
+    fn nivel_vazio_nao_tem_destino() {
+        assert_eq!(proximo_indice(None, 0, true), None);
+        assert_eq!(proximo_indice(Some(0), 0, true), None);
+    }
+
+    #[test]
+    fn um_destino_so_nao_vai_a_lugar_nenhum() {
+        // O caso que a aritmética modular acertava por acidente:
+        // `(0 + 1) % 1` é 0, então parecia certo. Com dois destinos ela
+        // já errava.
+        assert_eq!(proximo_indice(Some(0), 1, true), None);
+        assert_eq!(proximo_indice(Some(0), 1, false), None);
     }
 }

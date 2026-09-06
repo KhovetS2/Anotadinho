@@ -1375,12 +1375,39 @@ pub fn app() -> Html {
                                     let idx = crate::nav_mode::index_of(&items, active.as_ref());
                                     let forward =
                                         crate::nav_mode::direcao_de_navegacao(&key).unwrap_or(true);
-                                    let next_idx = match idx {
-                                        Some(i) if forward => (i + 1) % items.len(),
-                                        Some(i) => (i + items.len() - 1) % items.len(),
-                                        None => 0,
+                                    // O DOCUMENTO não circula (ciclo 279).
+                                    //
+                                    // A aritmética modular valia pra todo
+                                    // grupo, e no nível dos blocos isso
+                                    // teleportava: `j` no último bloco
+                                    // pulava pro primeiro, `k` no primeiro
+                                    // pulava pro último. O núcleo diz o
+                                    // contrário desde o 273 — na borda o
+                                    // cursor fica — e a GUI decidia sozinha.
+                                    //
+                                    // Em MENU circular continua certo: lista
+                                    // curta e fechada, dar a volta ajuda.
+                                    // Documento não é menu.
+                                    let next_idx = if group_id == crate::nav_mode::GRUPO_BLOCOS {
+                                        anotadinho_core::navegacao::proximo_indice(
+                                            idx,
+                                            items.len(),
+                                            forward,
+                                        )
+                                    } else {
+                                        Some(match idx {
+                                            Some(i) if forward => (i + 1) % items.len(),
+                                            Some(i) => (i + items.len() - 1) % items.len(),
+                                            None => 0,
+                                        })
                                     };
-                                    crate::nav_mode::focus_item(&items[next_idx]);
+                                    // `None` é a borda: o foco fica onde
+                                    // está, e a tecla foi consumida do mesmo
+                                    // jeito — sem isso ela vazaria pro
+                                    // handler global.
+                                    if let Some(next_idx) = next_idx {
+                                        crate::nav_mode::focus_item(&items[next_idx]);
+                                    }
                                 }
                             }
                             return;

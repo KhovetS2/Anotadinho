@@ -1568,3 +1568,90 @@ teclado(
   },
   273,
 );
+
+// ── a borda do documento segura (ciclo 279) ──────────────────────────
+//
+// O movimento entre blocos dava a VOLTA: `j` no último bloco pulava pro
+// primeiro, `k` no primeiro pulava pro último. O núcleo diz o contrário
+// desde o ciclo 273 — `navegacao::mover` devolve `None` na borda, e
+// `None` significa "fica onde está".
+//
+// Não é preciosismo de modelo: é o que a pessoa relatou quando pediu a
+// árvore n-ária. Numa CLI, sem mouse pra corrigir, um `j` a mais que
+// teleporta pro topo do documento faz perder o lugar sem aviso.
+//
+// Circular continua certo em MENU, onde a lista é curta e fechada. O
+// documento não é menu.
+
+const PAGINA_QUATRO_BLOCOS = `---
+title: __uitest
+---
+primeiro
+
+- um
+- dois
+
+{{ type: "callout" }}
+variant: info
+body: |
+  dentro do callout
+{{ /callout }}
+
+ultimo
+`;
+
+/// Desce até o editor e entra nele, deixando o foco no primeiro bloco.
+async function entrarNosBlocos(bridge, ctx) {
+  await bridge.js(TECLA("ArrowDown"));
+  await PAUSA(400);
+  for (let i = 0; i < 12 && (await bridge.js(ITEM_ATIVO)) !== "editor"; i++) {
+    await bridge.js(TECLA("ArrowDown"));
+    await PAUSA(250);
+  }
+  ctx.assertEq(await bridge.js(ITEM_ATIVO), "editor", "não cheguei no editor");
+  await bridge.js(TECLA("Enter"));
+  await PAUSA(600);
+}
+
+/// Como o bloco focado se descreve — tag e começo do texto.
+const BLOCO_FOCADO = `(() => {
+  const el = document.activeElement;
+  if (!el) return 'nada';
+  const b = el.closest('[data-nav-block]') || el;
+  return b.tagName.toLowerCase() + ':' + (b.textContent || '').trim().slice(0, 8);
+})()`;
+
+teclado("j no último bloco fica no último, não volta pro primeiro",
+  PAGINA_QUATRO_BLOCOS, async (bridge, ctx) => {
+    await entrarNosBlocos(bridge, ctx);
+
+    // Desce até o fim. Quatro blocos: parágrafo, lista, embed, parágrafo.
+    for (let i = 0; i < 3; i++) {
+      await bridge.js(TECLA("j"));
+      await PAUSA(300);
+    }
+    const ultimo = await bridge.js(BLOCO_FOCADO);
+    ctx.assert(ultimo.startsWith("p:ultimo"),
+      `esperava o último parágrafo, veio ${ultimo} — cenário sem base de comparação`);
+
+    await bridge.js(TECLA("j"));
+    await PAUSA(300);
+    const depois = await bridge.js(BLOCO_FOCADO);
+    ctx.assertEq(depois, ultimo,
+      `j na borda de baixo deu a volta: foi de ${ultimo} pra ${depois}`);
+  }, 279);
+
+teclado("k no primeiro bloco fica no primeiro, não volta pro último",
+  PAGINA_QUATRO_BLOCOS, async (bridge, ctx) => {
+    await entrarNosBlocos(bridge, ctx);
+
+    const primeiro = await bridge.js(BLOCO_FOCADO);
+    ctx.assert(primeiro.startsWith("p:primeir"),
+      `esperava o primeiro parágrafo, veio ${primeiro} — cenário sem base de comparação`);
+
+    await bridge.js(TECLA("k"));
+    await PAUSA(300);
+    const depois = await bridge.js(BLOCO_FOCADO);
+    ctx.assertEq(depois, primeiro,
+      `k na borda de cima deu a volta: foi de ${primeiro} pra ${depois}`);
+  }, 279);
