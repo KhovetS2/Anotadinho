@@ -17,3 +17,4 @@
 
 pub mod app;
 pub mod tela;
+pub mod tema;

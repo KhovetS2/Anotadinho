@@ -9,12 +9,13 @@ use anotadinho_core::unidade::Tipo;
 use anotadinho_core::unidade::{Caminho, Unidade};
 use anotadinho_ipc::PageMeta;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::tela::{self, Linha};
+use crate::tema::{Realce, Tema};
 
 /// Qual painel recebe as teclas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +46,8 @@ pub struct Estado {
     pub foco: Foco,
     /// Fim do programa.
     pub sair: bool,
+    /// A paleta, lida do CSS da janela (ciclo 288).
+    pub tema: Tema,
 }
 
 impl Estado {
@@ -62,7 +65,14 @@ impl Estado {
             altura: 20,
             foco: Foco::Paginas,
             sair: false,
+            tema: Tema::novo("escuro"),
         }
+    }
+
+    /// Troca a paleta.
+    pub fn com_tema(mut self, nome: &str) -> Self {
+        self.tema = Tema::novo(nome);
+        self
     }
 
     /// Troca a página aberta, recomeçando o cursor.
@@ -161,15 +171,15 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         .enumerate()
         .map(|(i, p)| {
             let estilo = if i == e.pagina {
-                realce(e.foco == Foco::Paginas)
+                realce(e.foco == Foco::Paginas, &e.tema)
             } else {
-                Style::default()
+                e.tema.estilo(Realce::Texto)
             };
             Line::from(Span::styled(p.title.clone(), estilo))
         })
         .collect();
     f.render_widget(
-        Paragraph::new(paginas).block(borda("páginas", e.foco == Foco::Paginas)),
+        Paragraph::new(paginas).block(borda("páginas", e.foco == Foco::Paginas, &e.tema)),
         colunas[0],
     );
 
@@ -178,7 +188,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         .iter()
         .skip(e.topo)
         .take(e.altura)
-        .map(|l| linha_estilizada(l, l.caminho == e.cursor && e.foco == Foco::Conteudo))
+        .map(|l| linha_estilizada(l, l.caminho == e.cursor && e.foco == Foco::Conteudo, &e.tema))
         .collect();
     let titulo = e
         .paginas
@@ -186,7 +196,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         .map(|p| p.title.clone())
         .unwrap_or_default();
     f.render_widget(
-        Paragraph::new(visiveis).block(borda(&titulo, e.foco == Foco::Conteudo)),
+        Paragraph::new(visiveis).block(borda(&titulo, e.foco == Foco::Conteudo, &e.tema)),
         colunas[1],
     );
 }
@@ -199,14 +209,17 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
 ///
 /// Sob o cursor, tudo cede: a linha inteira recebe o realce, porque
 /// duas ênfases competindo fazem a pessoa não saber onde está.
-fn linha_estilizada<'a>(l: &'a crate::tela::Linha, sob_cursor: bool) -> Line<'a> {
+fn linha_estilizada<'a>(l: &'a crate::tela::Linha, sob_cursor: bool, tema: &Tema) -> Line<'a> {
     let recuo = "  ".repeat(l.nivel);
     if sob_cursor {
         let plano = format!("{recuo}{} {}", l.marca, l.texto);
-        return Line::from(Span::styled(plano.trim_end().to_string(), realce(true)));
+        return Line::from(Span::styled(
+            plano.trim_end().to_string(),
+            tema.estilo(Realce::Cursor),
+        ));
     }
 
-    let base = estilo_do_bloco(&l.tipo);
+    let base = tema.estilo(papel_do_bloco(&l.tipo));
     let mut spans = vec![Span::styled(recuo, Style::default())];
     if !l.marca.trim().is_empty() {
         // A marca costuma ser estrutura e fica apagada pra não competir
@@ -219,7 +232,7 @@ fn linha_estilizada<'a>(l: &'a crate::tela::Linha, sob_cursor: bool) -> Line<'a>
         let estilo_marca = if l.texto.trim().is_empty() {
             base
         } else {
-            Style::default().fg(Color::DarkGray)
+            tema.estilo(Realce::Marca)
         };
         spans.push(Span::styled(format!("{} ", l.marca), estilo_marca));
     }
@@ -228,55 +241,59 @@ fn linha_estilizada<'a>(l: &'a crate::tela::Linha, sob_cursor: bool) -> Line<'a>
         return Line::from(spans);
     }
     for t in &l.trechos {
-        spans.push(Span::styled(t.texto.clone(), estilo_do_trecho(&t.marcas, base)));
+        spans.push(Span::styled(
+            t.texto.clone(),
+            estilo_do_trecho(&t.marcas, base, tema),
+        ));
     }
     Line::from(spans)
 }
 
-/// O estilo que o TIPO do bloco dá à linha inteira.
-fn estilo_do_bloco(tipo: &Tipo) -> Style {
+/// O papel de um bloco, pelo tipo dele.
+fn papel_do_bloco(tipo: &Tipo) -> Realce {
     match tipo {
-        // Título: quanto mais alto, mais forte. O h1 é o nome da página.
-        Tipo::Titulo(1) => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        Tipo::Titulo(_) => Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
-        Tipo::Citacao => Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC),
-        Tipo::Codigo(_) => Style::default().fg(Color::LightGreen),
-        Tipo::Embed(_) => Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
-        Tipo::Parte { .. } => Style::default().fg(Color::Yellow),
-        _ => Style::default(),
+        Tipo::Titulo(n) => Realce::Titulo(*n),
+        Tipo::Citacao => Realce::Citacao,
+        Tipo::Codigo(_) => Realce::Codigo,
+        Tipo::Embed(_) => Realce::Embed,
+        Tipo::Parte { .. } => Realce::Parte,
+        _ => Realce::Texto,
     }
 }
 
-/// O estilo que as marcas de um trecho somam ao do bloco.
-fn estilo_do_trecho(marcas: &[Marca], base: Style) -> Style {
+/// As marcas de um trecho somadas ao estilo do bloco.
+///
+/// Negrito e itálico são MODIFICADOR, não cor: valem em qualquer tema e
+/// não passam pela paleta. Código e link têm cor própria, e essa vem do
+/// tema como todo o resto.
+fn estilo_do_trecho(marcas: &[Marca], base: Style, tema: &Tema) -> Style {
     marcas.iter().fold(base, |e, m| match m {
         Marca::Negrito => e.add_modifier(Modifier::BOLD),
         Marca::Italico => e.add_modifier(Modifier::ITALIC),
         Marca::Tachado => e.add_modifier(Modifier::CROSSED_OUT),
-        Marca::Codigo => e.fg(Color::LightGreen),
-        Marca::Link => e.fg(Color::Blue).add_modifier(Modifier::UNDERLINED),
-        Marca::Wikilink => e.fg(Color::Cyan).add_modifier(Modifier::UNDERLINED),
+        Marca::Codigo => e.patch(tema.estilo(Realce::Codigo)),
+        Marca::Link => e.patch(tema.estilo(Realce::Link)),
+        Marca::Wikilink => e.patch(tema.estilo(Realce::Wikilink)),
     })
 }
 
-/// Realce do item sob o cursor. Fora do painel com foco ele fica
-/// apagado: sem isso a tela mostra dois cursores e nenhum dos dois
-/// parece o de verdade.
-fn realce(com_foco: bool) -> Style {
-    if com_foco {
-        Style::default().fg(Color::Black).bg(Color::Cyan)
+/// Realce do item sob o cursor.
+///
+/// Fora do painel com foco ele fica apagado: sem isso a tela mostra dois
+/// cursores e nenhum dos dois parece o de verdade.
+fn realce(com_foco: bool, tema: &Tema) -> Style {
+    tema.estilo(if com_foco {
+        Realce::Cursor
     } else {
-        Style::default().add_modifier(Modifier::DIM)
-    }
+        Realce::CursorApagado
+    })
 }
 
-fn borda(titulo: &str, com_foco: bool) -> Block<'_> {
-    let b = Block::default().borders(Borders::ALL).title(titulo.to_string());
-    if com_foco {
-        b.border_style(Style::default().fg(Color::Cyan))
-    } else {
-        b
-    }
+fn borda<'a>(titulo: &str, com_foco: bool, tema: &Tema) -> Block<'a> {
+    Block::default()
+        .borders(Borders::ALL)
+        .title(titulo.to_string())
+        .border_style(tema.estilo(if com_foco { Realce::BordaFoco } else { Realce::Borda }))
 }
 
 #[cfg(test)]
@@ -284,6 +301,7 @@ mod testes {
     use super::*;
     use anotadinho_core::analise::analisar;
     use ratatui::backend::TestBackend;
+    use ratatui::style::Color;
     use ratatui::Terminal;
 
     const PAGINA: &str = "# Título\n\nUm parágrafo.\n\n- um\n- dois\n\nFim.\n";
@@ -408,6 +426,7 @@ mod testes {
         // está certa" e "a pessoa vê acontecer" são coisas diferentes.
         let mut e = estado();
         e.foco = Foco::Conteudo;
+        let cursor = e.tema.estilo(Realce::Cursor).bg.unwrap();
         let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
         term.draw(|f| desenhar(f, &mut e)).unwrap();
         let buf = term.backend().buffer().clone();
@@ -418,7 +437,7 @@ mod testes {
                 let mut tem_realce = false;
                 for x in 0..buf.area.width {
                     let c = &buf[(x, y)];
-                    if c.style().bg == Some(Color::Cyan) {
+                    if c.style().bg == Some(cursor) {
                         tem_realce = true;
                         texto.push_str(c.symbol());
                     }
@@ -484,6 +503,7 @@ mod testes {
             analisar("{{ type: \"callout\" }}\nvariant: info\nbody: |\n  oi\n{{ /callout }}\n"),
         );
         e.foco = Foco::Paginas;
+        let marca = e.tema.estilo(Realce::Marca).fg.unwrap();
         let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
         term.draw(|f| desenhar(f, &mut e)).unwrap();
         let buf = term.backend().buffer().clone();
@@ -491,7 +511,7 @@ mod testes {
         let apagado: Vec<String> = (0..buf.area.height)
             .filter_map(|y| {
                 let t: String = (0..buf.area.width)
-                    .filter(|x| buf[(*x, y)].style().fg == Some(Color::DarkGray))
+                    .filter(|x| buf[(*x, y)].style().fg == Some(marca))
                     .map(|x| buf[(x, y)].symbol().to_string())
                     .collect();
                 (!t.trim().is_empty()).then(|| t.trim().to_string())
@@ -500,6 +520,43 @@ mod testes {
         assert!(
             !apagado.iter().any(|l| l.contains("callout")),
             "o rótulo do embed saiu apagado: {apagado:?}"
+        );
+    }
+
+    #[test]
+    fn trocar_o_tema_muda_as_cores_desenhadas() {
+        // O ponto do ciclo 288: a paleta vem do CSS da janela, e trocar
+        // de tema troca o que aparece na tela. Sem esta asserção, os
+        // quatro temas poderiam estar todos caindo no escuro em
+        // silêncio — que é o defeito mais fácil de não perceber.
+        fn cores(nome: &str) -> Vec<Color> {
+            let mut e = Estado::novo(paginas(), analisar("# Título\n\ntexto\n")).com_tema(nome);
+            e.foco = Foco::Paginas;
+            let mut term = Terminal::new(TestBackend::new(40, 8)).unwrap();
+            term.draw(|f| desenhar(f, &mut e)).unwrap();
+            let buf = term.backend().buffer().clone();
+            let mut vistas: Vec<Color> = (0..buf.area.height)
+                .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+                .filter_map(|(x, y)| buf[(x, y)].style().fg)
+                .collect();
+            vistas.sort_by_key(|c| format!("{c:?}"));
+            vistas.dedup();
+            vistas
+        }
+        let escuro = cores("escuro");
+        let papel = cores("papel");
+        assert_ne!(escuro, papel, "os dois temas desenharam as mesmas cores");
+        // E toda cor PINTADA é do CSS, não nome de terminal. O `Reset`
+        // fica de fora: são as células que ninguém tocou.
+        assert!(
+            escuro
+                .iter()
+                .all(|c| matches!(c, Color::Rgb(..) | Color::Reset)),
+            "veio cor de terminal em vez da paleta: {escuro:?}"
+        );
+        assert!(
+            escuro.iter().filter(|c| matches!(c, Color::Rgb(..))).count() >= 4,
+            "quase nada foi pintado pela paleta: {escuro:?}"
         );
     }
 

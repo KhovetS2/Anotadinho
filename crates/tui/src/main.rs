@@ -23,6 +23,13 @@ struct Cli {
     /// Path do vault.
     #[arg(long)]
     vault: String,
+
+    /// Tema: escuro, papel, contraste ou claro.
+    ///
+    /// São os mesmos quatro da janela, e as cores saem do mesmo
+    /// `main.css` (ciclo 288).
+    #[arg(long, default_value = "escuro")]
+    tema: String,
 }
 
 /// Traduz a tecla do crossterm pro nome que o NÚCLEO entende.
@@ -67,7 +74,14 @@ fn main() -> Result<(), String> {
         return Err(format!("o vault {} não tem páginas", cli.vault));
     }
     let primeira = arvore_de(&cli.vault, &paginas[0].path)?;
-    let mut estado = Estado::novo(paginas, primeira);
+    if !anotadinho_tui::tema::TEMAS.contains(&cli.tema.as_str()) {
+        return Err(format!(
+            "tema \"{}\" não existe — os que existem são: {}",
+            cli.tema,
+            anotadinho_tui::tema::TEMAS.join(", ")
+        ));
+    }
+    let mut estado = Estado::novo(paginas, primeira).com_tema(&cli.tema);
 
     // Sem terminal de verdade, `enable_raw_mode` falha com
     // "No such device or address (os error 6)" — que não diz nada a
