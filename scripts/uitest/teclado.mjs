@@ -1546,7 +1546,10 @@ teclado(
 );
 
 teclado(
-  "os itens da lista são blocos, e entrar neles é um ato",
+  // O nome dizia "entrar neles é um ato" e este cenário nunca aperta
+  // Enter — ele confere MARCAÇÃO. A entrada tem cenário próprio desde o
+  // ciclo 280, e foi lá que se descobriu que ela não funcionava.
+  "os itens da lista são blocos marcados, e aceitam cursor",
   { md: COM_LISTA_E_CALENDARIO, vim: true },
   async (b, ctx) => {
     await esperar(b, `!!document.querySelector('.editor__bloco')`, "os blocos", 15000);
@@ -1655,3 +1658,46 @@ teclado("k no primeiro bloco fica no primeiro, não volta pro último",
     ctx.assertEq(depois, primeiro,
       `k na borda de cima deu a volta: foi de ${primeiro} pra ${depois}`);
   }, 279);
+
+// ── entrar na lista é um ato de verdade (ciclo 280) ──────────────────
+//
+// O cenário do ciclo 273 se chama "entrar neles é um ato" e nunca
+// aperta Enter: ele confere MARCAÇÃO (atributos presentes,
+// `contenteditable` ligado). A entrada nunca foi provada, e não
+// funcionava — a sonda mostrou o foco parado no `<ul>`, com `j` mudo.
+//
+// A causa: `marcar_itens_da_lista` põe `data-nav-parent="bloco-N"` nos
+// itens, mas o `<ul>` nunca declarou `data-nav-group="bloco-N"`. O
+// Enter desce por `group_of()`, que lê esse atributo — sem ele a lista
+// é folha, e Enter não tem pra onde ir. Todo outro grupo do app
+// declara o seu.
+
+teclado("Enter na lista desce pros itens, e j anda entre eles",
+  "---\ntitle: __uitest\n---\nantes\n\n- um\n- dois\n- tres\n\ndepois\n",
+  async (bridge, ctx) => {
+    await entrarNosBlocos(bridge, ctx);
+
+    // Bloco 1 é a lista.
+    await bridge.js(TECLA("j"));
+    await PAUSA(300);
+    const lista = await bridge.js(BLOCO_FOCADO);
+    ctx.assert(lista.startsWith("ul:"),
+      `esperava a lista no bloco 1, veio ${lista} — cenário sem base de comparação`);
+
+    await bridge.js(TECLA("Enter"));
+    await PAUSA(500);
+    const dentro = await bridge.js(BLOCO_FOCADO);
+    ctx.assertEq(dentro, "li:um", `Enter não desceu pros itens: ficou em ${dentro}`);
+
+    await bridge.js(TECLA("j"));
+    await PAUSA(300);
+    ctx.assertEq(await bridge.js(BLOCO_FOCADO), "li:dois",
+      "j não andou de um item pro outro");
+
+    // E Escape devolve pro nível da lista, não pro começo do documento.
+    await bridge.js(TECLA("Escape"));
+    await PAUSA(400);
+    const voltou = await bridge.js(BLOCO_FOCADO);
+    ctx.assert(voltou.startsWith("ul:"),
+      `Escape não voltou pro nível da lista: foi pra ${voltou}`);
+  }, 280);

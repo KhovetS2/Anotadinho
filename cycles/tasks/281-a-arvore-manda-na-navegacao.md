@@ -1,22 +1,23 @@
 ---
-id: "280"
-titulo: "Passo 4d: o caminho da árvore vira endereço no DOM"
+id: "281"
+titulo: "Passo 4e: o caminho da árvore vira endereço no DOM"
 status: aberto
 criado: 2026-09-06
 autor: agente
 prioridade: alta
-depende_de: ["279"]
+depende_de: ["280"]
 estima_min: 240
 ---
 
-# 280 — A árvore manda na navegação
+# 281 — A árvore manda na navegação
 
 ## Onde o passo 4 está
 
 - 4a (ciclo 276): a árvore decide o que mudou ao **gravar**.
 - 4b (ciclo 278): a árvore responde a **política** do bloco.
 - 4c (ciclo 279): a árvore decide o que acontece na **borda**.
-- 4d (aqui): a árvore decide **para onde o foco vai**.
+- 4d (ciclo 280): entrar num nível volta a funcionar.
+- 4e (aqui): a árvore decide **para onde o foco vai**.
 
 ## O que ainda deriva do DOM
 

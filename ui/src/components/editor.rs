@@ -5140,12 +5140,26 @@ fn marcar_blocos(container: &web_sys::Element) {
         }
     }
 
+    // O índice do SEGMENTO entra no id (ciclo 280).
+    //
+    // `marcar_blocos` roda uma vez por segmento, e `i` é a posição
+    // DENTRO do segmento: numa página com embeds, dois segmentos
+    // diferentes produziam dois `bloco-1`. Enquanto o id só nomeava um
+    // destino isso passava batido, porque a navegação anda por ordem de
+    // documento e não por nome. Vira defeito no instante em que o id
+    // também nomeia um GRUPO — o Escape acha o grupo por seletor, e
+    // acharia o `<ul>` do segmento errado.
+    let segmento = container
+        .get_attribute("data-segment-index")
+        .unwrap_or_else(|| "0".to_string());
+
     let filhos = container.children();
     for i in 0..filhos.length() {
         let Some(bloco) = filhos.item(i) else {
             continue;
         };
-        let _ = bloco.set_attribute("data-nav-item", &format!("bloco-{i}"));
+        let id_do_bloco = format!("bloco-{segmento}-{i}");
+        let _ = bloco.set_attribute("data-nav-item", &id_do_bloco);
         let _ = bloco.set_attribute("data-nav-parent", crate::nav_mode::GRUPO_BLOCOS);
         let _ = bloco.set_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO, "texto");
         // Cada bloco é seu próprio `contenteditable` (ciclo 175). A TAG
@@ -5185,7 +5199,18 @@ fn marcar_blocos(container: &web_sys::Element) {
             // cursor pousar no `<ul>` e a digitação sumir — foi o que a
             // suíte pegou.
             let _ = bloco.class_list().remove_1("editor__bloco");
-            marcar_itens_da_lista(&bloco, i);
+            // A lista DECLARA que é um nível (ciclo 280).
+            //
+            // Sem isto ela marcava os filhos como seus (`data-nav-parent`)
+            // mas não se anunciava como grupo, e `group_of()` — que é
+            // como o Enter decide se desce ou ativa — via uma folha. O
+            // Enter não fazia nada, o `j` também não, e a lista virava
+            // um beco: exatamente o "entrei e fiquei preso" relatado.
+            //
+            // Todo outro grupo do app já declarava o seu; a lista era a
+            // única que dependia de um lado só da relação.
+            let _ = bloco.set_attribute("data-nav-group", &id_do_bloco);
+            marcar_itens_da_lista(&bloco, &id_do_bloco);
         }
     }
 
@@ -6708,15 +6733,15 @@ fn campo_do_item_focado() -> Option<web_sys::HtmlElement> {
 /// `data-nav-parent` aponta pra lista e não pro grupo de blocos: é o que
 /// põe os itens um nível abaixo, e é assim que a navegação sabe que
 /// entrar na lista é um ato separado de andar entre listas.
-fn marcar_itens_da_lista(lista: &web_sys::Element, indice_da_lista: u32) {
+fn marcar_itens_da_lista(lista: &web_sys::Element, id_da_lista: &str) {
     let itens = lista.children();
     for j in 0..itens.length() {
         let Some(item) = itens.item(j) else { continue };
         if item.tag_name().to_lowercase() != "li" {
             continue;
         }
-        let _ = item.set_attribute("data-nav-item", &format!("item-{indice_da_lista}-{j}"));
-        let _ = item.set_attribute("data-nav-parent", &format!("bloco-{indice_da_lista}"));
+        let _ = item.set_attribute("data-nav-item", &format!("{id_da_lista}-item-{j}"));
+        let _ = item.set_attribute("data-nav-parent", id_da_lista);
         let _ = item.set_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO, "texto");
         let _ = item.set_attribute("contenteditable", "true");
         let _ = item.class_list().add_1("editor__bloco");
