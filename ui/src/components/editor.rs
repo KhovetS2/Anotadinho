@@ -293,7 +293,7 @@ pub fn editor(props: &EditorProps) -> Html {
     // tecla: um handle de `use_state` capturado congelaria no valor de
     // quando a closure foi criada, e a contagem de `3j` nunca chegaria
     // inteira no `j`.
-    let vim_pendente = use_mut_ref(crate::vim_comandos::Pendente::default);
+    let vim_pendente = use_mut_ref(anotadinho_core::vim::Pendente::default);
     // O eco do que está pela metade, só pra tela. Aqui `use_state` é o
     // certo: é o render que precisa reagir.
     let vim_eco = use_state(String::new);
@@ -1955,11 +1955,11 @@ pub fn editor(props: &EditorProps) -> Html {
                 // cadeia de `else if` por tecla, que comportava `j` e `x`
                 // e não comportava `3j`, `dw` nem `d3w` — nesses a tecla
                 // não é o comando, é uma PARTE dele.
-                use crate::vim_comandos::{Comando, Insercao, Movimento, Passo};
+                use anotadinho_core::vim::{Comando, Insercao, Movimento, Passo};
 
                 let passo = {
                     let mut pendente = vim_pendente.borrow_mut();
-                    crate::vim_comandos::tecla_normal(&mut pendente, &key, e.ctrl_key())
+                    anotadinho_core::vim::tecla_normal(&mut pendente, &key, e.ctrl_key())
                 };
                 // Espelha o que está pela metade na barra (o "2d3" do
                 // canto), pra a pessoa saber que o vim está esperando.

@@ -290,7 +290,7 @@ pub fn mover_linha(frente: bool) -> bool {
 
 // ── Execução dos comandos do modo Normal (ciclo 254) ────────────────
 
-use crate::vim_comandos::Movimento;
+use anotadinho_core::vim::Movimento;
 
 /// O bloco onde o cursor está.
 pub fn bloco_atual() -> Option<web_sys::Element> {
@@ -401,7 +401,7 @@ pub fn selecionar_alcance(mov: Movimento, vezes: u32) -> Option<String> {
     // Movimento INCLUSIVO leva a posição final junto (`motion.txt`,
     // seção `*inclusive*`). O `Selection.modify` para sempre ANTES do
     // caractere final, que é o comportamento exclusivo.
-    if mov.alcance() == crate::vim_comandos::Alcance::Inclusivo {
+    if mov.alcance() == anotadinho_core::vim::Alcance::Inclusivo {
         if let Some(sel) = web_sys::window()
             .and_then(|w| w.get_selection().ok())
             .flatten()
@@ -637,8 +637,8 @@ pub fn substituir_caractere(novo: char) -> bool {
 }
 
 /// Põe o cursor onde a inserção começa, e devolve se conseguiu.
-pub fn posicionar_para_inserir(onde: crate::vim_comandos::Insercao) -> bool {
-    use crate::vim_comandos::Insercao;
+pub fn posicionar_para_inserir(onde: anotadinho_core::vim::Insercao) -> bool {
+    use anotadinho_core::vim::Insercao;
     match onde {
         Insercao::Antes => true,
         Insercao::Depois => aplicar_movimento(Movimento::Direita, 1, false),

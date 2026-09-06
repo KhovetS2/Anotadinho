@@ -9,6 +9,7 @@
 #![warn(missing_docs)]
 
 pub mod block;
+pub mod edicao;
 pub mod unidade;
 pub mod roteamento;
 pub mod render;
@@ -35,6 +36,7 @@ pub mod links;
 pub mod proposta;
 pub mod prompt_padrao;
 pub mod query;
+pub mod vim;
 
 pub use block::{Block, BlockId, BlockKind};
 pub use markdown::MarkdownCodec;

@@ -334,6 +334,18 @@ impl Unidade {
         }
     }
 
+    /// A unidade endereçada por `caminho`, pra mexer.
+    ///
+    /// Gêmea de `em`, e existe porque editar precisa alcançar a unidade
+    /// (ciclo 285). Fica aqui e não no módulo de edição porque descer a
+    /// árvore é assunto da árvore.
+    pub fn em_mut(&mut self, caminho: &[usize]) -> Option<&mut Unidade> {
+        match caminho.split_first() {
+            None => Some(self),
+            Some((i, resto)) => self.filhos.get_mut(*i)?.em_mut(resto),
+        }
+    }
+
     /// O caminho da raiz até `caminho`, unidade por unidade — do mais
     /// externo ao mais interno.
     ///
