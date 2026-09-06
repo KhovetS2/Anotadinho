@@ -6,6 +6,7 @@ members = [
     "crates/search",
     "crates/ipc",
     "crates/cli",
+    "crates/tui",
 ]
 exclude = ["ui", "src-tauri"]
 

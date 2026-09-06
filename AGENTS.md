@@ -171,6 +171,13 @@ linearidade que escrevi deixou passar a regressão que eu já sabia estar
 lá; e dois cenários de UI mediam zero elemento em zero milissegundo e
 passavam com folga, porque conferiam o TEMPO sem conferir o EFEITO.
 
+**A TUI se roda num pty, não na mão.** `crates/tui` não aparece na suíte
+de UI — ela fala com a janela Tauri. O que pega defeito ali é rodar o
+binário num pseudoterminal (`pty.fork` + `TIOCSWINSZ` pra a janela não
+nascer 0×0) e dirigir teclas por script. Foi assim que apareceu o fence
+do embed vazando pro desenho no ciclo 286 — um defeito que os testes de
+unidade não veriam, porque cada um deles olhava uma peça certa.
+
 **`trunk serve` não observa `crates/`.** Ele reconstrói quando um fonte
 de `ui/` muda; mudança só no núcleo NÃO chega ao app, e a suíte julga o
 binário velho sem avisar. Os ciclos que mexem nos dois lados escondem
