@@ -4543,6 +4543,7 @@ fn recompute_markdown_from_dom(
             })
             .collect();
         let new_body = crate::embed::join(&new_segs);
+        let new_body = costurar(body, &new_body);
         if fm.is_empty() {
             new_body
         } else {
@@ -4555,7 +4556,7 @@ fn recompute_markdown_from_dom(
         // com frontmatter (`title::`, `type::` etc) e sem embeds perdia o
         // frontmatter inteiro. O branch com embeds (acima) já fazia isso
         // certo, só esse aqui estava faltando.
-        let body_md = crate::html_to_md::html_to_markdown(&div);
+        let body_md = costurar(body, &crate::html_to_md::html_to_markdown(&div));
         if fm.is_empty() {
             body_md
         } else {
@@ -4564,6 +4565,25 @@ fn recompute_markdown_from_dom(
     } else {
         content_md.to_string()
     }
+}
+
+/// Preserva o que ninguém editou, na hora de gravar (ciclo 276).
+///
+/// O corpo que sai do DOM é uma RECONSTRUÇÃO: todo embed foi
+/// reserializado e todo trecho de markdown voltou pela travessia do
+/// HTML. Isso muda bytes que ninguém tocou — ordem de campos de YAML,
+/// espaço no fim de linha (que em markdown é quebra forte), recuo de
+/// continuação. Abrir uma página e salvar já deixava diff no git.
+///
+/// A árvore decide o que mudou de verdade, e o resto volta pelos bytes
+/// originais.
+///
+/// Só age quando é SEGURO: contagens de unidade diferentes (bloco
+/// inserido, apagado, dividido) devolvem a reconstrução inteira, que é o
+/// comportamento de sempre. E se o corpo novo vier vazio, ele passa
+/// vazio — quem barra gravação vazia é a trava do ciclo 248, não isto.
+fn costurar(original: &str, reconstruido: &str) -> String {
+    anotadinho_core::analise::costurar_mudancas(original, reconstruido)
 }
 
 fn exec_cmd_global(cmd: &str) {

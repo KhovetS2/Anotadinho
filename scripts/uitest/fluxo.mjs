@@ -812,6 +812,11 @@ fluxo.push({
       ctx.assert(abriu, "não encontrou uma segunda página para testar as abas");
       await esperar(bridge, `document.querySelectorAll('.tab-bar__tab').length >= 2`, "a segunda aba abrir");
       const antes = await bridge.js(`document.querySelectorAll('.tab-bar__tab').length`);
+      // Espera o BOTÃO, não só a aba. A aba entra na barra antes de o
+      // editor terminar de renderizar o cabeçalho, e clicar no que ainda
+      // não existe estourava com "null is not an object" — sintoma que
+      // parece defeito do app e é corrida do cenário.
+      await esperar(bridge, `!!document.querySelector('button[title="Mais ações"]')`, "o menu de ações aparecer");
       await bridge.js(`document.querySelector('button[title="Mais ações"]').click(); true`);
       await esperar(bridge, `[...document.querySelectorAll('.header-menu__item')].some(b => b.textContent.includes('Definir como início'))`, "a ação de definir início");
       await bridge.js(`(() => { [...document.querySelectorAll('.header-menu__item')].find(b => b.textContent.includes('Definir como início')).click(); return true; })()`);

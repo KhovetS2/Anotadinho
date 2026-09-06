@@ -753,3 +753,120 @@ caso("imagem: o app não cancela o paste de texto", "inicio", async (b, ctx) => 
   ctx.assertEq(cancelado, false,
     "o app cancelou um paste que só tinha texto — o caminho de texto quebrou");
 });
+
+// ── gravar não reescreve o que ninguém tocou (ciclo 276) ────────────
+//
+// O corpo que sai do DOM é uma RECONSTRUÇÃO: todo embed é reserializado
+// e todo markdown volta pela travessia do HTML. Isso mudava bytes que
+// ninguém editou — ordem de campos no YAML, espaço no fim de linha (que
+// em markdown é quebra forte), recuo de continuação. Abrir uma página e
+// salvar já deixava diff no git.
+
+const CORPO_SENSIVEL = `---
+title: __uitest
+---
+# Título
+
+Parágrafo com quebra forte no fim.${"  "}
+Segunda linha.
+
+- item
+   continuação indentada
+- outro
+
+{{ type: "callout" }}
+title: Nota
+variant: info
+{{ /callout }}
+
+fim
+`;
+
+// NÃO existe aqui um cenário "gravar sem editar não muda o arquivo".
+//
+// Eu escrevi um, ele passou, e depois passou TAMBÉM com a costura
+// desligada: o editor simplesmente não reconstrói o corpo quando nada
+// foi editado, então o cenário media o nada. É a mesma armadilha do
+// ciclo 259, e a lição é a mesma — um cenário só vale depois de ser
+// visto reprovando por falta do que ele testa.
+//
+// O cenário abaixo foi conferido nos dois sentidos.
+
+caso("editar um bloco não reformata os vizinhos", null, async (b, ctx, h) => {
+  ctx.escrever(CORPO_SENSIVEL);
+  await recarregarEstavel(b);
+  await abrirPaginaEstavel(b, ctx.nomePagina);
+  await esperar(b, `!!document.querySelector('.callout')`, "o embed renderizar", 15000);
+
+  // Digita no ÚLTIMO bloco de texto.
+  await b.js(`(() => {
+    const blocos = [...document.querySelectorAll('.editor__bloco[contenteditable="true"]')];
+    const alvo = blocos[blocos.length - 1];
+    alvo.focus();
+    const r = document.createRange();
+    r.selectNodeContents(alvo); r.collapse(false);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    document.execCommand('insertText', false, ' EDITADO');
+    return true;
+  })()`);
+  await PAUSA(500);
+  await b.js(SALVAR);
+  await PAUSA(1200);
+
+  const md = ctx.ler() || "";
+  ctx.assert(md.includes("EDITADO"), `a edição não chegou ao arquivo:\n${md}`);
+
+  // A quebra forte do parágrafo de cima sobrevive. Sem a costura, a
+  // volta pelo DOM apara espaço de fim de linha e ela some.
+  ctx.assert(
+    md.includes("no fim.  "),
+    `a quebra forte do parágrafo de cima sumiu:\n${JSON.stringify(md)}`,
+  );
+  // E o YAML do embed mantém a ordem original. Sem a costura, salvar
+  // reserializa todo embed e reordena campos que ninguém tocou.
+  ctx.assert(
+    md.includes("title: Nota\nvariant: info"),
+    `a ordem do YAML do embed mudou sem ninguém editar:\n${md}`,
+  );
+  ctx.assert(
+    !md.includes("body: ''"),
+    `o embed ganhou campo que não estava lá:\n${md}`,
+  );
+});
+
+// DEFEITO CONHECIDO, afirmado (ciclo 276).
+//
+// A costura não alcança a continuação indentada de item de lista, e o
+// motivo não é ela: a volta pelo DOM QUEBRA a lista em três unidades
+// (lista, parágrafo, lista) porque `html_to_md` não reindenta a
+// continuação. Não há o que alinhar — a estrutura mudou de verdade.
+//
+// Como as outras divergências desta série, fica afirmada em vez de
+// tolerada: no dia em que `html_to_md` aprender a reindentar, este
+// cenário reprova e avisa.
+caso("continuação de item ainda é achatada ao salvar", null, async (b, ctx, h) => {
+  ctx.escrever("---\ntitle: __uitest\n---\n- item\n   continuação indentada\n- outro\n\nfim\n");
+  await recarregarEstavel(b);
+  await abrirPaginaEstavel(b, ctx.nomePagina);
+
+  await b.js(`(() => {
+    const blocos = [...document.querySelectorAll('.editor__bloco[contenteditable="true"]')];
+    const alvo = blocos[blocos.length - 1];
+    alvo.focus();
+    const r = document.createRange();
+    r.selectNodeContents(alvo); r.collapse(false);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    document.execCommand('insertText', false, ' X');
+    return true;
+  })()`);
+  await PAUSA(500);
+  await b.js(SALVAR);
+  await PAUSA(1200);
+
+  const md = ctx.ler() || "";
+  ctx.assert(
+    !md.includes("   continuação indentada"),
+    "o recuo da continuação sobreviveu — `html_to_md` aprendeu a reindentar, " +
+      "e este cenário pode virar a afirmação contrária",
+  );
+});

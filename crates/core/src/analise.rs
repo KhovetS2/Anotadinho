@@ -414,6 +414,139 @@ pub fn escrever_costurando(corpo: &str, raiz: &Unidade) -> String {
     fora
 }
 
+/// Costura duas versões do corpo, preservando o que não mudou.
+///
+/// É o passo 4 chegando ao arquivo (ciclo 276). Hoje o editor reconstrói
+/// o corpo INTEIRO a partir do DOM ao salvar: cada embed é reserializado
+/// e cada trecho de markdown volta pela travessia do HTML. O resultado é
+/// que abrir uma página e salvar já muda bytes que ninguém tocou —
+/// aspas, ordem de campos de YAML, espaçamento.
+///
+/// Aqui a ÁRVORE é quem decide o que mudou. Unidade estruturalmente
+/// igual volta pelos bytes ORIGINAIS; o resto vem da versão nova.
+///
+/// Quando as duas versões têm contagens diferentes de unidades — bloco
+/// inserido, apagado, dividido —, devolve a nova inteira. Alinhar
+/// árvores de tamanhos diferentes é um problema de diff, e errar nele
+/// custaria conteúdo; devolver a nova é o que o editor já fazia, então o
+/// pior caso é o comportamento de hoje.
+pub fn costurar_mudancas(original: &str, novo: &str) -> String {
+    let arvore_velha = analisar(original);
+    let arvore_nova = analisar(novo);
+
+    // Alinha as duas listas de unidades pela maior subsequência comum.
+    //
+    // Comparar par a par por posição não serve, e isso foi MEDIDO: a
+    // volta pelo DOM não muda só formatação, muda ESTRUTURA. Um
+    // parágrafo com quebra forte vira dois blocos, e a partir daí todas
+    // as posições saem de sincronia — com comparação posicional, uma
+    // edição em qualquer lugar reescrevia o arquivo inteiro.
+    //
+    // Com o alinhamento, o que casa volta pelos bytes originais mesmo
+    // que tenha andado de posição.
+    let velhas = &arvore_velha.filhos;
+    let novas = &arvore_nova.filhos;
+    let pares = alinhar(velhas, novas);
+
+    let mut fora = String::new();
+    let mut cursor_novo = 0usize;
+    for (i_nova, nova) in novas.iter().enumerate() {
+        let Some(faixa_nova) = &nova.intervalo else {
+            return novo.to_string();
+        };
+        // O que vem ANTES desta unidade sai da versão nova: é lá que
+        // está a separação que a edição pode ter mexido.
+        fora.push_str(&novo[cursor_novo..faixa_nova.start]);
+        match pares.get(&i_nova).and_then(|i| velhas[*i].intervalo.clone()) {
+            Some(faixa_velha) if faixa_velha.end <= original.len() => {
+                fora.push_str(&original[faixa_velha]);
+            }
+            _ => fora.push_str(&novo[faixa_nova.clone()]),
+        }
+        cursor_novo = faixa_nova.end;
+    }
+    fora.push_str(&novo[cursor_novo..]);
+    fora
+}
+
+/// Casa unidades novas com velhas pela maior subsequência comum.
+///
+/// Devolve `índice na nova -> índice na velha` só pras que casaram. A
+/// ordem é respeitada: uma unidade não casa com outra que esteja "atrás"
+/// de um casamento anterior, senão o texto sairia embaralhado.
+fn alinhar(velhas: &[Unidade], novas: &[Unidade]) -> std::collections::HashMap<usize, usize> {
+    let (n, m) = (velhas.len(), novas.len());
+    // Tabela clássica de LCS. As páginas têm dezenas de unidades, então
+    // `O(n×m)` aqui é ruído — e a alternativa (heurística de vizinhança)
+    // erraria justamente nos casos que motivam isto.
+    let mut tabela = vec![vec![0usize; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            tabela[i][j] = if mesma_intencao(&velhas[i], &novas[j]) {
+                tabela[i + 1][j + 1] + 1
+            } else {
+                tabela[i + 1][j].max(tabela[i][j + 1])
+            };
+        }
+    }
+    let mut pares = std::collections::HashMap::new();
+    let (mut i, mut j) = (0usize, 0usize);
+    while i < n && j < m {
+        if mesma_intencao(&velhas[i], &novas[j]) {
+            pares.insert(j, i);
+            i += 1;
+            j += 1;
+        } else if tabela[i + 1][j] >= tabela[i][j + 1] {
+            i += 1;
+        } else {
+            j += 1;
+        }
+    }
+    pares
+}
+
+/// As duas unidades dizem a mesma coisa?
+///
+/// Mais frouxo que `==`: ignora espaço no FIM das linhas.
+///
+/// A razão é concreta. O editor sempre apara espaço final ao trazer o
+/// texto de volta do DOM — e em markdown dois espaços no fim são uma
+/// QUEBRA FORTE. Comparando byte a byte, todo parágrafo com quebra forte
+/// seria marcado como editado, reescrito pela versão do editor, e a
+/// quebra sumiria. O usuário nunca tocou nele.
+///
+/// A troca assumida: quem apagar espaços finais de propósito não vê o
+/// efeito. É um gesto que o editor não sabe expressar de qualquer forma.
+fn mesma_intencao(a: &Unidade, b: &Unidade) -> bool {
+    /// Espaço em branco vira um espaço só, e some das pontas.
+    ///
+    /// Vale porque o DOM não sabe representar espaço branco fielmente:
+    /// a quebra dentro de um item de lista, o recuo da continuação, os
+    /// dois espaços da quebra forte — tudo isso volta achatado, e o
+    /// usuário não tocou em nada.
+    ///
+    /// Uma edição de verdade mexe em caractere que não é espaço.
+    /// Inserir um espaço entre duas palavras (`a.B` -> `a. B`) continua
+    /// contando como mudança, porque não é uma RUN de espaço que muda,
+    /// é a presença dele.
+    fn achatado(t: &str) -> String {
+        t.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+    if a.tipo != b.tipo {
+        return false;
+    }
+    // Dentro de código, espaço é conteúdo. Achatar ali apagaria
+    // indentação que importa.
+    let texto_bate = if matches!(a.tipo, Tipo::Codigo(_)) {
+        a.texto == b.texto
+    } else {
+        achatado(&a.texto) == achatado(&b.texto)
+    };
+    texto_bate
+        && a.filhos.len() == b.filhos.len()
+        && a.filhos.iter().zip(b.filhos.iter()).all(|(x, y)| mesma_intencao(x, y))
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -716,5 +849,127 @@ mod costura {
     #[test]
     fn corpo_vazio_continua_vazio() {
         assert_eq!(escrever_costurando("", &analisar("")), "");
+    }
+}
+
+#[cfg(test)]
+mod costura_de_mudancas {
+    use super::*;
+
+    #[test]
+    fn nada_mudou_devolve_o_original_byte_a_byte() {
+        // O caso que motiva tudo: abrir e salvar sem editar não pode
+        // mudar o arquivo. Aqui o "novo" chega normalizado (aspas
+        // trocadas, espaçamento diferente), como o editor devolve hoje.
+        let original = "# T\n\n- a\n   recuo\n- b\n\ntexto   \n";
+        let normalizado = "# T\n\n- a\n  recuo\n- b\n\ntexto\n";
+        // As árvores são iguais em estrutura, então tudo volta original.
+        assert_eq!(costurar_mudancas(original, normalizado), original);
+    }
+
+    #[test]
+    fn so_o_bloco_editado_muda() {
+        let original = "# Título\n\nprimeiro\n\nsegundo   \n";
+        let novo = "# Título\n\nPRIMEIRO editado\n\nsegundo\n";
+        let saida = costurar_mudancas(original, novo);
+        assert!(saida.contains("PRIMEIRO editado"), "a edição não entrou:\n{saida}");
+        // O terceiro bloco não foi tocado: os dois espaços do fim
+        // sobrevivem, mesmo o editor tendo devolvido sem eles.
+        assert!(saida.contains("segundo   "), "o vizinho foi normalizado:\n{saida}");
+    }
+
+    #[test]
+    fn o_embed_intocado_mantem_o_yaml_como_estava() {
+        // O ganho mais visível: o editor reserializa todo embed ao
+        // salvar, reordenando campos que ninguém tocou.
+        let original = "{{ type: \"callout\" }}\ntitle: Nota\nvariant: info\n{{ /callout }}\n\nfim\n";
+        let reserializado = "{{ type: \"callout\" }}\nvariant: info\ntitle: Nota\n{{ /callout }}\n\nfim\n";
+        let saida = costurar_mudancas(original, reserializado);
+        assert!(
+            saida.starts_with("{{ type: \"callout\" }}\ntitle: Nota"),
+            "a ordem do YAML mudou sem ninguém editar:\n{saida}"
+        );
+    }
+
+    #[test]
+    fn bloco_inserido_no_meio_nao_reformata_os_vizinhos() {
+        // Contagens diferentes já não desistem: o alinhamento acha quem
+        // é quem. Aqui os espaços do fim de "um" e "dois" sobrevivem à
+        // inserção de um bloco entre eles.
+        let original = "um   \n\ndois   \n";
+        let novo = "um\n\nmeio\n\ndois\n";
+        let saida = costurar_mudancas(original, novo);
+        assert!(saida.contains("um   "), "o de cima foi normalizado:\n{saida:?}");
+        assert!(saida.contains("dois   "), "o de baixo foi normalizado:\n{saida:?}");
+        assert!(saida.contains("meio"), "o bloco novo não entrou:\n{saida:?}");
+    }
+
+    #[test]
+    fn bloco_partido_em_dois_preserva_o_resto() {
+        // O caso que a medição encontrou: a volta pelo DOM parte um
+        // parágrafo com quebra forte em dois blocos. Antes do
+        // alinhamento, isso dessincronizava tudo e o arquivo inteiro era
+        // reescrito.
+        let original = "# T\n\na  \nb\n\n- item\n   recuo\n\nfim   \n";
+        let novo = "# T\n\na\n\nb\n\n- item\n  recuo\n\nfim\n";
+        let saida = costurar_mudancas(original, novo);
+        assert!(saida.contains("   recuo"), "a lista foi reformatada:\n{saida:?}");
+        assert!(saida.contains("fim   "), "o último bloco foi normalizado:\n{saida:?}");
+    }
+
+    #[test]
+    fn bloco_apagado_some_e_os_outros_ficam() {
+        let original = "um   \n\ndois\n\ntres   \n";
+        let novo = "um\n\ntres\n";
+        let saida = costurar_mudancas(original, novo);
+        assert!(!saida.contains("dois"), "o bloco apagado voltou:\n{saida:?}");
+        assert!(saida.contains("um   "), "{saida:?}");
+        assert!(saida.contains("tres   "), "{saida:?}");
+    }
+
+    #[test]
+    fn apagar_tudo_devolve_vazio_e_nao_o_original() {
+        // A guarda que importa na direção contrária: se o novo está
+        // vazio, isto não pode "restaurar" o original. Quem decide se
+        // uma gravação vazia passa é a trava do ciclo 248, não daqui.
+        assert_eq!(costurar_mudancas("um\n\ndois\n", ""), "");
+    }
+}
+
+#[cfg(test)]
+mod comparacao {
+    use super::*;
+
+    #[test]
+    fn espaco_achatado_nao_conta_como_edicao() {
+        // O DOM não representa a quebra dentro de um item nem o recuo da
+        // continuação; tudo volta achatado. Marcar isso como edição
+        // fazia o vizinho ser reescrito por culpa do editor.
+        let a = Unidade::com_texto(Tipo::Item, "item\n   continuação");
+        let b = Unidade::com_texto(Tipo::Item, "item continuação");
+        assert!(mesma_intencao(&a, &b));
+    }
+
+    #[test]
+    fn inserir_um_espaco_entre_palavras_conta() {
+        // A guarda do outro lado: uma edição de verdade não pode passar
+        // por artefato.
+        let a = Unidade::com_texto(Tipo::Paragrafo, "frase.Outra");
+        let b = Unidade::com_texto(Tipo::Paragrafo, "frase. Outra");
+        assert!(!mesma_intencao(&a, &b));
+    }
+
+    #[test]
+    fn dentro_de_codigo_o_espaco_e_conteudo() {
+        let a = Unidade::com_texto(Tipo::Codigo(None), "fn f() {\n    1\n}");
+        let b = Unidade::com_texto(Tipo::Codigo(None), "fn f() {\n1\n}");
+        assert!(!mesma_intencao(&a, &b), "achatou indentação de código");
+    }
+
+    #[test]
+    fn tipos_diferentes_nunca_batem() {
+        let a = Unidade::com_texto(Tipo::Paragrafo, "x");
+        let b = Unidade::com_texto(Tipo::Titulo(1), "x");
+        assert!(!mesma_intencao(&a, &b));
     }
 }

@@ -171,6 +171,16 @@ linearidade que escrevi deixou passar a regressão que eu já sabia estar
 lá; e dois cenários de UI mediam zero elemento em zero milissegundo e
 passavam com folga, porque conferiam o TEMPO sem conferir o EFEITO.
 
+**Espere o elemento que você vai clicar, não um parente dele.** Esperar
+por um sinal PRÓXIMO — a aba entrou na barra, o embed renderizou — e
+agir no mesmo instante sobre outro elemento é corrida, e ela reprova com
+cara de defeito do app (`null is not an object`). Três cenários
+reprovaram assim no ciclo 276, inclusive isolados, o que me fez suspeitar
+de regressão minha por um bom tempo. O que separou foi refazer os passos
+na mão: passaram todos, e a única diferença era uma pausa que eu tinha
+posto sem pensar. Condição, nunca relógio — e `PAUSA` que faz um cenário
+passar é sintoma, não conserto.
+
 **Não tente subir o app você mesmo.** `./scripts/dev.sh` abre uma janela
 e fica rodando pra sempre; num comando não-interativo isso trava, e num
 sandbox costuma nem começar. Quem deixa o app de pé é a pessoa, num
