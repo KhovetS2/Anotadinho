@@ -4604,6 +4604,11 @@ fn recompute_markdown_from_dom(
 /// comportamento de sempre. E se o corpo novo vier vazio, ele passa
 /// vazio — quem barra gravação vazia é a trava do ciclo 248, não isto.
 fn costurar(original: &str, reconstruido: &str) -> String {
+    // Isto roda no `oninput`, ou seja, A CADA TECLA. O alinhamento lá
+    // dentro apara prefixo e sufixo iguais antes de qualquer coisa
+    // cara, justamente por isso (ciclo 282) — antes disso era uma
+    // tabela n×m da página inteira por caractere digitado, e numa
+    // página de 1200 blocos o webview parava de responder.
     anotadinho_core::analise::costurar_mudancas(original, reconstruido)
 }
 

@@ -474,11 +474,64 @@ pub fn costurar_mudancas(original: &str, novo: &str) -> String {
 /// Devolve `índice na nova -> índice na velha` só pras que casaram. A
 /// ordem é respeitada: uma unidade não casa com outra que esteja "atrás"
 /// de um casamento anterior, senão o texto sairia embaralhado.
+/// Acima disto, o miolo não é mais alinhado por LCS.
+///
+/// A tabela é `O(n×m)` em tempo E memória. Com o prefixo e o sufixo
+/// aparados, o miolo é o que a pessoa realmente mexeu — dezenas de
+/// unidades no pior caso realista. Se ainda assim for enorme, é porque
+/// a página inteira mudou; aí não há o que costurar, e insistir no LCS
+/// custaria mais do que o ganho.
+const MIOLO_MAXIMO: usize = 400;
+
 fn alinhar(velhas: &[Unidade], novas: &[Unidade]) -> std::collections::HashMap<usize, usize> {
-    let (n, m) = (velhas.len(), novas.len());
-    // Tabela clássica de LCS. As páginas têm dezenas de unidades, então
-    // `O(n×m)` aqui é ruído — e a alternativa (heurística de vizinhança)
-    // erraria justamente nos casos que motivam isto.
+    // Apara o que é igual nas pontas ANTES do LCS (ciclo 282).
+    //
+    // Eu escrevi aqui que "as páginas têm dezenas de unidades, então
+    // O(n×m) é ruído", e nunca medi. A bateria de estresse tem uma
+    // página de 1200 blocos, e esta função roda a cada TECLA, pelo
+    // `oninput` do editor: 1,44 milhão de comparações de unidade por
+    // caractere digitado. O webview parava de responder.
+    //
+    // Digitar muda UMA unidade. Aparando as pontas, o problema que sobra
+    // tem o tamanho da edição, não o da página — e a resposta é a mesma,
+    // porque unidade igual na mesma ponta casa consigo em qualquer
+    // alinhamento ótimo.
+    let mut pares = std::collections::HashMap::new();
+
+    let mut inicio = 0usize;
+    while inicio < velhas.len()
+        && inicio < novas.len()
+        && mesma_intencao(&velhas[inicio], &novas[inicio])
+    {
+        pares.insert(inicio, inicio);
+        inicio += 1;
+    }
+
+    let mut fim = 0usize;
+    while fim < (velhas.len() - inicio).min(novas.len() - inicio)
+        && mesma_intencao(
+            &velhas[velhas.len() - 1 - fim],
+            &novas[novas.len() - 1 - fim],
+        )
+    {
+        pares.insert(novas.len() - 1 - fim, velhas.len() - 1 - fim);
+        fim += 1;
+    }
+
+    let velhas_miolo = &velhas[inicio..velhas.len() - fim];
+    let novas_miolo = &novas[inicio..novas.len() - fim];
+    let (n, m) = (velhas_miolo.len(), novas_miolo.len());
+    if n == 0 || m == 0 {
+        return pares;
+    }
+    if n.saturating_mul(m) > MIOLO_MAXIMO * MIOLO_MAXIMO {
+        // Página inteira reescrita: o que não casou pelas pontas volta
+        // pelos bytes novos, que é o comportamento de antes da costura.
+        return pares;
+    }
+
+    let (velhas, novas) = (velhas_miolo, novas_miolo);
+    // Tabela clássica de LCS sobre o MIOLO.
     let mut tabela = vec![vec![0usize; m + 1]; n + 1];
     for i in (0..n).rev() {
         for j in (0..m).rev() {
@@ -489,11 +542,11 @@ fn alinhar(velhas: &[Unidade], novas: &[Unidade]) -> std::collections::HashMap<u
             };
         }
     }
-    let mut pares = std::collections::HashMap::new();
     let (mut i, mut j) = (0usize, 0usize);
     while i < n && j < m {
         if mesma_intencao(&velhas[i], &novas[j]) {
-            pares.insert(j, i);
+            // Os índices do miolo voltam pros do documento inteiro.
+            pares.insert(inicio + j, inicio + i);
             i += 1;
             j += 1;
         } else if tabela[i + 1][j] >= tabela[i][j + 1] {
@@ -971,5 +1024,58 @@ mod comparacao {
         let a = Unidade::com_texto(Tipo::Paragrafo, "x");
         let b = Unidade::com_texto(Tipo::Titulo(1), "x");
         assert!(!mesma_intencao(&a, &b));
+    }
+    /// Documento grande com um bloco editado no fim.
+    fn pagina_grande(n: usize) -> String {
+        (0..n)
+            .map(|i| format!("Parágrafo {i} com texto.\n"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn costurar_pagina_grande_preserva_o_que_ninguem_tocou() {
+        // O caso que a bateria de estresse tem: página grande, uma
+        // edição só. Antes do ciclo 282 isto montava uma tabela de
+        // n×m e rodava a cada TECLA — 1,44 milhão de comparações por
+        // caractere numa página de 1200 blocos.
+        let original = pagina_grande(1200);
+        let novo = original.replace("Parágrafo 1199 com texto.", "Parágrafo 1199 EDITADO.");
+
+        let fora = costurar_mudancas(&original, &novo);
+
+        assert!(fora.contains("Parágrafo 1199 EDITADO."), "a edição não entrou");
+        // Tudo antes dela volta pelos bytes originais.
+        assert!(fora.contains("Parágrafo 0 com texto."));
+        assert!(fora.contains("Parágrafo 1198 com texto."));
+        assert_eq!(fora.matches("com texto.").count(), 1199);
+    }
+
+    #[test]
+    fn o_aparo_das_pontas_da_a_mesma_resposta_do_lcs() {
+        // Bloco INSERIDO no meio: as pontas casam, o miolo é o que o
+        // LCS resolve. É o caso que o ciclo 276 media, e o aparo não
+        // pode mudá-lo.
+        let original = "um\n\ndois\n\ntres\n";
+        let novo = "um\n\nNOVO\n\ndois\n\ntres\n";
+        let fora = costurar_mudancas(original, novo);
+        assert!(fora.contains("NOVO"));
+        assert!(fora.contains("um"));
+        assert!(fora.contains("tres"));
+    }
+
+    #[test]
+    fn pagina_inteira_reescrita_nao_monta_tabela() {
+        // Nada casa nas pontas e o miolo passa do teto: a costura
+        // desiste e devolve o texto novo, que é o comportamento de
+        // antes dela existir. Desistir é a resposta certa — não há o
+        // que preservar.
+        let original = pagina_grande(600);
+        let novo = (0..600)
+            .map(|i| format!("Outra coisa {i} aqui.\n"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let fora = costurar_mudancas(&original, &novo);
+        assert_eq!(fora, novo);
     }
 }

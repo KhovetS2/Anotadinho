@@ -171,6 +171,23 @@ linearidade que escrevi deixou passar a regressão que eu já sabia estar
 lá; e dois cenários de UI mediam zero elemento em zero milissegundo e
 passavam com folga, porque conferiam o TEMPO sem conferir o EFEITO.
 
+**`trunk serve` não observa `crates/`.** Ele reconstrói quando um fonte
+de `ui/` muda; mudança só no núcleo NÃO chega ao app, e a suíte julga o
+binário velho sem avisar. Os ciclos que mexem nos dois lados escondem
+isso — o rebuild vem pelo lado da UI. Quando a mudança for só do núcleo,
+force o rebuild tocando um fonte de `ui/` com mudança de CONTEÚDO
+(`touch` não basta: ele compara conteúdo) e confira que `ui/dist/*.wasm`
+ficou mais novo que o fonte antes de medir qualquer coisa.
+
+**Mexeu no editor? Rode `--estresse`.** Ela fica fora de `todos` por
+bons motivos — leva minutos e mede tempo — e o preço disso é que ela
+apodrece calada. No ciclo 282 ela estava 1 de 9: um ciclo tinha tornado
+duas asserções impossíveis (a lista virou grupo `contenteditable=
+"false"`, e a asserção contava lista junto com parágrafo) e outro tinha
+posto um `O(n×m)` no caminho do `oninput` — 1,44 milhão de comparações
+por caractere digitado numa página de 1200 blocos. Nenhum dos dois
+apareceu na suíte principal, cujas páginas têm três parágrafos.
+
 **Espere o elemento que você vai clicar, não um parente dele.** Esperar
 por um sinal PRÓXIMO — a aba entrou na barra, o embed renderizou — e
 agir no mesmo instante sobre outro elemento é corrida, e ela reprova com

@@ -105,7 +105,12 @@ estressar("página de 1200 blocos abre e fica editável", () => corpoGrande(1200
     "os blocos renderizarem", 30000);
 
   const est = await b.js(`(() => {
-    const blocos = document.querySelectorAll('[data-nav-block]');
+    // Só os blocos de TEXTO recebem cursor. Desde o ciclo 273 a lista
+    // é um GRUPO (data-nav-block="grupo", contenteditable="false") de
+    // propósito, porque quem digita é o item. Contar os dois juntos
+    // tornou estas asserções impossíveis naquele dia, e ninguém rodou a
+    // bateria pra ver (ciclo 282).
+    const blocos = document.querySelectorAll('[data-nav-block="texto"]');
     return {
       n: blocos.length,
       editaveis: [...blocos].filter(e => e.getAttribute('contenteditable') === 'true').length,
@@ -130,7 +135,12 @@ estressar("digitar no fim de uma página de 1200 blocos", () => corpoGrande(1200
   // "digitar trava". Cada tecla dispara o `oninput` do editor, que
   // recompõe estado.
   const r = await b.js(MEDIR(`
-    const blocos = document.querySelectorAll('[data-nav-block]');
+    // Só os blocos de TEXTO recebem cursor. Desde o ciclo 273 a lista
+    // é um GRUPO (data-nav-block="grupo", contenteditable="false") de
+    // propósito, porque quem digita é o item. Contar os dois juntos
+    // tornou estas asserções impossíveis naquele dia, e ninguém rodou a
+    // bateria pra ver (ciclo 282).
+    const blocos = document.querySelectorAll('[data-nav-block="texto"]');
     const alvo = blocos[blocos.length - 1];
     alvo.focus();
     const sel = getSelection(); const range = document.createRange();
@@ -330,7 +340,12 @@ estressar("trocar de aba repetidamente com página grande aberta", () => corpoGr
   h.dentroDoTeto("5 idas e voltas", Date.now() - t0, 30000);
 
   const est = await b.js(`(() => {
-    const blocos = document.querySelectorAll('[data-nav-block]');
+    // Só os blocos de TEXTO recebem cursor. Desde o ciclo 273 a lista
+    // é um GRUPO (data-nav-block="grupo", contenteditable="false") de
+    // propósito, porque quem digita é o item. Contar os dois juntos
+    // tornou estas asserções impossíveis naquele dia, e ninguém rodou a
+    // bateria pra ver (ciclo 282).
+    const blocos = document.querySelectorAll('[data-nav-block="texto"]');
     return {
       n: blocos.length,
       editaveis: [...blocos].filter(e => e.getAttribute('contenteditable') === 'true').length,
