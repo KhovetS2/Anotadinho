@@ -5,6 +5,7 @@
 
 use anotadinho_core::inline::Marca;
 use anotadinho_core::navegacao::Passo;
+use anotadinho_core::vim::{self, Comando, Movimento};
 use anotadinho_core::unidade::Tipo;
 use anotadinho_core::unidade::{Caminho, Unidade};
 use anotadinho_ipc::PageMeta;
@@ -50,6 +51,8 @@ pub struct Estado {
     pub tema: Tema,
     /// Os níveis dobrados, pelo caminho (ciclo 289).
     pub dobrados: std::collections::HashSet<anotadinho_core::unidade::Caminho>,
+    /// O comando de vim digitado pela metade (ciclo 291).
+    pub vim: vim::Pendente,
 }
 
 impl Estado {
@@ -60,6 +63,7 @@ impl Estado {
         let dobrados = tela::dobras_iniciais(&arvore);
         Self {
             dobrados,
+            vim: vim::Pendente::default(),
             paginas,
             pagina: 0,
             arvore,
@@ -172,11 +176,27 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
 }
 
 fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
+    // A gramática do vim primeiro (ciclo 291).
+    //
+    // Ela mora no núcleo desde o ciclo 285 — contagem, operador,
+    // movimento, `gg`/`G` — e ninguém a consultava. É ela que dá `10j` e
+    // `G` sem uma linha de lógica nova aqui: a TUI só traduz o comando
+    // fechado em passos de navegação.
+    match vim::tecla_normal(&mut e.vim, tecla, false) {
+        vim::Passo::Aguardando => return,
+        vim::Passo::Pronto(c) => {
+            comando_de_vim(e, c);
+            return;
+        }
+        // Seta, Escape, `z`: não são da gramática e seguem o caminho de
+        // sempre, logo abaixo.
+        vim::Passo::Ignorada => {}
+    }
+
     // Quem decide o destino é o núcleo. Este `match` só diz qual PASSO a
     // tecla pede; a régua de "dá ou não dá" é da árvore (ciclo 281).
     // Dobrar é do painel, não da árvore: o modelo não sabe o que está
-    // escondido. `za` do vim vem quando a gramática for ligada; por
-    // enquanto uma tecla só.
+    // escondido.
     if tecla == "z" || tecla == " " {
         e.dobrar();
         e.seguir_cursor();
@@ -239,10 +259,20 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         .get(e.pagina)
         .map(|p| p.title.clone())
         .unwrap_or_default();
-    f.render_widget(
-        Paragraph::new(visiveis).block(borda(&titulo, e.foco == Foco::Conteudo, &e.tema)),
-        colunas[1],
-    );
+    // O que está digitado pela metade aparece no rodapé, como o "2d3"
+    // do canto do vim. Sem isso, teclar `1` `0` e não ver nada faz a
+    // pessoa achar que a tecla não pegou (ciclo 291).
+    let mut bloco = borda(&titulo, e.foco == Foco::Conteudo, &e.tema);
+    if e.vim.em_curso() {
+        bloco = bloco.title_bottom(
+            Line::from(Span::styled(
+                format!(" {} ", e.vim.rotulo()),
+                e.tema.estilo(Realce::Cursor),
+            ))
+            .right_aligned(),
+        );
+    }
+    f.render_widget(Paragraph::new(visiveis).block(bloco), colunas[1]);
 }
 
 /// Uma linha do conteúdo, com o estilo do BLOCO e o dos trechos.
@@ -296,6 +326,65 @@ fn linha_estilizada<'a>(l: &'a crate::tela::Linha, sob_cursor: bool, tema: &Tema
         ));
     }
     Line::from(spans)
+}
+
+/// Executa um comando fechado da gramática do vim.
+///
+/// Só MOVIMENTO por enquanto: a TUI é de leitura, e apagar/copiar/entrar
+/// em inserção precisam da edição ligada — que existe no núcleo desde o
+/// ciclo 285 e ainda não tem caminho até aqui. O comando é consumido e
+/// não faz nada, em vez de vazar pro tratamento de tecla e disparar
+/// outra coisa por engano.
+fn comando_de_vim(e: &mut Estado, c: Comando) {
+    let Comando::Mover(mov, vezes) = c else { return };
+    match mov {
+        Movimento::Baixo => repetir(e, Passo::Proximo, vezes),
+        Movimento::Cima => repetir(e, Passo::Anterior, vezes),
+        // Numa árvore, "pra dentro" é o que direita significa — e é o
+        // que o Enter já faz.
+        Movimento::Direita => repetir(e, Passo::Entrar, 1),
+        Movimento::Esquerda => repetir(e, Passo::Sair, 1),
+        Movimento::InicioDoDocumento => ir_para_linha(e, 0),
+        // `G` sozinho é o fim; `10G` é a décima linha, como no vim.
+        Movimento::FimDoDocumento => {
+            let ultima = e.visiveis().len().saturating_sub(1);
+            let alvo = if vezes > 1 {
+                (vezes as usize - 1).min(ultima)
+            } else {
+                ultima
+            };
+            ir_para_linha(e, alvo);
+        }
+        // Movimento DENTRO da linha não tem o que fazer numa tela de
+        // blocos: aqui o cursor pousa em unidades, não em caracteres.
+        // Volta quando a edição chegar.
+        _ => {}
+    }
+}
+
+/// Aplica o mesmo passo `vezes` vezes, parando na borda.
+fn repetir(e: &mut Estado, passo: Passo, vezes: u32) {
+    for _ in 0..vezes.max(1) {
+        let antes = e.cursor.clone();
+        if passo == Passo::Entrar {
+            e.dobrados.remove(&e.cursor);
+        }
+        e.cursor = tela::andar(&e.arvore, &e.cursor, passo);
+        // Bateu na borda: repetir não leva a lugar nenhum, e `1000j` não
+        // pode custar mil travessias da árvore.
+        if e.cursor == antes {
+            break;
+        }
+    }
+    e.seguir_cursor();
+}
+
+/// Põe o cursor na n-ésima linha VISÍVEL.
+fn ir_para_linha(e: &mut Estado, indice: usize) {
+    if let Some(l) = e.visiveis().get(indice) {
+        e.cursor = l.caminho.clone();
+    }
+    e.seguir_cursor();
 }
 
 /// O papel de um bloco, pelo tipo dele.
@@ -571,6 +660,118 @@ mod testes {
             !apagado.iter().any(|l| l.contains("callout")),
             "o rótulo do embed saiu apagado: {apagado:?}"
         );
+    }
+
+    /// Uma página com `n` parágrafos numerados, pra contar saltos.
+    fn pagina_numerada(n: usize) -> Unidade {
+        analisar(
+            &(0..n)
+                .map(|i| format!("linha {i}\n\n"))
+                .collect::<String>(),
+        )
+    }
+
+    #[test]
+    fn contagem_anda_varios_blocos_de_uma_vez() {
+        // `10j` — a gramática vem do núcleo (ciclo 285) e nunca tinha
+        // sido consultada por ninguém.
+        let mut e = Estado::novo(paginas(), pagina_numerada(30));
+        e.foco = Foco::Conteudo;
+        for t in ["1", "0", "j"] {
+            tecla(&mut e, t);
+        }
+        assert_eq!(e.cursor, vec![10]);
+        // E pra trás.
+        for t in ["3", "k"] {
+            tecla(&mut e, t);
+        }
+        assert_eq!(e.cursor, vec![7]);
+    }
+
+    #[test]
+    fn a_contagem_fica_pendente_ate_o_movimento_chegar() {
+        // Teclar `1` e `0` não move nada: o comando não fechou. Sem isso
+        // o `1` viraria "ir pra linha 1" e a contagem nunca existiria.
+        let mut e = Estado::novo(paginas(), pagina_numerada(30));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "1");
+        tecla(&mut e, "0");
+        assert_eq!(e.cursor, vec![0], "moveu antes do comando fechar");
+        assert!(e.vim.em_curso());
+        assert_eq!(e.vim.rotulo(), "10");
+    }
+
+    #[test]
+    fn gg_e_g_maiusculo_vao_pras_pontas() {
+        let mut e = Estado::novo(paginas(), pagina_numerada(30));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "G");
+        assert_eq!(e.cursor, vec![29]);
+        tecla(&mut e, "g");
+        assert!(e.vim.em_curso(), "um `g` só já fechou comando");
+        tecla(&mut e, "g");
+        assert_eq!(e.cursor, vec![0]);
+    }
+
+    #[test]
+    fn numero_antes_do_g_maiusculo_e_a_linha() {
+        // `10G` é a décima linha, como no vim.
+        let mut e = Estado::novo(paginas(), pagina_numerada(30));
+        e.foco = Foco::Conteudo;
+        for t in ["1", "0", "G"] {
+            tecla(&mut e, t);
+        }
+        assert_eq!(e.cursor, vec![9]);
+    }
+
+    #[test]
+    fn a_contagem_para_na_borda_e_nao_custa_mil_travessias() {
+        // `1000j` numa página de 5 blocos para no último. Sem a saída
+        // antecipada, seriam mil travessias da árvore por tecla.
+        let mut e = Estado::novo(paginas(), pagina_numerada(5));
+        e.foco = Foco::Conteudo;
+        for t in ["1", "0", "0", "0", "j"] {
+            tecla(&mut e, t);
+        }
+        assert_eq!(e.cursor, vec![4]);
+    }
+
+    #[test]
+    fn a_seta_continua_valendo_junto_da_gramatica() {
+        // A gramática ignora seta, e o caminho de sempre trata. As duas
+        // coisas convivem — quebrar a seta pra ganhar `10j` seria troca
+        // ruim.
+        let mut e = Estado::novo(paginas(), pagina_numerada(5));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "ArrowDown");
+        assert_eq!(e.cursor, vec![1]);
+        tecla(&mut e, "ArrowUp");
+        assert_eq!(e.cursor, vec![0]);
+    }
+
+    #[test]
+    fn dobrar_continua_funcionando_com_a_gramatica_ligada() {
+        // `z` não é comando de vim, então a gramática o ignora e ele
+        // chega no tratamento do painel.
+        let mut e = Estado::novo(paginas(), analisar("antes\n\n- um\n- dois\n"));
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![1];
+        tecla(&mut e, "z");
+        assert!(e.dobrados.contains(&vec![1]), "z deixou de dobrar");
+    }
+
+    #[test]
+    fn operador_sem_edicao_e_consumido_sem_fazer_nada() {
+        // `dd` fecha um comando de apagar, e a TUI é de leitura. O certo
+        // é consumir e não fazer nada — deixar vazar faria o segundo `d`
+        // cair no tratamento de tecla e disparar outra coisa.
+        let mut e = Estado::novo(paginas(), pagina_numerada(5));
+        e.foco = Foco::Conteudo;
+        let antes = e.cursor.clone();
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert_eq!(e.cursor, antes);
+        assert!(!e.vim.em_curso(), "o comando ficou pendente pra sempre");
     }
 
     #[test]
