@@ -28,6 +28,7 @@ import { telas } from "./telas.mjs";
 import { fluxo } from "./fluxo.mjs";
 import { pendentes } from "./pendentes.mjs";
 import { estresse } from "./estresse.mjs";
+import { arvore } from "./arvore.mjs";
 import { conferirSnapshots } from "./snapshot.mjs";
 
 const VAULT = process.env.ANOTADINHO_VAULT || "VaultAnotadinho";
@@ -85,8 +86,19 @@ const soPendentes = process.argv.includes("--pendentes");
 // `todos` porque leva minutos e MEDE TEMPO — e uma suíte que às vezes
 // falha por a máquina estar ocupada deixa de ser sinal confiável.
 const soEstresse = process.argv.includes("--estresse");
+// `--arvore` compara o MODELO com a TELA (ciclo 272). Fica fora de
+// `todos` porque é medição de MIGRAÇÃO, não guarda de comportamento:
+// enquanto a árvore não for a fonte da verdade, divergir não é
+// necessariamente defeito — é informação sobre o que falta.
+const soArvore = process.argv.includes("--arvore");
 const filtro = process.argv.slice(2).find((a) => !a.startsWith("--"));
-const base = soPendentes ? pendentes : soEstresse ? estresse : todos;
+const base = soPendentes
+  ? pendentes
+  : soEstresse
+    ? estresse
+    : soArvore
+      ? arvore
+      : todos;
 let selecionados = filtro
   ? base.filter((c) => c.nome.toLowerCase().includes(filtro.toLowerCase()))
   : base;
@@ -236,7 +248,7 @@ for (const cenario of selecionados) {
 // pra `run.mjs` continuar sendo o comando único de "está tudo certo?".
 // `--sem-snapshot` pula (útil quando você está no meio de um redesenho e
 // ainda não quer regravar a baseline).
-if (!filtro && !soPendentes && !soEstresse && !process.argv.includes("--sem-snapshot")) {
+if (!filtro && !soPendentes && !soEstresse && !soArvore && !process.argv.includes("--sem-snapshot")) {
   const t0 = Date.now();
   try {
     const resultados = await conferirSnapshots(bridge);

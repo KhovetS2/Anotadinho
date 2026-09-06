@@ -111,6 +111,32 @@ pub fn handle_scan_vault(vault_path: String) -> Result<Vec<PageIndexEntry>, Stri
     Ok(entradas)
 }
 
+/// A visão que o MODELO tem dos blocos de uma página (ciclo 272).
+///
+/// Devolve o resumo de cada unidade navegável, em ordem de documento —
+/// exatamente a lista que o DOM deveria estar mostrando.
+///
+/// Existe pro passo 3 da unificação: a árvore roda em PARALELO ao editor
+/// e alguém compara os dois. Enquanto o modelo não for a fonte da
+/// verdade, é o único jeito de saber se ele concordaria com a tela — e
+/// descobrir as divergências ANTES de inverter, não depois.
+///
+/// Fica no backend, e não no editor, porque assim não custa nada no
+/// render: a árvore só é construída quando alguém pergunta.
+pub fn handle_arvore_da_pagina(
+    vault_path: String,
+    page_path: String,
+) -> Result<Vec<String>, String> {
+    let vault = VaultIo::open(&vault_path);
+    let conteudo = vault.read_page(&page_path).map_err(|e| e.to_string())?;
+    let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+    Ok(anotadinho_core::analise::analisar(corpo)
+        .navegaveis()
+        .iter()
+        .map(|(_, u)| u.tipo.resumo())
+        .collect())
+}
+
 /// Handler de read_page: retorna o conteúdo Markdown bruto.
 pub fn handle_read_page(vault_path: String, page_path: String) -> Result<String, String> {
     let vault = VaultIo::open(&vault_path);

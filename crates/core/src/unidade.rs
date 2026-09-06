@@ -103,6 +103,25 @@ pub enum Tipo {
 }
 
 impl Tipo {
+    /// Nome curto e estável do tipo, pra comparar modelo com tela.
+    ///
+    /// Existe pro passo 3 da unificação (ciclo 272): a árvore roda em
+    /// paralelo ao DOM e alguém precisa dizer, numa palavra, o que cada
+    /// unidade É — pra que os dois lados possam discordar de forma
+    /// visível em vez de silenciosa.
+    pub fn resumo(&self) -> String {
+        match self {
+            Self::Paragrafo => "paragrafo".into(),
+            Self::Titulo(n) => format!("titulo{n}"),
+            Self::Citacao => "citacao".into(),
+            Self::Codigo => "codigo".into(),
+            Self::Lista => "lista".into(),
+            Self::Item => "item".into(),
+            Self::Vazia => "vazia".into(),
+            Self::Embed(nome) => format!("embed:{nome}"),
+        }
+    }
+
     /// A política deste tipo.
     pub fn politica(&self) -> Politica {
         match self {
@@ -351,6 +370,18 @@ mod testes {
         // Lista agrupa mas não é atômica: a navegação desce nela.
         assert!(Tipo::Lista.politica().aceita_filhos);
         assert!(!Tipo::Lista.politica().atomica);
+    }
+
+    #[test]
+    fn o_resumo_distingue_o_que_precisa_ser_distinguido() {
+        assert_eq!(Tipo::Paragrafo.resumo(), "paragrafo");
+        assert_eq!(Tipo::Titulo(3).resumo(), "titulo3");
+        assert_ne!(Tipo::Titulo(1).resumo(), Tipo::Titulo(2).resumo());
+        assert_eq!(Tipo::Embed("kanban".into()).resumo(), "embed:kanban");
+        assert_ne!(
+            Tipo::Embed("kanban".into()).resumo(),
+            Tipo::Embed("table".into()).resumo()
+        );
     }
 
     #[test]

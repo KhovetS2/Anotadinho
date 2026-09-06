@@ -162,6 +162,12 @@ fn scan_vault(vault_path: String) -> Result<Vec<PageIndexEntry>, String> {
     handle_scan_vault(vault_path)
 }
 
+/// A visão que o MODELO tem dos blocos de uma página (ciclo 272).
+#[tauri::command]
+fn arvore_da_pagina(vault_path: String, page_path: String) -> Result<Vec<String>, String> {
+    anotadinho_ipc::handle_arvore_da_pagina(vault_path, page_path)
+}
+
 #[tauri::command]
 fn read_page(vault_path: String, page_path: String) -> Result<String, String> {
     handle_read_page(vault_path, page_path)
@@ -914,6 +920,7 @@ fn main() {
             list_pages,
             scan_vault,
             read_page,
+            arvore_da_pagina,
             read_page_versioned,
             write_page,
             write_page_checked,
