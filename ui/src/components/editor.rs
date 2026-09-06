@@ -2412,8 +2412,18 @@ pub fn editor(props: &EditorProps) -> Html {
             if !em_navegacao && !e.ctrl_key() && !e.meta_key() {
                 if let Some(bloco) = bloco_do_cursor() {
                     let tag = bloco.tag_name().to_lowercase();
-                    let lista_ou_tabela = matches!(tag.as_str(), "ul" | "ol" | "table");
-                    let codigo = tag == "pre";
+                    let tipo = anotadinho_core::unidade::Tipo::da_tag(&tag);
+                    // A parte de LISTA vem do modelo (ciclo 278): grupo é
+                    // quem comporta filhos e não recebe texto. `table`
+                    // continua na mão porque tabela não é bloco do
+                    // modelo — no Anotadinho ela é embed, e o `<table>`
+                    // que chega aqui vem de HTML colado.
+                    let e_grupo = tipo
+                        .as_ref()
+                        .map(|t| t.politica())
+                        .is_some_and(|p| p.aceita_filhos && !p.aceita_texto);
+                    let lista_ou_tabela = e_grupo || tag == "table";
+                    let codigo = matches!(tipo, Some(anotadinho_core::unidade::Tipo::Codigo(_)));
 
                     let tratou = if e.key() == "Enter" && e.shift_key() {
                         if codigo {
@@ -4128,21 +4138,19 @@ fn insert_element_at_cursor(el: &web_sys::Element, break_out_of_block: bool) -> 
 /// ou um `<hr>` são blocos de primeiro nível como os outros, mas não têm
 /// onde pôr o caret.
 fn aceita_texto(el: &web_sys::Element) -> bool {
-    matches!(
-        el.tag_name().to_lowercase().as_str(),
-        "p" | "h1"
-            | "h2"
-            | "h3"
-            | "h4"
-            | "h5"
-            | "h6"
-            | "ul"
-            | "ol"
-            | "li"
-            | "blockquote"
-            | "pre"
-            | "table"
-    )
+    // Quem responde é o modelo (ciclo 278). Antes esta função mantinha
+    // a sua própria lista de tags, e ela DISCORDAVA do núcleo: dizia
+    // que `ul`/`ol` recebem texto, quando desde o ciclo 273 a lista é
+    // grupo e `contenteditable="false"`. Não causava estrago só porque
+    // nenhum chamador insere lista por este caminho — todos inserem
+    // figura, imagem ou marcador de embed. Sorte, não desenho.
+    //
+    // Tag que o modelo não conhece não recebe texto. É o que já
+    // acontecia com `div` e `figure`, agora por regra e não por
+    // ausência na lista.
+    anotadinho_core::unidade::Tipo::da_tag(&el.tag_name())
+        .map(|t| t.politica().aceita_texto)
+        .unwrap_or(false)
 }
 
 /// Quantos blocos de texto da PÁGINA vêm antes de `el`.
@@ -5163,8 +5171,13 @@ fn marcar_blocos(container: &web_sys::Element) {
         // Agora a lista é contêiner: entra-se nela com Enter e anda-se
         // entre os itens, que são os blocos de verdade — cada um com
         // seu `contenteditable`, como qualquer parágrafo.
-        let tag = bloco.tag_name().to_lowercase();
-        if tag == "ul" || tag == "ol" {
+        // Grupo é quem comporta filhos e não recebe texto — a lista,
+        // hoje. Perguntar ao modelo em vez de comparar tag faz um tipo
+        // novo de grupo funcionar aqui sem tocar no editor (ciclo 278).
+        let e_grupo = anotadinho_core::unidade::Tipo::da_tag(&bloco.tag_name())
+            .map(|t| t.politica())
+            .is_some_and(|p| p.aceita_filhos && !p.aceita_texto);
+        if e_grupo {
             let _ = bloco.set_attribute("contenteditable", "false");
             let _ = bloco.set_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO, "grupo");
             // A classe sai junto: `editor__bloco` significa "aqui se

@@ -151,6 +151,60 @@ impl Tipo {
             Self::Embed(_) => Politica::EMBED,
         }
     }
+
+    /// O tipo que uma tag HTML de bloco representa.
+    ///
+    /// É a ponte que faz a GUI perguntar a política ao modelo em vez de
+    /// manter a sua cópia. Sem ela a regra vivia duas vezes: o núcleo
+    /// dizia que `Lista` é grupo e não recebe texto, e o editor mantinha
+    /// uma lista de tags onde `ul`/`ol` recebiam — respostas contrárias
+    /// para a mesma pergunta, e a do editor só não causava estrago
+    /// porque nada inseria lista por aquele caminho. Sorte, não desenho.
+    ///
+    /// Devolve `None` para tag que não é bloco do modelo. Embed não sai
+    /// daqui: no DOM ele é um contêiner marcado por atributo, não por
+    /// tag, e quem o reconhece é quem o renderizou.
+    pub fn da_tag(tag: &str) -> Option<Self> {
+        Some(match tag.to_ascii_lowercase().as_str() {
+            "p" => Self::Paragrafo,
+            "h1" => Self::Titulo(1),
+            "h2" => Self::Titulo(2),
+            "h3" => Self::Titulo(3),
+            "h4" => Self::Titulo(4),
+            "h5" => Self::Titulo(5),
+            "h6" => Self::Titulo(6),
+            "blockquote" => Self::Citacao,
+            // A linguagem mora na cerca, e a tag não a carrega: quem
+            // precisa dela lê do markdown, não daqui.
+            "pre" => Self::Codigo(None),
+            "ul" => Self::Lista,
+            "ol" => Self::ListaOrdenada,
+            "li" => Self::Item,
+            "hr" | "figure" | "img" => Self::Vazia,
+            _ => return None,
+        })
+    }
+
+    /// A tag HTML de bloco deste tipo, quando existe uma.
+    pub fn tag(&self) -> Option<&'static str> {
+        Some(match self {
+            Self::Paragrafo => "p",
+            Self::Titulo(1) => "h1",
+            Self::Titulo(2) => "h2",
+            Self::Titulo(3) => "h3",
+            Self::Titulo(4) => "h4",
+            Self::Titulo(5) => "h5",
+            Self::Titulo(6) => "h6",
+            Self::Titulo(_) => return None,
+            Self::Citacao => "blockquote",
+            Self::Codigo(_) => "pre",
+            Self::Lista => "ul",
+            Self::ListaOrdenada => "ol",
+            Self::Item => "li",
+            Self::Vazia => "hr",
+            Self::Embed(_) => return None,
+        })
+    }
 }
 
 /// Endereço de uma unidade na árvore: os índices do caminho da raiz até
@@ -467,5 +521,58 @@ mod testes {
         assert!(d.percorrer().is_empty());
         // A raiz é endereçável pelo caminho vazio, mas não é destino.
         assert!(d.em(&[]).is_some());
+    }
+    #[test]
+    fn tag_e_tipo_fecham_o_ciclo() {
+        // Toda tag que o modelo reconhece volta na mesma tag. Sem isso
+        // as duas metades da ponte podem discordar em silêncio.
+        for tag in [
+            "p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "ul", "ol", "li",
+        ] {
+            let tipo = Tipo::da_tag(tag).unwrap_or_else(|| panic!("{tag} não virou tipo"));
+            assert_eq!(tipo.tag(), Some(tag), "{tag} não voltou");
+        }
+    }
+
+    #[test]
+    fn a_caixa_da_tag_nao_importa() {
+        // O DOM devolve tag em maiúscula (`tagName` é "P", não "p").
+        // Quem esquece disso descobre pela navegação parando de andar.
+        assert_eq!(Tipo::da_tag("UL"), Some(Tipo::Lista));
+        assert_eq!(Tipo::da_tag("H2"), Some(Tipo::Titulo(2)));
+    }
+
+    #[test]
+    fn tag_desconhecida_nao_vira_bloco() {
+        // `div` é o contêiner de tudo no editor, e `table`/`span` não são
+        // blocos do modelo. Nenhum deles pode virar bloco por descuido.
+        for tag in ["div", "span", "table", "section", ""] {
+            assert_eq!(Tipo::da_tag(tag), None, "{tag} virou bloco");
+        }
+    }
+
+    #[test]
+    fn a_lista_nao_recebe_texto_e_o_item_recebe() {
+        // A divergência que motivou a ponte: o editor tinha uma lista de
+        // tags própria dizendo que `ul` recebe texto. O modelo diz que
+        // não — a lista é grupo, quem recebe é o item.
+        let lista = Tipo::da_tag("ul").unwrap().politica();
+        assert!(!lista.aceita_texto);
+        assert!(lista.aceita_filhos);
+
+        let item = Tipo::da_tag("li").unwrap().politica();
+        assert!(item.aceita_texto);
+        assert!(!item.aceita_filhos);
+    }
+
+    #[test]
+    fn o_que_nao_recebe_texto_tambem_nao_recebe_cursor() {
+        // Onde não se digita, não se põe caret: era a regra que o
+        // editor aplicava por lista de tags e agora pergunta.
+        for tag in ["hr", "figure", "img", "ul", "ol"] {
+            let p = Tipo::da_tag(tag).unwrap().politica();
+            assert!(!p.aceita_texto, "{tag} aceita texto");
+            assert!(!p.aceita_cursor, "{tag} aceita cursor");
+        }
     }
 }
