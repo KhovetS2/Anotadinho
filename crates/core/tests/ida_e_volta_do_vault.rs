@@ -94,3 +94,41 @@ fn a_segunda_volta_e_identica_em_texto() {
             .join("\n  ")
     );
 }
+#[test]
+#[ignore]
+fn quanto_a_arvore_perde() {
+    let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../VaultAnotadinho");
+    let mut total = 0;
+    let mut iguais = 0;
+    let mut exemplos: Vec<(String, String, String)> = Vec::new();
+    for pasta in ["pages", "journals"] {
+        let dir = raiz.join(pasta);
+        if !dir.is_dir() { continue; }
+        for e in walkdir::WalkDir::new(&dir).into_iter().filter_map(|e| e.ok()) {
+            if e.path().extension().is_some_and(|x| x == "md") {
+                let Ok(texto) = std::fs::read_to_string(e.path()) else { continue };
+                let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
+                let volta = anotadinho_core::analise::escrever(
+                    &anotadinho_core::analise::analisar(corpo));
+                total += 1;
+                if volta.trim() == corpo.trim() { iguais += 1; }
+                else if exemplos.len() < 6 {
+                    // primeira linha que difere
+                    let a: Vec<&str> = corpo.trim().lines().collect();
+                    let b: Vec<&str> = volta.trim().lines().collect();
+                    let i = (0..a.len().max(b.len()))
+                        .find(|i| a.get(*i) != b.get(*i)).unwrap_or(0);
+                    exemplos.push((
+                        e.path().file_name().unwrap().to_string_lossy().to_string(),
+                        a.get(i).unwrap_or(&"(fim)").to_string(),
+                        b.get(i).unwrap_or(&"(fim)").to_string(),
+                    ));
+                }
+            }
+        }
+    }
+    println!("FIDELIDADE: {iguais}/{total} páginas voltam IDÊNTICAS");
+    for (arq, orig, novo) in &exemplos {
+        println!("  {arq}\n    original: {orig:?}\n    árvore:   {novo:?}");
+    }
+}

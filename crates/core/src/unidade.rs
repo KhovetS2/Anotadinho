@@ -90,9 +90,21 @@ pub enum Tipo {
     Paragrafo,
     Titulo(u8),
     Citacao,
-    Codigo,
-    /// A lista em si (`<ul>`/`<ol>`); os itens são filhos.
+    /// Bloco de código, com a linguagem declarada na cerca.
+    ///
+    /// A linguagem é observável no arquivo (```` ```bash ````) e serve o
+    /// realce de sintaxe. Perdê-la reescrevia toda cerca do vault sem
+    /// linguagem — medição de fidelidade do ciclo 274.
+    Codigo(Option<String>),
+    /// Lista com marcador (`<ul>`); os itens são filhos.
     Lista,
+    /// Lista numerada (`<ol>`).
+    ///
+    /// Variante própria em vez de um `bool` dentro de `Lista`: a
+    /// diferença é observável no arquivo (`1.` contra `-`), e perder
+    /// isso reescrevia toda lista numerada do vault como marcador — foi
+    /// o que a medição de fidelidade do ciclo 274 mostrou.
+    ListaOrdenada,
     /// Um item de lista.
     Item,
     /// Linha horizontal, imagem — o que ocupa uma linha e não recebe
@@ -114,8 +126,9 @@ impl Tipo {
             Self::Paragrafo => "paragrafo".into(),
             Self::Titulo(n) => format!("titulo{n}"),
             Self::Citacao => "citacao".into(),
-            Self::Codigo => "codigo".into(),
+            Self::Codigo(_) => "codigo".into(),
             Self::Lista => "lista".into(),
+            Self::ListaOrdenada => "lista-ordenada".into(),
             Self::Item => "item".into(),
             Self::Vazia => "vazia".into(),
             Self::Embed(nome) => format!("embed:{nome}"),
@@ -125,10 +138,10 @@ impl Tipo {
     /// A política deste tipo.
     pub fn politica(&self) -> Politica {
         match self {
-            Self::Paragrafo | Self::Titulo(_) | Self::Citacao | Self::Codigo | Self::Item => {
+            Self::Paragrafo | Self::Titulo(_) | Self::Citacao | Self::Codigo(_) | Self::Item => {
                 Politica::TEXTO
             }
-            Self::Lista => Politica::GRUPO,
+            Self::Lista | Self::ListaOrdenada => Politica::GRUPO,
             Self::Vazia => Politica {
                 aceita_texto: false,
                 aceita_cursor: false,
@@ -158,19 +171,41 @@ pub struct Unidade {
     pub texto: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub filhos: Vec<Unidade>,
+    /// O markdown EXATO de onde esta unidade veio, quando ela veio de um
+    /// arquivo.
+    ///
+    /// É o que torna a escrita fiel sem exigir um analisador perfeito
+    /// (ciclo 274). Quem não foi editado volta byte a byte; só o que
+    /// mudou é reserializado.
+    ///
+    /// A alternativa era perseguir cada detalhe do markdown — numeração
+    /// que começa em zero, continuação indentada de item, linguagem de
+    /// cerca — e cada correção revelava a próxima. Medido: 29 de 242
+    /// páginas do vault voltavam idênticas com o analisador sozinho.
+    ///
+    /// `None` numa unidade criada pelo editor: aí não há original, e
+    /// serializar é o certo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fonte: Option<String>,
 }
 
 impl Unidade {
     pub fn nova(tipo: Tipo) -> Self {
-        Self { tipo, texto: String::new(), filhos: Vec::new() }
+        Self { tipo, texto: String::new(), filhos: Vec::new(), fonte: None }
     }
 
     pub fn com_texto(tipo: Tipo, texto: impl Into<String>) -> Self {
-        Self { tipo, texto: texto.into(), filhos: Vec::new() }
+        Self { tipo, texto: texto.into(), filhos: Vec::new(), fonte: None }
+    }
+
+    /// A mesma unidade, lembrando de onde veio.
+    pub fn da_fonte(mut self, fonte: impl Into<String>) -> Self {
+        self.fonte = Some(fonte.into());
+        self
     }
 
     pub fn com_filhos(tipo: Tipo, filhos: Vec<Unidade>) -> Self {
-        Self { tipo, texto: String::new(), filhos }
+        Self { tipo, texto: String::new(), filhos, fonte: None }
     }
 
     pub fn politica(&self) -> Politica {

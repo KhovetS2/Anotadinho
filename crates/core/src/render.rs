@@ -70,6 +70,12 @@ fn visitar<R: Renderizador>(u: &Unidade, r: &mut R, nivel: usize) {
 #[derive(Default)]
 pub struct Markdown {
     saida: String,
+    /// Estado da lista sendo escrita: o item precisa saber se numera.
+    em_lista_ordenada: bool,
+    contador_item: usize,
+    /// Nível a partir do qual estamos dentro de uma unidade já escrita
+    /// pela fonte — os filhos dela não são reescritos.
+    pulando_de: Option<usize>,
 }
 
 impl Markdown {
@@ -81,16 +87,63 @@ impl Markdown {
 
 impl Renderizador for Markdown {
     fn entrar(&mut self, u: &Unidade, nivel: usize) {
+        // Já estamos dentro de algo escrito pela fonte: os filhos vieram
+        // junto, e escrevê-los de novo duplicaria o conteúdo.
+        if self.pulando_de.is_some() {
+            return;
+        }
+        // A FONTE ganha (ciclo 274). Quem não foi editado volta byte a
+        // byte, e o arquivo não muda por ter sido lido.
+        //
+        // É o que dispensa um analisador perfeito: sem isto, só 29 das
+        // 242 páginas do vault voltavam idênticas, e cada detalhe
+        // corrigido revelava o seguinte.
+        if let Some(fonte) = &u.fonte {
+            self.saida.push_str(fonte.trim_end());
+            self.saida.push_str("\n\n");
+            self.pulando_de = Some(nivel);
+            return;
+        }
         match &u.tipo {
             Tipo::Titulo(n) => {
                 let marca = "#".repeat((*n).clamp(1, 6) as usize);
                 self.saida.push_str(&format!("{marca} {}\n\n", u.texto));
             }
             Tipo::Paragrafo => self.saida.push_str(&format!("{}\n\n", u.texto)),
-            Tipo::Citacao => self.saida.push_str(&format!("> {}\n\n", u.texto)),
-            Tipo::Codigo => self.saida.push_str(&format!("```\n{}\n```\n\n", u.texto)),
+            Tipo::Citacao => {
+                // Uma citação de várias linhas volta com `>` em CADA
+                // linha — é assim que ela entrou, e escrever tudo numa
+                // linha só mudaria o arquivo.
+                for linha in u.texto.split('\n') {
+                    if linha.is_empty() {
+                        self.saida.push_str(">\n");
+                    } else {
+                        self.saida.push_str(&format!("> {linha}\n"));
+                    }
+                }
+                self.saida.push('\n');
+            }
+            Tipo::Codigo(lingua) => self.saida.push_str(&format!(
+                "```{}\n{}\n```\n\n",
+                lingua.as_deref().unwrap_or(""),
+                u.texto
+            )),
             Tipo::Item => {
                 let recuo = "  ".repeat(nivel.saturating_sub(1));
+                // Numerada volta numerada. O contador é o do
+                // renderizador, não da unidade: markdown aceita `1.` em
+                // todos os itens, e guardar o número por item seria
+                // guardar algo que o arquivo não precisa dizer.
+                if self.em_lista_ordenada {
+                    self.contador_item += 1;
+                    let n = self.contador_item;
+                    if u.texto.is_empty() {
+                        self.saida.push_str(&format!("{recuo}{n}.\n"));
+                    } else {
+                        self.saida.push_str(&format!("{recuo}{n}. {}\n", u.texto));
+                    }
+                    return;
+                }
                 // Item vazio sai como `-` e não `- `: espaço no fim de
                 // linha é sujeira que alguns editores comem sozinhos, e
                 // aí o arquivo mudaria sem ninguém ter editado.
@@ -100,7 +153,13 @@ impl Renderizador for Markdown {
                     self.saida.push_str(&format!("{recuo}- {}\n", u.texto));
                 }
             }
-            Tipo::Lista => {}
+            Tipo::Lista => {
+                self.em_lista_ordenada = false;
+            }
+            Tipo::ListaOrdenada => {
+                self.em_lista_ordenada = true;
+                self.contador_item = 0;
+            }
             Tipo::Vazia => self.saida.push_str("---\n\n"),
             Tipo::Embed(_) => {
                 // O `texto` de um embed JÁ É o markdown dele — a cerca
@@ -118,9 +177,17 @@ impl Renderizador for Markdown {
         }
     }
 
-    fn sair(&mut self, u: &Unidade, _nivel: usize) {
-        if u.tipo == Tipo::Lista {
+    fn sair(&mut self, u: &Unidade, nivel: usize) {
+        if self.pulando_de == Some(nivel) {
+            self.pulando_de = None;
+            return;
+        }
+        if self.pulando_de.is_some() {
+            return;
+        }
+        if matches!(u.tipo, Tipo::Lista | Tipo::ListaOrdenada) {
             self.saida.push('\n');
+            self.em_lista_ordenada = false;
         }
     }
 }
@@ -146,8 +213,9 @@ impl Terminal {
             Tipo::Paragrafo => "¶".to_string(),
             Tipo::Titulo(n) => format!("h{n}"),
             Tipo::Citacao => "❝".to_string(),
-            Tipo::Codigo => "```".to_string(),
+            Tipo::Codigo(_) => "```".to_string(),
             Tipo::Lista => "•••".to_string(),
+            Tipo::ListaOrdenada => "1••".to_string(),
             Tipo::Item => "•".to_string(),
             Tipo::Vazia => "───".to_string(),
             Tipo::Embed(nome) => format!("[{nome}]"),
@@ -195,6 +263,7 @@ mod testes {
                     tipo: Tipo::Embed("callout".into()),
                     texto: "{{ type: \"callout\" }}\nbody: oi\n{{ /callout }}".into(),
                     filhos: vec![Unidade::com_texto(Tipo::Paragrafo, "dentro do embed")],
+                    fonte: None,
                 },
             ],
         )

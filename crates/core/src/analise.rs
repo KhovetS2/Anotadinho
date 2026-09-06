@@ -35,10 +35,19 @@ pub fn analisar(corpo: &str) -> Unidade {
                 // O embed é UMA unidade atômica. O conteúdo dele não é
                 // reanalisado como markdown: ele tem estrutura própria,
                 // e é o componente que a conhece.
-                filhos.push(Unidade::com_texto(
-                    Tipo::Embed(dados.kind().type_name().to_string()),
-                    dados.to_fence_text(),
-                ));
+                // `to_fence_text` NORMALIZA o YAML (reordena campos,
+                // completa padrões). O editor já faz isso ao salvar
+                // desde sempre, então não é perda nova — mas guardar a
+                // fonte aqui também não custa, e mantém a árvore fiel
+                // pra quem só lê.
+                let texto = dados.to_fence_text();
+                filhos.push(
+                    Unidade::com_texto(
+                        Tipo::Embed(dados.kind().type_name().to_string()),
+                        texto.clone(),
+                    )
+                    .da_fonte(texto),
+                );
             }
             DocSegment::Markdown(texto) => filhos.extend(unidades_de_texto(&texto)),
         }
@@ -51,13 +60,18 @@ fn unidades_de_texto(texto: &str) -> Vec<Unidade> {
     let mut fora: Vec<Unidade> = Vec::new();
     let mut paragrafo: Vec<&str> = Vec::new();
     let mut lista: Vec<Unidade> = Vec::new();
-    let mut codigo: Option<Vec<&str>> = None;
+    let mut lista_ordenada = false;
+    let mut linhas_da_lista: Vec<&str> = Vec::new();
+    let mut citacao: Vec<&str> = Vec::new();
+    let mut linhas_da_citacao: Vec<&str> = Vec::new();
+    let mut codigo: Option<(Option<String>, Vec<&str>, Vec<&str>)> = None;
 
     // Fecha o que estiver aberto antes de começar outra coisa.
     macro_rules! fechar_paragrafo {
         () => {
             if !paragrafo.is_empty() {
-                fora.push(Unidade::com_texto(Tipo::Paragrafo, paragrafo.join("\n")));
+                let cru = paragrafo.join("\n");
+                fora.push(Unidade::com_texto(Tipo::Paragrafo, cru.clone()).da_fonte(cru));
                 paragrafo.clear();
             }
         };
@@ -65,7 +79,25 @@ fn unidades_de_texto(texto: &str) -> Vec<Unidade> {
     macro_rules! fechar_lista {
         () => {
             if !lista.is_empty() {
-                fora.push(Unidade::com_filhos(Tipo::Lista, std::mem::take(&mut lista)));
+                let tipo = if lista_ordenada { Tipo::ListaOrdenada } else { Tipo::Lista };
+                let cru = std::mem::take(&mut linhas_da_lista).join("\n");
+                fora.push(
+                    Unidade::com_filhos(tipo, std::mem::take(&mut lista)).da_fonte(cru),
+                );
+            }
+        };
+    }
+    // Linhas `>` seguidas são UMA citação, não uma por linha. Emitir uma
+    // por linha inseria linha em branco entre elas, e o markdown que
+    // saía já não era o que entrou (ciclo 274).
+    macro_rules! fechar_citacao {
+        () => {
+            if !citacao.is_empty() {
+                let cru = std::mem::take(&mut linhas_da_citacao).join("\n");
+                fora.push(
+                    Unidade::com_texto(Tipo::Citacao, citacao.join("\n")).da_fonte(cru),
+                );
+                citacao.clear();
             }
         };
     }
@@ -74,34 +106,47 @@ fn unidades_de_texto(texto: &str) -> Vec<Unidade> {
         // Dentro de uma cerca, TUDO é conteúdo — inclusive linhas que
         // pareceriam título ou item. É a razão de o código ser tratado
         // antes de qualquer outro teste.
-        if let Some(acumulado) = &mut codigo {
+        if let Some((lingua, acumulado, cru)) = &mut codigo {
+            cru.push(linha);
             if linha.trim_start().starts_with("```") {
-                fora.push(Unidade::com_texto(Tipo::Codigo, acumulado.join("\n")));
+                let fonte = cru.join("\n");
+                fora.push(
+                    Unidade::com_texto(Tipo::Codigo(lingua.clone()), acumulado.join("\n"))
+                        .da_fonte(fonte),
+                );
                 codigo = None;
             } else {
                 acumulado.push(linha);
             }
             continue;
         }
-        if linha.trim_start().starts_with("```") {
+        if let Some(resto) = linha.trim_start().strip_prefix("```") {
             fechar_paragrafo!();
+            fechar_citacao!();
             fechar_lista!();
-            codigo = Some(Vec::new());
+            let lingua = resto.trim();
+            codigo = Some((
+                (!lingua.is_empty()).then(|| lingua.to_string()),
+                Vec::new(),
+                vec![linha],
+            ));
             continue;
         }
 
         let sem_espaco = linha.trim();
         if sem_espaco.is_empty() {
             fechar_paragrafo!();
+            fechar_citacao!();
             fechar_lista!();
             continue;
         }
 
         if let Some(nivel) = nivel_de_titulo(sem_espaco) {
             fechar_paragrafo!();
+            fechar_citacao!();
             fechar_lista!();
             let texto = sem_espaco[nivel as usize..].trim_start().to_string();
-            fora.push(Unidade::com_texto(Tipo::Titulo(nivel), texto));
+            fora.push(Unidade::com_texto(Tipo::Titulo(nivel), texto).da_fonte(linha));
             continue;
         }
 
@@ -109,33 +154,45 @@ fn unidades_de_texto(texto: &str) -> Vec<Unidade> {
         // texto é "- -".
         if e_linha_horizontal(sem_espaco) {
             fechar_paragrafo!();
+            fechar_citacao!();
             fechar_lista!();
-            fora.push(Unidade::nova(Tipo::Vazia));
+            fora.push(Unidade::nova(Tipo::Vazia).da_fonte(linha));
             continue;
         }
 
-        if let Some(item) = item_de_lista(sem_espaco) {
+        if let Some((item, ordenada)) = item_de_lista(sem_espaco) {
             fechar_paragrafo!();
-            lista.push(Unidade::com_texto(Tipo::Item, item.to_string()));
+            fechar_citacao!();
+            if lista.is_empty() {
+                lista_ordenada = ordenada;
+            }
+            linhas_da_lista.push(linha);
+            lista.push(Unidade::com_texto(Tipo::Item, item.to_string()).da_fonte(linha));
             continue;
         }
 
-        if let Some(citacao) = sem_espaco.strip_prefix('>') {
+        if let Some(linha_citada) = sem_espaco.strip_prefix('>') {
             fechar_paragrafo!();
             fechar_lista!();
-            fora.push(Unidade::com_texto(Tipo::Citacao, citacao.trim().to_string()));
+            citacao.push(linha_citada.strip_prefix(' ').unwrap_or(linha_citada));
+            linhas_da_citacao.push(linha);
             continue;
         }
+        fechar_citacao!();
 
         fechar_lista!();
         paragrafo.push(linha);
     }
 
     // Cerca que o arquivo não fechou: o conteúdo não pode sumir.
-    if let Some(acumulado) = codigo {
-        fora.push(Unidade::com_texto(Tipo::Codigo, acumulado.join("\n")));
+    if let Some((lingua, acumulado, cru)) = codigo {
+        let fonte = cru.join("\n");
+        fora.push(
+            Unidade::com_texto(Tipo::Codigo(lingua), acumulado.join("\n")).da_fonte(fonte),
+        );
     }
     fechar_paragrafo!();
+    fechar_citacao!();
     fechar_lista!();
     fora
 }
@@ -158,22 +215,23 @@ fn nivel_de_titulo(linha: &str) -> Option<u8> {
 /// exatamente isso no corpo, e sem esta regra elas voltavam da ida e
 /// volta como parágrafo `-`. Foi o teste contra o vault que achou —
 /// nenhum fixture meu tinha uma lista vazia.
-fn item_de_lista(linha: &str) -> Option<&str> {
+fn item_de_lista(linha: &str) -> Option<(&str, bool)> {
     if matches!(linha, "-" | "*" | "+") {
-        return Some("");
+        return Some(("", false));
     }
     for marca in ["- ", "* ", "+ "] {
         if let Some(resto) = linha.strip_prefix(marca) {
-            return Some(resto);
+            return Some((resto, false));
         }
     }
-    // Lista numerada: `1. `, `12) `.
+    // Lista numerada: `1. `, `12) `. O `true` é o que preserva a
+    // numeração na volta.
     let digitos = linha.chars().take_while(char::is_ascii_digit).count();
     if digitos > 0 {
         let resto = &linha[digitos..];
         for marca in [". ", ") "] {
             if let Some(item) = resto.strip_prefix(marca) {
-                return Some(item);
+                return Some((item, true));
             }
         }
     }
@@ -244,11 +302,25 @@ mod testes {
     }
 
     #[test]
-    fn lista_numerada_tambem() {
+    fn lista_numerada_e_um_tipo_proprio() {
+        // A numeração é observável no arquivo (`1.` contra `-`), e
+        // perdê-la reescrevia toda lista numerada do vault como
+        // marcador — o que a medição de fidelidade do ciclo 274 mostrou.
         let d = analisar("1. um\n2) dois\n");
-        assert_eq!(tipos(&d), [Tipo::Lista]);
+        assert_eq!(tipos(&d), [Tipo::ListaOrdenada]);
         assert_eq!(d.filhos[0].filhos[0].texto, "um");
         assert_eq!(d.filhos[0].filhos[1].texto, "dois");
+        // E a com marcador continua sendo a outra.
+        assert_eq!(tipos(&analisar("- um\n")), [Tipo::Lista]);
+    }
+
+    #[test]
+    fn linhas_de_citacao_seguidas_sao_uma_citacao_so() {
+        // Uma por linha inseria linha em branco entre elas na volta, e o
+        // markdown que saía já não era o que entrou.
+        let d = analisar("> primeira\n> segunda\n\noutro\n");
+        assert_eq!(tipos(&d), [Tipo::Citacao, Tipo::Paragrafo]);
+        assert_eq!(d.filhos[0].texto, "primeira\nsegunda");
     }
 
     #[test]
@@ -256,14 +328,16 @@ mod testes {
         // O caso que separa um analisador de uma sequência de `if`s: o
         // `#` e o `-` aqui são CÓDIGO, não título nem item.
         let d = analisar("```rust\n# não é título\n- não é item\n```\n");
-        assert_eq!(tipos(&d), [Tipo::Codigo]);
+        // A linguagem da cerca sobrevive (ciclo 274): é observável no
+        // arquivo e é o que o realce de sintaxe usa.
+        assert_eq!(tipos(&d), [Tipo::Codigo(Some("rust".into()))]);
         assert_eq!(d.filhos[0].texto, "# não é título\n- não é item");
     }
 
     #[test]
     fn cerca_sem_fechamento_nao_perde_conteudo() {
         let d = analisar("```\nsobrou\n");
-        assert_eq!(tipos(&d), [Tipo::Codigo]);
+        assert_eq!(tipos(&d), [Tipo::Codigo(None)]);
         assert_eq!(d.filhos[0].texto, "sobrou");
     }
 
@@ -342,7 +416,7 @@ mod testes {
                 Tipo::Paragrafo,
                 Tipo::Lista,
                 Tipo::Citacao,
-                Tipo::Codigo
+                Tipo::Codigo(None)
             ]
         );
     }

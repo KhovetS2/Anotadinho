@@ -48,7 +48,10 @@ const DOM_RESUMO = `(() => {
     }
     const tag = el.tagName.toLowerCase();
     if (/^h[1-6]$/.test(tag)) return 'titulo' + tag[1];
-    if (tag === 'ul' || tag === 'ol') return 'lista';
+    // Lista numerada tem resumo próprio desde o ciclo 274: a numeração
+    // é observável no arquivo, e o modelo passou a distinguir.
+    if (tag === 'ul') return 'lista';
+    if (tag === 'ol') return 'lista-ordenada';
     if (tag === 'li') return 'item';
     if (tag === 'blockquote') return 'citacao';
     if (tag === 'pre') return 'codigo';
