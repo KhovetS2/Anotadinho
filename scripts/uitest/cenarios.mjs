@@ -259,7 +259,17 @@ export const cenarios = [
 
       await bridge.js(`(() => { document.querySelector('.editor__wysiwyg')?.focus(); return true; })()`);
       await bridge.js(tecla(".", true));
-      await PAUSA(400);
+      // Espera por CONDIÇÃO e não por relógio (a regra do ciclo 198).
+      //
+      // Este cenário falhou uma vez na suíte inteira e passou isolado —
+      // era o `PAUSA(400)` apostando que a máquina é rápida o bastante.
+      // Numa rodada carregada não era, e o erro saía como "Ctrl+. não
+      // entrou no embed", acusando o app de um defeito que não tinha.
+      await ctx.esperar(
+        bridge,
+        `document.activeElement?.getAttribute('data-nav-parent')?.startsWith('embed-')`,
+        "o Ctrl+. entrar no embed",
+      );
       const dentro = await bridge.js(`({
         item: document.activeElement?.getAttribute('data-nav-item'),
         grupo: document.activeElement?.getAttribute('data-nav-parent'),
@@ -269,7 +279,11 @@ export const cenarios = [
       ctx.assert(dentro.destaque, "o item focado não recebeu o indicador visual");
 
       await bridge.js(tecla("ArrowDown"));
-      await PAUSA(300);
+      await ctx.esperar(
+        bridge,
+        `document.activeElement?.getAttribute('data-nav-item') !== ${JSON.stringify(dentro.item)}`,
+        "a seta andar pro próximo controle",
+      );
       const depois = await bridge.js(`document.activeElement?.getAttribute('data-nav-item')`);
       ctx.assert(depois && depois !== dentro.item, "a seta não andou pro próximo controle");
 
@@ -277,7 +291,11 @@ export const cenarios = [
       // (com o próprio embed destacado), não direto pro texto — quem
       // entrou pelo teclado continua no teclado, sem perder o lugar.
       await bridge.js(tecla("Escape"));
-      await PAUSA(400);
+      await ctx.esperar(
+        bridge,
+        `document.activeElement?.getAttribute('data-nav-parent') === 'editor-blocos'`,
+        "o Escape voltar pro nível dos blocos",
+      );
       const saiu = await bridge.js(`({
         grupo: document.activeElement?.getAttribute('data-nav-parent'),
         embed: !!document.activeElement?.getAttribute('data-nav-group')?.startsWith('embed-'),

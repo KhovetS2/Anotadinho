@@ -138,13 +138,36 @@ export async function esperar(bridge, cond, descricao, limiteMs = 8000) {
 }
 
 /// Abre uma página pelo nome que aparece na sidebar.
-export async function abrirPagina(bridge, nome) {
-  await bridge.js(`(() => {
+///
+/// TENTA achar o alvo até conseguir (ciclo 270). A versão anterior
+/// clicava UMA vez e, se o item ainda não estivesse na sidebar, não
+/// clicava em nada — e depois esperava 8 segundos por um título que
+/// nunca ia chegar. O erro dizia "esperava a página X abrir", que acusa
+/// o app de não abrir quando o clique nem aconteceu.
+///
+/// A corrida é real: `recarregarEstavel` espera a sidebar ter ALGUM
+/// item, não este item.
+///
+/// O clique acontece SEMPRE, mesmo que o título já bata: o app restaura
+/// as abas depois de um reload, então o título da página anterior pode
+/// estar na tela enquanto o conteúdo ainda é o velho.
+export async function abrirPagina(bridge, nome, limiteMs = 10000) {
+  const clicar = `(() => {
     const alvo = [...document.querySelectorAll('*')]
       .filter(e => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(nome)})[0];
     if (alvo) alvo.click();
     return !!alvo;
-  })()`);
+  })()`;
+
+  const ate = Date.now() + limiteMs;
+  let clicou = false;
+  while (Date.now() < ate && !clicou) {
+    clicou = await bridge.js(clicar);
+    if (!clicou) await new Promise((r) => setTimeout(r, 250));
+  }
+  if (!clicou) {
+    throw new Error(`"${nome}" não apareceu na sidebar em ${limiteMs}ms`);
+  }
   await esperar(
     bridge,
     // `.conversa__titulo` entra aqui porque uma página `type: conversa`

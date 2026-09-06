@@ -417,3 +417,11 @@ telas.push({
     await recarregarEstavel(bridge);
   },
 });
+
+// NOTA (ciclo 270): a devolução da aparência acima está no CORPO do
+// cenário, não num `finally`. Se ele falhar antes desta linha, o app
+// fica com o tema trocado — e os dois cenários de snapshot, que rodam no
+// fim da suíte e comparam cor, falham em cascata por um motivo que não é
+// deles. O `envolver` do `run.mjs` cobre isso normalizando entre
+// cenários; esta nota fica pra quem for mexer aqui não desfazer a
+// proteção sem saber.

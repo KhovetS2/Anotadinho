@@ -13,6 +13,7 @@ pub mod unidade;
 pub mod roteamento;
 pub mod render;
 pub mod espacial;
+pub mod analise;
 pub mod page;
 pub mod property;
 pub mod markdown;

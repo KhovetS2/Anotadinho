@@ -17,5 +17,6 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+walkdir = "2"
 tempfile = "3.9"
 pretty_assertions = "1.4"

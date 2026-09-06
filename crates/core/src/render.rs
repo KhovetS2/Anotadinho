@@ -91,16 +91,29 @@ impl Renderizador for Markdown {
             Tipo::Codigo => self.saida.push_str(&format!("```\n{}\n```\n\n", u.texto)),
             Tipo::Item => {
                 let recuo = "  ".repeat(nivel.saturating_sub(1));
-                self.saida.push_str(&format!("{recuo}- {}\n", u.texto));
+                // Item vazio sai como `-` e não `- `: espaço no fim de
+                // linha é sujeira que alguns editores comem sozinhos, e
+                // aí o arquivo mudaria sem ninguém ter editado.
+                if u.texto.is_empty() {
+                    self.saida.push_str(&format!("{recuo}-\n"));
+                } else {
+                    self.saida.push_str(&format!("{recuo}- {}\n", u.texto));
+                }
             }
             Tipo::Lista => {}
             Tipo::Vazia => self.saida.push_str("---\n\n"),
-            Tipo::Embed(nome) => {
-                // Embed vira o fence inteiro, com o conteúdo dele — que
-                // é a razão de `desce_no_atomico` ser `false` aqui: o
-                // markdown do embed não é a soma dos filhos.
-                self.saida
-                    .push_str(&format!("{{{{ type: \"{nome}\" }}}}\n{}\n{{{{ /{nome} }}}}\n\n", u.texto));
+            Tipo::Embed(_) => {
+                // O `texto` de um embed JÁ É o markdown dele — a cerca
+                // inteira, com abertura e fechamento (ver
+                // `analise::analisar`). Envolvê-lo de novo produzia
+                // cerca dentro de cerca, e foi o que a ida e volta do
+                // ciclo 271 pegou.
+                //
+                // É também a razão de `desce_no_atomico` ser `false`
+                // aqui: o markdown do embed não é a soma dos filhos, é o
+                // texto dele.
+                self.saida.push_str(u.texto.trim_end());
+                self.saida.push_str("\n\n");
             }
         }
     }
@@ -175,10 +188,14 @@ mod testes {
                         Unidade::com_texto(Tipo::Item, "segundo"),
                     ],
                 ),
-                Unidade::com_filhos(
-                    Tipo::Embed("callout".into()),
-                    vec![Unidade::com_texto(Tipo::Paragrafo, "dentro do embed")],
-                ),
+                // Um embed traz o markdown DELE no texto, e os filhos
+                // representam o que ele desenha por dentro — que só o
+                // renderizador de tela abre.
+                Unidade {
+                    tipo: Tipo::Embed("callout".into()),
+                    texto: "{{ type: \"callout\" }}\nbody: oi\n{{ /callout }}".into(),
+                    filhos: vec![Unidade::com_texto(Tipo::Paragrafo, "dentro do embed")],
+                },
             ],
         )
     }

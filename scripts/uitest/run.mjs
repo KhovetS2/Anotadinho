@@ -18,7 +18,7 @@
 
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { Bridge, esperar, abrirPagina } from "./bridge.mjs";
+import { Bridge, esperar, abrirPagina, recarregarEstavel } from "./bridge.mjs";
 import { cenarios } from "./cenarios.mjs";
 import { digitacao } from "./digitacao.mjs";
 import { blocos } from "./blocos.mjs";
@@ -143,17 +143,90 @@ let passaram = 0;
 const falharam = [];
 const inicio = Date.now();
 
+/// Devolve o app ao estado padrão ANTES de cada cenário.
+///
+/// A normalização existia só no início da suíte (ciclo 197). Isso deixa
+/// um buraco: um cenário que muda `localStorage` e falha ANTES de
+/// restaurar contamina todos os seguintes, e o sintoma aparece longe da
+/// causa — foi assim que o snapshot do fim da suíte podia falhar por
+/// causa do cenário de aparência lá no meio.
+///
+/// Só recarrega quando algo estava mesmo fora do lugar: no caso normal
+/// é uma chamada de ponte e nada mais.
+async function normalizar() {
+  try {
+    // NÃO fecha as abas que sobraram, e isso foi MEDIDO (ciclo 270).
+    //
+    // As abas se acumulam pela suíte inteira, e o diagnóstico flagrou:
+    // os dois cenários que ainda falhavam numa rodada completa tinham
+    // `abas: 2` e `abas: 3` no momento da falha, e os dois afirmam
+    // coisas sobre a barra de abas. Fechá-las entre cenários parecia
+    // óbvio.
+    //
+    // Parecia. O cenário `abas: home fica na primeira posição (220)`
+    // PASSA sem a limpeza e FALHA com ela — ele depende das abas que
+    // encontra. Uma higiene que quebra um cenário que passava não é
+    // higiene, é outro acoplamento com o nome trocado.
+    //
+    // Fica como observação: o acúmulo é real e provavelmente é o que
+    // resta da instabilidade. Resolver isso é dar a cada cenário um
+    // ponto de partida declarado, não varrer estado por baixo dele.
+    const sujo = await bridge.js(`(() => {
+      const padrao = {
+        'anotadinho.nav_mode_enabled': 'true',
+        'anotadinho.vim_mode_enabled': 'false',
+      };
+      let mudou = false;
+      for (const [k, v] of Object.entries(padrao)) {
+        if (localStorage.getItem(k) !== v) { localStorage.setItem(k, v); mudou = true; }
+      }
+      return mudou;
+    })()`);
+    if (sujo) await recarregarEstavel(bridge);
+  } catch {
+    // Normalizar é higiene, não parte do cenário: se a ponte tropeçar
+    // aqui, o cenário ainda merece a chance de rodar.
+  }
+}
+
+/// O que estava fora do lugar quando um cenário falhou.
+///
+/// Existe porque a instabilidade desta suíte é RARA (duas rodadas
+/// inteiras verdes entre uma falha), e uma falha sem evidência vira
+/// adivinhação — foi o que aconteceu três vezes antes do ciclo 270.
+async function diagnostico() {
+  try {
+    return await bridge.js(`(() => {
+      const a = document.activeElement;
+      return JSON.stringify({
+        pagina: (document.querySelector('.editor__title, .conversa__titulo')||{}).textContent || null,
+        nav: localStorage.getItem('anotadinho.nav_mode_enabled'),
+        vim: localStorage.getItem('anotadinho.vim_mode_enabled'),
+        tema: localStorage.getItem('anotadinho.aparencia'),
+        foco: a ? (a.tagName + '.' + String(a.className).slice(0, 30)) : null,
+        modal: !!document.querySelector('.modal, [class*=dialog]'),
+        abas: document.querySelectorAll('.tab-bar__tab').length,
+      });
+    })()`);
+  } catch (e) {
+    return `(não consegui ler o estado: ${e.message})`;
+  }
+}
+
 for (const cenario of selecionados) {
   const t0 = Date.now();
   try {
     ctx.apagar();
+    await normalizar();
     await cenario.fn(bridge, ctx);
     passaram++;
     console.log(`  ✓ ${cenario.nome} (${Date.now() - t0}ms)`);
   } catch (e) {
+    const estado = await diagnostico();
     falharam.push({ nome: cenario.nome, erro: e.message });
     console.log(`  ✗ ${cenario.nome} (${Date.now() - t0}ms)`);
     console.log(`      ${e.message.replace(/\n/g, "\n      ")}`);
+    console.log(`      estado: ${estado}`);
   } finally {
     ctx.apagar();
   }
