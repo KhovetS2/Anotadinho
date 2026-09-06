@@ -24,6 +24,14 @@ pub struct Linha {
     pub texto: String,
     /// A marca que abre a linha (`##`, `-`, `[kanban]`).
     pub marca: String,
+    /// O que o nível tem dentro, pra quando ele estiver FECHADO
+    /// (ciclo 293).
+    ///
+    /// Vazio em bloco de texto. Fica separado do `texto` porque só é
+    /// informação quando o conteúdo não está à vista: aberto, `· 1 item`
+    /// em cima do único item é ruído, e uma página cheia de listas de um
+    /// item vira uma página cheia de ruído.
+    pub resumo: String,
     /// O texto quebrado em trechos com estilo (ciclo 287).
     ///
     /// Vazio quando não há nada a estilizar — bloco de código, embed,
@@ -76,6 +84,7 @@ impl Renderizador for Linhas {
             caminho: self.caminho.clone(),
             nivel,
             texto,
+            resumo: contagem(u),
             marca: marca(&u.tipo),
             trechos,
             tipo: u.tipo.clone(),
@@ -172,14 +181,9 @@ fn nomes_das_partes(u: &Unidade) -> Option<std::collections::BTreeSet<&str>> {
 /// meio dela, e o desenho saía torto.
 fn corpo(u: &Unidade) -> String {
     if matches!(u.tipo, Tipo::Embed(_)) {
-        return contagem(u);
+        return String::new();
     }
-    let limpo = u.texto.split_whitespace().collect::<Vec<_>>().join(" ");
-    // Grupo sem texto próprio (a lista) diz quantos itens tem.
-    if limpo.is_empty() && u.politica().aceita_filhos {
-        return contagem(u);
-    }
-    limpo
+    u.texto.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Tipo cujo texto é literal: nada dentro dele vira estilo.
@@ -349,9 +353,8 @@ mod testes {
         );
         let primeira = &linhas(&d)[0];
         assert_eq!(primeira.marca, "[callout]");
-        // Não é o fence: é o que ele CONTÉM (ciclo 289).
-        assert_eq!(primeira.texto, "1 item");
-        assert!(!primeira.texto.contains("variant"), "o fence vazou pro desenho");
+        assert_eq!(primeira.resumo, "1 item");
+        assert_eq!(primeira.texto, "", "o fence vazou pro desenho");
     }
 
     #[test]
@@ -405,7 +408,8 @@ mod testes {
         // não tinha o que mostrar sem que alguém entrasse nela.
         let d = analisar("antes\n\n- um\n- dois\n- tres\n");
         let lista = linhas(&d).into_iter().find(|l| l.marca == "·").unwrap();
-        assert_eq!(lista.texto, "3 items");
+        assert_eq!(lista.resumo, "3 items");
+        assert_eq!(lista.texto, "", "o resumo vazou pro texto");
     }
 
     #[test]
@@ -417,7 +421,10 @@ mod testes {
         );
         let e = &linhas(&d)[0];
         assert_eq!(e.marca, "[kanban]");
-        assert_eq!(e.texto, "2 columns");
+        // O resumo é campo próprio: só aparece quando o nível está
+        // FECHADO (ciclo 293).
+        assert_eq!(e.resumo, "2 columns");
+        assert_eq!(e.texto, "");
     }
 
     #[test]
@@ -429,7 +436,7 @@ mod testes {
         );
         let ls = linhas(&d);
         assert_eq!(ls[0].marca, "[fluxo]");
-        assert_eq!(ls[0].texto, "Spec · Concluída");
+        assert_eq!(ls[0].resumo, "Spec · Concluída");
         // E o estado aparece nos filhos.
         let textos: Vec<&str> = ls.iter().map(|l| l.texto.as_str()).collect();
         assert!(textos.contains(&"Spec"), "{textos:?}");
@@ -440,7 +447,7 @@ mod testes {
     fn um_item_so_nao_vira_plural() {
         let d = analisar("- só um\n");
         let lista = linhas(&d).into_iter().find(|l| l.marca == "·").unwrap();
-        assert_eq!(lista.texto, "1 item");
+        assert_eq!(lista.resumo, "1 item");
     }
 
     #[test]

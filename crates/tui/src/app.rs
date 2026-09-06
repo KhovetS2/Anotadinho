@@ -53,6 +53,15 @@ pub struct Estado {
     pub dobrados: std::collections::HashSet<anotadinho_core::unidade::Caminho>,
     /// O comando de vim digitado pela metade (ciclo 291).
     pub vim: vim::Pendente,
+    /// O termo do filtro. Vazio é "sem filtro" (ciclo 292).
+    pub busca: String,
+    /// A barra está capturando tecla?
+    ///
+    /// Separado do termo de propósito. Na primeira versão os dois eram o
+    /// mesmo `Option`, e Enter — que fecha a barra MANTENDO o filtro —
+    /// não tinha como se exprimir: o `j` seguinte virava texto do termo
+    /// em vez de andar pelo resultado. O teste pegou.
+    pub barra_aberta: bool,
 }
 
 impl Estado {
@@ -64,6 +73,8 @@ impl Estado {
         Self {
             dobrados,
             vim: vim::Pendente::default(),
+            busca: String::new(),
+            barra_aberta: false,
             paginas,
             pagina: 0,
             arvore,
@@ -92,9 +103,56 @@ impl Estado {
         self.topo = 0;
     }
 
-    /// As linhas que aparecem agora, sem o que está dentro de dobra.
+    /// As linhas que aparecem agora: sem o que está dentro de dobra e,
+    /// se houver busca, só o que casa.
     pub fn visiveis(&self) -> Vec<&Linha> {
-        tela::visiveis(&self.linhas, &self.dobrados)
+        let dobradas = tela::visiveis(&self.linhas, &self.dobrados);
+        match Some(self.busca.as_str()).filter(|b| !b.is_empty()) {
+            None => dobradas,
+            Some(termo) => {
+                let alvo = termo.to_lowercase();
+                dobradas
+                    .into_iter()
+                    .filter(|l| {
+                        l.texto.to_lowercase().contains(&alvo)
+                            || l.marca.to_lowercase().contains(&alvo)
+                    })
+                    .collect()
+            }
+        }
+    }
+
+    /// As páginas que aparecem — filtradas pela busca, quando é o painel
+    /// delas que está com foco.
+    pub fn paginas_visiveis(&self) -> Vec<(usize, &PageMeta)> {
+        let termo = Some(self.busca.as_str())
+            .filter(|b| !b.is_empty() && self.foco == Foco::Paginas)
+            .map(|b| b.to_lowercase());
+        self.paginas
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| match &termo {
+                None => true,
+                Some(t) => p.title.to_lowercase().contains(t),
+            })
+            .collect()
+    }
+
+    /// Traz o cursor de volta pra uma linha que EXISTE.
+    ///
+    /// Filtrar pode esconder a linha onde o cursor estava, e um cursor
+    /// apontando pro que não aparece é o "fiquei preso" de novo: as
+    /// setas andariam sem nada mudar na tela.
+    pub fn corrigir_cursor(&mut self) {
+        let visiveis = self.visiveis();
+        if visiveis.iter().any(|l| l.caminho == self.cursor) {
+            return;
+        }
+        if let Some(primeira) = visiveis.first() {
+            self.cursor = primeira.caminho.clone();
+        }
+        self.topo = 0;
+        self.seguir_cursor();
     }
 
     /// A unidade sob o cursor comporta filhos?
@@ -132,6 +190,12 @@ impl Estado {
 /// precisa carregar outra árvore — carregar arquivo é I/O, e I/O não
 /// entra aqui.
 pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
+    // A busca vem ANTES de tudo (ciclo 292): enquanto a barra está
+    // aberta, cada tecla é texto. Sem isto, digitar "java" numa busca
+    // executaria o `a` de inserção e o `j` de descer.
+    if e.barra_aberta {
+        return tecla_na_busca(e, tecla);
+    }
     match tecla {
         "q" => {
             e.sair = true;
@@ -152,7 +216,48 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
     }
 }
 
+/// O que uma tecla faz com a barra de busca aberta.
+fn tecla_na_busca(e: &mut Estado, tecla: &str) -> Option<String> {
+    match tecla {
+        // Escape LIMPA e fecha: sair deixando o filtro aplicado
+        // esconderia metade da página sem nada na tela dizendo por quê.
+        "Escape" => {
+            e.busca.clear();
+            e.barra_aberta = false;
+            e.corrigir_cursor();
+            None
+        }
+        // Enter fecha a barra e MANTÉM o filtro — é o que deixa navegar
+        // pelo resultado.
+        "Enter" => {
+            e.barra_aberta = false;
+            e.corrigir_cursor();
+            if e.foco == Foco::Paginas {
+                return e.paginas.get(e.pagina).map(|p| p.path.clone());
+            }
+            None
+        }
+        "Backspace" => {
+            e.busca.pop();
+            e.corrigir_cursor();
+            None
+        }
+        // Uma tecla de um caractere é texto; o resto (setas, F1) não.
+        t if t.chars().count() == 1 => {
+            e.busca.push_str(t);
+            e.corrigir_cursor();
+            None
+        }
+        _ => None,
+    }
+}
+
 fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
+    if tecla == "/" {
+        e.busca.clear();
+        e.barra_aberta = true;
+        return None;
+    }
     match tecla {
         // A lista de páginas NÃO circula, pelo mesmo motivo do documento
         // (ciclo 279): numa lista longa, um `j` a mais que teleporta pro
@@ -184,6 +289,13 @@ fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
     // fechado em passos de navegação.
     match vim::tecla_normal(&mut e.vim, tecla, false) {
         vim::Passo::Aguardando => return,
+        // A gramática já mapeia `/` pra busca desde o ciclo 254 — mais
+        // uma coisa que estava escrita e não era consultada.
+        vim::Passo::Pronto(vim::Comando::Busca) => {
+            e.busca.clear();
+            e.barra_aberta = true;
+            return;
+        }
         vim::Passo::Pronto(c) => {
             comando_de_vim(e, c);
             return;
@@ -230,9 +342,8 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     e.seguir_cursor();
 
     let paginas: Vec<Line> = e
-        .paginas
-        .iter()
-        .enumerate()
+        .paginas_visiveis()
+        .into_iter()
         .map(|(i, p)| {
             let estilo = if i == e.pagina {
                 realce(e.foco == Foco::Paginas, &e.tema)
@@ -242,17 +353,29 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             Line::from(Span::styled(p.title.clone(), estilo))
         })
         .collect();
-    f.render_widget(
-        Paragraph::new(paginas).block(borda("páginas", e.foco == Foco::Paginas, &e.tema)),
-        colunas[0],
-    );
+    let mut bloco_paginas = borda("páginas", e.foco == Foco::Paginas, &e.tema);
+    if let Some(rodape) = rodape_de_busca(e, Foco::Paginas) {
+        bloco_paginas = bloco_paginas.title_bottom(rodape);
+    }
+    f.render_widget(Paragraph::new(paginas).block(bloco_paginas), colunas[0]);
 
+    // Largura de dentro da borda: a faixa do h1 precisa chegar até a
+    // ponta pra parecer faixa.
+    let largura_util = colunas[1].width.saturating_sub(2) as usize;
     let linhas_visiveis = e.visiveis();
     let visiveis: Vec<Line> = linhas_visiveis
         .iter()
         .skip(e.topo)
         .take(e.altura)
-        .map(|l| linha_estilizada(l, l.caminho == e.cursor && e.foco == Foco::Conteudo, &e.tema))
+        .map(|l| {
+            linha_estilizada(
+                l,
+                l.caminho == e.cursor && e.foco == Foco::Conteudo,
+                e.dobrados.contains(&l.caminho),
+                &e.tema,
+                largura_util,
+            )
+        })
         .collect();
     let titulo = e
         .paginas
@@ -263,6 +386,9 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     // do canto do vim. Sem isso, teclar `1` `0` e não ver nada faz a
     // pessoa achar que a tecla não pegou (ciclo 291).
     let mut bloco = borda(&titulo, e.foco == Foco::Conteudo, &e.tema);
+    if let Some(rodape) = rodape_de_busca(e, Foco::Conteudo) {
+        bloco = bloco.title_bottom(rodape);
+    }
     if e.vim.em_curso() {
         bloco = bloco.title_bottom(
             Line::from(Span::styled(
@@ -283,10 +409,25 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
 ///
 /// Sob o cursor, tudo cede: a linha inteira recebe o realce, porque
 /// duas ênfases competindo fazem a pessoa não saber onde está.
-fn linha_estilizada<'a>(l: &'a crate::tela::Linha, sob_cursor: bool, tema: &Tema) -> Line<'a> {
+fn linha_estilizada<'a>(
+    l: &'a crate::tela::Linha,
+    sob_cursor: bool,
+    dobrada: bool,
+    tema: &Tema,
+    largura: usize,
+) -> Line<'a> {
     let recuo = "  ".repeat(l.nivel);
+    let marca = marca_com_dobra(l, dobrada);
+    // O resumo só entra quando o nível está FECHADO — aberto, os filhos
+    // já dizem o que ele tem, e `· 1 item` em cima do único item é
+    // ruído (ciclo 293).
+    let texto = if dobrada && !l.resumo.is_empty() {
+        l.resumo.clone()
+    } else {
+        l.texto.clone()
+    };
     if sob_cursor {
-        let plano = format!("{recuo}{} {}", l.marca, l.texto);
+        let plano = format!("{recuo}{marca} {texto}");
         return Line::from(Span::styled(
             plano.trim_end().to_string(),
             tema.estilo(Realce::Cursor),
@@ -295,7 +436,7 @@ fn linha_estilizada<'a>(l: &'a crate::tela::Linha, sob_cursor: bool, tema: &Tema
 
     let base = tema.estilo(papel_do_bloco(&l.tipo));
     let mut spans = vec![Span::styled(recuo, Style::default())];
-    if !l.marca.trim().is_empty() {
+    if !marca.trim().is_empty() {
         // A marca costuma ser estrutura e fica apagada pra não competir
         // com o conteúdo — o `##` de um título, o `-` de um item são
         // sintaxe de markdown, não o que se lê.
@@ -313,10 +454,10 @@ fn linha_estilizada<'a>(l: &'a crate::tela::Linha, sob_cursor: bool, tema: &Tema
         } else {
             base
         };
-        spans.push(Span::styled(format!("{} ", l.marca), estilo_marca));
+        spans.push(Span::styled(format!("{marca} "), estilo_marca));
     }
-    if l.trechos.is_empty() {
-        spans.push(Span::styled(l.texto.clone(), base));
+    if l.trechos.is_empty() || texto != l.texto {
+        spans.push(Span::styled(texto, base));
         return Line::from(spans);
     }
     for t in &l.trechos {
@@ -325,7 +466,46 @@ fn linha_estilizada<'a>(l: &'a crate::tela::Linha, sob_cursor: bool, tema: &Tema
             estilo_do_trecho(&t.marcas, base, tema),
         ));
     }
+    preencher(spans, l, base, largura)
+}
+
+/// Estica a faixa do h1 até a borda.
+///
+/// Sem isto o fundo do título para onde o texto acaba, e o que devia
+/// parecer uma faixa parece um realce mal-acabado. Só o h1: é o nome da
+/// página, e faixa em tudo vira listra.
+fn preencher<'a>(
+    spans: Vec<Span<'a>>,
+    l: &crate::tela::Linha,
+    base: Style,
+    largura: usize,
+) -> Line<'a> {
+    if !matches!(l.tipo, Tipo::Titulo(1)) {
+        return Line::from(spans);
+    }
+    let usado: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+    let mut spans = spans;
+    if usado < largura {
+        spans.push(Span::styled(" ".repeat(largura - usado), base));
+    }
     Line::from(spans)
+}
+
+/// A barra de busca no rodapé do painel, quando é dele a busca.
+///
+/// Aparece como `/termo`, que é onde o vim a põe. Enquanto está aberta
+/// ela é a única coisa que recebe tecla, então precisa estar VISÍVEL —
+/// uma busca invisível filtrando a tela seria indistinguível de um
+/// defeito.
+fn rodape_de_busca<'a>(e: &Estado, painel: Foco) -> Option<Line<'a>> {
+    if e.foco != painel || (!e.barra_aberta && e.busca.is_empty()) {
+        return None;
+    }
+    let termo = &e.busca;
+    Some(Line::from(Span::styled(
+        format!(" /{termo} "),
+        e.tema.estilo(Realce::Cursor),
+    )))
 }
 
 /// Executa um comando fechado da gramática do vim.
@@ -363,7 +543,20 @@ fn comando_de_vim(e: &mut Estado, c: Comando) {
 }
 
 /// Aplica o mesmo passo `vezes` vezes, parando na borda.
+///
+/// **Com busca ativa, anda pela LISTA e não pela árvore.** Uma vista
+/// filtrada não é uma árvore: os irmãos que não casaram sumiram, e
+/// andar pelo modelo pousaria numa linha que não está na tela — o
+/// "fiquei preso" do ciclo 280 por outra porta.
+///
+/// Sem busca, quem decide continua sendo `navegacao::mover`, e o nível
+/// nunca muda (ciclo 281).
 fn repetir(e: &mut Estado, passo: Passo, vezes: u32) {
+    let filtrando = !e.busca.is_empty();
+    if filtrando && matches!(passo, Passo::Proximo | Passo::Anterior) {
+        andar_na_lista(e, passo == Passo::Proximo, vezes);
+        return;
+    }
     for _ in 0..vezes.max(1) {
         let antes = e.cursor.clone();
         if passo == Passo::Entrar {
@@ -379,12 +572,47 @@ fn repetir(e: &mut Estado, passo: Passo, vezes: u32) {
     e.seguir_cursor();
 }
 
+/// Anda pelas linhas que estão na tela, parando nas pontas.
+fn andar_na_lista(e: &mut Estado, adiante: bool, vezes: u32) {
+    let visiveis = e.visiveis();
+    let Some(atual) = visiveis.iter().position(|l| l.caminho == e.cursor) else {
+        return;
+    };
+    let passos = vezes.max(1) as usize;
+    let alvo = if adiante {
+        (atual + passos).min(visiveis.len().saturating_sub(1))
+    } else {
+        atual.saturating_sub(passos)
+    };
+    let destino = visiveis[alvo].caminho.clone();
+    e.cursor = destino;
+    e.seguir_cursor();
+}
+
 /// Põe o cursor na n-ésima linha VISÍVEL.
 fn ir_para_linha(e: &mut Estado, indice: usize) {
     if let Some(l) = e.visiveis().get(indice) {
         e.cursor = l.caminho.clone();
     }
     e.seguir_cursor();
+}
+
+/// A marca da linha, com a seta de dobra quando o nível pode dobrar.
+///
+/// `▾`/`▸` são a afordância universal de outline, e resolvem uma coisa
+/// que faltava: nada na tela dizia que um nível PODE ser fechado.
+///
+/// A lista troca o `·` pela seta; o embed mantém o nome dele e ganha a
+/// seta na frente, porque `[kanban]` é identidade e não se troca.
+fn marca_com_dobra(l: &crate::tela::Linha, dobrada: bool) -> String {
+    if l.resumo.is_empty() {
+        return l.marca.clone();
+    }
+    let seta = if dobrada { "▸" } else { "▾" };
+    match l.tipo {
+        Tipo::Lista | Tipo::ListaOrdenada => seta.to_string(),
+        _ => format!("{seta} {}", l.marca),
+    }
 }
 
 /// O papel de um bloco, pelo tipo dele.
@@ -672,6 +900,159 @@ mod testes {
     }
 
     #[test]
+    fn lista_aberta_nao_repete_a_contagem_na_tela() {
+        // O ruído que a pessoa apontou: uma página com nove listas de um
+        // item mostrava nove `· 1 item`, cada um em cima do seu único
+        // item. Aberto, o resumo não é informação.
+        let md = (0..5)
+            .map(|i| format!("parágrafo {i}\n\n- item {i}\n\n"))
+            .collect::<String>();
+        let mut e = Estado::novo(paginas(), analisar(&md));
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 60, 20).join("\n");
+        assert!(
+            !tudo.contains("1 item"),
+            "a contagem apareceu com o nível aberto:\n{tudo}"
+        );
+        // E a seta diz que dá pra fechar.
+        assert!(tudo.contains('▾'), "faltou a afordância de dobra:\n{tudo}");
+    }
+
+    #[test]
+    fn lista_fechada_mostra_a_contagem_e_a_seta_vira() {
+        let mut e = Estado::novo(paginas(), analisar("antes\n\n- um\n- dois\n- tres\n"));
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![1];
+        tecla(&mut e, "z");
+        e.foco = Foco::Paginas; // pra o realce do cursor não cobrir
+        let tudo = desenho(&mut e, 60, 12).join("\n");
+        assert!(tudo.contains("3 items"), "faltou a contagem:\n{tudo}");
+        assert!(tudo.contains('▸'), "a seta não virou:\n{tudo}");
+    }
+
+    #[test]
+    fn a_busca_filtra_as_linhas_do_conteudo() {
+        let mut e = Estado::novo(
+            paginas(),
+            analisar("alfa\n\nbeta\n\nalfa de novo\n\ngama\n"),
+        );
+        e.foco = Foco::Conteudo;
+        assert_eq!(e.visiveis().len(), 4);
+
+        tecla(&mut e, "/");
+        for t in ["a", "l", "f", "a"] {
+            tecla(&mut e, t);
+        }
+        let achadas: Vec<&str> = e.visiveis().iter().map(|l| l.texto.as_str()).collect();
+        assert_eq!(achadas, ["alfa", "alfa de novo"]);
+    }
+
+    #[test]
+    fn a_busca_nao_liga_pra_caixa() {
+        let mut e = Estado::novo(paginas(), analisar("Alfa\n\nbeto\n"));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "/");
+        tecla(&mut e, "A");
+        assert_eq!(e.visiveis().len(), 1);
+        tecla(&mut e, "Backspace");
+        tecla(&mut e, "a");
+        assert_eq!(e.visiveis().len(), 1, "minúscula não achou o que maiúscula achou");
+    }
+
+    #[test]
+    fn digitar_na_busca_nao_dispara_comando_de_vim() {
+        // Sem a busca vindo antes de tudo, digitar "java" executaria o
+        // `a` de inserção e o `j` de descer. É o defeito mais provável
+        // de todo o ciclo.
+        let mut e = Estado::novo(paginas(), pagina_numerada(30));
+        e.foco = Foco::Conteudo;
+        let antes = e.cursor.clone();
+        tecla(&mut e, "/");
+        for t in ["j", "a", "v", "a"] {
+            tecla(&mut e, t);
+        }
+        assert_eq!(e.busca, "java");
+        assert_eq!(e.cursor, antes, "o `j` do termo moveu o cursor");
+        assert!(!e.vim.em_curso());
+    }
+
+    #[test]
+    fn escape_limpa_a_busca_e_devolve_a_pagina_inteira() {
+        // Sair deixando o filtro aplicado esconderia metade da página
+        // sem nada na tela dizendo por quê.
+        let mut e = Estado::novo(paginas(), analisar("alfa\n\nbeta\n"));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "/");
+        tecla(&mut e, "a");
+        tecla(&mut e, "l");
+        assert_eq!(e.visiveis().len(), 1);
+        tecla(&mut e, "Escape");
+        assert!(e.busca.is_empty());
+        assert_eq!(e.visiveis().len(), 2);
+    }
+
+    #[test]
+    fn enter_fecha_a_barra_e_mantem_o_filtro() {
+        // É o que deixa navegar pelo resultado com j/k.
+        let mut e = Estado::novo(paginas(), analisar("alfa\n\nbeta\n\nalfa dois\n"));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "/");
+        tecla(&mut e, "a");
+        tecla(&mut e, "l");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.busca, "al", "o filtro caiu junto com a barra");
+        assert_eq!(e.visiveis().len(), 2);
+        // E as teclas voltam a ser comando.
+        // E as teclas voltam a ser comando — andando pela LISTA, que é
+        // o que a vista filtrada é.
+        tecla(&mut e, "j");
+        assert_eq!(e.cursor, vec![2], "j pousou fora do resultado");
+    }
+
+    #[test]
+    fn o_cursor_nao_fica_apontando_pro_que_sumiu() {
+        // Filtrar pode esconder a linha onde o cursor estava, e aí as
+        // setas andariam sem nada mudar na tela — o "fiquei preso" de
+        // novo, por outra porta.
+        let mut e = Estado::novo(paginas(), analisar("alfa\n\nbeta\n\ngama\n"));
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![2]; // gama
+        tecla(&mut e, "/");
+        tecla(&mut e, "a");
+        tecla(&mut e, "l");
+        let visiveis = e.visiveis();
+        assert!(
+            visiveis.iter().any(|l| l.caminho == e.cursor),
+            "o cursor ficou fora do que aparece"
+        );
+    }
+
+    #[test]
+    fn a_busca_filtra_as_paginas_quando_o_foco_e_delas() {
+        let mut e = estado();
+        assert_eq!(e.paginas_visiveis().len(), 3);
+        tecla(&mut e, "/");
+        tecla(&mut e, "b");
+        let achadas: Vec<&str> = e
+            .paginas_visiveis()
+            .into_iter()
+            .map(|(_, p)| p.title.as_str())
+            .collect();
+        assert_eq!(achadas, ["beta"]);
+    }
+
+    #[test]
+    fn a_barra_de_busca_aparece_na_tela() {
+        // Busca invisível filtrando a tela é indistinguível de defeito.
+        let mut e = Estado::novo(paginas(), analisar("alfa\n\nbeta\n"));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "/");
+        tecla(&mut e, "a");
+        let tudo = desenho(&mut e, 60, 12).join("\n");
+        assert!(tudo.contains("/a"), "a barra não apareceu:\n{tudo}");
+    }
+
+    #[test]
     fn contagem_anda_varios_blocos_de_uma_vez() {
         // `10j` — a gramática vem do núcleo (ciclo 285) e nunca tinha
         // sido consultada por ninguém.
@@ -833,8 +1214,9 @@ mod testes {
             2,
             "a lista de mil itens não nasceu dobrada"
         );
-        // E a linha dela diz o tamanho.
-        assert_eq!(e.visiveis()[1].texto, "1000 items");
+        // E a linha dela diz o tamanho — no resumo, que é o que se
+        // mostra com o nível fechado (ciclo 293).
+        assert_eq!(e.visiveis()[1].resumo, "1000 items");
     }
 
     #[test]

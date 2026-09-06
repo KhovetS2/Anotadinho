@@ -94,7 +94,22 @@ impl Tema {
         match r {
             // O h1 é o nome da página: leva o destaque. Os outros
             // descem pro roxo, que é o segundo acento do app.
-            Realce::Titulo(1) => Style::default().fg(destaque).add_modifier(Modifier::BOLD),
+            // O h1 é o nome da página: ganha FAIXA, com fundo de
+            // superfície, que é o mais perto de "letra grande" que um
+            // terminal tem — tamanho de fonte é do emulador, não do
+            // programa (ciclo 293).
+            Realce::Titulo(1) => Style::default()
+                .fg(destaque)
+                .bg(self.cor("bg-elevated", Color::DarkGray))
+                .add_modifier(Modifier::BOLD),
+            // O h2 ganha régua, por sublinhado. Uma linha de `─` de
+            // verdade custaria uma LINHA, e a conta entre cursor e
+            // rolagem é feita em linhas visíveis: decoração que ocupa
+            // linha desalinharia as duas.
+            Realce::Titulo(2) => Style::default()
+                .fg(self.cor("accent-purple", Color::Magenta))
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED),
             Realce::Titulo(_) => Style::default()
                 .fg(self.cor("accent-purple", Color::Magenta))
                 .add_modifier(Modifier::BOLD),
