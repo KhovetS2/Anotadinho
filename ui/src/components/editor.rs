@@ -17,7 +17,7 @@ use crate::dialog::PendingDialog;
 // propósito: o embed continua atômico, `navegaveis()` para nele, e a
 // navegação da GUI segue exatamente como estava. Quem desce é o
 // renderizador de terminal — que a janela não usa, e o
-// `anotadinho-cli ver` e a TUI usam (ciclos 284, 286, 293, 297).
+// `anotadinho-cli ver` e a TUI usam (ciclos 284, 286, 293, 297, 302).
 use crate::embed::DocSegment;
 use crate::state;
 

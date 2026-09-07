@@ -435,8 +435,14 @@ fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
     let passo = match tecla {
         "j" | "ArrowDown" => Passo::Proximo,
         "k" | "ArrowUp" => Passo::Anterior,
-        "Enter" | "l" | "ArrowRight" => Passo::Entrar,
-        "Escape" | "h" | "ArrowLeft" => Passo::Sair,
+        // Mudar de NÍVEL é só destas teclas (ciclo 302).
+        //
+        // `h`/`l` e as setas laterais saíram daqui: elas andam entre
+        // irmãos num galho em linha, e não fazem nada num galho em
+        // coluna. Misturar "andar" com "descer" na mesma tecla é a
+        // ambiguidade que os ciclos 279 a 281 tiraram do caminho.
+        "Enter" => Passo::Entrar,
+        "Escape" | "Backspace" => Passo::Sair,
         _ => return,
     };
     // Entrar num nível dobrado ABRE ele: pedir pra descer e não descer
@@ -450,6 +456,16 @@ fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
 
 /// Desenha o quadro inteiro.
 pub fn desenhar(f: &mut Frame, e: &mut Estado) {
+    // O fundo da TELA INTEIRA, da cor da janela (ciclo 302).
+    //
+    // Sem isto o terminal mostra o fundo dele por baixo — que pode ser
+    // qualquer coisa, inclusive uma imagem. As cores do app são
+    // escolhidas contra o `--bg-base`, e sobre outro fundo o contraste
+    // que a janela garante deixa de valer.
+    f.render_widget(
+        ratatui::widgets::Block::default().style(e.tema.estilo(Realce::Fundo)),
+        f.area(),
+    );
     let colunas = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
@@ -568,12 +584,26 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         let mut fora: Vec<Line> = Vec::with_capacity(e.altura + 2);
         let mut atual: Option<(Vec<usize>, Realce)> = None;
         let mut achou = false;
-        for l in linhas_visiveis.iter().skip(topo) {
+        'linhas: for l in linhas_visiveis.iter().skip(topo) {
             if fora.len() >= e.altura {
                 break;
             }
             if matches!(l.tipo, Tipo::Lista | Tipo::ListaOrdenada)
                 && !e.dobrados.contains(&l.caminho)
+            {
+                continue;
+            }
+            // Embed ABERTO que tem título não desenha o próprio rótulo
+            // (ciclo 302): `[fluxo]` em cima de `PROPOSTA: Em revisão`
+            // diz duas vezes, e o título diz melhor. Fechado ele volta,
+            // porque aí o rótulo é a única identidade que sobra.
+            if matches!(l.tipo, Tipo::Embed(_))
+                && !l.resumo.is_empty()
+                && l.resumo != l.texto
+                && !e.dobrados.contains(&l.caminho)
+                && linhas_visiveis
+                    .iter()
+                    .any(|f| f.texto == l.resumo && f.caminho.starts_with(&l.caminho))
             {
                 continue;
             }
@@ -595,17 +625,28 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             if !l.enfeite && l.mostra(&e.cursor) {
                 achou = true;
             }
-            let linha = linha_estilizada(
-                // Sem fundo no texto (ciclo 295): quem diz onde se está
-                // é a moldura. Reintroduzi isto sem querer ao reescrever
-                // o laço, e o teste do 295 pegou.
-                l,
-                false,
-                e.dobrados.contains(&l.caminho),
-                &e.tema,
-                if atual.is_some() { largura_util - 2 } else { largura_util },
-                Some(&e.cursor),
-            );
+            let largura_conteudo = if atual.is_some() {
+                largura_util - 2
+            } else {
+                largura_util
+            };
+            // Uma fileira rende uma FAIXA de três linhas por grupo de
+            // botões, porque botão tem borda fechada. Todo o resto
+            // rende um grupo de uma linha só.
+            let desenhadas = if l.segmentos.is_empty() {
+                vec![vec![linha_estilizada(
+                    // Sem fundo no texto (ciclo 295): quem diz onde se
+                    // está é a moldura. Reintroduzi isto sem querer ao
+                    // reescrever o laço, e o teste do 295 pegou.
+                    l,
+                    false,
+                    e.dobrados.contains(&l.caminho),
+                    &e.tema,
+                    largura_conteudo,
+                )]]
+            } else {
+                linhas_de_fileira(l, &e.tema, largura_conteudo, Some(&e.cursor))
+            };
             // A lateral acende na linha do cursor: é como o foco se
             // marca dentro de um cartão que não é dele.
             let cor_lateral = match &atual {
@@ -616,10 +657,25 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 Some((_, r)) => Some(*r),
                 None => None,
             };
-            fora.push(match cor_lateral {
-                Some(r) => emoldurar(linha, largura_util, r, &e.tema),
-                None => linha,
-            });
+            // O grupo é INDIVISÍVEL: ou cabem as três linhas da faixa,
+            // ou ela fica pro próximo quadro. Meia borda de botão no
+            // rodapé lê como erro de desenho.
+            //
+            // Descartar a fileira INTEIRA quando uma faixa não cabe é o
+            // que eu tinha feito antes, e num painel estreito a trilha
+            // do fluxo sumia por completo — inclusive a etapa atual,
+            // que é a única que precisa estar na tela.
+            for grupo in desenhadas {
+                if fora.len() + grupo.len() > e.altura {
+                    break 'linhas;
+                }
+                for linha in grupo {
+                    fora.push(match cor_lateral {
+                        Some(r) => emoldurar(linha, largura_util, r, &e.tema),
+                        None => linha,
+                    });
+                }
+            }
         }
         if let Some((_, velha)) = atual {
             if fora.len() < e.altura {
@@ -688,6 +744,112 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     }
 }
 
+/// O respiro entre dois botões vizinhos.
+///
+/// Um só: o contorno de meio-bloco já deixa meia célula de fundo de
+/// cada lado, então dois espaços viravam três.
+const VAO: usize = 1;
+
+/// A largura que um botão ocupa: texto, um espaço de cada lado e as
+/// duas meias-células do contorno.
+fn largura_do_botao(texto: &str) -> usize {
+    texto.chars().count() + 4
+}
+
+/// Uma fileira desenhada como GRADE DE BOTÕES (ciclo 302).
+///
+/// Três linhas por faixa de botões, porque botão aqui tem a borda
+/// fechada dos quatro lados e superfície preenchida — é o padrão do
+/// botão na TUI, pedido depois de ver `[ texto ]` na tela. Colchete é
+/// convenção de terminal; retângulo é o que a pessoa desenhou, e é o
+/// que a janela mostra.
+///
+/// Quando a fileira não cabe na largura, ela QUEBRA em faixas em vez
+/// de ser cortada na borda. Seis etapas dão 89 colunas, e o painel de
+/// conteúdo raramente tem isso: antes o fim da trilha simplesmente
+/// sumia — e a etapa que sumia podia ser a atual.
+fn linhas_de_fileira(
+    l: &crate::tela::Linha,
+    tema: &Tema,
+    largura: usize,
+    cursor: Option<&[usize]>,
+) -> Vec<Vec<Line<'static>>> {
+    let recuo = "  ".repeat(l.nivel);
+    let disponivel = largura.saturating_sub(recuo.len()).max(4);
+
+    // Empacota em faixas que cabem. Um botão sozinho maior que a
+    // largura fica na sua própria faixa e é cortado — não há o que
+    // fazer, e cortar um é melhor que cortar todos depois dele.
+    let mut faixas: Vec<Vec<&crate::tela::Segmento>> = Vec::new();
+    let mut faixa: Vec<&crate::tela::Segmento> = Vec::new();
+    let mut usado = 0usize;
+    for seg in &l.segmentos {
+        let largura_seg = largura_do_botao(&seg.texto);
+        let custo = if faixa.is_empty() { largura_seg } else { largura_seg + VAO };
+        if !faixa.is_empty() && usado + custo > disponivel {
+            faixas.push(std::mem::take(&mut faixa));
+            usado = largura_seg;
+        } else {
+            usado += custo;
+        }
+        faixa.push(seg);
+    }
+    if !faixa.is_empty() {
+        faixas.push(faixa);
+    }
+
+    let mut fora = Vec::with_capacity(faixas.len());
+    for faixa in faixas {
+        let mut topo = vec![Span::styled(recuo.clone(), Style::default())];
+        let mut meio = vec![Span::styled(recuo.clone(), Style::default())];
+        let mut base = vec![Span::styled(recuo.clone(), Style::default())];
+        for (i, seg) in faixa.iter().enumerate() {
+            if i > 0 {
+                let vao = " ".repeat(VAO);
+                topo.push(Span::styled(vao.clone(), Style::default()));
+                meio.push(Span::styled(vao.clone(), Style::default()));
+                base.push(Span::styled(vao, Style::default()));
+            }
+            // O que está sob o cursor acende (ciclo 298): é o "cursor
+            // como coluna dentro da linha" — sem ele, entrar num botão
+            // move o cursor pra um lugar sem linha e o Enter parece
+            // não fazer nada.
+            //
+            // Fora do cursor, cada botão pela SUA cor: a etapa atual
+            // de um fluxo não pode sair igual às outras cinco.
+            let aceso = cursor.is_some_and(|c| c == seg.caminho.as_slice());
+            let papel = if aceso {
+                Realce::Cursor
+            } else {
+                papel_da_parte(&seg.nome)
+            };
+            let contorno = tema.contorno_do_botao(papel);
+            let largura_miolo = seg.texto.chars().count() + 2;
+            // Contorno de MEIO-BLOCO: cada célula pinta a metade que
+            // olha pra dentro, e deixa a de fora com o fundo da tela.
+            // `▗▄▖` em cima, `▝▀▘` embaixo, `▐` e `▌` nos lados — os
+            // cantos são quadrantes, senão a quina fica quadrada e o
+            // botão volta a parecer uma caixa cheia.
+            topo.push(Span::styled(
+                format!("▗{}▖", "▄".repeat(largura_miolo)),
+                contorno,
+            ));
+            meio.push(Span::styled("▐", contorno));
+            meio.push(Span::styled(
+                format!(" {} ", seg.texto),
+                tema.miolo_do_botao(papel),
+            ));
+            meio.push(Span::styled("▌", contorno));
+            base.push(Span::styled(
+                format!("▝{}▘", "▀".repeat(largura_miolo)),
+                contorno,
+            ));
+        }
+        fora.push(vec![Line::from(topo), Line::from(meio), Line::from(base)]);
+    }
+    fora
+}
+
 /// Uma linha do conteúdo, com o estilo do BLOCO e o dos trechos.
 ///
 /// Dois níveis, e eles se somam: o bloco dá a cor de fundo do papel
@@ -702,7 +864,6 @@ fn linha_estilizada<'a>(
     dobrada: bool,
     tema: &Tema,
     largura: usize,
-    cursor: Option<&[usize]>,
 ) -> Line<'a> {
     let recuo = "  ".repeat(l.nivel);
     // O fecho da caixa vai até a borda, e vem ANTES de qualquer outra
@@ -717,28 +878,6 @@ fn linha_estilizada<'a>(
                 tema.estilo(Realce::Embed),
             ),
         ]);
-    }
-    // Fileira: cada filho é um `[ texto ]`, e o que está sob o cursor
-    // acende (ciclo 298). É o "cursor como coluna dentro da linha" — sem
-    // ele, entrar num botão move o cursor pra um lugar sem linha e o
-    // Enter parece não fazer nada.
-    if !l.segmentos.is_empty() {
-        let mut spans = vec![Span::styled(recuo, Style::default())];
-        for (i, (caminho, texto)) in l.segmentos.iter().enumerate() {
-            if i > 0 {
-                spans.push(Span::styled("  ", Style::default()));
-            }
-            let aceso = cursor.is_some_and(|c| c == caminho.as_slice());
-            spans.push(Span::styled(
-                format!("[ {texto} ]"),
-                if aceso {
-                    tema.estilo(Realce::Cursor)
-                } else {
-                    tema.estilo(Realce::Parte)
-                },
-            ));
-        }
-        return Line::from(spans);
     }
     let marca = marca_com_dobra(l, dobrada);
     // O resumo só entra quando o nível está FECHADO — aberto, os filhos
@@ -861,16 +1000,23 @@ fn comando_de_vim(e: &mut Estado, c: Comando) {
         .and_then(|n| e.arvore.em(&e.cursor[..n]))
         .is_some_and(|pai| pai.tipo.arranjo() == Arranjo::Linha);
     match mov {
-        Movimento::Baixo if em_fileira => repetir(e, Passo::Sair, 1),
-        Movimento::Cima if em_fileira => repetir(e, Passo::Sair, 1),
+        // Num galho em linha, `j`/`k` não têm pra onde ir: os irmãos
+        // estão lado a lado. Ficam parados.
+        //
+        // Na primeira versão (ciclo 297) eles SAÍAM do galho, e isso
+        // estava errado: mudar de nível é do Enter, do Backspace e do
+        // Escape — só. Misturar "andar" com "mudar de nível" na mesma
+        // tecla é a ambiguidade que os ciclos 279 a 281 tiraram do
+        // caminho, e reintroduzi-la num caso especial é como ela
+        // voltaria (ciclo 302).
+        Movimento::Baixo | Movimento::Cima if em_fileira => {}
         Movimento::Direita if em_fileira => repetir(e, Passo::Proximo, vezes),
         Movimento::Esquerda if em_fileira => repetir(e, Passo::Anterior, vezes),
         Movimento::Baixo => repetir(e, Passo::Proximo, vezes),
         Movimento::Cima => repetir(e, Passo::Anterior, vezes),
-        // Numa árvore, "pra dentro" é o que direita significa — e é o
-        // que o Enter já faz.
-        Movimento::Direita => repetir(e, Passo::Entrar, 1),
-        Movimento::Esquerda => repetir(e, Passo::Sair, 1),
+        // `h`/`l` FORA de fileira também não mudam de nível, pelo mesmo
+        // motivo. Num galho em coluna eles não têm o que fazer.
+        Movimento::Direita | Movimento::Esquerda => {}
         Movimento::InicioDoDocumento => ir_para_linha(e, 0),
         // `G` sozinho é o fim; `10G` é a décima linha, como no vim.
         Movimento::FimDoDocumento => {
@@ -1033,8 +1179,25 @@ fn papel_do_bloco(tipo: &Tipo) -> Realce {
         Tipo::Citacao => Realce::Citacao,
         Tipo::Codigo(_) => Realce::Codigo,
         Tipo::Embed(_) => Realce::Embed,
-        Tipo::Parte { .. } => Realce::Parte,
+        // A parte se pinta pelo NOME (ciclo 302). Tudo roxo dizia só
+        // "isto é embed"; um cartão de fluxo tem coisas de naturezas
+        // diferentes, e é o embed que sabe o nome de cada uma.
+        Tipo::Parte { nome, .. } => papel_da_parte(nome),
         _ => Realce::Texto,
+    }
+}
+
+/// O papel de uma parte, pelo nome que o embed deu a ela.
+fn papel_da_parte(nome: &str) -> Realce {
+    match nome {
+        "titulo" => Realce::TituloCartao,
+        "etapa" => Realce::Etapa,
+        "etapa-atual" => Realce::EtapaAtual,
+        "acao" => Realce::Acao,
+        "dica" => Realce::Dica,
+        "transicao" => Realce::Transicao,
+        "transicao-principal" => Realce::TransicaoPrincipal,
+        _ => Realce::Parte,
     }
 }
 
@@ -1461,6 +1624,66 @@ mod testes {
     }
 
     #[test]
+    fn a_etapa_atual_sai_de_uma_cor_diferente_das_outras() {
+        // Sem o nome da parte no segmento, todas as seis etapas saíam da
+        // mesma cor — e a única que importa é a atual.
+        let mut e = Estado::novo(
+            paginas(),
+            analisar("{{ type: \"fluxo\" }}\nartefato: proposta\netapa: aprovada\n{{ /fluxo }}\n"),
+        );
+        e.foco = Foco::Paginas;
+        let atual = e.tema.estilo(Realce::EtapaAtual).fg.unwrap();
+        let outra = e.tema.estilo(Realce::Etapa).fg.unwrap();
+        assert_ne!(atual, outra, "as duas cores são iguais no tema");
+
+        let mut term = Terminal::new(TestBackend::new(70, 12)).unwrap();
+        term.draw(|f| desenhar(f, &mut e)).unwrap();
+        let buf = term.backend().buffer().clone();
+
+        // Botão preenchido: a cor do papel é o FUNDO do miolo, e o
+        // texto por cima é da cor do fundo da tela (ciclo 302).
+        let pintado = |cor: Color| -> String {
+            (0..buf.area.height)
+                .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+                .filter(|(x, y)| {
+                    let e = buf[(*x, *y)].style();
+                    e.fg == Some(cor) || e.bg == Some(cor)
+                })
+                .map(|(x, y)| buf[(x, y)].symbol().to_string())
+                .collect()
+        };
+        assert!(
+            pintado(atual).contains("Aprovada"),
+            "a etapa atual não saiu na cor dela: {:?}",
+            pintado(atual)
+        );
+        assert!(
+            pintado(outra).contains("Rascunho"),
+            "as outras etapas não saíram na cor delas"
+        );
+    }
+
+    #[test]
+    fn o_fundo_da_tela_e_o_da_janela() {
+        // Sem pintar o fundo, o terminal mostra o dele por baixo — que
+        // pode ser qualquer coisa, inclusive uma imagem. As cores do app
+        // são escolhidas contra o `--bg-base`.
+        let mut e = estado();
+        let fundo = e.tema.estilo(Realce::Fundo).bg.unwrap();
+        let mut term = Terminal::new(TestBackend::new(40, 8)).unwrap();
+        term.draw(|f| desenhar(f, &mut e)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let com_fundo = (0..buf.area.height)
+            .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+            .filter(|(x, y)| buf[(*x, *y)].style().bg == Some(fundo))
+            .count();
+        assert!(
+            com_fundo > (buf.area.width as usize * buf.area.height as usize) / 2,
+            "menos da metade da tela ficou com o fundo do app ({com_fundo} células)"
+        );
+    }
+
+    #[test]
     fn numa_fileira_o_cursor_anda_com_h_e_l() {
         // O arranjo vem do MODELO (ciclo 297): num galho em linha os
         // irmãos estão lado a lado, e quem anda entre eles é h/l.
@@ -1481,25 +1704,149 @@ mod testes {
     }
 
     #[test]
-    fn numa_fileira_j_e_k_saem_do_galho() {
-        // Empilhar não existe ali: `j` num item lado a lado significa
-        // "sair", que é o que a pessoa espera de um layout em linha.
+    fn numa_fileira_j_e_k_ficam_parados() {
+        // Empilhar não existe ali, então `j` não tem pra onde ir.
+        //
+        // A primeira versão fazia ele SAIR do galho, e isso estava
+        // errado: mudar de nível é do Enter, do Backspace e do Escape.
+        // Misturar "andar" com "mudar de nível" na mesma tecla é a
+        // ambiguidade que os ciclos 279 a 281 tiraram do caminho.
         let mut e = Estado::novo(paginas(), com_acoes());
         e.foco = Foco::Conteudo;
         e.cursor = vec![0, 0, 1];
         tecla(&mut e, "j");
-        assert_eq!(e.cursor, vec![0, 0], "j não saiu da fileira");
+        assert_eq!(e.cursor, vec![0, 0, 1], "j mudou de nível");
+        tecla(&mut e, "k");
+        assert_eq!(e.cursor, vec![0, 0, 1], "k mudou de nível");
     }
 
     #[test]
-    fn a_fileira_e_desenhada_numa_linha_so() {
+    fn so_enter_escape_e_backspace_mudam_de_nivel() {
+        let mut e = Estado::novo(paginas(), analisar("antes\n\n- um\n- dois\n"));
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![1];
+
+        // `l` não desce mais.
+        tecla(&mut e, "l");
+        assert_eq!(e.cursor, vec![1], "`l` desceu de nível");
+
+        tecla(&mut e, "Enter");
+        assert_eq!(e.cursor, vec![1, 0], "Enter não desceu");
+
+        // `h` não sobe.
+        tecla(&mut e, "h");
+        assert_eq!(e.cursor, vec![1, 0], "`h` subiu de nível");
+
+        tecla(&mut e, "Backspace");
+        assert_eq!(e.cursor, vec![1], "Backspace não subiu");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "Escape");
+        assert_eq!(e.cursor, vec![1], "Escape não subiu");
+    }
+
+    #[test]
+    fn os_botoes_de_uma_fileira_ficam_lado_a_lado_em_caixas() {
+        // Botão é retângulo de borda fechada e fundo preenchido — foi o
+        // pedido depois de ver `[ Abrir ]` na tela. Colchete é convenção
+        // de terminal; num cartão cheio de texto ele não se distingue de
+        // uma citação.
         let mut e = Estado::novo(paginas(), com_acoes());
         e.foco = Foco::Paginas;
         let tudo = desenho(&mut e, 60, 12).join("\n");
         assert!(
-            tudo.contains("[ Abrir ]  [ Buscar ]"),
-            "os botões não ficaram lado a lado:\n{tudo}"
+            tudo.contains("▗▄▄▄▄▄▄▄▖ ▗▄▄▄▄▄▄▄▄▖"),
+            "os botões não ficaram lado a lado em caixas:\n{tudo}"
         );
+        assert!(
+            tudo.contains("▐ Abrir ▌ ▐ Buscar ▌"),
+            "os rótulos não ficaram dentro das caixas:\n{tudo}"
+        );
+        assert!(
+            tudo.contains("▝▀▀▀▀▀▀▀▘ ▝▀▀▀▀▀▀▀▀▘"),
+            "as caixas dos botões não fecharam embaixo:\n{tudo}"
+        );
+    }
+
+    #[test]
+    fn o_contorno_do_botao_encosta_no_preenchimento() {
+        // Três voltas até aqui, e as duas primeiras foram por tratar
+        // célula como pixel: ou a cor tomava a célula inteira do traço
+        // (botão gordo, contorno engolido), ou não tomava nada (faixa
+        // escura entre o preenchimento e o traço).
+        //
+        // Meio-bloco é a terceira opção que eu tinha decidido que não
+        // existia: a célula pinta a metade que olha PRA DENTRO. O vão
+        // some e o botão encolhe meia célula de cada lado.
+        let mut e = Estado::novo(paginas(), com_acoes());
+        e.foco = Foco::Paginas;
+        let cor = e.tema.miolo_do_botao(Realce::Parte).bg.unwrap();
+        assert_eq!(
+            e.tema.contorno_do_botao(Realce::Parte).fg,
+            Some(cor),
+            "o traço do contorno não é da cor do preenchimento"
+        );
+        assert_eq!(
+            e.tema.contorno_do_botao(Realce::Parte).bg,
+            None,
+            "a metade de fora do contorno ficou pintada — o botão incha"
+        );
+
+        let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
+        term.draw(|f| desenhar(f, &mut e)).unwrap();
+        let buf = term.backend().buffer().clone();
+        // Onde a cor aparece, seja como traço ou como preenchimento.
+        let com_cor = |y: u16| -> Vec<u16> {
+            (0..buf.area.width)
+                .filter(|x| {
+                    let s = buf[(*x, y)].style();
+                    s.fg == Some(cor) || s.bg == Some(cor)
+                })
+                .collect::<Vec<u16>>()
+        };
+        let faixa: Vec<Vec<u16>> = (0..buf.area.height)
+            .map(com_cor)
+            .filter(|xs| !xs.is_empty())
+            .collect();
+        assert_eq!(faixa.len(), 3, "esperava as três linhas de uma faixa");
+        assert!(
+            faixa[0] == faixa[1] && faixa[1] == faixa[2],
+            "a cor não alcança as mesmas colunas nas três linhas — é vão: {faixa:?}"
+        );
+
+        // E o contorno é meio-bloco de verdade: com `─` e `│` a cor
+        // voltaria a tomar a célula inteira, que foi a volta anterior.
+        let simbolo = |x: u16, y: u16| buf[(x, y)].symbol().to_string();
+        let (x0, y0) = (faixa[0][0], (0..buf.area.height).find(|y| !com_cor(*y).is_empty()).unwrap());
+        assert_eq!(simbolo(x0, y0), "▗", "a quina do botão não é quadrante");
+        assert_eq!(simbolo(x0 + 1, y0), "▄", "o topo do botão não é meio-bloco");
+        assert_eq!(simbolo(x0, y0 + 1), "▐", "a lateral do botão não é meio-bloco");
+    }
+
+    #[test]
+    fn o_texto_do_botao_contrasta_com_o_preenchimento() {
+        // Texto da mesma cor do preenchimento é um botão sem rótulo.
+        let e = Estado::novo(paginas(), com_acoes());
+        let miolo = e.tema.miolo_do_botao(Realce::Parte);
+        assert_ne!(
+            miolo.fg, miolo.bg,
+            "o texto do botão sumiu dentro do preenchimento"
+        );
+    }
+
+    #[test]
+    fn a_fileira_larga_quebra_em_grade_em_vez_de_sumir() {
+        // Seis etapas dão 89 colunas, e o painel de conteúdo raramente
+        // tem isso. Cortar na borda esconderia o fim da trilha — e o
+        // que sumia podia ser a etapa atual.
+        let mut e = Estado::novo(
+            paginas(),
+            analisar("{{ type: \"fluxo\" }}\nartefato: proposta\netapa: aprovada\n{{ /fluxo }}\n"),
+        );
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 100, 24).join("\n");
+        for etapa in ["Rascunho", "Em revisão", "Aprovada", "Bloqueada"] {
+            assert!(tudo.contains(etapa), "`{etapa}` sumiu da trilha:\n{tudo}");
+        }
     }
 
     #[test]

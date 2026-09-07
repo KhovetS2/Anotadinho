@@ -13,6 +13,17 @@ use anotadinho_core::navegacao::{mover, Cursor, Passo};
 use anotadinho_core::render::{desenhar, Renderizador};
 use anotadinho_core::unidade::{Arranjo, Caminho, Tipo, Unidade};
 
+/// Um filho de galho em linha, desenhado dentro da linha do galho.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Segmento {
+    /// O endereço dele — é destino de navegação como qualquer outro.
+    pub caminho: Caminho,
+    /// O que se lê.
+    pub texto: String,
+    /// O nome da parte, pra quem desenha saber com que cor pintar.
+    pub nome: String,
+}
+
 /// Uma linha desenhável, com o endereço de quem a produziu.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Linha {
@@ -50,8 +61,6 @@ pub struct Linha {
     pub trechos: Vec<Trecho>,
     /// O tipo de quem produziu a linha — o desenho estiliza por ele.
     pub tipo: Tipo,
-    /// A fileira de etapas, quando esta linha é um embed de fluxo.
-    pub trilha: Option<String>,
     /// O nome do embed a que esta linha pertence, se pertence a algum.
     ///
     /// É o gancho de OVERRIDE da borda (ciclo 294): a borda é da unidade
@@ -65,7 +74,11 @@ pub struct Linha {
     /// linha só e mesmo assim cada filho é um DESTINO: sem guardar o
     /// caminho de cada um, entrar num botão movia o cursor pra um lugar
     /// que não tinha linha na tela — o Enter parecia não fazer nada.
-    pub segmentos: Vec<(Caminho, String)>,
+    ///
+    /// O NOME da parte vai junto (ciclo 302): sem ele todo segmento era
+    /// pintado igual, e a etapa atual de um fluxo saía da mesma cor das
+    /// outras cinco.
+    pub segmentos: Vec<Segmento>,
     /// O CAMINHO do embed dono (ciclo 298).
     ///
     /// O nome não bastava pra desenhar: dois embeds vizinhos do mesmo
@@ -118,9 +131,6 @@ impl Renderizador for Linhas {
             nivel,
             texto,
             resumo: contagem(u),
-            trilha: matches!(&u.tipo, Tipo::Embed(n) if n == "fluxo")
-                .then(|| trilha_do_fluxo(u))
-                .flatten(),
             marca: marca(&u.tipo),
             trechos,
             tipo: u.tipo.clone(),
@@ -152,6 +162,16 @@ fn contagem(u: &Unidade) -> String {
     let n = u.filhos.len();
     if n == 0 {
         return String::new();
+    }
+    // Cartão com TÍTULO fechado mostra o título (ciclo 302). "3 items"
+    // não diz nada sobre uma proposta em revisão; "PROPOSTA: Em Revisão"
+    // diz tudo que um cartão fechado precisa dizer.
+    if let Some(titulo) = u
+        .filhos
+        .iter()
+        .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "titulo"))
+    {
+        return titulo.texto.clone();
     }
     // Partes de nomes DIFERENTES são campos, não coleção: o fluxo tem
     // um artefato e uma etapa, e contar "2 items" ali não diz nada. O
@@ -230,6 +250,21 @@ fn literal(tipo: &Tipo) -> bool {
     matches!(tipo, Tipo::Codigo(_) | Tipo::Embed(_))
 }
 
+/// As partes cujo nome não vai pra tela.
+///
+/// São as que têm cor própria no tema: a cor já diz o que elas são, e
+/// repetir em texto é dizer duas vezes.
+const PARTES_SEM_ROTULO: &[&str] = &[
+    "titulo",
+    "acao",
+    "dica",
+    "etapa",
+    "etapa-atual",
+    "transicao",
+    "transicao-principal",
+    "button",
+];
+
 /// A marca que abre a linha de cada tipo.
 fn marca(tipo: &Tipo) -> String {
     match tipo {
@@ -241,50 +276,29 @@ fn marca(tipo: &Tipo) -> String {
         Tipo::Item => "-".into(),
         Tipo::Vazia => "───".into(),
         Tipo::Embed(nome) => format!("[{nome}]"),
-        // A parte não desenha traço próprio (ciclo 296): a moldura do
-        // embed já é a lateral, e o recuo já é a hierarquia. Sobra o
-        // NOME, que é o que ela tem a dizer.
+        // A parte mostra o NOME só quando ele informa (ciclo 302).
+        //
+        // `column Backlog` precisa do nome: sem ele não dá pra saber que
+        // aquilo é uma coluna. Já `titulo PROPOSTA: Em revisão` e
+        // `acao Pedir alteração` não — ali o nome repete o que a cor e a
+        // posição já dizem, e vira ruído.
+        //
+        // A lista de quem se cala é a mesma que tem cor própria: quando
+        // o desenho sabe pintar diferente, o rótulo textual sobra.
+        Tipo::Parte { nome, .. } if PARTES_SEM_ROTULO.contains(&nome.as_str()) => String::new(),
         Tipo::Parte { nome, .. } => nome.clone(),
     }
 }
 
-/// A trilha de etapas de um fluxo, como a GUI desenha (ciclo 293).
-///
-/// Na janela isso é uma fileira de pílulas com a atual acesa. No
-/// terminal é a mesma fileira, com a atual entre colchetes — a pessoa
-/// precisa ver EM QUE PONTO o artefato está, e "Concluída" sozinho não
-/// diz de onde ele veio nem pra onde vai.
-fn trilha_do_fluxo(u: &Unidade) -> Option<String> {
-    use anotadinho_core::fluxo::Etapa;
-    let atual = u
-        .filhos
-        .iter()
-        .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "etapa"))?
-        .texto
-        .clone();
-    let fileira: Vec<String> = Etapa::all()
-        .iter()
-        .map(|e| {
-            let r = e.label();
-            if r == atual {
-                format!("[{r}]")
-            } else {
-                r.to_string()
-            }
-        })
-        .collect();
-    Some(fileira.join("  "))
-}
-
-/// Desenha um galho em LINHA numa linha só (ciclo 297).
+/// Junta um galho em LINHA numa linha só (ciclo 297).
 ///
 /// O arranjo vem do MODELO — `Arranjo::Linha` — e não de um caso
 /// especial aqui. Antes eu juntava botões olhando o nome da parte; era
 /// adivinhação, e valia só pra botão.
 ///
-/// Cada filho vira `[ texto ]` e eles ficam lado a lado, que é como uma
-/// barra de ações se lê. A navegação dentro dela é `h`/`l`, e quem
-/// decide isso também é o arranjo.
+/// Cada filho vira um SEGMENTO da linha, e quem desenha os põe lado a
+/// lado — como botões numa barra de ações. A navegação dentro dela é
+/// `h`/`l`, e quem decide isso também é o arranjo.
 fn achatar_fileiras(linhas: Vec<Linha>, raiz: &Unidade) -> Vec<Linha> {
     let mut fora: Vec<Linha> = Vec::with_capacity(linhas.len());
     let mut fileira: Option<Caminho> = None;
@@ -293,9 +307,16 @@ fn achatar_fileiras(linhas: Vec<Linha>, raiz: &Unidade) -> Vec<Linha> {
         if let Some(dono) = &fileira {
             if l.caminho.len() == dono.len() + 1 && l.caminho.starts_with(dono) {
                 if let Some(atual) = fora.last_mut() {
-                    // Guarda o caminho de cada um: a linha é uma, os
-                    // destinos são vários.
-                    atual.segmentos.push((l.caminho.clone(), l.texto.clone()));
+                    // Guarda caminho e nome de cada um: a linha é uma,
+                    // os destinos são vários, e as cores também.
+                    atual.segmentos.push(Segmento {
+                        caminho: l.caminho.clone(),
+                        texto: l.texto.clone(),
+                        nome: match &l.tipo {
+                            Tipo::Parte { nome, .. } => nome.clone(),
+                            _ => String::new(),
+                        },
+                    });
                 }
                 continue;
             }
@@ -318,7 +339,7 @@ fn achatar_fileiras(linhas: Vec<Linha>, raiz: &Unidade) -> Vec<Linha> {
     fora
 }
 
-/// A página inteira em linhas, na ordem em que se lê./// A página inteira em linhas, na ordem em que se lê.
+/// A página inteira em linhas, na ordem em que se lê.
 pub fn linhas(raiz: &Unidade) -> Vec<Linha> {
     let mut r = Linhas::default();
     desenhar(raiz, &mut r);
@@ -352,30 +373,7 @@ fn encaixotar_embeds(linhas: Vec<Linha>) -> Vec<Linha> {
             aberto = Some((l.caminho.clone(), nome.clone()));
         }
 
-        let trilha = l.trilha.clone();
-        let dono = l.caminho.clone();
-        let nivel = l.nivel;
-        let nome = l.embed_dono.clone();
-        let caminho_dono = l.dono_embed.clone();
         fora.push(l);
-        if let Some(t) = trilha {
-            fora.push(Linha {
-                caminho: dono,
-                enfeite: true,
-                nivel: nivel + 1,
-                texto: t,
-                resumo: String::new(),
-                // Sem marca: a moldura do embed já é a lateral, e um
-                // `│` extra desenharia duas.
-                marca: String::new(),
-                trechos: Vec::new(),
-                tipo: Tipo::Vazia,
-                trilha: None,
-                embed_dono: nome,
-                dono_embed: caminho_dono,
-                segmentos: Vec::new(),
-            });
-        }
     }
     fora
 }
@@ -389,7 +387,7 @@ impl Linha {
     /// num botão não acha linha nenhuma — e a rolagem, a moldura e o
     /// realce ficam todos sem alvo (ciclo 298).
     pub fn mostra(&self, caminho: &[usize]) -> bool {
-        self.caminho == caminho || self.segmentos.iter().any(|(c, _)| c == caminho)
+        self.caminho == caminho || self.segmentos.iter().any(|s| s.caminho == caminho)
     }
 }
 
@@ -612,11 +610,15 @@ mod testes {
         );
         let ls = linhas(&d);
         assert_eq!(ls[0].marca, "[fluxo]");
-        assert_eq!(ls[0].resumo, "Spec · Concluída");
-        // E o estado aparece nos filhos.
+        // Fechado, o cartão mostra o TÍTULO dele (ciclo 302).
+        assert_eq!(ls[0].resumo, "SPEC: Concluída");
+        // Aberto, o título é uma linha e a trilha é uma fileira.
         let textos: Vec<&str> = ls.iter().map(|l| l.texto.as_str()).collect();
-        assert!(textos.contains(&"Spec"), "{textos:?}");
-        assert!(textos.contains(&"Concluída"), "{textos:?}");
+        assert!(textos.contains(&"SPEC: Concluída"), "{textos:?}");
+        assert!(
+            ls.iter().any(|l| l.segmentos.iter().any(|s| s.texto == "Concluída")),
+            "a trilha não apareceu"
+        );
     }
 
     #[test]
@@ -655,21 +657,32 @@ mod testes {
     }
 
     #[test]
-    fn o_fluxo_desenha_a_trilha_de_etapas() {
-        // Como a GUI: a fileira inteira, com a atual destacada. "Concluída"
-        // sozinho não diz de onde veio nem pra onde vai.
+    fn o_fluxo_desenha_a_trilha_como_fileira() {
+        // A trilha era feita à mão aqui (ciclo 293) e virou fileira
+        // DECLARADA no 302 — o modelo diz as etapas e qual é a atual, e
+        // o desenho só as põe lado a lado.
         let d = analisar(
-            "{{ type: \"fluxo\" }}\nartefato: spec\netapa: aprovada\n{{ /fluxo }}\n",
+            "{{ type: \"fluxo\" }}\nartefato: proposta\netapa: aprovada\n{{ /fluxo }}\n",
         );
-        let trilha = linhas(&d)
-            .into_iter()
-            // A marca saiu no ciclo 296: a moldura do embed já é a
-            // lateral, e um `│` extra desenharia duas.
-            .find(|l| l.enfeite)
+        let ls = linhas(&d);
+        let trilha = ls
+            .iter()
+            .find(|l| l.segmentos.iter().any(|s| s.texto == "Rascunho"))
             .expect("faltou a trilha");
-        assert!(trilha.texto.contains("Rascunho"), "{:?}", trilha.texto);
-        assert!(trilha.texto.contains("[Aprovada]"), "a atual não está marcada: {:?}", trilha.texto);
-        assert!(trilha.texto.contains("Concluída"), "{:?}", trilha.texto);
+        let etapas: Vec<&str> = trilha.segmentos.iter().map(|s| s.texto.as_str()).collect();
+        assert_eq!(
+            etapas,
+            ["Rascunho", "Em revisão", "Aprovada", "Em execução", "Concluída", "Bloqueada"]
+        );
+
+        // E as transições, que vêm do domínio.
+        let acoes = ls
+            .iter()
+            .find(|l| l.segmentos.iter().any(|s| s.texto == "Em execução")
+                && l.segmentos.len() < etapas.len())
+            .expect("faltaram as transições");
+        let rotulos: Vec<&str> = acoes.segmentos.iter().map(|s| s.texto.as_str()).collect();
+        assert_eq!(rotulos, ["Em execução", "Em revisão"]);
     }
 
     #[test]
@@ -702,11 +715,11 @@ mod testes {
             .iter()
             .find(|l| !l.segmentos.is_empty())
             .expect("faltou a fileira");
-        let textos: Vec<&str> = fileira.segmentos.iter().map(|(_, t)| t.as_str()).collect();
+        let textos: Vec<&str> = fileira.segmentos.iter().map(|s| s.texto.as_str()).collect();
         assert_eq!(textos, ["Abrir", "Buscar"]);
         // E os caminhos são os de verdade, pra o cursor achar.
-        assert_eq!(fileira.segmentos[0].0, vec![0, 0, 0]);
-        assert_eq!(fileira.segmentos[1].0, vec![0, 0, 1]);
+        assert_eq!(fileira.segmentos[0].caminho, vec![0, 0, 0]);
+        assert_eq!(fileira.segmentos[1].caminho, vec![0, 0, 1]);
         // E não sobrou uma linha por botão.
         assert_eq!(ls.len(), 2, "{:?}", ls.iter().map(|l| &l.texto).collect::<Vec<_>>());
     }

@@ -345,6 +345,43 @@ fn e_linha_horizontal(linha: &str) -> bool {
 ///
 /// Reusa o `render::Markdown` do ciclo 266 — que existia sem consumidor
 /// e agora tem um.
+/// A ação principal de um fluxo, se o estado dele tem uma.
+///
+/// São os dois momentos em que o fluxo oferece mais do que mudar de
+/// etapa, e os dois vêm da janela (ciclos 209 e 223):
+///
+/// - **aprovada** é onde o trabalho passa do "o quê" pro "como";
+/// - **em revisão** ganhou a terceira saída — "está quase, muda estes
+///   pontos" — que antes era copiar e colar na mão.
+///
+/// Só pra spec e proposta: execução e conversa não têm o que planejar.
+fn acao_do_fluxo(d: &embed::FluxoEmbedData) -> Option<(String, String)> {
+    use crate::fluxo::{Artefato, Etapa};
+    if !matches!(d.artefato, Artefato::Spec | Artefato::Proposta) {
+        return None;
+    }
+    match d.etapa {
+        Etapa::Aprovada => Some(if d.artefato == Artefato::Spec {
+            (
+                "Planejar implementação".into(),
+                "Abre uma conversa com esta spec anexada.".into(),
+            )
+        } else {
+            (
+                "Executar".into(),
+                "Abre uma conversa com esta proposta anexada. A abordagem já foi aceita."
+                    .into(),
+            )
+        }),
+        Etapa::EmRevisao => Some((
+            "Pedir alteração".into(),
+            "O agente devolve a mudança como proposta, pra você ver o diff antes de aplicar."
+                .into(),
+        )),
+        _ => None,
+    }
+}
+
 /// O conteúdo de um embed, como unidades.
 ///
 /// **Conteúdo, não controle.** O DOM de um embed mistura as duas coisas:
@@ -501,11 +538,73 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
         //
         // Cada decisão certa sozinha, erradas juntas — o mesmo tipo de
         // composição silenciosa que o ciclo 285 achou na costura.
+        // O fluxo declara o CARTÃO dele (ciclo 302), na mesma ordem que
+        // a janela desenha: título, trilha de etapas, a ação principal
+        // daquele estado, e as transições possíveis.
+        //
+        // As transições são DOMÍNIO, não decoração: saem de
+        // `Etapa::proximas()`, que é quem sabe que de "em revisão" se vai
+        // pra aprovada, rascunho ou bloqueada — e que não se pula a
+        // revisão indo direto pra execução.
+        //
+        // Isso é derivável da própria página, diferente das linhas de
+        // uma consulta: aqui não se pergunta nada ao vault, só ao estado
+        // que está escrito no embed.
         EmbedData::Fluxo(d) => {
+            use crate::fluxo::Etapa;
             let mut partes = vec![
-                item("artefato", d.artefato.label()),
-                item("etapa", d.etapa.label()),
+                item(
+                    "titulo",
+                    format!(
+                        "{}: {}",
+                        d.artefato.label().to_uppercase(),
+                        d.etapa.label()
+                    ),
+                ),
+                // A trilha inteira, com a atual marcada pelo NOME da
+                // parte — quem desenha pinta diferente sem ter que
+                // comparar texto.
+                fileira(
+                    "etapas",
+                    Etapa::all()
+                        .iter()
+                        .map(|e| {
+                            item(
+                                if *e == d.etapa { "etapa-atual" } else { "etapa" },
+                                e.label(),
+                            )
+                        })
+                        .collect(),
+                ),
             ];
+            // A ação é um BOTÃO, não um rótulo com um filho (ciclo
+            // 302). Na janela ela é `<button>`, e a dica é o texto ao
+            // lado; aqui era um grupo, e o desenho não tinha como
+            // saber que aquilo se aperta.
+            //
+            // Botão é FOLHA DE FILEIRA — a mesma forma das transições.
+            // Quem desenha pergunta o arranjo, não o nome da parte.
+            if let Some((rotulo, dica)) = acao_do_fluxo(d) {
+                partes.push(fileira("acao", vec![item("acao", rotulo)]));
+                partes.push(item("dica", dica));
+            }
+            partes.push(fileira(
+                "transicoes",
+                d.etapa
+                    .proximas()
+                    .into_iter()
+                    .map(|destino| {
+                        item(
+                            if d.etapa.avanco_natural() == Some(destino) {
+                                "transicao-principal"
+                            } else {
+                                "transicao"
+                            },
+                            destino.label(),
+                        )
+                    })
+                    .collect(),
+            ));
             if let Some(nota) = d.nota.as_ref().filter(|n| !n.trim().is_empty()) {
                 partes.push(item("nota", nota.clone()));
             }
@@ -1387,9 +1486,96 @@ mod partes_de_embed {
         let e = embed_de(
             "{{ type: \"fluxo\" }}\nartefato: spec\netapa: concluida\n{{ /fluxo }}\n",
         );
-        assert_eq!(partes(&e), ["parte:artefato", "parte:etapa"]);
-        assert_eq!(e.filhos[0].texto, "Spec");
-        assert_eq!(e.filhos[1].texto, "Concluída");
+        // O cartão inteiro, na ordem da janela (ciclo 302).
+        assert_eq!(
+            partes(&e),
+            ["parte:titulo", "parte:etapas", "parte:transicoes"]
+        );
+        assert_eq!(e.filhos[0].texto, "SPEC: Concluída");
+    }
+
+    #[test]
+    fn as_transicoes_do_fluxo_saem_do_dominio() {
+        // Os botões não são lista minha: vêm de `Etapa::proximas()`, que
+        // é quem sabe que de "em revisão" se vai pra aprovada, rascunho
+        // ou bloqueada — e que NÃO se pula a revisão indo direto pra
+        // execução. Escrever a lista aqui seria uma segunda fonte da
+        // mesma verdade, como a política do bloco até o ciclo 278.
+        let e = embed_de(
+            "{{ type: \"fluxo\" }}\nartefato: proposta\netapa: em-revisao\n{{ /fluxo }}\n",
+        );
+        let transicoes = e
+            .filhos
+            .iter()
+            .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "transicoes"))
+            .expect("faltaram as transições");
+        let rotulos: Vec<String> = transicoes.filhos.iter().map(|f| f.texto.clone()).collect();
+        let esperado: Vec<String> = crate::fluxo::Etapa::EmRevisao
+            .proximas()
+            .iter()
+            .map(|e| e.label().to_string())
+            .collect();
+        assert_eq!(rotulos, esperado);
+    }
+
+    #[test]
+    fn a_etapa_atual_se_identifica_pelo_nome_da_parte() {
+        // Quem desenha pinta a atual diferente sem ter que comparar
+        // texto — comparar texto quebraria no dia em que um rótulo
+        // mudasse.
+        let e = embed_de(
+            "{{ type: \"fluxo\" }}\nartefato: proposta\netapa: aprovada\n{{ /fluxo }}\n",
+        );
+        let trilha = &e.filhos[1];
+        let atuais: Vec<&str> = trilha
+            .filhos
+            .iter()
+            .filter(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "etapa-atual"))
+            .map(|f| f.texto.as_str())
+            .collect();
+        assert_eq!(atuais, ["Aprovada"], "esperava UMA etapa atual");
+        assert_eq!(trilha.filhos.len(), crate::fluxo::Etapa::all().len());
+    }
+
+    #[test]
+    fn a_acao_principal_depende_do_estado_e_do_artefato() {
+        // Vem da janela (ciclos 209 e 223): aprovada é onde o trabalho
+        // passa do "o quê" pro "como"; em revisão ganhou a terceira
+        // saída.
+        // A ação é BOTÃO: folha de uma fileira, como as transições.
+        // Antes era um grupo com a dica dentro, e o desenho não tinha
+        // como saber que aquilo se aperta (ciclo 302).
+        let tem_acao = |md: &str| {
+            embed_de(md)
+                .filhos
+                .iter()
+                .filter(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "acao"))
+                .flat_map(|f| f.filhos.iter())
+                .map(|b| b.texto.clone())
+                .next()
+        };
+        assert_eq!(
+            tem_acao("{{ type: \"fluxo\" }}\nartefato: spec\netapa: aprovada\n{{ /fluxo }}\n"),
+            Some("Planejar implementação".to_string())
+        );
+        assert_eq!(
+            tem_acao("{{ type: \"fluxo\" }}\nartefato: proposta\netapa: aprovada\n{{ /fluxo }}\n"),
+            Some("Executar".to_string())
+        );
+        assert_eq!(
+            tem_acao("{{ type: \"fluxo\" }}\nartefato: proposta\netapa: em-revisao\n{{ /fluxo }}\n"),
+            Some("Pedir alteração".to_string())
+        );
+        // Rascunho não tem ação principal, e execução não é spec nem
+        // proposta.
+        assert_eq!(
+            tem_acao("{{ type: \"fluxo\" }}\nartefato: proposta\netapa: rascunho\n{{ /fluxo }}\n"),
+            None
+        );
+        assert_eq!(
+            tem_acao("{{ type: \"fluxo\" }}\nartefato: execucao\netapa: aprovada\n{{ /fluxo }}\n"),
+            None
+        );
     }
 
     #[test]

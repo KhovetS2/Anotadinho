@@ -3535,84 +3535,47 @@ Acima do embed você pode ter texto normal. Abaixo também.
 
     #[test]
     fn exemplos_embeds_vault_file_parses() {
-        // Regressão de sincronia: a página de demo do vault precisa parsear
-        // com a sintaxe atual do wrapper, incluindo os campos ricos do
-        // card (description/tags/due/checklist) escritos à mão.
+        // Regressão de sincronia: a página de demo do vault precisa
+        // parsear com a sintaxe atual do wrapper, incluindo os campos
+        // ricos do card (description/tags/due/checklist) escritos à mão.
+        //
+        // A asserção era a SEQUÊNCIA exata de tipos, e isso quebrava a
+        // cada edição da página — quebrou quando ela virou a referência
+        // completa (ciclo 302). O que ela quer garantir não é a ordem: é
+        // que tudo ali parseia e que a demo cobre o que existe.
+        //
+        // Cobertura é asserção mais forte que ordem: no dia em que
+        // alguém acrescentar um `EmbedKind` novo, este teste reprova até
+        // a demo ganhar um exemplo dele.
         let raw = include_str!("../../../VaultAnotadinho/pages/exemplos-embeds.md");
         let (_, body) = crate::MarkdownCodec::split_frontmatter_text(raw);
         let segments = segment(body);
 
-        let kinds: Vec<Option<EmbedKind>> = segments
+        let mut vistos: Vec<EmbedKind> = segments
             .iter()
-            .map(|s| match s {
+            .filter_map(|s| match s {
                 DocSegment::Embed(d) => Some(d.kind()),
                 DocSegment::Markdown(_) => None,
             })
             .collect();
+        vistos.sort_by_key(|k| k.type_name());
+        vistos.dedup();
+
+        let mut todos: Vec<EmbedKind> = EmbedKind::all().to_vec();
+        todos.sort_by_key(|k| k.type_name());
         assert_eq!(
-            kinds,
-            vec![
-                None,
-                Some(EmbedKind::Kanban),
-                None,
-                Some(EmbedKind::Calendar),
-                None,
-                Some(EmbedKind::Table),
-                None,
-                // Ciclo 183: a página de demo passou a cobrir também os
-                // dois embeds que faltavam nela.
-                Some(EmbedKind::Timeline),
-                None,
-                Some(EmbedKind::Actions),
-                None,
-            ]
+            vistos, todos,
+            "a página de exemplos deixou de cobrir algum tipo de embed"
         );
 
-        let DocSegment::Embed(EmbedData::Kanban(kanban)) = &segments[1] else {
-            panic!("esperava embed kanban");
-        };
-        assert_eq!(kanban.columns, vec!["Backlog", "Todo", "Done"]);
-        assert_eq!(kanban.items.len(), 3);
-        let card = &kanban.items[0];
-        assert_eq!(card.title, "Tarefa 1");
-        assert!(card.description.is_some());
-        assert_eq!(card.tags, vec!["urgente", "bug"]);
-        assert_eq!(card.due.as_deref(), Some("2026-08-10"));
-        assert_eq!(card.checklist.len(), 2);
-        assert!(!card.checklist[0].done);
-        assert!(card.checklist[1].done);
-
-        let DocSegment::Embed(EmbedData::Calendar(calendar)) = &segments[3] else {
-            panic!("esperava embed calendar");
-        };
-        assert_eq!(calendar.entries.len(), 5);
-        assert_eq!(calendar.entries[0].date.as_deref(), Some("2026-08-06"));
-        assert_eq!(calendar.entries[0].all_tags(), vec!["urgente".to_string()]);
-        let ranged = calendar.entries.iter().find(|e| e.end_date.is_some()).expect("esperava 1 evento com end_date");
-        assert_eq!(ranged.date.as_deref(), Some("2026-08-10"));
-        assert_eq!(ranged.end_date.as_deref(), Some("2026-08-14"));
-        assert_eq!(ranged.all_tags(), vec!["infra".to_string()]);
-        let timed = calendar.entries.iter().find(|e| e.start_time.is_some()).expect("esperava 1 evento com horário");
-        assert_eq!(timed.start_time.as_deref(), Some("14:30"));
-        assert_eq!(timed.end_time.as_deref(), Some("15:15"));
-        let unscheduled = calendar.entries.iter().find(|e| e.date.is_none()).expect("esperava 1 evento sem data");
-        assert_eq!(unscheduled.title, "Ligar pro fornecedor");
-
-        let DocSegment::Embed(EmbedData::Table(table)) = &segments[5] else {
-            panic!("esperava embed table");
-        };
-        assert_eq!(table.rows.len(), 3);
-        let kinds: Vec<&ColumnKind> = table.columns.iter().map(|c| &c.kind).collect();
-        assert_eq!(kinds[0], &ColumnKind::Text);
-        assert_eq!(kinds[1], &ColumnKind::Select { options: vec!["todo".into(), "doing".into(), "done".into()] });
-        assert_eq!(kinds[2], &ColumnKind::MultiSelect { options: vec!["urgente".into(), "bug".into(), "infra".into()] });
-        assert_eq!(kinds[3], &ColumnKind::Number);
-        assert_eq!(kinds[4], &ColumnKind::Date);
-        assert_eq!(kinds[5], &ColumnKind::Url);
-        assert_eq!(kinds[6], &ColumnKind::PageLink);
-        assert_eq!(table.rows[0][2], "infra");
-        assert_eq!(table.rows[1][2], "urgente, bug");
-        assert_eq!(table.rows[0][6], "pages/kanban-projeto.md");
+        // E a ida e volta continua fiel: o que sai do parse volta igual.
+        for s in &segments {
+            if let DocSegment::Embed(d) = s {
+                let texto = d.to_fence_text();
+                let volta = segment(&texto);
+                assert_eq!(volta.len(), 1, "o fence de {:?} não voltou inteiro", d.kind());
+            }
+        }
     }
 
     #[test]

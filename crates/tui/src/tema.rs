@@ -42,6 +42,23 @@ pub enum Realce {
     Embed,
     /// Uma parte de dentro de um embed.
     Parte,
+    /// O título de um cartão (ciclo 302).
+    TituloCartao,
+    /// Uma etapa já percorrida ou futura, na trilha do fluxo.
+    Etapa,
+    /// A etapa ATUAL — a que diz onde o artefato está.
+    EtapaAtual,
+    /// A ação principal daquele estado.
+    Acao,
+    /// A explicação da ação principal.
+    Dica,
+    /// Uma transição possível.
+    Transicao,
+    /// A transição de avanço natural — o botão que se aperta sem
+    /// pensar.
+    TransicaoPrincipal,
+    /// O fundo da tela.
+    Fundo,
     /// O marcador que abre a linha (`##`, `-`) — estrutura, não texto.
     Marca,
     /// `[[wikilink]]`.
@@ -127,6 +144,28 @@ impl Tema {
                 .fg(self.cor("accent-purple", Color::Magenta))
                 .add_modifier(Modifier::BOLD),
             Realce::Parte => Style::default().fg(self.cor("cor-ambar", Color::Yellow)),
+            // Cores POR PAPEL (ciclo 302): tudo roxo dizia só "isto é
+            // embed", e um cartão de fluxo tem coisas de naturezas
+            // diferentes — o que ele é, onde está, o que dá pra fazer.
+            Realce::TituloCartao => Style::default()
+                .fg(self.cor("text-primary", Color::White))
+                .add_modifier(Modifier::BOLD),
+            // Etapa não-atual é contexto: apagada de propósito, senão
+            // compete com a que importa.
+            Realce::Etapa => Style::default().fg(apagado),
+            Realce::EtapaAtual => Style::default()
+                .fg(self.cor("cor-verde", Color::Green))
+                .add_modifier(Modifier::BOLD),
+            Realce::Acao => Style::default()
+                .fg(destaque)
+                .add_modifier(Modifier::BOLD),
+            Realce::Dica => Style::default().fg(apagado).add_modifier(Modifier::ITALIC),
+            Realce::Transicao => Style::default().fg(self.cor("cor-azul", Color::Blue)),
+            Realce::TransicaoPrincipal => Style::default()
+                .fg(self.cor("accent-purple", Color::Magenta))
+                .add_modifier(Modifier::BOLD),
+            // O fundo da tela inteira, da mesma cor da janela.
+            Realce::Fundo => Style::default().bg(self.cor("bg-base", Color::Black)),
             Realce::Marca => Style::default().fg(apagado),
             Realce::Wikilink => Style::default().fg(destaque).add_modifier(Modifier::UNDERLINED),
             Realce::Link => Style::default()
@@ -141,6 +180,46 @@ impl Tema {
             Realce::BordaFoco => Style::default().fg(destaque),
             Realce::BordaUnidade => Style::default().fg(destaque),
         }
+    }
+
+    /// A cor que IDENTIFICA um papel de botão.
+    ///
+    /// Regra: se o papel já declara um fundo, o fundo é a cor dele —
+    /// é o caso do cursor, que é fundo de destaque com texto escuro.
+    /// Os outros papéis são cor de texto, e aí a cor é o `fg`.
+    fn cor_do_botao(&self, r: Realce) -> Color {
+        let e = self.estilo(r);
+        e.bg.or(e.fg).unwrap_or(Color::Gray)
+    }
+
+    /// O CONTORNO de um botão daquele papel (ciclo 302).
+    ///
+    /// Fundo nenhum: quem carrega a cor é o GLIFO. O contorno é
+    /// desenhado com meio-bloco (`▄`, `▐`, `▗`…), e meio-bloco pinta
+    /// com o `fg` a metade da célula que olha PRA DENTRO do botão — a
+    /// outra metade fica com o fundo da tela.
+    ///
+    /// Foi assim que o vão sumiu sem o botão inchar. Duas voltas antes
+    /// eu tratava célula como pixel: ou a cor tomava a célula inteira
+    /// do traço (e o botão ficava gordo, com o contorno engolido), ou
+    /// não tomava nada (e sobrava faixa escura entre o preenchimento e
+    /// o traço). Meio-bloco é a terceira opção que eu tinha decidido
+    /// que não existia — e é meia célula, então o botão encolhe.
+    pub fn contorno_do_botao(&self, r: Realce) -> Style {
+        Style::default().fg(self.cor_do_botao(r))
+    }
+
+    /// O MIOLO de um botão: onde o rótulo fica.
+    ///
+    /// Fundo na cor do papel e texto na cor do fundo da tela — é como
+    /// `.btn--primary` se lê na janela: fundo de acento, texto que
+    /// contrasta. O contorno encosta neste preenchimento sem emenda,
+    /// porque a metade de dentro da célula dele é da mesma cor.
+    pub fn miolo_do_botao(&self, r: Realce) -> Style {
+        Style::default()
+            .fg(self.cor("bg-base", Color::Black))
+            .bg(self.cor_do_botao(r))
+            .add_modifier(Modifier::BOLD)
     }
 }
 
