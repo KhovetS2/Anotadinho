@@ -11,7 +11,7 @@
 use anotadinho_core::inline::{self, Trecho};
 use anotadinho_core::navegacao::{mover, Cursor, Passo};
 use anotadinho_core::render::{desenhar, Renderizador};
-use anotadinho_core::unidade::{Caminho, Tipo, Unidade};
+use anotadinho_core::unidade::{Arranjo, Caminho, Tipo, Unidade};
 
 /// Uma linha desenhável, com o endereço de quem a produziu.
 #[derive(Debug, Clone, PartialEq)]
@@ -142,7 +142,7 @@ fn contagem(u: &Unidade) -> String {
     // que serve é o valor deles.
     let folhas_distintas = u.filhos.len() <= 3
         && u.filhos.iter().all(|f| {
-            matches!(&f.tipo, Tipo::Parte { grupo: false, .. })
+            matches!(&f.tipo, Tipo::Parte { arranjo: Arranjo::Folha, .. })
                 && f.filhos.is_empty()
                 && !f.texto.trim().is_empty()
         })
@@ -260,46 +260,54 @@ fn trilha_do_fluxo(u: &Unidade) -> Option<String> {
     Some(fileira.join("  "))
 }
 
-/// Junta os botões de um embed numa fileira só (ciclo 296).
+/// Desenha um galho em LINHA numa linha só (ciclo 297).
 ///
-/// Botão é coisa clicável, e clicável em fileira lê como barra de
-/// ações — que é como a janela desenha. Um por linha lê como lista, que
-/// é outra coisa.
+/// O arranjo vem do MODELO — `Arranjo::Linha` — e não de um caso
+/// especial aqui. Antes eu juntava botões olhando o nome da parte; era
+/// adivinhação, e valia só pra botão.
 ///
-/// Dá pra juntar porque parte de embed NÃO é destino: o embed é atômico
-/// e `navegacao::mover` para nele, então nenhuma dessas linhas recebe
-/// cursor. Fundir duas linhas de conteúdo comum quebraria a conta entre
-/// cursor e tela; aqui não há o que quebrar.
-fn agrupar_botoes(linhas: Vec<Linha>) -> Vec<Linha> {
-    let e_botao = |l: &Linha| {
-        matches!(&l.tipo, Tipo::Parte { nome, .. } if nome == "button")
-    };
+/// Cada filho vira `[ texto ]` e eles ficam lado a lado, que é como uma
+/// barra de ações se lê. A navegação dentro dela é `h`/`l`, e quem
+/// decide isso também é o arranjo.
+fn achatar_fileiras(linhas: Vec<Linha>, raiz: &Unidade) -> Vec<Linha> {
     let mut fora: Vec<Linha> = Vec::with_capacity(linhas.len());
+    let mut fileira: Option<Caminho> = None;
     for l in linhas {
-        match fora.last_mut() {
-            Some(anterior) if e_botao(&l) && e_botao(anterior) => {
-                anterior.texto.push_str("  ");
-                anterior.texto.push_str(&format!("[ {} ]", l.texto));
-            }
-            _ => {
-                let mut l = l;
-                if e_botao(&l) {
-                    l.texto = format!("[ {} ]", l.texto);
-                    l.marca = String::new();
-                    l.trechos.clear();
+        // Filho de uma fileira já aberta: entra na linha dela.
+        if let Some(dono) = &fileira {
+            if l.caminho.len() == dono.len() + 1 && l.caminho.starts_with(dono) {
+                if let Some(atual) = fora.last_mut() {
+                    if !atual.texto.is_empty() {
+                        atual.texto.push_str("  ");
+                    }
+                    atual.texto.push_str(&format!("[ {} ]", l.texto));
                 }
-                fora.push(l);
+                continue;
             }
+            fileira = None;
         }
+        let e_fileira = raiz
+            .em(&l.caminho)
+            .is_some_and(|u| u.tipo.arranjo() == Arranjo::Linha);
+        if e_fileira && !l.enfeite {
+            fileira = Some(l.caminho.clone());
+            let mut l = l;
+            l.marca = String::new();
+            l.texto = String::new();
+            l.resumo = String::new();
+            fora.push(l);
+            continue;
+        }
+        fora.push(l);
     }
     fora
 }
 
-/// A página inteira em linhas, na ordem em que se lê.
+/// A página inteira em linhas, na ordem em que se lê./// A página inteira em linhas, na ordem em que se lê.
 pub fn linhas(raiz: &Unidade) -> Vec<Linha> {
     let mut r = Linhas::default();
     desenhar(raiz, &mut r);
-    encaixotar_embeds(agrupar_botoes(r.fora))
+    encaixotar_embeds(achatar_fileiras(r.fora, raiz))
 }
 
 /// Marca a que embed cada linha pertence, e injeta a trilha do fluxo.

@@ -233,13 +233,11 @@ impl Terminal {
             // terminal tem pra mostrar a estrutura de dentro de um
             // kanban ou de uma tabela — até o ciclo 283 ele descia no
             // atômico e não achava nada.
-            Tipo::Parte { nome, grupo } => {
-                if *grupo {
-                    format!("┌{nome}")
-                } else {
-                    format!("│{nome}")
-                }
-            }
+            Tipo::Parte { nome, arranjo } => match arranjo {
+                crate::unidade::Arranjo::Folha => format!("│{nome}"),
+                crate::unidade::Arranjo::Coluna => format!("┌{nome}"),
+                crate::unidade::Arranjo::Linha => format!("├{nome}"),
+            },
         }
     }
 }

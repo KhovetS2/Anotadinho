@@ -128,8 +128,8 @@ pub enum Tipo {
     Parte {
         /// O que ela é, no vocabulário do embed.
         nome: String,
-        /// Comporta outras partes.
-        grupo: bool,
+        /// Como ela se arranja: folha, ou galho em coluna ou em linha.
+        arranjo: Arranjo,
     },
 }
 
@@ -155,6 +155,17 @@ impl Tipo {
         }
     }
 
+    /// Como este tipo arruma os filhos.
+    ///
+    /// Só a parte escolhe; todo o resto empilha, que é como markdown se
+    /// lê.
+    pub fn arranjo(&self) -> Arranjo {
+        match self {
+            Self::Parte { arranjo, .. } => *arranjo,
+            _ => Arranjo::Coluna,
+        }
+    }
+
     /// A política deste tipo.
     pub fn politica(&self) -> Politica {
         match self {
@@ -171,8 +182,11 @@ impl Tipo {
             Self::Embed(_) => Politica::EMBED,
             // Parte que comporta partes é grupo; parte folha carrega
             // texto, como um item de lista.
-            Self::Parte { grupo: true, .. } => Politica::GRUPO,
-            Self::Parte { grupo: false, .. } => Politica::TEXTO,
+            Self::Parte {
+                arranjo: Arranjo::Folha,
+                ..
+            } => Politica::TEXTO,
+            Self::Parte { .. } => Politica::GRUPO,
         }
     }
 
@@ -231,6 +245,27 @@ impl Tipo {
             Self::Embed(_) | Self::Parte { .. } => return None,
         })
     }
+}
+
+/// Como um galho arruma os filhos dele (ciclo 297).
+///
+/// Foi a peça que faltava pra desenhar interface de verdade num
+/// terminal. Antes, "linha de botões" era um caso especial no desenho, e
+/// a navegação dentro dele teria que ser geométrica — adivinhando pela
+/// tela quem está ao lado de quem.
+///
+/// Declarando, some a adivinhação: num galho em LINHA os filhos ficam
+/// lado a lado e `h`/`l` andam entre eles; num galho em COLUNA ficam
+/// empilhados e `j`/`k` andam. Aninhar os dois dá layout, do mesmo jeito
+/// que uma GUI compõe caixa dentro de caixa.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Arranjo {
+    /// Não tem filhos: é conteúdo.
+    Folha,
+    /// Filhos empilhados — o arranjo de sempre.
+    Coluna,
+    /// Filhos lado a lado.
+    Linha,
 }
 
 /// Endereço de uma unidade na árvore: os índices do caminho da raiz até

@@ -22,7 +22,7 @@
 //! BLOCOS primeiro — `dd` e `j` não olham para dentro da linha.
 
 use crate::embed::{self, DocSegment};
-use crate::unidade::{Tipo, Unidade};
+use crate::unidade::{Arranjo, Tipo, Unidade};
 
 /// Transforma o corpo de uma página na árvore de unidades.
 ///
@@ -365,17 +365,29 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
         Unidade::com_texto(
             Tipo::Parte {
                 nome: nome.to_string(),
-                grupo: false,
+                arranjo: Arranjo::Folha,
             },
             texto,
         )
     }
-    /// Uma parte que comporta outras.
+    /// Uma parte que comporta outras, empilhadas.
     fn grupo(nome: &str, texto: impl Into<String>, filhos: Vec<Unidade>) -> Unidade {
+        arranjado(nome, texto, filhos, Arranjo::Coluna)
+    }
+    /// Uma parte cujos filhos ficam LADO A LADO (ciclo 297).
+    fn fileira(nome: &str, filhos: Vec<Unidade>) -> Unidade {
+        arranjado(nome, String::new(), filhos, Arranjo::Linha)
+    }
+    fn arranjado(
+        nome: &str,
+        texto: impl Into<String>,
+        filhos: Vec<Unidade>,
+        arranjo: Arranjo,
+    ) -> Unidade {
         let mut u = Unidade::com_filhos(
             Tipo::Parte {
                 nome: nome.to_string(),
-                grupo: true,
+                arranjo,
             },
             filhos,
         );
@@ -449,11 +461,16 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
 
         EmbedData::Timeline(d) => d.items.iter().map(|i| item("item", i.title.clone())).collect(),
 
-        EmbedData::Actions(d) => d
-            .buttons
-            .iter()
-            .map(|b| item("button", b.label.clone()))
-            .collect(),
+        // Botão é coisa clicável, e clicável fica em FILEIRA — é como a
+        // janela desenha, e agora o modelo diz isso em vez de o desenho
+        // adivinhar (ciclo 297).
+        EmbedData::Actions(d) => vec![fileira(
+            "acoes",
+            d.buttons
+                .iter()
+                .map(|b| item("button", b.label.clone()))
+                .collect(),
+        )],
 
         // Só os eventos ESCRITOS no embed. No modo vault a lista vem de
         // fora e não pertence à árvore desta página.
@@ -1354,8 +1371,13 @@ mod partes_de_embed {
         let a = embed_de(
             "{{ type: \"actions\" }}\nbuttons:\n- label: Abrir\n  action: open-page\n{{ /actions }}\n",
         );
-        assert_eq!(partes(&a), ["parte:button"]);
-        assert_eq!(a.filhos[0].texto, "Abrir");
+        // Os botões ficam numa FILEIRA declarada (ciclo 297): o galho
+        // diz que os filhos vão lado a lado, e o desenho e a navegação
+        // seguem daí em vez de adivinhar pela tela.
+        assert_eq!(partes(&a), ["parte:acoes"]);
+        assert_eq!(a.filhos[0].tipo.arranjo(), Arranjo::Linha);
+        assert_eq!(partes(&a.filhos[0]), ["parte:button"]);
+        assert_eq!(a.filhos[0].filhos[0].texto, "Abrir");
     }
 
     #[test]

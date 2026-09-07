@@ -6,7 +6,7 @@
 use anotadinho_core::inline::Marca;
 use anotadinho_core::navegacao::Passo;
 use anotadinho_core::vim::{self, Comando, Movimento};
-use anotadinho_core::unidade::Tipo;
+use anotadinho_core::unidade::{Arranjo, Tipo};
 use anotadinho_core::unidade::{Caminho, Unidade};
 use anotadinho_ipc::PageMeta;
 use ratatui::layout::{Constraint, Direction, Layout};
@@ -55,6 +55,13 @@ pub struct Estado {
     pub vim: vim::Pendente,
     /// O termo do filtro. Vazio é "sem filtro" (ciclo 292).
     pub busca: String,
+    /// Em qual painel a busca foi digitada (ciclo 297).
+    ///
+    /// Achado usando: busquei uma página, abri, e o conteúdo veio vazio
+    /// — o termo da busca de PÁGINAS estava filtrando as linhas também.
+    /// Filtro é do painel onde foi digitado; aplicar nos dois faz o
+    /// segundo esconder tudo.
+    pub busca_em: Foco,
     /// A barra está capturando tecla?
     ///
     /// Separado do termo de propósito. Na primeira versão os dois eram o
@@ -74,6 +81,7 @@ impl Estado {
             dobrados,
             vim: vim::Pendente::default(),
             busca: String::new(),
+            busca_em: Foco::Paginas,
             barra_aberta: false,
             paginas,
             pagina: 0,
@@ -96,6 +104,10 @@ impl Estado {
 
     /// Troca a página aberta, recomeçando o cursor.
     pub fn abrir(&mut self, arvore: Unidade) {
+        // Abrir uma página descarta a busca: o termo era pra achar a
+        // página, e mantê-lo filtraria o conteúdo dela por acidente.
+        self.busca.clear();
+        self.barra_aberta = false;
         self.linhas = tela::linhas(&arvore);
         self.cursor = tela::primeiro(&arvore).unwrap_or_default();
         self.dobrados = tela::dobras_iniciais(&arvore);
@@ -107,7 +119,9 @@ impl Estado {
     /// se houver busca, só o que casa.
     pub fn visiveis(&self) -> Vec<&Linha> {
         let dobradas = tela::visiveis(&self.linhas, &self.dobrados);
-        match Some(self.busca.as_str()).filter(|b| !b.is_empty()) {
+        match Some(self.busca.as_str())
+            .filter(|b| !b.is_empty() && self.busca_em == Foco::Conteudo)
+        {
             None => dobradas,
             Some(termo) => {
                 let alvo = termo.to_lowercase();
@@ -126,7 +140,7 @@ impl Estado {
     /// delas que está com foco.
     pub fn paginas_visiveis(&self) -> Vec<(usize, &PageMeta)> {
         let termo = Some(self.busca.as_str())
-            .filter(|b| !b.is_empty() && self.foco == Foco::Paginas)
+            .filter(|b| !b.is_empty() && self.busca_em == Foco::Paginas)
             .map(|b| b.to_lowercase());
         self.paginas
             .iter()
@@ -156,6 +170,30 @@ impl Estado {
         }
         self.topo = 0;
         self.seguir_cursor();
+    }
+
+    /// Anda na lista de páginas VISÍVEL.
+    fn andar_nas_paginas(&mut self, adiante: bool) {
+        let visiveis: Vec<usize> = self.paginas_visiveis().into_iter().map(|(i, _)| i).collect();
+        let Some(pos) = visiveis.iter().position(|i| *i == self.pagina) else {
+            // A selecionada não está na lista filtrada: cai na primeira.
+            self.pagina = visiveis.first().copied().unwrap_or(0);
+            return;
+        };
+        let nova = if adiante {
+            (pos + 1).min(visiveis.len().saturating_sub(1))
+        } else {
+            pos.saturating_sub(1)
+        };
+        self.pagina = visiveis[nova];
+    }
+
+    /// Traz a seleção de página pra dentro do que o filtro deixou.
+    fn corrigir_pagina(&mut self) {
+        let visiveis: Vec<usize> = self.paginas_visiveis().into_iter().map(|(i, _)| i).collect();
+        if !visiveis.contains(&self.pagina) {
+            self.pagina = visiveis.first().copied().unwrap_or(0);
+        }
     }
 
     /// A unidade sob o cursor comporta filhos?
@@ -246,12 +284,14 @@ fn tecla_na_busca(e: &mut Estado, tecla: &str) -> Option<String> {
         "Backspace" => {
             e.busca.pop();
             e.corrigir_cursor();
+            e.corrigir_pagina();
             None
         }
         // Uma tecla de um caractere é texto; o resto (setas, F1) não.
         t if t.chars().count() == 1 => {
             e.busca.push_str(t);
             e.corrigir_cursor();
+            e.corrigir_pagina();
             None
         }
         _ => None,
@@ -261,21 +301,27 @@ fn tecla_na_busca(e: &mut Estado, tecla: &str) -> Option<String> {
 fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
     if tecla == "/" {
         e.busca.clear();
+        e.busca_em = Foco::Paginas;
         e.barra_aberta = true;
         return None;
     }
     match tecla {
-        // A lista de páginas NÃO circula, pelo mesmo motivo do documento
-        // (ciclo 279): numa lista longa, um `j` a mais que teleporta pro
-        // topo faz perder o lugar sem aviso.
+        // Anda na lista VISÍVEL, não na completa (ciclo 297).
+        //
+        // Achado usando: busquei "incio", a lista filtrou pra uma
+        // página, e o Enter abriu a PRIMEIRA da lista inteira. O índice
+        // andava no vetor original, que com filtro não é o que está na
+        // tela.
+        //
+        // E não circula, pelo mesmo motivo do documento (ciclo 279):
+        // numa lista longa, um `j` a mais que teleporta pro topo faz
+        // perder o lugar sem aviso.
         "j" | "ArrowDown" => {
-            if e.pagina + 1 < e.paginas.len() {
-                e.pagina += 1;
-            }
+            e.andar_nas_paginas(true);
             None
         }
         "k" | "ArrowUp" => {
-            e.pagina = e.pagina.saturating_sub(1);
+            e.andar_nas_paginas(false);
             None
         }
         "Enter" => {
@@ -299,6 +345,7 @@ fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
         // uma coisa que estava escrita e não era consultada.
         vim::Passo::Pronto(vim::Comando::Busca) => {
             e.busca.clear();
+            e.busca_em = Foco::Conteudo;
             e.barra_aberta = true;
             return;
         }
@@ -583,7 +630,7 @@ fn preencher<'a>(
 /// uma busca invisível filtrando a tela seria indistinguível de um
 /// defeito.
 fn rodape_de_busca<'a>(e: &Estado, painel: Foco) -> Option<Line<'a>> {
-    if e.foco != painel || (!e.barra_aberta && e.busca.is_empty()) {
+    if e.busca_em != painel || (!e.barra_aberta && e.busca.is_empty()) {
         return None;
     }
     let termo = &e.busca;
@@ -602,7 +649,26 @@ fn rodape_de_busca<'a>(e: &Estado, painel: Foco) -> Option<Line<'a>> {
 /// outra coisa por engano.
 fn comando_de_vim(e: &mut Estado, c: Comando) {
     let Comando::Mover(mov, vezes) = c else { return };
+    // Onde o cursor está, o PAI arruma os filhos como? (ciclo 297)
+    //
+    // Num galho em linha os irmãos estão lado a lado, e aí quem anda
+    // entre eles é `h`/`l`; `j`/`k` saem do galho. Num galho em coluna é
+    // o contrário, que é o caso de sempre.
+    //
+    // Quem responde é o modelo. Antes isso teria que ser geometria —
+    // adivinhar pela tela quem está ao lado de quem — e geometria não
+    // existe num renderizador que ainda não desenhou.
+    let em_fileira = e
+        .cursor
+        .len()
+        .checked_sub(1)
+        .and_then(|n| e.arvore.em(&e.cursor[..n]))
+        .is_some_and(|pai| pai.tipo.arranjo() == Arranjo::Linha);
     match mov {
+        Movimento::Baixo if em_fileira => repetir(e, Passo::Sair, 1),
+        Movimento::Cima if em_fileira => repetir(e, Passo::Sair, 1),
+        Movimento::Direita if em_fileira => repetir(e, Passo::Proximo, vezes),
+        Movimento::Esquerda if em_fileira => repetir(e, Passo::Anterior, vezes),
         Movimento::Baixo => repetir(e, Passo::Proximo, vezes),
         Movimento::Cima => repetir(e, Passo::Anterior, vezes),
         // Numa árvore, "pra dentro" é o que direita significa — e é o
@@ -1065,6 +1131,102 @@ mod testes {
         assert!(
             !tudo.contains('▾'),
             "unidade comum anunciando dobra:\n{tudo}"
+        );
+    }
+
+    /// Uma página com um embed de ações de dois botões.
+    fn com_acoes() -> Unidade {
+        analisar("{{ type: \"actions\" }}\nbuttons:\n- label: Abrir\n  action: open-page\n- label: Buscar\n  action: run-search\n{{ /actions }}\n")
+    }
+
+    #[test]
+    fn a_busca_de_pagina_nao_filtra_o_conteudo() {
+        // Achado usando: busquei uma página, abri, e o conteúdo veio
+        // vazio — o termo da busca de PÁGINAS estava filtrando as linhas
+        // também. Filtro é do painel onde foi digitado.
+        let mut e = Estado::novo(paginas(), analisar("alfa\n\nbeta\n"));
+        assert_eq!(e.foco, Foco::Paginas);
+        tecla(&mut e, "/");
+        tecla(&mut e, "g"); // casa com "gama", não com o conteúdo
+        assert_eq!(e.paginas_visiveis().len(), 1);
+        assert_eq!(e.visiveis().len(), 2, "a busca de página escondeu o conteúdo");
+    }
+
+    #[test]
+    fn buscar_uma_pagina_seleciona_a_que_sobrou() {
+        // Achado usando: busquei "incio", a lista filtrou pra uma página,
+        // e o Enter abriu a PRIMEIRA da lista inteira — o índice andava
+        // no vetor original, que com filtro não é o que está na tela.
+        let mut e = estado();
+        tecla(&mut e, "/");
+        tecla(&mut e, "g"); // só "gama"
+        assert_eq!(e.paginas_visiveis().len(), 1);
+        let pedido = tecla(&mut e, "Enter");
+        assert_eq!(pedido.as_deref(), Some("pages/gama.md"));
+    }
+
+    #[test]
+    fn andar_na_lista_filtrada_nao_sai_do_filtro() {
+        let mut e = estado();
+        tecla(&mut e, "/");
+        tecla(&mut e, "a"); // alfa, beta, gama — todos têm "a"
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "j");
+        let visiveis: Vec<usize> = e.paginas_visiveis().into_iter().map(|(i, _)| i).collect();
+        assert!(visiveis.contains(&e.pagina), "a seleção saiu do filtro");
+    }
+
+    #[test]
+    fn abrir_uma_pagina_descarta_a_busca() {
+        // O termo era pra achar a página; mantê-lo filtraria o conteúdo
+        // dela por acidente.
+        let mut e = Estado::novo(paginas(), analisar("alfa\n"));
+        tecla(&mut e, "/");
+        tecla(&mut e, "b");
+        e.abrir(analisar("outra coisa\n\nmais\n"));
+        assert!(e.busca.is_empty());
+        assert_eq!(e.visiveis().len(), 2);
+    }
+
+    #[test]
+    fn numa_fileira_o_cursor_anda_com_h_e_l() {
+        // O arranjo vem do MODELO (ciclo 297): num galho em linha os
+        // irmãos estão lado a lado, e quem anda entre eles é h/l.
+        let mut e = Estado::novo(paginas(), com_acoes());
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "Enter"); // entra no embed → a fileira
+        assert_eq!(e.cursor, vec![0, 0]);
+        tecla(&mut e, "Enter"); // entra na fileira → o primeiro botão
+        assert_eq!(e.cursor, vec![0, 0, 0]);
+
+        tecla(&mut e, "l");
+        assert_eq!(e.cursor, vec![0, 0, 1], "l não andou pro botão seguinte");
+        tecla(&mut e, "h");
+        assert_eq!(e.cursor, vec![0, 0, 0], "h não voltou");
+        // Na borda ele fica, como em qualquer nível.
+        tecla(&mut e, "h");
+        assert_eq!(e.cursor, vec![0, 0, 0]);
+    }
+
+    #[test]
+    fn numa_fileira_j_e_k_saem_do_galho() {
+        // Empilhar não existe ali: `j` num item lado a lado significa
+        // "sair", que é o que a pessoa espera de um layout em linha.
+        let mut e = Estado::novo(paginas(), com_acoes());
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0, 0, 1];
+        tecla(&mut e, "j");
+        assert_eq!(e.cursor, vec![0, 0], "j não saiu da fileira");
+    }
+
+    #[test]
+    fn a_fileira_e_desenhada_numa_linha_so() {
+        let mut e = Estado::novo(paginas(), com_acoes());
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 60, 12).join("\n");
+        assert!(
+            tudo.contains("[ Abrir ]  [ Buscar ]"),
+            "os botões não ficaram lado a lado:\n{tudo}"
         );
     }
 
