@@ -159,10 +159,7 @@ impl Estado {
     /// setas andariam sem nada mudar na tela.
     pub fn corrigir_cursor(&mut self) {
         let visiveis = self.visiveis();
-        if visiveis
-            .iter()
-            .any(|l| !l.enfeite && l.caminho == self.cursor)
-        {
+        if visiveis.iter().any(|l| !l.enfeite && l.mostra(&self.cursor)) {
             return;
         }
         if let Some(primeira) = visiveis.iter().find(|l| !l.enfeite) {
@@ -221,7 +218,7 @@ impl Estado {
         let visiveis = self.visiveis();
         if let Some(l) = visiveis
             .iter()
-            .position(|l| !l.enfeite && l.caminho == self.cursor)
+            .position(|l| !l.enfeite && l.mostra(&self.cursor))
         {
             self.topo = tela::rolar(self.topo, self.altura, l);
         }
@@ -435,60 +432,133 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     // Antes eu desenhava a caixa do foco aqui e a do embed na mão, lá no
     // `tela` — dois vocabulários de caixa na mesma tela, e o embed
     // ficava com meia moldura.
-    let regiao = |l: &crate::tela::Linha| -> Option<Realce> {
+    // A região é identificada pelo DONO, não só pela cor (ciclo 298).
+    //
+    // Agrupar por cor fundia embeds vizinhos: seis embeds seguidos
+    // viravam uma caixa magenta só, porque todos pediam a mesma cor. O
+    // dono distingue — dois embeds lado a lado são duas caixas.
+    let regiao = |l: &crate::tela::Linha| -> Option<(Vec<usize>, Realce)> {
+        // Dentro de um embed, a caixa é DELE — mesmo com o cursor lá
+        // dentro (ciclo 298).
+        //
+        // Deixar o foco abrir caixa própria partia o cartão em dois: a
+        // moldura do fluxo fechava antes da linha do cursor e outra
+        // abria depois. Um cartão partido no meio não é cartão.
+        //
+        // Quem marca o foco lá dentro é a LATERAL da linha, que acende.
+        if let Some(d) = l.dono_embed.clone() {
+            return Some((d, Realce::Embed));
+        }
         if no_foco
-            && (l.caminho == e.cursor
+            && (l.mostra(&e.cursor)
                 || (l.caminho.len() > e.cursor.len() && l.caminho.starts_with(&e.cursor)))
         {
-            return Some(Realce::BordaUnidade);
+            return Some((e.cursor.clone(), Realce::BordaUnidade));
         }
-        l.embed_dono.as_ref().map(|_| Realce::Embed)
+        None
     };
 
-    let mut visiveis: Vec<Line> = Vec::with_capacity(e.altura + 2);
-    let mut atual: Option<Realce> = None;
-    for l in linhas_visiveis.iter().skip(e.topo) {
-        if visiveis.len() >= e.altura {
-            break;
-        }
-        // Lista ABERTA não desenha a própria linha (ciclo 294): o `·`
-        // sozinho não diz nada e a moldura já mostra a extensão.
-        if matches!(l.tipo, Tipo::Lista | Tipo::ListaOrdenada)
-            && !e.dobrados.contains(&l.caminho)
-        {
-            continue;
-        }
-        let quer = regiao(l);
-        if quer != atual {
-            if let Some(velha) = atual {
-                visiveis.push(moldura(false, largura_util, velha, &e.tema));
+    // Monta as linhas a partir de um topo, e diz se o cursor coube.
+    //
+    // As molduras ocupam linha e a janela é calculada em linhas REAIS —
+    // então caber "na conta" não garante caber na tela. Em vez de
+    // estimar, monta e confere: se o cursor não coube, monta de novo a
+    // partir dele (ciclo 298).
+    //
+    // Achado usando: `G` ia pro fim da página e a tela ficava parada no
+    // meio.
+    let montar = |topo: usize| -> (Vec<Line>, bool) {
+        let mut fora: Vec<Line> = Vec::with_capacity(e.altura + 2);
+        let mut atual: Option<(Vec<usize>, Realce)> = None;
+        let mut achou = false;
+        for l in linhas_visiveis.iter().skip(topo) {
+            if fora.len() >= e.altura {
+                break;
             }
-            if let Some(nova) = quer {
-                if visiveis.len() < e.altura {
-                    visiveis.push(moldura(true, largura_util, nova, &e.tema));
+            if matches!(l.tipo, Tipo::Lista | Tipo::ListaOrdenada)
+                && !e.dobrados.contains(&l.caminho)
+            {
+                continue;
+            }
+            let quer = regiao(l);
+            if quer != atual {
+                if let Some((_, velha)) = &atual {
+                    fora.push(moldura(false, largura_util, *velha, &e.tema));
+                }
+                if let Some((_, nova)) = &quer {
+                    if fora.len() < e.altura {
+                        fora.push(moldura(true, largura_util, *nova, &e.tema));
+                    }
+                }
+                atual = quer;
+            }
+            if fora.len() >= e.altura {
+                break;
+            }
+            if !l.enfeite && l.mostra(&e.cursor) {
+                achou = true;
+            }
+            let linha = linha_estilizada(
+                // Sem fundo no texto (ciclo 295): quem diz onde se está
+                // é a moldura. Reintroduzi isto sem querer ao reescrever
+                // o laço, e o teste do 295 pegou.
+                l,
+                false,
+                e.dobrados.contains(&l.caminho),
+                &e.tema,
+                if atual.is_some() { largura_util - 2 } else { largura_util },
+                Some(&e.cursor),
+            );
+            // A lateral acende na linha do cursor: é como o foco se
+            // marca dentro de um cartão que não é dele.
+            let cor_lateral = match &atual {
+                Some((_, r)) if no_foco && !l.enfeite && l.mostra(&e.cursor) => {
+                    let _ = r;
+                    Some(Realce::BordaUnidade)
+                }
+                Some((_, r)) => Some(*r),
+                None => None,
+            };
+            fora.push(match cor_lateral {
+                Some(r) => emoldurar(linha, largura_util, r, &e.tema),
+                None => linha,
+            });
+        }
+        if let Some((_, velha)) = atual {
+            if fora.len() < e.altura {
+                fora.push(moldura(false, largura_util, velha, &e.tema));
+            }
+        }
+        (fora, achou)
+    };
+
+    let (mut visiveis, coube) = montar(e.topo);
+    // O cursor ficou de fora da tela desenhada.
+    //
+    // Começar a janela NELE resolve e estraga: ele aparece na primeira
+    // linha e o resto fica em branco — foi o que a tela mostrou depois
+    // de um `G`. O certo é recuar o máximo que ainda o mantenha visível,
+    // que é o que enche a tela acima dele.
+    //
+    // O recuo é medido montando, não estimando: cada moldura ocupa linha
+    // e não dá pra saber quantas cabem sem desenhar. Custa até `altura`
+    // montagens, e só quando há correção a fazer.
+    let novo_topo = (!coube && no_foco)
+        .then(|| linhas_visiveis.iter().position(|l| l.mostra(&e.cursor)))
+        .flatten()
+        .map(|i| {
+            let mut melhor = i;
+            for t in (0..i).rev() {
+                if montar(t).1 {
+                    melhor = t;
+                } else {
+                    break;
                 }
             }
-            atual = quer;
-        }
-        if visiveis.len() >= e.altura {
-            break;
-        }
-        let linha = linha_estilizada(
-            l,
-            false,
-            e.dobrados.contains(&l.caminho),
-            &e.tema,
-            if atual.is_some() { largura_util - 2 } else { largura_util },
-        );
-        visiveis.push(match atual {
-            Some(r) => emoldurar(linha, largura_util, r, &e.tema),
-            None => linha,
+            melhor
         });
-    }
-    if let Some(velha) = atual {
-        if visiveis.len() < e.altura {
-            visiveis.push(moldura(false, largura_util, velha, &e.tema));
-        }
+    if let Some(i) = novo_topo {
+        visiveis = montar(i).0;
     }
 
     let titulo = e
@@ -513,6 +583,12 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         );
     }
     f.render_widget(Paragraph::new(visiveis).block(bloco), colunas[1]);
+    // Guardado só agora: `linhas_visiveis` empresta `e` até aqui, e o
+    // topo corrigido precisa sobreviver pro próximo quadro — senão a
+    // tela "conserta" e desconserta a cada tecla.
+    if let Some(i) = novo_topo {
+        e.topo = i;
+    }
 }
 
 /// Uma linha do conteúdo, com o estilo do BLOCO e o dos trechos.
@@ -529,6 +605,7 @@ fn linha_estilizada<'a>(
     dobrada: bool,
     tema: &Tema,
     largura: usize,
+    cursor: Option<&[usize]>,
 ) -> Line<'a> {
     let recuo = "  ".repeat(l.nivel);
     // O fecho da caixa vai até a borda, e vem ANTES de qualquer outra
@@ -543,6 +620,28 @@ fn linha_estilizada<'a>(
                 tema.estilo(Realce::Embed),
             ),
         ]);
+    }
+    // Fileira: cada filho é um `[ texto ]`, e o que está sob o cursor
+    // acende (ciclo 298). É o "cursor como coluna dentro da linha" — sem
+    // ele, entrar num botão move o cursor pra um lugar sem linha e o
+    // Enter parece não fazer nada.
+    if !l.segmentos.is_empty() {
+        let mut spans = vec![Span::styled(recuo, Style::default())];
+        for (i, (caminho, texto)) in l.segmentos.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::styled("  ", Style::default()));
+            }
+            let aceso = cursor.is_some_and(|c| c == caminho.as_slice());
+            spans.push(Span::styled(
+                format!("[ {texto} ]"),
+                if aceso {
+                    tema.estilo(Realce::Cursor)
+                } else {
+                    tema.estilo(Realce::Parte)
+                },
+            ));
+        }
+        return Line::from(spans);
     }
     let marca = marca_com_dobra(l, dobrada);
     // O resumo só entra quando o nível está FECHADO — aberto, os filhos
@@ -728,7 +827,7 @@ fn andar_na_lista(e: &mut Estado, adiante: bool, vezes: u32) {
     // Enfeite não é destino: a borda de uma caixa ocupa linha e não
     // recebe cursor.
     let visiveis: Vec<_> = e.visiveis().into_iter().filter(|l| !l.enfeite).collect();
-    let Some(atual) = visiveis.iter().position(|l| l.caminho == e.cursor) else {
+    let Some(atual) = visiveis.iter().position(|l| l.mostra(&e.cursor)) else {
         return;
     };
     let passos = vezes.max(1) as usize;
@@ -1186,6 +1285,82 @@ mod testes {
         e.abrir(analisar("outra coisa\n\nmais\n"));
         assert!(e.busca.is_empty());
         assert_eq!(e.visiveis().len(), 2);
+    }
+
+    #[test]
+    fn g_maiusculo_mostra_o_fim_da_pagina() {
+        // Achado usando: `G` ia pro fim e a tela ficava vazia. A janela
+        // é contada em linhas REAIS e o desenho insere molduras, então
+        // caber na conta não é caber na tela.
+        // Com EMBEDS: cada um insere duas molduras, e é isso que faz a
+        // conta em linhas reais divergir do que cabe na tela.
+        let md: String = (0..8)
+            .map(|i| {
+                format!("linha {i}\n\n{{{{ type: \"callout\" }}}}\nvariant: info\nbody: |\n  corpo {i}\n{{{{ /callout }}}}\n\n")
+            })
+            .chain(std::iter::once("linha 39\n".to_string()))
+            .collect();
+        let mut e = Estado::novo(paginas(), analisar(&md));
+        e.foco = Foco::Conteudo;
+        let linhas = desenho(&mut e, 60, 12);
+        tecla(&mut e, "G");
+        let depois = desenho(&mut e, 60, 12);
+        let tudo = depois.join("\n");
+        assert!(
+            tudo.contains("linha 39"),
+            "o fim não apareceu:\n{tudo}\n(antes era:\n{})",
+            linhas.join("\n")
+        );
+        // E a tela fica CHEIA: começar a janela no cursor o põe na
+        // primeira linha e deixa o resto em branco, que foi o que
+        // apareceu na tela depois de um `G`.
+        let cheias = depois.iter().filter(|l| !l.trim().is_empty()).count();
+        assert!(
+            cheias >= 10,
+            "a tela ficou vazia abaixo do cursor ({cheias} linhas):\n{tudo}"
+        );
+    }
+
+    #[test]
+    fn o_botao_sob_o_cursor_acende_na_fileira() {
+        // O defeito que a pessoa mostrou: entrar num botão movia o
+        // cursor pra um lugar SEM linha na tela, e o Enter parecia não
+        // fazer nada. A linha é uma, os destinos são vários — o que
+        // muda é qual segmento acende.
+        let mut e = Estado::novo(paginas(), com_acoes());
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0, 0, 1]; // o segundo botão
+        let cursor = e.tema.estilo(Realce::Cursor).bg.unwrap();
+        let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
+        term.draw(|f| desenhar(f, &mut e)).unwrap();
+        let buf = term.backend().buffer().clone();
+
+        let aceso: String = (0..buf.area.height)
+            .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+            .filter(|(x, y)| buf[(*x, *y)].style().bg == Some(cursor))
+            .map(|(x, y)| buf[(x, y)].symbol().to_string())
+            .collect();
+        assert!(aceso.contains("Buscar"), "o botão do cursor não acendeu: {aceso:?}");
+        assert!(!aceso.contains("Abrir"), "acendeu o botão errado também: {aceso:?}");
+    }
+
+    #[test]
+    fn dois_embeds_vizinhos_sao_duas_caixas() {
+        // O defeito da captura: seis embeds seguidos viravam UMA caixa
+        // magenta, porque a região era identificada pela cor e todos
+        // pediam a mesma. O dono distingue.
+        let mut e = Estado::novo(
+            paginas(),
+            analisar("{{ type: \"callout\" }}\nvariant: info\nbody: |\n  um\n{{ /callout }}\n\n{{ type: \"callout\" }}\nvariant: info\nbody: |\n  dois\n{{ /callout }}\n"),
+        );
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 60, 14).join("\n");
+        // Duas caixas de embed, mais a borda dos dois painéis.
+        assert_eq!(
+            tudo.matches('┌').count(),
+            4,
+            "os embeds vizinhos viraram uma caixa só:\n{tudo}"
+        );
     }
 
     #[test]

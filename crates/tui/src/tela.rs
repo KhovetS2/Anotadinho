@@ -58,6 +58,20 @@ pub struct Linha {
     /// base e some por padrão, e quem quiser desenhar a sua — um embed —
     /// se identifica aqui.
     pub embed_dono: Option<String>,
+    /// Os filhos de um galho em LINHA, cada um com o caminho dele
+    /// (ciclo 298).
+    ///
+    /// Vazio em todo o resto. Existe porque a fileira é desenhada numa
+    /// linha só e mesmo assim cada filho é um DESTINO: sem guardar o
+    /// caminho de cada um, entrar num botão movia o cursor pra um lugar
+    /// que não tinha linha na tela — o Enter parecia não fazer nada.
+    pub segmentos: Vec<(Caminho, String)>,
+    /// O CAMINHO do embed dono (ciclo 298).
+    ///
+    /// O nome não bastava pra desenhar: dois embeds vizinhos do mesmo
+    /// tipo pediam a mesma cor e viravam uma caixa só. O caminho
+    /// distingue.
+    pub dono_embed: Option<Caminho>,
 }
 
 /// Renderizador que produz linhas endereçadas.
@@ -111,6 +125,8 @@ impl Renderizador for Linhas {
             trechos,
             tipo: u.tipo.clone(),
             embed_dono: None,
+            dono_embed: None,
+            segmentos: Vec::new(),
         });
     }
 
@@ -277,10 +293,9 @@ fn achatar_fileiras(linhas: Vec<Linha>, raiz: &Unidade) -> Vec<Linha> {
         if let Some(dono) = &fileira {
             if l.caminho.len() == dono.len() + 1 && l.caminho.starts_with(dono) {
                 if let Some(atual) = fora.last_mut() {
-                    if !atual.texto.is_empty() {
-                        atual.texto.push_str("  ");
-                    }
-                    atual.texto.push_str(&format!("[ {} ]", l.texto));
+                    // Guarda o caminho de cada um: a linha é uma, os
+                    // destinos são vários.
+                    atual.segmentos.push((l.caminho.clone(), l.texto.clone()));
                 }
                 continue;
             }
@@ -326,12 +341,14 @@ fn encaixotar_embeds(linhas: Vec<Linha>) -> Vec<Linha> {
             let dentro = l.caminho.len() > dono.len() && l.caminho.starts_with(dono);
             if dentro {
                 l.embed_dono = Some(nome.clone());
+                l.dono_embed = Some(dono.clone());
             } else {
                 aberto = None;
             }
         }
         if let Tipo::Embed(nome) = &l.tipo {
             l.embed_dono = Some(nome.clone());
+            l.dono_embed = Some(l.caminho.clone());
             aberto = Some((l.caminho.clone(), nome.clone()));
         }
 
@@ -339,6 +356,7 @@ fn encaixotar_embeds(linhas: Vec<Linha>) -> Vec<Linha> {
         let dono = l.caminho.clone();
         let nivel = l.nivel;
         let nome = l.embed_dono.clone();
+        let caminho_dono = l.dono_embed.clone();
         fora.push(l);
         if let Some(t) = trilha {
             fora.push(Linha {
@@ -354,6 +372,8 @@ fn encaixotar_embeds(linhas: Vec<Linha>) -> Vec<Linha> {
                 tipo: Tipo::Vazia,
                 trilha: None,
                 embed_dono: nome,
+                dono_embed: caminho_dono,
+                segmentos: Vec::new(),
             });
         }
     }
@@ -361,9 +381,21 @@ fn encaixotar_embeds(linhas: Vec<Linha>) -> Vec<Linha> {
 }
 
 
+impl Linha {
+    /// Esta linha MOSTRA a unidade endereçada?
+    ///
+    /// Não é só "tem o mesmo caminho": um filho de fileira aparece
+    /// DENTRO da linha do galho, como um segmento. Sem isto, o cursor
+    /// num botão não acha linha nenhuma — e a rolagem, a moldura e o
+    /// realce ficam todos sem alvo (ciclo 298).
+    pub fn mostra(&self, caminho: &[usize]) -> bool {
+        self.caminho == caminho || self.segmentos.iter().any(|(c, _)| c == caminho)
+    }
+}
+
 /// Em que linha está a unidade endereçada.
 pub fn linha_de(linhas: &[Linha], caminho: &Caminho) -> Option<usize> {
-    linhas.iter().position(|l| &l.caminho == caminho)
+    linhas.iter().position(|l| l.mostra(caminho))
 }
 
 /// O novo topo da janela pra que `linha` fique visível.
@@ -664,11 +696,17 @@ mod testes {
             "{{ type: \"actions\" }}\nbuttons:\n- label: Abrir\n  action: open-page\n- label: Buscar\n  action: run-search\n{{ /actions }}\n",
         );
         let ls = linhas(&d);
+        // Os filhos ficam em SEGMENTOS, cada um com o caminho dele: a
+        // linha é uma, os destinos são vários (ciclo 298).
         let fileira = ls
             .iter()
-            .find(|l| l.texto.contains("Abrir"))
+            .find(|l| !l.segmentos.is_empty())
             .expect("faltou a fileira");
-        assert_eq!(fileira.texto, "[ Abrir ]  [ Buscar ]");
+        let textos: Vec<&str> = fileira.segmentos.iter().map(|(_, t)| t.as_str()).collect();
+        assert_eq!(textos, ["Abrir", "Buscar"]);
+        // E os caminhos são os de verdade, pra o cursor achar.
+        assert_eq!(fileira.segmentos[0].0, vec![0, 0, 0]);
+        assert_eq!(fileira.segmentos[1].0, vec![0, 0, 1]);
         // E não sobrou uma linha por botão.
         assert_eq!(ls.len(), 2, "{:?}", ls.iter().map(|l| &l.texto).collect::<Vec<_>>());
     }
