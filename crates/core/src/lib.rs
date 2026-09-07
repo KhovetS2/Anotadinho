@@ -10,7 +10,6 @@
 
 pub mod block;
 pub mod edicao;
-pub mod grafo;
 pub mod inline;
 pub mod unidade;
 pub mod roteamento;

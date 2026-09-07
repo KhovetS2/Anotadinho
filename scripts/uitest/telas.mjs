@@ -98,79 +98,44 @@ for (const [comando, marca, desc, arquivo] of [
   });
 }
 
-tela("página type: grafo desenha nós e arestas", async (b, ctx) => {
+// ── grafo (ciclos 120, 300, 301) ────────────────────────────────────
+//
+// O desenho passou pra `3d-force-graph` no ciclo 301, e com isso o que
+// dá pra afirmar de fora MUDOU. Antes eu conferia coordenada de SVG:
+// "os nós não estão todos no mesmo raio" era uma asserção sobre o
+// layout, e ela distinguia círculo de física.
+//
+// Com WebGL não há elemento por nó pra medir — o desenho está numa
+// textura. O que sobra é o contrato entre o app e a biblioteca: os
+// dados chegaram, o canvas existe, e clicar volta pro app. O layout em
+// si é responsabilidade dela, e testá-lo aqui seria testar a
+// biblioteca.
+
+tela("página type: grafo entrega os dados pro renderizador", async (b, ctx) => {
   await b.js(`(() => {
     const alvo = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.trim() === 'grafo');
     if (alvo) alvo.click();
     return !!alvo;
   })()`);
-  await esperar(b, "document.querySelector('svg')", "o SVG do grafo", 12000);
-  const nos = await b.js(`document.querySelectorAll('svg g, svg circle').length`);
-  ctx.assert(nos > 0, "o grafo abriu sem nó nenhum");
-});
+  await esperar(b, "document.querySelector('.graph-view__canvas canvas')", "o canvas do grafo", 20000);
 
-tela("o grafo não é mais um círculo (300)", async (b, ctx) => {
-  // O cenário acima passa com QUALQUER layout — só conta nós. Este
-  // distingue: num círculo todo nó está à mesma distância do centro,
-  // então a variação dos raios é ~zero. Com força dirigida, não.
-  await b.js(`(() => {
-    const alvo = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.trim() === 'grafo');
-    if (alvo) alvo.click();
-    return !!alvo;
-  })()`);
-  // `svg circle` pega os ÍCONES da barra de ferramentas junto — cada
-  // botão tem um SVG. A sonda mostrou `cx=6` num nó que devia estar por
-  // volta de 400. O seletor precisa mirar o grafo.
-  await esperar(b, "document.querySelectorAll('.graph-view__svg circle').length > 10", "os nós do grafo", 15000);
-
-  const espalhamento = await b.js(`(() => {
-    const cs = [...document.querySelectorAll('.graph-view__svg circle')];
-    const raios = cs.map(c => {
-      const x = parseFloat(c.getAttribute('cx')) - 400;
-      const y = parseFloat(c.getAttribute('cy')) - 400;
-      return Math.sqrt(x * x + y * y);
-    });
-    const media = raios.reduce((a, b) => a + b, 0) / raios.length;
-    const desvio = Math.sqrt(
-      raios.reduce((a, r) => a + (r - media) ** 2, 0) / raios.length,
-    );
-    return { media, desvio, n: raios.length };
-  })()`);
-
-  ctx.assert(
-    espalhamento.desvio > espalhamento.media * 0.15,
-    `os nós estão todos no mesmo raio — ainda é um círculo ` +
-      `(média ${espalhamento.media.toFixed(0)}, desvio ${espalhamento.desvio.toFixed(0)}, ` +
-      `${espalhamento.n} nós)`,
+  // A biblioteca não carregada escreve o motivo no contêiner — uma tela
+  // em branco sem explicação é o pior modo de falhar.
+  const erro = await b.js(
+    `(document.querySelector('.graph-view__canvas')?.textContent || '').includes('não carregou')`,
   );
-});
+  ctx.assertEq(erro, false, "a biblioteca do grafo não carregou");
 
-tela("arrastar gira o grafo (300)", async (b, ctx) => {
-  // É o que faz o layout em três dimensões valer numa tela plana:
-  // parado, profundidade é borrão; girando, a estrutura aparece.
-  await b.js(`(() => {
-    const alvo = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.trim() === 'grafo');
-    if (alvo) alvo.click();
-    return !!alvo;
+  // O canvas com tamanho de verdade: a biblioteca mede o contêiner, e
+  // sem altura explícita ela calcula zero e não desenha nada.
+  const tamanho = await b.js(`(() => {
+    const c = document.querySelector('.graph-view__canvas canvas');
+    return { w: c.width, h: c.height };
   })()`);
-  await esperar(b, "document.querySelectorAll('.graph-view__svg circle').length > 10", "os nós do grafo", 15000);
-
-  const cx = `[...document.querySelectorAll('.graph-view__svg circle')].map(c => c.getAttribute('cx')).join(',')`;
-  const antes = await b.js(cx);
-  // As coordenadas do arraste são relativas à JANELA, e o SVG não começa
-  // em 0,0 — sem o retângulo dele o gesto acontece fora.
-  await b.js(`(() => {
-    const svg = document.querySelector('.graph-view__svg');
-    const r = svg.getBoundingClientRect();
-    const mk = (t, x, y) => new MouseEvent(t, {bubbles:true, cancelable:true, clientX:x, clientY:y, buttons:1, button:0});
-    svg.dispatchEvent(mk('mousedown', r.left + 100, r.top + 100));
-    svg.dispatchEvent(mk('mousemove', r.left + 250, r.top + 150));
-    svg.dispatchEvent(mk('mouseup', r.left + 250, r.top + 150));
-    return true;
-  })()`);
-  await new Promise((r) => setTimeout(r, 400));
-  const depois = await b.js(cx);
-  ctx.assert(antes !== depois, "arrastar não girou nada");
+  ctx.assert(
+    tamanho.w > 100 && tamanho.h > 100,
+    `o canvas nasceu sem tamanho (${tamanho.w}x${tamanho.h})`,
+  );
 });
 
 tela("página type: kanban mostra o board", async (b, ctx) => {

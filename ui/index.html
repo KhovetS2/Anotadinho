@@ -12,9 +12,14 @@
          sintaxe dependendo de conexão — num app de notas locais — e punha
          código de terceiros entrando na janela em tempo de execução. -->
     <link data-trunk rel="copy-file" href="vendor/mermaid.min.js"/>
+    <!-- Grafo 3D (ciclo 301). Autocontido: traz o three.js dentro, então
+         não há segunda dependência a versionar. Vendorizado como o
+         mermaid — o app roda offline, e buscar de CDN o quebraria. -->
+    <link data-trunk rel="copy-file" href="vendor/3d-force-graph.min.js"/>
     <link data-trunk rel="copy-file" href="vendor/highlight.min.js"/>
     <link data-trunk rel="copy-file" href="vendor/atom-one-dark.min.css"/>
     <script src="/mermaid.min.js"></script>
+    <script src="/3d-force-graph.min.js"></script>
     <link rel="stylesheet" href="/atom-one-dark.min.css">
     <script src="/highlight.min.js"></script>
 </head>

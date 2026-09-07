@@ -2329,10 +2329,13 @@ body {
     text-align: center;
 }
 
-.graph-view__svg {
+/* O canvas do grafo (ciclo 301). A biblioteca desenha em WebGL dentro
+   deste elemento e mede o tamanho dele — sem altura explícita ela
+   calcula zero e não desenha nada. */
+.graph-view__canvas {
     width: 100%;
-    max-width: 800px;
-    height: auto;
+    height: 70vh;
+    min-height: 320px;
     cursor: grab;
     overflow: hidden;
     touch-action: none;
@@ -2340,7 +2343,7 @@ body {
     -webkit-user-select: none;
 }
 
-.graph-view__svg:active {
+.graph-view__canvas:active {
     cursor: grabbing;
 }
 
