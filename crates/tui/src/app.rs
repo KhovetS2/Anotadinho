@@ -15,6 +15,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
+use crate::sidebar::{self, Item};
 use crate::tela::{self, Linha};
 use crate::tema::{Realce, Tema};
 
@@ -33,6 +34,12 @@ pub struct Estado {
     pub paginas: Vec<PageMeta>,
     /// Qual delas está selecionada na lista.
     pub pagina: usize,
+    /// A árvore de pastas da sidebar (ciclo 299).
+    pub arvore_sidebar: sidebar::No,
+    /// As pastas fechadas, pelo caminho.
+    pub pastas_fechadas: std::collections::BTreeSet<String>,
+    /// Que linha da sidebar está selecionada.
+    pub linha_sidebar: usize,
     /// A árvore da página aberta.
     pub arvore: Unidade,
     /// As linhas dela, já desenhadas.
@@ -77,8 +84,13 @@ impl Estado {
         let linhas = tela::linhas(&arvore);
         let cursor = tela::primeiro(&arvore).unwrap_or_default();
         let dobrados = tela::dobras_iniciais(&arvore);
+        let arvore_sidebar = sidebar::arvore(&paginas);
+        let pastas_fechadas = sidebar::fechadas_iniciais(&arvore_sidebar);
         Self {
             dobrados,
+            arvore_sidebar,
+            pastas_fechadas,
+            linha_sidebar: 0,
             vim: vim::Pendente::default(),
             busca: String::new(),
             busca_em: Foco::Paginas,
@@ -169,20 +181,64 @@ impl Estado {
         self.seguir_cursor();
     }
 
-    /// Anda na lista de páginas VISÍVEL.
+    /// As linhas da sidebar que aparecem agora.
+    pub fn sidebar_visivel(&self) -> Vec<sidebar::Linha> {
+        let todas = sidebar::visiveis(&self.arvore_sidebar, &self.paginas, &self.pastas_fechadas);
+        match Some(self.busca.as_str())
+            .filter(|b| !b.is_empty() && self.busca_em == Foco::Paginas)
+        {
+            None => todas,
+            // Com busca, a hierarquia sai da frente: o que interessa é
+            // o que casou, e mostrar as pastas vazias em volta seria
+            // ruído. É o que a janela faz desde o ciclo 106.
+            Some(termo) => {
+                let alvo = termo.to_lowercase();
+                todas
+                    .into_iter()
+                    .filter(|l| match &l.item {
+                        Item::Pagina { titulo, .. } => titulo.to_lowercase().contains(&alvo),
+                        Item::Pasta { .. } => false,
+                    })
+                    .map(|mut l| {
+                        l.nivel = 0;
+                        l
+                    })
+                    .collect()
+            }
+        }
+    }
+
+    /// Abre ou fecha a pasta selecionada.
+    fn dobrar_pasta(&mut self) -> bool {
+        let visiveis = self.sidebar_visivel();
+        let Some(l) = visiveis.get(self.linha_sidebar) else {
+            return false;
+        };
+        let Item::Pasta { caminho, .. } = &l.item else {
+            return false;
+        };
+        if !self.pastas_fechadas.remove(caminho) {
+            self.pastas_fechadas.insert(caminho.clone());
+        }
+        true
+    }
+
+    /// Anda na sidebar VISÍVEL — pastas e páginas, na ordem da tela.
     fn andar_nas_paginas(&mut self, adiante: bool) {
-        let visiveis: Vec<usize> = self.paginas_visiveis().into_iter().map(|(i, _)| i).collect();
-        let Some(pos) = visiveis.iter().position(|i| *i == self.pagina) else {
-            // A selecionada não está na lista filtrada: cai na primeira.
-            self.pagina = visiveis.first().copied().unwrap_or(0);
+        let visiveis = self.sidebar_visivel();
+        if visiveis.is_empty() {
             return;
-        };
+        }
         let nova = if adiante {
-            (pos + 1).min(visiveis.len().saturating_sub(1))
+            (self.linha_sidebar + 1).min(visiveis.len() - 1)
         } else {
-            pos.saturating_sub(1)
+            self.linha_sidebar.saturating_sub(1)
         };
-        self.pagina = visiveis[nova];
+        self.linha_sidebar = nova;
+        // A página selecionada acompanha, pra o Enter abrir a certa.
+        if let Some(Item::Pagina { indice, .. }) = visiveis.get(nova).map(|l| &l.item) {
+            self.pagina = *indice;
+        }
     }
 
     /// Traz a seleção de página pra dentro do que o filtro deixou.
@@ -321,7 +377,19 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
             e.andar_nas_paginas(false);
             None
         }
+        // Numa árvore, direita/esquerda abrem e fecham — é o que se
+        // espera de pasta em qualquer lugar (ciclo 299).
+        "l" | "ArrowRight" | "h" | "ArrowLeft" => {
+            e.dobrar_pasta();
+            None
+        }
         "Enter" => {
+            // Enter numa PASTA abre ou fecha; numa página, abre a
+            // página. A mesma tecla, o que faz sentido pro que está sob
+            // o cursor.
+            if e.dobrar_pasta() {
+                return None;
+            }
             e.foco = Foco::Conteudo;
             e.paginas.get(e.pagina).map(|p| p.path.clone())
         }
@@ -392,15 +460,44 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     e.seguir_cursor();
 
     let paginas: Vec<Line> = e
-        .paginas_visiveis()
+        .sidebar_visivel()
         .into_iter()
-        .map(|(i, p)| {
-            let estilo = if i == e.pagina {
+        .enumerate()
+        .map(|(i, l)| {
+            let selecionada = i == e.linha_sidebar;
+            let estilo = if selecionada {
                 realce(e.foco == Foco::Paginas, &e.tema)
             } else {
                 e.tema.estilo(Realce::Texto)
             };
-            Line::from(Span::styled(p.title.clone(), estilo))
+            let recuo = "  ".repeat(l.nivel);
+            match &l.item {
+                // A pasta leva a seta do estado, como no outline: `▸`
+                // fechada, `▾` aberta. Aqui a seta é informação — quem
+                // olha precisa saber que tem coisa dentro.
+                Item::Pasta { caminho, nome } => {
+                    let seta = if e.pastas_fechadas.contains(caminho) {
+                        "▸"
+                    } else {
+                        "▾"
+                    };
+                    Line::from(vec![
+                        Span::styled(recuo, Style::default()),
+                        Span::styled(
+                            format!("{seta} {nome}/"),
+                            if selecionada {
+                                estilo
+                            } else {
+                                e.tema.estilo(Realce::Parte)
+                            },
+                        ),
+                    ])
+                }
+                Item::Pagina { titulo, .. } => Line::from(vec![
+                    Span::styled(recuo, Style::default()),
+                    Span::styled(titulo.clone(), estilo),
+                ]),
+            }
         })
         .collect();
     let mut bloco_paginas = borda("páginas", e.foco == Foco::Paginas, &e.tema);

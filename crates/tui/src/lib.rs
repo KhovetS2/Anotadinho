@@ -16,5 +16,6 @@
 //! tinha terminado.
 
 pub mod app;
+pub mod sidebar;
 pub mod tela;
 pub mod tema;
