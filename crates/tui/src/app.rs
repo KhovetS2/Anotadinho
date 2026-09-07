@@ -378,66 +378,72 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     // olhando". Um `##` com nove itens embaixo é uma coisa só, e a
     // moldura é quem diz isso.
     let no_foco = e.foco == Foco::Conteudo;
-    let mut visiveis: Vec<Line> = Vec::with_capacity(e.altura + 2);
-    let mut dentro = false;
-    for (i, l) in linhas_visiveis.iter().enumerate().skip(e.topo) {
-        if visiveis.len() >= e.altura {
-            break;
-        }
-        let comeca = no_foco && !l.enfeite && l.caminho == e.cursor;
-        let pertence = no_foco
+    // A moldura é desenhada por REGIÃO (ciclo 296).
+    //
+    // Uma região é um trecho contíguo de linhas que pertencem à mesma
+    // caixa: a subárvore em foco, ou um embed. O embed desenha a sua
+    // SEMPRE, com cor própria; o foco desenha por cima, porque quando
+    // as duas coincidem quem importa é onde a pessoa está.
+    //
+    // Antes eu desenhava a caixa do foco aqui e a do embed na mão, lá no
+    // `tela` — dois vocabulários de caixa na mesma tela, e o embed
+    // ficava com meia moldura.
+    let regiao = |l: &crate::tela::Linha| -> Option<Realce> {
+        if no_foco
             && (l.caminho == e.cursor
-                || (l.caminho.len() > e.cursor.len() && l.caminho.starts_with(&e.cursor)));
-        if comeca && !dentro {
-            visiveis.push(moldura(true, largura_util, &e.tema));
-            dentro = true;
+                || (l.caminho.len() > e.cursor.len() && l.caminho.starts_with(&e.cursor)))
+        {
+            return Some(Realce::BordaUnidade);
         }
-        // Saiu do que a moldura abraça: fecha antes de desenhar.
-        if dentro && !pertence {
-            visiveis.push(moldura(false, largura_util, &e.tema));
-            dentro = false;
-        }
+        l.embed_dono.as_ref().map(|_| Realce::Embed)
+    };
+
+    let mut visiveis: Vec<Line> = Vec::with_capacity(e.altura + 2);
+    let mut atual: Option<Realce> = None;
+    for l in linhas_visiveis.iter().skip(e.topo) {
         if visiveis.len() >= e.altura {
             break;
         }
-        // Lista ABERTA não desenha a própria linha (ciclo 294).
-        //
-        // Ela não tem texto — o `·` sozinho não diz nada — e a moldura
-        // já mostra onde ela começa e acaba. Na janela também não existe
-        // "linha da lista": existe a lista, com os itens dentro.
-        //
-        // Fechada ela volta, porque aí é a única coisa que representa o
-        // que está escondido.
+        // Lista ABERTA não desenha a própria linha (ciclo 294): o `·`
+        // sozinho não diz nada e a moldura já mostra a extensão.
         if matches!(l.tipo, Tipo::Lista | Tipo::ListaOrdenada)
             && !e.dobrados.contains(&l.caminho)
         {
             continue;
         }
-        // Sem fundo no texto (ciclo 295): quem diz onde se está é a
-        // MOLDURA. Realce de fundo mais moldura são dois destaques
-        // competindo, e o texto colorido por cima do fundo perde a cor
-        // que o tipo dele tinha.
+        let quer = regiao(l);
+        if quer != atual {
+            if let Some(velha) = atual {
+                visiveis.push(moldura(false, largura_util, velha, &e.tema));
+            }
+            if let Some(nova) = quer {
+                if visiveis.len() < e.altura {
+                    visiveis.push(moldura(true, largura_util, nova, &e.tema));
+                }
+            }
+            atual = quer;
+        }
+        if visiveis.len() >= e.altura {
+            break;
+        }
         let linha = linha_estilizada(
             l,
             false,
             e.dobrados.contains(&l.caminho),
             &e.tema,
-            if dentro { largura_util - 2 } else { largura_util },
+            if atual.is_some() { largura_util - 2 } else { largura_util },
         );
-        visiveis.push(if dentro {
-            emoldurar(linha, largura_util, &e.tema)
-        } else {
-            linha
+        visiveis.push(match atual {
+            Some(r) => emoldurar(linha, largura_util, r, &e.tema),
+            None => linha,
         });
-        // A última linha da tela também fecha.
-        if dentro && i + 1 == linhas_visiveis.len() {
-            visiveis.push(moldura(false, largura_util, &e.tema));
-            dentro = false;
+    }
+    if let Some(velha) = atual {
+        if visiveis.len() < e.altura {
+            visiveis.push(moldura(false, largura_util, velha, &e.tema));
         }
     }
-    if dentro && visiveis.len() < e.altura {
-        visiveis.push(moldura(false, largura_util, &e.tema));
-    }
+
     let titulo = e
         .paginas
         .get(e.pagina)
@@ -688,8 +694,8 @@ fn ir_para_linha(e: &mut Estado, indice: usize) {
 /// O conteúdo é cortado no que cabe, com `…`. Deixar transbordar seria
 /// pior do que cortar: o `│` da direita sumiria e a moldura quebraria
 /// justo na linha mais longa.
-fn emoldurar<'a>(linha: Line<'a>, largura: usize, tema: &Tema) -> Line<'a> {
-    let estilo = tema.estilo(Realce::BordaUnidade);
+fn emoldurar<'a>(linha: Line<'a>, largura: usize, cor: Realce, tema: &Tema) -> Line<'a> {
+    let estilo = tema.estilo(cor);
     let util = largura.saturating_sub(2);
     let mut spans: Vec<Span<'a>> = vec![Span::styled("│", estilo)];
     let mut usado = 0usize;
@@ -722,12 +728,12 @@ fn emoldurar<'a>(linha: Line<'a>, largura: usize, tema: &Tema) -> Line<'a> {
 }
 
 /// O topo ou o fundo da moldura da unidade em foco.
-fn moldura<'a>(topo: bool, largura: usize, tema: &Tema) -> Line<'a> {
+fn moldura<'a>(topo: bool, largura: usize, cor: Realce, tema: &Tema) -> Line<'a> {
     let (canto, fim) = if topo { ("┌", "┐") } else { ("└", "┘") };
     let meio = "─".repeat(largura.saturating_sub(2));
     Line::from(Span::styled(
         format!("{canto}{meio}{fim}"),
-        tema.estilo(Realce::BordaUnidade),
+        tema.estilo(cor),
     ))
 }
 

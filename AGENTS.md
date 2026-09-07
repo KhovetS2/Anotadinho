@@ -171,6 +171,13 @@ linearidade que escrevi deixou passar a regressão que eu já sabia estar
 lá; e dois cenários de UI mediam zero elemento em zero milissegundo e
 passavam com folga, porque conferiam o TEMPO sem conferir o EFEITO.
 
+**Fixture de YAML em literal Rust não leva `\` de continuação.** A
+indentação da linha seguinte vaza pra dentro do YAML (`- Backlog` vira
+`- Backlog             items:`), o parser cai no default e o teste mede
+outra coisa — passando ou reprovando por motivo errado. Aconteceu três
+vezes em ciclos diferentes no mesmo dia (283, 284, 296). Escreva o
+literal numa linha só, ou em `concat!`.
+
 **A TUI se roda num pty, não na mão.** `crates/tui` não aparece na suíte
 de UI — ela fala com a janela Tauri. O que pega defeito ali é rodar o
 binário num pseudoterminal (`pty.fork` + `TIOCSWINSZ` pra a janela não

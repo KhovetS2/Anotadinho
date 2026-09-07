@@ -225,13 +225,10 @@ fn marca(tipo: &Tipo) -> String {
         Tipo::Item => "-".into(),
         Tipo::Vazia => "───".into(),
         Tipo::Embed(nome) => format!("[{nome}]"),
-        Tipo::Parte { nome, grupo } => {
-            if *grupo {
-                format!("┌{nome}")
-            } else {
-                format!("│{nome}")
-            }
-        }
+        // A parte não desenha traço próprio (ciclo 296): a moldura do
+        // embed já é a lateral, e o recuo já é a hierarquia. Sobra o
+        // NOME, que é o que ela tem a dizer.
+        Tipo::Parte { nome, .. } => nome.clone(),
     }
 }
 
@@ -263,72 +260,88 @@ fn trilha_do_fluxo(u: &Unidade) -> Option<String> {
     Some(fileira.join("  "))
 }
 
+/// Junta os botões de um embed numa fileira só (ciclo 296).
+///
+/// Botão é coisa clicável, e clicável em fileira lê como barra de
+/// ações — que é como a janela desenha. Um por linha lê como lista, que
+/// é outra coisa.
+///
+/// Dá pra juntar porque parte de embed NÃO é destino: o embed é atômico
+/// e `navegacao::mover` para nele, então nenhuma dessas linhas recebe
+/// cursor. Fundir duas linhas de conteúdo comum quebraria a conta entre
+/// cursor e tela; aqui não há o que quebrar.
+fn agrupar_botoes(linhas: Vec<Linha>) -> Vec<Linha> {
+    let e_botao = |l: &Linha| {
+        matches!(&l.tipo, Tipo::Parte { nome, .. } if nome == "button")
+    };
+    let mut fora: Vec<Linha> = Vec::with_capacity(linhas.len());
+    for l in linhas {
+        match fora.last_mut() {
+            Some(anterior) if e_botao(&l) && e_botao(anterior) => {
+                anterior.texto.push_str("  ");
+                anterior.texto.push_str(&format!("[ {} ]", l.texto));
+            }
+            _ => {
+                let mut l = l;
+                if e_botao(&l) {
+                    l.texto = format!("[ {} ]", l.texto);
+                    l.marca = String::new();
+                    l.trechos.clear();
+                }
+                fora.push(l);
+            }
+        }
+    }
+    fora
+}
+
 /// A página inteira em linhas, na ordem em que se lê.
 pub fn linhas(raiz: &Unidade) -> Vec<Linha> {
     let mut r = Linhas::default();
     desenhar(raiz, &mut r);
-    encaixotar_embeds(r.fora)
+    encaixotar_embeds(agrupar_botoes(r.fora))
 }
 
-/// Põe uma borda de fechamento embaixo de cada embed (ciclo 293).
+/// Marca a que embed cada linha pertence, e injeta a trilha do fluxo.
 ///
-/// Um embed na GUI é um CARTÃO — tem moldura, e é ela que diz onde ele
-/// começa e acaba. No terminal a moldura é uma linha decorativa: o
-/// rótulo `[kanban]` abre, e esta fecha.
-///
-/// Só quando o embed tem conteúdo à vista. Um embed dobrado é uma linha
-/// só, e emoldurar uma linha só é enfeite sem função.
+/// A BORDA saiu daqui (ciclo 296). Eu desenhava um `└────` na mão, e a
+/// unidade em foco ganhou moldura de verdade no 294 — ficaram dois
+/// vocabulários de caixa na mesma tela. Agora o embed usa a MESMA
+/// moldura, com cor própria e sempre visível; quem desenha é o painel,
+/// por região, e aqui só se diz de quem é cada linha.
 fn encaixotar_embeds(linhas: Vec<Linha>) -> Vec<Linha> {
     let mut fora: Vec<Linha> = Vec::with_capacity(linhas.len());
-    // O embed aberto agora, e se ele já teve conteúdo.
-    //
-    // Estado explícito, e não varredura pra trás: a primeira versão
-    // procurava "o último embed em `fora`" a cada linha, e depois de
-    // fechar a caixa continuava achando o mesmo embed — saía um `└`
-    // sobrando a cada bloco seguinte. Apareceu na tela em três segundos.
-    let mut aberto: Option<(Caminho, usize, bool, String)> = None;
+    let mut aberto: Option<(Caminho, String)> = None;
 
     for mut l in linhas {
-        if let Some((dono, nivel, teve, _)) = &aberto {
-            let ainda_dentro = l.caminho.len() > dono.len() && l.caminho.starts_with(dono);
-            if !ainda_dentro {
-                if *teve {
-                    // O fecho leva o nome do dono: sem isso a régua da
-                    // unidade some justo na linha que fecha o cartão, e
-                    // a moldura fica pela metade.
-                    fora.push(fecho(dono, *nivel, &aberto.as_ref().unwrap().3));
-                }
-                aberto = None;
-            } else {
-                let nome = aberto.as_ref().map(|a| a.3.clone()).unwrap_or_default();
+        if let Some((dono, nome)) = &aberto {
+            let dentro = l.caminho.len() > dono.len() && l.caminho.starts_with(dono);
+            if dentro {
                 l.embed_dono = Some(nome.clone());
-                aberto = Some((dono.clone(), *nivel, true, nome));
+            } else {
+                aberto = None;
             }
         }
         if let Tipo::Embed(nome) = &l.tipo {
-            if !l.enfeite {
-                l.embed_dono = Some(nome.clone());
-                aberto = Some((l.caminho.clone(), l.nivel, false, nome.clone()));
-            }
+            l.embed_dono = Some(nome.clone());
+            aberto = Some((l.caminho.clone(), nome.clone()));
         }
 
-        let trilha = (!l.enfeite).then(|| l.trilha.clone()).flatten();
+        let trilha = l.trilha.clone();
         let dono = l.caminho.clone();
         let nivel = l.nivel;
+        let nome = l.embed_dono.clone();
         fora.push(l);
         if let Some(t) = trilha {
-            // A trilha é conteúdo do embed pra efeito de caixa.
-            let nome = aberto.as_ref().map(|a| a.3.clone());
-            if let Some((_, _, teve, _)) = aberto.as_mut() {
-                *teve = true;
-            }
             fora.push(Linha {
                 caminho: dono,
                 enfeite: true,
                 nivel: nivel + 1,
                 texto: t,
                 resumo: String::new(),
-                marca: "│".to_string(),
+                // Sem marca: a moldura do embed já é a lateral, e um
+                // `│` extra desenharia duas.
+                marca: String::new(),
                 trechos: Vec::new(),
                 tipo: Tipo::Vazia,
                 trilha: None,
@@ -336,28 +349,9 @@ fn encaixotar_embeds(linhas: Vec<Linha>) -> Vec<Linha> {
             });
         }
     }
-    // O embed pode ser a última coisa da página.
-    if let Some((dono, nivel, true, nome)) = aberto {
-        fora.push(fecho(&dono, nivel, &nome));
-    }
     fora
 }
 
-/// A linha que fecha a caixa de um embed.
-fn fecho(dono: &Caminho, nivel: usize, embed: &str) -> Linha {
-    Linha {
-        caminho: dono.clone(),
-        enfeite: true,
-        nivel,
-        texto: String::new(),
-        resumo: String::new(),
-        marca: "└".to_string(),
-        trechos: Vec::new(),
-        tipo: Tipo::Vazia,
-        trilha: None,
-        embed_dono: Some(embed.to_string()),
-    }
-}
 
 /// Em que linha está a unidade endereçada.
 pub fn linha_de(linhas: &[Linha], caminho: &Caminho) -> Option<usize> {
@@ -479,8 +473,10 @@ mod testes {
             .into_iter()
             .map(|l| format!("{} {}", l.marca, l.texto).trim().to_string())
             .collect();
-        assert!(pares.iter().any(|t| t == "┌column Backlog"), "{pares:?}");
-        assert!(pares.iter().any(|t| t == "│card Card A"), "{pares:?}");
+        // O traço da parte saiu no ciclo 296: a moldura do embed é a
+        // lateral, e o recuo é a hierarquia. Sobra o nome.
+        assert!(pares.iter().any(|t| t == "column Backlog"), "{pares:?}");
+        assert!(pares.iter().any(|t| t == "card Card A"), "{pares:?}");
     }
 
     #[test]
@@ -591,39 +587,31 @@ mod testes {
     }
 
     #[test]
-    fn o_embed_com_conteudo_ganha_caixa() {
+    fn as_linhas_de_um_embed_sabem_de_quem_sao() {
+        // A borda saiu daqui (ciclo 296): quem desenha é o painel, por
+        // região. O que este módulo faz é dizer de quem é cada linha.
         let d = analisar(
             "antes\n\n{{ type: \"callout\" }}\nvariant: info\nbody: |\n  oi\n{{ /callout }}\n\ndepois\n",
         );
         let ls = linhas(&d);
-        let fechos: Vec<&Linha> = ls.iter().filter(|l| l.enfeite && l.marca == "└").collect();
-        assert_eq!(fechos.len(), 1, "esperava UMA caixa fechada");
-        // Fecha depois do conteúdo e antes do bloco seguinte.
-        let i = ls.iter().position(|l| l.enfeite && l.marca == "└").unwrap();
-        assert_eq!(ls[i - 1].texto, "oi");
-        assert_eq!(ls[i + 1].texto, "depois");
-    }
-
-    #[test]
-    fn a_caixa_nao_sobra_depois_do_embed() {
-        // A primeira versão procurava "o último embed" varrendo pra trás
-        // e, depois de fechar, continuava achando o mesmo — saía um `└`
-        // a cada bloco seguinte. Apareceu na tela em três segundos.
-        let d = analisar(
-            "{{ type: \"callout\" }}\nvariant: info\nbody: |\n  oi\n{{ /callout }}\n\na\n\nb\n\nc\n",
+        let donos: Vec<Option<&str>> = ls
+            .iter()
+            .map(|l| l.embed_dono.as_deref())
+            .collect();
+        assert_eq!(
+            donos,
+            [None, Some("callout"), Some("callout"), None],
+            "{:?}",
+            ls.iter().map(|l| l.texto.clone()).collect::<Vec<_>>()
         );
-        let fechos = linhas(&d).iter().filter(|l| l.enfeite && l.marca == "└").count();
-        assert_eq!(fechos, 1, "sobrou fecho de caixa");
     }
 
     #[test]
-    fn embed_sem_conteudo_nao_ganha_caixa() {
-        // Emoldurar uma linha só é enfeite sem função.
+    fn consulta_sem_from_nao_declara_parte_vazia() {
+        // Parte vazia é ruído no modelo: fazia o desenho achar que havia
+        // conteúdo onde não há.
         let d = analisar("{{ type: \"query\" }}\nview: list\n{{ /query }}\n");
-        let com_from = linhas(&d).iter().any(|l| l.texto == "pages");
-        assert!(!com_from, "a consulta sem `from` não devia ter parte");
-        let fechos = linhas(&d).iter().filter(|l| l.enfeite).count();
-        assert_eq!(fechos, 0);
+        assert_eq!(linhas(&d).len(), 1, "a consulta ganhou parte que não tem");
     }
 
     #[test]
@@ -635,7 +623,9 @@ mod testes {
         );
         let trilha = linhas(&d)
             .into_iter()
-            .find(|l| l.enfeite && l.marca == "│")
+            // A marca saiu no ciclo 296: a moldura do embed já é a
+            // lateral, e um `│` extra desenharia duas.
+            .find(|l| l.enfeite)
             .expect("faltou a trilha");
         assert!(trilha.texto.contains("Rascunho"), "{:?}", trilha.texto);
         assert!(trilha.texto.contains("[Aprovada]"), "a atual não está marcada: {:?}", trilha.texto);
@@ -656,6 +646,23 @@ mod testes {
                 l.caminho
             );
         }
+    }
+
+    #[test]
+    fn os_botoes_de_um_embed_viram_uma_fileira() {
+        // Clicável em fileira lê como barra de ações, que é como a
+        // janela desenha. Um por linha lê como lista, que é outra coisa.
+        let d = analisar(
+            "{{ type: \"actions\" }}\nbuttons:\n- label: Abrir\n  action: open-page\n- label: Buscar\n  action: run-search\n{{ /actions }}\n",
+        );
+        let ls = linhas(&d);
+        let fileira = ls
+            .iter()
+            .find(|l| l.texto.contains("Abrir"))
+            .expect("faltou a fileira");
+        assert_eq!(fileira.texto, "[ Abrir ]  [ Buscar ]");
+        // E não sobrou uma linha por botão.
+        assert_eq!(ls.len(), 2, "{:?}", ls.iter().map(|l| &l.texto).collect::<Vec<_>>());
     }
 
     #[test]
