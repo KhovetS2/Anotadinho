@@ -56,6 +56,13 @@ pub enum Realce {
     Borda,
     /// A borda do painel com foco.
     BordaFoco,
+    /// A moldura da unidade em foco (ciclo 294).
+    ///
+    /// A unidade sob o cursor é desenhada como CARTÃO: caixa em volta
+    /// dela e dos filhos. Numa árvore a pergunta não é só "que linha" —
+    /// é "até onde vai o que estou olhando", e um `##` com nove itens
+    /// embaixo é uma coisa só.
+    BordaUnidade,
 }
 
 /// Uma paleta resolvida.
@@ -132,6 +139,7 @@ impl Tema {
             Realce::CursorApagado => Style::default().add_modifier(Modifier::DIM),
             Realce::Borda => Style::default().fg(self.cor("border", Color::DarkGray)),
             Realce::BordaFoco => Style::default().fg(destaque),
+            Realce::BordaUnidade => Style::default().fg(destaque),
         }
     }
 }

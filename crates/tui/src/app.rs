@@ -369,20 +369,66 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     // ponta pra parecer faixa.
     let largura_util = colunas[1].width.saturating_sub(2) as usize;
     let linhas_visiveis = e.visiveis();
-    let visiveis: Vec<Line> = linhas_visiveis
-        .iter()
-        .skip(e.topo)
-        .take(e.altura)
-        .map(|l| {
-            linha_estilizada(
-                l,
-                !l.enfeite && l.caminho == e.cursor && e.foco == Foco::Conteudo,
-                e.dobrados.contains(&l.caminho),
-                &e.tema,
-                largura_util,
-            )
-        })
-        .collect();
+    // A unidade em foco é desenhada como CARTÃO: caixa em volta dela e
+    // dos filhos (ciclo 294).
+    //
+    // Uma régua à esquerda não bastava — a pessoa mostrou o desenho que
+    // queria, e o que ele tem é MOLDURA. Faz sentido: numa árvore, a
+    // pergunta não é só "que linha", é "até onde vai o que estou
+    // olhando". Um `##` com nove itens embaixo é uma coisa só, e a
+    // moldura é quem diz isso.
+    let no_foco = e.foco == Foco::Conteudo;
+    let mut visiveis: Vec<Line> = Vec::with_capacity(e.altura + 2);
+    let mut dentro = false;
+    for (i, l) in linhas_visiveis.iter().enumerate().skip(e.topo) {
+        if visiveis.len() >= e.altura {
+            break;
+        }
+        let comeca = no_foco && !l.enfeite && l.caminho == e.cursor;
+        let pertence = no_foco
+            && (l.caminho == e.cursor
+                || (l.caminho.len() > e.cursor.len() && l.caminho.starts_with(&e.cursor)));
+        if comeca && !dentro {
+            visiveis.push(moldura(true, largura_util, &e.tema));
+            dentro = true;
+        }
+        // Saiu do que a moldura abraça: fecha antes de desenhar.
+        if dentro && !pertence {
+            visiveis.push(moldura(false, largura_util, &e.tema));
+            dentro = false;
+        }
+        if visiveis.len() >= e.altura {
+            break;
+        }
+        // Lista ABERTA não desenha a própria linha (ciclo 294).
+        //
+        // Ela não tem texto — o `·` sozinho não diz nada — e a moldura
+        // já mostra onde ela começa e acaba. Na janela também não existe
+        // "linha da lista": existe a lista, com os itens dentro.
+        //
+        // Fechada ela volta, porque aí é a única coisa que representa o
+        // que está escondido.
+        if matches!(l.tipo, Tipo::Lista | Tipo::ListaOrdenada)
+            && !e.dobrados.contains(&l.caminho)
+        {
+            continue;
+        }
+        visiveis.push(linha_estilizada(
+            l,
+            comeca,
+            e.dobrados.contains(&l.caminho),
+            &e.tema,
+            largura_util,
+        ));
+        // A última linha da tela também fecha.
+        if dentro && i + 1 == linhas_visiveis.len() {
+            visiveis.push(moldura(false, largura_util, &e.tema));
+            dentro = false;
+        }
+    }
+    if dentro && visiveis.len() < e.altura {
+        visiveis.push(moldura(false, largura_util, &e.tema));
+    }
     let titulo = e
         .paginas
         .get(e.pagina)
@@ -624,6 +670,16 @@ fn ir_para_linha(e: &mut Estado, indice: usize) {
     e.seguir_cursor();
 }
 
+/// O topo ou o fundo da moldura da unidade em foco.
+fn moldura<'a>(topo: bool, largura: usize, tema: &Tema) -> Line<'a> {
+    let (canto, fim) = if topo { ("┌", "┐") } else { ("└", "┘") };
+    let meio = "─".repeat(largura.saturating_sub(2));
+    Line::from(Span::styled(
+        format!("{canto}{meio}{fim}"),
+        tema.estilo(Realce::BordaUnidade),
+    ))
+}
+
 /// A marca da linha, com a seta de dobra quando o nível pode dobrar.
 ///
 /// `▾`/`▸` são a afordância universal de outline, e resolvem uma coisa
@@ -632,13 +688,22 @@ fn ir_para_linha(e: &mut Estado, indice: usize) {
 /// A lista troca o `·` pela seta; o embed mantém o nome dele e ganha a
 /// seta na frente, porque `[kanban]` é identidade e não se troca.
 fn marca_com_dobra(l: &crate::tela::Linha, dobrada: bool) -> String {
-    if l.resumo.is_empty() {
+    // Unidade comum NÃO anuncia dobra (ciclo 294).
+    //
+    // Eu tinha posto `▾`/`▸` em todo nível, e a pessoa apontou o erro:
+    // não é assim que a janela funciona. Lá uma lista de markdown é uma
+    // lista — quem tem botão de recolher é o callout, porque ele É um
+    // objeto. Anunciar dobra em tudo ensina uma coisa que a janela não
+    // faz.
+    //
+    // Fechado, a seta aparece: aí ela não é anúncio, é ESTADO — a
+    // pessoa precisa saber que tem coisa escondida ali.
+    if !dobrada {
         return l.marca.clone();
     }
-    let seta = if dobrada { "▸" } else { "▾" };
     match l.tipo {
-        Tipo::Lista | Tipo::ListaOrdenada => seta.to_string(),
-        _ => format!("{seta} {}", l.marca),
+        Tipo::Lista | Tipo::ListaOrdenada => "▸".to_string(),
+        _ => format!("▸ {}", l.marca),
     }
 }
 
@@ -941,8 +1006,73 @@ mod testes {
             !tudo.contains("1 item"),
             "a contagem apareceu com o nível aberto:\n{tudo}"
         );
-        // E a seta diz que dá pra fechar.
-        assert!(tudo.contains('▾'), "faltou a afordância de dobra:\n{tudo}");
+        // E a seta NÃO aparece: no GUI uma lista de markdown não é
+        // colapsável, e anunciar dobra em tudo ensina uma coisa que a
+        // janela não faz (ciclo 294).
+        assert!(
+            !tudo.contains('▾'),
+            "unidade comum anunciando dobra:\n{tudo}"
+        );
+    }
+
+    #[test]
+    fn a_unidade_em_foco_ganha_moldura() {
+        // O desenho que a pessoa pediu: caixa em volta da unidade e dos
+        // filhos dela. Numa árvore, "até onde vai o que estou olhando" é
+        // parte da pergunta.
+        let mut e = Estado::novo(paginas(), analisar("antes\n\n- um\n- dois\n\ndepois\n"));
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![1]; // a lista
+        let linhas = desenho(&mut e, 50, 12);
+        // A moldura da unidade é a que não está na primeira linha (essa
+        // é a borda dos painéis).
+        let topo = linhas
+            .iter()
+            .enumerate()
+            .skip(1)
+            .find(|(_, l)| l.contains('┌'))
+            .map(|(i, _)| i)
+            .expect("faltou o topo");
+        let fundo = linhas
+            .iter()
+            .enumerate()
+            .skip(topo + 1)
+            .find(|(_, l)| l.contains('┘'))
+            .map(|(i, _)| i)
+            .expect("faltou o fundo");
+        assert!(topo < fundo, "a moldura saiu invertida");
+        // Os itens ficam DENTRO.
+        let dentro = &linhas[topo + 1..fundo];
+        assert!(dentro.iter().any(|l| l.contains("um")), "{dentro:?}");
+        assert!(dentro.iter().any(|l| l.contains("dois")), "{dentro:?}");
+        // E o bloco de fora, não.
+        assert!(!dentro.iter().any(|l| l.contains("depois")), "{dentro:?}");
+    }
+
+    #[test]
+    fn sem_foco_no_conteudo_nao_ha_moldura() {
+        // Os dois painéis já têm `┌` no cabeçalho — contar é o jeito de
+        // distinguir a moldura da unidade das bordas de sempre.
+        let mut e = Estado::novo(paginas(), analisar("antes\n\n- um\n"));
+        e.foco = Foco::Paginas;
+        let sem = desenho(&mut e, 50, 12).join("\n").matches('┌').count();
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![1];
+        let com = desenho(&mut e, 50, 12).join("\n").matches('┌').count();
+        assert_eq!(sem, 2, "esperava só as bordas dos painéis");
+        assert_eq!(com, 3, "a moldura da unidade não apareceu");
+    }
+
+    #[test]
+    fn lista_aberta_nao_desenha_a_propria_linha() {
+        // O `·` sozinho dentro da própria moldura era ruído: a caixa já
+        // diz onde a lista começa e acaba. Na janela também não existe
+        // "linha da lista".
+        let mut e = Estado::novo(paginas(), analisar("antes\n\n- um\n- dois\n"));
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 50, 12).join("\n");
+        assert!(!tudo.contains('·'), "a linha da lista apareceu:\n{tudo}");
+        assert!(tudo.contains("- um"), "os itens sumiram:\n{tudo}");
     }
 
     #[test]

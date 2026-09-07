@@ -52,6 +52,12 @@ pub struct Linha {
     pub tipo: Tipo,
     /// A fileira de etapas, quando esta linha é um embed de fluxo.
     pub trilha: Option<String>,
+    /// O nome do embed a que esta linha pertence, se pertence a algum.
+    ///
+    /// É o gancho de OVERRIDE da borda (ciclo 294): a borda é da unidade
+    /// base e some por padrão, e quem quiser desenhar a sua — um embed —
+    /// se identifica aqui.
+    pub embed_dono: Option<String>,
 }
 
 /// Renderizador que produz linhas endereçadas.
@@ -104,6 +110,7 @@ impl Renderizador for Linhas {
             marca: marca(&u.tipo),
             trechos,
             tipo: u.tipo.clone(),
+            embed_dono: None,
         });
     }
 
@@ -279,22 +286,30 @@ fn encaixotar_embeds(linhas: Vec<Linha>) -> Vec<Linha> {
     // procurava "o último embed em `fora`" a cada linha, e depois de
     // fechar a caixa continuava achando o mesmo embed — saía um `└`
     // sobrando a cada bloco seguinte. Apareceu na tela em três segundos.
-    let mut aberto: Option<(Caminho, usize, bool)> = None;
+    let mut aberto: Option<(Caminho, usize, bool, String)> = None;
 
-    for l in linhas {
-        if let Some((dono, nivel, teve)) = &aberto {
+    for mut l in linhas {
+        if let Some((dono, nivel, teve, _)) = &aberto {
             let ainda_dentro = l.caminho.len() > dono.len() && l.caminho.starts_with(dono);
             if !ainda_dentro {
                 if *teve {
-                    fora.push(fecho(dono, *nivel));
+                    // O fecho leva o nome do dono: sem isso a régua da
+                    // unidade some justo na linha que fecha o cartão, e
+                    // a moldura fica pela metade.
+                    fora.push(fecho(dono, *nivel, &aberto.as_ref().unwrap().3));
                 }
                 aberto = None;
             } else {
-                aberto = Some((dono.clone(), *nivel, true));
+                let nome = aberto.as_ref().map(|a| a.3.clone()).unwrap_or_default();
+                l.embed_dono = Some(nome.clone());
+                aberto = Some((dono.clone(), *nivel, true, nome));
             }
         }
-        if matches!(l.tipo, Tipo::Embed(_)) && !l.enfeite {
-            aberto = Some((l.caminho.clone(), l.nivel, false));
+        if let Tipo::Embed(nome) = &l.tipo {
+            if !l.enfeite {
+                l.embed_dono = Some(nome.clone());
+                aberto = Some((l.caminho.clone(), l.nivel, false, nome.clone()));
+            }
         }
 
         let trilha = (!l.enfeite).then(|| l.trilha.clone()).flatten();
@@ -303,7 +318,8 @@ fn encaixotar_embeds(linhas: Vec<Linha>) -> Vec<Linha> {
         fora.push(l);
         if let Some(t) = trilha {
             // A trilha é conteúdo do embed pra efeito de caixa.
-            if let Some((_, _, teve)) = aberto.as_mut() {
+            let nome = aberto.as_ref().map(|a| a.3.clone());
+            if let Some((_, _, teve, _)) = aberto.as_mut() {
                 *teve = true;
             }
             fora.push(Linha {
@@ -316,18 +332,19 @@ fn encaixotar_embeds(linhas: Vec<Linha>) -> Vec<Linha> {
                 trechos: Vec::new(),
                 tipo: Tipo::Vazia,
                 trilha: None,
+                embed_dono: nome,
             });
         }
     }
     // O embed pode ser a última coisa da página.
-    if let Some((dono, nivel, true)) = aberto {
-        fora.push(fecho(&dono, nivel));
+    if let Some((dono, nivel, true, nome)) = aberto {
+        fora.push(fecho(&dono, nivel, &nome));
     }
     fora
 }
 
 /// A linha que fecha a caixa de um embed.
-fn fecho(dono: &Caminho, nivel: usize) -> Linha {
+fn fecho(dono: &Caminho, nivel: usize, embed: &str) -> Linha {
     Linha {
         caminho: dono.clone(),
         enfeite: true,
@@ -338,6 +355,7 @@ fn fecho(dono: &Caminho, nivel: usize) -> Linha {
         trechos: Vec::new(),
         tipo: Tipo::Vazia,
         trilha: None,
+        embed_dono: Some(embed.to_string()),
     }
 }
 
