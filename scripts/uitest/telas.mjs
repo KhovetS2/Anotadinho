@@ -109,6 +109,70 @@ tela("página type: grafo desenha nós e arestas", async (b, ctx) => {
   ctx.assert(nos > 0, "o grafo abriu sem nó nenhum");
 });
 
+tela("o grafo não é mais um círculo (300)", async (b, ctx) => {
+  // O cenário acima passa com QUALQUER layout — só conta nós. Este
+  // distingue: num círculo todo nó está à mesma distância do centro,
+  // então a variação dos raios é ~zero. Com força dirigida, não.
+  await b.js(`(() => {
+    const alvo = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.trim() === 'grafo');
+    if (alvo) alvo.click();
+    return !!alvo;
+  })()`);
+  // `svg circle` pega os ÍCONES da barra de ferramentas junto — cada
+  // botão tem um SVG. A sonda mostrou `cx=6` num nó que devia estar por
+  // volta de 400. O seletor precisa mirar o grafo.
+  await esperar(b, "document.querySelectorAll('.graph-view__svg circle').length > 10", "os nós do grafo", 15000);
+
+  const espalhamento = await b.js(`(() => {
+    const cs = [...document.querySelectorAll('.graph-view__svg circle')];
+    const raios = cs.map(c => {
+      const x = parseFloat(c.getAttribute('cx')) - 400;
+      const y = parseFloat(c.getAttribute('cy')) - 400;
+      return Math.sqrt(x * x + y * y);
+    });
+    const media = raios.reduce((a, b) => a + b, 0) / raios.length;
+    const desvio = Math.sqrt(
+      raios.reduce((a, r) => a + (r - media) ** 2, 0) / raios.length,
+    );
+    return { media, desvio, n: raios.length };
+  })()`);
+
+  ctx.assert(
+    espalhamento.desvio > espalhamento.media * 0.15,
+    `os nós estão todos no mesmo raio — ainda é um círculo ` +
+      `(média ${espalhamento.media.toFixed(0)}, desvio ${espalhamento.desvio.toFixed(0)}, ` +
+      `${espalhamento.n} nós)`,
+  );
+});
+
+tela("arrastar gira o grafo (300)", async (b, ctx) => {
+  // É o que faz o layout em três dimensões valer numa tela plana:
+  // parado, profundidade é borrão; girando, a estrutura aparece.
+  await b.js(`(() => {
+    const alvo = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.trim() === 'grafo');
+    if (alvo) alvo.click();
+    return !!alvo;
+  })()`);
+  await esperar(b, "document.querySelectorAll('.graph-view__svg circle').length > 10", "os nós do grafo", 15000);
+
+  const cx = `[...document.querySelectorAll('.graph-view__svg circle')].map(c => c.getAttribute('cx')).join(',')`;
+  const antes = await b.js(cx);
+  // As coordenadas do arraste são relativas à JANELA, e o SVG não começa
+  // em 0,0 — sem o retângulo dele o gesto acontece fora.
+  await b.js(`(() => {
+    const svg = document.querySelector('.graph-view__svg');
+    const r = svg.getBoundingClientRect();
+    const mk = (t, x, y) => new MouseEvent(t, {bubbles:true, cancelable:true, clientX:x, clientY:y, buttons:1, button:0});
+    svg.dispatchEvent(mk('mousedown', r.left + 100, r.top + 100));
+    svg.dispatchEvent(mk('mousemove', r.left + 250, r.top + 150));
+    svg.dispatchEvent(mk('mouseup', r.left + 250, r.top + 150));
+    return true;
+  })()`);
+  await new Promise((r) => setTimeout(r, 400));
+  const depois = await b.js(cx);
+  ctx.assert(antes !== depois, "arrastar não girou nada");
+});
+
 tela("página type: kanban mostra o board", async (b, ctx) => {
   await b.js(`(() => {
     const alvo = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.trim() === 'roadmap');

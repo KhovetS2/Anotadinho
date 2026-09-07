@@ -18,8 +18,12 @@ struct Node {
     path: String,
     title: String,
     section: String,
-    x: f64,
-    y: f64,
+    /// A posição no ESPAÇO, do layout do núcleo (ciclo 300).
+    ///
+    /// A projeção pra tela é feita no desenho, porque ela depende da
+    /// rotação — que muda a cada arraste e não pode custar recalcular o
+    /// grafo inteiro.
+    p: [f64; 3],
 }
 
 /// Props da `GraphView`.
@@ -29,6 +33,30 @@ pub struct GraphViewProps {
     pub vault_path: String,
     /// Navega pra uma página ao clicar num nó.
     pub on_page_selected: Callback<PageMeta>,
+}
+
+/// Projeta um ponto do espaço na tela, girado.
+///
+/// Perspectiva fraca (o `1.6` no divisor): forte demais e os nós de trás
+/// somem; nenhuma e a rotação não se percebe. Devolve também a
+/// profundidade normalizada, que o desenho usa pra tamanho e opacidade —
+/// que é o que dá noção de fundo numa tela plana.
+fn projetar(p: [f64; 3], giro: (f64, f64), escala: f64) -> (f64, f64, f64) {
+    let (gy, gx) = giro;
+    // Gira em Y, depois em X.
+    let (sy, cy) = gy.sin_cos();
+    let x1 = p[0] * cy + p[2] * sy;
+    let z1 = -p[0] * sy + p[2] * cy;
+    let (sx, cx) = gx.sin_cos();
+    let y1 = p[1] * cx - z1 * sx;
+    let z2 = p[1] * sx + z1 * cx;
+
+    let perto = 1.0 / (1.6 - z2.clamp(-1.2, 1.2) * 0.35);
+    (
+        400.0 + x1 * escala * perto,
+        400.0 + y1 * escala * perto,
+        z2,
+    )
 }
 
 /// Limites de zoom — abaixo de 0.25x os rótulos ficam ilegíveis, acima
@@ -49,6 +77,13 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
     // dividir pela escala atual.
     let scale = use_state(|| 1.0f64);
     let pan = use_state(|| (0.0f64, 0.0f64));
+    /// Rotação em torno de Y e de X, em radianos (ciclo 300).
+    ///
+    /// É o que faz o layout em três dimensões valer a pena numa tela
+    /// plana: parado, profundidade é só um borrão; girando, a estrutura
+    /// aparece. Começa levemente torto pra a terceira dimensão ser
+    /// visível já na abertura.
+    let giro = use_state(|| (0.5f64, -0.3f64));
     let dragging = use_mut_ref(|| None::<(f64, f64)>);
 
     let on_wheel = {
@@ -75,12 +110,22 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
     let on_mouse_move = {
         let dragging = dragging.clone();
         let pan = pan.clone();
+        let giro = giro.clone();
         Callback::from(move |e: MouseEvent| {
             let mut d = dragging.borrow_mut();
             if let Some((last_x, last_y)) = *d {
                 let (cx, cy) = (e.client_x() as f64, e.client_y() as f64);
-                let (px, py) = *pan;
-                pan.set((px + (cx - last_x), py + (cy - last_y)));
+                if e.shift_key() {
+                    // Shift arrasta a tela, como antes.
+                    let (px, py) = *pan;
+                    pan.set((px + (cx - last_x), py + (cy - last_y)));
+                } else {
+                    // Arrastar GIRA: é o gesto que as pessoas já esperam
+                    // de qualquer coisa em três dimensões, e sem ele o
+                    // layout 3D seria só um 2D embaralhado.
+                    let (gy, gx) = *giro;
+                    giro.set((gy + (cx - last_x) * 0.008, gx + (cy - last_y) * 0.008));
+                }
                 *d = Some((cx, cy));
             }
         })
@@ -126,21 +171,8 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
                 // arquivo inteiro em cada uma.
                 let pages = api::scan_vault(&vault_path).await.unwrap_or_default();
                 let n = pages.len();
-                let cx = 400.0;
-                let cy = 400.0;
-                let radius = if n > 1 { 320.0 } else { 0.0 };
-
-                let mut node_list = Vec::with_capacity(n);
                 let mut title_to_index: HashMap<String, usize> = HashMap::new();
                 for (i, p) in pages.iter().enumerate() {
-                    let angle = 2.0 * PI * (i as f64) / (n.max(1) as f64);
-                    node_list.push(Node {
-                        path: p.path.clone(),
-                        title: p.title.clone(),
-                        section: p.section.clone(),
-                        x: cx + radius * angle.cos(),
-                        y: cy + radius * angle.sin(),
-                    });
                     title_to_index.insert(p.title.to_lowercase(), i);
                 }
 
@@ -161,6 +193,31 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
                         }
                     }
                 }
+
+                // O layout vem do núcleo (ciclo 300): força dirigida em
+                // três dimensões, no lugar do círculo do ciclo 120.
+                //
+                // O círculo punha todo nó na borda, e aí TODA aresta
+                // virava uma corda cruzando o meio — com 239 páginas e
+                // 162 links o desenho é uma bola de linhas que não
+                // mostra estrutura nenhuma. Aqui o que se liga fica
+                // junto.
+                let posicoes = anotadinho_core::grafo::posicionar(
+                    &anotadinho_core::grafo::Grafo {
+                        nos: n,
+                        arestas: edge_list.clone(),
+                    },
+                );
+                let node_list: Vec<Node> = pages
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| Node {
+                        path: p.path.clone(),
+                        title: p.title.clone(),
+                        section: p.section.clone(),
+                        p: posicoes.get(i).copied().unwrap_or([0.0; 3]),
+                    })
+                    .collect();
 
                 nodes.set(node_list);
                 edges.set(edge_list);
@@ -227,15 +284,27 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
             >
                 <g style={content_transform}>
                     { for edges.iter().map(|&(i, j)| {
-                        let a = &nodes[i];
-                        let b = &nodes[j];
+                        let (x1, y1, z1) = projetar(nodes[i].p, *giro, 320.0);
+                        let (x2, y2, z2) = projetar(nodes[j].p, *giro, 320.0);
+                        // Aresta de trás fica mais apagada: é o que
+                        // separa "está atrás" de "está longe" numa tela
+                        // plana.
+                        let fundo = ((z1 + z2) / 2.0).clamp(-1.0, 1.0);
+                        let opacidade = 0.15 + 0.35 * (fundo + 1.0) / 2.0;
                         html! {
                             <line class="graph-view__edge"
-                                x1={a.x.to_string()} y1={a.y.to_string()}
-                                x2={b.x.to_string()} y2={b.y.to_string()} />
+                                opacity={format!("{opacidade:.2}")}
+                                x1={x1.to_string()} y1={y1.to_string()}
+                                x2={x2.to_string()} y2={y2.to_string()} />
                         }
                     }) }
                     { for nodes.iter().map(|node| {
+                        let (x, y, z) = projetar(node.p, *giro, 320.0);
+                        // Perto é maior e mais opaco. É a única pista de
+                        // profundidade que um SVG plano oferece de
+                        // graça, e sem ela o 3D vira 2D embaralhado.
+                        let raio = 5.0 + 4.0 * (z.clamp(-1.0, 1.0) + 1.0) / 2.0;
+                        let opacidade = 0.45 + 0.55 * (z.clamp(-1.0, 1.0) + 1.0) / 2.0;
                         let meta = PageMeta { path: node.path.clone(), title: node.title.clone(), section: node.section.clone() };
                         let onclick = {
                             let on_page_selected = on_page_selected.clone();
@@ -264,8 +333,16 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
                         };
                         html! {
                             <g class="graph-view__node" tabindex="0" {onclick} {onkeydown}>
-                                <circle cx={node.x.to_string()} cy={node.y.to_string()} r="8" />
-                                <text x={(node.x + 12.0).to_string()} y={(node.y + 4.0).to_string()}>{ &node.title }</text>
+                                <circle cx={x.to_string()} cy={y.to_string()}
+                                    r={format!("{:.1}", raio)} opacity={format!("{opacidade:.2}")} />
+                                // O rótulo só do que está na frente: com
+                                // 239 páginas, escrever todos empilha
+                                // texto ilegível — e o que está atrás é
+                                // justamente o que não se quer ler
+                                // agora.
+                                if z > 0.15 {
+                                    <text x={(x + raio + 4.0).to_string()} y={(y + 4.0).to_string()}>{ &node.title }</text>
+                                }
                             </g>
                         }
                     }) }
