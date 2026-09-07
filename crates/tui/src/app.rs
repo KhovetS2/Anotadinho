@@ -413,13 +413,22 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         {
             continue;
         }
-        visiveis.push(linha_estilizada(
+        // Sem fundo no texto (ciclo 295): quem diz onde se está é a
+        // MOLDURA. Realce de fundo mais moldura são dois destaques
+        // competindo, e o texto colorido por cima do fundo perde a cor
+        // que o tipo dele tinha.
+        let linha = linha_estilizada(
             l,
-            comeca,
+            false,
             e.dobrados.contains(&l.caminho),
             &e.tema,
-            largura_util,
-        ));
+            if dentro { largura_util - 2 } else { largura_util },
+        );
+        visiveis.push(if dentro {
+            emoldurar(linha, largura_util, &e.tema)
+        } else {
+            linha
+        });
         // A última linha da tela também fecha.
         if dentro && i + 1 == linhas_visiveis.len() {
             visiveis.push(moldura(false, largura_util, &e.tema));
@@ -670,6 +679,48 @@ fn ir_para_linha(e: &mut Estado, indice: usize) {
     e.seguir_cursor();
 }
 
+/// Põe as laterais da moldura numa linha de conteúdo.
+///
+/// O retângulo precisa das QUATRO bordas pra ler como retângulo: sem as
+/// laterais ele é um par de traços soltos, e o texto parece escapar por
+/// eles.
+///
+/// O conteúdo é cortado no que cabe, com `…`. Deixar transbordar seria
+/// pior do que cortar: o `│` da direita sumiria e a moldura quebraria
+/// justo na linha mais longa.
+fn emoldurar<'a>(linha: Line<'a>, largura: usize, tema: &Tema) -> Line<'a> {
+    let estilo = tema.estilo(Realce::BordaUnidade);
+    let util = largura.saturating_sub(2);
+    let mut spans: Vec<Span<'a>> = vec![Span::styled("│", estilo)];
+    let mut usado = 0usize;
+    for s in linha.spans {
+        let n = s.content.chars().count();
+        if usado + n <= util {
+            usado += n;
+            spans.push(s);
+            continue;
+        }
+        // Este trecho não cabe inteiro: entra o que couber, menos um
+        // caractere pro `…`.
+        let cabe = util.saturating_sub(usado + 1);
+        if cabe > 0 {
+            let corte: String = s.content.chars().take(cabe).collect();
+            spans.push(Span::styled(corte, s.style));
+            usado += cabe;
+        }
+        if usado < util {
+            spans.push(Span::styled("…", s.style));
+            usado += 1;
+        }
+        break;
+    }
+    if usado < util {
+        spans.push(Span::styled(" ".repeat(util - usado), Style::default()));
+    }
+    spans.push(Span::styled("│", estilo));
+    Line::from(spans)
+}
+
 /// O topo ou o fundo da moldura da unidade em foco.
 fn moldura<'a>(topo: bool, largura: usize, tema: &Tema) -> Line<'a> {
     let (canto, fim) = if topo { ("┌", "┐") } else { ("└", "┘") };
@@ -877,41 +928,8 @@ mod testes {
         assert!(tudo.contains("- um"), "{tudo}");
     }
 
-    #[test]
-    fn o_item_sob_o_cursor_fica_realcado() {
-        // Sem realce, a pessoa não sabe onde está — e num terminal não há
-        // mouse pra descobrir. É o mesmo achado do ciclo 267: "a lógica
-        // está certa" e "a pessoa vê acontecer" são coisas diferentes.
-        let mut e = estado();
-        e.foco = Foco::Conteudo;
-        let cursor = e.tema.estilo(Realce::Cursor).bg.unwrap();
-        let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
-        term.draw(|f| desenhar(f, &mut e)).unwrap();
-        let buf = term.backend().buffer().clone();
-
-        let realcadas: Vec<String> = (0..buf.area.height)
-            .filter_map(|y| {
-                let mut texto = String::new();
-                let mut tem_realce = false;
-                for x in 0..buf.area.width {
-                    let c = &buf[(x, y)];
-                    if c.style().bg == Some(cursor) {
-                        tem_realce = true;
-                        texto.push_str(c.symbol());
-                    }
-                }
-                tem_realce.then(|| texto.trim().to_string())
-            })
-            .collect();
-        assert_eq!(realcadas.len(), 1, "esperava UMA linha realçada: {realcadas:?}");
-        assert!(realcadas[0].contains("Título"), "{realcadas:?}");
-    }
-
     /// As células de uma linha da tela que têm um modificador.
-    fn com_modificador(
-        e: &mut Estado,
-        m: Modifier,
-    ) -> Vec<String> {
+    fn com_modificador(e: &mut Estado, m: Modifier) -> Vec<String> {
         let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
         term.draw(|f| desenhar(f, e)).unwrap();
         let buf = term.backend().buffer().clone();
@@ -924,6 +942,35 @@ mod testes {
                 (!texto.trim().is_empty()).then(|| texto.trim().to_string())
             })
             .collect()
+    }
+
+    #[test]
+    fn o_conteudo_em_foco_nao_ganha_fundo(){
+        // Quem diz onde se está é a MOLDURA (ciclo 295). Fundo mais
+        // moldura são dois destaques competindo, e o texto colorido por
+        // cima do fundo perde a cor que o tipo dele tinha.
+        let mut e = Estado::novo(paginas(), analisar("# Título\n\ntexto\n"));
+        e.foco = Foco::Conteudo;
+        let cursor = e.tema.estilo(Realce::Cursor).bg.unwrap();
+        let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
+        term.draw(|f| desenhar(f, &mut e)).unwrap();
+        let buf = term.backend().buffer().clone();
+
+        // A ÚNICA coisa com fundo de cursor é a página selecionada na
+        // lista, que não tem moldura pra marcar.
+        let com_fundo: Vec<String> = (0..buf.area.height)
+            .filter_map(|y| {
+                let t: String = (0..buf.area.width)
+                    .filter(|x| buf[(*x, y)].style().bg == Some(cursor))
+                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .collect();
+                (!t.trim().is_empty()).then(|| t.trim().to_string())
+            })
+            .collect();
+        assert!(
+            !com_fundo.iter().any(|l| l.contains("Título")),
+            "o conteúdo em foco ganhou fundo: {com_fundo:?}"
+        );
     }
 
     #[test]
