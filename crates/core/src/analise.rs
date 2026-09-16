@@ -481,12 +481,16 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
             .map(|painel| grupo("pane", String::new(), unidades_de_texto(&painel.body)))
             .collect(),
 
+        // "miniatura", não "item" (ciclo 304): o terminal não desenha a
+        // imagem, então o nome da parte é quem diz que ali era pra ser
+        // uma — e é o gancho que o desenho usa pra pintar o selo que
+        // faz as vezes dela.
         EmbedData::Gallery(d) => d
             .items
             .iter()
             .map(|i| {
                 item(
-                    "item",
+                    "miniatura",
                     if i.caption.is_empty() {
                         i.path.clone()
                     } else {
@@ -501,11 +505,24 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
         // Botão é coisa clicável, e clicável fica em FILEIRA — é como a
         // janela desenha, e agora o modelo diz isso em vez de o desenho
         // adivinhar (ciclo 297).
+        //
+        // O `variant: primary` também é domínio, não cromo (ciclo 304):
+        // é o mesmo campo que a janela lê pra pintar
+        // `.actions-embed__btn--primary` de destaque, e o nome da parte
+        // é como o desenho do terminal recebe a mesma informação sem
+        // reabrir o YAML.
         EmbedData::Actions(d) => vec![fileira(
             "acoes",
             d.buttons
                 .iter()
-                .map(|b| item("button", b.label.clone()))
+                .map(|b| {
+                    let nome = if b.variant.as_deref() == Some("primary") {
+                        "button-primary"
+                    } else {
+                        "button"
+                    };
+                    item(nome, b.label.clone())
+                })
                 .collect(),
         )],
 
@@ -1466,6 +1483,10 @@ mod partes_de_embed {
             g.filhos.iter().map(|i| i.texto.clone()).collect::<Vec<_>>(),
             ["Legenda", "b.png"]
         );
+        // "miniatura", não "item" (ciclo 304): o nome é o gancho que o
+        // desenho do terminal usa pra pintar o selo que faz as vezes da
+        // imagem que ele não consegue mostrar.
+        assert_eq!(partes(&g), ["parte:miniatura", "parte:miniatura"]);
 
         let a = embed_de(
             "{{ type: \"actions\" }}\nbuttons:\n- label: Abrir\n  action: open-page\n{{ /actions }}\n",
@@ -1477,6 +1498,29 @@ mod partes_de_embed {
         assert_eq!(a.filhos[0].tipo.arranjo(), Arranjo::Linha);
         assert_eq!(partes(&a.filhos[0]), ["parte:button"]);
         assert_eq!(a.filhos[0].filhos[0].texto, "Abrir");
+    }
+
+    #[test]
+    fn o_botao_primario_das_acoes_vira_parte_propria() {
+        // `variant: primary` já era lido pela janela pra pintar
+        // `.actions-embed__btn--primary` de destaque; até este ciclo o
+        // terminal jogava fora o campo e todo botão saía "button" —
+        // igual, sem distinção nenhuma (ciclo 304).
+        let a = embed_de(
+            "{{ type: \"actions\" }}\nbuttons:\n- label: Cancelar\n  action: open-page\n  path: pages/a.md\n- label: Confirmar\n  action: open-page\n  path: pages/b.md\n  variant: primary\n{{ /actions }}\n",
+        );
+        assert_eq!(
+            partes(&a.filhos[0]),
+            ["parte:button", "parte:button-primary"]
+        );
+        assert_eq!(a.filhos[0].filhos[1].texto, "Confirmar");
+
+        // Qualquer outro valor — inclusive vazio — é o estilo fantasma,
+        // igual à janela: `variant` só destaca quando é `primary`.
+        let b = embed_de(
+            "{{ type: \"actions\" }}\nbuttons:\n- label: X\n  action: open-page\n  variant: secondary\n{{ /actions }}\n",
+        );
+        assert_eq!(partes(&b.filhos[0]), ["parte:button"]);
     }
 
     #[test]

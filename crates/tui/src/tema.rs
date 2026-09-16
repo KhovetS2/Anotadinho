@@ -80,6 +80,37 @@ pub enum Realce {
     /// é "até onde vai o que estou olhando", e um `##` com nove itens
     /// embaixo é uma coisa só.
     BordaUnidade,
+    /// A cor que IDENTIFICA um TIPO de embed — a moldura aberta e o
+    /// rótulo fechado (`[kanban]`) usam a mesma, pra abrir e fechar não
+    /// trocar de cor (ciclo 304).
+    ///
+    /// Nove variantes, não uma genérica parametrizada por nome: o
+    /// conjunto de embeds é FECHADO (`EmbedKind::all()`), e cada cor é
+    /// uma decisão de design, não um cálculo — a mesma razão que fez o
+    /// fluxo ganhar `TituloCartao`/`Etapa`/`Acao` em vez de um "papel
+    /// genérico" no ciclo 302. O fluxo fica de fora: já tinha a dele
+    /// (`Embed`, roxo) desde o ciclo 293.
+    EmbedKanban,
+    EmbedCalendar,
+    EmbedTable,
+    EmbedCallout,
+    EmbedColumns,
+    EmbedGallery,
+    EmbedQuery,
+    EmbedTimeline,
+    EmbedActions,
+    /// O cartão de um kanban: um retângulo preenchido por linha,
+    /// empilhado dentro da coluna — não fileira, cada cartão é dono da
+    /// própria linha (ciclo 304).
+    Cartao,
+    /// A miniatura de uma galeria: mesma ideia do cartão, um selo no
+    /// lugar da imagem que o terminal não desenha.
+    Miniatura,
+    /// Botão de ação com `variant: primary` — o preenchido da janela
+    /// (`.actions-embed__btn--primary`), cor de destaque. O botão sem
+    /// variante fica no `Parte` genérico de sempre — só o primário
+    /// precisava se destacar dos outros.
+    BotaoPrimario,
 }
 
 /// Uma paleta resolvida.
@@ -179,6 +210,42 @@ impl Tema {
             Realce::Borda => Style::default().fg(self.cor("border", Color::DarkGray)),
             Realce::BordaFoco => Style::default().fg(destaque),
             Realce::BordaUnidade => Style::default().fg(destaque),
+            // Cada embed puxa um token que já existe no CSS — nenhuma
+            // cor nova, só um papel novo pra uma que já era do tema. É
+            // o que deixa "atualizável pelo usuário" de graça: trocar
+            // `--cor-azul` na tela de aparência muda o kanban junto.
+            Realce::EmbedKanban => Style::default()
+                .fg(self.cor("cor-azul", Color::Blue))
+                .add_modifier(Modifier::BOLD),
+            Realce::EmbedCalendar => Style::default()
+                .fg(self.cor("cor-verde", Color::Green))
+                .add_modifier(Modifier::BOLD),
+            Realce::EmbedTable => Style::default()
+                .fg(self.cor("cor-ambar", Color::Yellow))
+                .add_modifier(Modifier::BOLD),
+            Realce::EmbedCallout => Style::default()
+                .fg(self.cor("warning", Color::Yellow))
+                .add_modifier(Modifier::BOLD),
+            Realce::EmbedColumns => Style::default()
+                .fg(self.cor("cor-roxo", Color::Magenta))
+                .add_modifier(Modifier::BOLD),
+            Realce::EmbedGallery => Style::default()
+                .fg(self.cor("cor-vermelho", Color::Red))
+                .add_modifier(Modifier::BOLD),
+            Realce::EmbedQuery => Style::default()
+                .fg(self.cor("error", Color::Red))
+                .add_modifier(Modifier::BOLD),
+            Realce::EmbedTimeline => Style::default()
+                .fg(self.cor("success", Color::Green))
+                .add_modifier(Modifier::BOLD),
+            Realce::EmbedActions => Style::default().fg(destaque).add_modifier(Modifier::BOLD),
+            // A mesma cor do embed dono: o cartão do kanban ecoa o azul
+            // da moldura, a miniatura da galeria ecoa o vermelho dela —
+            // é o que faz o conteúdo parecer do mesmo cartão, não de
+            // dois vocabulários de cor.
+            Realce::Cartao => Style::default().fg(self.cor("cor-azul", Color::Blue)),
+            Realce::Miniatura => Style::default().fg(self.cor("cor-vermelho", Color::Red)),
+            Realce::BotaoPrimario => Style::default().fg(destaque).add_modifier(Modifier::BOLD),
         }
     }
 
@@ -393,6 +460,18 @@ mod testes {
             Realce::Cursor,
             Realce::Borda,
             Realce::BordaFoco,
+            Realce::EmbedKanban,
+            Realce::EmbedCalendar,
+            Realce::EmbedTable,
+            Realce::EmbedCallout,
+            Realce::EmbedColumns,
+            Realce::EmbedGallery,
+            Realce::EmbedQuery,
+            Realce::EmbedTimeline,
+            Realce::EmbedActions,
+            Realce::Cartao,
+            Realce::Miniatura,
+            Realce::BotaoPrimario,
         ] {
             let e = t.estilo(r);
             let cor = e.fg.or(e.bg).unwrap_or(Color::Reset);
@@ -400,6 +479,35 @@ mod testes {
                 matches!(cor, Color::Rgb(..)),
                 "{r:?} não veio do CSS: {cor:?}"
             );
+        }
+    }
+
+    #[test]
+    fn cada_tipo_de_embed_tem_sua_propria_cor() {
+        // Nove tipos, todos diferentes entre si — senão dois embeds
+        // vizinhos voltam a se fundir numa caixa só, o defeito que o
+        // ciclo 298 corrigiu pra unidade, agora checado pra cor.
+        let t = Tema::novo("escuro");
+        let papeis = [
+            Realce::EmbedKanban,
+            Realce::EmbedCalendar,
+            Realce::EmbedTable,
+            Realce::EmbedCallout,
+            Realce::EmbedColumns,
+            Realce::EmbedGallery,
+            Realce::EmbedQuery,
+            Realce::EmbedTimeline,
+            Realce::EmbedActions,
+        ];
+        let cores: Vec<Color> = papeis.iter().map(|r| t.estilo(*r).fg.unwrap()).collect();
+        for (i, a) in cores.iter().enumerate() {
+            for (j, b) in cores.iter().enumerate().skip(i + 1) {
+                assert_ne!(
+                    a, b,
+                    "{:?} e {:?} saíram com a mesma cor: {a:?}",
+                    papeis[i], papeis[j]
+                );
+            }
         }
     }
 }

@@ -263,6 +263,12 @@ const PARTES_SEM_ROTULO: &[&str] = &[
     "transicao",
     "transicao-principal",
     "button",
+    "button-primary",
+    // O cartão e a miniatura desenham em caixa própria (ciclo 304) —
+    // `card cartão` ou `miniatura Legenda` repetiria o nome que a
+    // caixa já mostra pela cor e pela forma.
+    "card",
+    "miniatura",
 ];
 
 /// A marca que abre a linha de cada tipo.
@@ -514,7 +520,11 @@ mod testes {
         // O traço da parte saiu no ciclo 296: a moldura do embed é a
         // lateral, e o recuo é a hierarquia. Sobra o nome.
         assert!(pares.iter().any(|t| t == "column Backlog"), "{pares:?}");
-        assert!(pares.iter().any(|t| t == "card Card A"), "{pares:?}");
+        // "Card A", sem o prefixo "card" (ciclo 304): o cartão vira
+        // retângulo preenchido, e a caixa já diz o que ele é — repetir
+        // o nome em texto seria a mesma informação duas vezes, como o
+        // ciclo 302 já tinha decidido pra "titulo" e "acao".
+        assert!(pares.iter().any(|t| t == "Card A"), "{pares:?}");
     }
 
     #[test]

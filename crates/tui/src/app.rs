@@ -560,7 +560,11 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         //
         // Quem marca o foco lá dentro é a LATERAL da linha, que acende.
         if let Some(d) = l.dono_embed.clone() {
-            return Some((d, Realce::Embed));
+            // Ciclo 304: a moldura pinta pelo TIPO do embed, não mais
+            // uma cor só pra todos — `embed_dono` é o nome (`"kanban"`,
+            // `"callout"`…) que `encaixotar_embeds` gravou junto.
+            let papel = papel_do_embed(l.embed_dono.as_deref().unwrap_or(""));
+            return Some((d, papel));
         }
         if no_foco
             && (l.mostra(&e.cursor)
@@ -631,9 +635,21 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 largura_util
             };
             // Uma fileira rende uma FAIXA de três linhas por grupo de
-            // botões, porque botão tem borda fechada. Todo o resto
-            // rende um grupo de uma linha só.
-            let desenhadas = if l.segmentos.is_empty() {
+            // botões, porque botão tem borda fechada. Um cartão ou uma
+            // miniatura são a MESMA faixa de três linhas, sozinhos — não
+            // ficam lado a lado, cada um é dono da própria linha (ciclo
+            // 304). Todo o resto rende um grupo de uma linha só.
+            let desenhadas = if !l.segmentos.is_empty() {
+                linhas_de_fileira(l, &e.tema, largura_conteudo, Some(&e.cursor))
+            } else if let Some(preencher_largura) = caixa_avulsa(&l.tipo) {
+                vec![linha_de_caixa(
+                    l,
+                    &e.tema,
+                    largura_conteudo,
+                    Some(&e.cursor),
+                    preencher_largura,
+                )]
+            } else {
                 vec![vec![linha_estilizada(
                     // Sem fundo no texto (ciclo 295): quem diz onde se
                     // está é a moldura. Reintroduzi isto sem querer ao
@@ -644,8 +660,6 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                     &e.tema,
                     largura_conteudo,
                 )]]
-            } else {
-                linhas_de_fileira(l, &e.tema, largura_conteudo, Some(&e.cursor))
             };
             // A lateral acende na linha do cursor: é como o foco se
             // marca dentro de um cartão que não é dele.
@@ -848,6 +862,79 @@ fn linhas_de_fileira(
         fora.push(vec![Line::from(topo), Line::from(meio), Line::from(base)]);
     }
     fora
+}
+
+/// A parte, quando ela quer ser desenhada como retângulo/quadrado
+/// preenchido sozinha na própria linha — não numa fileira (ciclo 304).
+///
+/// Diz também se o preenchimento ESTICA até a borda do painel: o
+/// cartão do kanban ocupa a largura da coluna, como na janela; a
+/// miniatura da galeria só cresce até caber a legenda, como um selo.
+///
+/// `None` pra qualquer outra parte — aí quem desenha usa a linha comum.
+fn caixa_avulsa(tipo: &Tipo) -> Option<bool> {
+    match tipo {
+        Tipo::Parte { nome, arranjo: Arranjo::Folha } if nome == "card" => Some(true),
+        Tipo::Parte { nome, arranjo: Arranjo::Folha } if nome == "miniatura" => Some(false),
+        _ => None,
+    }
+}
+
+/// Um retângulo preenchido SOZINHO — mesmo contorno de meio-bloco e
+/// miolo do botão (ciclo 302), só que empilhado como o resto de uma
+/// coluna em vez de lado a lado numa fileira (ciclo 304).
+///
+/// Existe porque nem todo conteúdo clicável fica em fileira: um cartão
+/// de kanban é filho de uma COLUNA — `j`/`k` andam entre cartões, não
+/// `h`/`l` — e mesmo assim quer a caixa fechada que só botão tinha.
+fn linha_de_caixa(
+    l: &crate::tela::Linha,
+    tema: &Tema,
+    largura: usize,
+    cursor: Option<&[usize]>,
+    preencher_largura: bool,
+) -> Vec<Line<'static>> {
+    let recuo = "  ".repeat(l.nivel);
+    let disponivel = largura.saturating_sub(recuo.len()).max(4);
+    let nome = match &l.tipo {
+        Tipo::Parte { nome, .. } => nome.as_str(),
+        _ => "",
+    };
+    let aceso = cursor.is_some_and(|c| l.mostra(c));
+    let papel = if aceso { Realce::Cursor } else { papel_da_parte(nome) };
+    let contorno = tema.contorno_do_botao(papel);
+    let miolo_estilo = tema.miolo_do_botao(papel);
+
+    // O miolo cabe na largura menos as duas meias-célula do contorno e
+    // o espaço de respiro de cada lado — a mesma conta do botão
+    // (`largura_do_botao`), só que aqui a largura é a do PAINEL, não a
+    // do texto: um cartão vazio ainda ocupa a coluna inteira.
+    let cabe = disponivel.saturating_sub(4).max(1);
+    let mut texto: String = l.texto.chars().take(cabe).collect();
+    if preencher_largura {
+        let usado = texto.chars().count();
+        if usado < cabe {
+            texto.push_str(&" ".repeat(cabe - usado));
+        }
+    }
+    let largura_miolo = texto.chars().count() + 2;
+
+    vec![
+        Line::from(vec![
+            Span::styled(recuo.clone(), Style::default()),
+            Span::styled(format!("▗{}▖", "▄".repeat(largura_miolo)), contorno),
+        ]),
+        Line::from(vec![
+            Span::styled(recuo.clone(), Style::default()),
+            Span::styled("▐", contorno),
+            Span::styled(format!(" {texto} "), miolo_estilo),
+            Span::styled("▌", contorno),
+        ]),
+        Line::from(vec![
+            Span::styled(recuo, Style::default()),
+            Span::styled(format!("▝{}▘", "▀".repeat(largura_miolo)), contorno),
+        ]),
+    ]
 }
 
 /// Uma linha do conteúdo, com o estilo do BLOCO e o dos trechos.
@@ -1178,7 +1265,10 @@ fn papel_do_bloco(tipo: &Tipo) -> Realce {
         Tipo::Titulo(n) => Realce::Titulo(*n),
         Tipo::Citacao => Realce::Citacao,
         Tipo::Codigo(_) => Realce::Codigo,
-        Tipo::Embed(_) => Realce::Embed,
+        // Ciclo 304: o rótulo fechado (`[kanban]`) usa a MESMA cor da
+        // moldura aberta — é `papel_do_embed` quem resolve as duas, pra
+        // abrir e fechar não trocar de cor.
+        Tipo::Embed(nome) => papel_do_embed(nome),
         // A parte se pinta pelo NOME (ciclo 302). Tudo roxo dizia só
         // "isto é embed"; um cartão de fluxo tem coisas de naturezas
         // diferentes, e é o embed que sabe o nome de cada uma.
@@ -1197,7 +1287,38 @@ fn papel_da_parte(nome: &str) -> Realce {
         "dica" => Realce::Dica,
         "transicao" => Realce::Transicao,
         "transicao-principal" => Realce::TransicaoPrincipal,
+        // Ciclo 304: o cartão do kanban e a miniatura da galeria — cada
+        // um puxa a cor do embed dono (ver `tema::estilo`). O botão de
+        // ações se separa em dois pra `variant: primary` deixar de
+        // desaparecer no meio dos outros.
+        "card" => Realce::Cartao,
+        "miniatura" => Realce::Miniatura,
+        // "button" fica de fora de propósito: cai no `Parte` genérico
+        // de sempre, a mesma cor que já tinha antes deste ciclo — só o
+        // `primary` precisava se destacar dos outros.
+        "button-primary" => Realce::BotaoPrimario,
         _ => Realce::Parte,
+    }
+}
+
+/// A cor que IDENTIFICA um TIPO de embed — moldura aberta e rótulo
+/// fechado (`[kanban]`) usam a mesma (ciclo 304).
+///
+/// Nome desconhecido ou o próprio fluxo caem no `Embed` genérico: o
+/// fluxo já tinha a dele desde o ciclo 293, e um embed novo que ainda
+/// não ganhou cor própria não deve desenhar preto.
+fn papel_do_embed(nome: &str) -> Realce {
+    match nome {
+        "kanban" => Realce::EmbedKanban,
+        "calendar" => Realce::EmbedCalendar,
+        "table" => Realce::EmbedTable,
+        "callout" => Realce::EmbedCallout,
+        "columns" => Realce::EmbedColumns,
+        "gallery" => Realce::EmbedGallery,
+        "query" => Realce::EmbedQuery,
+        "timeline" => Realce::EmbedTimeline,
+        "actions" => Realce::EmbedActions,
+        _ => Realce::Embed,
     }
 }
 
@@ -1493,6 +1614,16 @@ mod testes {
         );
     }
 
+    /// Uma página com um kanban de uma coluna e um cartão.
+    fn com_kanban() -> Unidade {
+        analisar("{{ type: \"kanban\" }}\ncolumns:\n- Backlog\nitems:\n- title: Card A\n  column: Backlog\n{{ /kanban }}\n")
+    }
+
+    /// Uma página com uma galeria de duas imagens.
+    fn com_galeria() -> Unidade {
+        analisar("{{ type: \"gallery\" }}\nitems:\n- path: a.png\n  caption: Primeira\n- path: b.png\n  caption: Segunda\n{{ /gallery }}\n")
+    }
+
     /// Uma página com um embed de ações de dois botões.
     fn com_acoes() -> Unidade {
         analisar("{{ type: \"actions\" }}\nbuttons:\n- label: Abrir\n  action: open-page\n- label: Buscar\n  action: run-search\n{{ /actions }}\n")
@@ -1621,6 +1752,23 @@ mod testes {
             4,
             "os embeds vizinhos viraram uma caixa só:\n{tudo}"
         );
+    }
+
+    #[test]
+    fn a_moldura_do_kanban_pinta_com_a_cor_do_kanban() {
+        // Até este ciclo TODO embed pedia `Realce::Embed` (roxo) pra
+        // moldura — kanban, callout, tabela, todos a mesma cor. Agora
+        // cada tipo puxa a dele (ciclo 304), e é a cor que precisa
+        // aparecer na tela — não só existir no tema.
+        let mut e = Estado::novo(paginas(), com_kanban());
+        e.foco = Foco::Paginas;
+        let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
+        term.draw(|f| desenhar(f, &mut e)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let cor_kanban = e.tema.estilo(Realce::EmbedKanban).fg.unwrap();
+        let aparece = (0..buf.area.height)
+            .any(|y| (0..buf.area.width).any(|x| buf[(x, y)].style().fg == Some(cor_kanban)));
+        assert!(aparece, "a cor do kanban não apareceu na tela");
     }
 
     #[test]
@@ -1764,6 +1912,58 @@ mod testes {
         assert!(
             tudo.contains("▝▀▀▀▀▀▀▀▘ ▝▀▀▀▀▀▀▀▀▘"),
             "as caixas dos botões não fecharam embaixo:\n{tudo}"
+        );
+    }
+
+    #[test]
+    fn o_cartao_do_kanban_vira_retangulo_preenchido() {
+        // Ciclo 304: o cartão não fica mais em texto puro — a mesma
+        // caixa de contorno fechado do botão, só que sozinho na linha
+        // (a coluna empilha, não enfileira) e esticado até a borda do
+        // painel, como um cartão de verdade.
+        let mut e = Estado::novo(paginas(), com_kanban());
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 60, 14).join("\n");
+        assert!(
+            tudo.contains("▐ Card A"),
+            "o cartão não abriu como caixa preenchida:\n{tudo}"
+        );
+        // Sem o prefixo "card": a caixa já diz o que ele é.
+        assert!(!tudo.contains("card Card A"), "{tudo}");
+    }
+
+    #[test]
+    fn a_miniatura_da_galeria_vira_selo_preenchido() {
+        // O terminal não desenha a imagem — o selo colorido é o que
+        // sobra pra dizer "aqui tinha uma" (ciclo 304).
+        let mut e = Estado::novo(paginas(), com_galeria());
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 60, 14).join("\n");
+        assert!(
+            tudo.contains("▐ Primeira ▌"),
+            "a miniatura não virou selo preenchido:\n{tudo}"
+        );
+        assert!(
+            tudo.contains("▐ Segunda ▌"),
+            "a segunda miniatura sumiu:\n{tudo}"
+        );
+    }
+
+    #[test]
+    fn o_botao_primario_das_acoes_tem_cor_propria() {
+        // `variant: primary` chegava até a árvore e morria aí — todo
+        // botão saía na mesma cor, igual ao fantasma da janela quando o
+        // destaque falha em aparecer (ciclo 304).
+        let e = Estado::novo(
+            paginas(),
+            analisar(
+                "{{ type: \"actions\" }}\nbuttons:\n- label: Cancelar\n  action: open-page\n  path: pages/a.md\n- label: Confirmar\n  action: open-page\n  path: pages/b.md\n  variant: primary\n{{ /actions }}\n",
+            ),
+        );
+        assert_ne!(
+            e.tema.contorno_do_botao(Realce::Parte).fg,
+            e.tema.contorno_do_botao(Realce::BotaoPrimario).fg,
+            "o botão primário saiu da mesma cor que o comum"
         );
     }
 
