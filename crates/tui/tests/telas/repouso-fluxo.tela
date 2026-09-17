@@ -2,19 +2,19 @@
 ┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
 │cena                                    ││Antes.                                                                                          │
 │                                        ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
-│                                        ││▌  PROPOSTA: Em revisão                                                                        ▌│
-│                                        ││▌  ▗▄▄▄▄▄▄▄▄▄▄▖ ▗▄▄▄▄▄▄▄▄▄▄▄▄▖ ▗▄▄▄▄▄▄▄▄▄▄▖ ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▖ ▗▄▄▄▄▄▄▄▄▄▄▄▖ ▗▄▄▄▄▄▄▄▄▄▄▄▖        ▌│
-│                                        ││▌  ▐ Rascunho ▌ ▐ Em revisão ▌ ▐ Aprovada ▌ ▐ Em execução ▌ ▐ Concluída ▌ ▐ Bloqueada ▌        ▌│
-│                                        ││▌  ▝▀▀▀▀▀▀▀▀▀▀▘ ▝▀▀▀▀▀▀▀▀▀▀▀▀▘ ▝▀▀▀▀▀▀▀▀▀▀▘ ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▘ ▝▀▀▀▀▀▀▀▀▀▀▀▘ ▝▀▀▀▀▀▀▀▀▀▀▀▘        ▌│
+│                                        ││▌  PROPOSTA   Em revisão                                                                       ▌│
+│                                        ││▌   Rascunho   Em revisão   Aprovada   Em execução   Concluída                                 ▌│
 │                                        ││▌  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖                                                                         ▌│
 │                                        ││▌  ▐ Pedir alteração ▌                                                                         ▌│
 │                                        ││▌  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘                                                                         ▌│
 │                                        ││▌  O agente devolve a mudança como proposta, pra você ver o diff antes de aplicar.             ▌│
-│                                        ││▌  ▗▄▄▄▄▄▄▄▄▄▄▖ ▗▄▄▄▄▄▄▄▄▄▄▖ ▗▄▄▄▄▄▄▄▄▄▄▄▖                                                     ▌│
-│                                        ││▌  ▐ Aprovada ▌ ▐ Rascunho ▌ ▐ Bloqueada ▌                                                     ▌│
-│                                        ││▌  ▝▀▀▀▀▀▀▀▀▀▀▘ ▝▀▀▀▀▀▀▀▀▀▀▘ ▝▀▀▀▀▀▀▀▀▀▀▀▘                                                     ▌│
+│                                        ││▌  ▗▄▄▄▄▄▄▄▄▄▄▖                                                                                ▌│
+│                                        ││▌  ▐ Aprovada ▌   Rascunho     Bloqueada                                                       ▌│
+│                                        ││▌  ▝▀▀▀▀▀▀▀▀▀▀▘                                                                                ▌│
 │                                        ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
 │                                        ││Depois.                                                                                         │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -43,19 +43,19 @@
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjhkkkkkkkkkkkkkkhjjjjjjjjjjjjhjjjjjjjjjjjjjjjhjjjjjjjjjjjjjhjjjjjjjjjjjjjhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhjlllllllllljhkmmmmmmmmmmmmkhjlllllllllljhjllllllllllllljhjllllllllllljhjllllllllllljhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjhkkkkkkkkkkkkkkhjjjjjjjjjjjjhjjjjjjjjjjjjjjjhjjjjjjjjjjjjjhjjjjjjjjjjjjjhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiihhjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhkkkkkkkkkkhllllllllllllhmmmmmmmmmmhmmmmmmmmmmmmmhmmmmmmmmmmmhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhnnnnnnnnnnnnnnnnnnnhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhnooooooooooooooooonhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhnnnnnnnnnnnnnnnnnnnhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppphhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhgggggggggggghqqqqqqqqqqqqhqqqqqqqqqqqqqhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhgrrrrrrrrrrghqssssssssssqhqsssssssssssqhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhgggggggggggghqqqqqqqqqqqqhqqqqqqqqqqqqqhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhpppppppppppphhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhpqqqqqqqqqqphhiiiiiiiiiihhhiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhpppppppppppphhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -88,14 +88,12 @@ e = fg #e4e8f5 bg #272930
 f = fg #3a334e bg #272930
 g = fg #9327ff bg #3a334e
 h = fg - bg #3a334e
-i = fg #e4e8f5 bg #3a334e negrito
-j = fg #989eb7 bg #3a334e
-k = fg #5fd3b2 bg #3a334e
-l = fg #272930 bg #989eb7 negrito
-m = fg #272930 bg #5fd3b2 negrito
-n = fg #00b5ff bg #3a334e
-o = fg #272930 bg #00b5ff negrito
-p = fg #989eb7 bg #3a334e itálico
-q = fg #6fd3ff bg #3a334e
-r = fg #272930 bg #9327ff negrito
-s = fg #272930 bg #6fd3ff negrito
+i = fg #989eb7 bg #3a334e
+j = fg #00b5ff bg #2a495e negrito
+k = fg #248569 bg #303f45
+l = fg #e4e8f5 bg #275069
+m = fg #989eb7 bg #3d404f
+n = fg #3d404f bg #3a334e
+o = fg #e4e8f5 bg #3d404f negrito
+p = fg #4a6eff bg #3a334e
+q = fg #ffffff bg #4a6eff negrito

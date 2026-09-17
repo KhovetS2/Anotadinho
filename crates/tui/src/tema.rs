@@ -420,7 +420,7 @@ impl Tema {
 
 /// `pct` de `a` sobre `b`, canal a canal. Cor sem RGB (a de socorro)
 /// não mistura: volta `a`.
-fn misturar(a: Color, b: Color, pct: f64) -> Color {
+pub fn misturar(a: Color, b: Color, pct: f64) -> Color {
     match (a, b) {
         (Color::Rgb(ar, ag, ab), Color::Rgb(br, bg, bb)) => {
             let canal = |x: u8, y: u8| (x as f64 * pct + y as f64 * (1.0 - pct)).round() as u8;

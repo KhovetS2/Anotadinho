@@ -926,6 +926,8 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                     })
                     .collect::<Vec<_>>();
                 vec![vec![Line::from(spans)]]
+            } else if l.embed_dono.as_deref() == Some("fluxo") && matches!(nome_da_parte, "titulo" | "dica" | "nota") {
+                vec![vec![linha_do_fluxo(l, nome_da_parte, &e.tema)]]
             } else if no_callout && nome_da_parte == "titulo" {
                 let dono = l.dono_embed.as_deref().unwrap_or(&[]);
                 vec![vec![linha_do_titulo_do_callout(
@@ -974,7 +976,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                         Some(&e.cursor),
                         ultima,
                     )],
-                    None => linhas_de_fileira(l, &e.tema, largura_conteudo, Some(&e.cursor)),
+                    None => linhas_de_fileira(l, &e.arvore, &e.tema, largura_conteudo, Some(&e.cursor)),
                 }
             } else if !l.segmentos.is_empty() && l.embed_dono.as_deref() == Some("table")
             {
@@ -996,7 +998,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                     Some(&e.cursor),
                 )]
             } else if !l.segmentos.is_empty() {
-                linhas_de_fileira(l, &e.tema, largura_conteudo, Some(&e.cursor))
+                linhas_de_fileira(l, &e.arvore, &e.tema, largura_conteudo, Some(&e.cursor))
             } else if let Some(modo) = e.arvore.em(&l.caminho).and_then(caixa_avulsa) {
                 vec![linha_de_caixa(l, &e.tema, largura_conteudo, Some(&e.cursor), modo)]
             } else {
@@ -1717,21 +1719,89 @@ fn largura_do_botao(texto: &str) -> usize {
 /// sumia — e a etapa que sumia podia ser a atual.
 fn linhas_de_fileira(
     l: &crate::tela::Linha,
+    arvore: &Unidade,
     tema: &Tema,
     largura: usize,
     cursor: Option<&[usize]>,
 ) -> Vec<Vec<Line<'static>>> {
     let recuo = "  ".repeat(l.nivel);
     let disponivel = largura.saturating_sub(recuo.len()).max(4);
+    let dono = l.dono_embed.as_deref().unwrap_or(&[]);
+
+    // A trilha do fluxo é de PÍLULAS, não de botões (ciclo 330): uma
+    // linha só, cada etapa na cor do seu estado — feita, atual, futura —
+    // como `.fluxo__passo`. "Bloqueada" é exceção e não entra na trilha,
+    // como na janela, a não ser que seja onde o fluxo está.
+    if l.segmentos.iter().any(|s| s.nome.starts_with("etapa")) {
+        let atual = l.segmentos.iter().position(|s| s.nome == "etapa-atual");
+        let superficie = tema.var("bg-surface");
+        let pilulas: Vec<(String, Style)> = l
+            .segmentos
+            .iter()
+            .enumerate()
+            .filter(|(i, s)| s.texto != "Bloqueada" || Some(*i) == atual)
+            .map(|(i, s)| {
+                let aceso = cursor.is_some_and(|c| c == s.caminho.as_slice());
+                let estilo = if aceso {
+                    tema.estilo(Realce::Cursor)
+                } else {
+                    match atual {
+                        Some(a) if i < a => {
+                            let cor = tema.var("success");
+                            Style::default().fg(cor).bg(crate::tema::misturar(cor, superficie, 0.14))
+                        }
+                        Some(a) if i == a => Style::default()
+                            .fg(tema.var("text-primary"))
+                            .bg(crate::tema::misturar(tema.var("accent-blue"), superficie, 0.22)),
+                        _ => Style::default().fg(tema.var("text-muted")).bg(tema.var("bg-elevated")),
+                    }
+                };
+                (format!(" {} ", s.texto), estilo)
+            })
+            .collect();
+        return pilulas_quebrando(&pilulas, disponivel, Style::default())
+            .into_iter()
+            .map(|f| vec![Line::from([vec![Span::raw(recuo.clone())], f.spans].concat())])
+            .collect();
+    }
+
+    // Os ícones dos botões de ações, lidos do arquivo pela posição.
+    let icones: Vec<Option<String>> = arvore
+        .em(dono)
+        .filter(|u| matches!(&u.tipo, Tipo::Embed(n) if n == "actions"))
+        .and_then(|u| u.fonte.as_deref())
+        .and_then(|f| {
+            anotadinho_core::embed::segment(f).into_iter().find_map(|s| match s {
+                anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Actions(d)) => Some(d),
+                _ => None,
+            })
+        })
+        .map(|d| d.buttons.iter().map(|b| b.icon.clone()).collect())
+        .unwrap_or_default();
+    let rotulo = |seg: &crate::tela::Segmento| -> String {
+        let icone = seg.caminho.last().and_then(|i| icones.get(*i)).and_then(|i| i.as_deref());
+        match icone {
+            Some(nome) => format!("{} {}", glifo_do_icone(nome), seg.texto),
+            None => seg.texto.clone(),
+        }
+    };
+    let e_acoes = !icones.is_empty() || arvore.em(dono).is_some_and(|u| matches!(&u.tipo, Tipo::Embed(n) if n == "actions"));
 
     // Empacota em faixas que cabem. Um botão sozinho maior que a
     // largura fica na sua própria faixa e é cortado — não há o que
     // fazer, e cortar um é melhor que cortar todos depois dele.
-    let mut faixas: Vec<Vec<&crate::tela::Segmento>> = Vec::new();
-    let mut faixa: Vec<&crate::tela::Segmento> = Vec::new();
+    let mut itens: Vec<(String, Option<&crate::tela::Segmento>)> =
+        l.segmentos.iter().map(|s| (rotulo(s), Some(s))).collect();
+    // O "+ ação" da janela, depois do último botão: não é destino do
+    // cursor, só o lembrete de onde se cria (com `o`).
+    if e_acoes {
+        itens.push(("+ ação".to_string(), None));
+    }
+    let mut faixas: Vec<Vec<&(String, Option<&crate::tela::Segmento>)>> = Vec::new();
+    let mut faixa = Vec::new();
     let mut usado = 0usize;
-    for seg in &l.segmentos {
-        let largura_seg = largura_do_botao(&seg.texto);
+    for item in &itens {
+        let largura_seg = largura_do_botao(&item.0);
         let custo = if faixa.is_empty() { largura_seg } else { largura_seg + VAO };
         if !faixa.is_empty() && usado + custo > disponivel {
             faixas.push(std::mem::take(&mut faixa));
@@ -1739,7 +1809,7 @@ fn linhas_de_fileira(
         } else {
             usado += custo;
         }
-        faixa.push(seg);
+        faixa.push(item);
     }
     if !faixa.is_empty() {
         faixas.push(faixa);
@@ -1750,51 +1820,143 @@ fn linhas_de_fileira(
         let mut topo = vec![Span::styled(recuo.clone(), Style::default())];
         let mut meio = vec![Span::styled(recuo.clone(), Style::default())];
         let mut base = vec![Span::styled(recuo.clone(), Style::default())];
-        for (i, seg) in faixa.iter().enumerate() {
+        for (i, (texto, seg)) in faixa.iter().enumerate() {
             if i > 0 {
                 let vao = " ".repeat(VAO);
                 topo.push(Span::styled(vao.clone(), Style::default()));
                 meio.push(Span::styled(vao.clone(), Style::default()));
                 base.push(Span::styled(vao, Style::default()));
             }
-            // O que está sob o cursor acende (ciclo 298): é o "cursor
-            // como coluna dentro da linha" — sem ele, entrar num botão
-            // move o cursor pra um lugar sem linha e o Enter parece
-            // não fazer nada.
-            //
-            // Fora do cursor, cada botão pela SUA cor: a etapa atual
-            // de um fluxo não pode sair igual às outras cinco.
-            let aceso = cursor.is_some_and(|c| c == seg.caminho.as_slice());
-            let papel = if aceso {
-                Realce::Cursor
-            } else {
-                papel_da_parte(&seg.nome)
+            let nome = seg.map(|s| s.nome.as_str()).unwrap_or("adicionar");
+            let aceso = seg.is_some_and(|s| cursor.is_some_and(|c| c == s.caminho.as_slice()));
+            let (fundo, estilo_texto) = aparencia_do_botao(nome, tema);
+            // Sob o cursor, o botão ganha o CONTORNO na cor de destaque
+            // (o `:focus-visible` da janela) e mantém o preenchimento — um
+            // botão primário aceso continua dizendo que é o primário.
+            let destaque = tema.var("accent-blue");
+            let cor_contorno = match (aceso, fundo) {
+                (true, Some(f)) if f == destaque => Some(tema.var("text-primary")),
+                (true, _) => Some(destaque),
+                (false, f) => f,
             };
-            let contorno = tema.contorno_do_botao(papel);
-            let largura_miolo = seg.texto.chars().count() + 2;
+            let largura_miolo = texto.chars().count() + 2;
+            let (cima, lado_e, lado_d, baixo) = match cor_contorno {
+                Some(_) => (format!("▗{}▖", "▄".repeat(largura_miolo)), "▐", "▌", format!("▝{}▘", "▀".repeat(largura_miolo))),
+                None => (" ".repeat(largura_miolo + 2), " ", " ", " ".repeat(largura_miolo + 2)),
+            };
+            let contorno = match cor_contorno {
+                Some(c) => Style::default().fg(c),
+                None => Style::default(),
+            };
+            let miolo = match fundo {
+                Some(f) => estilo_texto.bg(f),
+                None => estilo_texto,
+            };
             // Contorno de MEIO-BLOCO: cada célula pinta a metade que
             // olha pra dentro, e deixa a de fora com o fundo da tela.
-            // `▗▄▖` em cima, `▝▀▘` embaixo, `▐` e `▌` nos lados — os
-            // cantos são quadrantes, senão a quina fica quadrada e o
-            // botão volta a parecer uma caixa cheia.
-            topo.push(Span::styled(
-                format!("▗{}▖", "▄".repeat(largura_miolo)),
-                contorno,
-            ));
-            meio.push(Span::styled("▐", contorno));
-            meio.push(Span::styled(
-                format!(" {} ", seg.texto),
-                tema.miolo_do_botao(papel),
-            ));
-            meio.push(Span::styled("▌", contorno));
-            base.push(Span::styled(
-                format!("▝{}▘", "▀".repeat(largura_miolo)),
-                contorno,
-            ));
+            // Com contorno aceso sobre fundo próprio, a metade de dentro
+            // fica com o fundo do botão.
+            let contorno_lateral = match (aceso, fundo) {
+                (true, Some(f)) => contorno.bg(f),
+                _ => contorno,
+            };
+            topo.push(Span::styled(cima, contorno));
+            meio.push(Span::styled(lado_e, contorno_lateral));
+            meio.push(Span::styled(format!(" {texto} "), miolo));
+            meio.push(Span::styled(lado_d, contorno_lateral));
+            base.push(Span::styled(baixo, contorno));
         }
         fora.push(vec![Line::from(topo), Line::from(meio), Line::from(base)]);
     }
     fora
+}
+
+/// As linhas de texto do fluxo (ciclo 330): o topo é o `.fluxo__topo`
+/// da janela — o artefato em caixa alta apagado e a etapa numa pílula na
+/// cor dela (azul; verde concluída; âmbar bloqueada) —, e a dica e a
+/// nota saem apagadas, sem itálico.
+fn linha_do_fluxo(l: &crate::tela::Linha, nome: &str, tema: &Tema) -> Line<'static> {
+    let recuo = Span::raw("  ".repeat(l.nivel));
+    let apagado = Style::default().fg(tema.var("text-muted"));
+    if nome != "titulo" {
+        return Line::from(vec![recuo, Span::styled(l.texto.clone(), apagado)]);
+    }
+    let (artefato, etapa) = l.texto.split_once(": ").unwrap_or((l.texto.as_str(), ""));
+    let cor = match etapa {
+        "Concluída" => tema.var("success"),
+        "Bloqueada" => tema.var("warning"),
+        _ => tema.var("accent-blue"),
+    };
+    let pilula = Style::default()
+        .fg(cor)
+        .bg(crate::tema::misturar(cor, tema.var("bg-surface"), 0.16))
+        .add_modifier(Modifier::BOLD);
+    Line::from(vec![
+        recuo,
+        Span::styled(artefato.to_string(), apagado),
+        Span::raw("  "),
+        Span::styled(format!(" {etapa} "), pilula),
+    ])
+}
+
+/// O fundo e o texto de um botão, pelo papel — as classes da janela:
+///
+/// - `button` é `.actions-embed__btn`: superfície, texto normal;
+/// - `button-primary` e `acao` de aprovada: `--accent-blue` com texto no
+///   fundo da página;
+/// - `acao` (o "Pedir alteração"): `.btn` elevado;
+/// - `transicao-principal`: o `.btn--primary` do fluxo, o gradiente azul
+///   → roxo, aqui no meio dele;
+/// - `transicao`: `.btn--ghost`, sem fundo, texto apagado;
+/// - `adicionar` ("+ ação"): elevado e apagado.
+///
+/// `None` no fundo é botão sem caixa.
+fn aparencia_do_botao(nome: &str, tema: &Tema) -> (Option<Color>, Style) {
+    let base = tema.var("bg-base");
+    match nome {
+        "button" => (Some(tema.var("bg-surface")), Style::default().fg(tema.var("text-primary"))),
+        "button-primary" => (Some(tema.var("accent-blue")), Style::default().fg(base)),
+        "acao" => (Some(tema.var("bg-elevated")), Style::default().fg(tema.var("text-primary")).add_modifier(Modifier::BOLD)),
+        "transicao-principal" => (
+            Some(crate::tema::misturar(tema.var("accent-blue"), tema.var("accent-purple"), 0.5)),
+            Style::default().fg(Color::Rgb(255, 255, 255)).add_modifier(Modifier::BOLD),
+        ),
+        "transicao" => (None, Style::default().fg(tema.var("text-muted"))),
+        "adicionar" => (Some(tema.var("bg-elevated")), Style::default().fg(tema.var("text-muted"))),
+        outro => {
+            let papel = papel_da_parte(outro);
+            (Some(tema.contorno_do_botao(papel).fg.unwrap_or(Color::Gray)), tema.miolo_do_botao(papel))
+        }
+    }
+}
+
+/// Um glifo de uma célula pro ícone de um botão de ações (os nomes de
+/// `components/icon.rs`). Nada de emoji: ele ocupa duas células em
+/// metade dos terminais e desalinha a caixa.
+fn glifo_do_icone(nome: &str) -> &'static str {
+    match nome {
+        "search" => "⌕",
+        "home" => "⌂",
+        "file-text" => "≡",
+        "folder" => "▭",
+        "calendar" | "table" => "▦",
+        "check" => "✓",
+        "edit" => "✎",
+        "link" | "external-link" => "↗",
+        "clock" => "◷",
+        "network" => "⋈",
+        "image" => "▨",
+        "columns" => "▥",
+        "layout" => "▤",
+        "settings" => "✲",
+        "download" => "↓",
+        "git-branch" => "⑂",
+        "message-circle" => "○",
+        "paperclip" => "⌁",
+        "info" => "ℹ",
+        "lightbulb" => "✱",
+        _ => "ϟ",
+    }
 }
 
 /// O papel de um badge pelo sufixo do nome (`--info`, `--success`…),
@@ -3649,22 +3811,28 @@ mod testes {
         // O defeito que a pessoa mostrou: entrar num botão movia o
         // cursor pra um lugar SEM linha na tela, e o Enter parecia não
         // fazer nada. A linha é uma, os destinos são vários — o que
-        // muda é qual segmento acende.
+        // muda é qual segmento acende: o contorno dele vai pra cor de
+        // destaque (o `:focus-visible` da janela, ciclo 329).
         let mut e = Estado::novo(paginas(), com_acoes());
         e.foco = Foco::Conteudo;
         e.cursor = vec![0, 0, 1]; // o segundo botão
-        let cursor = e.tema.estilo(Realce::Cursor).bg.unwrap();
-        let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
-        term.draw(|f| desenhar(f, &mut e)).unwrap();
-        let buf = term.backend().buffer().clone();
-
-        let aceso: String = (0..buf.area.height)
-            .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
-            .filter(|(x, y)| buf[(*x, *y)].style().bg == Some(cursor))
-            .map(|(x, y)| buf[(x, y)].symbol().to_string())
+        let destaque = e.tema.var("accent-blue");
+        let buf = quadro(&mut e, 60, 12);
+        let y = (0..buf.area.height)
+            .find(|y| (0..buf.area.width).map(|x| buf[(x, *y)].symbol().to_string()).collect::<String>().contains("Buscar"))
+            .expect("o botão sumiu");
+        let linha: Vec<String> = (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect();
+        let inicio = linha.join("").find("Buscar").map(|b| linha.join("")[..b].chars().count()).unwrap();
+        let fim_abrir = linha.join("").find("Abrir").map(|b| linha.join("")[..b].chars().count()).unwrap();
+        // Só o contorno de meio-bloco dos botões, não a moldura da região.
+        let acesos: Vec<usize> = (0..buf.area.width)
+            .filter(|x| buf[(*x, y)].style().fg == Some(destaque) && linha[*x as usize] == "▐" || linha[*x as usize] == "▌" && buf[(*x, y)].style().fg == Some(destaque))
+            .map(|x| x as usize)
+            .filter(|x| *x > fim_abrir && *x < inicio + 12)
             .collect();
-        assert!(aceso.contains("Buscar"), "o botão do cursor não acendeu: {aceso:?}");
-        assert!(!aceso.contains("Abrir"), "acendeu o botão errado também: {aceso:?}");
+        assert_eq!(acesos.len(), 2, "o contorno do botão do cursor não acendeu: {acesos:?}");
+        assert!(acesos[0] < inicio && acesos[1] > inicio, "acendeu fora do Buscar: {acesos:?}");
+        assert!(acesos[0] > fim_abrir, "acendeu o botão errado: {acesos:?}");
     }
 
     /// Um callout `warning` com título e um parágrafo.
@@ -3882,42 +4050,28 @@ mod testes {
 
     #[test]
     fn a_etapa_atual_sai_de_uma_cor_diferente_das_outras() {
-        // Sem o nome da parte no segmento, todas as seis etapas saíam da
-        // mesma cor — e a única que importa é a atual.
+        // A trilha é de pílulas como `.fluxo__passo` (ciclo 330): feita,
+        // atual e futura, cada uma de um jeito.
         let mut e = Estado::novo(
             paginas(),
             analisar("{{ type: \"fluxo\" }}\nartefato: proposta\netapa: aprovada\n{{ /fluxo }}\n"),
         );
         e.foco = Foco::Paginas;
-        let atual = e.tema.estilo(Realce::EtapaAtual).fg.unwrap();
-        let outra = e.tema.estilo(Realce::Etapa).fg.unwrap();
-        assert_ne!(atual, outra, "as duas cores são iguais no tema");
-
-        let mut term = Terminal::new(TestBackend::new(70, 12)).unwrap();
-        term.draw(|f| desenhar(f, &mut e)).unwrap();
-        let buf = term.backend().buffer().clone();
-
-        // Botão preenchido: a cor do papel é o FUNDO do miolo, e o
-        // texto por cima é da cor do fundo da tela (ciclo 302).
-        let pintado = |cor: Color| -> String {
-            (0..buf.area.height)
-                .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
-                .filter(|(x, y)| {
-                    let e = buf[(*x, *y)].style();
-                    e.fg == Some(cor) || e.bg == Some(cor)
-                })
-                .map(|(x, y)| buf[(x, y)].symbol().to_string())
-                .collect()
+        let buf = quadro(&mut e, 130, 14);
+        let fundo_de = |palavra: &str| -> Option<Color> {
+            (0..buf.area.height).find_map(|y| {
+                let linha: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect();
+                if !linha.contains("Rascunho") || !linha.contains("Concluída") {
+                    return None;
+                }
+                let x = linha.chars().collect::<Vec<_>>().windows(palavra.chars().count()).position(|w| w.iter().collect::<String>() == palavra)?;
+                buf[(x as u16, y)].style().bg
+            })
         };
-        assert!(
-            pintado(atual).contains("Aprovada"),
-            "a etapa atual não saiu na cor dela: {:?}",
-            pintado(atual)
-        );
-        assert!(
-            pintado(outra).contains("Rascunho"),
-            "as outras etapas não saíram na cor delas"
-        );
+        let (feita, atual, futura) = (fundo_de("Rascunho"), fundo_de("Aprovada"), fundo_de("Concluída"));
+        assert!(feita.is_some() && atual.is_some() && futura.is_some(), "{feita:?} {atual:?} {futura:?}\n{}", desenho(&mut e, 130, 14).join("\n"));
+        assert_ne!(atual, feita, "a atual saiu igual à feita");
+        assert_ne!(atual, futura, "a atual saiu igual à futura");
     }
 
     #[test]
@@ -5641,20 +5795,11 @@ mod testes {
         //
         // Meio-bloco é a terceira opção que eu tinha decidido que não
         // existia: a célula pinta a metade que olha PRA DENTRO. O vão
-        // some e o botão encolhe meia célula de cada lado.
+        // some e o botão encolhe meia célula de cada lado. O botão comum
+        // de ações é `--bg-surface`, como `.actions-embed__btn`.
         let mut e = Estado::novo(paginas(), com_acoes());
         e.foco = Foco::Paginas;
-        let cor = e.tema.miolo_do_botao(Realce::Parte).bg.unwrap();
-        assert_eq!(
-            e.tema.contorno_do_botao(Realce::Parte).fg,
-            Some(cor),
-            "o traço do contorno não é da cor do preenchimento"
-        );
-        assert_eq!(
-            e.tema.contorno_do_botao(Realce::Parte).bg,
-            None,
-            "a metade de fora do contorno ficou pintada — o botão incha"
-        );
+        let cor = e.tema.var("bg-surface");
 
         let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
         term.draw(|f| desenhar(f, &mut e)).unwrap();
@@ -5700,18 +5845,26 @@ mod testes {
 
     #[test]
     fn a_fileira_larga_quebra_em_grade_em_vez_de_sumir() {
-        // Seis etapas dão 89 colunas, e o painel de conteúdo raramente
-        // tem isso. Cortar na borda esconderia o fim da trilha — e o
-        // que sumia podia ser a etapa atual.
+        // A trilha num painel estreito QUEBRA em vez de sumir pela borda
+        // — o que sumia podia ser a etapa atual.
         let mut e = Estado::novo(
             paginas(),
             analisar("{{ type: \"fluxo\" }}\nartefato: proposta\netapa: aprovada\n{{ /fluxo }}\n"),
         );
         e.foco = Foco::Paginas;
-        let tudo = desenho(&mut e, 100, 24).join("\n");
-        for etapa in ["Rascunho", "Em revisão", "Aprovada", "Bloqueada"] {
+        let tudo = desenho(&mut e, 70, 24).join("\n");
+        for etapa in ["Rascunho", "Em revisão", "Aprovada", "Em execução", "Concluída"] {
             assert!(tudo.contains(etapa), "`{etapa}` sumiu da trilha:\n{tudo}");
         }
+        // Bloqueada é exceção: fora da trilha, como na janela — a não ser
+        // quando é onde o fluxo está.
+        let mut e = Estado::novo(
+            paginas(),
+            analisar("{{ type: \"fluxo\" }}\nartefato: proposta\netapa: bloqueada\n{{ /fluxo }}\n"),
+        );
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 100, 24).join("\n");
+        assert!(tudo.matches("Bloqueada").count() >= 2, "a etapa atual bloqueada sumiu da trilha:\n{tudo}");
     }
 
     #[test]
