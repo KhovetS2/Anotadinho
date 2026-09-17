@@ -927,6 +927,7 @@ fn laco<B: ratatui::backend::Backend>(
             continue;
         }
         if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
+            salvar_pendente(estado, vault);
             return Ok(None);
         }
         let Some(nome) = nome_da_tecla(&k) else { continue };
