@@ -37,7 +37,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | `type: assets` (arquivos, uso, excluir) | ✅ | 346 — "Ver assets"; `x`/`dd` exclui |
 | `type: kanban` / `calendar` / `table` de página inteira | ✅ | 353 — quadro com `column::`, calendário do vault, tarefas com `status::` |
 | `type: graph` | — | grafo 3D; talvez lista de conexões |
-| Cabeçalho de página tipada + propriedades | 🟡 | 344 — propriedades pela barra |
+| Cabeçalho de página tipada + propriedades | ✅ | 344, 360 — título da página e "Propriedades" (`=`) nas telas de tipo |
 
 ## Editor
 

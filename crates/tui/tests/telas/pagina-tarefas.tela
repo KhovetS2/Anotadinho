@@ -1,6 +1,8 @@
 # cena pagina-tarefas · 140x16 · teclas: Tab j
 ┌páginas─────────────────────────────────┐┌────────────────────────────────────────────────────────────────────────────────────────────────┐
-│cena                                    ││ Tarefas                                                                                      3 │
+│cena                                    ││ cena                                                                         ✲ Propriedades  = │
+│                                        ││────────────────────────────────────────────────────────────────────────────────────────────────│
+│                                        ││ Tarefas                                                                                      3 │
 │                                        ││                                                                                                │
 │                                        ││ Título ↓                                                          Status          Prioridade   │
 │                                        ││────────────────────────────────────────────────────────────────────────────────────────────────│
@@ -12,38 +14,37 @@
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
 └────────────────────────────────────────┘└ j k · Enter abre · s ordena ───────────────────────────────────────────────────────────────────┘
 == estilos ==
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-accccddddddddddddddddddddddddddddddddddddabeeeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabgggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggdb
+accccddddddddddddddddddddddddddddddddddddabeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
-addddddddddddddddddddddddddddddddddddddddabbhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiidddddddddhhhhhhhhhhhhdb
-addddddddddddddddddddddddddddddddddddddddabjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllmmmmmmmmmmkkkkkkkkkkkkdb
-addddddddddddddddddddddddddddddddddddddddabbhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhnnnnnnddddddddddhhhhhhhhhhhhdb
+addddddddddddddddddddddddddddddddddddddddabggggggggddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhdb
+addddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+addddddddddddddddddddddddddddddddddddddddabbiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiijjjjjjjdddddddddiiiiiiiiiiiidb
+addddddddddddddddddddddddddddddddddddddddabkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmnnnnnnnnnnlllllllllllldb
+addddddddddddddddddddddddddddddddddddddddabbiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiooooooddddddddddiiiiiiiiiiiidb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabooooooooooooooooooooooooooooobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabpppppppppppppppppppppppppppppbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 a = fg #3d404f bg #272930
 b = fg #00b5ff bg #272930
 c = fg - bg #272930 apagado
 d = fg - bg #272930
-e = fg #e4e8f5 bg #272930 negrito
+e = fg #00b5ff bg #272930 negrito
 f = fg #989eb7 bg #272930
-g = fg #989eb7 bg #272930 negrito
-h = fg #e4e8f5 bg #272930
-i = fg #00b5ff bg #213e4f
-j = fg #00b5ff bg #3d404f
-k = fg #e4e8f5 bg #3d404f
-l = fg #db7e21 bg #42362e
-m = fg - bg #3d404f
-n = fg #248569 bg #273739
-o = fg #989eb7 bg #272930 itálico
+g = fg #e4e8f5 bg #272930 negrito
+h = fg #989eb7 bg #272930 negrito
+i = fg #e4e8f5 bg #272930
+j = fg #00b5ff bg #213e4f
+k = fg #00b5ff bg #3d404f
+l = fg #e4e8f5 bg #3d404f
+m = fg #db7e21 bg #42362e
+n = fg - bg #3d404f
+o = fg #248569 bg #273739
+p = fg #989eb7 bg #272930 itálico

@@ -1,6 +1,8 @@
 # cena assets · 140x20 · teclas: Tab j
 ┌páginas─────────────────────────────────┐┌────────────────────────────────────────────────────────────────────────────────────────────────┐
-│cena                                    ││ Assets                                                                                         │
+│cena                                    ││ cena                                                                         ✲ Propriedades  = │
+│                                        ││────────────────────────────────────────────────────────────────────────────────────────────────│
+│                                        ││ Assets                                                                                         │
 │                                        ││ 3 arquivos · 2.5 MB · 1 não referenciados                                                      │
 │                                        ││                                                                                                │
 │                                        ││ Arquivo                                                         Tamanho   Uso                  │
@@ -16,19 +18,19 @@
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
 └────────────────────────────────────────┘└ j k · x exclui · R recarrega ──────────────────────────────────────────────────────────────────┘
 == estilos ==
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-accccddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+accccddddddddddddddddddddddddddddddddddddabeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffffffffffffffffffb
+addddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+addddddddddddddddddddddddddddddddddddddddabgggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabgggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggdddddddddb
+addddddddddddddddddddddddddddddddddddddddabhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhdddddddddb
 addddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
-addddddddddddddddddddddddddddddddddddddddabbhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhffffffffffiiiiiiidddddjjjjjjjjjb
-addddddddddddddddddddddddddddddddddddddddabkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmiiiiiiinnnnnooooooooob
-addddddddddddddddddddddddddddddddddddddddabbhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhffffffffffpppppppppppdjjjjjjjjjb
+addddddddddddddddddddddddddddddddddddddddabbiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffjjjjjjjdddddkkkkkkkkkb
+addddddddddddddddddddddddddddddddddddddddablmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnnnnnnnjjjjjjjooooopppppppppb
+addddddddddddddddddddddddddddddddddddddddabbiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffqqqqqqqqqqqdkkkkkkkkkb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -37,23 +39,22 @@ addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 a = fg #3d404f bg #272930
 b = fg #00b5ff bg #272930
 c = fg - bg #272930 apagado
 d = fg - bg #272930
-e = fg #e4e8f5 bg #272930 negrito
+e = fg #00b5ff bg #272930 negrito
 f = fg #989eb7 bg #272930
-g = fg #989eb7 bg #272930 negrito
-h = fg #e4e8f5 bg #272930
-i = fg #248569 bg #273739
-j = fg #e71d32 bg #272930
-k = fg #00b5ff bg #3d404f
-l = fg #e4e8f5 bg #3d404f
-m = fg #989eb7 bg #3d404f
-n = fg - bg #3d404f
-o = fg #e71d32 bg #3d404f negrito
-p = fg #db7e21 bg #42362e
-q = fg #989eb7 bg #272930 itálico
+g = fg #e4e8f5 bg #272930 negrito
+h = fg #989eb7 bg #272930 negrito
+i = fg #e4e8f5 bg #272930
+j = fg #248569 bg #273739
+k = fg #e71d32 bg #272930
+l = fg #00b5ff bg #3d404f
+m = fg #e4e8f5 bg #3d404f
+n = fg #989eb7 bg #3d404f
+o = fg - bg #3d404f
+p = fg #e71d32 bg #3d404f negrito
+q = fg #db7e21 bg #42362e
+r = fg #989eb7 bg #272930 itálico

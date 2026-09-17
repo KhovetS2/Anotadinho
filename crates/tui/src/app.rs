@@ -9041,4 +9041,20 @@ mod testes {
         tecla(&mut e2, "Ctrl+d");
         assert!(e2.pedidos.contains(&Pedido::AbrirHoje));
     }
+
+    // --- Ciclo 360: cabeçalho da página tipada ---------------------------------
+
+    #[test]
+    fn pagina_tipada_mostra_o_titulo_e_igual_abre_as_propriedades() {
+        let mut e = especial_aberto("tags");
+        especiais::carregar(&mut e, especiais::tags_do_indice(&[]));
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("alfa") && tela.contains("Propriedades"), "{tela}");
+        tecla(&mut e, "=");
+        assert!(matches!(e.modal, Some(Modal::Detalhe { alvo: modais::AlvoDoDetalhe::Propriedades, .. })));
+        // Propostas não tem cabeçalho de página.
+        let mut e = especial_aberto("propostas");
+        especiais::carregar(&mut e, especiais::Dados::Propostas(vec![]));
+        assert!(!desenho(&mut e, 100, 20).join("\n").contains("Propriedades"));
+    }
 }

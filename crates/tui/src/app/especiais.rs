@@ -297,6 +297,9 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
             let tipo = t.tipo;
             e.pedidos.push(Pedido::CarregarEspecial(tipo));
         }
+        "=" if t.tipo != TipoEspecial::Propostas => {
+            super::edicao::abrir_propriedades(e);
+        }
         _ => {
             let tipo = t.tipo;
             return match tipo {
@@ -455,7 +458,8 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
     if w < 20 || dentro.height < 4 {
         return;
     }
-    let (linhas, faixas) = linhas_da_tela(t, tema, w, no_foco);
+    let titulo = e.paginas.get(e.pagina).map(|p| p.title.clone()).unwrap_or_default();
+    let (linhas, faixas) = linhas_da_tela(t, &titulo, tema, w, no_foco);
     let altura = dentro.height as usize;
     let topo = match faixas.get(t.selecionado) {
         Some(&(_, fim)) if fim <= altura => 0,
@@ -469,10 +473,23 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
 
 /// As linhas da tela e, pra cada item, a faixa de linhas `[inicio, fim)`
 /// que ele ocupa — a rolagem segue o item selecionado.
-pub fn linhas_da_tela(t: &TelaEspecial, tema: &Tema, w: usize, no_foco: bool) -> (Vec<Line<'static>>, Vec<(usize, usize)>) {
+pub fn linhas_da_tela(t: &TelaEspecial, pagina: &str, tema: &Tema, w: usize, no_foco: bool) -> (Vec<Line<'static>>, Vec<(usize, usize)>) {
     let texto = Style::default().fg(tema.var("text-primary"));
     let apagado = Style::default().fg(tema.var("text-muted"));
     let mut fora: Vec<Line<'static>> = Vec::new();
+    // O cabeçalho da página tipada (ciclo 360), como o `TypedPageHeader`
+    // da janela: o título dela e "Propriedades" (`=`). A revisão de
+    // propostas não tem, lá também não.
+    if t.tipo != TipoEspecial::Propostas && !pagina.is_empty() {
+        let esquerda = format!(" {pagina}");
+        let direita = "✲ Propriedades  = ";
+        fora.push(Line::from(vec![
+            Span::styled(esquerda.clone(), Style::default().fg(tema.var("accent-blue")).add_modifier(Modifier::BOLD)),
+            Span::raw(" ".repeat(w.saturating_sub(esquerda.chars().count() + direita.chars().count()))),
+            Span::styled(direita, apagado),
+        ]));
+        fora.push(Line::from(Span::styled("─".repeat(w), Style::default().fg(tema.var("border")))));
+    }
     let mut faixas = Vec::new();
     let (titulo, direita) = match (&t.tipo, &t.dados) {
         (TipoEspecial::Tags, _) => ("Tags", String::new()),
@@ -523,7 +540,8 @@ pub fn linhas_da_tela(t: &TelaEspecial, tema: &Tema, w: usize, no_foco: bool) ->
             if assets.is_empty() {
                 fora.push(Line::from(Span::styled(" Nenhum arquivo em assets/ ainda.", apagado)));
             } else {
-                fora.extend(tabela_de_assets(t, tema, assets, w, no_foco, &mut faixas));
+                let antes = fora.len();
+                fora.extend(tabela_de_assets(t, tema, assets, w, no_foco, antes, &mut faixas));
             }
         }
         Dados::Kanban(colunas) => {
@@ -535,7 +553,8 @@ pub fn linhas_da_tela(t: &TelaEspecial, tema: &Tema, w: usize, no_foco: bool) ->
             if lista.is_empty() {
                 fora.extend(paragrafo("Nenhuma tarefa encontrada. Use 'status::' e 'priority::' nas páginas.", apagado, w));
             } else {
-                fora.extend(tabela_de_tarefas(t, tema, lista, w, no_foco, &mut faixas));
+                let antes = fora.len();
+                fora.extend(tabela_de_tarefas(t, tema, lista, w, no_foco, antes, &mut faixas));
             }
         }
         Dados::Propostas(lista) => {
@@ -658,6 +677,7 @@ fn tabela_de_assets(
     assets: &[Asset],
     w: usize,
     no_foco: bool,
+    antes: usize,
     faixas: &mut Vec<(usize, usize)>,
 ) -> Vec<Line<'static>> {
     let apagado = Style::default().fg(tema.var("text-muted"));
@@ -679,8 +699,8 @@ fn tabela_de_assets(
         ]),
         Line::from(Span::styled("─".repeat(w), Style::default().fg(tema.var("border")))),
     ];
-    // As faixas contam do começo da tela: título, resumo e vão vêm antes.
-    let base = 3 + fora.len();
+    // As faixas contam do começo da tela.
+    let base = antes + fora.len();
     for (i, a) in assets.iter().enumerate() {
         let sel = i == t.selecionado;
         let fundo = if sel && no_foco { Some(tema.var("bg-elevated")) } else { None };
@@ -831,7 +851,7 @@ fn quadro_kanban(t: &TelaEspecial, tema: &Tema, colunas: &[(String, String, Vec<
 }
 
 /// A tabela de tarefas, com o status em badge como `.task-table`.
-fn tabela_de_tarefas(t: &TelaEspecial, tema: &Tema, lista: &[Tarefa], w: usize, no_foco: bool, faixas: &mut Vec<(usize, usize)>) -> Vec<Line<'static>> {
+fn tabela_de_tarefas(t: &TelaEspecial, tema: &Tema, lista: &[Tarefa], w: usize, no_foco: bool, antes: usize, faixas: &mut Vec<(usize, usize)>) -> Vec<Line<'static>> {
     let apagado = Style::default().fg(tema.var("text-muted"));
     let texto = Style::default().fg(tema.var("text-primary"));
     let (col_status, col_prio) = (16, 12);
@@ -851,7 +871,7 @@ fn tabela_de_tarefas(t: &TelaEspecial, tema: &Tema, lista: &[Tarefa], w: usize, 
         ]),
         Line::from(Span::styled("─".repeat(w), Style::default().fg(tema.var("border")))),
     ];
-    let base = 2 + fora.len();
+    let base = antes + fora.len();
     for (i, x) in tarefas_ordenadas(lista, t.chip).into_iter().enumerate() {
         let sel = no_foco && i == t.selecionado;
         let fundo = |s: Style| if sel { s.bg(tema.var("bg-elevated")) } else { s };
