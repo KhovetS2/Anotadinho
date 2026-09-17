@@ -402,67 +402,113 @@ pub fn e_evento(nome: &str) -> bool {
     nome == "evento" || nome == "evento-continua" || nome.starts_with("evento--")
 }
 
+/// `(ano, mês)` de um "mes" do calendário, lido do rótulo que o núcleo
+/// montou (`Agosto 2026`).
+///
+/// O rótulo sai de `date_util::month_name`, e é a MESMA função que o lê
+/// de volta aqui — as duas pontas não têm como discordar sobre o nome de
+/// um mês.
+pub fn ano_e_mes(rotulo: &str) -> Option<(i32, u32)> {
+    let (nome, ano) = rotulo.rsplit_once(' ')?;
+    let mes = (1..=12).find(|m| anotadinho_core::date_util::month_name(*m) == nome)?;
+    Some((ano.parse().ok()?, mes))
+}
+
+/// Os dias de um "mes" do calendário, na ordem da grade, como
+/// `(data, semana, dia, é_do_mês)`.
+fn dias_do_mes(mes: &Unidade) -> Vec<(String, usize, usize, bool)> {
+    let Some((ano, m)) = ano_e_mes(&mes.texto) else { return Vec::new() };
+    anotadinho_core::calendario::month_cells(ano, m)
+        .into_iter()
+        .enumerate()
+        // O núcleo só corta semanas do FIM da grade, então a célula `i`
+        // é a semana `i / 7` enquanto essa semana existir na árvore.
+        .filter(|(i, _)| i / 7 < mes.filhos.len())
+        .map(|(i, (y, mm, d, do_mes))| {
+            (anotadinho_core::date_util::format_date(y, mm, d), i / 7, i % 7, do_mes)
+        })
+        .collect()
+}
+
 /// O evento do dia vizinho, com o cursor num evento do calendário
-/// (ciclo 311).
+/// (ciclos 311 e 312).
 ///
 /// `h`/`l` num evento andam de DIA, não de irmão: os irmãos de um evento
 /// são as outras faixas do mesmo dia, empilhadas — `j`/`k` já andam
 /// entre elas. Andar de dia mantém o nível: o cursor sai de um evento e
 /// pousa num evento.
 ///
-/// No dia ao lado, a preferência é a MESMA faixa — dentro de uma barra
-/// de vários dias, é a continuação dela, e `l` percorre a barra dia a
-/// dia com o evento selecionado. Se a faixa ali não é evento, vai pro
-/// primeiro evento do dia; dia sem evento é pulado. A semana vira junto
-/// (sábado → domingo seguinte), dentro do mesmo mês. Sem evento adiante,
-/// `None`: o cursor fica.
+/// No dia ao lado, dentro do mesmo mês, a preferência é a MESMA faixa —
+/// numa barra de vários dias é a continuação dela, e `l` percorre a barra
+/// dia a dia com o evento selecionado. Se a faixa ali não é evento, vai
+/// pro primeiro evento do dia; dia sem evento é pulado.
+///
+/// A conta é por DATA, e atravessa os meses (ciclo 312): do último
+/// evento de agosto, `l` vai pro primeiro dia com evento do próximo mês
+/// que o calendário mostra. Só os dias do PRÓPRIO mês de cada grade
+/// contam — os de fora (o 1º de setembro no fim da grade de agosto) são
+/// os mesmos dias da grade seguinte, e contá-los duas vezes faria o
+/// cursor voltar no tempo ao virar o mês. Sem evento adiante, `None`.
 pub fn evento_ao_lado(raiz: &Unidade, cursor: &[usize], adiante: bool) -> Option<Caminho> {
     let nome_de = |u: &Unidade| match &u.tipo {
         Tipo::Parte { nome, .. } => Some(nome.clone()),
         _ => None,
     };
     let n = cursor.len();
-    if n < 4 {
+    if n < 5 {
         return None;
     }
     let atual = raiz.em(cursor)?;
     if !nome_de(atual).is_some_and(|nm| e_evento(&nm)) {
         return None;
     }
-    let (mes_c, semana, dia, faixa) = (&cursor[..n - 3], cursor[n - 3], cursor[n - 2], cursor[n - 1]);
-    let mes = raiz.em(mes_c)?;
-    if nome_de(mes).as_deref() != Some("mes") {
+    let embed_c = &cursor[..n - 4];
+    let (mes_atual, semana, dia, faixa) = (cursor[n - 4], cursor[n - 3], cursor[n - 2], cursor[n - 1]);
+    let embed = raiz.em(embed_c)?;
+    if nome_de(embed.filhos.get(mes_atual)?).as_deref() != Some("mes") {
         return None;
     }
-    let dias_por_semana: Vec<usize> = mes.filhos.iter().map(|s| s.filhos.len()).collect();
-    // Posição linear do dia no mês, pra atravessar a virada da semana.
-    let linear = |s: usize, d: usize| dias_por_semana[..s].iter().sum::<usize>() + d;
-    let total: usize = dias_por_semana.iter().sum();
-    let mut pos = linear(semana, dia) as isize;
-    loop {
-        pos += if adiante { 1 } else { -1 };
-        if pos < 0 || pos as usize >= total {
-            return None;
-        }
-        // De volta pra (semana, dia).
-        let (mut s, mut d) = (0usize, pos as usize);
-        while d >= dias_por_semana[s] {
-            d -= dias_por_semana[s];
-            s += 1;
-        }
-        let o_dia = &mes.filhos[s].filhos[d];
+
+    // A data de onde se parte.
+    let hoje = dias_do_mes(&embed.filhos[mes_atual])
+        .into_iter()
+        .find(|(_, s, d, _)| (*s, *d) == (semana, dia))?
+        .0;
+
+    // Todos os dias de todos os meses, em ordem de data.
+    let mut dias: Vec<(String, usize, usize, usize)> = embed
+        .filhos
+        .iter()
+        .enumerate()
+        .filter(|(_, u)| nome_de(u).as_deref() == Some("mes"))
+        .flat_map(|(m, u)| {
+            dias_do_mes(u)
+                .into_iter()
+                .filter(|(_, _, _, do_mes)| *do_mes)
+                .map(move |(data, s, d, _)| (data, m, s, d))
+        })
+        .filter(|(data, ..)| if adiante { *data > hoje } else { *data < hoje })
+        .collect();
+    dias.sort_by(|a, b| a.0.cmp(&b.0));
+    if !adiante {
+        dias.reverse();
+    }
+
+    for (_, m, s, d) in dias {
+        let o_dia = embed.filhos.get(m)?.filhos.get(s)?.filhos.get(d)?;
         let e_ev = |i: usize| o_dia.filhos.get(i).and_then(nome_de).is_some_and(|nm| e_evento(&nm));
-        let alvo = if e_ev(faixa) {
+        let alvo = if m == mes_atual && e_ev(faixa) {
             Some(faixa)
         } else {
             (0..o_dia.filhos.len()).find(|i| e_ev(*i))
         };
         if let Some(f) = alvo {
-            let mut c = mes_c.to_vec();
-            c.extend([s, d, f]);
+            let mut c = embed_c.to_vec();
+            c.extend([m, s, d, f]);
             return Some(c);
         }
     }
+    None
 }
 
 /// A página inteira em linhas, na ordem em que se lê.

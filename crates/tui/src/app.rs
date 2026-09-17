@@ -3065,6 +3065,65 @@ mod testes {
     }
 
     #[test]
+    fn h_e_l_atravessam_os_meses() {
+        // Agosto termina com uma viagem que entra em setembro; outubro
+        // tem um evento, e novembro nenhum (não tem grade).
+        let mut e = Estado::novo(
+            paginas(),
+            analisar(
+                "{{ type: \"calendar\" }}\nentries:\n\
+                 - date: 2026-08-28\n  title: Revisão\n\
+                 - date: 2026-08-31\n  title: Viagem\n  end_date: 2026-09-02\n\
+                 - date: 2026-10-05\n  title: Entrega\n\
+                 {{ /calendar }}\n",
+            ),
+        );
+        e.foco = Foco::Conteudo;
+        let onde = |e: &Estado| {
+            let u = e.arvore.em(&e.cursor).unwrap();
+            let mes = e.arvore.em(&e.cursor[..2]).unwrap().texto.clone();
+            (mes, u.texto.clone())
+        };
+        // Três meses de grade: agosto, setembro, outubro.
+        assert_eq!(e.arvore.filhos[0].filhos.len(), 3);
+        // Revisão, sexta 28 de agosto: semana 5 (23–29), coluna 5.
+        e.cursor = vec![0, 0, 4, 5, 0];
+        assert_eq!(onde(&e), ("Agosto 2026".into(), "Revisão".into()));
+        tecla(&mut e, "l");
+        assert_eq!(onde(&e), ("Agosto 2026".into(), "Viagem".into()));
+        // Do dia 31 de agosto (a última célula DO MÊS), `l` pula as
+        // células de setembro no fim da grade de agosto e vai pro 1º de
+        // setembro na grade de SETEMBRO.
+        tecla(&mut e, "l");
+        assert_eq!(onde(&e), ("Setembro 2026".into(), "Viagem".into()));
+        tecla(&mut e, "l");
+        assert_eq!(onde(&e), ("Setembro 2026".into(), "Viagem".into()));
+        // Acabou a viagem (dia 2); o resto de setembro é vazio: outubro.
+        tecla(&mut e, "l");
+        assert_eq!(onde(&e), ("Outubro 2026".into(), "Entrega".into()));
+        tecla(&mut e, "l");
+        assert_eq!(onde(&e), ("Outubro 2026".into(), "Entrega".into()), "depois da entrega não há nada");
+        // E de volta, sem nunca voltar no tempo.
+        tecla(&mut e, "h");
+        assert_eq!(onde(&e), ("Setembro 2026".into(), "Viagem".into()));
+        let setembro_2 = e.cursor.clone();
+        tecla(&mut e, "h");
+        assert_ne!(e.cursor, setembro_2);
+        assert_eq!(onde(&e), ("Setembro 2026".into(), "Viagem".into()));
+        tecla(&mut e, "h");
+        assert_eq!(onde(&e), ("Agosto 2026".into(), "Viagem".into()));
+    }
+
+    #[test]
+    fn o_rotulo_do_mes_volta_a_ser_ano_e_mes() {
+        for m in 1..=12 {
+            let rotulo = format!("{} 2026", anotadinho_core::date_util::month_name(m));
+            assert_eq!(tela::ano_e_mes(&rotulo), Some((2026, m)), "{rotulo}");
+        }
+        assert_eq!(tela::ano_e_mes("Sem data (1)"), None);
+    }
+
+    #[test]
     fn o_evento_sob_o_cursor_acende_na_grade() {
         let mut e = Estado::novo(paginas(), com_calendario());
         // embed → mês → segunda semana → quinta, dia 6 → Revisão.
