@@ -522,7 +522,7 @@ impl Estado {
     /// Com uma edição aberta (inserção, formulário) não mexe: devolve
     /// `false` e quem vigia tenta de novo depois.
     pub fn recarregar_do_disco(&mut self, texto: &str, versao: Option<String>) -> bool {
-        if self.pergunta.is_some() || matches!(self.modal, Some(Modal::Detalhe { .. } | Modal::Opcoes(_))) {
+        if self.pergunta.is_some() || matches!(self.modal, Some(Modal::Detalhe { .. } | Modal::Opcoes(_) | Modal::Conflito(_))) {
             return false;
         }
         let (frontmatter, _) = anotadinho_core::MarkdownCodec::split_frontmatter_text(texto);
@@ -9150,5 +9150,31 @@ mod testes {
         digitar(&mut e, "como inicio");
         tecla(&mut e, "Enter");
         assert!(matches!(e.pedidos.last(), Some(Pedido::AlternarInicio(_))));
+    }
+
+    // --- Ciclo 363: conflito com o disco --------------------------------------
+
+    #[test]
+    fn conflito_oferece_ver_diferenca_manter_ou_recarregar() {
+        let mut e = markdown_editavel();
+        e.modal = Some(Modal::Conflito(modais::Conflito {
+            path: "pages/alfa.md".into(),
+            meu: "# Título\n\nmeu texto\n".into(),
+            disco: "# Título\n\ntexto de fora\n".into(),
+            opcao: 0,
+            diff: false,
+            rolagem: 0,
+        }));
+        let tela = desenho(&mut e, 120, 30).join("\n");
+        assert!(tela.contains("mudou no disco") && tela.contains("Manter o meu") && tela.contains("Recarregar"), "{tela}");
+        tecla(&mut e, "Enter");
+        let tela = desenho(&mut e, 120, 30).join("\n");
+        assert!(tela.contains("-texto de fora") && tela.contains("+meu texto"), "{tela}");
+        // Enquanto decide, o disco não relê por cima.
+        assert!(!e.recarregar_do_disco("# outro\n", Some("v9".into())));
+        tecla(&mut e, "l");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::GravarPorCima { path: "pages/alfa.md".into(), conteudo: "# Título\n\nmeu texto\n".into() }]);
+        assert!(e.modal.is_none());
     }
 }

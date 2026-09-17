@@ -439,6 +439,15 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         .map(|t| (t.path, t.title))
                         .collect(),
                 ),
+                Pedido::GravarPorCima { path, conteudo } => match handle_write_page(vault.to_string(), path.clone(), conteudo) {
+                    Ok(_) => {
+                        if let Ok((_, v)) = ler(vault, &path) {
+                            estado.versao = v;
+                        }
+                        estado.aviso = Some("gravado por cima do disco".into());
+                    }
+                    Err(e) => estado.aviso = Some(format!("não gravou: {e}")),
+                },
                 Pedido::AlternarInicio(path) => {
                     let atual = estado.preferencias.inicio.get(vault).cloned();
                     if atual.as_deref() == Some(path.as_str()) {
@@ -800,14 +809,27 @@ fn laco<B: ratatui::backend::Backend>(
         if let Some(conteudo) = estado.gravacao.take() {
             let caminho = estado.paginas.get(estado.pagina).map(|p| p.path.clone());
             if let Some(caminho) = caminho {
+                let conteudo_tentado = conteudo.clone();
                 match handle_write_page_checked(vault.to_string(), caminho.clone(), conteudo, estado.versao.clone()) {
                     Ok(v) => estado.versao = Some(v),
-                    Err(motivo) => {
-                        if let Ok((texto, versao)) = ler(vault, &caminho) {
-                            estado.abrir_texto(&texto, versao);
+                    Err(motivo) => match ler(vault, &caminho) {
+                        // Mudou por fora: a pessoa decide (ciclo 363).
+                        Ok((disco, _)) if disco != conteudo_tentado => {
+                            estado.modal = Some(app::Modal::Conflito(app::modais::Conflito {
+                                path: caminho.clone(),
+                                meu: conteudo_tentado,
+                                disco,
+                                opcao: 0,
+                                diff: false,
+                                rolagem: 0,
+                            }));
                         }
-                        estado.aviso = Some(format!("não gravou: {motivo}"));
-                    }
+                        Ok((texto, versao)) => {
+                            estado.abrir_texto(&texto, versao);
+                            estado.aviso = Some(format!("não gravou: {motivo}"));
+                        }
+                        Err(_) => estado.aviso = Some(format!("não gravou: {motivo}")),
+                    },
                 }
             }
         }

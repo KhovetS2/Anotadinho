@@ -39,6 +39,13 @@ pub enum Pedido {
     },
     /// Listar os templates pra "Nova página" (ciclo 350).
     ListarTemplates,
+    /// Gravar por cima do disco, sem a trava de versão (ciclo 363).
+    GravarPorCima {
+        /// A página.
+        path: String,
+        /// O texto.
+        conteudo: String,
+    },
     /// Pôr ou tirar a página como início do vault (ciclo 362).
     AlternarInicio(String),
     /// Gravar a página como HTML.
@@ -236,6 +243,9 @@ pub enum Modal {
     Prompt(SeletorDePrompt),
     /// Um texto longo pra ler, com a rolagem (o "Visualizar").
     Visualizar(String, usize),
+    /// A página mudou no disco enquanto se editava (ciclo 363), como a
+    /// barra de conflito da janela.
+    Conflito(Conflito),
     /// Os detalhes de um item num formulário (ciclo 343): o cartão do
     /// kanban, o evento do calendário.
     Detalhe {
@@ -283,6 +293,23 @@ pub enum AlvoDoDetalhe {
     Agente,
     /// O remapeamento de teclas (ciclo 359).
     Teclas,
+}
+
+/// O conflito entre o que se escreveu e o que está no disco.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Conflito {
+    /// A página.
+    pub path: String,
+    /// O texto que não gravou.
+    pub meu: String,
+    /// O que está no disco agora.
+    pub disco: String,
+    /// A opção escolhida: 0 ver a diferença, 1 manter o meu, 2 recarregar.
+    pub opcao: usize,
+    /// A diferença à vista.
+    pub diff: bool,
+    /// A rolagem da diferença.
+    pub rolagem: usize,
 }
 
 /// O seletor de prompt padrão: a lista e os campos das variáveis.
@@ -805,6 +832,26 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             }
             e.modal = Some(Modal::Detalhe { titulo, form, alvo });
         }
+        Modal::Conflito(mut c) => {
+            match tecla {
+                "j" | "ArrowDown" | "l" | "ArrowRight" | "Tab" => c.opcao = (c.opcao + 1) % 3,
+                "k" | "ArrowUp" | "h" | "ArrowLeft" => c.opcao = (c.opcao + 2) % 3,
+                "Ctrl+d" | "PageDown" => c.rolagem += 10,
+                "Ctrl+u" | "PageUp" => c.rolagem = c.rolagem.saturating_sub(10),
+                "Enter" if c.opcao == 0 => c.diff = !c.diff,
+                "Enter" if c.opcao == 1 => {
+                    e.pedidos.push(Pedido::GravarPorCima { path: c.path, conteudo: c.meu });
+                    return;
+                }
+                "Enter" => {
+                    e.pedidos.push(Pedido::AbrirPagina(c.path));
+                    e.aviso = Some("recarregada do disco".into());
+                    return;
+                }
+                _ => {}
+            }
+            e.modal = Some(Modal::Conflito(c));
+        }
         Modal::Visualizar(texto, rolagem) => match tecla {
             "Escape" | "q" | "Enter" => {}
             "j" | "ArrowDown" => e.modal = Some(Modal::Visualizar(texto, rolagem + 1)),
@@ -1004,6 +1051,45 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
             let cursor = form.linha_do_cursor();
             let rolagem = cursor.saturating_sub(dentro.height.saturating_sub(2) as usize);
             f.render_widget(Paragraph::new(linhas).scroll((rolagem as u16, 0)), dentro);
+        }
+        Modal::Conflito(c) => {
+            let linhas_diff = if c.diff { anotadinho_core::diff::diff_linhas(&c.disco, &c.meu) } else { Vec::new() };
+            let altura = if c.diff { tela.height.saturating_sub(4) } else { 9 };
+            let area = componentes::area_do_modal(tela, 90, altura);
+            let dentro = componentes::desenhar_modal(f, area, "Conflito", "h l escolher · Enter · Ctrl+D rola", t);
+            let apagado = Style::default().fg(t.var("text-muted"));
+            let mut linhas = vec![
+                Line::from(Span::styled(" ⚠ Esta página mudou no disco enquanto você editava.", Style::default().fg(t.var("warning")).add_modifier(Modifier::BOLD))),
+                Line::default(),
+            ];
+            let rotulos = [
+                if c.diff { "Esconder a diferença" } else { "Ver a diferença" },
+                "Manter o meu",
+                "Recarregar (perde o que você escreveu)",
+            ];
+            let mut botoes = vec![Span::raw(" ")];
+            for (i, r) in rotulos.iter().enumerate() {
+                let estilo = if i == c.opcao { t.estilo(crate::tema::Realce::Cursor) } else { Style::default().fg(t.var("text-primary")).bg(t.var("bg-elevated")) };
+                botoes.push(Span::styled(format!(" {r} "), estilo));
+                botoes.push(Span::raw("  "));
+            }
+            linhas.push(Line::from(botoes));
+            if c.diff {
+                linhas.push(Line::default());
+                linhas.push(Line::from(Span::styled(" - no disco   + o seu", apagado)));
+                let w = dentro.width as usize;
+                for l in linhas_diff.iter().skip(c.rolagem) {
+                    let (marca, estilo) = match l {
+                        anotadinho_core::diff::LinhaDiff::Igual { .. } => (" ", apagado),
+                        anotadinho_core::diff::LinhaDiff::Removida { .. } => ("-", Style::default().fg(t.var("text-primary")).bg(crate::tema::misturar(t.var("error"), t.var("bg-surface"), 0.16))),
+                        anotadinho_core::diff::LinhaDiff::Adicionada { .. } => ("+", Style::default().fg(t.var("text-primary")).bg(crate::tema::misturar(t.var("success"), t.var("bg-surface"), 0.16))),
+                    };
+                    let texto: String = format!("{marca}{}", l.texto()).chars().take(w).collect();
+                    let falta = w.saturating_sub(texto.chars().count());
+                    linhas.push(Line::from(vec![Span::styled(texto, estilo), Span::styled(" ".repeat(falta), estilo)]));
+                }
+            }
+            f.render_widget(Paragraph::new(linhas), dentro);
         }
         Modal::Visualizar(texto, rolagem) => {
             let area = componentes::area_do_modal(tela, 90, tela.height.saturating_sub(6));
