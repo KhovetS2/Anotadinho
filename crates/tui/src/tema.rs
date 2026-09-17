@@ -128,6 +128,10 @@ pub enum Realce {
     BadgeSucesso,
     BadgeAtencao,
     BadgeErro,
+    /// Um evento sem tag na grade do mês — a barra neutra da janela
+    /// (`.calendar-grid__bar`: fundo `--bg-elevated`, texto comum),
+    /// ciclo 306.
+    Evento,
 }
 
 /// Uma paleta resolvida.
@@ -274,6 +278,9 @@ impl Tema {
             Realce::BadgeSucesso => Style::default().fg(self.cor("success", Color::Green)),
             Realce::BadgeAtencao => Style::default().fg(self.cor("warning", Color::Yellow)),
             Realce::BadgeErro => Style::default().fg(self.cor("error", Color::Red)),
+            Realce::Evento => Style::default()
+                .fg(texto)
+                .bg(self.cor("bg-elevated", Color::DarkGray)),
         }
     }
 
@@ -315,6 +322,35 @@ impl Tema {
             .fg(self.cor("bg-base", Color::Black))
             .bg(self.cor_do_botao(r))
             .add_modifier(Modifier::BOLD)
+    }
+
+    /// Uma PÍLULA: texto na cor do papel sobre um fundo tingido dela —
+    /// é como `.badge--info` se lê na janela, `color-mix(in srgb,
+    /// var(--accent-blue) 15%, transparent)` com o texto no acento (ciclo
+    /// 306).
+    ///
+    /// O terminal não tem transparência, então a mistura é feita aqui,
+    /// contra o fundo da tela: 15% da cor, 85% do `--bg-base`. Papel que
+    /// já declara fundo próprio (o evento neutro, o cursor) sai como está.
+    pub fn pilula(&self, r: Realce) -> Style {
+        let e = self.estilo(r);
+        if e.bg.is_some() {
+            return e;
+        }
+        let cor = e.fg.unwrap_or(Color::Gray);
+        e.bg(misturar(cor, self.cor("bg-base", Color::Black), 0.15))
+    }
+}
+
+/// `pct` de `a` sobre `b`, canal a canal. Cor sem RGB (a de socorro)
+/// não mistura: volta `a`.
+fn misturar(a: Color, b: Color, pct: f64) -> Color {
+    match (a, b) {
+        (Color::Rgb(ar, ag, ab), Color::Rgb(br, bg, bb)) => {
+            let canal = |x: u8, y: u8| (x as f64 * pct + y as f64 * (1.0 - pct)).round() as u8;
+            Color::Rgb(canal(ar, br), canal(ag, bg), canal(ab, bb))
+        }
+        _ => a,
     }
 }
 
@@ -508,6 +544,7 @@ mod testes {
             Realce::BadgeSucesso,
             Realce::BadgeAtencao,
             Realce::BadgeErro,
+            Realce::Evento,
         ] {
             let e = t.estilo(r);
             let cor = e.fg.or(e.bg).unwrap_or(Color::Reset);
@@ -545,5 +582,22 @@ mod testes {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_pilula_tinge_o_fundo_com_15_por_cento_da_cor() {
+        // `color-mix(in srgb, X 15%, transparent)` da janela, contra o
+        // fundo da tela.
+        assert_eq!(
+            misturar(Color::Rgb(200, 100, 0), Color::Rgb(0, 0, 100), 0.15),
+            Color::Rgb(30, 15, 85)
+        );
+        let t = Tema::novo("escuro");
+        let p = t.pilula(Realce::BadgeInfo);
+        assert_eq!(p.fg, t.estilo(Realce::BadgeInfo).fg);
+        assert_ne!(p.bg, None);
+        assert_ne!(p.bg, p.fg, "o fundo tingido não pode ser a própria cor do texto");
+        // O neutro já tem fundo: sai como está.
+        assert_eq!(t.pilula(Realce::Evento), t.estilo(Realce::Evento));
     }
 }

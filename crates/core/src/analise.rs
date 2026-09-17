@@ -600,11 +600,96 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
 
         // Só os eventos ESCRITOS no embed. No modo vault a lista vem de
         // fora e não pertence à árvore desta página.
-        EmbedData::Calendar(d) => d
-            .entries
-            .iter()
-            .map(|e| item("entry", format!("{} {}", e.date.as_deref().unwrap_or(""), e.title).trim().to_string()))
-            .collect(),
+        //
+        // A GRADE DO MÊS de verdade (ciclo 306), a mesma da janela: um
+        // "mes" por mês que tem evento, uma "semana" por fileira de 7
+        // "dia"s, e dentro de cada dia uma parte por FAIXA — as faixas
+        // saem de `calendario::pack_days`, o mesmo algoritmo que a janela
+        // usa (movido pra cá pra não haver duas cópias).
+        //
+        // Cada dia tem exatamente tantas faixas quanto a semana usa, pra
+        // quem desenha ler a faixa pela POSIÇÃO: "evento" (começa aqui),
+        // "evento-continua" (a barra vem do dia anterior) ou "vazio". A
+        // cor do evento vai no sufixo do nome ("evento--info"), a mesma
+        // de `badge_class` sobre as tags do calendário inteiro. Nenhuma
+        // dessas partes vira linha na tela — é o desenho da semana que
+        // as lê.
+        EmbedData::Calendar(d) => {
+            use crate::calendario::{existing_tags, month_cells, months_with_events, pack_days};
+            let tags = existing_tags(&d.entries);
+            let nome_do_evento = |e: &embed::CalendarEntry| -> String {
+                match e.all_tags().first() {
+                    Some(t) => {
+                        let classe = embed::badge_class(&tags, t);
+                        format!("evento{}", classe.strip_prefix("badge").unwrap_or(""))
+                    }
+                    None => "evento".to_string(),
+                }
+            };
+
+            let mut partes: Vec<Unidade> = months_with_events(&d.entries)
+                .into_iter()
+                .map(|(ano, mes)| {
+                    let semanas = month_cells(ano, mes)
+                        .chunks(7)
+                        // A sexta semana costuma ser toda do mês seguinte:
+                        // a janela reserva a altura, o terminal não tem
+                        // linha pra gastar com ela.
+                        .filter(|semana| semana.iter().any(|c| c.3))
+                        .map(|semana| {
+                            let datas: Vec<String> = semana
+                                .iter()
+                                .map(|&(y, m, dia, _)| crate::date_util::format_date(y, m, dia))
+                                .collect();
+                            let (barras, excesso) = pack_days(&d.entries, &datas, false);
+                            let faixas = barras.iter().map(|b| b.lane + 1).max().unwrap_or(0);
+                            let dias = semana
+                                .iter()
+                                .enumerate()
+                                .map(|(col, &(_, _, dia, do_mes))| {
+                                    let mut slots: Vec<Unidade> = (0..faixas)
+                                        .map(|faixa| {
+                                            match barras.iter().find(|b| {
+                                                b.lane == faixa && b.start_col <= col && col <= b.end_col
+                                            }) {
+                                                Some(b) if b.start_col == col => item(
+                                                    &nome_do_evento(&d.entries[b.entry_idx]),
+                                                    d.entries[b.entry_idx].title.clone(),
+                                                ),
+                                                Some(_) => item("evento-continua", String::new()),
+                                                None => item("vazio", String::new()),
+                                            }
+                                        })
+                                        .collect();
+                                    if excesso[col] > 0 {
+                                        slots.push(item("mais", format!("+{} mais", excesso[col])));
+                                    }
+                                    grupo(if do_mes { "dia" } else { "dia-fora" }, dia.to_string(), slots)
+                                })
+                                .collect();
+                            fileira("semana", dias)
+                        })
+                        .collect();
+                    grupo(
+                        "mes",
+                        format!("{} {}", crate::date_util::month_name(mes), ano),
+                        semanas,
+                    )
+                })
+                .collect();
+
+            // A "gaveta" da janela: evento sem data não tem dia na grade.
+            let sem_data: Vec<Unidade> = d
+                .entries
+                .iter()
+                .filter(|e| e.date.is_none())
+                .map(|e| item("entry", e.title.clone()))
+                .collect();
+            if !sem_data.is_empty() {
+                partes.push(grupo("sem-data", format!("Sem data ({})", sem_data.len()), sem_data));
+            }
+            partes
+        }
 
         // A consulta declara a definição, que é o que está escrito; as
         // linhas são runtime.
@@ -1550,6 +1635,64 @@ mod partes_de_embed {
         // options=[todo,doing,done]: doing é a segunda (índice 1).
         assert_eq!(partes(&e.filhos[2]), ["parte:cell", "parte:badge--success", "parte:badge--info"]);
         assert_eq!(e.filhos[2].filhos[2].texto, "urgente, bug");
+    }
+
+    /// O calendário da página de exemplos, mínimo.
+    fn calendario_de_agosto() -> Unidade {
+        embed_de(
+            "{{ type: \"calendar\" }}\nentries:\n\
+             - date: 2026-08-06\n  title: Revisão de código\n  tags:\n  - urgente\n\
+             - date: 2026-08-10\n  title: Sprint de agosto\n  end_date: 2026-08-14\n  tags:\n  - infra\n\
+             - date: 2026-08-12\n  title: Reunião\n\
+             - title: Ligar pro fornecedor\n\
+             {{ /calendar }}\n",
+        )
+    }
+
+    #[test]
+    fn o_calendario_vira_grade_do_mes() {
+        let c = calendario_de_agosto();
+        assert_eq!(partes(&c), ["parte:mes", "parte:sem-data"]);
+        let mes = &c.filhos[0];
+        assert_eq!(mes.texto, "Agosto 2026");
+        // Agosto de 2026 começa num sábado e tem 31 dias: são seis
+        // semanas com dia do mês (a última, 30/08 a 05/09).
+        assert_eq!(mes.filhos.len(), 6);
+        let semana1 = &mes.filhos[0];
+        assert_eq!(semana1.tipo.arranjo(), Arranjo::Linha);
+        assert_eq!(
+            semana1.filhos.iter().map(|d| d.texto.as_str()).collect::<Vec<_>>(),
+            ["26", "27", "28", "29", "30", "31", "1"]
+        );
+        assert_eq!(partes(semana1)[..2], ["parte:dia-fora", "parte:dia-fora"]);
+        assert_eq!(partes(semana1)[6], "parte:dia");
+    }
+
+    #[test]
+    fn o_evento_ocupa_a_faixa_e_a_barra_continua_nos_dias_seguintes() {
+        let c = calendario_de_agosto();
+        // Semana de 9 a 15: Sprint de 10 a 14 na faixa 0, Reunião no dia
+        // 12 na faixa 1 — então TODO dia da semana tem duas faixas.
+        let semana = &c.filhos[0].filhos[2];
+        assert!(semana.filhos.iter().all(|d| d.filhos.len() == 2));
+        // tags do calendário: [infra, urgente] → infra é índice 0.
+        assert_eq!(partes(&semana.filhos[1]), ["parte:evento--info", "parte:vazio"]);
+        assert_eq!(semana.filhos[1].filhos[0].texto, "Sprint de agosto");
+        assert_eq!(partes(&semana.filhos[3]), ["parte:evento-continua", "parte:evento"]);
+        assert_eq!(semana.filhos[3].filhos[1].texto, "Reunião");
+        assert_eq!(partes(&semana.filhos[6]), ["parte:vazio", "parte:vazio"]);
+        // Semana de 2 a 8: Revisão (urgente, índice 1) só no dia 6.
+        let semana2 = &c.filhos[0].filhos[1];
+        assert_eq!(partes(&semana2.filhos[4]), ["parte:evento--success"]);
+    }
+
+    #[test]
+    fn evento_sem_data_vai_pra_gaveta() {
+        let c = calendario_de_agosto();
+        let gaveta = &c.filhos[1];
+        assert_eq!(gaveta.texto, "Sem data (1)");
+        assert_eq!(partes(gaveta), ["parte:entry"]);
+        assert_eq!(gaveta.filhos[0].texto, "Ligar pro fornecedor");
     }
 
     #[test]

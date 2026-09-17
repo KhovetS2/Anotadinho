@@ -641,7 +641,35 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             // 304). A fileira de uma TABELA foge dessa regra: célula
             // não é botão, é grade — uma linha só, alinhada em coluna
             // (ciclo 305). Todo o resto rende um grupo de uma linha só.
-            let desenhadas = if !l.segmentos.is_empty() && l.embed_dono.as_deref() == Some("table")
+            let nome_da_parte = match &l.tipo {
+                Tipo::Parte { nome, .. } => nome.as_str(),
+                _ => "",
+            };
+            let no_calendario = l.embed_dono.as_deref() == Some("calendar");
+            let desenhadas = if no_calendario
+                && nome_da_parte == "mes"
+                && !e.dobrados.contains(&l.caminho)
+            {
+                // A grade do mês (ciclo 306). Dobrado, o mês volta a ser
+                // uma linha comum com o resumo — sem semanas embaixo,
+                // uma borda de cima sem a de baixo leria como desenho
+                // quebrado.
+                vec![linhas_do_mes(l, &e.tema, largura_conteudo)]
+            } else if no_calendario && nome_da_parte == "semana" && !l.segmentos.is_empty() {
+                let (ultimo, pai) = l.caminho.split_last().unwrap_or((&0, &[]));
+                let ultima = e.arvore.em(pai).is_some_and(|m| m.filhos.len() == ultimo + 1);
+                match e.arvore.em(&l.caminho) {
+                    Some(semana) => vec![linhas_da_semana(
+                        l,
+                        semana,
+                        &e.tema,
+                        largura_conteudo,
+                        Some(&e.cursor),
+                        ultima,
+                    )],
+                    None => linhas_de_fileira(l, &e.tema, largura_conteudo, Some(&e.cursor)),
+                }
+            } else if !l.segmentos.is_empty() && l.embed_dono.as_deref() == Some("table")
             {
                 let embed = e.arvore.em(l.dono_embed.as_deref().unwrap_or(&[]));
                 let larguras = embed.map(larguras_de_tabela).unwrap_or_default();
@@ -923,6 +951,173 @@ fn linha_de_tabela<'a>(
     Line::from(spans)
 }
 
+/// A largura de uma célula (dia) da grade do mês: sete dias e oito
+/// traços de borda cabem na largura disponível (ciclo 306).
+fn largura_do_dia(disponivel: usize) -> usize {
+    (disponivel.saturating_sub(8) / 7).max(3)
+}
+
+/// `texto` exatamente em `largura` colunas: cortado com `…` se passa,
+/// completado com espaço se falta.
+fn caber(texto: &str, largura: usize) -> String {
+    let n = texto.chars().count();
+    if n > largura {
+        let mut t: String = texto.chars().take(largura.saturating_sub(1)).collect();
+        t.push('…');
+        t
+    } else {
+        format!("{texto}{}", " ".repeat(largura - n))
+    }
+}
+
+/// Uma régua horizontal da grade: `┌───┬───┐`, `├───┼───┤` ou
+/// `└───┴───┘`.
+fn regua_do_mes<'a>(recuo: &str, cel: usize, pontas: [&str; 3], tema: &Tema) -> Line<'a> {
+    let miolo = vec!["─".repeat(cel); 7].join(pontas[1]);
+    Line::from(vec![
+        Span::styled(recuo.to_string(), Style::default()),
+        Span::styled(format!("{}{miolo}{}", pontas[0], pontas[2]), tema.estilo(Realce::Borda)),
+    ])
+}
+
+/// O cabeçalho de um mês: o nome, os dias da semana e a borda de cima
+/// da grade (ciclo 306) — o `Agosto 2026` e a fileira `D S T Q Q S S`
+/// que a janela desenha em cima das semanas.
+fn linhas_do_mes(l: &crate::tela::Linha, tema: &Tema, largura: usize) -> Vec<Line<'static>> {
+    let recuo = "  ".repeat(l.nivel);
+    let cel = largura_do_dia(largura.saturating_sub(recuo.len()));
+    let dias: Vec<String> = anotadinho_core::calendario::WEEKDAY_LABELS
+        .iter()
+        .map(|d| format!("{d:^cel$}"))
+        .collect();
+    vec![
+        Line::from(vec![
+            Span::styled(recuo.clone(), Style::default()),
+            Span::styled(l.texto.clone(), tema.estilo(Realce::TituloCartao)),
+        ]),
+        Line::from(vec![
+            Span::styled(recuo.clone(), Style::default()),
+            Span::styled(format!(" {} ", dias.join(" ")), tema.estilo(Realce::CabecalhoDeTabela)),
+        ]),
+        regua_do_mes(&recuo, cel, ["┌", "┬", "┐"], tema),
+    ]
+}
+
+/// O papel de um evento na grade, pelo sufixo que o núcleo pôs no nome
+/// (`evento--info` → a cor de `badge--info`).
+fn papel_do_evento(nome: &str) -> Realce {
+    match nome.strip_prefix("evento") {
+        Some("--info") => Realce::BadgeInfo,
+        Some("--success") => Realce::BadgeSucesso,
+        Some("--warning") => Realce::BadgeAtencao,
+        Some("--error") => Realce::BadgeErro,
+        _ => Realce::Evento,
+    }
+}
+
+/// Uma SEMANA da grade do mês (ciclo 306): a linha dos números, uma
+/// linha por faixa de evento, o "+N mais" quando sobra, e a régua que
+/// fecha — `├┼┤` entre semanas, `└┴┘` na última.
+///
+/// Um evento de vários dias é UMA barra: o texto começa no dia em que
+/// ele entra na semana e corre por cima das bordas dos dias seguintes,
+/// como a barra da janela atravessa as células com `grid-column`.
+fn linhas_da_semana(
+    l: &crate::tela::Linha,
+    semana: &Unidade,
+    tema: &Tema,
+    largura: usize,
+    cursor: Option<&[usize]>,
+    ultima: bool,
+) -> Vec<Line<'static>> {
+    // O recuo é o do MÊS, não o da semana: a semana é filha dele na
+    // árvore, mas na tela as duas são a mesma grade — um nível a mais
+    // empurraria as bordas pra fora do alinhamento com o cabeçalho.
+    let recuo = "  ".repeat(l.nivel.saturating_sub(1));
+    let cel = largura_do_dia(largura.saturating_sub(recuo.len()));
+    let borda = tema.estilo(Realce::Borda);
+    let nome = |u: &Unidade| match &u.tipo {
+        Tipo::Parte { nome, .. } => nome.clone(),
+        _ => String::new(),
+    };
+    let faixas_de = |dia: &Unidade| -> Vec<Unidade> {
+        dia.filhos.iter().filter(|f| nome(f) != "mais").cloned().collect()
+    };
+    let dias: Vec<&Unidade> = semana.filhos.iter().collect();
+    let mut fora = Vec::new();
+
+    // Os números, à direita da célula como na janela.
+    let mut spans = vec![Span::styled(recuo.clone(), Style::default()), Span::styled("│", borda)];
+    for (col, dia) in dias.iter().enumerate() {
+        let aceso = cursor.is_some_and(|c| {
+            l.segmentos.get(col).is_some_and(|s| s.caminho.as_slice() == c)
+        });
+        let papel = if aceso {
+            Realce::Cursor
+        } else if nome(dia) == "dia-fora" {
+            Realce::Marca
+        } else {
+            Realce::Celula
+        };
+        spans.push(Span::styled(format!("{:>w$} ", dia.texto, w = cel - 1), tema.estilo(papel)));
+        spans.push(Span::styled("│", borda));
+    }
+    fora.push(Line::from(spans));
+
+    // As faixas. Uma semana sem evento ainda ganha uma linha em branco:
+    // a célula da janela tem altura mínima, e um dia de uma linha só
+    // não lê como dia.
+    let faixas = dias.iter().map(|d| faixas_de(d).len()).max().unwrap_or(0);
+    for faixa in 0..faixas.max(1) {
+        let mut spans = vec![Span::styled(recuo.clone(), Style::default()), Span::styled("│", borda)];
+        let mut col = 0;
+        while col < dias.len() {
+            let slot = faixas_de(dias[col]).get(faixa).cloned();
+            let nome_slot = slot.as_ref().map(&nome).unwrap_or_default();
+            if nome_slot.starts_with("evento") {
+                let mut k = 1;
+                while col + k < dias.len()
+                    && faixas_de(dias[col + k])
+                        .get(faixa)
+                        .is_some_and(|s| nome(s) == "evento-continua")
+                {
+                    k += 1;
+                }
+                let w = k * cel + (k - 1);
+                let texto = slot.map(|s| s.texto).unwrap_or_default();
+                spans.push(Span::styled(caber(&format!(" {texto}"), w), tema.pilula(papel_do_evento(&nome_slot))));
+                col += k;
+            } else {
+                spans.push(Span::styled(" ".repeat(cel), Style::default()));
+                col += 1;
+            }
+            spans.push(Span::styled("│", borda));
+        }
+        fora.push(Line::from(spans));
+    }
+
+    // "+N mais", na célula de cada dia que transbordou.
+    let mais: Vec<Option<String>> = dias
+        .iter()
+        .map(|d| d.filhos.iter().find(|f| nome(f) == "mais").map(|f| f.texto.clone()))
+        .collect();
+    if mais.iter().any(Option::is_some) {
+        let mut spans = vec![Span::styled(recuo.clone(), Style::default()), Span::styled("│", borda)];
+        for m in &mais {
+            spans.push(Span::styled(caber(m.as_deref().unwrap_or(""), cel), tema.estilo(Realce::Marca)));
+            spans.push(Span::styled("│", borda));
+        }
+        fora.push(Line::from(spans));
+    }
+
+    fora.push(if ultima {
+        regua_do_mes(&recuo, cel, ["└", "┴", "┘"], tema)
+    } else {
+        regua_do_mes(&recuo, cel, ["├", "┼", "┤"], tema)
+    });
+    fora
+}
+
 /// Como um retângulo/quadrado preenchido SOZINHO ocupa a largura do
 /// painel (ciclo 304, estendido no 305 pra caber a barra do
 /// cronograma).
@@ -957,7 +1152,7 @@ fn caixa_avulsa(u: &Unidade) -> Option<ModoCaixa> {
         // A barra é GRUPO, não folha: início e duração viajam como
         // duas partes-filhas em porcentagem (`crates/core/src/analise.rs`,
         // ciclo 305) — dado de desenho, não conteúdo pra navegar ou
-        // mostrar (`tela::e_geometria` as esconde da tela e do Enter).
+        // mostrar (`tela::fica_fora_da_tela` as esconde da tela e do Enter).
         Tipo::Parte { nome, .. } if nome == "barra" => {
             let pct = |campo: &str| -> Option<u8> {
                 u.filhos
@@ -1418,6 +1613,9 @@ fn papel_da_parte(nome: &str) -> Realce {
         // cor que `badge_class` (núcleo) já escolheu pra coluna
         // select/multiselect — o desenho só traduz o nome pro papel do
         // tema (ciclo 305).
+        // A gaveta de eventos sem data: rótulo apagado, como o botão que
+        // a abre na janela (ciclo 306).
+        "sem-data" => Realce::Marca,
         "cell" => Realce::Celula,
         "badge--info" => Realce::BadgeInfo,
         "badge--success" => Realce::BadgeSucesso,
@@ -1750,9 +1948,16 @@ mod testes {
         analisar("{{ type: \"gallery\" }}\nitems:\n- path: a.png\n  caption: Primeira\n- path: b.png\n  caption: Segunda\n{{ /gallery }}\n")
     }
 
-    /// Uma página com um calendário de um evento.
+    /// Uma página com um calendário: um evento de um dia com tag, uma
+    /// sprint de cinco dias com outra tag, e um evento sem data.
     fn com_calendario() -> Unidade {
-        analisar("{{ type: \"calendar\" }}\nentries:\n- date: 2026-08-06\n  title: Revisão de código\n{{ /calendar }}\n")
+        analisar(
+            "{{ type: \"calendar\" }}\nentries:\n\
+             - date: 2026-08-06\n  title: Revisão de código\n  tags:\n  - urgente\n\
+             - date: 2026-08-10\n  title: Sprint de agosto\n  end_date: 2026-08-14\n  tags:\n  - infra\n\
+             - title: Ligar pro fornecedor\n\
+             {{ /calendar }}\n",
+        )
     }
 
     /// Uma página com um cronograma de duas barras: uma que ocupa a
@@ -2105,19 +2310,151 @@ mod testes {
         );
     }
 
+    /// O quadro inteiro, com o estilo de cada célula.
+    fn quadro(e: &mut Estado, largura: u16, altura: u16) -> ratatui::buffer::Buffer {
+        let mut term = Terminal::new(TestBackend::new(largura, altura)).unwrap();
+        term.draw(|f| desenhar(f, e)).unwrap();
+        term.backend().buffer().clone()
+    }
+
+    /// As colunas (em caracteres) onde `c` aparece na linha.
+    fn colunas_de(linha: &str, c: char) -> Vec<usize> {
+        linha.chars().enumerate().filter(|(_, x)| *x == c).map(|(i, _)| i).collect()
+    }
+
     #[test]
-    fn o_evento_do_calendario_vira_retangulo_preenchido() {
-        // Mesma ideia do cartão do kanban (ciclo 304) — o texto puro
-        // "entry 2026-08-06 Revisão de código" virava ruído (ciclo
-        // 305).
+    fn o_calendario_vira_grade_do_mes() {
+        // Até aqui cada evento era um selo solto, um embaixo do outro. A
+        // janela desenha um MÊS: nome, dias da semana e as semanas em
+        // grade (ciclo 306).
         let mut e = Estado::novo(paginas(), com_calendario());
         e.foco = Foco::Paginas;
-        let tudo = desenho(&mut e, 60, 14).join("\n");
+        let linhas = desenho(&mut e, 100, 40);
+        let tudo = linhas.join("\n");
+        assert!(tudo.contains("Agosto 2026"), "{tudo}");
+        let topo = linhas.iter().find(|l| l.contains('┌') && l.contains('┬')).expect("sem borda de cima");
+        let meio = linhas.iter().find(|l| l.contains('┼')).expect("sem régua entre semanas");
+        let fim = linhas.iter().find(|l| l.contains('┴')).expect("sem borda de baixo");
+        // Sete dias: seis divisões internas, nas MESMAS colunas em cima,
+        // no meio e embaixo — senão não é grade.
+        assert_eq!(colunas_de(topo, '┬').len(), 6, "{topo}");
+        assert_eq!(colunas_de(topo, '┬'), colunas_de(meio, '┼'), "\n{topo}\n{meio}");
+        assert_eq!(colunas_de(topo, '┬'), colunas_de(fim, '┴'), "\n{topo}\n{fim}");
+        // E a linha dos números da primeira semana: 26 de julho a 1º.
+        let numeros = linhas.iter().find(|l| l.contains("26") && l.contains("31")).expect("sem a primeira semana");
+        // As bordas dos dias batem com as da régua: da `┌` à `┐`.
+        let esquerda = colunas_de(topo, '┌')[0];
+        let direita = colunas_de(topo, '┐')[0];
+        let esperado: Vec<usize> = std::iter::once(esquerda)
+            .chain(colunas_de(topo, '┬'))
+            .chain(std::iter::once(direita))
+            .collect();
+        let bordas: Vec<usize> = colunas_de(numeros, '│')
+            .into_iter()
+            .filter(|c| (esquerda..=direita).contains(c))
+            .collect();
+        assert_eq!(bordas, esperado, "\n{topo}\n{numeros}");
+        // O evento sem data fica na gaveta, fora da grade.
+        assert!(tudo.contains("Sem data (1)"), "{tudo}");
+    }
+
+    #[test]
+    fn o_evento_de_varios_dias_e_uma_barra_so() {
+        // A sprint vai de segunda a sexta: o título atravessa as bordas
+        // dos dias, como a barra da janela atravessa as células.
+        let mut e = Estado::novo(paginas(), com_calendario());
+        e.foco = Foco::Paginas;
+        let linhas = desenho(&mut e, 100, 40);
+        let barra = linhas
+            .iter()
+            .find(|l| l.contains("Sprint de agosto"))
+            .unwrap_or_else(|| panic!("a sprint sumiu:\n{}", linhas.join("\n")));
+        let inicio = barra.chars().collect::<Vec<_>>();
+        let col = barra.find("Sprint").map(|b| barra[..b].chars().count()).unwrap();
+        // Da coluna do título até o fim da barra não há borda de dia:
+        // procura o próximo `│` depois do título e confere que ele está
+        // bem depois do fim da primeira célula.
+        let proxima_borda = inicio.iter().enumerate().skip(col).find(|(_, c)| **c == '│').unwrap().0;
         assert!(
-            tudo.contains("▐ 2026-08-06 Revisão de código ▌"),
-            "o evento não virou caixa preenchida:\n{tudo}"
+            proxima_borda - col > "Sprint de agosto".len(),
+            "a barra parou na borda do primeiro dia:\n{barra}"
         );
-        assert!(!tudo.contains("entry 2026"), "{tudo}");
+    }
+
+    #[test]
+    fn o_evento_com_tag_tem_a_cor_do_badge() {
+        // tags do calendário: [infra, urgente] — a sprint (infra) é a
+        // primeira, `badge--info`; a revisão (urgente), `badge--success`.
+        let mut e = Estado::novo(paginas(), com_calendario());
+        e.foco = Foco::Paginas;
+        let info = e.tema.pilula(Realce::BadgeInfo);
+        let sucesso = e.tema.pilula(Realce::BadgeSucesso);
+        let buf = quadro(&mut e, 100, 40);
+        let tem = |estilo: Style| {
+            (0..buf.area.height).any(|y| {
+                (0..buf.area.width).any(|x| {
+                    let s = buf[(x, y)].style();
+                    s.bg == estilo.bg && s.fg == estilo.fg
+                })
+            })
+        };
+        assert!(tem(info), "a sprint não saiu com a cor de badge--info");
+        assert!(tem(sucesso), "a revisão não saiu com a cor de badge--success");
+    }
+
+    #[test]
+    fn o_dia_sob_o_cursor_acende() {
+        let mut e = Estado::novo(paginas(), com_calendario());
+        // embed → mês → segunda semana → quinta-feira, dia 6.
+        e.cursor = vec![0, 0, 1, 4];
+        e.foco = Foco::Conteudo;
+        let cursor = e.tema.estilo(Realce::Cursor);
+        let buf = quadro(&mut e, 100, 40);
+        let acesos: String = (0..buf.area.height)
+            .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+            .filter(|p| buf[*p].style().bg == cursor.bg && cursor.bg.is_some())
+            .map(|p| buf[p].symbol().to_string())
+            .collect();
+        assert!(acesos.contains('6'), "o dia 6 não acendeu: {acesos:?}");
+    }
+
+    #[test]
+    fn dia_com_mais_de_tres_eventos_mostra_quantos_sobraram() {
+        // Três faixas, como na janela (`MAX_LANES`); o quarto evento vira
+        // "+1 mais" na célula do dia.
+        let mut e = Estado::novo(
+            paginas(),
+            analisar(
+                "{{ type: \"calendar\" }}\nentries:\n\
+                 - date: 2026-08-12\n  title: Um\n\
+                 - date: 2026-08-12\n  title: Dois\n\
+                 - date: 2026-08-12\n  title: Três\n\
+                 - date: 2026-08-12\n  title: Quatro\n\
+                 {{ /calendar }}\n",
+            ),
+        );
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 120, 60).join("\n");
+        assert!(tudo.contains("+1 mais"), "{tudo}");
+        assert!(!tudo.contains("Quatro"), "o quarto evento devia estar no +1:\n{tudo}");
+    }
+
+    #[test]
+    fn a_grade_nao_quebra_num_terminal_estreito() {
+        let mut e = Estado::novo(paginas(), com_calendario());
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 30, 40).join("\n");
+        assert!(tudo.contains('┬'), "{tudo}");
+    }
+
+    #[test]
+    fn entrar_num_dia_nao_desce_nas_faixas() {
+        // As faixas de evento são lidas pelo desenho da semana e não têm
+        // linha própria: Enter num dia não pode levar o cursor pra elas.
+        let arvore = com_calendario();
+        let dia: Caminho = vec![0, 0, 1, 4];
+        assert!(!arvore.em(&dia).unwrap().filhos.is_empty());
+        assert_eq!(tela::andar(&arvore, &dia, Passo::Entrar), dia);
     }
 
     #[test]

@@ -8,7 +8,6 @@
 //! mudar o horário arrastando verticalmente fica pra um ciclo futuro).
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use gloo_events::EventListener;
@@ -20,6 +19,9 @@ use crate::components::embeds::EventDetailModal;
 use crate::date_util;
 use crate::dialog::PendingDialog;
 use crate::embed::{badge_class, CalendarEmbedData, CalendarEntry, CalendarSource};
+// A geometria da grade (faixas, células do mês, rótulos) mora no núcleo
+// desde o ciclo 306 — o terminal desenha a mesma grade.
+use anotadinho_core::calendario::{existing_tags as tags_existentes, month_cells, pack_days, WEEKDAY_LABELS};
 
 /// Props do `InlineCalendar`.
 #[derive(Properties, PartialEq, Clone)]
@@ -43,9 +45,7 @@ pub struct InlineCalendarProps {
     pub nav_group: String,
 }
 
-const WEEKDAY_LABELS: [&str; 7] = ["D", "S", "T", "Q", "Q", "S", "S"];
 const WEEKDAY_ABBR: [&str; 7] = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
-const MAX_LANES: usize = 3;
 const HOUR_PX: f64 = 48.0;
 const SNAP_MINUTES: f64 = 15.0;
 
@@ -64,83 +64,6 @@ enum ViewMode {
     Month,
     Week,
     Day,
-}
-
-/// Uma barra de evento posicionada num intervalo de dias visíveis (semana
-/// inteira na visão Mês, ou a janela de 1/7 dias das visões Dia/Semana).
-struct Bar {
-    entry_idx: usize,
-    lane: usize,
-    start_col: usize,
-    end_col: usize,
-}
-
-/// Aloca as barras de `entries` que tocam `day_dates` em lanes sem
-/// sobreposição (algoritmo guloso: ordena por início, cada evento vai na
-/// primeira lane livre). Eventos que não cabem nas `MAX_LANES` visíveis
-/// incrementam o contador de overflow nas colunas (dias) que tocam.
-/// Genérico sobre o tamanho da janela — usado tanto pela semana inteira
-/// (7 dias, visão Mês) quanto pela janela de Dia/Semana.
-///
-/// `exclude_timed`: quando `true`, eventos com `start_time` ficam de fora
-/// (usado pra faixa de dia inteiro das visões Semana/Dia, onde um evento
-/// com horário já ganha um bloco posicionado na grade de horas — mostrar
-/// ele nos dois lugares seria duplicado). Na visão Mês (sem grade de
-/// horas pra mostrar o horário de outro jeito) passa `false`, todo evento
-/// vira barra independente de ter horário ou não.
-fn pack_days(entries: &[CalendarEntry], day_dates: &[String], exclude_timed: bool) -> (Vec<Bar>, Vec<usize>) {
-    let n = day_dates.len();
-    let mut overflow = vec![0usize; n];
-    if n == 0 {
-        return (Vec::new(), overflow);
-    }
-    let window_start = day_dates[0].as_str();
-    let window_end = day_dates[n - 1].as_str();
-
-    let mut touching: Vec<(usize, usize, usize)> = Vec::new();
-    for (i, e) in entries.iter().enumerate() {
-        if exclude_timed && e.start_time.is_some() {
-            continue;
-        }
-        // Evento sem data (na gaveta) não aparece na grade.
-        let Some(e_start) = e.date.as_deref() else { continue };
-        let e_end = e.end_date.as_deref().unwrap_or(e_start);
-        if e_end < window_start || e_start > window_end {
-            continue;
-        }
-        let clipped_start = if e_start > window_start { e_start } else { window_start };
-        let clipped_end = if e_end < window_end { e_end } else { window_end };
-        let start_col = date_util::days_between(window_start, clipped_start).unwrap_or(0).max(0) as usize;
-        let end_col = date_util::days_between(window_start, clipped_end).unwrap_or(0).max(0) as usize;
-        touching.push((i, start_col, end_col));
-    }
-    touching.sort_by_key(|&(_, start_col, _)| start_col);
-
-    let mut lane_end: Vec<i64> = Vec::new();
-    let mut bars = Vec::new();
-
-    for (entry_idx, start_col, end_col) in touching {
-        let mut placed = false;
-        for (lane, last_end) in lane_end.iter_mut().enumerate() {
-            if *last_end < start_col as i64 {
-                *last_end = end_col as i64;
-                bars.push(Bar { entry_idx, lane, start_col, end_col });
-                placed = true;
-                break;
-            }
-        }
-        if !placed {
-            if lane_end.len() < MAX_LANES {
-                lane_end.push(end_col as i64);
-                bars.push(Bar { entry_idx, lane: lane_end.len() - 1, start_col, end_col });
-            } else {
-                for c in overflow.iter_mut().take(end_col + 1).skip(start_col) {
-                    *c += 1;
-                }
-            }
-        }
-    }
-    (bars, overflow)
 }
 
 /// Início (domingo) da semana que contém `(y, m, d)`.
@@ -457,10 +380,7 @@ pub fn inline_calendar(props: &InlineCalendarProps) -> Html {
         Callback::from(move |_: MouseEvent| drawer_open.set(!*drawer_open))
     };
 
-    let existing_tags: Vec<String> = {
-        let set: BTreeSet<String> = props.data.entries.iter().flat_map(|e| e.all_tags()).collect();
-        set.into_iter().collect()
-    };
+    let existing_tags: Vec<String> = tags_existentes(&props.data.entries);
 
     // Eventos sem data (`date: None`) — ficam fora da grade, na gaveta.
     // Arrastar um item daqui reusa o MESMO mecanismo de `dragging` já
@@ -693,24 +613,7 @@ fn render_vault_month_grid(
     today_str: &str,
     on_page_selected: &Callback<PageMeta>,
 ) -> Html {
-    let first_weekday = date_util::weekday_of(vy, vm, 1);
-    let days_in_month = date_util::days_in_month(vy, vm);
-    let (py, pm) = date_util::prev_month(vy, vm);
-    let days_in_prev = date_util::days_in_month(py, pm);
-    let (ny, nm) = date_util::next_month(vy, vm);
-
-    let mut cells: Vec<(i32, u32, u32, bool)> = Vec::with_capacity(42);
-    for i in 0..first_weekday {
-        cells.push((py, pm, days_in_prev - (first_weekday - 1 - i), false));
-    }
-    for d in 1..=days_in_month {
-        cells.push((vy, vm, d, true));
-    }
-    let mut trailing = 1;
-    while cells.len() < 42 {
-        cells.push((ny, nm, trailing, false));
-        trailing += 1;
-    }
+    let cells = month_cells(vy, vm);
 
     html! {
         <>
@@ -852,24 +755,7 @@ fn render_month_grid(
     open_dialog: &Callback<PendingDialog>,
     suppress_click_ref: &Rc<RefCell<bool>>,
 ) -> Html {
-    let first_weekday = date_util::weekday_of(vy, vm, 1);
-    let days_in_month = date_util::days_in_month(vy, vm);
-    let (py, pm) = date_util::prev_month(vy, vm);
-    let days_in_prev = date_util::days_in_month(py, pm);
-    let (ny, nm) = date_util::next_month(vy, vm);
-
-    let mut cells: Vec<(i32, u32, u32, bool)> = Vec::with_capacity(42);
-    for i in 0..first_weekday {
-        cells.push((py, pm, days_in_prev - (first_weekday - 1 - i), false));
-    }
-    for d in 1..=days_in_month {
-        cells.push((vy, vm, d, true));
-    }
-    let mut trailing = 1;
-    while cells.len() < 42 {
-        cells.push((ny, nm, trailing, false));
-        trailing += 1;
-    }
+    let cells = month_cells(vy, vm);
 
     html! {
         <>

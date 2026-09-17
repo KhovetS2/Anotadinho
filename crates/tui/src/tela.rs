@@ -273,6 +273,13 @@ const PARTES_SEM_ROTULO: &[&str] = &[
     // (ciclo 305).
     "entry",
     "barra",
+    // A grade do mês (ciclo 306): o mês, a semana e o dia têm desenho
+    // próprio — o nome só apareceria se o desenho caísse no genérico.
+    "mes",
+    "semana",
+    "dia",
+    "dia-fora",
+    "sem-data",
 ];
 
 /// A marca que abre a linha de cada tipo.
@@ -349,27 +356,35 @@ fn achatar_fileiras(linhas: Vec<Linha>, raiz: &Unidade) -> Vec<Linha> {
     fora
 }
 
-/// A página inteira em linhas, na ordem em que se lê.
 /// Nomes de parte que só carregam DADO de desenho, não conteúdo pra
-/// navegar ou mostrar (ciclo 305).
+/// navegar ou mostrar.
 ///
 /// A barra do cronograma guarda início e duração como partes-filhas em
-/// porcentagem — é a mesma aritmética que a janela usa (`bar_span`),
-/// calculada uma vez no núcleo em vez de a cada repaint. Mas "12" não é
-/// uma linha que alguém devesse ler, nem um lugar onde o `j` devesse
-/// parar: é cano, não conteúdo. `linha_de_caixa` (em `app.rs`) é quem
-/// lê o valor; a tela some com a linha.
-pub fn e_geometria(nome: &str) -> bool {
-    matches!(nome, "inicio" | "duracao")
+/// porcentagem (ciclo 305) — é a mesma aritmética que a janela usa
+/// (`bar_span`), calculada uma vez no núcleo em vez de a cada repaint.
+/// O dia do calendário guarda as FAIXAS de evento como filhas (ciclo
+/// 306), e quem as lê é o desenho da semana, que põe cada uma na sua
+/// coluna. Nos dois casos "12" ou "Reunião" soltos numa linha seriam
+/// cano, não conteúdo — e nem um lugar onde o `j` devesse parar.
+pub fn fica_fora_da_tela(nome: &str) -> bool {
+    matches!(nome, "inicio" | "duracao" | "evento-continua" | "vazio" | "mais")
+        || nome == "evento"
+        || nome.starts_with("evento--")
 }
 
+/// A página inteira em linhas, na ordem em que se lê.
 pub fn linhas(raiz: &Unidade) -> Vec<Linha> {
     let mut r = Linhas::default();
     desenhar(raiz, &mut r);
-    encaixotar_embeds(achatar_fileiras(r.fora, raiz))
+    // Tirar ANTES de achatar as fileiras: a semana é fileira de dias, e
+    // uma faixa de evento no meio dela interromperia a fileira — os dias
+    // depois dela deixariam de virar segmento.
+    let visiveis: Vec<Linha> = r
+        .fora
         .into_iter()
-        .filter(|l| !matches!(&l.tipo, Tipo::Parte { nome, .. } if e_geometria(nome)))
-        .collect()
+        .filter(|l| !matches!(&l.tipo, Tipo::Parte { nome, .. } if fica_fora_da_tela(nome)))
+        .collect();
+    encaixotar_embeds(achatar_fileiras(visiveis, raiz))
 }
 
 /// Marca a que embed cada linha pertence, e injeta a trilha do fluxo.
@@ -446,7 +461,7 @@ pub fn rolar(topo: usize, altura: usize, linha: usize) -> usize {
 /// diz que não dá, o cursor fica.
 pub fn andar(raiz: &Unidade, cursor: &Caminho, passo: Passo) -> Caminho {
     // Entrar numa barra desceria pra "início"/"duração" — que não têm
-    // linha na tela (`e_geometria`, acima). Sem esta guarda o cursor
+    // linha na tela (`fica_fora_da_tela`, acima). Sem esta guarda o cursor
     // "entra" de verdade na árvore, mas a tela não acende nada: parece
     // que o Enter não fez nada, e só o Backspace devolve (ciclo 305).
     // Tratar como se não houvesse filhos é o mesmo efeito que um
@@ -455,7 +470,7 @@ pub fn andar(raiz: &Unidade, cursor: &Caminho, passo: Passo) -> Caminho {
         if let Some(atual) = raiz.em(cursor) {
             let so_geometria = !atual.filhos.is_empty()
                 && atual.filhos.iter().all(
-                    |f| matches!(&f.tipo, Tipo::Parte { nome, .. } if e_geometria(nome)),
+                    |f| matches!(&f.tipo, Tipo::Parte { nome, .. } if fica_fora_da_tela(nome)),
                 );
             if so_geometria {
                 return cursor.clone();
