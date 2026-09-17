@@ -709,6 +709,80 @@ impl Linha {
     }
 }
 
+/// Quantas linhas de uma transclusão cabem na página (ciclo 415).
+///
+/// A janela mostra a página transcluída inteira numa caixa rolável;
+/// aqui quem rola é a página toda, então uma transclusão de 300 linhas
+/// enterraria o resto do documento. Doze é o que deixa ver o começo sem
+/// perder o fio — o resto se lê abrindo a página, que é um Enter.
+pub const LINHAS_DA_TRANSCLUSAO: usize = 12;
+
+/// Insere, depois de cada `![[Página]]`, o conteúdo dela (ciclo 415).
+///
+/// As linhas trazidas são ENFEITE: ocupam a tela, carregam o caminho do
+/// dono — somem junto quando ele dobra —, e o cursor nunca pousa nelas.
+/// Isso é o que mantém a edição honesta: o bloco continua sendo o
+/// marcador `![[…]]`, que é o que está no arquivo; ninguém edita o texto
+/// de outra página achando que edita esta.
+///
+/// `resolvidas` vai do alvo cru (`Página#Seção`) pro conteúdo, ou pro
+/// motivo de não ter dado. Alvo ausente do mapa é alvo ainda carregando:
+/// não desenha nada, pra a página não piscar aviso enquanto lê o disco.
+pub fn com_transclusoes(
+    linhas: Vec<Linha>,
+    raiz: &Unidade,
+    resolvidas: &std::collections::BTreeMap<String, Result<String, String>>,
+) -> Vec<Linha> {
+    let mut fora: Vec<Linha> = Vec::with_capacity(linhas.len());
+    for l in linhas {
+        // O `texto` da linha é o VISÍVEL — o `[[…]]` já virou o rótulo.
+        // O marcador só existe na fonte, então a busca é na unidade.
+        let fonte = raiz.em(&l.caminho).map(corpo).unwrap_or_default();
+        let alvos = anotadinho_core::links::extract_transclusion_targets(&fonte);
+        let mut l = l;
+        // Bloco que é SÓ o marcador: mostra a fonte crua. O desenho de
+        // wikilink comeria os colchetes (`![Página`), e aí a linha não
+        // seria nem o que está no arquivo nem o conteúdo trazido.
+        if alvos.len() == 1 && fonte.trim().starts_with("![[") && fonte.trim().ends_with("]]") {
+            l.texto = fonte.trim().to_string();
+            l.trechos = Vec::new();
+        }
+        let modelo = l.clone();
+        fora.push(l);
+        for alvo in alvos {
+            let Some(estado) = resolvidas.get(&alvo) else { continue };
+            let trazidas: Vec<String> = match estado {
+                Ok(conteudo) => {
+                    let mut v: Vec<String> = vec![format!("▤ {alvo}")];
+                    let corpo: Vec<&str> = conteudo.lines().collect();
+                    v.extend(corpo.iter().take(LINHAS_DA_TRANSCLUSAO).map(|t| format!("│ {t}")));
+                    if corpo.len() > LINHAS_DA_TRANSCLUSAO {
+                        v.push(format!("│ … mais {} linha(s) — Enter abre", corpo.len() - LINHAS_DA_TRANSCLUSAO));
+                    }
+                    v
+                }
+                Err(motivo) => vec![format!("▤ {alvo} — {motivo}")],
+            };
+            for texto in trazidas {
+                fora.push(Linha {
+                    caminho: modelo.caminho.clone(),
+                    enfeite: true,
+                    nivel: modelo.nivel + 1,
+                    texto,
+                    resumo: String::new(),
+                    marca: String::new(),
+                    trechos: Vec::new(),
+                    tipo: Tipo::Paragrafo,
+                    embed_dono: modelo.embed_dono.clone(),
+                    dono_embed: modelo.dono_embed.clone(),
+                    segmentos: Vec::new(),
+                });
+            }
+        }
+    }
+    fora
+}
+
 /// Em que linha está a unidade endereçada.
 pub fn linha_de(linhas: &[Linha], caminho: &Caminho) -> Option<usize> {
     linhas.iter().position(|l| l.mostra(caminho))
@@ -1121,5 +1195,55 @@ mod testes {
         let dentro = andar(&d, &lista, Passo::Entrar);
         assert_eq!(dentro, vec![2, 0]);
         assert_eq!(andar(&d, &dentro, Passo::Sair), lista);
+    }
+
+    // --- Ciclo 415: transclusão desenhada --------------------------------------------
+
+    #[test]
+    fn a_transclusao_traz_o_conteudo_como_enfeite() {
+        let d = analisar("antes\n\n![[Padrões#Regras]]\n\ndepois\n");
+        let mut mapa = std::collections::BTreeMap::new();
+        mapa.insert("Padrões#Regras".to_string(), Ok("## Regras\n\nsempre minúsculas".to_string()));
+        let base = linhas(&d);
+        let com = com_transclusoes(base.clone(), &d, &mapa);
+        assert!(com.len() > base.len(), "o conteúdo entrou");
+        let texto: Vec<&str> = com.iter().map(|l| l.texto.as_str()).collect();
+        assert!(texto.iter().any(|t| t.contains("▤ Padrões")), "{texto:?}");
+        assert!(texto.iter().any(|t| t.contains("sempre minúsculas")), "{texto:?}");
+        // A linha do marcador continua lá — é ela que se edita e se
+        // apaga; o conteúdo trazido vem DEPOIS dela.
+        let marcador = texto.iter().position(|t| t.starts_with("![")).expect("marcador na tela");
+        let cabecalho = texto.iter().position(|t| t.contains("▤ Padrões")).expect("cabeçalho na tela");
+        assert!(marcador < cabecalho, "{texto:?}");
+        // Tudo que veio é enfeite, com o caminho do dono — some junto
+        // quando ele dobra, e o cursor nunca pousa ali.
+        let dono = com[marcador].caminho.clone();
+        for l in com.iter().filter(|l| l.texto.contains("minúsculas") || l.texto.contains("▤")) {
+            assert!(l.enfeite, "{:?}", l.texto);
+            assert_eq!(l.caminho, dono);
+        }
+    }
+
+    #[test]
+    fn transclusao_grande_e_cortada_com_recado() {
+        let d = analisar("![[Longa]]\n");
+        let corpo: String = (1..=40).map(|i| format!("linha {i}\n")).collect();
+        let mut mapa = std::collections::BTreeMap::new();
+        mapa.insert("Longa".to_string(), Ok(corpo));
+        let texto: Vec<String> = com_transclusoes(linhas(&d), &d, &mapa).into_iter().map(|l| l.texto).collect();
+        assert!(texto.iter().any(|t| t.contains("linha 12")), "{texto:?}");
+        assert!(!texto.iter().any(|t| t.contains("linha 13")), "cortou no teto:\n{texto:?}");
+        assert!(texto.iter().any(|t| t.contains("mais 28 linha(s)")), "{texto:?}");
+    }
+
+    #[test]
+    fn o_que_nao_resolveu_aparece_e_o_que_nao_chegou_nao_pisca() {
+        let d = analisar("![[Sumida]]\n");
+        let mut mapa = std::collections::BTreeMap::new();
+        // Ainda carregando: nada além do marcador.
+        assert_eq!(com_transclusoes(linhas(&d), &d, &mapa).len(), linhas(&d).len());
+        mapa.insert("Sumida".to_string(), Err("a página Sumida não existe".to_string()));
+        let texto: Vec<String> = com_transclusoes(linhas(&d), &d, &mapa).into_iter().map(|l| l.texto).collect();
+        assert!(texto.iter().any(|t| t.contains("Sumida — a página Sumida não existe")), "{texto:?}");
     }
 }

@@ -52,6 +52,10 @@ pub struct Estado {
     /// As pastas do disco, inclusive vazias (`pages/…`), pro `main` dizer
     /// (ciclo 345).
     pub pastas_do_vault: Vec<String>,
+    /// O conteúdo das transclusões da página aberta (ciclo 415): alvo
+    /// cru (`Página#Seção`) → conteúdo, ou o motivo de não ter dado.
+    /// Alvo ausente é alvo ainda carregando.
+    pub transclusoes: std::collections::BTreeMap<String, Result<String, String>>,
     /// As pastas fechadas, pelo caminho.
     pub pastas_fechadas: std::collections::BTreeSet<String>,
     /// Que linha da sidebar está selecionada.
@@ -211,6 +215,7 @@ impl Estado {
             dobrados,
             arvore_sidebar,
             pastas_do_vault: Vec::new(),
+            transclusoes: Default::default(),
             pastas_fechadas,
             linha_sidebar: 0,
             vim: vim::Pendente::default(),
@@ -330,6 +335,14 @@ impl Estado {
         let calendario = pagina_de_calendario(frontmatter);
         let corpo = if calendario { CALENDARIO_DA_PAGINA } else { corpo };
         self.abrir(anotadinho_core::analise::analisar(corpo));
+        // O conteúdo das transclusões vem de outras páginas, então é
+        // pedido (ciclo 415). Até chegar, a página desenha o marcador
+        // como está — nada pisca.
+        self.transclusoes.clear();
+        let alvos = anotadinho_core::links::extract_transclusion_targets(corpo);
+        if !alvos.is_empty() {
+            self.pedidos.push(Pedido::ResolverTransclusoes(alvos));
+        }
         self.desfazer.clear();
         self.refazer.clear();
         self.texto_da_pagina = (!calendario).then(|| texto.to_string());
@@ -435,12 +448,18 @@ impl Estado {
         self.trocar_texto(texto);
     }
 
+    /// O conteúdo das transclusões chegou (ciclo 415): guarda e redesenha.
+    pub fn definir_transclusoes(&mut self, resolvidas: Vec<(String, Result<String, String>)>) {
+        self.transclusoes = resolvidas.into_iter().collect();
+        self.linhas = tela::com_transclusoes(tela::linhas(&self.arvore), &self.arvore, &self.transclusoes);
+    }
+
     /// Troca o texto da página sem mexer no histórico — o que o `u` usa.
     fn trocar_texto(&mut self, texto: String) {
         let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
         self.arvore = anotadinho_core::analise::analisar(corpo);
         self.ancorar_calendarios();
-        self.linhas = tela::linhas(&self.arvore);
+        self.linhas = tela::com_transclusoes(tela::linhas(&self.arvore), &self.arvore, &self.transclusoes);
         while !self.cursor.is_empty() && self.arvore.em(&self.cursor).is_none() {
             self.cursor.pop();
         }
@@ -497,7 +516,7 @@ impl Estado {
     fn ancorar_calendarios(&mut self) {
         self.montar_consultas();
         let Some(hoje) = self.hoje.clone() else {
-            self.linhas = tela::linhas(&self.arvore);
+            self.linhas = tela::com_transclusoes(tela::linhas(&self.arvore), &self.arvore, &self.transclusoes);
             return;
         };
         self.ancorar_cronogramas(&hoje);
@@ -521,7 +540,7 @@ impl Estado {
                 Some(&hoje),
             );
         }
-        self.linhas = tela::linhas(&self.arvore);
+        self.linhas = tela::com_transclusoes(tela::linhas(&self.arvore), &self.arvore, &self.transclusoes);
         if self.arvore.em(&self.cursor).is_none() {
             self.cursor = tela::primeiro(&self.arvore).unwrap_or_default();
         }
@@ -639,7 +658,7 @@ impl Estado {
         let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(texto);
         self.arvore = anotadinho_core::analise::analisar(corpo);
         self.ancorar_calendarios();
-        self.linhas = tela::linhas(&self.arvore);
+        self.linhas = tela::com_transclusoes(tela::linhas(&self.arvore), &self.arvore, &self.transclusoes);
         while !self.cursor.is_empty() && self.arvore.em(&self.cursor).is_none() {
             self.cursor.pop();
         }
@@ -660,7 +679,7 @@ impl Estado {
         // página, e mantê-lo filtraria o conteúdo dela por acidente.
         self.busca.clear();
         self.barra_aberta = false;
-        self.linhas = tela::linhas(&arvore);
+        self.linhas = tela::com_transclusoes(tela::linhas(&arvore), &arvore, &self.transclusoes);
         self.cursor = tela::primeiro(&arvore).unwrap_or_default();
         self.dobrados = tela::dobras_iniciais(&arvore);
         self.arvore = arvore;

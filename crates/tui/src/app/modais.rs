@@ -85,6 +85,8 @@ pub enum Pedido {
     ListarExecucoes,
     /// Ver o que está rodando e o que espera na fila (ciclo 408).
     VerAgentes,
+    /// Buscar o conteúdo das transclusões da página aberta (ciclo 415).
+    ResolverTransclusoes(Vec<String>),
     /// Ver os gatilhos do vault (ciclo 412).
     ListarGatilhos,
     /// Ligar ou desligar um gatilho pelo nome.

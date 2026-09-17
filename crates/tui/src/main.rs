@@ -1146,6 +1146,51 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                 }
                 // Os gatilhos (ciclo 412). Toda escrita relê a lista do
                 // disco antes: o arquivo é editável à mão.
+                // Cada alvo vira o pedaço que ele pede (ciclo 415). A
+                // busca do título é a mesma do wikilink, e a leitura
+                // passa pelo `handle_ler_para_contexto`, então uma
+                // página transcluída que transclui outra já vem inteira.
+                Pedido::ResolverTransclusoes(alvos) => {
+                    use anotadinho_core::transclusao::{analisar_alvo, recortar};
+                    let paginas = estado.paginas.clone();
+                    let achar = |titulo: &str| -> Option<String> {
+                        let alvo = titulo.trim().to_lowercase();
+                        estado
+                            .indice_do_vault
+                            .iter()
+                            .find(|p| p.title.to_lowercase() == alvo)
+                            .map(|p| p.path.clone())
+                            .or_else(|| {
+                                paginas
+                                    .iter()
+                                    .find(|p| {
+                                        p.title.to_lowercase() == alvo
+                                            || std::path::Path::new(&p.path)
+                                                .file_stem()
+                                                .is_some_and(|s| s.to_string_lossy().to_lowercase() == alvo)
+                                    })
+                                    .map(|p| p.path.clone())
+                            })
+                    };
+                    let resolvidas = alvos
+                        .into_iter()
+                        .map(|bruto| {
+                            let alvo = analisar_alvo(&bruto);
+                            let r = match achar(&alvo.titulo) {
+                                None => Err(format!("a página {} não existe", alvo.titulo)),
+                                Some(path) => anotadinho_ipc::handle_ler_para_contexto(vault.to_string(), path)
+                                    .map_err(|e| format!("não consegui ler: {e}"))
+                                    .and_then(|x| {
+                                        let (_, corpo) =
+                                            anotadinho_core::MarkdownCodec::split_frontmatter_text(&x.texto);
+                                        recortar(corpo, &alvo)
+                                    }),
+                            };
+                            (bruto, r)
+                        })
+                        .collect();
+                    estado.definir_transclusoes(resolvidas);
+                }
                 Pedido::ListarGatilhos => match anotadinho_ipc::handle_ler_gatilhos(vault.to_string()) {
                     Ok(g) => app::modais::mostrar_gatilhos(estado, &g),
                     Err(e) => estado.aviso = Some(format!("não leu os gatilhos: {e}")),
