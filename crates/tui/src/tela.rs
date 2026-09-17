@@ -161,7 +161,9 @@ impl Renderizador for Linhas {
 fn contagem(u: &Unidade) -> String {
     // Dado de desenho não conta: a variante de um callout não é um item
     // dele (ciclo 307), e "2 items" num callout de um parágrafo mentiria.
-    let esconde = |f: &Unidade| matches!(&f.tipo, Tipo::Parte { nome, .. } if fica_fora_da_tela(nome));
+    let esconde = |f: &Unidade| {
+        matches!(&f.tipo, Tipo::Parte { nome, .. } if fica_fora_da_tela(nome) || cursor_passa_por_cima(nome))
+    };
     if u.filhos.iter().any(esconde) {
         let mut so_visiveis = u.clone();
         so_visiveis.filhos.retain(|f| !esconde(f));
@@ -376,7 +378,7 @@ fn achatar_fileiras(linhas: Vec<Linha>, raiz: &Unidade) -> Vec<Linha> {
 /// coluna. Nos dois casos "12" ou "Reunião" soltos numa linha seriam
 /// cano, não conteúdo — e nem um lugar onde o `j` devesse parar.
 pub fn fica_fora_da_tela(nome: &str) -> bool {
-    matches!(nome, "inicio" | "duracao" | "evento-continua" | "vazio" | "mais" | "variante")
+    matches!(nome, "inicio" | "duracao" | "evento-continua" | "vazio" | "mais" | "variante" | "detalhe")
         || nome == "evento"
         || nome.starts_with("evento--")
         // As tags de uma célula multiselect (ciclo 308): quem as desenha
@@ -392,8 +394,48 @@ pub fn fica_fora_da_tela(nome: &str) -> bool {
 /// ciclo 310 isso vale também no MEIO de uma barra de vários dias: a
 /// continuação é o mesmo evento, visto de outro dia. Só a faixa vazia é
 /// pulada.
+///
+/// E o contrário também existe: o EIXO do cronograma (ciclo 313) tem
+/// linha — é desenhado —, mas é régua, não conteúdo, e o cursor passa
+/// por cima dele.
 pub fn cursor_passa_por_cima(nome: &str) -> bool {
-    fica_fora_da_tela(nome) && !e_evento(nome)
+    (fica_fora_da_tela(nome) && !e_evento(nome)) || nome == "eixo"
+}
+
+/// A barra vizinha NO TEMPO, com o cursor numa barra do cronograma
+/// (ciclo 313).
+///
+/// `j`/`k` andam pela ordem do arquivo, que é a ordem em que as barras
+/// estão empilhadas. `h`/`l` andam pela ordem em que elas ACONTECEM:
+/// quem começa antes, e, empatado o começo, a mais curta primeiro — a
+/// leitura de um cronograma da esquerda pra direita. Sem barra adiante,
+/// `None`.
+pub fn barra_ao_lado(raiz: &Unidade, cursor: &[usize], adiante: bool) -> Option<Caminho> {
+    let (idx, pai_c) = cursor.split_last()?;
+    let pai = raiz.em(pai_c)?;
+    if !matches!(&pai.tipo, Tipo::Embed(n) if n == "timeline") {
+        return None;
+    }
+    let pct = |u: &Unidade, campo: &str| -> i64 {
+        u.filhos
+            .iter()
+            .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == campo))
+            .and_then(|f| f.texto.parse().ok())
+            .unwrap_or(0)
+    };
+    let mut barras: Vec<(i64, i64, usize)> = pai
+        .filhos
+        .iter()
+        .enumerate()
+        .filter(|(_, u)| matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "barra"))
+        .map(|(i, u)| (pct(u, "inicio"), pct(u, "duracao"), i))
+        .collect();
+    barras.sort();
+    let pos = barras.iter().position(|b| b.2 == *idx)?;
+    let alvo = if adiante { barras.get(pos + 1) } else { pos.checked_sub(1).and_then(|p| barras.get(p)) }?;
+    let mut c = pai_c.to_vec();
+    c.push(alvo.2);
+    Some(c)
 }
 
 /// Um evento na grade do mês — o começo dele (`evento`,

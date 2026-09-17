@@ -627,7 +627,12 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             }
             let quer = regiao(l);
             if quer != atual {
-                if let Some((_, velha)) = &atual {
+                if let Some((dono, velha)) = &atual {
+                    if let Some(d) = linha_de_detalhe(e, dono) {
+                        if fora.len() < e.altura {
+                            fora.push(emoldurar(d, largura_util, *velha, *velha, &e.tema));
+                        }
+                    }
                     fora.push(moldura(false, largura_util, *velha, &e.tema));
                 }
                 if let Some((_, nova)) = &quer {
@@ -661,7 +666,9 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             };
             let no_calendario = l.embed_dono.as_deref() == Some("calendar");
             let no_callout = l.embed_dono.as_deref() == Some("callout");
-            let desenhadas = if matches!(&l.tipo, Tipo::Embed(n) if n == "callout") {
+            let desenhadas = if l.embed_dono.as_deref() == Some("timeline") && nome_da_parte == "eixo" {
+                vec![linhas_do_eixo(l, &e.tema, largura_conteudo)]
+            } else if matches!(&l.tipo, Tipo::Embed(n) if n == "callout") {
                 // O rótulo `[callout]` (callout sem título, ou dobrado)
                 // veste a cor da VARIANTE, não a genérica do tipo — senão
                 // um `error` fechado se anunciaria em âmbar (ciclo 307).
@@ -794,7 +801,12 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 }
             }
         }
-        if let Some((_, velha)) = atual {
+        if let Some((dono, velha)) = atual {
+            if let Some(d) = linha_de_detalhe(e, &dono) {
+                if fora.len() < e.altura {
+                    fora.push(emoldurar(d, largura_util, velha, velha, &e.tema));
+                }
+            }
             if fora.len() < e.altura {
                 fora.push(moldura(false, largura_util, velha, &e.tema));
             }
@@ -1341,6 +1353,107 @@ fn linhas_da_semana(
     fora
 }
 
+/// A linha de DETALHE de um embed: com o cursor numa parte que tem
+/// "detalhe" (a barra do cronograma, o evento do calendário), ele aparece
+/// no pé da caixa (ciclo 313) — o que na janela é o `title` ao passar o
+/// mouse ou o modal ao clicar.
+fn linha_de_detalhe<'a>(e: &Estado, dono: &[usize]) -> Option<Line<'a>> {
+    if e.foco != Foco::Conteudo || e.cursor.len() <= dono.len() || !e.cursor.starts_with(dono) {
+        return None;
+    }
+    let u = e.arvore.em(&e.cursor)?;
+    let detalhe = u
+        .filhos
+        .iter()
+        .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "detalhe"))?;
+    Some(Line::from(vec![
+        Span::styled("  ", Style::default()),
+        Span::styled(u.texto.clone(), e.tema.estilo(Realce::TituloCartao)),
+        Span::styled(" · ", e.tema.estilo(Realce::Marca)),
+        Span::styled(detalhe.texto.clone(), e.tema.estilo(Realce::Dica)),
+    ]))
+}
+
+/// Abreviação do mês pro eixo do cronograma — a da janela (`03 ago`).
+fn mes_abreviado(m: u32) -> &'static str {
+    const M: [&str; 12] = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+    M.get(m.saturating_sub(1) as usize).copied().unwrap_or("")
+}
+
+/// O EIXO de datas do cronograma (ciclo 313): os rótulos e uma régua com
+/// `┬` em cada marca, na MESMA conta de coluna das barras — a marca de
+/// 10 de agosto cai em cima do começo de uma barra que começa no dia 10.
+///
+/// Marca por semana quando a janela é curta (até 10 semanas, como a
+/// escala `week` da janela); por mês quando é longa; por ano quando
+/// passa de dois. Rótulo que encostaria no anterior é pulado.
+fn linhas_do_eixo(l: &crate::tela::Linha, tema: &Tema, largura: usize) -> Vec<Line<'static>> {
+    use anotadinho_core::date_util::{add_days, days_between, parse_date};
+    let recuo = "  ".repeat(l.nivel);
+    let disponivel = largura.saturating_sub(recuo.len()).max(4);
+    let Some((inicio, fim)) = l.texto.split_once(' ') else { return Vec::new() };
+    let dias = days_between(inicio, fim).unwrap_or(0) + 1;
+    if dias <= 0 {
+        return Vec::new();
+    }
+    let coluna = |data: &str| -> usize {
+        let off = days_between(inicio, data).unwrap_or(0).max(0);
+        ((disponivel as f64 * off as f64 / dias as f64).round() as usize).min(disponivel - 1)
+    };
+    // As datas das marcas.
+    let mut marcas: Vec<(String, String)> = Vec::new();
+    if dias <= 70 {
+        let mut k = 0;
+        while k < dias {
+            if let Some(d) = add_days(inicio, k) {
+                if let Some((_, m, dd)) = parse_date(&d) {
+                    marcas.push((d.clone(), format!("{dd:02} {}", mes_abreviado(m))));
+                }
+            }
+            k += 7;
+        }
+    } else {
+        let Some((mut y, mut m, _)) = parse_date(inicio) else { return Vec::new() };
+        let anual = dias > 730;
+        loop {
+            let d = anotadinho_core::date_util::format_date(y, m, 1);
+            if d.as_str() > fim {
+                break;
+            }
+            if d.as_str() >= inicio && (!anual || m == 1) {
+                let rotulo = if anual { y.to_string() } else { format!("{} {y}", mes_abreviado(m)) };
+                marcas.push((d, rotulo));
+            }
+            (y, m) = anotadinho_core::date_util::next_month(y, m);
+        }
+    }
+    let mut rotulos = vec![' '; disponivel];
+    let mut regua: Vec<char> = vec!['─'; disponivel];
+    let mut livre_a_partir = 0usize;
+    for (data, rotulo) in marcas {
+        let c = coluna(&data);
+        regua[c] = '┬';
+        let n = rotulo.chars().count();
+        if c >= livre_a_partir && c + n <= disponivel {
+            for (k, ch) in rotulo.chars().enumerate() {
+                rotulos[c + k] = ch;
+            }
+            livre_a_partir = c + n + 1;
+        }
+    }
+    let marca = tema.estilo(Realce::Marca);
+    vec![
+        Line::from(vec![
+            Span::styled(recuo.clone(), Style::default()),
+            Span::styled(rotulos.into_iter().collect::<String>(), marca),
+        ]),
+        Line::from(vec![
+            Span::styled(recuo, Style::default()),
+            Span::styled(regua.into_iter().collect::<String>(), tema.estilo(Realce::Grade)),
+        ]),
+    ]
+}
+
 /// Como um retângulo/quadrado preenchido SOZINHO ocupa a largura do
 /// painel (ciclo 304, estendido no 305 pra caber a barra do
 /// cronograma).
@@ -1618,6 +1731,25 @@ fn comando_de_vim(e: &mut Estado, c: Comando) {
         .checked_sub(1)
         .and_then(|n| e.arvore.em(&e.cursor[..n]))
         .is_some_and(|pai| pai.tipo.arranjo() == Arranjo::Linha);
+    // Numa barra do cronograma, `h`/`l` andam pela ordem no TEMPO (ciclo
+    // 313) — ver `tela::barra_ao_lado`.
+    if matches!(mov, Movimento::Direita | Movimento::Esquerda)
+        && e.cursor.len() >= 2
+        && matches!(
+            e.arvore.em(&e.cursor[..e.cursor.len() - 1]).map(|p| &p.tipo),
+            Some(Tipo::Embed(n)) if n == "timeline"
+        )
+    {
+        let adiante = matches!(mov, Movimento::Direita);
+        for _ in 0..vezes.max(1) {
+            match tela::barra_ao_lado(&e.arvore, &e.cursor, adiante) {
+                Some(c) => e.cursor = c,
+                None => break,
+            }
+        }
+        e.seguir_cursor();
+        return;
+    }
     // Num evento do calendário, `h`/`l` andam de DIA com o evento
     // selecionado (ciclo 311) — ver `tela::evento_ao_lado`.
     if matches!(mov, Movimento::Direita | Movimento::Esquerda)
@@ -3182,13 +3314,83 @@ mod testes {
     }
 
     #[test]
+    fn o_cronograma_tem_eixo_de_datas_alinhado_com_as_barras() {
+        // Janela de 1 a 20 de agosto: marcas semanais em 01, 08 e 15.
+        let mut e = Estado::novo(paginas(), com_cronograma());
+        e.foco = Foco::Paginas;
+        let linhas = desenho(&mut e, 90, 20);
+        let tudo = linhas.join("\n");
+        let rotulos = linhas.iter().find(|l| l.contains("01 ago")).unwrap_or_else(|| panic!("sem eixo:\n{tudo}"));
+        assert!(rotulos.contains("08 ago") && rotulos.contains("15 ago"), "{rotulos}");
+        let regua = linhas.iter().find(|l| l.contains('┬')).unwrap_or_else(|| panic!("sem régua:\n{tudo}"));
+        assert_eq!(colunas_de(regua, '┬').len(), 3, "{regua}");
+        // A primeira marca (01 ago) cai na coluna onde a primeira barra
+        // começa: as duas usam a mesma conta.
+        let barra = linhas.iter().find(|l| l.contains("Primeira etapa")).unwrap();
+        let topo_da_barra = &linhas[linhas.iter().position(|l| l == barra).unwrap() - 1];
+        assert_eq!(colunas_de(regua, '┬')[0], colunas_de(topo_da_barra, '▗')[0], "\n{regua}\n{topo_da_barra}");
+    }
+
+    #[test]
+    fn h_e_l_andam_pelas_barras_na_ordem_do_tempo() {
+        // No arquivo: C (15), A (1), B (8). No tempo: A, B, C.
+        let mut e = Estado::novo(
+            paginas(),
+            analisar(
+                "{{ type: \"timeline\" }}\nitems:\n\
+                 - title: C\n  start: '2026-08-15'\n  end: '2026-08-20'\n\
+                 - title: A\n  start: '2026-08-01'\n  end: '2026-08-05'\n\
+                 - title: B\n  start: '2026-08-08'\n  end: '2026-08-10'\n\
+                 {{ /timeline }}\n",
+            ),
+        );
+        e.foco = Foco::Conteudo;
+        let titulo = |e: &Estado| e.arvore.em(&e.cursor).unwrap().texto.clone();
+        e.cursor = vec![0];
+        tecla(&mut e, "Enter");
+        // Enter passa por cima do eixo e pousa na primeira barra do ARQUIVO.
+        assert_eq!(titulo(&e), "C");
+        tecla(&mut e, "h");
+        assert_eq!(titulo(&e), "B");
+        tecla(&mut e, "h");
+        assert_eq!(titulo(&e), "A");
+        tecla(&mut e, "h");
+        assert_eq!(titulo(&e), "A", "antes da primeira não há nada");
+        tecla(&mut e, "2");
+        tecla(&mut e, "l");
+        assert_eq!(titulo(&e), "C");
+        // `j`/`k` continuam na ordem do arquivo, e `k` não pousa no eixo.
+        tecla(&mut e, "j");
+        assert_eq!(titulo(&e), "A");
+        e.cursor = vec![0, 1];
+        tecla(&mut e, "k");
+        assert_eq!(e.cursor, vec![0, 1]);
+    }
+
+    #[test]
+    fn a_barra_selecionada_mostra_o_detalhe_no_pe_da_caixa() {
+        let mut e = Estado::novo(paginas(), com_cronograma());
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0, 2];
+        let tudo = desenho(&mut e, 100, 20).join("\n");
+        assert!(
+            tudo.contains("Segunda etapa · 11/08/2026 → 20/08/2026 · 10 dias"),
+            "sem detalhe:\n{tudo}"
+        );
+        // Fora da barra, nada de detalhe.
+        e.cursor = vec![0];
+        let tudo = desenho(&mut e, 100, 20).join("\n");
+        assert!(!tudo.contains("10 dias"), "{tudo}");
+    }
+
+    #[test]
     fn entrar_numa_barra_nao_desce_pra_geometria() {
         // Início/duração são filhas de verdade na árvore (é como
         // `linha_de_caixa` chega nelas) — sem a guarda, Enter numa
         // barra desceria pra "0", que não tem linha na tela: pareceria
         // que a tecla não fez nada, e só o Backspace devolveria.
         let arvore = com_cronograma();
-        let caminho: Caminho = vec![0, 0]; // embed → primeira barra
+        let caminho: Caminho = vec![0, 1]; // embed → eixo, primeira barra
         assert!(matches!(
             &arvore.em(&caminho).unwrap().tipo,
             Tipo::Parte { nome, .. } if nome == "barra"

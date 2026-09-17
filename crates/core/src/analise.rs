@@ -382,6 +382,15 @@ fn acao_do_fluxo(d: &embed::FluxoEmbedData) -> Option<(String, String)> {
     }
 }
 
+/// `AAAA-MM-DD` como `DD/MM/AAAA`, o jeito de ler data em português.
+/// Data que não parseia volta como veio.
+fn data_curta(iso: &str) -> String {
+    match crate::date_util::parse_date(iso) {
+        Some((y, m, d)) => format!("{d:02}/{m:02}/{y}"),
+        None => iso.to_string(),
+    }
+}
+
 /// O conteúdo de um embed, como unidades.
 ///
 /// **Conteúdo, não controle.** O DOM de um embed mistura as duas coisas:
@@ -576,33 +585,58 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
             }
             .max(1);
 
-            d.items
-                .iter()
-                .map(|i| {
-                    let span = inicio_janela.and_then(|ini| {
-                        embed::bar_span(i.start.as_deref(), i.end.as_deref(), ini, dias_da_janela)
-                    });
-                    match span {
-                        // Início e duração viajam como duas partes
-                        // FILHAS, em porcentagem inteira (0-100) — não
-                        // no texto da barra, que seria dado disfarçado
-                        // de rótulo. `linha_de_caixa` (TUI) lê as duas
-                        // e desenha um retângulo proporcional; nenhum
-                        // outro consumidor precisa delas.
-                        Some((inicio_pct, largura_pct)) => grupo(
+            // O EIXO de datas vem antes das barras (ciclo 313): a janela
+            // desenha `03 ago · 10 ago · …` em cima delas, e sem ele uma
+            // barra proporcional não diz QUANDO. Carrega só o começo e o
+            // fim da janela; os rótulos saem do desenho, que sabe a
+            // largura. Não é destino do cursor.
+            let mut partes: Vec<Unidade> = Vec::new();
+            if let (Some(a), Some(b)) = (inicio_janela, fim_janela) {
+                partes.push(item("eixo", format!("{a} {b}")));
+            }
+            let mut sem_data: Vec<Unidade> = Vec::new();
+            for i in &d.items {
+                let span = inicio_janela.and_then(|ini| {
+                    embed::bar_span(i.start.as_deref(), i.end.as_deref(), ini, dias_da_janela)
+                });
+                match (span, i.start.as_deref()) {
+                    // Início e duração viajam como duas partes FILHAS, em
+                    // porcentagem inteira (0-100) — não no texto da
+                    // barra, que seria dado disfarçado de rótulo.
+                    // `linha_de_caixa` (TUI) lê as duas e desenha um
+                    // retângulo proporcional. O "detalhe" é o que aparece
+                    // com o cursor na barra (ciclo 313).
+                    (Some((inicio_pct, largura_pct)), Some(inicio)) => {
+                        let fim = i.end.as_deref().filter(|f| *f >= inicio).unwrap_or(inicio);
+                        let dias = crate::date_util::days_between(inicio, fim).unwrap_or(0) + 1;
+                        let mut detalhe = if fim == inicio {
+                            data_curta(inicio)
+                        } else {
+                            format!("{} → {}", data_curta(inicio), data_curta(fim))
+                        };
+                        detalhe.push_str(&format!(" · {dias} {}", if dias == 1 { "dia" } else { "dias" }));
+                        for t in &i.tags {
+                            detalhe.push_str(&format!(" · #{t}"));
+                        }
+                        partes.push(grupo(
                             "barra",
                             i.title.clone(),
                             vec![
                                 item("inicio", inicio_pct.round().to_string()),
                                 item("duracao", largura_pct.round().max(1.0).to_string()),
+                                item("detalhe", detalhe),
                             ],
-                        ),
-                        // Sem data (ficaria na "gaveta" da janela): uma
-                        // parte comum, sem barra pra desenhar.
-                        None => item("item", i.title.clone()),
+                        ));
                     }
-                })
-                .collect()
+                    // Sem data: a "gaveta" da janela, depois das barras —
+                    // a mesma forma da gaveta do calendário.
+                    _ => sem_data.push(item("item", i.title.clone())),
+                }
+            }
+            if !sem_data.is_empty() {
+                partes.push(grupo("sem-data", format!("Sem data ({})", sem_data.len()), sem_data));
+            }
+            partes
         }
 
         // Botão é coisa clicável, e clicável fica em FILEIRA — é como a
@@ -1803,8 +1837,9 @@ mod partes_de_embed {
         );
         // "barra", não "item" (ciclo 305): os dois têm data, então os
         // dois viram retângulo proporcional — não rótulo solto.
-        assert_eq!(partes(&t), ["parte:barra", "parte:barra"]);
-        assert_eq!(t.filhos[0].texto, "Etapa um");
+        assert_eq!(partes(&t), ["parte:eixo", "parte:barra", "parte:barra"]);
+        assert_eq!(t.filhos[0].texto, "2026-01-01 2026-02-01");
+        assert_eq!(t.filhos[1].texto, "Etapa um");
 
         let g = embed_de(
             "{{ type: \"gallery\" }}\nitems:\n- path: a.png\n  caption: Legenda\n- path: b.png\n{{ /gallery }}\n",
@@ -1842,7 +1877,9 @@ mod partes_de_embed {
              - title: Revisar e publicar\n  start: '2026-08-25'\n  end: '2026-08-31'\n\
              {{ /timeline }}\n",
         );
-        assert_eq!(partes(&t), ["parte:barra", "parte:barra", "parte:barra"]);
+        assert_eq!(partes(&t), ["parte:eixo", "parte:barra", "parte:barra", "parte:barra"]);
+        assert_eq!(t.filhos[0].texto, "2026-08-03 2026-08-31");
+        let t = Unidade { filhos: t.filhos[1..].to_vec(), ..t };
 
         fn geometria(barra: &Unidade) -> (String, String) {
             let campo = |nome: &str| {
@@ -1874,8 +1911,29 @@ mod partes_de_embed {
         let t = embed_de(
             "{{ type: \"timeline\" }}\nitems:\n- title: Sem data\n{{ /timeline }}\n",
         );
-        assert_eq!(partes(&t), ["parte:item"]);
-        assert_eq!(t.filhos[0].texto, "Sem data");
+        assert_eq!(partes(&t), ["parte:sem-data"]);
+        assert_eq!(t.filhos[0].texto, "Sem data (1)");
+        assert_eq!(t.filhos[0].filhos[0].texto, "Sem data");
+    }
+
+    #[test]
+    fn a_barra_do_cronograma_traz_o_detalhe() {
+        let t = embed_de(
+            "{{ type: \"timeline\" }}\nitems:\n\
+             - title: Levantar\n  start: '2026-08-03'\n  end: '2026-08-10'\n  tags:\n  - infra\n\
+             - title: Reunião\n  start: '2026-08-12'\n\
+             {{ /timeline }}\n",
+        );
+        let detalhe = |barra: &Unidade| {
+            barra
+                .filhos
+                .iter()
+                .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "detalhe"))
+                .map(|f| f.texto.clone())
+                .unwrap()
+        };
+        assert_eq!(detalhe(&t.filhos[1]), "03/08/2026 → 10/08/2026 · 8 dias · #infra");
+        assert_eq!(detalhe(&t.filhos[2]), "12/08/2026 · 1 dia");
     }
 
     #[test]
