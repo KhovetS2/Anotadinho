@@ -226,8 +226,11 @@ fn acrescentar_mensagem(vault: &str, conversa: &str, mensagem: &anotadinho_core:
     Ok(corpo.to_string())
 }
 
-/// O que vai pro agente: o prompt montado e o peso de cada parte
-/// (ciclo 417).
+/// O que vai pro agente (ciclo 417), com o recado da transclusão.
+///
+/// A montagem em si é do núcleo desde o ciclo 423 (`core::envio`), pra a
+/// janela usar a MESMA — aqui fica só o que precisa de disco: ler os
+/// anexos com as transclusões resolvidas.
 struct Envio {
     prompt: String,
     orcamento: anotadinho_core::orcamento::Orcamento,
@@ -237,8 +240,7 @@ struct Envio {
     cortes: Vec<anotadinho_core::orcamento::Corte>,
 }
 
-/// Monta o envio: lê os anexos com as transclusões resolvidas (ciclo
-/// 414), junta o prompt e pesa cada parte.
+/// Lê os anexos (transclusões resolvidas) e monta o envio.
 ///
 /// O envio e a PRÉVIA passam os dois por aqui. Se fossem dois caminhos,
 /// a prévia mentiria no primeiro dia em que um deles mudasse — e uma
@@ -252,14 +254,21 @@ fn montar_envio(
     teto: usize,
 ) -> Envio {
     use anotadinho_core::conversa;
-    use anotadinho_core::orcamento::{Orcamento, Peso};
     let mut trazidas: Vec<String> = Vec::new();
     let mut avisos: Vec<String> = Vec::new();
     let contextos: Vec<conversa::Contexto> = anexos
         .iter()
         .filter(|a| a.as_str() != conversa_path)
         .filter_map(|a| {
-            let expandida = anotadinho_ipc::handle_ler_para_contexto(vault.to_string(), a.clone()).ok()?;
+            // Anexo que não abre precisa APARECER: some do prompt, e
+            // sem recado a resposta sai pior sem ninguém entender.
+            let expandida = match anotadinho_ipc::handle_ler_para_contexto(vault.to_string(), a.clone()) {
+                Ok(x) => x,
+                Err(_) => {
+                    avisos.push(format!("não consegui ler {a}"));
+                    return None;
+                }
+            };
             for t in expandida.trazidas {
                 if !trazidas.contains(&t) {
                     trazidas.push(t);
@@ -269,22 +278,13 @@ fn montar_envio(
             Some(conversa::Contexto { nome: a.clone(), conteudo: expandida.texto })
         })
         .collect();
-    // Passando do teto, corta o que menos importa — e diz o que cortou
-    // (ciclo 419). O corte é explícito justamente porque o silencioso já
-    // acontece sozinho, do outro lado, quando o modelo trunca.
-    let mut contextos = contextos;
-    let recortado: Vec<anotadinho_core::conversa::Mensagem> =
-        historico[historico.len() - historico.len().min(app::conversa::HISTORICO_NO_PROMPT)..].to_vec();
-    let mut podado = recortado;
-    let cortes = anotadinho_core::orcamento::podar(&mut contextos, &mut podado, pergunta, teto);
-    let prompt = conversa::montar_prompt(&podado, pergunta, &contextos, app::conversa::HISTORICO_NO_PROMPT);
-    // O peso é por PARTE: quem precisa cortar quer saber qual anexo
-    // pesa, não só que o total estourou.
-    let mut partes: Vec<Peso> = contextos.iter().map(|c| Peso::novo(c.nome.clone(), &c.conteudo)).collect();
-    let recentes = podado.len();
-    let historico_texto: String = podado.iter().map(|m| m.texto.clone()).collect::<Vec<_>>().join("\n");
-    partes.push(Peso::novo(format!("histórico ({recentes} msg)"), &historico_texto));
-    partes.push(Peso::novo("pergunta", pergunta));
+    let montado = anotadinho_core::envio::montar(
+        &contextos,
+        historico,
+        pergunta,
+        app::conversa::HISTORICO_NO_PROMPT,
+        teto,
+    );
     let mut nota = if trazidas.is_empty() {
         String::new()
     } else {
@@ -297,10 +297,10 @@ fn montar_envio(
         nota.push_str(&avisos.join(" · "));
     }
     Envio {
-        prompt,
-        orcamento: Orcamento::novo(partes, teto),
+        prompt: montado.prompt,
+        orcamento: montado.orcamento,
         aviso: (!nota.is_empty()).then_some(nota),
-        cortes,
+        cortes: montado.cortes,
     }
 }
 

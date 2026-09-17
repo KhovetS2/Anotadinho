@@ -696,6 +696,14 @@ pub struct Aparencia {
     pub destaque: String,
     /// Id do estilo de botão — vira `data-botoes` no `<html>`.
     pub botoes: String,
+    /// Teto de tokens estimados do contexto (ciclo 423, como na TUI);
+    /// `0` desliga o aviso e a poda.
+    #[serde(default = "teto_padrao")]
+    pub teto_de_contexto: usize,
+}
+
+fn teto_padrao() -> usize {
+    40_000
 }
 
 impl Default for Aparencia {
@@ -704,6 +712,7 @@ impl Default for Aparencia {
             tema: "mocha".into(),
             destaque: String::new(),
             botoes: "arredondado".into(),
+            teto_de_contexto: teto_padrao(),
         }
     }
 }

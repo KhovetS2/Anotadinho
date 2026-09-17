@@ -114,9 +114,9 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Transclusão `![[Página#Seção]]` resolvida no contexto do prompt | ✅ | 414 — anexo chega ao agente com o conteúdo; `read --contexto` no CLI |
 | Transclusão DESENHADA na página (conteúdo de outra página à vista) | ✅ | 415 — conteúdo entra como enfeite sob o marcador, com teto de 12 linhas |
 | Compor contexto: inserir transclusão pelo menu `/`, anexos viram página de contexto | ✅ | 416 — só na TUI; a página-recorte vira O anexo, reutilizável |
-| Peso do contexto no cabeçalho e prévia do prompt montado | ✅ | 417 — só na TUI; tokens estimados por parte, teto avisa antes de estourar |
+| Peso do contexto no cabeçalho e prévia do prompt montado | ✅ | 417 (TUI), 423 (janela) — montagem única em `core::envio` |
 | Consulta dentro do recorte vira contexto (o vault de hoje, não uma lista velha) | ✅ | 418 — vale pros dois: TUI, janela e CLI passam pelo mesmo handler |
-| Poda explícita quando o contexto passa do teto | ✅ | 419 — só na TUI; histórico antigo, depois esqueleto do anexo maior, e diz o que cortou |
+| Poda explícita quando o contexto passa do teto | ✅ | 419 (TUI), 423 (janela) — histórico antigo, depois esqueleto do anexo maior |
 | Proposta em lote atômico (mudança que atravessa páginas) | ✅ | 420 — núcleo/IPC/CLI/MCP valem pros dois; decisão do lote só na TUI |
 | Contar ao agente o que foi aplicado e recusado (com o motivo) | ✅ | 421 — só na TUI; vai pro campo, não é enviado sozinho |
 | Tokens e custo por execução, com total do dia | ✅ | 422 — só na TUI; do `usage` do agente (Claude Code e Codex) |

@@ -62,6 +62,42 @@ pub struct ConversaViewProps {
     pub on_pergunta_consumida: Callback<()>,
 }
 
+/// Lê os anexos com as transclusões resolvidas e monta o envio pelo
+/// núcleo (ciclo 423) — a MESMA montagem da TUI: poda, peso por parte e
+/// prompt final.
+async fn montar_envio(
+    vault_path: &str,
+    conversa_path: &str,
+    anexados: &[String],
+    historico: &[Mensagem],
+    pergunta: &str,
+) -> (anotadinho_core::envio::Envio, Vec<String>) {
+    let mut contextos = Vec::new();
+    let mut avisos = Vec::new();
+    for a in anexados {
+        if a == conversa_path {
+            continue; // a própria conversa não é contexto dela
+        }
+        match api::ler_para_contexto(vault_path, a).await {
+            Ok(x) => {
+                avisos.extend(x.avisos);
+                contextos.push(conversa::Contexto { nome: a.clone(), conteudo: x.texto });
+            }
+            // Anexo que não abre precisa APARECER: some do prompt, e sem
+            // recado a resposta sai pior sem ninguém entender.
+            Err(_) => avisos.push(format!("não consegui ler {a}")),
+        }
+    }
+    let envio = anotadinho_core::envio::montar(
+        &contextos,
+        historico,
+        pergunta,
+        HISTORICO_NO_PROMPT,
+        crate::state::load_aparencia().teto_de_contexto,
+    );
+    (envio, avisos)
+}
+
 #[function_component(ConversaView)]
 pub fn conversa_view(props: &ConversaViewProps) -> Html {
     let mensagens = use_state(Vec::<Mensagem>::new);
@@ -112,6 +148,10 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     // e handle de `use_state` capturado em closure fica congelado.
     let colado_no_fim = use_mut_ref(|| true);
     let parcial_ref = use_node_ref();
+    // O peso do contexto e a prévia do prompt (ciclo 423), as mesmas da
+    // TUI: sem isto, anexar aqui continua sendo escolher no escuro.
+    let peso = use_state(|| None::<(String, bool)>);
+    let previa = use_state(|| None::<String>);
     let adaptador = use_state(crate::state::load_adaptador);
     let trocando_agente = use_state(|| false);
     // Páginas anexadas, lidas do FRONTMATTER (ciclo 208) — sobrevivem a
@@ -130,7 +170,6 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     let prompt_path = use_state(String::new);
     let valores_prompt = use_state(BTreeMap::<String, String>::new);
     let rascunho_antes_prompt = use_state(String::new);
-    let preview_prompt = use_state(|| false);
     // O popover do prompt padrão. Fechado por padrão: o campo de escrever
     // é o que a pessoa veio fazer aqui, e a faixa fixa que existia antes
     // comia uma linha da tela mesmo quando não havia prompt nenhum.
@@ -452,6 +491,72 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
             .any(|nome| valores_prompt.get(nome).is_none_or(|v| v.trim().is_empty()))
     });
 
+    // O peso do contexto, medido quando os anexos mudam (ciclo 423).
+    // Com transclusão um anexo traz outros, então a conta só existe
+    // depois de resolver — daí ser assíncrona.
+    {
+        let peso = peso.clone();
+        let vault_path = props.vault_path.clone();
+        let path = props.page.path.clone();
+        let lista = (*anexos).clone();
+        let historico = (*mensagens).clone();
+        use_effect_with((lista.clone(), path.clone()), move |_| {
+            if lista.is_empty() {
+                peso.set(None);
+                return;
+            }
+            wasm_bindgen_futures::spawn_local(async move {
+                let (envio, _) = montar_envio(&vault_path, &path, &lista, &historico, "").await;
+                peso.set(Some((envio.orcamento.resumo(), envio.orcamento.estourou())));
+            });
+        });
+    }
+
+    // A prévia: o texto EXATO que vai pro agente, com o peso de cada
+    // parte e o que a poda cortou.
+    let abrir_previa = {
+        let previa = previa.clone();
+        let vault_path = props.vault_path.clone();
+        let path = props.page.path.clone();
+        let anexos = anexos.clone();
+        let mensagens = mensagens.clone();
+        let rascunho = rascunho.clone();
+        Callback::from(move |_: MouseEvent| {
+            let (previa, vault_path, path) = (previa.clone(), vault_path.clone(), path.clone());
+            let (lista, historico, pergunta) =
+                ((*anexos).clone(), (*mensagens).clone(), (*rascunho).clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                let (envio, avisos) = montar_envio(&vault_path, &path, &lista, &historico, &pergunta).await;
+                let mut texto = format!("O que vai pro agente — {}\n", envio.orcamento.resumo());
+                for aviso in &avisos {
+                    texto.push_str(&format!("aviso: {aviso}\n"));
+                }
+                if envio.orcamento.estourou() {
+                    texto.push_str("PASSOU DO TETO: tire um anexo ou aumente o teto.\n");
+                } else if envio.orcamento.apertado() {
+                    texto.push_str("Perto do teto.\n");
+                }
+                texto.push('\n');
+                for p in &envio.orcamento.partes {
+                    texto.push_str(&format!(
+                        "  ~{}  {}\n",
+                        anotadinho_core::orcamento::humano(p.tokens),
+                        p.nome
+                    ));
+                }
+                if !envio.cortes.is_empty() {
+                    texto.push_str("\nPodado pra caber:\n");
+                    for c in &envio.cortes {
+                        texto.push_str(&format!("  · {}\n", c.rotulo()));
+                    }
+                }
+                texto.push_str("\n────────────────────────────────\n\n");
+                texto.push_str(&envio.prompt);
+                previa.set(Some(texto));
+            });
+        })
+    };
+
     // Mandar a pergunta pro agente. Recebe os anexos em vez de lê-los do
     // estado porque quem promove uma execução acabou de criar uma página
     // e precisa que ELA entre no contexto — o handle capturado no render
@@ -461,6 +566,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         let rascunho = rascunho.clone();
         let ocupado = ocupado.clone();
         let erro = erro.clone();
+        let peso = peso.clone();
         let adaptador = adaptador.clone();
         let ativo = ativo.clone();
         let vault_path = props.vault_path.clone();
@@ -481,6 +587,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
             ocupado.set(true);
             erro.set(None);
 
+            let peso = peso.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 let agora = crate::state::agora_legivel();
 
@@ -497,23 +604,22 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 // Lê cada anexo na hora do envio, não ao abrir: a página
                 // pode ter mudado desde então, e mandar a versão velha
                 // faria o modelo responder sobre o que não existe mais.
-                let mut contextos = Vec::new();
-                for a in &anexados {
-                    if *a == path {
-                        continue; // a própria conversa não é contexto dela
-                    }
-                    // Com as transclusões resolvidas (ciclo 414): a
-                    // página-recorte chega ao agente com o conteúdo.
-                    if let Ok(x) = api::ler_para_contexto(&vault_path, a).await {
-                        contextos.push(conversa::Contexto { nome: a.clone(), conteudo: x.texto });
-                    }
+                // Transclusões resolvidas (414), poda dentro do teto
+                // (419) e peso por parte (417) — tudo pelo núcleo.
+                let (envio, avisos) = montar_envio(&vault_path, &path, &anexados, &lista[..lista.len() - 1], &pergunta).await;
+                if !avisos.is_empty() {
+                    erro.set(Some(avisos.join(" · ")));
                 }
-                let prompt = conversa::montar_prompt(
-                    &lista[..lista.len() - 1],
-                    &pergunta,
-                    &contextos,
-                    HISTORICO_NO_PROMPT,
-                );
+                if !envio.cortes.is_empty() {
+                    // A poda mudou o que o agente vai ler: não pode ser
+                    // surpresa.
+                    erro.set(Some(format!(
+                        "contexto podado pra caber — {}",
+                        envio.cortes.iter().map(|c| c.rotulo()).collect::<Vec<_>>().join(" · ")
+                    )));
+                }
+                peso.set(Some((envio.orcamento.resumo(), envio.orcamento.estourou())));
+                let prompt = envio.prompt;
 
                 // Só DISPARA. Quem acompanha é o efeito de polling
                 // abaixo — inclusive se esta tela for desmontada no
@@ -833,13 +939,12 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         .map(|p| p.title.clone())
         .unwrap_or_else(|| "Prompt padrão".to_string());
 
-    let abrir_preview = {
-        let preview = preview_prompt.clone();
-        Callback::from(move |_: MouseEvent| preview.set(true))
-    };
+    // Era só o rascunho expandido; agora mostra o que o agente REALMENTE
+    // recebe — contexto, histórico e pergunta (ciclo 423).
+    let abrir_preview = abrir_previa.clone();
     let fechar_preview = {
-        let preview = preview_prompt.clone();
-        Callback::from(move |_: ()| preview.set(false))
+        let previa = previa.clone();
+        Callback::from(move |_: ()| previa.set(None))
     };
 
     html! {
@@ -931,6 +1036,16 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     title="Anexar páginas que o modelo deve consultar">
                     <Icon name="paperclip" />{ format!("{} anexo(s)", anexos.len()) }
                 </button>
+                <button class="btn btn--ghost btn--xs" onclick={abrir_previa.clone()}
+                    title="Ver o prompt que vai pro agente, com o peso de cada parte">
+                    { "Prévia" }
+                </button>
+                if let Some((resumo, estourou)) = (*peso).clone() {
+                    <span class={classes!("conversa__peso", estourou.then_some("conversa__peso--estourou"))}
+                        title="Tamanho estimado do que vai pro agente">
+                        { resumo }
+                    </span>
+                }
             </header>
 
             if !anexos.is_empty() {
@@ -1201,13 +1316,13 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     }}>{ "Criar e pedir" }</button>
                 </div>
             </Modal>
-            <Modal title="Visualização do prompt final" open={*preview_prompt}
+            <Modal title="Visualização do prompt final" open={previa.is_some()}
                 on_close={fechar_preview} wide=true>
-                <pre class="conversa__prompt-final">{ (*rascunho).clone() }</pre>
+                <pre class="conversa__prompt-final">{ (*previa).clone().unwrap_or_default() }</pre>
                 <div class="modal__actions">
                     <button class="btn" onclick={{
-                        let preview = preview_prompt.clone();
-                        Callback::from(move |_: MouseEvent| preview.set(false))
+                        let previa = previa.clone();
+                        Callback::from(move |_: MouseEvent| previa.set(None))
                     }}>{ "Fechar" }</button>
                 </div>
             </Modal>

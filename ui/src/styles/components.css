@@ -1501,6 +1501,24 @@
    Ficam à vista o tempo todo: o que o modelo está lendo não pode ser
    invisível — foi o pedido de "anexar o que ele deve consultar". */
 .conversa__anexar { margin-left: auto; }
+/* O peso do contexto (ciclo 423): discreto ao lado da contagem de
+   anexos, e em alerta quando passa do teto. */
+.conversa__peso {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.conversa__peso--estourou { color: var(--warning); font-weight: 600; }
+/* A prévia mostra o prompt CRU: quebra de linha e espaços contam. */
+.conversa__previa {
+  white-space: pre-wrap;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  max-height: 60vh;
+  overflow: auto;
+  margin: 0;
+}
 
 .conversa__anexos {
   display: flex;

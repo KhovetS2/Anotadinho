@@ -36,6 +36,7 @@ pub mod agente;
 pub mod conversa;
 pub mod decisao;
 pub mod diff;
+pub mod envio;
 pub mod execucao;
 pub mod ferramentas;
 pub mod avaliacao;
