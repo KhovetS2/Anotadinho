@@ -111,6 +111,23 @@ pub enum Realce {
     /// variante fica no `Parte` genérico de sempre — só o primário
     /// precisava se destacar dos outros.
     BotaoPrimario,
+    /// Um evento do calendário: mesma ideia do cartão do kanban, ecoa a
+    /// cor da moldura (`EmbedCalendar`) — ciclo 305.
+    Entrada,
+    /// A barra do cronograma: retângulo PROPORCIONAL à duração, ecoa a
+    /// cor da moldura (`EmbedTimeline`) — ciclo 305.
+    Barra,
+    /// Célula de tabela sem tipo especial: texto comum, não a cor
+    /// âmbar de parte genérica — é dado, não decoração (ciclo 305).
+    Celula,
+    /// O cabeçalho de uma coluna de tabela.
+    CabecalhoDeTabela,
+    /// Badge de célula `select`/`multiselect` — as mesmas quatro cores
+    /// da janela (`.badge--info/success/warning/error`, ciclo 305).
+    BadgeInfo,
+    BadgeSucesso,
+    BadgeAtencao,
+    BadgeErro,
 }
 
 /// Uma paleta resolvida.
@@ -246,6 +263,17 @@ impl Tema {
             Realce::Cartao => Style::default().fg(self.cor("cor-azul", Color::Blue)),
             Realce::Miniatura => Style::default().fg(self.cor("cor-vermelho", Color::Red)),
             Realce::BotaoPrimario => Style::default().fg(destaque).add_modifier(Modifier::BOLD),
+            Realce::Entrada => Style::default().fg(self.cor("cor-verde", Color::Green)),
+            Realce::Barra => Style::default().fg(self.cor("success", Color::Green)),
+            Realce::Celula => Style::default().fg(texto),
+            Realce::CabecalhoDeTabela => Style::default()
+                .fg(apagado)
+                .add_modifier(Modifier::BOLD),
+            // Mesmos quatro tokens do `badge--*` da janela.
+            Realce::BadgeInfo => Style::default().fg(destaque),
+            Realce::BadgeSucesso => Style::default().fg(self.cor("success", Color::Green)),
+            Realce::BadgeAtencao => Style::default().fg(self.cor("warning", Color::Yellow)),
+            Realce::BadgeErro => Style::default().fg(self.cor("error", Color::Red)),
         }
     }
 
@@ -472,6 +500,14 @@ mod testes {
             Realce::Cartao,
             Realce::Miniatura,
             Realce::BotaoPrimario,
+            Realce::Entrada,
+            Realce::Barra,
+            Realce::Celula,
+            Realce::CabecalhoDeTabela,
+            Realce::BadgeInfo,
+            Realce::BadgeSucesso,
+            Realce::BadgeAtencao,
+            Realce::BadgeErro,
         ] {
             let e = t.estilo(r);
             let cor = e.fg.or(e.bg).unwrap_or(Color::Reset);

@@ -638,17 +638,25 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             // botões, porque botão tem borda fechada. Um cartão ou uma
             // miniatura são a MESMA faixa de três linhas, sozinhos — não
             // ficam lado a lado, cada um é dono da própria linha (ciclo
-            // 304). Todo o resto rende um grupo de uma linha só.
-            let desenhadas = if !l.segmentos.is_empty() {
-                linhas_de_fileira(l, &e.tema, largura_conteudo, Some(&e.cursor))
-            } else if let Some(preencher_largura) = caixa_avulsa(&l.tipo) {
-                vec![linha_de_caixa(
+            // 304). A fileira de uma TABELA foge dessa regra: célula
+            // não é botão, é grade — uma linha só, alinhada em coluna
+            // (ciclo 305). Todo o resto rende um grupo de uma linha só.
+            let desenhadas = if !l.segmentos.is_empty() && l.embed_dono.as_deref() == Some("table")
+            {
+                let embed = e.arvore.em(l.dono_embed.as_deref().unwrap_or(&[]));
+                let larguras = embed.map(larguras_de_tabela).unwrap_or_default();
+                let cabecalho = matches!(&l.tipo, Tipo::Parte { nome, .. } if nome == "header");
+                vec![vec![linha_de_tabela(
                     l,
                     &e.tema,
-                    largura_conteudo,
+                    &larguras,
+                    cabecalho,
                     Some(&e.cursor),
-                    preencher_largura,
-                )]
+                )]]
+            } else if !l.segmentos.is_empty() {
+                linhas_de_fileira(l, &e.tema, largura_conteudo, Some(&e.cursor))
+            } else if let Some(modo) = e.arvore.em(&l.caminho).and_then(caixa_avulsa) {
+                vec![linha_de_caixa(l, &e.tema, largura_conteudo, Some(&e.cursor), modo)]
             } else {
                 vec![vec![linha_estilizada(
                     // Sem fundo no texto (ciclo 295): quem diz onde se
@@ -864,18 +872,104 @@ fn linhas_de_fileira(
     fora
 }
 
-/// A parte, quando ela quer ser desenhada como retângulo/quadrado
+/// A largura de cada COLUNA de uma tabela — o máximo entre cabeçalho e
+/// linhas, pra célula ficar alinhada em grade (ciclo 305).
+///
+/// Recebe o embed inteiro (não uma linha): a largura de uma coluna só
+/// existe olhando TODAS as linhas juntas, e é por isso que a tabela não
+/// podia reusar o botão — um botão só olha o próprio texto.
+fn larguras_de_tabela(embed: &Unidade) -> Vec<usize> {
+    let mut larguras: Vec<usize> = Vec::new();
+    for linha in &embed.filhos {
+        for (i, celula) in linha.filhos.iter().enumerate() {
+            let n = celula.texto.chars().count();
+            match larguras.get_mut(i) {
+                Some(atual) => *atual = (*atual).max(n),
+                None => larguras.push(n),
+            }
+        }
+    }
+    larguras
+}
+
+/// Uma linha de TABELA: célula ao lado de célula alinhada em coluna,
+/// texto simples — não a caixa de botão que toda outra fileira ganha
+/// (ciclo 305). Uma tabela é grade, não fileira de retângulos.
+fn linha_de_tabela<'a>(
+    l: &crate::tela::Linha,
+    tema: &Tema,
+    larguras: &[usize],
+    cabecalho: bool,
+    cursor: Option<&[usize]>,
+) -> Line<'a> {
+    let recuo = "  ".repeat(l.nivel);
+    let mut spans = vec![Span::styled(recuo, Style::default())];
+    for (i, seg) in l.segmentos.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" │ ", tema.estilo(Realce::Borda)));
+        }
+        let aceso = cursor.is_some_and(|c| c == seg.caminho.as_slice());
+        let papel = if aceso {
+            Realce::Cursor
+        } else if cabecalho {
+            Realce::CabecalhoDeTabela
+        } else {
+            papel_da_parte(&seg.nome)
+        };
+        let largura = larguras.get(i).copied().unwrap_or(0);
+        let texto = format!("{:largura$}", seg.texto, largura = largura);
+        spans.push(Span::styled(texto, tema.estilo(papel)));
+    }
+    Line::from(spans)
+}
+
+/// Como um retângulo/quadrado preenchido SOZINHO ocupa a largura do
+/// painel (ciclo 304, estendido no 305 pra caber a barra do
+/// cronograma).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ModoCaixa {
+    /// Estica até a borda — o cartão do kanban, a entrada do
+    /// calendário: ocupam a largura da coluna/painel, como na janela.
+    Cheia,
+    /// Cresce só até caber o texto — a miniatura da galeria, um selo.
+    Conteudo,
+    /// Retângulo PROPORCIONAL dentro da largura disponível — a barra
+    /// do cronograma. Os dois números são porcentagem (0-100): onde
+    /// começa, quanto ocupa.
+    Proporcional { inicio_pct: u8, largura_pct: u8 },
+}
+
+/// A unidade, quando ela quer ser desenhada como retângulo/quadrado
 /// preenchido sozinha na própria linha — não numa fileira (ciclo 304).
 ///
-/// Diz também se o preenchimento ESTICA até a borda do painel: o
-/// cartão do kanban ocupa a largura da coluna, como na janela; a
-/// miniatura da galeria só cresce até caber a legenda, como um selo.
-///
 /// `None` pra qualquer outra parte — aí quem desenha usa a linha comum.
-fn caixa_avulsa(tipo: &Tipo) -> Option<bool> {
-    match tipo {
-        Tipo::Parte { nome, arranjo: Arranjo::Folha } if nome == "card" => Some(true),
-        Tipo::Parte { nome, arranjo: Arranjo::Folha } if nome == "miniatura" => Some(false),
+fn caixa_avulsa(u: &Unidade) -> Option<ModoCaixa> {
+    match &u.tipo {
+        Tipo::Parte { nome, arranjo: Arranjo::Folha } if nome == "card" => Some(ModoCaixa::Cheia),
+        // Miniatura e evento crescem só até caber o conteúdo — nem uma
+        // é "coisa inteira" como o cartão: uma é o TAMANHO de uma
+        // legenda, a outra é um PONTO no calendário, não uma faixa que
+        // preencha a coluna (isso é o cronograma, que tem largura
+        // própria — `Proporcional`, abaixo).
+        Tipo::Parte { nome, arranjo: Arranjo::Folha } if nome == "miniatura" || nome == "entry" => {
+            Some(ModoCaixa::Conteudo)
+        }
+        // A barra é GRUPO, não folha: início e duração viajam como
+        // duas partes-filhas em porcentagem (`crates/core/src/analise.rs`,
+        // ciclo 305) — dado de desenho, não conteúdo pra navegar ou
+        // mostrar (`tela::e_geometria` as esconde da tela e do Enter).
+        Tipo::Parte { nome, .. } if nome == "barra" => {
+            let pct = |campo: &str| -> Option<u8> {
+                u.filhos
+                    .iter()
+                    .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == campo))
+                    .and_then(|f| f.texto.parse().ok())
+            };
+            Some(ModoCaixa::Proporcional {
+                inicio_pct: pct("inicio").unwrap_or(0),
+                largura_pct: pct("duracao").unwrap_or(100),
+            })
+        }
         _ => None,
     }
 }
@@ -892,7 +986,7 @@ fn linha_de_caixa(
     tema: &Tema,
     largura: usize,
     cursor: Option<&[usize]>,
-    preencher_largura: bool,
+    modo: ModoCaixa,
 ) -> Vec<Line<'static>> {
     let recuo = "  ".repeat(l.nivel);
     let disponivel = largura.saturating_sub(recuo.len()).max(4);
@@ -905,33 +999,53 @@ fn linha_de_caixa(
     let contorno = tema.contorno_do_botao(papel);
     let miolo_estilo = tema.miolo_do_botao(papel);
 
+    // Cheia e Proporcional preenchem o miolo com espaço até a largura
+    // alvo — é o que faz a caixa parecer um retângulo sólido em vez de
+    // encolher pro tamanho do texto. Conteúdo não: um selo cresce só
+    // até caber a legenda.
+    let (largura_caixa, deslocamento, preencher) = match modo {
+        ModoCaixa::Cheia => (disponivel, 0, true),
+        ModoCaixa::Conteudo => (disponivel, 0, false),
+        ModoCaixa::Proporcional { inicio_pct, largura_pct } => {
+            let desloc = (disponivel as f64 * inicio_pct as f64 / 100.0).round() as usize;
+            let larg = ((disponivel as f64 * largura_pct as f64 / 100.0).round() as usize).max(4);
+            // A barra não pode vazar a borda: sobra da largura entra
+            // no deslocamento antes, não depois.
+            (larg, desloc.min(disponivel.saturating_sub(larg)), true)
+        }
+    };
+
     // O miolo cabe na largura menos as duas meias-célula do contorno e
     // o espaço de respiro de cada lado — a mesma conta do botão
-    // (`largura_do_botao`), só que aqui a largura é a do PAINEL, não a
+    // (`largura_do_botao`), só que aqui a largura é a da CAIXA, não a
     // do texto: um cartão vazio ainda ocupa a coluna inteira.
-    let cabe = disponivel.saturating_sub(4).max(1);
+    let cabe = largura_caixa.saturating_sub(4).max(1);
     let mut texto: String = l.texto.chars().take(cabe).collect();
-    if preencher_largura {
+    if preencher {
         let usado = texto.chars().count();
         if usado < cabe {
             texto.push_str(&" ".repeat(cabe - usado));
         }
     }
     let largura_miolo = texto.chars().count() + 2;
+    let prefixo = " ".repeat(deslocamento);
 
     vec![
         Line::from(vec![
             Span::styled(recuo.clone(), Style::default()),
+            Span::styled(prefixo.clone(), Style::default()),
             Span::styled(format!("▗{}▖", "▄".repeat(largura_miolo)), contorno),
         ]),
         Line::from(vec![
             Span::styled(recuo.clone(), Style::default()),
+            Span::styled(prefixo.clone(), Style::default()),
             Span::styled("▐", contorno),
             Span::styled(format!(" {texto} "), miolo_estilo),
             Span::styled("▌", contorno),
         ]),
         Line::from(vec![
             Span::styled(recuo, Style::default()),
+            Span::styled(prefixo, Style::default()),
             Span::styled(format!("▝{}▘", "▀".repeat(largura_miolo)), contorno),
         ]),
     ]
@@ -1297,6 +1411,18 @@ fn papel_da_parte(nome: &str) -> Realce {
         // de sempre, a mesma cor que já tinha antes deste ciclo — só o
         // `primary` precisava se destacar dos outros.
         "button-primary" => Realce::BotaoPrimario,
+        // Ciclo 305: o evento do calendário e a barra do cronograma.
+        "entry" => Realce::Entrada,
+        "barra" => Realce::Barra,
+        // Célula de tabela: "cell" é dado comum, "badge--X" é a MESMA
+        // cor que `badge_class` (núcleo) já escolheu pra coluna
+        // select/multiselect — o desenho só traduz o nome pro papel do
+        // tema (ciclo 305).
+        "cell" => Realce::Celula,
+        "badge--info" => Realce::BadgeInfo,
+        "badge--success" => Realce::BadgeSucesso,
+        "badge--warning" => Realce::BadgeAtencao,
+        "badge--error" => Realce::BadgeErro,
         _ => Realce::Parte,
     }
 }
@@ -1624,6 +1750,36 @@ mod testes {
         analisar("{{ type: \"gallery\" }}\nitems:\n- path: a.png\n  caption: Primeira\n- path: b.png\n  caption: Segunda\n{{ /gallery }}\n")
     }
 
+    /// Uma página com um calendário de um evento.
+    fn com_calendario() -> Unidade {
+        analisar("{{ type: \"calendar\" }}\nentries:\n- date: 2026-08-06\n  title: Revisão de código\n{{ /calendar }}\n")
+    }
+
+    /// Uma página com um cronograma de duas barras: uma que ocupa a
+    /// janela inteira (10 dias) e outra que emenda logo depois.
+    fn com_cronograma() -> Unidade {
+        analisar(
+            "{{ type: \"timeline\" }}\nitems:\n\
+             - title: Primeira etapa\n  start: '2026-08-01'\n  end: '2026-08-10'\n\
+             - title: Segunda etapa\n  start: '2026-08-11'\n  end: '2026-08-20'\n\
+             {{ /timeline }}\n",
+        )
+    }
+
+    /// Uma página com uma tabela de duas colunas, uma delas `select`.
+    fn com_tabela() -> Unidade {
+        analisar(
+            "{{ type: \"table\" }}\ncolumns:\n\
+             - name: Tarefa\n\
+             - name: Status\n  type: select\n  options: [todo, doing, done]\n\
+             ---\n\
+             | Tarefa | Status |\n| --- | --- |\n\
+             | API | done |\n\
+             | Um nome de tarefa bem mais longo | doing |\n\
+             {{ /table }}\n",
+        )
+    }
+
     /// Uma página com um embed de ações de dois botões.
     fn com_acoes() -> Unidade {
         analisar("{{ type: \"actions\" }}\nbuttons:\n- label: Abrir\n  action: open-page\n- label: Buscar\n  action: run-search\n{{ /actions }}\n")
@@ -1947,6 +2103,128 @@ mod testes {
             tudo.contains("▐ Segunda ▌"),
             "a segunda miniatura sumiu:\n{tudo}"
         );
+    }
+
+    #[test]
+    fn o_evento_do_calendario_vira_retangulo_preenchido() {
+        // Mesma ideia do cartão do kanban (ciclo 304) — o texto puro
+        // "entry 2026-08-06 Revisão de código" virava ruído (ciclo
+        // 305).
+        let mut e = Estado::novo(paginas(), com_calendario());
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 60, 14).join("\n");
+        assert!(
+            tudo.contains("▐ 2026-08-06 Revisão de código ▌"),
+            "o evento não virou caixa preenchida:\n{tudo}"
+        );
+        assert!(!tudo.contains("entry 2026"), "{tudo}");
+    }
+
+    #[test]
+    fn a_barra_do_cronograma_fica_proporcional_a_duracao() {
+        // As duas etapas de `com_cronograma()` duram o mesmo tanto (10
+        // dias cada, janela de 20) — a segunda barra tem que começar
+        // exatamente onde a primeira parou, não randomicamente lado a
+        // lado nem uma embaixo da outra na mesma coluna.
+        let mut e = Estado::novo(paginas(), com_cronograma());
+        e.foco = Foco::Paginas;
+        let linhas = desenho(&mut e, 80, 16);
+        let linha_de = |texto: &str| {
+            linhas
+                .iter()
+                .find(|l| l.contains(texto))
+                .unwrap_or_else(|| panic!("\"{texto}\" sumiu da tela:\n{}", linhas.join("\n")))
+        };
+        let l1 = linha_de("Primeira etapa");
+        let l2 = linha_de("Segunda etapa");
+        // Coluna em CARACTERES, não bytes: `find`/`rfind` de `str`
+        // devolvem posição de byte, e `▐`/`▌` ocupam 3 — junto dos
+        // outros caracteres largos da tela (bordas dos painéis), o
+        // índice de byte não bate com a coluna que se vê.
+        let coluna = |l: &str, c: char| -> usize {
+            l.chars().collect::<Vec<_>>().iter().position(|x| *x == c).expect("caractere sumiu")
+        };
+        let col1 = coluna(l1, '▐');
+        let col2 = coluna(l2, '▐');
+        assert!(
+            col2 > col1,
+            "a segunda barra devia começar mais à direita — col1={col1} col2={col2}\n{l1}\n{l2}"
+        );
+        // Cada uma é metade da janela: nenhuma toma o painel inteiro,
+        // que é o que "retângulo proporcional" promete sobre "cartão".
+        // O painel de conteúdo aqui tem uns 55 colunas úteis; metade
+        // fica bem antes da borda direita da tela (80).
+        let fim1 = coluna(l1, '▌');
+        assert!(
+            fim1 < 60,
+            "a primeira barra ocupou o painel inteiro, não a metade:\n{l1}"
+        );
+    }
+
+    #[test]
+    fn entrar_numa_barra_nao_desce_pra_geometria() {
+        // Início/duração são filhas de verdade na árvore (é como
+        // `linha_de_caixa` chega nelas) — sem a guarda, Enter numa
+        // barra desceria pra "0", que não tem linha na tela: pareceria
+        // que a tecla não fez nada, e só o Backspace devolveria.
+        let arvore = com_cronograma();
+        let caminho: Caminho = vec![0, 0]; // embed → primeira barra
+        assert!(matches!(
+            &arvore.em(&caminho).unwrap().tipo,
+            Tipo::Parte { nome, .. } if nome == "barra"
+        ));
+        let depois = tela::andar(&arvore, &caminho, Passo::Entrar);
+        assert_eq!(depois, caminho, "Entrar desceu pra dentro da geometria da barra");
+    }
+
+    #[test]
+    fn a_tabela_vira_grade_alinhada_em_coluna() {
+        // Célula não é botão: até este ciclo cada célula saía na
+        // PRÓPRIA linha, uma embaixo da outra — uma tabela de duas
+        // colunas e duas linhas virava quatro linhas de texto solto.
+        // Agora cabeçalho e cada linha ocupam uma linha só, alinhados
+        // (ciclo 305).
+        let mut e = Estado::novo(paginas(), com_tabela());
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 80, 16);
+        let linha_de = |texto: &str| {
+            tudo.iter()
+                .find(|l| l.contains(texto))
+                .unwrap_or_else(|| panic!("\"{texto}\" sumiu da tela:\n{}", tudo.join("\n")))
+        };
+        let cabecalho = linha_de("Tarefa");
+        assert!(cabecalho.contains("Status"), "{cabecalho}");
+        let l_api = linha_de("API");
+        assert!(l_api.contains("done"), "{l_api}");
+        // As duas colunas têm a MESMA largura em toda linha — é o que
+        // "alinhado" quer dizer. A segunda linha tem o nome mais
+        // longo, então é ELA quem define a largura da primeira coluna;
+        // a coluna de "API" cresce até lá.
+        let l_longa = linha_de("Um nome de tarefa bem mais longo");
+        let col_status_curta = l_api.find("done").unwrap();
+        let col_status_longa = l_longa.find("doing").unwrap();
+        assert_eq!(
+            col_status_curta, col_status_longa,
+            "a coluna Status não ficou alinhada entre as linhas:\n{l_api}\n{l_longa}"
+        );
+    }
+
+    #[test]
+    fn a_celula_de_select_ganha_a_cor_do_badge_na_tela() {
+        // "done" é a terceira opção de [todo, doing, done] — mesma
+        // conta do núcleo (`badge_class`): índice 2, `BadgeAtencao`
+        // (o token `warning`). Uma célula comum ("Tarefa"/"API") não
+        // pode sair dessa cor — só ela distingue "isto é um badge" de
+        // "isto é texto".
+        let mut e = Estado::novo(paginas(), com_tabela());
+        e.foco = Foco::Paginas;
+        let cor_badge = e.tema.estilo(Realce::BadgeAtencao).fg.unwrap();
+        let mut term = Terminal::new(TestBackend::new(80, 16)).unwrap();
+        term.draw(|f| desenhar(f, &mut e)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let aparece = (0..buf.area.height)
+            .any(|y| (0..buf.area.width).any(|x| buf[(x, y)].style().fg == Some(cor_badge)));
+        assert!(aparece, "a cor do badge não apareceu na tela");
     }
 
     #[test]

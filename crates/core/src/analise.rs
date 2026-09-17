@@ -450,20 +450,42 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
             })
             .collect(),
 
-        // Linha é grupo, célula é folha. A célula guarda o valor, não o
-        // nome da coluna: o cabeçalho é uma linha à parte.
+        // Cabeçalho e linha são FILEIRA, não grupo (ciclo 305): célula
+        // ao lado de célula é como se lê uma tabela — é a mesma peça
+        // (`Arranjo::Linha`) que já faz o botão de ações ficar lado a
+        // lado; até aqui o desenho da TUI não sabia disso, e cada
+        // célula saía numa linha própria, uma embaixo da outra.
+        //
+        // O nome da célula carrega a cor do badge quando a coluna é
+        // Select/MultiSelect — o mesmo `badge_class` que a janela usa
+        // pra pintar `.badge--info`/`--success`/`--warning`/`--error`.
+        // Célula comum fica "cell", sem cor própria.
         EmbedData::Table(d) => {
-            let cabecalho = grupo(
+            let nome_da_celula = |col: Option<&embed::TableColumn>, valor: &str| -> String {
+                match col.map(|c| &c.kind) {
+                    Some(embed::ColumnKind::Select { options }) => {
+                        embed::badge_class(options, valor).to_string()
+                    }
+                    Some(embed::ColumnKind::MultiSelect { options }) => {
+                        let primeira = valor.split(", ").next().unwrap_or("");
+                        embed::badge_class(options, primeira).to_string()
+                    }
+                    _ => "cell".to_string(),
+                }
+            };
+            let cabecalho = fileira(
                 "header",
-                String::new(),
                 d.columns.iter().map(|c| item("cell", c.name.clone())).collect(),
             );
             std::iter::once(cabecalho)
                 .chain(d.rows.iter().map(|linha| {
-                    grupo(
+                    fileira(
                         "row",
-                        String::new(),
-                        linha.iter().map(|v| item("cell", v.clone())).collect(),
+                        linha
+                            .iter()
+                            .enumerate()
+                            .map(|(i, v)| item(&nome_da_celula(d.columns.get(i), v), v.clone()))
+                            .collect(),
                     )
                 }))
                 .collect()
@@ -500,7 +522,57 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
             })
             .collect(),
 
-        EmbedData::Timeline(d) => d.items.iter().map(|i| item("item", i.title.clone())).collect(),
+        // Cada item vira uma BARRA proporcional — a mesma aritmética
+        // que a janela usa pra desenhar (`embed::bar_span`, ciclo 167),
+        // calculada uma vez aqui em vez de a cada repaint (ciclo 305).
+        //
+        // A janela escolhe a janela de tempo pela navegação (mês/semana
+        // corrente); aqui não há esse estado — TUI e CLI não têm "mês
+        // atual" — então a janela é o próprio conjunto: do primeiro
+        // início ao último fim. ISO (`AAAA-MM-DD`) ordena léxico igual
+        // a cronológico, então `min`/`max` de string bastam, sem
+        // reabrir `date_util` pra isso.
+        EmbedData::Timeline(d) => {
+            let inicio_janela = d.items.iter().filter_map(|i| i.start.as_deref()).min();
+            let fim_janela = d
+                .items
+                .iter()
+                .filter_map(|i| i.end.as_deref().or(i.start.as_deref()))
+                .max();
+            let dias_da_janela = match (inicio_janela, fim_janela) {
+                (Some(a), Some(b)) => crate::date_util::days_between(a, b).unwrap_or(0) + 1,
+                _ => 0,
+            }
+            .max(1);
+
+            d.items
+                .iter()
+                .map(|i| {
+                    let span = inicio_janela.and_then(|ini| {
+                        embed::bar_span(i.start.as_deref(), i.end.as_deref(), ini, dias_da_janela)
+                    });
+                    match span {
+                        // Início e duração viajam como duas partes
+                        // FILHAS, em porcentagem inteira (0-100) — não
+                        // no texto da barra, que seria dado disfarçado
+                        // de rótulo. `linha_de_caixa` (TUI) lê as duas
+                        // e desenha um retângulo proporcional; nenhum
+                        // outro consumidor precisa delas.
+                        Some((inicio_pct, largura_pct)) => grupo(
+                            "barra",
+                            i.title.clone(),
+                            vec![
+                                item("inicio", inicio_pct.round().to_string()),
+                                item("duracao", largura_pct.round().max(1.0).to_string()),
+                            ],
+                        ),
+                        // Sem data (ficaria na "gaveta" da janela): uma
+                        // parte comum, sem barra pra desenhar.
+                        None => item("item", i.title.clone()),
+                    }
+                })
+                .collect()
+        }
 
         // Botão é coisa clicável, e clicável fica em FILEIRA — é como a
         // janela desenha, e agora o modelo diz isso em vez de o desenho
@@ -1445,6 +1517,47 @@ mod partes_de_embed {
                 .collect::<Vec<_>>(),
             ["API", "done"]
         );
+        // Cabeçalho e linha são FILEIRA (ciclo 305): célula ao lado de
+        // célula é o desenho de uma tabela, não uma embaixo da outra.
+        assert_eq!(e.filhos[0].tipo.arranjo(), Arranjo::Linha);
+        assert_eq!(e.filhos[1].tipo.arranjo(), Arranjo::Linha);
+    }
+
+    #[test]
+    fn celula_de_select_e_multiselect_carrega_a_cor_do_badge() {
+        // O mesmo `badge_class` que a janela usa pra pintar
+        // `.badge--info`/`--success`/`--warning`/`--error` — só que
+        // aqui vira o NOME da parte, e é o gancho que o desenho do
+        // terminal usa (ciclo 305).
+        let e = embed_de(
+            "{{ type: \"table\" }}\ncolumns:\n\
+             - name: Tarefa\n\
+             - name: Status\n  type: select\n  options: [todo, doing, done]\n\
+             - name: Tags\n  type: multiselect\n  options: [urgente, bug, infra]\n\
+             ---\n\
+             | Tarefa | Status | Tags |\n| --- | --- | --- |\n\
+             | API | done | infra |\n\
+             | UI | doing | urgente, bug |\n\
+             {{ /table }}\n",
+        );
+        assert_eq!(partes(&e), ["parte:header", "parte:row", "parte:row"]);
+        // options=[todo,doing,done]: done é a TERCEIRA (índice 2).
+        assert_eq!(partes(&e.filhos[1]), ["parte:cell", "parte:badge--warning", "parte:badge--warning"]);
+        // A cor vem da PRIMEIRA tag ("infra", índice 2 em
+        // [urgente,bug,infra]) — mostrar as duas juntas em badges
+        // separados fica pro próximo corte.
+        assert_eq!(e.filhos[1].filhos[2].texto, "infra");
+        // options=[todo,doing,done]: doing é a segunda (índice 1).
+        assert_eq!(partes(&e.filhos[2]), ["parte:cell", "parte:badge--success", "parte:badge--info"]);
+        assert_eq!(e.filhos[2].filhos[2].texto, "urgente, bug");
+    }
+
+    #[test]
+    fn celula_comum_nao_ganha_cor_de_badge() {
+        let e = embed_de(
+            "{{ type: \"table\" }}\ncolumns:\n- name: Tarefa\n  type: number\n---\n| Tarefa |\n| --- |\n| 8 |\n{{ /table }}\n",
+        );
+        assert_eq!(partes(&e.filhos[1]), ["parte:cell"]);
     }
 
     #[test]
@@ -1472,7 +1585,9 @@ mod partes_de_embed {
         let t = embed_de(
             "{{ type: \"timeline\" }}\nitems:\n- title: Etapa um\n  start: '2026-01-01'\n- title: Etapa dois\n  start: '2026-02-01'\n{{ /timeline }}\n",
         );
-        assert_eq!(partes(&t), ["parte:item", "parte:item"]);
+        // "barra", não "item" (ciclo 305): os dois têm data, então os
+        // dois viram retângulo proporcional — não rótulo solto.
+        assert_eq!(partes(&t), ["parte:barra", "parte:barra"]);
         assert_eq!(t.filhos[0].texto, "Etapa um");
 
         let g = embed_de(
@@ -1498,6 +1613,53 @@ mod partes_de_embed {
         assert_eq!(a.filhos[0].tipo.arranjo(), Arranjo::Linha);
         assert_eq!(partes(&a.filhos[0]), ["parte:button"]);
         assert_eq!(a.filhos[0].filhos[0].texto, "Abrir");
+    }
+
+    #[test]
+    fn a_barra_do_cronograma_carrega_inicio_e_duracao_em_porcentagem() {
+        // A mesma conta da página de exemplos: três itens de agosto,
+        // 29 dias de janela (do primeiro início ao último fim).
+        let t = embed_de(
+            "{{ type: \"timeline\" }}\nitems:\n\
+             - title: Levantar requisitos\n  start: '2026-08-03'\n  end: '2026-08-10'\n\
+             - title: Implementar\n  start: '2026-08-11'\n  end: '2026-08-24'\n\
+             - title: Revisar e publicar\n  start: '2026-08-25'\n  end: '2026-08-31'\n\
+             {{ /timeline }}\n",
+        );
+        assert_eq!(partes(&t), ["parte:barra", "parte:barra", "parte:barra"]);
+
+        fn geometria(barra: &Unidade) -> (String, String) {
+            let campo = |nome: &str| {
+                barra
+                    .filhos
+                    .iter()
+                    .find(|f| matches!(&f.tipo, Tipo::Parte { nome: n, .. } if n == nome))
+                    .map(|f| f.texto.clone())
+                    .unwrap_or_default()
+            };
+            (campo("inicio"), campo("duracao"))
+        }
+
+        // A primeira barra começa NO início da janela (0%) — é ela quem
+        // define a janela.
+        assert_eq!(geometria(&t.filhos[0]), ("0".to_string(), "28".to_string()));
+        // A segunda emenda onde a primeira parou.
+        assert_eq!(geometria(&t.filhos[1]), ("28".to_string(), "48".to_string()));
+        // A terceira termina NO fim da janela.
+        let (inicio3, duracao3) = geometria(&t.filhos[2]);
+        assert_eq!(inicio3, "76".to_string());
+        assert_eq!(duracao3, "24".to_string());
+    }
+
+    #[test]
+    fn item_do_cronograma_sem_data_nao_vira_barra() {
+        // Fica na "gaveta" da janela — sem início não há o que
+        // desenhar proporcional, então volta a ser rótulo comum.
+        let t = embed_de(
+            "{{ type: \"timeline\" }}\nitems:\n- title: Sem data\n{{ /timeline }}\n",
+        );
+        assert_eq!(partes(&t), ["parte:item"]);
+        assert_eq!(t.filhos[0].texto, "Sem data");
     }
 
     #[test]

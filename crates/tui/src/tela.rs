@@ -269,6 +269,10 @@ const PARTES_SEM_ROTULO: &[&str] = &[
     // caixa já mostra pela cor e pela forma.
     "card",
     "miniatura",
+    // O evento do calendário e a barra do cronograma, mesma razão
+    // (ciclo 305).
+    "entry",
+    "barra",
 ];
 
 /// A marca que abre a linha de cada tipo.
@@ -346,10 +350,26 @@ fn achatar_fileiras(linhas: Vec<Linha>, raiz: &Unidade) -> Vec<Linha> {
 }
 
 /// A página inteira em linhas, na ordem em que se lê.
+/// Nomes de parte que só carregam DADO de desenho, não conteúdo pra
+/// navegar ou mostrar (ciclo 305).
+///
+/// A barra do cronograma guarda início e duração como partes-filhas em
+/// porcentagem — é a mesma aritmética que a janela usa (`bar_span`),
+/// calculada uma vez no núcleo em vez de a cada repaint. Mas "12" não é
+/// uma linha que alguém devesse ler, nem um lugar onde o `j` devesse
+/// parar: é cano, não conteúdo. `linha_de_caixa` (em `app.rs`) é quem
+/// lê o valor; a tela some com a linha.
+pub fn e_geometria(nome: &str) -> bool {
+    matches!(nome, "inicio" | "duracao")
+}
+
 pub fn linhas(raiz: &Unidade) -> Vec<Linha> {
     let mut r = Linhas::default();
     desenhar(raiz, &mut r);
     encaixotar_embeds(achatar_fileiras(r.fora, raiz))
+        .into_iter()
+        .filter(|l| !matches!(&l.tipo, Tipo::Parte { nome, .. } if e_geometria(nome)))
+        .collect()
 }
 
 /// Marca a que embed cada linha pertence, e injeta a trilha do fluxo.
@@ -425,6 +445,23 @@ pub fn rolar(topo: usize, altura: usize, linha: usize) -> usize {
 /// janela usa desde o ciclo 281. Aqui não há régua nova: se a árvore
 /// diz que não dá, o cursor fica.
 pub fn andar(raiz: &Unidade, cursor: &Caminho, passo: Passo) -> Caminho {
+    // Entrar numa barra desceria pra "início"/"duração" — que não têm
+    // linha na tela (`e_geometria`, acima). Sem esta guarda o cursor
+    // "entra" de verdade na árvore, mas a tela não acende nada: parece
+    // que o Enter não fez nada, e só o Backspace devolve (ciclo 305).
+    // Tratar como se não houvesse filhos é o mesmo efeito que um
+    // cartão de kanban já tem — ele não tem filho nenhum.
+    if passo == Passo::Entrar {
+        if let Some(atual) = raiz.em(cursor) {
+            let so_geometria = !atual.filhos.is_empty()
+                && atual.filhos.iter().all(
+                    |f| matches!(&f.tipo, Tipo::Parte { nome, .. } if e_geometria(nome)),
+                );
+            if so_geometria {
+                return cursor.clone();
+            }
+        }
+    }
     mover(raiz, &Cursor::em(cursor), passo)
         .map(|c| c.caminho)
         .unwrap_or_else(|| cursor.clone())
