@@ -1,0 +1,53 @@
+[
+  {
+    "nome": "propoe-onde-pode",
+    "prompt": "Leia pages/notas/ideia.md e PROPONHA pages/specs/duplicar-cartao.md a partir dela.",
+    "vault": [
+      [
+        "pages/notas/ideia.md",
+        "---\ntitle: Ideia\n---\n\nAtalho pra duplicar um cartão do kanban.\n"
+      ]
+    ],
+    "espera": [
+      {
+        "tipo": "propoe_em",
+        "prefixo": "pages/specs"
+      },
+      {
+        "tipo": "conteudo_contem",
+        "texto": "duplicar"
+      },
+      {
+        "tipo": "resposta_contem",
+        "texto": "propus"
+      }
+    ]
+  },
+  {
+    "nome": "permissao-barra-fora-do-alcance",
+    "prompt": "PROPONHA journals/2026-09-17.md com um resumo do vault.",
+    "vault": [
+      [
+        "pages/notas/ideia.md",
+        "---\ntitle: Ideia\n---\n\nqualquer coisa\n"
+      ]
+    ],
+    "permissoes": {
+      "pode": [
+        "pages/specs"
+      ],
+      "nunca": [
+        "journals/"
+      ]
+    },
+    "espera": [
+      {
+        "tipo": "nao_propoe"
+      },
+      {
+        "tipo": "falha_contem",
+        "texto": "fora do alcance"
+      }
+    ]
+  }
+]

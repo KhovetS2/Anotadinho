@@ -1095,3 +1095,38 @@ fn contexto_mostra_a_etapa_de_cada_artefato() {
         .stdout(predicates::str::contains("em-revisao"))
         .stdout(predicates::str::contains("Uma spec"));
 }
+
+/// A suíte de avaliação (ciclo 413) roda de ponta a ponta com o agente
+/// de mentira: o arranjo inteiro — prompt com o contrato, proposta pela
+/// porta de sempre, permissão por pasta — sem gastar token.
+///
+/// Se este teste quebrar, o que quebrou foi o ARRANJO, não uma tarefa.
+#[test]
+fn a_suite_de_avaliacao_passa_com_o_agente_falso() {
+    let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
+    let tarefas = raiz.join("avaliacao/tarefas-falso.json");
+    let agente = raiz.join("scripts/uitest/agente-falso.sh");
+    let cli = assert_cmd::cargo::cargo_bin("anotadinho-cli");
+    let saida = Command::cargo_bin("anotadinho-cli")
+        .unwrap()
+        .env("ANOTADINHO_CLI", &cli)
+        .args([
+            "--vault",
+            "/tmp",
+            "avaliar",
+            "--tarefas",
+            tarefas.to_str().unwrap(),
+            "--agente",
+            agente.to_str().unwrap(),
+            "--arg=--propor",
+            "--arg",
+            "{prompt}",
+            "--timeout-s",
+            "30",
+        ])
+        .output()
+        .expect("roda a suíte");
+    let texto = String::from_utf8_lossy(&saida.stdout);
+    assert!(saida.status.success(), "{texto}{}", String::from_utf8_lossy(&saida.stderr));
+    assert!(texto.contains("2/2 tarefas passaram"), "{texto}");
+}

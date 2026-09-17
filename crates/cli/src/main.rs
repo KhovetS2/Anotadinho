@@ -14,6 +14,7 @@ use anotadinho_ipc::{
     handle_read_page_versioned, handle_recusar_proposta, handle_scan_vault, handle_search_content,
     handle_write_page_checked,
 };
+mod avaliar;
 mod mcp;
 
 use clap::{Parser, Subcommand};
@@ -171,6 +172,31 @@ enum Command {
     Recusar {
         /// Id da proposta.
         id: String,
+    },
+    /// Roda a suíte de avaliação do agente (ciclo 413): tarefas com
+    /// resultado esperado, cada uma num vault temporário.
+    ///
+    /// Com o agente falso mede o ARRANJO (prompt, contrato, permissões,
+    /// proposta); com um agente real mede o agente.
+    Avaliar {
+        /// Arquivo JSON das tarefas.
+        #[arg(long, default_value = "avaliacao/tarefas.json")]
+        tarefas: String,
+        /// Só as tarefas cujo nome contém isto.
+        #[arg(long)]
+        so: Option<String>,
+        /// Binário do agente.
+        #[arg(long, default_value = "claude")]
+        agente: String,
+        /// Argumentos do agente; um deles tem que conter `{prompt}`.
+        #[arg(long = "arg", default_values_t = [String::from("-p"), String::from("{prompt}")])]
+        args: Vec<String>,
+        /// Segundos até desistir de uma tarefa.
+        #[arg(long, default_value = "180")]
+        timeout_s: u64,
+        /// A saída é `stream-json` (Claude Code) em vez de texto.
+        #[arg(long)]
+        stream: bool,
     },
     /// Sobe um servidor MCP por stdio expondo o vault (ciclo 205).
     ///
@@ -624,6 +650,32 @@ fn run(cli: Cli) -> Result<(), String> {
                 print_json(&contexto_json(&cli.vault, &paginas, &propostas))?;
             } else {
                 print!("{}", contexto_texto(&cli.vault, &paginas, &propostas));
+            }
+        }
+        Command::Avaliar { tarefas, so, agente, args, timeout_s, stream } => {
+            let lista = avaliar::ler_tarefas(&tarefas)?;
+            if lista.is_empty() {
+                return Err(format!("{tarefas}: nenhuma tarefa"));
+            }
+            let adaptador = anotadinho_core::agente::Adaptador {
+                nome: "avaliação".into(),
+                binario: agente,
+                args,
+                timeout_s,
+                formato: if stream {
+                    anotadinho_core::agente::FormatoSaida::StreamJson
+                } else {
+                    anotadinho_core::agente::FormatoSaida::Texto
+                },
+                ..Default::default()
+            };
+            println!("avaliando {} tarefa(s) com {}", lista.len(), adaptador.binario);
+            let vereditos = avaliar::rodar_suite(&lista, &adaptador, so.as_deref())?;
+            println!("{}", anotadinho_core::avaliacao::resumo(&vereditos));
+            // Sai diferente de zero quando alguma reprova: é o que faz a
+            // suíte servir em CI.
+            if vereditos.iter().any(|v| !v.passou) {
+                std::process::exit(1);
             }
         }
         Command::Mcp => {

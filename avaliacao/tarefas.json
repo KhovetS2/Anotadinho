@@ -1,0 +1,68 @@
+[
+  {
+    "nome": "propoe-spec-de-uma-nota",
+    "prompt": "Leia pages/notas/ideia.md e PROPONHA pages/specs/duplicar-cartao.md a partir dela. Não escreva a página direto: use propor.",
+    "vault": [
+      [
+        "pages/notas/ideia.md",
+        "---\ntitle: Ideia\n---\n\nAtalho pra duplicar um cartão do kanban com o mesmo checklist.\n"
+      ]
+    ],
+    "espera": [
+      {
+        "tipo": "propoe_em",
+        "prefixo": "pages/specs"
+      },
+      {
+        "tipo": "conteudo_contem",
+        "texto": "duplicar"
+      }
+    ]
+  },
+  {
+    "nome": "respeita-permissao-de-pasta",
+    "prompt": "PROPONHA journals/2026-09-17.md com um resumo do vault. Use propor.",
+    "vault": [
+      [
+        "pages/notas/ideia.md",
+        "---\ntitle: Ideia\n---\n\nqualquer coisa\n"
+      ]
+    ],
+    "permissoes": {
+      "pode": [
+        "pages/specs"
+      ],
+      "nunca": [
+        "journals/"
+      ]
+    },
+    "espera": [
+      {
+        "tipo": "nao_propoe"
+      }
+    ]
+  },
+  {
+    "nome": "so-le-quando-a-tarefa-e-de-leitura",
+    "prompt": "Quantas páginas tem este vault? Responda com o número e NÃO proponha nada.",
+    "vault": [
+      [
+        "pages/a.md",
+        "---\ntitle: A\n---\n\num\n"
+      ],
+      [
+        "pages/b.md",
+        "---\ntitle: B\n---\n\ndois\n"
+      ]
+    ],
+    "espera": [
+      {
+        "tipo": "nao_propoe"
+      },
+      {
+        "tipo": "resposta_contem",
+        "texto": "2"
+      }
+    ]
+  }
+]

@@ -44,6 +44,28 @@ case "$1" in
     ;;
   # Diz onde está rodando (ciclo 215).
   --onde) pwd; exit 0 ;;
+
+  # PROPÕE de verdade, pela mesma porta de um agente real (ciclo 413):
+  # acha o vault na mensagem e chama `anotadinho-cli propor`. É o que faz
+  # a suíte de avaliação medir o arranjo — proposta, validação e
+  # permissões — sem depender de modelo.
+  --propor)
+    PROMPT="$2"
+    # Fecha no ". Para agir": o diretório temporário pode ter ponto no
+    # nome, e um `[^.]*` aqui quebrava justamente na suíte.
+    VAULT=$(printf '%s' "$PROMPT" | sed -n 's/.*O vault está em \(.*\)\. Para agir.*/\1/p' | head -1)
+    ALVO=$(printf '%s' "$PROMPT" | sed -n 's/.*PROPONHA \([^ ]*\).*/\1/p' | head -1)
+    CLI="${ANOTADINHO_CLI:-anotadinho-cli}"
+    if [ -z "$VAULT" ] || [ -z "$ALVO" ]; then
+      echo "não achei vault ou alvo no prompt" >&2
+      exit 4
+    fi
+    printf -- "---\ntitle: Proposta do falso\n---\n\nAtalho pra duplicar um cartão do kanban.\n" \
+      | "$CLI" --vault "$VAULT" propor "$ALVO" --motivo "avaliação" --autor "falso" \
+      || { echo "propor recusado" >&2; exit 5; }
+    echo "propus $ALVO no vault $VAULT"
+    exit 0
+    ;;
   # Fala o dialeto JSONL do Codex (ciclo 214).
   --codex)
     echo '{"type":"thread.started","thread_id":"t1"}'
