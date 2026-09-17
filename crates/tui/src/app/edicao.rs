@@ -546,9 +546,15 @@ pub(super) fn responder(e: &mut Estado, acao: AcaoDaPergunta, titulo: String) {
     match acao {
         AcaoDaPergunta::NovoEvento { embed, data } => {
             let mut novo = 0;
+            // `10:00 Reunião` (ou `10:00-11:30 Reunião`) nasce com horário
+            // (ciclo 378), como clicar na grade de horas da janela: sem o
+            // fim, uma hora.
+            let (horario, titulo) = horario_no_titulo(&titulo);
             if editar_calendario(e, &embed, |d| {
                 if data.is_empty() {
                     d.add_unscheduled_entry(titulo.clone());
+                } else if let Some((ini, fim)) = horario.clone() {
+                    d.add_entry_timed(data.clone(), titulo.clone(), ini, fim);
                 } else {
                     d.add_entry(data.clone(), titulo.clone());
                 }
@@ -771,6 +777,21 @@ pub(super) fn responder(e: &mut Estado, acao: AcaoDaPergunta, titulo: String) {
 // Calendário (ciclo 318)
 // ---------------------------------------------------------------------
 
+/// `HH:MM[-HH:MM] título` → o horário e o título; sem hora na frente, o
+/// título inteiro.
+fn horario_no_titulo(texto: &str) -> (Option<(String, String)>, String) {
+    use anotadinho_core::date_util::{format_time, parse_time};
+    let (cabeca, resto) = texto.split_once(' ').unwrap_or((texto, ""));
+    let (ini, fim) = cabeca.split_once('-').map_or((cabeca, None), |(a, b)| (a, Some(b)));
+    let Some((h, m)) = parse_time(ini) else { return (None, texto.to_string()) };
+    if resto.trim().is_empty() {
+        return (None, texto.to_string());
+    }
+    let inicio = h * 60 + m;
+    let fim = fim.and_then(parse_time).map(|(h, m)| h * 60 + m).filter(|f| *f > inicio).unwrap_or((inicio + 60).min(23 * 60 + 59));
+    (Some((format_time(inicio / 60, inicio % 60), format_time(fim / 60, fim % 60))), resto.trim().to_string())
+}
+
 fn no_calendario(e: &mut Estado, ed: Edicao) -> bool {
     let Some(embed) = tela::calendario_do_cursor(&e.arvore, &e.cursor) else { return false };
     let data = tela::data_do_cursor(&e.arvore, &e.cursor);
@@ -790,7 +811,7 @@ fn no_calendario(e: &mut Estado, ed: Edicao) -> bool {
                 e.aviso = Some("escolha um dia pra criar o evento".into());
                 return true;
             };
-            perguntar(e, format!("Novo evento em {}", data_legivel(&data)), String::new(), AcaoDaPergunta::NovoEvento {
+            perguntar(e, format!("Novo evento em {} (10:00 título dá horário)", data_legivel(&data)), String::new(), AcaoDaPergunta::NovoEvento {
                 embed,
                 data,
             });

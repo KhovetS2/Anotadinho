@@ -9580,4 +9580,29 @@ mod testes {
         let EmbedData::Query(q) = embed_gravado(&e) else { panic!() };
         assert!(q.collapsed.is_empty());
     }
+
+    // --- Ciclo 378: evento com horário ------------------------------------------
+
+    #[test]
+    fn novo_evento_com_hora_na_frente_nasce_com_horario() {
+        use anotadinho_core::embed::EmbedData;
+        let mut e = pagina_com("{{ type: \"calendar\" }}\nentries:\n- date: 2026-08-10\n  title: Antes\n{{ /calendar }}\n").com_hoje("2026-08-12");
+        e.foco = Foco::Conteudo;
+        e.cursor = achar_evento_na_tela(&e, "Antes");
+        tecla(&mut e, "o");
+        assert!(e.pergunta.as_ref().unwrap().rotulo.contains("horário"));
+        digitar(&mut e, "10:00 Reunião");
+        tecla(&mut e, "Escape");
+        tecla(&mut e, "o");
+        digitar(&mut e, "14:30-15:00 Café");
+        tecla(&mut e, "Escape");
+        tecla(&mut e, "o");
+        digitar(&mut e, "Dia todo");
+        tecla(&mut e, "Escape");
+        let EmbedData::Calendar(d) = embed_gravado(&e) else { panic!() };
+        let hora = |i: usize| (d.entries[i].title.as_str(), d.entries[i].start_time.as_deref(), d.entries[i].end_time.as_deref());
+        assert_eq!(hora(1), ("Reunião", Some("10:00"), Some("11:00")));
+        assert_eq!(hora(2), ("Café", Some("14:30"), Some("15:00")));
+        assert_eq!(hora(3), ("Dia todo", None, None));
+    }
 }
