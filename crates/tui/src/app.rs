@@ -15,6 +15,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
+pub mod conversa;
 mod edicao;
 mod markdown;
 pub mod modais;
@@ -109,6 +110,9 @@ pub struct Estado {
     pub aviso: Option<String>,
     /// A pergunta aberta no rodapé, quando uma edição precisa de texto.
     pub pergunta: Option<Pergunta>,
+    /// A tela de conversa, quando a página aberta é `type: conversa`
+    /// (ciclo 340).
+    pub conversa: Option<conversa::TelaDeConversa>,
     /// O modal aberto — barra de comandos, escolha, confirmação (ciclo 339).
     pub modal: Option<Modal>,
     /// O que só o `main` pode fazer (abrir, criar, apagar, gravar
@@ -174,6 +178,7 @@ impl Estado {
             pergunta: None,
             registro: None,
             modal: None,
+            conversa: None,
             pedidos: Vec::new(),
             preferencias: Preferencias::default(),
             agora: None,
@@ -200,6 +205,16 @@ impl Estado {
     /// Troca a página aberta pelo arquivo `texto` (ciclo 318) — o caminho
     /// que o `main` usa, pra a edição saber o que gravar.
     pub fn abrir_texto(&mut self, texto: &str, versao: Option<String>) {
+        // Conversa abre como conversa (ciclo 340); o que é da tela (o
+        // rascunho, o agente rodando) atravessa a releitura.
+        let (path, titulo) = self.paginas.get(self.pagina).map(|p| (p.path.clone(), p.title.clone())).unwrap_or_default();
+        let velha = self.conversa.take();
+        self.conversa = conversa::TelaDeConversa::do_arquivo(&path, &titulo, texto).map(|mut nova| {
+            if let Some(v) = &velha {
+                nova.herdar(v);
+            }
+            nova
+        });
         let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(texto);
         self.abrir(anotadinho_core::analise::analisar(corpo));
         self.desfazer.clear();
@@ -578,6 +593,11 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
         modais::tecla(e, tecla);
         return None;
     }
+    // Escrevendo numa conversa, toda tecla é texto (ciclo 340).
+    if e.foco == Foco::Conteudo && e.conversa.as_ref().is_some_and(|c| c.escrevendo) {
+        conversa::tecla(e, tecla);
+        return None;
+    }
     // A barra de comandos: `:` (o modo de comando do vim) ou `Ctrl+K` (o
     // atalho da janela); `?` mostra os atalhos.
     if tecla == "Ctrl+k" || (matches!(tecla, ":" | "?") && !e.vim.em_curso()) {
@@ -605,6 +625,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
             None
         }
         _ if e.foco == Foco::Paginas => tecla_nas_paginas(e, tecla),
+        _ if e.conversa.is_some() => {
+            conversa::tecla(e, tecla);
+            None
+        }
         _ => {
             // Enter num evento do vault abre a página dele (ciclo 317), o
             // que o clique faz na janela.
@@ -868,6 +892,12 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     }
     f.render_widget(Paragraph::new(paginas).block(bloco_paginas), colunas[0]);
 
+    // Uma conversa tem tela própria (ciclo 340).
+    if e.conversa.is_some() {
+        conversa::desenhar(f, e, colunas[1]);
+        modais::desenhar(f, e);
+        return;
+    }
     // Largura de dentro da borda: a faixa do h1 precisa chegar até a
     // ponta pra parecer faixa.
     let largura_util = colunas[1].width.saturating_sub(2) as usize;
@@ -6497,6 +6527,99 @@ mod testes {
         e.cursor = vec![1, 0, 0];
         tecla(&mut e, "Enter");
         assert!(e.modal.is_none());
+    }
+
+    const CONVERSA: &str = "---\ntitle: \"Planejar: imagens\"\ntype: conversa\ncontexto:\n- pages/specs/imagens.md\n---\n## você · 2026-08-24 19:41\n\nEscreva uma **proposta** com etapas.\n\n## agente · 2026-08-24 19:42\n\n# Proposta\n\n1. primeiro passo\n2. segundo passo\n";
+
+    fn conversa_aberta() -> Estado {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(CONVERSA, Some("v1".into()));
+        e.foco = Foco::Conteudo;
+        e.agora = Some("2026-09-17 10:00".into());
+        e
+    }
+
+    #[test]
+    fn pagina_de_conversa_abre_a_tela_de_conversa() {
+        let mut e = conversa_aberta();
+        let c = e.conversa.as_ref().expect("não virou conversa");
+        assert_eq!(c.mensagens.len(), 2);
+        assert_eq!(c.anexos, ["pages/specs/imagens.md"]);
+        let tela = desenho(&mut e, 120, 40);
+        let tudo = tela.join("\n");
+        for esperado in ["Planejar: imagens", "1 anexo(s)", "imagens ×", "VOCÊ", "AGENTE", "Proposta", "primeiro passo", "Enviar"] {
+            assert!(tudo.contains(esperado), "faltou {esperado}:\n{tudo}");
+        }
+        // As suas à direita, as do agente à esquerda.
+        let col = |t: &str| tela.iter().find_map(|l| l.find(t)).unwrap();
+        assert!(col("VOCÊ") > col("AGENTE"), "\n{tudo}");
+        // Página comum não é conversa.
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto("# nota\n", None);
+        assert!(e.conversa.is_none());
+    }
+
+    #[test]
+    fn escrever_e_enviar_pede_a_execucao_do_agente() {
+        let mut e = conversa_aberta();
+        tecla(&mut e, "i");
+        // Escrevendo, `q` e `:` são texto, não sair nem barra de comandos.
+        digitar(&mut e, "q: e o teste?");
+        tecla(&mut e, "Ctrl+j");
+        digitar(&mut e, "linha 2");
+        assert!(!e.sair && e.modal.is_none());
+        tecla(&mut e, "Enter");
+        assert_eq!(
+            e.pedidos,
+            vec![Pedido::EnviarNaConversa {
+                path: "pages/alfa.md".into(),
+                pergunta: "q: e o teste?\nlinha 2".into(),
+                anexos: vec!["pages/specs/imagens.md".into()],
+            }]
+        );
+        let c = e.conversa.as_ref().unwrap();
+        assert!(!c.escrevendo && c.rascunho.texto.is_empty());
+        // Com o agente rodando, aparece o progresso e Ctrl+X interrompe.
+        e.pedidos.clear();
+        e.conversa.as_mut().unwrap().trabalho = Some((12, "lendo arquivos".into()));
+        let tudo = desenho(&mut e, 120, 40).join("\n");
+        assert!(tudo.contains("pensando há 12s") && tudo.contains("lendo arquivos") && tudo.contains("Parar"), "{tudo}");
+        tecla(&mut e, "Ctrl+x");
+        assert_eq!(e.pedidos, vec![Pedido::InterromperAgente("pages/alfa.md".into())]);
+    }
+
+    #[test]
+    fn enter_na_resposta_vira_spec_e_a_barra_anexa_pagina() {
+        let mut e = conversa_aberta();
+        tecla(&mut e, "k");
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Escolha { .. })));
+        tecla(&mut e, "Enter");
+        let Some(Pedido::CriarPagina { path, conteudo }) = e.pedidos.first() else { panic!("{:?}", e.pedidos) };
+        assert!(path.ends_with(".md") && conteudo.contains("Proposta"), "{path}\n{conteudo}");
+        e.pedidos.clear();
+        // Execução passa por confirmação.
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Confirmar { .. })));
+        tecla(&mut e, "y");
+        assert!(matches!(e.pedidos.first(), Some(Pedido::ExecutarDaConversa { .. })));
+        e.pedidos.clear();
+        // Anexar pela barra de comandos.
+        tecla(&mut e, ":");
+        digitar(&mut e, "anexar");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "beta");
+        tecla(&mut e, "Enter");
+        assert_eq!(
+            e.pedidos,
+            vec![Pedido::AnexosDaConversa {
+                conversa: "pages/alfa.md".into(),
+                lista: vec!["pages/specs/imagens.md".into(), "pages/beta.md".into()],
+            }]
+        );
     }
 
     const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";

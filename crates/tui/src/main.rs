@@ -152,8 +152,108 @@ fn abrir(estado: &mut Estado, vault: &str, caminho: &str) {
     }
 }
 
+/// As execuções do agente, por conversa (ciclo 340). Vivem aqui, fora do
+/// estado da tela: sair da conversa não para o agente, e a resposta cai no
+/// arquivo quando ele acaba — como o registro de jobs do backend da janela.
+type Trabalhos = std::collections::HashMap<String, anotadinho_tui::agente::Trabalho>;
+
+/// Lê o arquivo, acrescenta a mensagem e grava de volta (com o
+/// frontmatter).
+fn acrescentar_mensagem(vault: &str, conversa: &str, mensagem: &anotadinho_core::conversa::Mensagem) -> Result<String, String> {
+    let atual = anotadinho_ipc::handle_read_page(vault.to_string(), conversa.to_string())?;
+    let (frontmatter, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&atual);
+    let novo_corpo = anotadinho_core::conversa::append(corpo, mensagem);
+    let novo = if frontmatter.is_empty() { novo_corpo } else { format!("{frontmatter}\n{novo_corpo}") };
+    handle_write_page(vault.to_string(), conversa.to_string(), novo)?;
+    Ok(corpo.to_string())
+}
+
+/// Grava a pergunta e dispara o agente com o histórico e os anexos.
+fn enviar_na_conversa(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, path: &str, pergunta: &str, anexos: &[String]) {
+    use anotadinho_core::conversa::{self, Autor, Mensagem};
+    if trabalhos.contains_key(path) {
+        estado.aviso = Some("já tem uma execução em andamento nesta conversa".into());
+        return;
+    }
+    let minha = Mensagem { autor: Autor::Voce, quando: agora_local(), texto: pergunta.to_string() };
+    let corpo_antes = match acrescentar_mensagem(vault, path, &minha) {
+        Ok(c) => c,
+        Err(e) => {
+            estado.aviso = Some(format!("não gravou a pergunta: {e}"));
+            return;
+        }
+    };
+    let historico = conversa::parse(&corpo_antes);
+    let contextos: Vec<conversa::Contexto> = anexos
+        .iter()
+        .filter(|a| a.as_str() != path)
+        .filter_map(|a| {
+            anotadinho_ipc::handle_read_page(vault.to_string(), a.clone())
+                .ok()
+                .map(|c| conversa::Contexto { nome: a.clone(), conteudo: c })
+        })
+        .collect();
+    let prompt = conversa::montar_prompt(&historico, pergunta, &contextos, app::conversa::HISTORICO_NO_PROMPT);
+    let adaptador = estado.preferencias.agente.clone().unwrap_or_default().migrado();
+    let cwd = if adaptador.cwd.trim().is_empty() {
+        anotadinho_core::agente::raiz_do_projeto(vault, |d| d.join(".git").exists())
+    } else {
+        adaptador.cwd.clone()
+    };
+    match anotadinho_tui::agente::Trabalho::iniciar(&adaptador, &prompt, &cwd) {
+        Ok(t) => {
+            trabalhos.insert(path.to_string(), t);
+        }
+        Err(e) => {
+            if let Some(c) = estado.conversa.as_mut() {
+                c.erro = Some(e);
+            }
+        }
+    }
+    if estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path) {
+        abrir(estado, vault, path);
+    }
+}
+
+/// A cada volta: mostra o agente rodando na conversa aberta e, quando ele
+/// acaba, grava a resposta (ou o erro) e relê a conversa.
+fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
+    use anotadinho_core::conversa::{Autor, Mensagem};
+    let mut prontos = Vec::new();
+    for (path, t) in trabalhos.iter_mut() {
+        if let Some(fim) = t.terminou() {
+            prontos.push((path.clone(), fim));
+        }
+    }
+    for (path, fim) in prontos {
+        trabalhos.remove(&path);
+        let erro = match fim {
+            Ok(texto) => acrescentar_mensagem(vault, &path, &Mensagem { autor: Autor::Agente, quando: agora_local(), texto })
+                .err()
+                .map(|e| format!("não gravou a resposta: {e}")),
+            Err(e) => Some(e),
+        };
+        let aberta = estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path);
+        if aberta {
+            if let Some(c) = estado.conversa.as_mut() {
+                c.trabalho = None;
+            }
+            abrir(estado, vault, &path);
+            if let Some(c) = estado.conversa.as_mut() {
+                c.erro = erro;
+                c.selecionada = c.mensagens.len();
+            }
+        } else if let Some(e) = erro {
+            estado.aviso = Some(format!("{path}: {e}"));
+        }
+    }
+    if let Some(c) = estado.conversa.as_mut() {
+        c.trabalho = trabalhos.get(&c.path).map(|t| (t.segundos(), t.parcial()));
+    }
+}
+
 /// Executa o que a TUI pediu e só quem tem o vault pode fazer (ciclo 339).
-fn atender(estado: &mut Estado, vault: &str) {
+fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
     let recarregar = |estado: &mut Estado| {
         if let Ok(p) = handle_list_pages(vault.to_string()) {
             estado.atualizar_paginas(p);
@@ -195,6 +295,48 @@ fn atender(estado: &mut Estado, vault: &str) {
                 }
                 Err(e) => estado.aviso = Some(format!("não excluiu: {e}")),
             },
+            Pedido::EnviarNaConversa { path, pergunta, anexos } => {
+                enviar_na_conversa(estado, vault, trabalhos, &path, &pergunta, &anexos);
+            }
+            Pedido::InterromperAgente(path) => {
+                if let Some(t) = trabalhos.get(&path) {
+                    t.interromper();
+                }
+            }
+            Pedido::AnexosDaConversa { conversa, lista } => {
+                let feito = anotadinho_ipc::handle_read_page(vault.to_string(), conversa.clone()).and_then(|atual| {
+                    handle_write_page(vault.to_string(), conversa.clone(), anotadinho_core::conversa::reescrever_contexto(&atual, &lista))
+                });
+                match feito {
+                    Ok(()) => abrir(estado, vault, &conversa),
+                    Err(e) => estado.aviso = Some(format!("não gravou os anexos: {e}")),
+                }
+            }
+            Pedido::ExecutarDaConversa { conversa, texto } => {
+                use anotadinho_core::fluxo::{self, Artefato};
+                let titulo = fluxo::titulo_sugerido(&texto, 60);
+                let hoje = hoje_local();
+                let md = fluxo::montar_pagina(Artefato::Execucao, &titulo, &texto, Some(&conversa), &hoje);
+                let path = format!("{}/{}.md", Artefato::Execucao.pasta(), fluxo::slug_de_titulo(&titulo));
+                if let Err(e) = handle_write_page(vault.to_string(), path.clone(), md) {
+                    estado.aviso = Some(format!("não criou a execução: {e}"));
+                    continue;
+                }
+                recarregar(estado);
+                let mut anexos = estado.conversa.as_ref().map(|c| c.anexos.clone()).unwrap_or_default();
+                if !anexos.contains(&path) {
+                    anexos.push(path.clone());
+                }
+                if let Ok(atual) = anotadinho_ipc::handle_read_page(vault.to_string(), conversa.clone()) {
+                    let _ = handle_write_page(
+                        vault.to_string(),
+                        conversa.clone(),
+                        anotadinho_core::conversa::reescrever_contexto(&atual, &anexos),
+                    );
+                }
+                let pergunta = fluxo::pergunta_de_execucao_da_conversa(&titulo, &path);
+                enviar_na_conversa(estado, vault, trabalhos, &conversa, &pergunta, &anexos);
+            }
             Pedido::GravarPreferencias => {
                 if let Err(e) = gravar_preferencias(&estado.preferencias) {
                     estado.aviso = Some(format!("não gravou as preferências: {e}"));
@@ -275,6 +417,7 @@ fn laco<B: ratatui::backend::Backend>(
     estado: &mut Estado,
     vault: &str,
 ) -> Result<(), String> {
+    let mut trabalhos = Trabalhos::new();
     loop {
         estado.agora = Some(agora_local());
         term.draw(|f| app::desenhar(f, estado)).map_err(|e| e.to_string())?;
@@ -286,7 +429,8 @@ fn laco<B: ratatui::backend::Backend>(
         // enquanto a pessoa só olha.
         if !event::poll(std::time::Duration::from_millis(250)).map_err(|e| e.to_string())? {
             app::tique(estado);
-            atender(estado, vault);
+            acompanhar(estado, vault, &mut trabalhos);
+            atender(estado, vault, &mut trabalhos);
             continue;
         }
         let Event::Key(k) = event::read().map_err(|e| e.to_string())? else {
@@ -308,7 +452,8 @@ fn laco<B: ratatui::backend::Backend>(
                 estado.abrir_texto(&texto, versao);
             }
         }
-        atender(estado, vault);
+        atender(estado, vault, &mut trabalhos);
+        acompanhar(estado, vault, &mut trabalhos);
         // Uma edição deixou texto novo: grava com a trava de versão. Se
         // o arquivo mudou por fora, a gravação é recusada, a página volta
         // a ser a do disco e o rodapé diz por quê (ciclo 318).

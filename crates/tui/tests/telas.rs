@@ -41,6 +41,9 @@ use ratatui::Terminal;
 /// A página de exemplos do vault, com um embed de cada tipo.
 const EXEMPLOS: &str = include_str!("telas/paginas/embeds.md");
 
+/// Uma conversa de verdade do vault (ciclo 340).
+const CONVERSA: &str = include_str!("telas/paginas/conversa.md");
+
 /// Uma cena: o que abrir, o que teclar, de que tamanho é a tela.
 struct Cena {
     nome: &'static str,
@@ -164,6 +167,10 @@ fn cenas() -> Vec<Cena> {
     v.push(cena("paleta-filtrada", so_o_embed("callout"), &com(&[&[":"], &digitado("tema")]), 140, 36));
     v.push(cena("opcoes-da-selecao", so_o_embed("table"), &["Tab", "j", "Enter", "Enter", "l", "Enter"], 160, 36));
     v.push(cena("atalhos", so_o_embed("callout"), &["?"], 140, 40));
+    // A tela de conversa (ciclo 340): no fim, numa resposta, e escrevendo.
+    v.push(cena("conversa-no-fim", CONVERSA.to_string(), &["Tab"], 160, 50));
+    v.push(cena("conversa-resposta-selecionada", CONVERSA.to_string(), &["Tab", "k"], 160, 50));
+    v.push(cena("conversa-escrevendo", CONVERSA.to_string(), &com(&[&["Tab", "i"], &digitado("Detalha a etapa 2")]), 160, 50));
     // O cronograma na janela da tela: manual, escala Mês, e as teclas.
     let manual = so_o_embed("timeline").replace("source: vault\n", "").replace("scale: quarter\n", "scale: month\n");
     v.push(cena("cronograma-manual-mes", manual.clone(), &[], 140, 30));

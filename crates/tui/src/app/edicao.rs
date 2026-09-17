@@ -2108,7 +2108,7 @@ pub(super) fn tecla_nas_opcoes(e: &mut Estado, mut ed: super::modais::EditorDeOp
                             em::ColumnKind::MultiSelect { options } => (options, true),
                             _ => return Err("a coluna não é mais de seleção".into()),
                         };
-                        if opcoes.iter().any(|o| *o == nome) {
+                        if opcoes.contains(&nome) {
                             return Err(format!("já existe a opção {nome}"));
                         }
                         match alvo {

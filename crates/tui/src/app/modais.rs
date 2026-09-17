@@ -45,6 +45,32 @@ pub enum Pedido {
     ExcluirPagina(String),
     /// Gravar as preferências da TUI.
     GravarPreferencias,
+    /// Gravar a pergunta na conversa e disparar o agente (ciclo 340).
+    EnviarNaConversa {
+        /// A conversa.
+        path: String,
+        /// O que a pessoa escreveu.
+        pergunta: String,
+        /// As páginas que vão de contexto.
+        anexos: Vec<String>,
+    },
+    /// Parar o agente desta conversa.
+    InterromperAgente(String),
+    /// Criar a página de execução a partir de uma resposta, anexar e pedir
+    /// a implementação.
+    ExecutarDaConversa {
+        /// A conversa.
+        conversa: String,
+        /// A resposta do agente.
+        texto: String,
+    },
+    /// Regravar a lista de anexos da conversa.
+    AnexosDaConversa {
+        /// A conversa.
+        conversa: String,
+        /// A lista nova.
+        lista: Vec<String>,
+    },
 }
 
 /// As preferências da TUI, gravadas fora do vault (ciclo 339).
@@ -138,6 +164,12 @@ pub enum AcaoDaEscolha {
     Tema,
     /// Trocar o agente pelo índice do preset.
     Agente,
+    /// O que fazer com a resposta `n` da conversa (ciclo 340).
+    RespostaDoAgente(usize),
+    /// Anexar a página escolhida à conversa.
+    Anexar,
+    /// Tirar o anexo escolhido.
+    Desanexar,
 }
 
 /// Os comandos da barra, como na janela.
@@ -160,7 +192,9 @@ const COMANDOS: &[(&str, &str)] = &[
 
 /// Abre a barra de comandos: os comandos, depois as páginas.
 pub fn abrir_paleta(e: &mut Estado) {
-    let mut itens: Vec<Item> = COMANDOS.iter().map(|(r, c)| Item::novo("ϟ", *r, *c)).collect();
+    // Numa conversa, os comandos dela vêm primeiro.
+    let mut itens: Vec<Item> = super::conversa::comandos(e);
+    itens.extend(COMANDOS.iter().map(|(r, c)| Item::novo("ϟ", *r, *c)));
     itens.extend(
         e.paginas
             .iter()
@@ -216,6 +250,9 @@ pub fn trocar_tema(e: &mut Estado, tema: &str) {
 
 fn executar(e: &mut Estado, chave: &str) {
     e.modal = None;
+    if super::conversa::executar(e, chave) {
+        return;
+    }
     if let Some(path) = chave.strip_prefix("pagina:") {
         e.pedidos.push(Pedido::AbrirPagina(path.to_string()));
         return;
@@ -309,6 +346,9 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     _ => {}
                 },
                 AcaoDaEscolha::Tema => trocar_tema(e, &chave),
+                AcaoDaEscolha::RespostaDoAgente(i) => super::conversa::acao_na_resposta(e, i, &chave),
+                AcaoDaEscolha::Anexar => super::conversa::mudar_anexo(e, &chave, true),
+                AcaoDaEscolha::Desanexar => super::conversa::mudar_anexo(e, &chave, false),
                 AcaoDaEscolha::Agente => {
                     if let Some(a) = chave.parse::<usize>().ok().and_then(|i| anotadinho_core::agente::Adaptador::presets().get(i).cloned()) {
                         e.aviso = Some(format!("agente: {}", a.nome));
@@ -391,10 +431,14 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
         "Conversa",
         &[
             ("i", "escrever a mensagem"),
-            ("Enter", "enviar (na mensagem)"),
+            ("Enter", "enviar (escrevendo)"),
             ("Ctrl+J", "quebrar linha na mensagem"),
-            ("j k", "passar pelas mensagens"),
-            ("Enter", "ações da resposta do agente"),
+            ("Esc", "sair do campo (o rascunho fica)"),
+            ("j k G", "passar pelas mensagens"),
+            ("Enter", "virar spec/proposta/execução (na resposta)"),
+            ("y", "copiar a mensagem"),
+            ("Ctrl+X", "interromper o agente"),
+            (":", "anexar, tirar anexo, trocar agente"),
         ],
     ),
 ];

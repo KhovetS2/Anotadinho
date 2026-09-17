@@ -60,6 +60,50 @@ pub struct Mensagem {
     pub texto: String,
 }
 
+/// Troca a lista `contexto:` do frontmatter de uma conversa pela `lista`
+/// (ciclos 208 e 340). As páginas anexadas moram no frontmatter pra
+/// sobreviver a fechar o app — na janela e na TUI.
+pub fn reescrever_contexto(conteudo: &str, lista: &[String]) -> String {
+    let (frontmatter, corpo) = crate::MarkdownCodec::split_frontmatter_text(conteudo);
+    let mut linhas: Vec<String> = Vec::new();
+    let mut pulando = false;
+    for linha in frontmatter.lines() {
+        if linha.starts_with("contexto:") {
+            pulando = true;
+            continue;
+        }
+        if pulando {
+            if linha.starts_with("- ") || linha.starts_with("  ") {
+                continue;
+            }
+            pulando = false;
+        }
+        linhas.push(linha.to_string());
+    }
+    let mut fm = String::from("---\n");
+    for l in linhas.into_iter().filter(|l| l.trim() != "---") {
+        fm.push_str(&l);
+        fm.push('\n');
+    }
+    if !lista.is_empty() {
+        fm.push_str("contexto:\n");
+        for c in lista {
+            fm.push_str(&format!("- {}\n", crate::markdown::escapar_escalar_yaml(c)));
+        }
+    }
+    fm.push_str("---\n");
+    format!("{fm}{corpo}")
+}
+
+/// "12s", "3 min", "1h04" — o suficiente pra saber se vale esperar.
+pub fn duracao_legivel(segundos: u64) -> String {
+    match segundos {
+        s if s < 60 => format!("{s}s"),
+        s if s < 3600 => format!("{} min", s / 60),
+        s => format!("{}h{:02}", s / 3600, (s % 3600) / 60),
+    }
+}
+
 /// Lê as mensagens do corpo de uma página de conversa.
 ///
 /// Texto antes da primeira mensagem (uma introdução escrita à mão, por

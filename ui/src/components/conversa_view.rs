@@ -1238,54 +1238,12 @@ fn nome_curto(path: &str) -> String {
 /// reordenaria os campos e mexeria em coisas que a pessoa escreveu à
 /// mão, num arquivo que ela também edita fora do app.
 fn reescrever_contexto(conteudo: &str, lista: &[String]) -> String {
-    let (frontmatter, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(conteudo);
-    let mut linhas: Vec<String> = Vec::new();
-    let mut pulando = false;
-    for linha in frontmatter.lines() {
-        if linha.starts_with("contexto:") {
-            pulando = true;
-            continue;
-        }
-        if pulando {
-            if linha.starts_with("- ") || linha.starts_with("  ") {
-                continue;
-            }
-            pulando = false;
-        }
-        // A linha de fecho do bloco entra depois, junto da lista nova.
-        if linha.trim() == "---" && linhas.iter().any(|l| l.trim() == "---") {
-            continue;
-        }
-        linhas.push(linha.to_string());
-    }
-    // Tira o `---` de abertura pra remontar de forma previsível.
-    let corpo_fm: Vec<String> = linhas
-        .into_iter()
-        .filter(|l| l.trim() != "---")
-        .collect();
-
-    let mut fm = String::from("---\n");
-    for l in corpo_fm {
-        fm.push_str(&l);
-        fm.push('\n');
-    }
-    if !lista.is_empty() {
-        fm.push_str("contexto:\n");
-        for c in lista {
-            fm.push_str(&format!("- {}\n", anotadinho_core::markdown::escapar_escalar_yaml(c)));
-        }
-    }
-    fm.push_str("---\n");
-    format!("{fm}{corpo}")
+    conversa::reescrever_contexto(conteudo, lista)
 }
 
 /// "12s", "3 min", "1h04" — o suficiente pra saber se vale esperar.
 fn duracao_legivel(segundos: u64) -> String {
-    match segundos {
-        s if s < 60 => format!("{s}s"),
-        s if s < 3600 => format!("{} min", s / 60),
-        s => format!("{}h{:02}", s / 3600, (s % 3600) / 60),
-    }
+    conversa::duracao_legivel(segundos)
 }
 
 #[cfg(test)]
