@@ -7405,7 +7405,8 @@ mod testes {
         tecla(&mut e, "j");
         tecla(&mut e, "a");
         digitar(&mut e, "com exemplos");
-        tecla(&mut e, "Enter");
+        // A descrição é de várias linhas (ciclo 391): Esc confirma.
+        tecla(&mut e, "Escape");
         assert_eq!(cartao(&e).description.as_deref(), Some("com exemplos"));
         // tags: + tag
         tecla(&mut e, "j");

@@ -365,30 +365,6 @@ pub enum AlvoDoTexto {
     },
 }
 
-/// Move o cursor de texto uma linha acima ou abaixo, mantendo a coluna.
-fn cursor_vertical(campo: &mut Campo, descer: bool) {
-    let chars: Vec<char> = campo.texto.chars().collect();
-    let c = campo.cursor.min(chars.len());
-    let inicio_da_linha = |p: usize| chars[..p].iter().rposition(|x| *x == '\n').map_or(0, |i| i + 1);
-    let fim_da_linha = |p: usize| chars[p..].iter().position(|x| *x == '\n').map_or(chars.len(), |i| p + i);
-    let ini = inicio_da_linha(c);
-    let coluna = c - ini;
-    if descer {
-        let fim = fim_da_linha(c);
-        if fim >= chars.len() {
-            return;
-        }
-        let prox = fim + 1;
-        campo.cursor = (prox + coluna).min(fim_da_linha(prox));
-    } else {
-        if ini == 0 {
-            return;
-        }
-        let ant = inicio_da_linha(ini - 1);
-        campo.cursor = (ant + coluna).min(ini - 1);
-    }
-}
-
 /// O conflito entre o que se escreveu e o que está no disco.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Conflito {
@@ -1053,16 +1029,8 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     campo.tecla(" ");
                     campo.tecla(" ");
                 }
-                "ArrowUp" | "ArrowDown" => cursor_vertical(&mut campo, tecla == "ArrowDown"),
-                "Home" | "End" => {
-                    let chars: Vec<char> = campo.texto.chars().collect();
-                    let c = campo.cursor.min(chars.len());
-                    campo.cursor = if tecla == "Home" {
-                        chars[..c].iter().rposition(|x| *x == '\n').map_or(0, |i| i + 1)
-                    } else {
-                        chars[c..].iter().position(|x| *x == '\n').map_or(chars.len(), |i| c + i)
-                    };
-                }
+                "ArrowUp" | "ArrowDown" => crate::componentes::cursor_vertical(&mut campo, tecla == "ArrowDown"),
+                "Home" | "End" => crate::componentes::cursor_na_linha(&mut campo, tecla == "End"),
                 outra => {
                     campo.tecla(outra);
                 }

@@ -70,7 +70,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 |---|---|---|
 | Desenho dos 10 tipos | ✅ | 325–336 |
 | Kanban: cartão/coluna criar, mover, reordenar | ✅ | 319, 337, 338 |
-| Kanban: modal do cartão (descrição, tags, prazo, checklist, comentários, anexos) | ✅ | 343 — Enter no cartão |
+| Kanban: modal do cartão (descrição, tags, prazo, checklist, comentários, anexos) | ✅ | 343, 391 — Enter no cartão; descrição de várias linhas |
 | Calendário: modal do evento (datas, horário, tags) | ✅ | 343 — Enter no evento |
 | Calendário: criar evento com horário (grade de horas) | ✅ | 378 — `10:00 título` ou `10:00-11:30 título` no `o` |
 | Seletor de data nos formulários (prazo, início, fim, criado) | ✅ | 364 — Enter abre o mês; `c` digita |

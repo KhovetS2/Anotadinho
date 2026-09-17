@@ -400,6 +400,67 @@ mod testes {
     }
 }
 
+/// Move o cursor de texto uma linha acima ou abaixo, mantendo a coluna.
+pub fn cursor_vertical(campo: &mut Campo, descer: bool) {
+    let chars: Vec<char> = campo.texto.chars().collect();
+    let c = campo.cursor.min(chars.len());
+    let inicio_da_linha = |p: usize| chars[..p].iter().rposition(|x| *x == '\n').map_or(0, |i| i + 1);
+    let fim_da_linha = |p: usize| chars[p..].iter().position(|x| *x == '\n').map_or(chars.len(), |i| p + i);
+    let ini = inicio_da_linha(c);
+    let coluna = c - ini;
+    if descer {
+        let fim = fim_da_linha(c);
+        if fim >= chars.len() {
+            return;
+        }
+        let prox = fim + 1;
+        campo.cursor = (prox + coluna).min(fim_da_linha(prox));
+    } else {
+        if ini == 0 {
+            return;
+        }
+        let ant = inicio_da_linha(ini - 1);
+        campo.cursor = (ant + coluna).min(ini - 1);
+    }
+}
+
+/// Home/End na LINHA do cursor, num texto de várias linhas.
+pub fn cursor_na_linha(campo: &mut Campo, fim: bool) {
+    let chars: Vec<char> = campo.texto.chars().collect();
+    let c = campo.cursor.min(chars.len());
+    campo.cursor = if fim {
+        chars[c..].iter().position(|x| *x == '\n').map_or(chars.len(), |i| c + i)
+    } else {
+        chars[..c].iter().rposition(|x| *x == '\n').map_or(0, |i| i + 1)
+    };
+}
+
+/// As linhas de um texto de várias linhas com o cursor em vídeo inverso,
+/// cada uma com `recuo` na frente.
+pub fn linhas_com_cursor(campo: &Campo, recuo: &str, estilo: Style, tema: &Tema) -> Vec<Line<'static>> {
+    let invertido = Style::default().fg(tema.var("bg-base")).bg(tema.var("text-primary"));
+    let chars: Vec<char> = campo.texto.chars().collect();
+    let mut linhas = Vec::new();
+    let mut atual: Vec<Span<'static>> = vec![Span::raw(recuo.to_string())];
+    for (i, ch) in chars.iter().enumerate() {
+        let no_cursor = i == campo.cursor;
+        if *ch == '\n' {
+            if no_cursor {
+                atual.push(Span::styled(" ", invertido));
+            }
+            linhas.push(Line::from(std::mem::take(&mut atual)));
+            atual.push(Span::raw(recuo.to_string()));
+        } else {
+            atual.push(Span::styled(ch.to_string(), if no_cursor { invertido } else { estilo }));
+        }
+    }
+    if campo.cursor >= chars.len() {
+        atual.push(Span::styled(" ", invertido));
+    }
+    linhas.push(Line::from(atual));
+    linhas
+}
+
 // ---------------------------------------------------------------------
 // Formulário (ciclo 343)
 // ---------------------------------------------------------------------
@@ -442,12 +503,20 @@ pub struct CampoDoFormulario {
     /// Texto que é uma TECLA: `Enter` espera a próxima tecla apertada e
     /// guarda o nome dela (ciclo 383), `c` digita.
     pub captura: bool,
+    /// Texto de VÁRIAS linhas (ciclo 391): editando, `Enter` quebra a
+    /// linha e `Esc` confirma, como o textarea da janela.
+    pub multilinha: bool,
 }
 
 impl CampoDoFormulario {
     /// Um campo.
     pub fn novo(chave: &'static str, rotulo: impl Into<String>, valor: Valor) -> Self {
-        Self { chave, rotulo: rotulo.into(), valor, dica: String::new(), escondido: false, data: false, hora: false, captura: false }
+        Self { chave, rotulo: rotulo.into(), valor, dica: String::new(), escondido: false, data: false, hora: false, captura: false, multilinha: false }
+    }
+    /// Um campo de texto longo, de várias linhas.
+    pub fn como_multilinha(mut self) -> Self {
+        self.multilinha = true;
+        self
     }
     /// Um campo de tecla, capturada ao apertar.
     pub fn como_tecla(mut self) -> Self {
@@ -663,8 +732,23 @@ impl Formulario {
         }
         // Editando um texto.
         if let Some(mut campo) = self.editando.take() {
+            let longo = self.campos.get(p.campo).is_some_and(|c| c.multilinha);
+            if longo && tecla != "Escape" {
+                match tecla {
+                    "Enter" => {
+                        campo.tecla("\n");
+                    }
+                    "ArrowUp" | "ArrowDown" => cursor_vertical(&mut campo, tecla == "ArrowDown"),
+                    "Home" | "End" => cursor_na_linha(&mut campo, tecla == "End"),
+                    outra => {
+                        campo.tecla(outra);
+                    }
+                }
+                self.editando = Some(campo);
+                return RespostaDoFormulario::Nada;
+            }
             if matches!(tecla, "Enter" | "Escape") {
-                let texto = campo.texto.trim().to_string();
+                let texto = if longo { campo.texto.trim_end().to_string() } else { campo.texto.trim().to_string() };
                 let Some(c) = self.campos.get_mut(p.campo) else { return RespostaDoFormulario::Nada };
                 match &mut c.valor {
                     Valor::Texto(t) => *t = texto,
@@ -814,6 +898,26 @@ impl Formulario {
                 continue;
             }
             match &c.valor {
+                Valor::Texto(t) if c.multilinha => {
+                    let p = Posicao { campo: i, item: 0 };
+                    let esta = self.posicao == p;
+                    let rotulo = Span::styled(format!(" {:<14}", c.rotulo), if esta { apagado.fg(destaque) } else { apagado });
+                    match (esta, self.editando.as_ref()) {
+                        (true, Some(campo)) => {
+                            fora.push(linha(vec![rotulo, Span::styled("Enter quebra linha · Esc confirma", apagado)], true));
+                            fora.extend(linhas_com_cursor(campo, "   ", texto, tema));
+                        }
+                        _ if t.is_empty() => fora.push(linha(vec![rotulo, Span::styled(c.dica.clone(), apagado)], esta)),
+                        _ => {
+                            let mut partes = t.lines();
+                            let primeira = partes.next().unwrap_or("").to_string();
+                            fora.push(linha(vec![rotulo, Span::styled(primeira, texto)], esta));
+                            for resto in partes {
+                                fora.push(linha(vec![Span::raw(" ".repeat(15)), Span::styled(resto.to_string(), texto)], esta));
+                            }
+                        }
+                    }
+                }
                 Valor::Texto(t) => {
                     let p = Posicao { campo: i, item: 0 };
                     let esta = self.posicao == p;
@@ -959,6 +1063,19 @@ impl Formulario {
                         return n + self.posicao.item;
                     }
                     n += l.len() + 1;
+                }
+                Valor::Texto(t) if c.multilinha => {
+                    let editando = self.posicao.campo == i && self.editando.is_some();
+                    if editando {
+                        // O rótulo, e a linha do cursor dentro do texto.
+                        let campo = self.editando.as_ref().expect("editando");
+                        let antes: String = campo.texto.chars().take(campo.cursor).collect();
+                        return n + 1 + antes.matches('\n').count();
+                    }
+                    if self.posicao.campo == i {
+                        return n;
+                    }
+                    n += t.lines().count().max(1);
                 }
                 _ => {
                     if self.posicao.campo == i {
@@ -1137,5 +1254,28 @@ mod testes_do_formulario {
         f.tecla("Enter");
         f.tecla("q");
         assert_eq!(f.texto("down"), "q");
+    }
+
+    #[test]
+    fn campo_de_varias_linhas_quebra_com_enter_e_confirma_com_esc() {
+        let mut f = Formulario::novo(vec![
+            CampoDoFormulario::novo("descricao", "Descrição", Valor::Texto("linha 1".into())).como_multilinha(),
+            CampoDoFormulario::novo("titulo", "Título", Valor::Texto("T".into())),
+        ]);
+        f.tecla("Enter");
+        assert!(f.editando.is_some());
+        assert_eq!(f.tecla("Enter"), RespostaDoFormulario::Nada, "Enter quebra a linha");
+        for c in "linha 2".chars() {
+            f.tecla(&c.to_string());
+        }
+        f.tecla("ArrowUp");
+        f.tecla("End");
+        f.tecla("!");
+        assert_eq!(f.linha_do_cursor(), 1, "cursor na primeira linha do texto");
+        assert_eq!(f.tecla("Escape"), RespostaDoFormulario::Mudou);
+        assert_eq!(f.texto("descricao"), "linha 1!\nlinha 2");
+        let tema = crate::tema::Tema::novo("mocha");
+        let tela: Vec<String> = f.linhas(60, &tema).iter().map(|l| l.spans.iter().map(|s| s.content.to_string()).collect()).collect();
+        assert!(tela[0].contains("linha 1!") && tela[1].contains("linha 2") && tela[2].contains("Título"), "{tela:?}");
     }
 }

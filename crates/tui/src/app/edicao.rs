@@ -2572,7 +2572,7 @@ pub(super) fn abrir_detalhe_do_cartao(e: &mut Estado) -> bool {
     let Some(c) = ler_kanban(e, &embed).and_then(|d| d.items.get(indice).cloned()) else { return false };
     let mut form = Formulario::novo(vec![
         C::novo("titulo", "Título", Valor::Texto(c.title.clone())),
-        C::novo("descricao", "Descrição", Valor::Texto(c.description.clone().unwrap_or_default())).com_dica("sem descrição"),
+        C::novo("descricao", "Descrição", Valor::Texto(c.description.clone().unwrap_or_default())).com_dica("sem descrição").como_multilinha(),
         C::novo("tags", "Tags", Valor::Lista(c.tags.clone())).com_dica("tag"),
         C::novo("vencimento", "Vencimento", Valor::Texto(c.due.clone().unwrap_or_default())).com_dica("AAAA-MM-DD").como_data(),
         C::novo("checklist", "Checklist", Valor::Checklist(c.checklist.iter().map(|i| (i.done, i.text.clone())).collect()))
