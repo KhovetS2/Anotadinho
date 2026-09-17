@@ -10626,4 +10626,55 @@ mod testes {
         // E os dois lados não se confundem: sai é sai, entra é entra.
         assert_ne!(comum, comum_b);
     }
+
+    // --- Ciclo 411: editar a proposta antes de aplicar -------------------------------
+
+    #[test]
+    fn editar_a_proposta_grava_o_texto_revisado() {
+        use anotadinho_core::proposta::{Operacao, Proposta};
+        let mut e = especial_aberto("propostas");
+        let p = Proposta {
+            id: "p1".into(),
+            autor: "claude".into(),
+            quando: "2026-09-17 10:00".into(),
+            motivo: String::new(),
+            alvo: "pages/alfa.md".into(),
+            operacao: Operacao::Substituir,
+            conteudo: "# Alfa\n\nquase certo\n".into(),
+        };
+        especiais::carregar(
+            &mut e,
+            especiais::Dados::Propostas(vec![especiais::PropostaNaTela { proposta: p, atual: "# Alfa\n".into() }]),
+        );
+        e.pedidos.clear();
+        // O cartão oferece a edição.
+        assert!(desenho(&mut e, 120, 40).join("\n").contains("Editar e"));
+        tecla(&mut e, "e");
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("Editar antes de aplicar — pages/alfa.md"), "{tela}");
+        // O campo vem com o conteúdo proposto.
+        assert!(tela.contains("quase certo"), "{tela}");
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[0].valor = crate::componentes::Valor::Texto("# Alfa\n\nagora certo\n".into());
+        for _ in 0..10 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        assert_eq!(
+            e.pedidos,
+            [Pedido::AplicarPropostaEditada { id: "p1".into(), conteudo: "# Alfa\n\nagora certo\n".into() }]
+        );
+        // Esvaziar o conteúdo não grava nada: pra isso existe recusar.
+        e.pedidos.clear();
+        tecla(&mut e, "e");
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[0].valor = crate::componentes::Valor::Texto("   ".into());
+        for _ in 0..10 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        assert!(e.pedidos.is_empty());
+        assert!(e.aviso.as_deref().unwrap().contains("recuse a proposta"));
+        assert!(matches!(&e.modal, Some(Modal::Detalhe { .. })), "o formulário fica aberto");
+    }
 }

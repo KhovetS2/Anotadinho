@@ -27,6 +27,10 @@ pub enum Acao {
         /// De quantos.
         de: usize,
     },
+    /// A pessoa editou o conteúdo proposto antes de gravar (ciclo 411).
+    /// O que entrou não é o que o agente escreveu — e o registro precisa
+    /// dizer isso, senão a auditoria credita ao agente texto humano.
+    Editada,
     /// Nada entrou.
     Recusada,
 }
@@ -37,6 +41,7 @@ impl Acao {
         match self {
             Self::Aplicada => "aplicada".into(),
             Self::Parcial { aceitos, de } => format!("parcial ({aceitos}/{de})"),
+            Self::Editada => "editada".into(),
             Self::Recusada => "recusada".into(),
         }
     }

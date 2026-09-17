@@ -793,6 +793,18 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                     }
                     carregar_especial(estado, vault, TipoEspecial::Assets);
                 }
+                // Editada (ciclo 411): grava o texto que a pessoa
+                // revisou. O caminho de escrita é o mesmo da aplicação
+                // parcial — conteúdo dado de fora, permissões checadas,
+                // proposta consumida —, só o registro muda.
+                Pedido::AplicarPropostaEditada { id, conteudo } => {
+                    let dados = proposta_por_id(vault, &id);
+                    let r = anotadinho_ipc::handle_aplicar_proposta_parcial(vault.to_string(), id, conteudo);
+                    if r.is_ok() {
+                        registrar_decisao(estado, vault, dados, anotadinho_core::decisao::Acao::Editada, String::new());
+                    }
+                    decidido(estado, vault, r);
+                }
                 Pedido::AplicarPropostaParcial { id, conteudo, aceitos, de } => {
                     let dados = proposta_por_id(vault, &id);
                     let r = anotadinho_ipc::handle_aplicar_proposta_parcial(vault.to_string(), id, conteudo);

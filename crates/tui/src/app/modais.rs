@@ -69,6 +69,12 @@ pub enum Pedido {
     ExportarHtml(String),
     /// Ver o registro de decisões sobre propostas (ciclo 404).
     ListarDecisoes,
+    /// Gravar o conteúdo da proposta depois de a pessoa editá-lo
+    /// (ciclo 411).
+    AplicarPropostaEditada {
+        id: String,
+        conteudo: String,
+    },
     /// Aplicar ou recusar várias propostas de uma vez (ciclo 409).
     DecidirVarias {
         ids: Vec<String>,
@@ -373,6 +379,13 @@ pub enum AlvoDoDetalhe {
     Agente,
     /// As pastas onde o agente pode propor (ciclo 405).
     Permissoes,
+    /// O conteúdo de uma proposta, editado antes de aplicar (ciclo 411).
+    PropostaEditada {
+        /// O id da proposta.
+        id: String,
+        /// O alvo, pro título e pra confirmação.
+        alvo: String,
+    },
     /// O remapeamento de teclas (ciclo 359).
     Teclas,
     /// A imagem do menu `/` (ciclo 388).
@@ -1133,6 +1146,20 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     return;
                 }
                 R::Mudou if alvo == AlvoDoDetalhe::Permissoes => {}
+                // Aplicar o conteúdo editado (ciclo 411): não é mais o
+                // que o agente escreveu, e o registro vai dizer isso.
+                R::Botao("aplicar") if matches!(alvo, AlvoDoDetalhe::PropostaEditada { .. }) => {
+                    let AlvoDoDetalhe::PropostaEditada { id, .. } = &alvo else { unreachable!() };
+                    let conteudo = form.texto("conteudo");
+                    if conteudo.trim().is_empty() {
+                        e.aviso = Some("conteúdo vazio: recuse a proposta em vez de gravar nada".into());
+                        e.modal = Some(Modal::Detalhe { titulo, form, alvo });
+                        return;
+                    }
+                    e.pedidos.push(Pedido::AplicarPropostaEditada { id: id.clone(), conteudo });
+                    return;
+                }
+                R::Mudou if matches!(alvo, AlvoDoDetalhe::PropostaEditada { .. }) => {}
                 R::Botao("remover") if alvo == AlvoDoDetalhe::Agente => {
                     remover_agente(e);
                     return;
@@ -1805,6 +1832,7 @@ pub fn mostrar_decisoes(e: &mut Estado, decisoes: &[anotadinho_core::decisao::De
             let glifo = match d.acao {
                 anotadinho_core::decisao::Acao::Aplicada => "✓",
                 anotadinho_core::decisao::Acao::Parcial { .. } => "◐",
+                anotadinho_core::decisao::Acao::Editada => "✎",
                 anotadinho_core::decisao::Acao::Recusada => "✗",
             };
             let motivo = if d.motivo.is_empty() { String::new() } else { format!(" — {}", d.motivo) };
@@ -1904,5 +1932,20 @@ pub fn mostrar_agentes(e: &mut Estado, rodando: &[(String, String, u64)], espera
         titulo: format!("Agentes em andamento ({} rodando, {} na fila)", rodando.len(), esperando.len()),
         lista: Lista::filtravel(itens),
         acao: AcaoDaEscolha::Agentes,
+    });
+}
+
+/// A proposta aberta pra editar antes de aplicar (ciclo 411): o texto
+/// proposto num campo de várias linhas.
+pub fn editar_proposta(e: &mut Estado, id: &str, alvo: &str, conteudo: &str) {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    let mut form = Formulario::novo(vec![C::novo("conteudo", "Conteúdo", Valor::Texto(conteudo.to_string()))
+        .como_multilinha()
+        .com_dica("o que vai ser gravado em ".to_string() + alvo)]);
+    form.botoes.push(("aplicar", "Aplicar editada".into()));
+    e.modal = Some(Modal::Detalhe {
+        titulo: format!("Editar antes de aplicar — {alvo}"),
+        form,
+        alvo: AlvoDoDetalhe::PropostaEditada { id: id.to_string(), alvo: alvo.to_string() },
     });
 }

@@ -570,6 +570,12 @@ fn tecla_nas_propostas(e: &mut Estado, tecla: &str) -> bool {
                 acao,
             });
         }
+        // Editar antes de aplicar (ciclo 411): a revisão que quase
+        // aceita, mas quer trocar uma frase, não precisa mais recusar e
+        // pedir de novo.
+        "e" => {
+            super::modais::editar_proposta(e, &p.id, &p.alvo, &p.conteudo);
+        }
         // Recusar pede o motivo (ciclo 404): ele entra no registro.
         "r" => {
             e.modal = Some(Modal::Entrada {
@@ -1052,7 +1058,7 @@ fn cartao_da_proposta(
             " m marca/desmarca · M todas ".to_string(),
         )
     } else {
-        (rotulo_aplicar, " Recusar r ".to_string(), " h l trecho · espaço tira/põe · A tudo · m marca ".to_string())
+        (rotulo_aplicar, " Recusar r ".to_string(), " Editar e · h l trecho · espaço tira/põe · m marca ".to_string())
     };
     miolo.push(Line::from(vec![
         Span::styled(rotulo_aplicar, primario),

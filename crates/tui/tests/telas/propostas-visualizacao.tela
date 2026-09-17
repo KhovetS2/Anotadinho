@@ -12,7 +12,7 @@
 │                                        │││ ## Feitas                                                                                    ││
 │                                        │││   - [x] revisão do PR                                                                        ││
 │                                        │││                                                                                              ││
-│                                        │││  Aplicar a   Recusar r   h l trecho · espaço tira/põe · A tudo · m marca                     ││
+│                                        │││  Aplicar a   Recusar r   Editar e · h l trecho · espaço tira/põe · m marca                   ││
 │                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
 │                                        ││                                                                                                │
 │                                        ││╭──────────────────────────────────────────────────────────────────────────────────────────────╮│
@@ -23,7 +23,7 @@
 │                                        │││ +                                                                                            ││
 │                                        │││ +- atalho pra duplicar cartão                                                                ││
 │                                        │││                                                                                              ││
-│                                        │││  Aplicar a   Recusar r   h l trecho · espaço tira/põe · A tudo · m marca                     ││
+│                                        │││  Aplicar a   Recusar r   Editar e · h l trecho · espaço tira/põe · m marca                   ││
 │                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -53,7 +53,7 @@ addddddddddddddddddddddddddddddddddddddddabggddffqqqqqqqqqqqqqqqqqqddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabggfffppppppdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
 addddddddddddddddddddddddddddddddddddddddabggddffqqqqqqqqqqqqqqqqqdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
 addddddddddddddddddddddddddddddddddddddddabggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
-addddddddddddddddddddddddddddddddddddddddabggrrrrrrrrrrrisssssssssssillllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiggb
+addddddddddddddddddddddddddddddddddddddddabggrrrrrrrrrrrisssssssssssillllllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiggb
 addddddddddddddddddddddddddddddddddddddddabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttb
@@ -64,7 +64,7 @@ addddddddddddddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 addddddddddddddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvttb
 addddddddddddddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvttb
 addddddddddddddddddddddddddddddddddddddddabttiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiittb
-addddddddddddddddddddddddddddddddddddddddabttrrrrrrrrrrrisssssssssssillllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiittb
+addddddddddddddddddddddddddddddddddddddddabttrrrrrrrrrrrisssssssssssillllllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiittb
 addddddddddddddddddddddddddddddddddddddddabttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
