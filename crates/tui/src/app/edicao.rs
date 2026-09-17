@@ -787,8 +787,46 @@ fn no_kanban(e: &mut Estado, ed: Edicao) -> bool {
 // Cronograma (ciclo 320)
 // ---------------------------------------------------------------------
 
+/// Troca a escala do cronograma no arquivo (ciclo 332). Vale também no
+/// modo vault: a escala é da tela, não das barras.
+pub(super) fn trocar_escala(e: &mut Estado, embed: &[usize], escala: em::TimelineScale) {
+    if editar_embed(e, embed, |dados| match dados {
+        EmbedData::Timeline(d) => {
+            d.scale = escala;
+            Ok(())
+        }
+        _ => Err("isto não é um cronograma".into()),
+    }) {
+        e.aviso = Some(format!("escala: {}", escala.label()));
+    }
+}
+
 fn no_cronograma(e: &mut Estado, ed: Edicao) -> bool {
     let Some(embed) = embed_do_cursor(e, "timeline") else { return false };
+    // `~` alterna entre os itens do embed e as páginas do vault — o botão
+    // "Manual/Vault" da janela.
+    if ed == Edicao::Alternar {
+        let mut vault = false;
+        if editar_embed(e, &embed, |dados| match dados {
+            EmbedData::Timeline(d) => {
+                d.source = if d.source == em::TimelineSource::Vault {
+                    em::TimelineSource::Manual
+                } else {
+                    em::TimelineSource::Vault
+                };
+                vault = d.source == em::TimelineSource::Vault;
+                Ok(())
+            }
+            _ => Err("isto não é um cronograma".into()),
+        }) {
+            e.aviso = Some(if vault { "fonte: páginas do vault (só leitura)" } else { "fonte: itens do embed" }.into());
+            if e.arvore.em(&e.cursor).is_none() {
+                e.cursor = embed;
+            }
+            e.seguir_cursor();
+        }
+        return true;
+    }
     let Some(dados) = ler_cronograma(e, &embed) else { return false };
     let indice = indice_do_cursor(e);
     let barra = indice.and_then(|i| dados.items.get(i).cloned());

@@ -70,14 +70,26 @@ fn indice_falso() -> Vec<anotadinho_core::index::PageIndexEntry> {
             ..Default::default()
         }
     };
-    vec![
+    let mut v = vec![
         pagina("pages/ciclos/001-bootstrap.md", "Ciclo 001 — Bootstrap do projeto", "ciclo", "done"),
         pagina("pages/ciclos/002-vault-picker.md", "Ciclo 002 — Vault picker", "ciclo", "done"),
         pagina("pages/specs/editor.md", "Spec do editor", "spec", "em-revisao"),
         pagina("pages/decisoes/yew.md", "Decisão: Yew no front", "decisao", ""),
         pagina("pages/specs/sync.md", "Spec de sincronização", "spec", "rascunho"),
         pagina("journals/2026-08-12.md", "12 de agosto", "", ""),
-    ]
+    ];
+    // Páginas com data, pros cronogramas e calendários em modo vault.
+    let mut com_data = |path: &str, title: &str, start: &str, end: &str| {
+        let mut p = pagina(path, title, "", "");
+        p.properties.insert("start".into(), start.into());
+        if !end.is_empty() {
+            p.properties.insert("end".into(), end.into());
+        }
+        v.push(p);
+    };
+    com_data("journals/planejamento.md", "Planejamento", "2026-07-28", "2026-08-07");
+    com_data("journals/lancamento.md", "Lançamento", "2026-08-20", "");
+    v
 }
 
 /// Só o `n`-ésimo embed do tipo `tipo` dos exemplos, entre dois
@@ -102,6 +114,12 @@ fn cenas() -> Vec<Cena> {
         let nome: &'static str = Box::leak(format!("repouso-{tipo}").into_boxed_str());
         v.push(cena(nome, so_o_embed(tipo), &[], 140, 40));
     }
+    // O cronograma na janela da tela: manual, escala Mês, e as teclas.
+    let manual = so_o_embed("timeline").replace("source: vault\n", "").replace("scale: quarter\n", "scale: month\n");
+    v.push(cena("cronograma-manual-mes", manual.clone(), &[], 140, 30));
+    v.push(cena("cronograma-proximo-periodo", manual.clone(), &["Tab", "j", "Enter", "]"], 140, 30));
+    v.push(cena("cronograma-m-troca-a-escala", manual.clone(), &["Tab", "j", "Enter", "m"], 140, 30));
+    v.push(cena("cronograma-barra-acesa", manual, &["Tab", "j", "Enter", "j"], 140, 30));
     // A consulta nas três visões, e agrupada.
     let consulta = |yaml: &str| format!("Antes.\n\n{{{{ type: \"query\" }}}}\n{yaml}{{{{ /query }}}}\n\nDepois.\n");
     v.push(cena("consulta-lista", consulta("from: pages\nwhere:\n- field: type\n  op: exists\ncolumns:\n- type\n- status\n"), &[], 140, 40));

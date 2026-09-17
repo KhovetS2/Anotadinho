@@ -270,6 +270,7 @@ impl Estado {
             self.linhas = tela::linhas(&self.arvore);
             return;
         };
+        self.ancorar_cronogramas(&hoje);
         for i in 0..self.arvore.filhos.len() {
             let u = &self.arvore.filhos[i];
             if !matches!(&u.tipo, Tipo::Embed(n) if n == "calendar") {
@@ -293,6 +294,39 @@ impl Estado {
         self.linhas = tela::linhas(&self.arvore);
         if self.arvore.em(&self.cursor).is_none() {
             self.cursor = tela::primeiro(&self.arvore).unwrap_or_default();
+        }
+    }
+
+    /// Os cronogramas da página na janela de tempo da tela (ciclo 332):
+    /// `escala` dias a partir da âncora — ou, sem âncora, começando um
+    /// quarto da janela antes de hoje, como a janela gráfica. No modo
+    /// vault as barras são as páginas com data.
+    fn ancorar_cronogramas(&mut self, hoje: &str) {
+        for i in 0..self.arvore.filhos.len() {
+            let u = &self.arvore.filhos[i];
+            if !matches!(&u.tipo, Tipo::Embed(n) if n == "timeline") {
+                continue;
+            }
+            let Some(anotadinho_core::embed::EmbedData::Timeline(mut d)) = u.fonte.as_deref().and_then(|f| {
+                anotadinho_core::embed::segment(f).into_iter().find_map(|s| match s {
+                    anotadinho_core::embed::DocSegment::Embed(d) => Some(d),
+                    _ => None,
+                })
+            }) else {
+                continue;
+            };
+            if d.source == anotadinho_core::embed::TimelineSource::Vault {
+                d.items = anotadinho_core::calendario::itens_do_vault(&self.indice_do_vault);
+            }
+            let dias = d.scale.days();
+            let inicio = self
+                .ancoras
+                .get(&vec![i])
+                .cloned()
+                .or_else(|| anotadinho_core::date_util::add_days(hoje, -(dias / 4)))
+                .unwrap_or_else(|| hoje.to_string());
+            self.arvore.filhos[i].filhos =
+                anotadinho_core::analise::partes_do_cronograma(&d, Some((&inicio, dias)), Some(hoje));
         }
     }
 
@@ -939,7 +973,13 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             } else if na_galeria && !l.segmentos.is_empty() {
                 vec![linhas_da_galeria(l, &e.arvore, &e.tema, largura_conteudo, no_foco.then_some(e.cursor.as_slice()))]
             } else if l.embed_dono.as_deref() == Some("timeline") && nome_da_parte == "eixo" {
-                vec![linhas_do_eixo(l, &e.tema, largura_conteudo)]
+                let hoje = desloc_de_hoje(&e.arvore, l.dono_embed.as_deref().unwrap_or(&[]));
+                vec![linhas_do_eixo(l, &e.tema, largura_conteudo, hoje)]
+            } else if l.embed_dono.as_deref() == Some("timeline") && nome_da_parte == "cabecalho" {
+                vec![vec![linha_do_cabecalho_do_cronograma(l, &e.arvore, &e.tema, largura_conteudo)]]
+            } else if l.embed_dono.as_deref() == Some("timeline") && nome_da_parte == "barra" {
+                let hoje = desloc_de_hoje(&e.arvore, l.dono_embed.as_deref().unwrap_or(&[]));
+                vec![vec![linha_da_barra(l, &e.arvore, &e.tema, largura_conteudo, no_foco.then_some(e.cursor.as_slice()), hoje)]]
             } else if matches!(&l.tipo, Tipo::Embed(n) if n == "callout") {
                 // O rótulo `[callout]` (callout sem título, ou dobrado)
                 // veste a cor da VARIANTE, não a genérica do tipo — senão
@@ -2724,7 +2764,7 @@ fn mes_abreviado(m: u32) -> &'static str {
 /// Marca por semana quando a janela é curta (até 10 semanas, como a
 /// escala `week` da janela); por mês quando é longa; por ano quando
 /// passa de dois. Rótulo que encostaria no anterior é pulado.
-fn linhas_do_eixo(l: &crate::tela::Linha, tema: &Tema, largura: usize) -> Vec<Line<'static>> {
+fn linhas_do_eixo(l: &crate::tela::Linha, tema: &Tema, largura: usize, hoje: Option<i64>) -> Vec<Line<'static>> {
     use anotadinho_core::date_util::{add_days, days_between, parse_date};
     let recuo = "  ".repeat(l.nivel);
     let disponivel = largura.saturating_sub(recuo.len()).max(4);
@@ -2739,15 +2779,18 @@ fn linhas_do_eixo(l: &crate::tela::Linha, tema: &Tema, largura: usize) -> Vec<Li
     };
     // As datas das marcas.
     let mut marcas: Vec<(String, String)> = Vec::new();
-    if dias <= 70 {
+    if dias <= 91 {
+        // Uma marca por semana (por dia na escala Semana), `dd/mm` — as
+        // marcas do `.timeline__axis` da janela.
+        let passo = if dias <= 7 { 1 } else { 7 };
         let mut k = 0;
         while k < dias {
             if let Some(d) = add_days(inicio, k) {
                 if let Some((_, m, dd)) = parse_date(&d) {
-                    marcas.push((d.clone(), format!("{dd:02} {}", mes_abreviado(m))));
+                    marcas.push((d.clone(), format!("{dd:02}/{m:02}")));
                 }
             }
-            k += 7;
+            k += passo;
         }
     } else {
         let Some((mut y, mut m, _)) = parse_date(inicio) else { return Vec::new() };
@@ -2779,16 +2822,131 @@ fn linhas_do_eixo(l: &crate::tela::Linha, tema: &Tema, largura: usize) -> Vec<Li
         }
     }
     let marca = tema.estilo(Realce::Marca);
+    let mut linha_da_regua = vec![Span::styled(recuo.clone(), Style::default())];
+    match hoje.map(|h| ((disponivel as f64 * h as f64 / dias as f64).round() as usize).min(disponivel - 1)) {
+        // Hoje cruza a régua na cor de destaque, como `.timeline__today`.
+        Some(c) => {
+            let texto: String = regua.iter().collect();
+            let antes: String = texto.chars().take(c).collect();
+            let depois: String = texto.chars().skip(c + 1).collect();
+            linha_da_regua.push(Span::styled(antes, tema.estilo(Realce::Grade)));
+            linha_da_regua.push(Span::styled("┼", Style::default().fg(tema.var("accent-blue"))));
+            linha_da_regua.push(Span::styled(depois, tema.estilo(Realce::Grade)));
+        }
+        None => linha_da_regua.push(Span::styled(regua.into_iter().collect::<String>(), tema.estilo(Realce::Grade))),
+    }
     vec![
         Line::from(vec![
-            Span::styled(recuo.clone(), Style::default()),
+            Span::styled(recuo, Style::default()),
             Span::styled(rotulos.into_iter().collect::<String>(), marca),
         ]),
-        Line::from(vec![
-            Span::styled(recuo, Style::default()),
-            Span::styled(regua.into_iter().collect::<String>(), tema.estilo(Realce::Grade)),
-        ]),
+        Line::from(linha_da_regua),
     ]
+}
+
+/// Quantos dias depois do início da janela é hoje, se hoje cai nela.
+fn desloc_de_hoje(arvore: &Unidade, embed: &[usize]) -> Option<i64> {
+    arvore
+        .em(embed)?
+        .filhos
+        .iter()
+        .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "cabecalho"))
+        .and_then(|c| valor_escondido(c, "hoje"))
+        .and_then(|h| h.parse().ok())
+}
+
+/// A barra de cima do cronograma (ciclo 332), como `.timeline__bar`: a
+/// janela de tempo com as setas, "Hoje", o seletor de escala com a ativa
+/// cheia, e a fonte (Manual/Vault) — com a tecla de cada coisa na frente,
+/// como o cabeçalho do calendário.
+fn linha_do_cabecalho_do_cronograma(l: &crate::tela::Linha, arvore: &Unidade, tema: &Tema, largura: usize) -> Line<'static> {
+    let recuo = "  ".repeat(l.nivel);
+    let u = arvore.em(&l.caminho);
+    let escala = u.and_then(|u| valor_escondido(u, "escala")).unwrap_or("month").to_string();
+    let fonte = u.and_then(|u| valor_escondido(u, "fonte")).unwrap_or("Manual").to_string();
+    let apagado = Style::default().fg(tema.var("text-muted"));
+    let tecla = tema.estilo(Realce::Marca);
+    let mut esquerda = Faixa::default()
+        .mais(recuo, Style::default())
+        .mais("[ ‹  ", tecla)
+        .mais(l.texto.clone(), apagado)
+        .mais("  ] ›", tecla)
+        .mais("   t ", tecla)
+        .mais("Hoje", apagado);
+    let mut direita = Faixa::default().mais("m ", tecla);
+    for (slug, rotulo) in [("week", "Semana"), ("month", "Mês"), ("quarter", "Trimestre")] {
+        let estilo = if slug == escala {
+            Style::default().bg(tema.var("accent-blue")).fg(tema.var("bg-base"))
+        } else {
+            Style::default().bg(tema.var("bg-elevated")).fg(tema.var("text-muted"))
+        };
+        direita = direita.mais(format!(" {rotulo} "), estilo);
+    }
+    direita = direita.mais("   ~ ", tecla).mais(fonte.clone(), apagado);
+    if fonte == "Manual" {
+        direita = direita.mais("   o ", tecla).mais("+ etapa", apagado);
+    }
+    let sobra = largura.saturating_sub(esquerda.largura + direita.largura).max(2);
+    esquerda = esquerda.mais(" ".repeat(sobra), Style::default()).juntar(direita);
+    Line::from(esquerda.spans)
+}
+
+/// Uma barra do cronograma (ciclo 332): uma linha só, como
+/// `.timeline__bar-item` — a pílula na cor do badge da primeira tag,
+/// posicionada e dimensionada pela janela de tempo, com o título cortado
+/// por dentro. Hoje atravessa a linha na cor de destaque onde a barra
+/// não está. Sob o cursor, a pílula fica cheia na cor de destaque.
+fn linha_da_barra(
+    l: &crate::tela::Linha,
+    arvore: &Unidade,
+    tema: &Tema,
+    largura: usize,
+    cursor: Option<&[usize]>,
+    hoje: Option<i64>,
+) -> Line<'static> {
+    let recuo = "  ".repeat(l.nivel);
+    let disponivel = largura.saturating_sub(recuo.len()).max(4);
+    let u = arvore.em(&l.caminho);
+    let pct = |campo: &str| -> f64 { u.and_then(|u| valor_escondido(u, campo)).and_then(|v| v.parse().ok()).unwrap_or(0.0) };
+    let inicio = ((disponivel as f64 * pct("inicio") / 100.0).round() as usize).min(disponivel - 1);
+    let tamanho = ((disponivel as f64 * pct("duracao") / 100.0).round() as usize).max(3).min(disponivel - inicio);
+    let dias: i64 = u
+        .and_then(|_| {
+            let dono = l.dono_embed.as_deref()?;
+            let cab = arvore.em(dono)?.filhos.iter().find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "cabecalho"))?;
+            valor_escondido(cab, "dias")?.parse().ok()
+        })
+        .unwrap_or(0);
+    let coluna_hoje = hoje.filter(|_| dias > 0).map(|h| ((disponivel as f64 * h as f64 / dias as f64).round() as usize).min(disponivel - 1));
+    let aceso = cursor.is_some_and(|c| l.mostra(c));
+    let estilo_barra = if aceso {
+        tema.estilo(Realce::Cursor).add_modifier(Modifier::BOLD)
+    } else {
+        let papel = u
+            .and_then(|u| valor_escondido(u, "cor"))
+            .and_then(|c| papel_do_badge(c.strip_prefix("badge").unwrap_or("")))
+            .unwrap_or(Realce::BadgeInfo);
+        tema.pilula(papel)
+    };
+    let hoje_estilo = Style::default().fg(crate::tema::misturar(tema.var("accent-blue"), tema.var("bg-surface"), 0.6));
+    let trilho = |de: usize, ate: usize| -> Vec<Span<'static>> {
+        let mut v = Vec::new();
+        match coluna_hoje.filter(|c| *c >= de && *c < ate) {
+            Some(c) => {
+                v.push(Span::raw(" ".repeat(c - de)));
+                v.push(Span::styled("│", hoje_estilo));
+                v.push(Span::raw(" ".repeat(ate - c - 1)));
+            }
+            None => v.push(Span::raw(" ".repeat(ate - de))),
+        }
+        v
+    };
+    let mut spans = vec![Span::raw(recuo)];
+    spans.extend(trilho(0, inicio));
+    let texto = cortado(&format!(" {}", l.texto), tamanho);
+    spans.push(Span::styled(na_largura(&texto, tamanho), estilo_barra));
+    spans.extend(trilho(inicio + tamanho, disponivel));
+    Line::from(spans)
 }
 
 /// Como um retângulo/quadrado preenchido SOZINHO ocupa a largura do
@@ -3075,6 +3233,9 @@ fn tecla_do_calendario(e: &mut Estado, tecla: &str) -> bool {
     if !matches!(tecla, "[" | "]" | "t" | "m") {
         return false;
     }
+    if tecla_do_cronograma(e, tecla) {
+        return true;
+    }
     let (Some(hoje), Some(embed)) = (e.hoje.clone(), tela::calendario_do_cursor(&e.arvore, &e.cursor)) else {
         return false;
     };
@@ -3101,6 +3262,58 @@ fn tecla_do_calendario(e: &mut Estado, tecla: &str) -> bool {
     let mut no_mes = embed.clone();
     no_mes.push(1);
     e.cursor = if e.arvore.em(&no_mes).is_some() { no_mes } else { embed };
+    e.seguir_cursor();
+    true
+}
+
+/// A navegação no TEMPO do cronograma (ciclo 332), com as mesmas teclas
+/// do calendário: `[`/`]` andam uma janela inteira, `t` volta pra hoje e
+/// `m` troca a escala (Semana → Mês → Trimestre) — que, como na janela,
+/// fica gravada no arquivo.
+fn tecla_do_cronograma(e: &mut Estado, tecla: &str) -> bool {
+    use anotadinho_core::embed::TimelineScale;
+    let Some(hoje) = e.hoje.clone() else { return false };
+    let Some(embed) = (1..=e.cursor.len())
+        .map(|n| e.cursor[..n].to_vec())
+        .find(|c| matches!(e.arvore.em(c).map(|u| &u.tipo), Some(Tipo::Embed(n)) if n == "timeline"))
+    else {
+        return false;
+    };
+    let cab = e
+        .arvore
+        .em(&embed)
+        .and_then(|u| u.filhos.iter().find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "cabecalho")));
+    let dias: i64 = cab.and_then(|c| valor_escondido(c, "dias")).and_then(|d| d.parse().ok()).unwrap_or(35);
+    let inicio = e
+        .arvore
+        .em(&embed)
+        .and_then(|u| u.filhos.iter().find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "eixo")))
+        .and_then(|x| x.texto.split_once(' ').map(|(a, _)| a.to_string()));
+    match tecla {
+        "[" | "]" => {
+            let delta = if tecla == "]" { dias } else { -dias };
+            if let Some(novo) = inicio.and_then(|i| anotadinho_core::date_util::add_days(&i, delta)) {
+                e.ancorar(&embed, novo);
+            }
+        }
+        "t" => {
+            e.ancoras.remove(&embed);
+            e.ancorar_calendarios();
+        }
+        _ => {
+            let atual = cab.and_then(|c| valor_escondido(c, "escala")).unwrap_or("month").to_string();
+            let seguinte = match atual.as_str() {
+                "week" => TimelineScale::Month,
+                "month" => TimelineScale::Quarter,
+                _ => TimelineScale::Week,
+            };
+            edicao::trocar_escala(e, &embed, seguinte);
+            let _ = hoje;
+        }
+    }
+    if e.arvore.em(&e.cursor).is_none() {
+        e.cursor = embed;
+    }
     e.seguir_cursor();
     true
 }
@@ -5791,59 +6004,45 @@ mod testes {
     fn a_barra_do_cronograma_fica_proporcional_a_duracao() {
         // As duas etapas de `com_cronograma()` duram o mesmo tanto (10
         // dias cada, janela de 20) — a segunda barra tem que começar
-        // exatamente onde a primeira parou, não randomicamente lado a
-        // lado nem uma embaixo da outra na mesma coluna.
+        // exatamente onde a primeira parou. A barra é uma linha só, como
+        // `.timeline__bar-item` (ciclo 332): o fundo pintado é a barra.
         let mut e = Estado::novo(paginas(), com_cronograma());
         e.foco = Foco::Paginas;
-        let linhas = desenho(&mut e, 80, 16);
-        let linha_de = |texto: &str| {
-            linhas
-                .iter()
-                .find(|l| l.contains(texto))
-                .unwrap_or_else(|| panic!("\"{texto}\" sumiu da tela:\n{}", linhas.join("\n")))
+        let buf = quadro(&mut e, 80, 16);
+        let fundo_da_barra = e.tema.pilula(Realce::BadgeInfo).bg;
+        let trecho = |texto: &str| -> (usize, usize) {
+            let y = (0..buf.area.height)
+                .find(|y| (0..buf.area.width).map(|x| buf[(x, *y)].symbol().to_string()).collect::<String>().contains(texto))
+                .unwrap_or_else(|| panic!("{texto} sumiu"));
+            let pintadas: Vec<usize> =
+                (0..buf.area.width).filter(|x| buf[(*x, y)].style().bg == fundo_da_barra).map(|x| x as usize).collect();
+            (pintadas[0], *pintadas.last().unwrap())
         };
-        let l1 = linha_de("Primeira etapa");
-        let l2 = linha_de("Segunda etapa");
-        // Coluna em CARACTERES, não bytes: `find`/`rfind` de `str`
-        // devolvem posição de byte, e `▐`/`▌` ocupam 3 — junto dos
-        // outros caracteres largos da tela (bordas dos painéis), o
-        // índice de byte não bate com a coluna que se vê.
-        let coluna = |l: &str, c: char| -> usize {
-            l.chars().collect::<Vec<_>>().iter().position(|x| *x == c).expect("caractere sumiu")
-        };
-        let col1 = coluna(l1, '▐');
-        let col2 = coluna(l2, '▐');
-        assert!(
-            col2 > col1,
-            "a segunda barra devia começar mais à direita — col1={col1} col2={col2}\n{l1}\n{l2}"
-        );
-        // Cada uma é metade da janela: nenhuma toma o painel inteiro,
-        // que é o que "retângulo proporcional" promete sobre "cartão".
-        // O painel de conteúdo aqui tem uns 55 colunas úteis; metade
-        // fica bem antes da borda direita da tela (80).
-        let fim1 = coluna(l1, '▌');
-        assert!(
-            fim1 < 60,
-            "a primeira barra ocupou o painel inteiro, não a metade:\n{l1}"
-        );
+        let (i1, f1) = trecho("Primeira etapa");
+        let (i2, f2) = trecho("Segunda etapa");
+        assert!(i2 > i1 && i2 >= f1, "a segunda barra devia começar onde a primeira acaba: {i1}-{f1} {i2}-{f2}");
+        let (l1, l2) = (f1 - i1, f2 - i2);
+        assert!(l1.abs_diff(l2) <= 1, "as duas duram o mesmo e saíram de tamanhos diferentes: {l1} {l2}");
+        assert!(f1 < 60, "a primeira barra ocupou o painel inteiro, não a metade");
     }
 
     #[test]
     fn o_cronograma_tem_eixo_de_datas_alinhado_com_as_barras() {
-        // Janela de 1 a 20 de agosto: marcas semanais em 01, 08 e 15.
+        // Janela de 1 a 20 de agosto: marcas semanais em 01/08, 08/08 e
+        // 15/08, como `.timeline__tick`.
         let mut e = Estado::novo(paginas(), com_cronograma());
         e.foco = Foco::Paginas;
         let linhas = desenho(&mut e, 90, 20);
         let tudo = linhas.join("\n");
-        let rotulos = linhas.iter().find(|l| l.contains("01 ago")).unwrap_or_else(|| panic!("sem eixo:\n{tudo}"));
-        assert!(rotulos.contains("08 ago") && rotulos.contains("15 ago"), "{rotulos}");
+        let rotulos = linhas.iter().find(|l| l.contains("01/08")).unwrap_or_else(|| panic!("sem eixo:\n{tudo}"));
+        assert!(rotulos.contains("08/08") && rotulos.contains("15/08"), "{rotulos}");
         let regua = linhas.iter().find(|l| l.contains('┬')).unwrap_or_else(|| panic!("sem régua:\n{tudo}"));
         assert_eq!(colunas_de(regua, '┬').len(), 3, "{regua}");
-        // A primeira marca (01 ago) cai na coluna onde a primeira barra
+        // A primeira marca (01/08) cai na coluna onde a primeira barra
         // começa: as duas usam a mesma conta.
         let barra = linhas.iter().find(|l| l.contains("Primeira etapa")).unwrap();
-        let topo_da_barra = &linhas[linhas.iter().position(|l| l == barra).unwrap() - 1];
-        assert_eq!(colunas_de(regua, '┬')[0], colunas_de(topo_da_barra, '▗')[0], "\n{regua}\n{topo_da_barra}");
+        let comeco = barra.chars().collect::<Vec<_>>().windows(2).position(|w| w[0] == ' ' && w[1] == 'P').unwrap();
+        assert_eq!(colunas_de(regua, '┬')[0], comeco, "\n{regua}\n{barra}");
     }
 
     #[test]

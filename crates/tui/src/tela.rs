@@ -390,6 +390,8 @@ pub fn fica_fora_da_tela(nome: &str) -> bool {
             | "tamanho" | "colunas" | "caminho" | "largura"
             // A contagem, os campos e os agregados da consulta (ciclo 331).
             | "contagem" | "campo" | "total" | "agregado"
+            // A janela do cronograma e a cor da barra (ciclo 332).
+            | "escala" | "fonte" | "dias" | "hoje" | "cor"
     )
         || nome == "evento"
         || nome.starts_with("evento--")

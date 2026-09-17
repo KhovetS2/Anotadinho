@@ -345,6 +345,116 @@ fn e_linha_horizontal(linha: &str) -> bool {
 ///
 /// Reusa o `render::Markdown` do ciclo 266 — que existia sem consumidor
 /// e agora tem um.
+/// As partes de um cronograma (ciclos 305, 313 e 332).
+///
+/// Sem `janela`, a janela de tempo é o próprio conjunto — do primeiro
+/// início ao último fim —, que é o que o CLI mostra: ele não tem "hoje"
+/// nem navegação.
+///
+/// Com `janela` (`inicio`, dias), é a janela da tela, como a da janela
+/// gráfica: o `cabecalho` ("26/08/2026 · Trimestre", com `escala`, `fonte`,
+/// `dias` e o deslocamento de `hoje` escondidos), o eixo dela e só as
+/// barras que caem dentro. A TUI escolhe o início pela âncora e pela
+/// escala.
+pub fn partes_do_cronograma(
+    d: &embed::TimelineEmbedData,
+    janela: Option<(&str, i64)>,
+    hoje: Option<&str>,
+) -> Vec<Unidade> {
+    let (inicio_janela, dias_da_janela) = match janela {
+        Some((inicio, dias)) => (Some(inicio.to_string()), dias.max(1)),
+        None => {
+            let inicio = d.items.iter().filter_map(|i| i.start.clone()).min();
+            let fim = d.items.iter().filter_map(|i| i.end.clone().or(i.start.clone())).max();
+            let dias = match (&inicio, &fim) {
+                (Some(a), Some(b)) => crate::date_util::days_between(a, b).unwrap_or(0) + 1,
+                _ => 0,
+            };
+            (inicio, dias.max(1))
+        }
+    };
+
+    let mut partes: Vec<Unidade> = Vec::new();
+    if let (Some((inicio, dias)), Some(ini)) = (janela, inicio_janela.as_deref()) {
+        let desloc_hoje = hoje
+            .and_then(|h| crate::date_util::days_between(ini, h))
+            .filter(|x| *x >= 0 && *x < dias)
+            .map(|x| x.to_string())
+            .unwrap_or_default();
+        partes.push(arranjado(
+            "cabecalho",
+            format!("{} · {}", data_curta(inicio), d.scale.label()),
+            vec![
+                item("escala", d.scale.slug()),
+                item("fonte", if d.source == embed::TimelineSource::Vault { "Vault" } else { "Manual" }),
+                item("dias", dias.to_string()),
+                item("hoje", desloc_hoje),
+            ],
+            Arranjo::Folha,
+        ));
+    }
+    // O EIXO de datas vem antes das barras (ciclo 313): a janela
+    // desenha as datas em cima delas, e sem ele uma barra proporcional
+    // não diz QUANDO. Carrega só o começo e o fim da janela; os rótulos
+    // saem do desenho, que sabe a largura. Não é destino do cursor.
+    if let Some(ini) = inicio_janela.as_deref() {
+        if let Some(fim) = crate::date_util::add_days(ini, dias_da_janela - 1) {
+            partes.push(item("eixo", format!("{ini} {fim}")));
+        }
+    }
+    let mut sem_data: Vec<Unidade> = Vec::new();
+    for (n, i) in d.items.iter().enumerate() {
+        let span = inicio_janela
+            .as_deref()
+            .and_then(|ini| embed::bar_span(i.start.as_deref(), i.end.as_deref(), ini, dias_da_janela));
+        match (span, i.start.as_deref()) {
+            // Início e duração viajam como duas partes FILHAS, em
+            // porcentagem inteira (0-100) — não no texto da barra, que
+            // seria dado disfarçado de rótulo. O "detalhe" é o que aparece
+            // com o cursor na barra (ciclo 313).
+            (Some((inicio_pct, largura_pct)), Some(inicio)) => {
+                let fim = i.end.as_deref().filter(|f| *f >= inicio).unwrap_or(inicio);
+                let dias = crate::date_util::days_between(inicio, fim).unwrap_or(0) + 1;
+                let mut detalhe = if fim == inicio {
+                    data_curta(inicio)
+                } else {
+                    format!("{} → {}", data_curta(inicio), data_curta(fim))
+                };
+                detalhe.push_str(&format!(" · {dias} {}", if dias == 1 { "dia" } else { "dias" }));
+                for t in &i.tags {
+                    detalhe.push_str(&format!(" · #{t}"));
+                }
+                let mut filhos = vec![
+                    item("inicio", inicio_pct.round().to_string()),
+                    item("duracao", largura_pct.round().max(1.0).to_string()),
+                    item("detalhe", detalhe),
+                    // O item do arquivo (ciclo 320): é por ele que a
+                    // edição acha o que mudar.
+                    item("indice", n.to_string()),
+                ];
+                // A cor da barra, a mesma classe de badge da janela.
+                if let Some(t) = i.tags.first() {
+                    filhos.push(item("cor", embed::badge_class(&i.tags, t)));
+                }
+                // No modo vault a barra É uma página: Enter a abre.
+                if let Some(p) = &i.page {
+                    filhos.push(item("pagina", p.clone()));
+                }
+                partes.push(grupo("barra", i.title.clone(), filhos));
+            }
+            // Fora da janela da tela: não aparece, como na janela.
+            (None, Some(_)) if janela.is_some() => {}
+            // Sem data: a "gaveta" da janela, depois das barras — a
+            // mesma forma da gaveta do calendário.
+            _ => sem_data.push(arranjado("item", i.title.clone(), vec![item("indice", n.to_string())], Arranjo::Folha)),
+        }
+    }
+    if !sem_data.is_empty() {
+        partes.push(grupo("sem-data", format!("Sem data ({})", sem_data.len()), sem_data));
+    }
+    partes
+}
+
 /// As partes de uma consulta JÁ RODADA sobre o índice do vault (ciclo
 /// 331).
 ///
@@ -1022,80 +1132,7 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
         // início ao último fim. ISO (`AAAA-MM-DD`) ordena léxico igual
         // a cronológico, então `min`/`max` de string bastam, sem
         // reabrir `date_util` pra isso.
-        EmbedData::Timeline(d) => {
-            let inicio_janela = d.items.iter().filter_map(|i| i.start.as_deref()).min();
-            let fim_janela = d
-                .items
-                .iter()
-                .filter_map(|i| i.end.as_deref().or(i.start.as_deref()))
-                .max();
-            let dias_da_janela = match (inicio_janela, fim_janela) {
-                (Some(a), Some(b)) => crate::date_util::days_between(a, b).unwrap_or(0) + 1,
-                _ => 0,
-            }
-            .max(1);
-
-            // O EIXO de datas vem antes das barras (ciclo 313): a janela
-            // desenha `03 ago · 10 ago · …` em cima delas, e sem ele uma
-            // barra proporcional não diz QUANDO. Carrega só o começo e o
-            // fim da janela; os rótulos saem do desenho, que sabe a
-            // largura. Não é destino do cursor.
-            let mut partes: Vec<Unidade> = Vec::new();
-            if let (Some(a), Some(b)) = (inicio_janela, fim_janela) {
-                partes.push(item("eixo", format!("{a} {b}")));
-            }
-            let mut sem_data: Vec<Unidade> = Vec::new();
-            for (n, i) in d.items.iter().enumerate() {
-                let span = inicio_janela.and_then(|ini| {
-                    embed::bar_span(i.start.as_deref(), i.end.as_deref(), ini, dias_da_janela)
-                });
-                match (span, i.start.as_deref()) {
-                    // Início e duração viajam como duas partes FILHAS, em
-                    // porcentagem inteira (0-100) — não no texto da
-                    // barra, que seria dado disfarçado de rótulo.
-                    // `linha_de_caixa` (TUI) lê as duas e desenha um
-                    // retângulo proporcional. O "detalhe" é o que aparece
-                    // com o cursor na barra (ciclo 313).
-                    (Some((inicio_pct, largura_pct)), Some(inicio)) => {
-                        let fim = i.end.as_deref().filter(|f| *f >= inicio).unwrap_or(inicio);
-                        let dias = crate::date_util::days_between(inicio, fim).unwrap_or(0) + 1;
-                        let mut detalhe = if fim == inicio {
-                            data_curta(inicio)
-                        } else {
-                            format!("{} → {}", data_curta(inicio), data_curta(fim))
-                        };
-                        detalhe.push_str(&format!(" · {dias} {}", if dias == 1 { "dia" } else { "dias" }));
-                        for t in &i.tags {
-                            detalhe.push_str(&format!(" · #{t}"));
-                        }
-                        partes.push(grupo(
-                            "barra",
-                            i.title.clone(),
-                            vec![
-                                item("inicio", inicio_pct.round().to_string()),
-                                item("duracao", largura_pct.round().max(1.0).to_string()),
-                                item("detalhe", detalhe),
-                                // O item do arquivo (ciclo 320): é por ele que
-                                // a edição acha o que mudar.
-                                item("indice", n.to_string()),
-                            ],
-                        ));
-                    }
-                    // Sem data: a "gaveta" da janela, depois das barras —
-                    // a mesma forma da gaveta do calendário.
-                    _ => sem_data.push(arranjado(
-                        "item",
-                        i.title.clone(),
-                        vec![item("indice", n.to_string())],
-                        Arranjo::Folha,
-                    )),
-                }
-            }
-            if !sem_data.is_empty() {
-                partes.push(grupo("sem-data", format!("Sem data ({})", sem_data.len()), sem_data));
-            }
-            partes
-        }
+        EmbedData::Timeline(d) => partes_do_cronograma(d, None, None),
 
         // Botão é coisa clicável, e clicável fica em FILEIRA — é como a
         // janela desenha, e agora o modelo diz isso em vez de o desenho

@@ -287,3 +287,22 @@ mod testes {
         assert_eq!(eventos[1].end_date.as_deref(), Some("2026-08-22"));
     }
 }
+
+/// As barras de um cronograma em modo vault (ciclo 332): cada página com
+/// `start` (ou `date`) no frontmatter vira uma, até `end` (ou `due`) — a
+/// mesma leitura da janela.
+pub fn itens_do_vault(entries: &[crate::index::PageIndexEntry]) -> Vec<crate::embed::TimelineItem> {
+    entries
+        .iter()
+        .filter_map(|e| {
+            let start = e.properties.get("start").or_else(|| e.properties.get("date"))?.clone();
+            Some(crate::embed::TimelineItem {
+                title: e.title.clone(),
+                start: Some(start),
+                end: e.properties.get("end").or_else(|| e.properties.get("due")).cloned(),
+                tags: e.tags.clone(),
+                page: Some(e.path.clone()),
+            })
+        })
+        .collect()
+}
