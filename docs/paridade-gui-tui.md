@@ -39,7 +39,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 |---|---|---|
 | Markdown com embeds | ✅ | |
 | `type: conversa` | ✅ | 340, 341 |
-| `type: propostas` (revisar diff, aplicar/recusar) | ✅ | 346 — `a`/`r`, `v` Diff/Visualização |
+| `type: propostas` (revisar diff, aplicar/recusar) | ✅ | 346, 399 — `a`/`r`, `v` Diff/Visualização (desenhada como página, com embeds) |
 | `type: tags` (tags do vault e onde aparecem) | ✅ | 346 — "Ver tags"; `h`/`l` + Enter abre |
 | `type: assets` (arquivos, uso, excluir) | ✅ | 346 — "Ver assets"; `x`/`dd` exclui |
 | `type: kanban` / `calendar` / `table` de página inteira | ✅ | 353 — quadro com `column::`, calendário do vault, tarefas com `status::` |

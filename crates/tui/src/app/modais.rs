@@ -1379,10 +1379,10 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
         Modal::Visualizar(texto, rolagem) => {
             let area = componentes::area_do_modal(tela, 90, tela.height.saturating_sub(6));
             let dentro = componentes::desenhar_modal(f, area, "Visualizar", "j k rolar · Esc", t);
-            let p = Paragraph::new(texto.clone())
-                .style(Style::default().fg(t.var("text-primary")))
-                .wrap(ratatui::widgets::Wrap { trim: false })
-                .scroll((*rolagem as u16, 0));
+            // O texto final desenhado como página (ciclo 399), como a
+            // visualização da janela.
+            let linhas = super::especiais::pagina_renderizada(texto, t, dentro.width.saturating_sub(1) as usize);
+            let p = Paragraph::new(linhas).scroll((*rolagem as u16, 0));
             f.render_widget(p, dentro);
         }
         Modal::Prompt(sel) => {

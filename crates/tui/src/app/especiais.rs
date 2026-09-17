@@ -849,7 +849,7 @@ fn cartao_da_proposta(
     miolo.push(Line::from(linha_modo));
     if visualizar {
         let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&proposta.conteudo);
-        miolo.extend(super::conversa::corpo_da_mensagem(corpo, tema, dentro));
+        miolo.extend(pagina_renderizada(corpo, tema, dentro));
     } else {
         let sai = Style::default().fg(tema.var("text-primary")).bg(misturar(tema.var("error"), tema.var("bg-surface"), 0.16));
         let entra = Style::default().fg(tema.var("text-primary")).bg(misturar(tema.var("success"), tema.var("bg-surface"), 0.16));
@@ -991,4 +991,49 @@ fn no_do_grafo(tema: &Tema, titulo: &str, vizinhos: &[(String, String)], chip: O
         w.saturating_sub(4),
     ));
     caixa(tema, miolo, w, cor_da_borda(tema, selecionado, chip.is_some()))
+}
+
+/// A página desenhada pelo MESMO desenho da TUI (ciclo 399), como o
+/// `PaginaPreview` da janela mostra a proposta renderizada — embeds
+/// inclusive. Desenha num terminal de mentira da largura pedida e devolve
+/// as linhas de dentro da borda, sem as vazias do fim.
+pub fn pagina_renderizada(corpo: &str, tema: &Tema, largura: usize) -> Vec<Line<'static>> {
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+    let paginas = vec![anotadinho_ipc::PageMeta { path: "pages/visualizacao.md".into(), title: String::new(), section: "pages".into() }];
+    let mut e = Estado::novo(paginas, anotadinho_core::analise::analisar(corpo));
+    e.tema = tema.clone();
+    e.preferencias.sidebar = false;
+    e.foco = Foco::Paginas;
+    let (w, h) = (largura as u16 + 2, 300u16);
+    let Ok(mut term) = Terminal::new(TestBackend::new(w, h)) else { return Vec::new() };
+    if term.draw(|f| super::desenhar(f, &mut e)).is_err() {
+        return Vec::new();
+    }
+    let buf = term.backend().buffer().clone();
+    let mut linhas: Vec<Line<'static>> = Vec::new();
+    for y in 1..h - 1 {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        let mut texto = String::new();
+        let mut estilo: Option<Style> = None;
+        for x in 1..w - 1 {
+            let cel = &buf[(x, y)];
+            let st = cel.style();
+            if estilo != Some(st) {
+                if let Some(s) = estilo {
+                    spans.push(Span::styled(std::mem::take(&mut texto), s));
+                }
+                estilo = Some(st);
+            }
+            texto.push_str(cel.symbol());
+        }
+        if let Some(s) = estilo {
+            spans.push(Span::styled(texto, s));
+        }
+        linhas.push(Line::from(spans));
+    }
+    while linhas.last().is_some_and(|l| l.spans.iter().all(|s| s.content.trim().is_empty())) {
+        linhas.pop();
+    }
+    linhas
 }

@@ -150,6 +150,7 @@ pub enum Realce {
 }
 
 /// Uma paleta resolvida.
+#[derive(Debug, Clone)]
 pub struct Tema {
     cores: HashMap<String, Color>,
     /// O estilo dos botões (ciclo 358): `arredondado`, `reto`, `pilula`.

@@ -10163,4 +10163,16 @@ mod testes {
         let u = e.arvore.em(&e.cursor).unwrap();
         assert_eq!(u.texto, "Deploy final", "{:?}", e.cursor);
     }
+
+    // --- Ciclo 399: visualização renderizada -------------------------------------------
+
+    #[test]
+    fn a_visualizacao_da_proposta_desenha_os_embeds() {
+        let tema = crate::tema::Tema::novo("mocha");
+        let linhas = especiais::pagina_renderizada("# Quadro\n\n{{ type: \"kanban\" }}\ncolumns:\n- Todo\nitems:\n- title: Cartão X\n  column: Todo\n{{ /kanban }}\n", &tema, 80);
+        let texto: Vec<String> = linhas.iter().map(|l| l.spans.iter().map(|s| s.content.to_string()).collect()).collect();
+        let tudo = texto.join("\n");
+        assert!(tudo.contains("TODO") && tudo.contains("Cartão X") && !tudo.contains("{{ type"), "{tudo}");
+        assert!(texto.iter().all(|l| l.chars().count() <= 80));
+    }
 }
