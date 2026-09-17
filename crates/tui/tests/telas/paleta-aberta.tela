@@ -10,6 +10,7 @@
 │                                  │ ϟ Nova página: Calendário                                          │                                  │
 │                                  │ ϟ Nova página: Tabela de tarefas                                   │                                  │
 │                                  │ ϟ Nova página: Grafo de conexões                                   │                                  │
+│                                  │ ϟ Nova página inicial (landing)                                    │                                  │
 │                                  │ ϟ Nova página: Conversa                                            │                                  │
 │                                  │ ϟ Alternar tema                                                    │                                  │
 │                                  │ ϟ Escolher tema…                                                   │                                  │
@@ -23,7 +24,6 @@
 │                                  │ ϟ Ir pra Hoje (journal)                                            │                                  │
 │                                  │ ϟ Personalizar…                                                    │                                  │
 │                                  │ ϟ Trocar agente…                                                   │                                  │
-│                                  │ ϟ Configurar agente…                                               │                                  │
 │                                  ╰ ↑↓ escolher · Enter · Ctrl+F buscar no conteúdo · Esc ─────────────╯                                  │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │

@@ -12,7 +12,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Busca da sidebar também no conteúdo ("Resultados") | ✅ | 370 — a partir de 3 letras, com o trecho |
 | Abrir resultado de busca já no trecho | ✅ | 371 — cursor no bloco, dobras abertas |
 | Seção Journals + "Journal de hoje" | ✅ | 339, 355 — seção no fim da sidebar, o mais novo em cima |
-| Nova página / por tipo | ✅ | 339 |
+| Nova página / por tipo | ✅ | 339, 384 — inclui "Nova página inicial (landing)" |
 | Nova pasta, nova página na pasta | ✅ | 345 — `O`/`o` na sidebar, "Nova pasta…" |
 | Mover página pra pasta | ✅ | 345 — `m` na sidebar |
 | Excluir página | ✅ | 339, 345 — `dd` na sidebar |

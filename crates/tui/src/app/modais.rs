@@ -451,6 +451,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Nova página: Calendário", "nova-pagina:calendar"),
     ("Nova página: Tabela de tarefas", "nova-pagina:table"),
     ("Nova página: Grafo de conexões", "nova-pagina:graph"),
+    ("Nova página inicial (landing)", "nova-landing"),
     ("Nova página: Conversa", "nova-pagina:conversa"),
     ("Alternar tema", "alternar-tema"),
     ("Escolher tema…", "escolher-tema"),
@@ -635,6 +636,14 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "aba-fechar" => super::comando_de_aba(e, "Alt+q"),
         "git" => e.pedidos.push(Pedido::StatusDoGit),
         "salvar" => e.salvar_agora = true,
+        // O "+" com a casinha da sidebar da janela (ciclo 384).
+        "nova-landing" => {
+            e.modal = Some(Modal::Entrada {
+                titulo: "Título da página inicial".into(),
+                campo: Campo::com("Início"),
+                acao: AcaoDaEntrada::NovaPagina(Some("landing".into())),
+            })
+        }
         "modo-vim" => {
             e.preferencias.modo_vim = !e.preferencias.modo_vim;
             e.aviso = Some(if e.preferencias.modo_vim { "modo vim ligado" } else { "modo vim desligado: digite pra editar, Ctrl+K abre a barra" }.into());

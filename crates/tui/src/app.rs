@@ -9773,4 +9773,12 @@ mod testes {
         tecla(&mut e, "Ctrl+y");
         assert!(!corpo_gravado(&e).contains("Um parágrafo"));
     }
+
+    #[test]
+    fn nova_pagina_inicial_nasce_landing_com_titulo_inicio() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::executar(&mut e, "nova-landing");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::CriarPaginaComTitulo { titulo: "Início".into(), tipo: Some("landing".into()) }]);
+    }
 }
