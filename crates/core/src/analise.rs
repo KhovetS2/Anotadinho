@@ -465,7 +465,40 @@ fn arranjado(
     u
 }
 
-/// A árvore de um calendário (ciclos 306 e 315).
+/// A visão de um calendário ancorado — o seletor Mês/Semana/Dia da
+/// janela (ciclo 316).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Visao {
+    /// A grade do mês da âncora.
+    #[default]
+    Mes,
+    /// A semana (domingo a sábado) que contém a âncora.
+    Semana,
+    /// A agenda do dia da âncora.
+    Dia,
+}
+
+impl Visao {
+    /// Nome de exibição, o do seletor da janela.
+    pub fn rotulo(&self) -> &'static str {
+        match self {
+            Visao::Mes => "Mês",
+            Visao::Semana => "Semana",
+            Visao::Dia => "Dia",
+        }
+    }
+
+    /// A próxima, na ordem do seletor, dando a volta.
+    pub fn seguinte(&self) -> Visao {
+        match self {
+            Visao::Mes => Visao::Semana,
+            Visao::Semana => Visao::Dia,
+            Visao::Dia => Visao::Mes,
+        }
+    }
+}
+
+/// A árvore de um calendário na visão Mês (ciclos 306 e 315).
 ///
 /// Sem `ancora`, é o que o arquivo sozinho diz: um "mes" por mês que tem
 /// evento — é o que `analisar` usa, e o que o CLI mostra, porque o núcleo
@@ -480,102 +513,40 @@ pub fn partes_do_calendario(
     ancora: Option<&str>,
     hoje: Option<&str>,
 ) -> Vec<Unidade> {
-    use crate::calendario::{existing_tags, month_cells, months_with_events, pack_days};
-    let tags = existing_tags(&d.entries);
-    let nome_do_evento = |e: &embed::CalendarEntry| -> String {
-        match e.all_tags().first() {
-            Some(t) => {
-                let classe = embed::badge_class(&tags, t);
-                format!("evento{}", classe.strip_prefix("badge").unwrap_or(""))
-            }
-            None => "evento".to_string(),
-        }
-    };
+    partes_do_calendario_na_visao(d, Visao::Mes, ancora, hoje)
+}
 
-    let meses = match ancora.and_then(crate::date_util::parse_date) {
-        Some((y, m, _)) => vec![(y, m)],
-        None => months_with_events(&d.entries),
+/// A árvore de um calendário numa visão (ciclo 316).
+///
+/// - **Mês**: a grade do mês da âncora.
+/// - **Semana**: a semana da âncora, como uma grade de uma semana só, com
+///   TODAS as faixas (sem "+N mais") e o horário na frente do título.
+/// - **Dia**: a agenda do dia — um "compromisso" por evento, os de dia
+///   inteiro primeiro e os com horário em ordem.
+///
+/// Sem âncora a visão não importa: é o calendário de todo mês com evento.
+///
+/// Todo dia da grade carrega a própria data numa parte "data" (a última):
+/// numa semana solta, a posição do dia não diz mais a data.
+pub fn partes_do_calendario_na_visao(
+    d: &embed::CalendarEmbedData,
+    visao: Visao,
+    ancora: Option<&str>,
+    hoje: Option<&str>,
+) -> Vec<Unidade> {
+    use crate::calendario::{existing_tags, months_with_events};
+    let tags = existing_tags(&d.entries);
+    let mut partes: Vec<Unidade> = match (ancora, ancora.and_then(crate::date_util::parse_date)) {
+        (Some(a), Some((y, m, _))) => match visao {
+            Visao::Mes => vec![grade_do_mes(d, &tags, hoje, y, m)],
+            Visao::Semana => vec![grade_da_semana(d, &tags, hoje, a)],
+            Visao::Dia => vec![agenda_do_dia(d, &tags, a)],
+        },
+        _ => months_with_events(&d.entries)
+            .into_iter()
+            .map(|(y, m)| grade_do_mes(d, &tags, hoje, y, m))
+            .collect(),
     };
-    let mut partes: Vec<Unidade> = meses
-        .into_iter()
-        .map(|(ano, mes)| {
-            let semanas = month_cells(ano, mes)
-                .chunks(7)
-                // A sexta semana costuma ser toda do mês seguinte:
-                // a janela reserva a altura, o terminal não tem
-                // linha pra gastar com ela.
-                .filter(|semana| semana.iter().any(|c| c.3))
-                .map(|semana| {
-                    let datas: Vec<String> = semana
-                        .iter()
-                        .map(|&(y, m, dia, _)| crate::date_util::format_date(y, m, dia))
-                        .collect();
-                    let (barras, excesso) = pack_days(&d.entries, &datas, false);
-                    let faixas = barras.iter().map(|b| b.lane + 1).max().unwrap_or(0);
-                    let dias = semana
-                        .iter()
-                        .enumerate()
-                        .map(|(col, &(y, m, dia, do_mes))| {
-                            // Cada evento leva o DETALHE (ciclo 314):
-                            // datas, horário e tags — o que a janela
-                            // mostra no modal do evento.
-                            let evento = |nome: &str, b: &crate::calendario::Bar| {
-                                let entrada = &d.entries[b.entry_idx];
-                                grupo(
-                                    nome,
-                                    entrada.title.clone(),
-                                    vec![item("detalhe", detalhe_do_evento(entrada))],
-                                )
-                            };
-                            let mut slots: Vec<Unidade> = (0..faixas)
-                                .map(|faixa| {
-                                    match barras.iter().find(|b| {
-                                        b.lane == faixa && b.start_col <= col && col <= b.end_col
-                                    }) {
-                                        Some(b) if b.start_col == col => {
-                                            evento(&nome_do_evento(&d.entries[b.entry_idx]), b)
-                                        }
-                                        // A continuação leva o título também
-                                        // (ciclo 310): o cursor pode pousar
-                                        // nela, no meio da barra, e ali ela
-                                        // É o evento.
-                                        Some(b) => evento("evento-continua", b),
-                                        None => item("vazio", String::new()),
-                                    }
-                                })
-                                .collect();
-                            if excesso[col] > 0 {
-                                slots.push(item("mais", format!("+{} mais", excesso[col])));
-                            }
-                            // O dia também tem detalhe: a data por
-                            // extenso e quantos eventos ele tem —
-                            // inclusive os que não couberam.
-                            let quantos = barras
-                                .iter()
-                                .filter(|b| b.start_col <= col && col <= b.end_col)
-                                .count()
-                                + excesso[col];
-                            slots.push(item("detalhe", detalhe_do_dia(y, m, dia, quantos)));
-                            let nome_do_dia = if !do_mes {
-                                "dia-fora"
-                            } else if hoje == Some(crate::date_util::format_date(y, m, dia).as_str()) {
-                                "dia-hoje"
-                            } else {
-                                "dia"
-                            };
-                            grupo(nome_do_dia, dia.to_string(), slots)
-                        })
-                        .collect();
-                    fileira("semana", dias)
-                })
-                .collect();
-            grupo(
-                "mes",
-                format!("{} {}", crate::date_util::month_name(mes), ano),
-                semanas,
-            )
-        })
-        .collect();
 
     // A "gaveta" da janela: evento sem data não tem dia na grade.
     let sem_data: Vec<Unidade> = d
@@ -594,6 +565,204 @@ pub fn partes_do_calendario(
         partes.push(grupo("sem-data", format!("Sem data ({})", sem_data.len()), sem_data));
     }
     partes
+}
+
+/// O nome da parte de um evento, com a cor de `badge_class` sobre as tags
+/// do calendário inteiro no sufixo (`evento--info`).
+fn nome_com_cor(prefixo: &str, e: &embed::CalendarEntry, tags: &[String]) -> String {
+    match e.all_tags().first() {
+        Some(t) => {
+            let classe = embed::badge_class(tags, t);
+            format!("{prefixo}{}", classe.strip_prefix("badge").unwrap_or(""))
+        }
+        None => prefixo.to_string(),
+    }
+}
+
+/// A grade de um mês: um "mes" com uma "semana" por linha.
+fn grade_do_mes(
+    d: &embed::CalendarEmbedData,
+    tags: &[String],
+    hoje: Option<&str>,
+    ano: i32,
+    mes: u32,
+) -> Unidade {
+    let semanas = crate::calendario::month_cells(ano, mes)
+        .chunks(7)
+        // A sexta semana costuma ser toda do mês seguinte: a janela
+        // reserva a altura, o terminal não tem linha pra gastar com ela.
+        .filter(|semana| semana.iter().any(|c| c.3))
+        .map(|semana| semana_da_grade(&d.entries, tags, hoje, semana, crate::calendario::MAX_LANES, false))
+        .collect();
+    grupo("mes", format!("{} {}", crate::date_util::month_name(mes), ano), semanas)
+}
+
+/// A visão Semana: a semana (domingo a sábado) que contém `ancora`, num
+/// "mes" de uma semana só — o desenho é o mesmo da grade do mês.
+fn grade_da_semana(
+    d: &embed::CalendarEmbedData,
+    tags: &[String],
+    hoje: Option<&str>,
+    ancora: &str,
+) -> Unidade {
+    use crate::date_util::{add_days, month_name, parse_date, weekday_of};
+    let (y, m, dd) = parse_date(ancora).unwrap_or((1970, 1, 1));
+    let domingo = add_days(ancora, -(weekday_of(y, m, dd) as i64)).unwrap_or_else(|| ancora.to_string());
+    let celulas: Vec<(i32, u32, u32, bool)> = (0..7)
+        .filter_map(|k| add_days(&domingo, k).and_then(|x| parse_date(&x)))
+        .map(|(yy, mm, ddd)| (yy, mm, ddd, true))
+        .collect();
+    let (a, b) = (celulas[0], celulas[6]);
+    let rotulo = if (a.0, a.1) == (b.0, b.1) {
+        format!("{} – {} de {} de {}", a.2, b.2, month_name(a.1).to_lowercase(), a.0)
+    } else if a.0 == b.0 {
+        format!(
+            "{} de {} – {} de {} de {}",
+            a.2,
+            month_name(a.1).to_lowercase(),
+            b.2,
+            month_name(b.1).to_lowercase(),
+            a.0
+        )
+    } else {
+        format!(
+            "{} de {} de {} – {} de {} de {}",
+            a.2,
+            month_name(a.1).to_lowercase(),
+            a.0,
+            b.2,
+            month_name(b.1).to_lowercase(),
+            b.0
+        )
+    };
+    // Na semana, dentro do dia, o que tem hora vem pela hora — os de dia
+    // inteiro (e os de vários dias) primeiro, como na agenda.
+    let mut entries = d.entries.clone();
+    entries.sort_by_key(|e| e.start_time.clone().map(|h| (1, h)).unwrap_or((0, String::new())));
+    grupo("mes", rotulo, vec![semana_da_grade(&entries, tags, hoje, &celulas, usize::MAX, true)])
+}
+
+/// Uma semana da grade: 7 dias, cada um com uma parte por faixa, o
+/// "+N mais", o detalhe e a data (ciclos 306, 314, 316).
+fn semana_da_grade(
+    entries: &[embed::CalendarEntry],
+    tags: &[String],
+    hoje: Option<&str>,
+    semana: &[(i32, u32, u32, bool)],
+    max_faixas: usize,
+    com_hora: bool,
+) -> Unidade {
+    let datas: Vec<String> = semana
+        .iter()
+        .map(|&(y, m, dia, _)| crate::date_util::format_date(y, m, dia))
+        .collect();
+    let (barras, excesso) = crate::calendario::pack_days_ate(entries, &datas, false, max_faixas);
+    let faixas = barras.iter().map(|b| b.lane + 1).max().unwrap_or(0);
+    let dias = semana
+        .iter()
+        .enumerate()
+        .map(|(col, &(y, m, dia, do_mes))| {
+            // Cada evento leva o DETALHE (ciclo 314): datas, horário e
+            // tags — o que a janela mostra no modal do evento.
+            let evento = |nome: &str, b: &crate::calendario::Bar| {
+                let entrada = &entries[b.entry_idx];
+                let titulo = match (&entrada.start_time, com_hora && b.start_col == col) {
+                    (Some(h), true) => format!("{h} {}", entrada.title),
+                    _ => entrada.title.clone(),
+                };
+                grupo(nome, titulo, vec![item("detalhe", detalhe_do_evento(entrada))])
+            };
+            let mut slots: Vec<Unidade> = (0..faixas)
+                .map(|faixa| {
+                    match barras
+                        .iter()
+                        .find(|b| b.lane == faixa && b.start_col <= col && col <= b.end_col)
+                    {
+                        Some(b) if b.start_col == col => {
+                            evento(&nome_com_cor("evento", &entries[b.entry_idx], tags), b)
+                        }
+                        // A continuação leva o título também (ciclo 310):
+                        // o cursor pode pousar nela, no meio da barra, e
+                        // ali ela É o evento.
+                        Some(b) => evento("evento-continua", b),
+                        None => item("vazio", String::new()),
+                    }
+                })
+                .collect();
+            if excesso[col] > 0 {
+                slots.push(item("mais", format!("+{} mais", excesso[col])));
+            }
+            // O dia também tem detalhe: a data por extenso e quantos
+            // eventos ele tem — inclusive os que não couberam.
+            let quantos = barras
+                .iter()
+                .filter(|b| b.start_col <= col && col <= b.end_col)
+                .count()
+                + excesso[col];
+            slots.push(item("detalhe", detalhe_do_dia(y, m, dia, quantos)));
+            slots.push(item("data", datas[col].clone()));
+            let nome_do_dia = if !do_mes {
+                "dia-fora"
+            } else if hoje == Some(datas[col].as_str()) {
+                "dia-hoje"
+            } else {
+                "dia"
+            };
+            grupo(nome_do_dia, dia.to_string(), slots)
+        })
+        .collect();
+    fileira("semana", dias)
+}
+
+/// A visão Dia: a agenda do dia da âncora (ciclo 316).
+///
+/// Um "compromisso" por evento que toca o dia — os de dia inteiro
+/// primeiro, na ordem do arquivo, e os com horário pela hora. A hora (ou
+/// "dia inteiro") vai numa parte "hora"; o dia sem nada ganha "sem
+/// eventos", que não é destino.
+fn agenda_do_dia(d: &embed::CalendarEmbedData, tags: &[String], ancora: &str) -> Unidade {
+    use crate::date_util::{parse_date, weekday_of};
+    let mut do_dia: Vec<&embed::CalendarEntry> = d
+        .entries
+        .iter()
+        .filter(|e| {
+            let Some(inicio) = e.date.as_deref() else { return false };
+            let fim = e.end_date.as_deref().filter(|f| *f > inicio).unwrap_or(inicio);
+            inicio <= ancora && ancora <= fim
+        })
+        .collect();
+    do_dia.sort_by_key(|e| e.start_time.clone().map(|h| (1, h)).unwrap_or((0, String::new())));
+    let mut filhos: Vec<Unidade> = do_dia
+        .into_iter()
+        .map(|e| {
+            let hora = match (e.start_time.as_deref(), e.end_time.as_deref()) {
+                (Some(a), Some(b)) => format!("{a}–{b}"),
+                (Some(a), None) => a.to_string(),
+                _ => "dia inteiro".to_string(),
+            };
+            grupo(
+                &nome_com_cor("compromisso", e, tags),
+                e.title.clone(),
+                vec![item("hora", hora), item("detalhe", detalhe_do_evento(e))],
+            )
+        })
+        .collect();
+    if filhos.is_empty() {
+        filhos.push(item("nada", "sem eventos"));
+    }
+    filhos.push(item("data", ancora));
+    let rotulo = match parse_date(ancora) {
+        Some((y, m, dd)) => {
+            const SEMANA: [&str; 7] = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+            format!(
+                "{}, {dd} de {} de {y}",
+                SEMANA[weekday_of(y, m, dd) as usize],
+                crate::date_util::month_name(m).to_lowercase()
+            )
+        }
+        None => ancora.to_string(),
+    };
+    grupo("agenda", rotulo, filhos)
 }
 
 /// O conteúdo de um embed, como unidades.
@@ -1851,19 +2020,19 @@ mod partes_de_embed {
         // Semana de 9 a 15: Sprint de 10 a 14 na faixa 0, Reunião no dia
         // 12 na faixa 1 — então TODO dia da semana tem duas faixas.
         let semana = &c.filhos[0].filhos[2];
-        // Duas faixas e o detalhe do dia, em todo dia da semana.
-        assert!(semana.filhos.iter().all(|d| d.filhos.len() == 3));
+        // Duas faixas, o detalhe e a data do dia, em todo dia da semana.
+        assert!(semana.filhos.iter().all(|d| d.filhos.len() == 4));
         // tags do calendário: [infra, urgente] → infra é índice 0.
-        assert_eq!(partes(&semana.filhos[1]), ["parte:evento--info", "parte:vazio", "parte:detalhe"]);
+        assert_eq!(partes(&semana.filhos[1]), ["parte:evento--info", "parte:vazio", "parte:detalhe", "parte:data"]);
         assert_eq!(semana.filhos[1].filhos[0].texto, "Sprint de agosto");
-        assert_eq!(partes(&semana.filhos[3]), ["parte:evento-continua", "parte:evento", "parte:detalhe"]);
+        assert_eq!(partes(&semana.filhos[3]), ["parte:evento-continua", "parte:evento", "parte:detalhe", "parte:data"]);
         // A continuação diz de que evento ela é (ciclo 310).
         assert_eq!(semana.filhos[3].filhos[0].texto, "Sprint de agosto");
         assert_eq!(semana.filhos[3].filhos[1].texto, "Reunião");
-        assert_eq!(partes(&semana.filhos[6]), ["parte:vazio", "parte:vazio", "parte:detalhe"]);
+        assert_eq!(partes(&semana.filhos[6]), ["parte:vazio", "parte:vazio", "parte:detalhe", "parte:data"]);
         // Semana de 2 a 8: Revisão (urgente, índice 1) só no dia 6.
         let semana2 = &c.filhos[0].filhos[1];
-        assert_eq!(partes(&semana2.filhos[4]), ["parte:evento--success", "parte:detalhe"]);
+        assert_eq!(partes(&semana2.filhos[4]), ["parte:evento--success", "parte:detalhe", "parte:data"]);
     }
 
     #[test]
@@ -1915,6 +2084,76 @@ mod partes_de_embed {
         assert!(ago[1].filhos.iter().flat_map(|s| &s.filhos).all(|d| d.tipo.resumo() != "parte:dia-hoje"));
         // Sem âncora, nada muda: o que `analisar` sempre fez.
         assert_eq!(partes_do_calendario(&dados, None, None), c.filhos);
+    }
+
+    fn dados_do(c: &Unidade) -> embed::CalendarEmbedData {
+        match embed::segment(&c.fonte.clone().unwrap()).remove(0) {
+            DocSegment::Embed(embed::EmbedData::Calendar(d)) => d,
+            outro => panic!("{outro:?}"),
+        }
+    }
+
+    #[test]
+    fn a_visao_semana_mostra_a_semana_da_ancora_sem_limite_de_faixas() {
+        let c = embed_de(
+            "{{ type: \"calendar\" }}\nentries:\n\
+             - date: 2026-08-12\n  title: Um\n  start_time: '09:00'\n\
+             - date: 2026-08-12\n  title: Dois\n\
+             - date: 2026-08-12\n  title: Três\n\
+             - date: 2026-08-12\n  title: Quatro\n\
+             {{ /calendar }}\n",
+        );
+        let dados = dados_do(&c);
+        let p = partes_do_calendario_na_visao(&dados, Visao::Semana, Some("2026-08-12"), Some("2026-08-13"));
+        assert_eq!(p[1].texto, "9 – 15 de agosto de 2026");
+        assert_eq!(p[1].filhos.len(), 1, "uma semana só");
+        let quarta = &p[1].filhos[0].filhos[3];
+        // Quatro faixas, nenhum "+N mais"; o horário vem na frente.
+        let nomes: Vec<String> = quarta.filhos.iter().map(|f| f.tipo.resumo()).collect();
+        assert_eq!(nomes.iter().filter(|n| n.starts_with("parte:evento")).count(), 4, "{nomes:?}");
+        assert!(!nomes.contains(&"parte:mais".to_string()));
+        // Os de dia inteiro primeiro; o com hora por último, com a hora.
+        assert_eq!(quarta.filhos[3].texto, "09:00 Um");
+        // A data viaja no dia; e o 13 é hoje.
+        assert_eq!(quarta.filhos.last().unwrap().texto, "2026-08-12");
+        assert_eq!(p[1].filhos[0].filhos[4].tipo.resumo(), "parte:dia-hoje");
+        // Semana que atravessa o mês.
+        let v = partes_do_calendario_na_visao(&dados, Visao::Semana, Some("2026-09-01"), None);
+        assert_eq!(v[1].texto, "30 de agosto – 5 de setembro de 2026");
+    }
+
+    #[test]
+    fn a_visao_dia_e_uma_agenda_com_os_de_dia_inteiro_primeiro() {
+        let c = embed_de(
+            "{{ type: \"calendar\" }}\nentries:\n\
+             - date: 2026-08-12\n  title: Almoço\n  start_time: '12:00'\n  end_time: '13:00'\n\
+             - date: 2026-08-12\n  title: Reunião\n  start_time: '09:30'\n  tags:\n  - infra\n\
+             - date: 2026-08-10\n  title: Sprint\n  end_date: 2026-08-14\n\
+             {{ /calendar }}\n",
+        );
+        let dados = dados_do(&c);
+        let p = partes_do_calendario_na_visao(&dados, Visao::Dia, Some("2026-08-12"), None);
+        let agenda = &p[1];
+        assert_eq!(agenda.texto, "quarta, 12 de agosto de 2026");
+        let resumo: Vec<(String, String)> = agenda
+            .filhos
+            .iter()
+            .map(|f| (f.tipo.resumo(), f.texto.clone()))
+            .collect();
+        assert_eq!(
+            resumo,
+            [
+                ("parte:compromisso".to_string(), "Sprint".to_string()),
+                ("parte:compromisso--info".to_string(), "Reunião".to_string()),
+                ("parte:compromisso".to_string(), "Almoço".to_string()),
+                ("parte:data".to_string(), "2026-08-12".to_string()),
+            ]
+        );
+        assert_eq!(agenda.filhos[0].filhos[0].texto, "dia inteiro");
+        assert_eq!(agenda.filhos[2].filhos[0].texto, "12:00–13:00");
+        // Dia sem nada.
+        let vazio = partes_do_calendario_na_visao(&dados, Visao::Dia, Some("2026-08-20"), None);
+        assert_eq!(vazio[1].filhos[0].tipo.resumo(), "parte:nada");
     }
 
     #[test]

@@ -293,6 +293,8 @@ const PARTES_SEM_ROTULO: &[&str] = &[
     "tags",
     "dia-hoje",
     "cabecalho",
+    "agenda",
+    "nada",
 ];
 
 /// A marca que abre a linha de cada tipo.
@@ -380,7 +382,10 @@ fn achatar_fileiras(linhas: Vec<Linha>, raiz: &Unidade) -> Vec<Linha> {
 /// coluna. Nos dois casos "12" ou "Reunião" soltos numa linha seriam
 /// cano, não conteúdo — e nem um lugar onde o `j` devesse parar.
 pub fn fica_fora_da_tela(nome: &str) -> bool {
-    matches!(nome, "inicio" | "duracao" | "evento-continua" | "vazio" | "mais" | "variante" | "detalhe")
+    matches!(
+        nome,
+        "inicio" | "duracao" | "evento-continua" | "vazio" | "mais" | "variante" | "detalhe" | "data" | "hora"
+    )
         || nome == "evento"
         || nome.starts_with("evento--")
         // As tags de uma célula multiselect (ciclo 308): quem as desenha
@@ -401,7 +406,7 @@ pub fn fica_fora_da_tela(nome: &str) -> bool {
 /// linha — é desenhado —, mas é régua, não conteúdo, e o cursor passa
 /// por cima dele.
 pub fn cursor_passa_por_cima(nome: &str) -> bool {
-    (fica_fora_da_tela(nome) && !e_evento(nome)) || nome == "eixo" || nome == "cabecalho"
+    (fica_fora_da_tela(nome) && !e_evento(nome)) || matches!(nome, "eixo" | "cabecalho" | "nada")
 }
 
 /// A barra vizinha NO TEMPO, com o cursor numa barra do cronograma
@@ -461,15 +466,21 @@ pub fn ano_e_mes(rotulo: &str) -> Option<(i32, u32)> {
 /// Os dias de um "mes" do calendário, na ordem da grade, como
 /// `(data, semana, dia, é_do_mês)`.
 fn dias_do_mes(mes: &Unidade) -> Vec<(String, usize, usize, bool)> {
-    let Some((ano, m)) = ano_e_mes(&mes.texto) else { return Vec::new() };
-    anotadinho_core::calendario::month_cells(ano, m)
-        .into_iter()
+    // Cada dia carrega a própria data numa parte "data" (ciclo 316): numa
+    // semana solta (a visão Semana), a posição do dia não diz mais a data.
+    mes.filhos
+        .iter()
         .enumerate()
-        // O núcleo só corta semanas do FIM da grade, então a célula `i`
-        // é a semana `i / 7` enquanto essa semana existir na árvore.
-        .filter(|(i, _)| i / 7 < mes.filhos.len())
-        .map(|(i, (y, mm, d, do_mes))| {
-            (anotadinho_core::date_util::format_date(y, mm, d), i / 7, i % 7, do_mes)
+        .flat_map(|(s, semana)| {
+            semana.filhos.iter().enumerate().filter_map(move |(d, dia)| {
+                let Tipo::Parte { nome, .. } = &dia.tipo else { return None };
+                let data = dia
+                    .filhos
+                    .iter()
+                    .rev()
+                    .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "data"))?;
+                Some((data.texto.clone(), s, d, nome != "dia-fora"))
+            })
         })
         .collect()
 }
@@ -487,9 +498,43 @@ pub fn calendario_do_cursor(raiz: &Unidade, cursor: &[usize]) -> Option<Caminho>
 pub fn data_do_cursor(raiz: &Unidade, cursor: &[usize]) -> Option<String> {
     let embed = calendario_do_cursor(raiz, cursor)?;
     let k = embed.len();
+    // Na agenda do Dia, a data é a da agenda.
+    if let Some(agenda) = cursor.get(k).and_then(|m| raiz.em(&embed)?.filhos.get(*m)) {
+        if matches!(&agenda.tipo, Tipo::Parte { nome, .. } if nome == "agenda") {
+            return agenda
+                .filhos
+                .iter()
+                .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "data"))
+                .map(|f| f.texto.clone());
+        }
+    }
     let (m, s, d) = (*cursor.get(k)?, *cursor.get(k + 1)?, *cursor.get(k + 2)?);
     let mes = raiz.em(&embed)?.filhos.get(m)?;
     dias_do_mes(mes).into_iter().find(|(_, ss, dd, _)| (*ss, *dd) == (s, d)).map(|x| x.0)
+}
+
+/// As datas que o calendário mostra agora, em ordem: os dias do mês (ou
+/// da semana) da grade, ou o dia da agenda (ciclo 316).
+pub fn datas_visiveis(raiz: &Unidade, embed: &[usize]) -> Vec<String> {
+    let Some(cal) = raiz.em(embed) else { return Vec::new() };
+    let mut datas: Vec<String> = cal
+        .filhos
+        .iter()
+        .flat_map(|parte| match &parte.tipo {
+            Tipo::Parte { nome, .. } if nome == "mes" => {
+                dias_do_mes(parte).into_iter().filter(|x| x.3).map(|x| x.0).collect()
+            }
+            Tipo::Parte { nome, .. } if nome == "agenda" => parte
+                .filhos
+                .iter()
+                .filter(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "data"))
+                .map(|f| f.texto.clone())
+                .collect(),
+            _ => Vec::new(),
+        })
+        .collect();
+    datas.sort();
+    datas
 }
 
 /// O caminho do DIA com essa data num calendário — na grade do próprio

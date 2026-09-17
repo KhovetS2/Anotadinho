@@ -79,6 +79,8 @@ pub struct Estado {
     /// A âncora de cada calendário da página aberta, pelo caminho do
     /// embed — o mês que ele mostra. Ausente é "o mês de hoje".
     pub ancoras: std::collections::HashMap<Caminho, String>,
+    /// A visão de cada calendário (ciclo 316). Ausente é Mês.
+    pub visoes: std::collections::HashMap<Caminho, anotadinho_core::analise::Visao>,
     /// A barra está capturando tecla?
     ///
     /// Separado do termo de propósito. Na primeira versão os dois eram o
@@ -117,6 +119,7 @@ impl Estado {
             tema: Tema::novo("escuro"),
             hoje: None,
             ancoras: std::collections::HashMap::new(),
+            visoes: std::collections::HashMap::new(),
         }
     }
 
@@ -143,8 +146,13 @@ impl Estado {
             }
             let Some(dados) = u.fonte.as_deref().and_then(dados_do_calendario) else { continue };
             let ancora = self.ancoras.get(&vec![i]).cloned().unwrap_or_else(|| hoje.clone());
-            self.arvore.filhos[i].filhos =
-                anotadinho_core::analise::partes_do_calendario(&dados, Some(&ancora), Some(&hoje));
+            let visao = self.visoes.get(&vec![i]).copied().unwrap_or_default();
+            self.arvore.filhos[i].filhos = anotadinho_core::analise::partes_do_calendario_na_visao(
+                &dados,
+                visao,
+                Some(&ancora),
+                Some(&hoje),
+            );
         }
         self.linhas = tela::linhas(&self.arvore);
         if self.arvore.em(&self.cursor).is_none() {
@@ -177,6 +185,7 @@ impl Estado {
         self.topo = 0;
         // Outra página, outros calendários: âncoras voltam pra hoje.
         self.ancoras.clear();
+        self.visoes.clear();
         self.ancorar_calendarios();
         self.cursor = tela::primeiro(&self.arvore).unwrap_or_default();
     }
@@ -760,7 +769,24 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                     &e.tema,
                 )]]
             } else if no_calendario && nome_da_parte == "cabecalho" {
-                vec![vec![linha_do_cabecalho_do_calendario(l, &e.tema, largura_conteudo)]]
+                let visao = e
+                    .visoes
+                    .get(l.dono_embed.as_deref().unwrap_or(&[]))
+                    .copied()
+                    .unwrap_or_default();
+                vec![vec![linha_do_cabecalho_do_calendario(l, visao, &e.tema, largura_conteudo)]]
+            } else if no_calendario && nome_da_parte == "agenda" && !e.dobrados.contains(&l.caminho) {
+                vec![vec![Line::from(vec![
+                    Span::styled("  ".repeat(l.nivel), Style::default()),
+                    Span::styled(l.texto.clone(), e.tema.estilo(Realce::TituloCartao)),
+                ])]]
+            } else if no_calendario && nome_da_parte.starts_with("compromisso") {
+                vec![vec![linha_do_compromisso(l, &e.arvore, &e.tema, largura_conteudo, Some(&e.cursor))]]
+            } else if no_calendario && nome_da_parte == "nada" {
+                vec![vec![Line::from(vec![
+                    Span::styled("  ".repeat(l.nivel), Style::default()),
+                    Span::styled(l.texto.clone(), e.tema.estilo(Realce::Dica)),
+                ])]]
             } else if no_calendario
                 && nome_da_parte == "mes"
                 && !e.dobrados.contains(&l.caminho)
@@ -1280,15 +1306,60 @@ fn linhas_do_mes(l: &crate::tela::Linha, tema: &Tema, largura: usize) -> Vec<Lin
 /// O cabeçalho do calendário ancorado (ciclo 315): as teclas que fazem
 /// o papel dos controles da janela (‹ › e "Hoje") e a contagem de
 /// eventos, à direita como o `.calendar-grid__count`.
-fn linha_do_cabecalho_do_calendario(l: &crate::tela::Linha, tema: &Tema, largura: usize) -> Line<'static> {
+fn linha_do_cabecalho_do_calendario(
+    l: &crate::tela::Linha,
+    visao: anotadinho_core::analise::Visao,
+    tema: &Tema,
+    largura: usize,
+) -> Line<'static> {
     let recuo = "  ".repeat(l.nivel);
-    let teclas = "[ ‹   ] ›   t hoje";
+    let teclas = format!("[ ‹   ] ›   t hoje   m {}", visao.rotulo());
     let usado = recuo.chars().count() + teclas.chars().count() + l.texto.chars().count();
     Line::from(vec![
         Span::styled(recuo, Style::default()),
-        Span::styled(teclas, tema.estilo(Realce::Marca)),
+        Span::styled(teclas.clone(), tema.estilo(Realce::Marca)),
         Span::styled(" ".repeat(largura.saturating_sub(usado + 1).max(2)), Style::default()),
         Span::styled(l.texto.clone(), tema.estilo(Realce::Marca)),
+    ])
+}
+
+/// Um compromisso da agenda do Dia (ciclo 316): a hora (ou "dia
+/// inteiro") numa coluna fixa e o título numa pílula na cor do evento,
+/// até a borda — a lista que a janela desenha na visão Dia.
+fn linha_do_compromisso(
+    l: &crate::tela::Linha,
+    arvore: &Unidade,
+    tema: &Tema,
+    largura: usize,
+    cursor: Option<&[usize]>,
+) -> Line<'static> {
+    let recuo = "  ".repeat(l.nivel);
+    let hora = arvore
+        .em(&l.caminho)
+        .and_then(|u| {
+            u.filhos
+                .iter()
+                .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "hora"))
+                .map(|f| f.texto.clone())
+        })
+        .unwrap_or_default();
+    let nome = match &l.tipo {
+        Tipo::Parte { nome, .. } => nome.clone(),
+        _ => String::new(),
+    };
+    let aceso = cursor.is_some_and(|c| l.mostra(c));
+    let estilo = if aceso {
+        tema.estilo(Realce::Cursor)
+    } else {
+        tema.pilula(papel_do_evento(&nome.replacen("compromisso", "evento", 1)))
+    };
+    let coluna_hora = 13;
+    let resto = largura.saturating_sub(recuo.len() + coluna_hora + 1).max(4);
+    Line::from(vec![
+        Span::styled(recuo, Style::default()),
+        Span::styled(format!("{hora:<coluna_hora$}"), tema.estilo(Realce::Marca)),
+        Span::styled(" ", Style::default()),
+        Span::styled(caber(&format!(" {}", l.texto), resto), estilo),
     ])
 }
 
@@ -1330,7 +1401,7 @@ fn linhas_da_semana(
         _ => String::new(),
     };
     let faixas_de = |dia: &Unidade| -> Vec<Unidade> {
-        dia.filhos.iter().filter(|f| !matches!(nome(f).as_str(), "mais" | "detalhe")).cloned().collect()
+        dia.filhos.iter().filter(|f| !matches!(nome(f).as_str(), "mais" | "detalhe" | "data")).cloned().collect()
     };
     let dias: Vec<&Unidade> = semana.filhos.iter().collect();
     let mut fora = Vec::new();
@@ -1811,23 +1882,38 @@ fn outro_mes(data: &str, delta: i32) -> Option<String> {
     Some(format_date(y, m, 1))
 }
 
-/// As teclas do calendário ancorado (ciclo 315): `[` e `]` trocam de mês
-/// (os botões ‹ › da janela), `t` volta pro mês de hoje (o "Hoje").
+/// As teclas do calendário ancorado (ciclos 315 e 316): `[` e `]` andam
+/// pra trás e pra frente (os botões ‹ › da janela — um mês, uma semana ou
+/// um dia, conforme a visão), `t` volta pra hoje, `m` troca a visão
+/// (Mês → Semana → Dia, o seletor da janela).
 ///
 /// Só com o cursor dentro de um calendário e com o dia de hoje conhecido;
-/// fora disso a tecla segue pro resto. O cursor vai pro mês, pra grade
-/// nova estar à vista.
+/// fora disso a tecla segue pro resto. O cursor vai pro mês (ou pra
+/// agenda), pra grade nova estar à vista.
 fn tecla_do_calendario(e: &mut Estado, tecla: &str) -> bool {
-    if !matches!(tecla, "[" | "]" | "t") {
+    use anotadinho_core::analise::Visao;
+    if !matches!(tecla, "[" | "]" | "t" | "m") {
         return false;
     }
     let (Some(hoje), Some(embed)) = (e.hoje.clone(), tela::calendario_do_cursor(&e.arvore, &e.cursor)) else {
         return false;
     };
     let atual = e.ancoras.get(&embed).cloned().unwrap_or_else(|| hoje.clone());
+    let visao = e.visoes.get(&embed).copied().unwrap_or_default();
+    let passo = |delta: i32| match visao {
+        Visao::Mes => outro_mes(&atual, delta),
+        Visao::Semana => anotadinho_core::date_util::add_days(&atual, 7 * delta as i64),
+        Visao::Dia => anotadinho_core::date_util::add_days(&atual, delta as i64),
+    };
     let nova = match tecla {
-        "[" => outro_mes(&atual, -1),
-        "]" => outro_mes(&atual, 1),
+        "[" => passo(-1),
+        "]" => passo(1),
+        "m" => {
+            e.visoes.insert(embed.clone(), visao.seguinte());
+            // Trocar de visão não troca de dia: com o cursor num dia ou
+            // evento, a semana ou a agenda são as DELE.
+            Some(tela::data_do_cursor(&e.arvore, &e.cursor).unwrap_or(atual.clone()))
+        }
         _ => Some(hoje),
     };
     let Some(nova) = nova else { return true };
@@ -1839,15 +1925,21 @@ fn tecla_do_calendario(e: &mut Estado, tecla: &str) -> bool {
     true
 }
 
-/// Com o calendário ancorado, `h`/`l` num evento sem vizinho no mês
-/// visível pulam pro próximo mês que tem evento (ciclo 315) — a
-/// navegação entre meses do ciclo 312, agora que só um mês está na tela.
+/// Com o calendário ancorado, `h`/`l` num evento sem vizinho no que está
+/// na tela pulam pro próximo dia com evento FORA dela (ciclos 315 e 316):
+/// o próximo mês na visão Mês, a próxima semana na Semana, o próximo dia
+/// na agenda do Dia. A âncora vai pra esse dia, e o cursor pousa no
+/// primeiro evento dele.
 fn pular_pro_mes_com_evento(e: &mut Estado, adiante: bool) -> bool {
     let Some(embed) = tela::calendario_do_cursor(&e.arvore, &e.cursor) else { return false };
     let Some(dados) = e.arvore.em(&embed).and_then(|u| u.fonte.as_deref()).and_then(dados_do_calendario) else {
         return false;
     };
-    let Some(hoje_no_cursor) = tela::data_do_cursor(&e.arvore, &e.cursor) else { return false };
+    // Os dias que estão na tela: os do mês (ou da semana), ou o da agenda.
+    let visiveis = tela::datas_visiveis(&e.arvore, &embed);
+    let (Some(primeiro), Some(ultimo)) = (visiveis.first().cloned(), visiveis.last().cloned()) else {
+        return false;
+    };
     // Todo dia tocado por algum evento, em ordem.
     let mut datas = std::collections::BTreeSet::new();
     for ev in &dados.entries {
@@ -1860,14 +1952,24 @@ fn pular_pro_mes_com_evento(e: &mut Estado, adiante: bool) -> bool {
             }
         }
     }
-    let mes_atual = &hoje_no_cursor[..7];
     let alvo = if adiante {
-        datas.iter().find(|d| d[..7] > *mes_atual).cloned()
+        datas.iter().find(|d| **d > ultimo).cloned()
     } else {
-        datas.iter().rev().find(|d| d[..7] < *mes_atual).cloned()
+        datas.iter().rev().find(|d| **d < primeiro).cloned()
     };
     let Some(alvo) = alvo else { return false };
     e.ancorar(&embed, alvo.clone());
+    let mut agenda = embed.clone();
+    agenda.push(1);
+    let e_agenda = matches!(
+        e.arvore.em(&agenda).map(|u| &u.tipo),
+        Some(Tipo::Parte { nome, .. }) if nome == "agenda"
+    );
+    if e_agenda {
+        agenda.push(0);
+        e.cursor = agenda;
+        return true;
+    }
     let Some(dia) = tela::dia_com_data(&e.arvore, &embed, &alvo) else { return false };
     let Some(u) = e.arvore.em(&dia) else { return false };
     let evento = u
@@ -1927,11 +2029,26 @@ fn comando_de_vim(e: &mut Estado, c: Comando) {
     }
     // Num evento do calendário, `h`/`l` andam de DIA com o evento
     // selecionado (ciclo 311) — ver `tela::evento_ao_lado`.
+    let num_compromisso = e
+        .arvore
+        .em(&e.cursor)
+        .is_some_and(|u| matches!(&u.tipo, Tipo::Parte { nome, .. } if nome.starts_with("compromisso")));
     let num_evento = e
         .arvore
         .em(&e.cursor)
         .is_some_and(|u| matches!(&u.tipo, Tipo::Parte { nome, .. } if tela::e_evento(nome)))
         && tela::calendario_do_cursor(&e.arvore, &e.cursor).is_some();
+    // Na agenda do Dia, `h`/`l` vão pro dia anterior/seguinte com evento.
+    if matches!(mov, Movimento::Direita | Movimento::Esquerda) && num_compromisso {
+        let adiante = matches!(mov, Movimento::Direita);
+        for _ in 0..vezes.max(1) {
+            if !pular_pro_mes_com_evento(e, adiante) {
+                break;
+            }
+        }
+        e.seguir_cursor();
+        return;
+    }
     if matches!(mov, Movimento::Direita | Movimento::Esquerda) && num_evento {
         let adiante = matches!(mov, Movimento::Direita);
         for _ in 0..vezes.max(1) {
@@ -3527,6 +3644,87 @@ mod testes {
         // Nada antes de agosto: o cursor fica.
         tecla(&mut e, "h");
         assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Revisão");
+    }
+
+    /// Um calendário com um dia cheio, pra as visões.
+    fn com_agenda() -> Unidade {
+        analisar(
+            "{{ type: \"calendar\" }}\nentries:\n\
+             - date: 2026-08-10\n  title: Sprint\n  end_date: 2026-08-14\n\
+             - date: 2026-08-12\n  title: Almoço\n  start_time: '12:00'\n  end_time: '13:00'\n\
+             - date: 2026-08-12\n  title: Reunião\n  start_time: '09:30'\n  tags:\n  - infra\n\
+             - date: 2026-08-19\n  title: Retro\n\
+             {{ /calendar }}\n",
+        )
+    }
+
+    #[test]
+    fn m_troca_a_visao_mes_semana_dia_na_data_do_cursor() {
+        let mut e = Estado::novo(paginas(), com_agenda()).com_hoje("2026-08-20");
+        e.foco = Foco::Conteudo;
+        // Quarta, 12 de agosto, na grade do mês: embed → mês → semana 9–15.
+        e.cursor = vec![0, 1, 2, 3];
+        assert_eq!(tela::data_do_cursor(&e.arvore, &e.cursor).as_deref(), Some("2026-08-12"));
+        tecla(&mut e, "m");
+        let tudo = desenho(&mut e, 140, 40).join("\n");
+        assert!(tudo.contains("9 – 15 de agosto de 2026"), "semana do dia 12:\n{tudo}");
+        assert!(tudo.contains("m Semana"), "{tudo}");
+        assert!(tudo.contains("09:30 Reun"), "o horário vem na frente na semana:\n{tudo}");
+        let linhas = desenho(&mut e, 140, 40);
+        let pos = |t: &str| linhas.iter().position(|l| l.contains(t)).unwrap();
+        assert!(pos("09:30 Reun") < pos("12:00 Almo"), "na semana, pela hora:\n{tudo}");
+        // A semana anda de 7 em 7.
+        tecla(&mut e, "]");
+        assert!(desenho(&mut e, 140, 40).join("\n").contains("16 – 22 de agosto de 2026"));
+        tecla(&mut e, "[");
+        // Dia: a agenda do dia em que o cursor está (o mês ancora no dia 12
+        // de novo, e o cursor foi pro "mes" da semana — sem dia, fica a
+        // âncora).
+        e.cursor = vec![0, 1, 0, 3];
+        tecla(&mut e, "m");
+        let tudo = desenho(&mut e, 140, 40).join("\n");
+        assert!(tudo.contains("quarta, 12 de agosto de 2026"), "{tudo}");
+        assert!(tudo.contains("m Dia"), "{tudo}");
+        tecla(&mut e, "m");
+        assert!(desenho(&mut e, 140, 40).join("\n").contains("Agosto 2026"));
+    }
+
+    #[test]
+    fn a_agenda_do_dia_lista_na_ordem_e_anda_entre_dias() {
+        let mut e = Estado::novo(paginas(), com_agenda()).com_hoje("2026-08-12");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0];
+        tecla(&mut e, "m");
+        tecla(&mut e, "m");
+        let linhas = desenho(&mut e, 120, 30);
+        let tudo = linhas.join("\n");
+        // Dia inteiro primeiro, depois pela hora.
+        let pos = |t: &str| linhas.iter().position(|l| l.contains(t)).unwrap_or_else(|| panic!("{t} sumiu:\n{tudo}"));
+        assert!(pos("Sprint") < pos("Reunião") && pos("Reunião") < pos("Almoço"), "{tudo}");
+        assert!(linhas[pos("Sprint")].contains("dia inteiro"));
+        assert!(linhas[pos("Reunião")].contains("09:30"));
+        assert!(linhas[pos("Almoço")].contains("12:00–13:00"));
+        // Enter na agenda pousa no primeiro; j anda; o detalhe acompanha.
+        tecla(&mut e, "Enter");
+        let titulo = |e: &Estado| e.arvore.em(&e.cursor).unwrap().texto.clone();
+        assert_eq!(titulo(&e), "Sprint");
+        tecla(&mut e, "j");
+        assert_eq!(titulo(&e), "Reunião");
+        assert!(desenho(&mut e, 120, 30).join("\n").contains("Reunião · 12/08/2026 · 09:30 · #infra"));
+        // `l`: próximo dia com evento é o 13 (a sprint continua).
+        tecla(&mut e, "l");
+        assert!(desenho(&mut e, 120, 30).join("\n").contains("quinta, 13 de agosto de 2026"));
+        assert_eq!(titulo(&e), "Sprint");
+        // Do 13, `l` pula 15–18 vazios... o 14 ainda tem a sprint.
+        tecla(&mut e, "l");
+        assert!(desenho(&mut e, 120, 30).join("\n").contains("sexta, 14 de agosto de 2026"));
+        tecla(&mut e, "l");
+        assert!(desenho(&mut e, 120, 30).join("\n").contains("quarta, 19 de agosto de 2026"));
+        assert_eq!(titulo(&e), "Retro");
+        // Dia sem nada: "sem eventos", e `]` anda um dia.
+        tecla(&mut e, "]");
+        let tudo = desenho(&mut e, 120, 30).join("\n");
+        assert!(tudo.contains("quinta, 20 de agosto de 2026") && tudo.contains("sem eventos"), "{tudo}");
     }
 
     #[test]

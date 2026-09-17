@@ -47,6 +47,18 @@ pub struct Bar {
 /// horas pra mostrar o horário de outro jeito) passa `false`, todo evento
 /// vira barra independente de ter horário ou não.
 pub fn pack_days(entries: &[CalendarEntry], day_dates: &[String], exclude_timed: bool) -> (Vec<Bar>, Vec<usize>) {
+    pack_days_ate(entries, day_dates, exclude_timed, MAX_LANES)
+}
+
+/// `pack_days` com o limite de faixas dado (ciclo 316). A visão Semana
+/// do terminal não tem grade de horas pra onde mandar o excesso, então
+/// mostra todas as faixas em vez de "+N mais".
+pub fn pack_days_ate(
+    entries: &[CalendarEntry],
+    day_dates: &[String],
+    exclude_timed: bool,
+    max_lanes: usize,
+) -> (Vec<Bar>, Vec<usize>) {
     let n = day_dates.len();
     let mut overflow = vec![0usize; n];
     if n == 0 {
@@ -88,7 +100,7 @@ pub fn pack_days(entries: &[CalendarEntry], day_dates: &[String], exclude_timed:
             }
         }
         if !placed {
-            if lane_end.len() < MAX_LANES {
+            if lane_end.len() < max_lanes {
                 lane_end.push(end_col as i64);
                 bars.push(Bar { entry_idx, lane: lane_end.len() - 1, start_col, end_col });
             } else {
