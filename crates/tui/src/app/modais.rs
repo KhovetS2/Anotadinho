@@ -271,6 +271,16 @@ pub enum Modal {
     Prompt(SeletorDePrompt),
     /// Um texto longo pra ler, com a rolagem (o "Visualizar").
     Visualizar(String, usize),
+    /// Um editor de várias linhas (ciclo 390): Enter quebra a linha, as
+    /// setas andam, Esc grava e fecha, Ctrl+C desiste.
+    EditorDeTexto {
+        /// O título.
+        titulo: String,
+        /// O texto e o cursor.
+        campo: Campo,
+        /// O que gravar.
+        alvo: AlvoDoTexto,
+    },
     /// A página mudou no disco enquanto se editava (ciclo 363), como a
     /// barra de conflito da janela.
     Conflito(Conflito),
@@ -337,6 +347,46 @@ pub enum AlvoDoDetalhe {
         /// O item no arquivo.
         indice: usize,
     },
+}
+
+/// O que o [`Modal::EditorDeTexto`] grava.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AlvoDoTexto {
+    /// O miolo de um bloco de código, entre as cercas.
+    Codigo {
+        /// O markdown que o contém.
+        hospedeiro: super::markdown::Hospedeiro,
+        /// Onde o bloco começa.
+        inicio: usize,
+        /// A cerca de abertura (```` ```rust ````).
+        cerca: String,
+        /// A de fechamento.
+        fecha: String,
+    },
+}
+
+/// Move o cursor de texto uma linha acima ou abaixo, mantendo a coluna.
+fn cursor_vertical(campo: &mut Campo, descer: bool) {
+    let chars: Vec<char> = campo.texto.chars().collect();
+    let c = campo.cursor.min(chars.len());
+    let inicio_da_linha = |p: usize| chars[..p].iter().rposition(|x| *x == '\n').map_or(0, |i| i + 1);
+    let fim_da_linha = |p: usize| chars[p..].iter().position(|x| *x == '\n').map_or(chars.len(), |i| p + i);
+    let ini = inicio_da_linha(c);
+    let coluna = c - ini;
+    if descer {
+        let fim = fim_da_linha(c);
+        if fim >= chars.len() {
+            return;
+        }
+        let prox = fim + 1;
+        campo.cursor = (prox + coluna).min(fim_da_linha(prox));
+    } else {
+        if ini == 0 {
+            return;
+        }
+        let ant = inicio_da_linha(ini - 1);
+        campo.cursor = (ant + coluna).min(ini - 1);
+    }
 }
 
 /// O conflito entre o que se escreveu e o que está no disco.
@@ -980,6 +1030,45 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             }
             e.modal = Some(Modal::Detalhe { titulo, form, alvo });
         }
+        Modal::EditorDeTexto { titulo, mut campo, alvo } => {
+            match tecla {
+                "Escape" => {
+                    match &alvo {
+                        AlvoDoTexto::Codigo { hospedeiro, inicio, cerca, fecha } => {
+                            super::markdown::gravar_codigo(e, hospedeiro, *inicio, cerca, fecha, &campo.texto)
+                        }
+                    }
+                    return;
+                }
+                "Ctrl+c" => {
+                    e.aviso = Some("edição descartada".into());
+                    return;
+                }
+                "Enter" => {
+                    campo.tecla("\n");
+                }
+                "Tab" => {
+                    campo.tecla(" ");
+                    campo.tecla(" ");
+                    campo.tecla(" ");
+                    campo.tecla(" ");
+                }
+                "ArrowUp" | "ArrowDown" => cursor_vertical(&mut campo, tecla == "ArrowDown"),
+                "Home" | "End" => {
+                    let chars: Vec<char> = campo.texto.chars().collect();
+                    let c = campo.cursor.min(chars.len());
+                    campo.cursor = if tecla == "Home" {
+                        chars[..c].iter().rposition(|x| *x == '\n').map_or(0, |i| i + 1)
+                    } else {
+                        chars[c..].iter().position(|x| *x == '\n').map_or(chars.len(), |i| c + i)
+                    };
+                }
+                outra => {
+                    campo.tecla(outra);
+                }
+            }
+            e.modal = Some(Modal::EditorDeTexto { titulo, campo, alvo });
+        }
         Modal::Conflito(mut c) => {
             match tecla {
                 "j" | "ArrowDown" | "l" | "ArrowRight" | "Tab" => c.opcao = (c.opcao + 1) % 3,
@@ -1203,6 +1292,42 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
             let dentro = componentes::desenhar_modal(f, area, titulo, rodape, t);
             let cursor = form.linha_do_cursor();
             let rolagem = cursor.saturating_sub(dentro.height.saturating_sub(2) as usize);
+            f.render_widget(Paragraph::new(linhas).scroll((rolagem as u16, 0)), dentro);
+        }
+        Modal::EditorDeTexto { titulo, campo, .. } => {
+            let area = componentes::area_do_modal(tela, 100, tela.height.saturating_sub(4));
+            let dentro = componentes::desenhar_modal(f, area, titulo, "Enter quebra linha · Esc grava · Ctrl+C desiste", t);
+            let texto = Style::default().fg(t.var("text-primary"));
+            // Uma linha da tela por linha do texto, com o número apagado e
+            // o cursor em vídeo inverso.
+            let invertido = Style::default().fg(t.var("bg-base")).bg(t.var("text-primary"));
+            let chars: Vec<char> = campo.texto.chars().collect();
+            let mut linhas: Vec<Line<'static>> = Vec::new();
+            let mut atual: Vec<Span<'static>> = vec![Span::styled("  1 ", Style::default().fg(t.var("text-muted")))];
+            let mut n: usize = 1;
+            let mut linha_do_cursor: usize = 0;
+            for (i, ch) in chars.iter().enumerate() {
+                if i == campo.cursor {
+                    linha_do_cursor = n - 1;
+                    atual.push(Span::styled(if *ch == '\n' { " ".to_string() } else { ch.to_string() }, invertido));
+                    if *ch != '\n' {
+                        continue;
+                    }
+                }
+                if *ch == '\n' {
+                    linhas.push(Line::from(std::mem::take(&mut atual)));
+                    n += 1;
+                    atual = vec![Span::styled(format!("{n:>3} "), Style::default().fg(t.var("text-muted")))];
+                } else if i != campo.cursor {
+                    atual.push(Span::styled(ch.to_string(), texto));
+                }
+            }
+            if campo.cursor >= chars.len() {
+                linha_do_cursor = n - 1;
+                atual.push(Span::styled(" ", invertido));
+            }
+            linhas.push(Line::from(atual));
+            let rolagem = linha_do_cursor.saturating_sub(dentro.height.saturating_sub(1) as usize);
             f.render_widget(Paragraph::new(linhas).scroll((rolagem as u16, 0)), dentro);
         }
         Modal::Conflito(c) => {

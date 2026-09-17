@@ -9936,4 +9936,35 @@ mod testes {
         tecla(&mut e, "Enter");
         assert!(matches!(e.modal, Some(Modal::Detalhe { alvo: modais::AlvoDoDetalhe::TabelaMd { .. }, .. })));
     }
+
+    // --- Ciclo 390: editar bloco de código ------------------------------------------
+
+    #[test]
+    fn bloco_de_codigo_abre_o_editor_de_varias_linhas_e_grava() {
+        let mut e = pagina_com("# T\n\n```rust\nfn a() {}\n```\n\nFim.\n");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![1];
+        tecla(&mut e, "Enter");
+        let Some(Modal::EditorDeTexto { campo, titulo, .. }) = &e.modal else { panic!("{:?} {:?}", e.modal, e.aviso) };
+        assert_eq!((campo.texto.as_str(), titulo.as_str()), ("fn a() {}", "Código rust"));
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("  1 fn a() {}") && tela.contains("Esc grava"), "{tela}");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "fn b() {}");
+        tecla(&mut e, "ArrowUp");
+        tecla(&mut e, "Home");
+        digitar(&mut e, "pub ");
+        tecla(&mut e, "ArrowDown");
+        tecla(&mut e, "End");
+        digitar(&mut e, " // fim");
+        tecla(&mut e, "Escape");
+        let texto = e.gravacao.clone().expect("não gravou");
+        assert!(texto.contains("```rust\npub fn a() {}\nfn b() {} // fim\n```\n\nFim."), "{texto}");
+        // Ctrl+C desiste.
+        e.gravacao = None;
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "lixo");
+        tecla(&mut e, "Ctrl+c");
+        assert!(e.gravacao.is_none() && e.modal.is_none());
+    }
 }

@@ -343,6 +343,20 @@ pub(super) fn no_markdown(e: &mut Estado, ed: Edicao, h: Hospedeiro) -> bool {
         abrir_tabela_md(e, h, faixa.start);
         return true;
     }
+    // Bloco de código (ciclo 390): o editor de várias linhas, como o
+    // `<pre>` editável da janela.
+    if let (Edicao::Reescrever { limpar, .. }, Tipo::Codigo(_)) = (&ed, &tipo) {
+        let linhas: Vec<&str> = fonte.lines().collect();
+        let cerca = linhas.first().copied().unwrap_or("```").to_string();
+        let miolo = if linhas.len() >= 2 { linhas[1..linhas.len() - 1].join("\n") } else { String::new() };
+        let fecha = linhas.last().filter(|_| linhas.len() >= 2).copied().unwrap_or("```").to_string();
+        e.modal = Some(super::modais::Modal::EditorDeTexto {
+            titulo: format!("Código {}", cerca.trim_start_matches(['`', '~'])).trim().to_string(),
+            campo: crate::componentes::Campo::com(if *limpar { String::new() } else { miolo }),
+            alvo: super::modais::AlvoDoTexto::Codigo { hospedeiro: h, inicio: faixa.start, cerca, fecha },
+        });
+        return true;
+    }
     match ed {
         Edicao::Reescrever { limpar, no_fim } => {
             let Some((prefixo, texto)) = decomposto else {
@@ -862,10 +876,31 @@ pub(super) fn aplicar_tabela_md(e: &mut Estado, h: &Hospedeiro, inicio: usize, f
 pub(super) fn enter_na_tabela_md(e: &mut Estado) -> bool {
     let Some(h) = hospedeiro_do_cursor(e) else { return false };
     let Some(u) = e.arvore.em(&e.cursor) else { return false };
+    // Enter num bloco de código abre o editor (ciclo 390).
+    if matches!(u.tipo, Tipo::Codigo(_)) {
+        return no_markdown(e, Edicao::Reescrever { limpar: false, no_fim: true }, h);
+    }
     if u.tipo != Tipo::Paragrafo || anotadinho_core::tabela_md::ler(&u.texto).is_none() {
         return false;
     }
     let Some(inicio) = u.intervalo.as_ref().map(|r| r.start) else { return false };
     abrir_tabela_md(e, h, inicio);
     true
+}
+
+/// Grava o código editado no bloco (ciclo 390).
+pub(super) fn gravar_codigo(e: &mut Estado, h: &Hospedeiro, inicio: usize, cerca: &str, fecha: &str, texto: &str) {
+    let Some(corpo_atual) = corpo(e, h) else { return };
+    let Some(faixa) = bloco_no_inicio(e, h, inicio) else {
+        e.aviso = Some("o bloco sumiu do arquivo".into());
+        return;
+    };
+    let mut novo = corpo_atual.clone();
+    let miolo = texto.trim_end_matches('\n');
+    let bloco = if miolo.is_empty() { format!("{cerca}\n{fecha}") } else { format!("{cerca}\n{miolo}\n{fecha}") };
+    novo.replace_range(faixa, &bloco);
+    if gravar(e, h, novo) {
+        e.aviso = Some("código gravado".into());
+        e.seguir_cursor();
+    }
 }

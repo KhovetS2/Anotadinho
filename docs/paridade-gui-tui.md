@@ -52,6 +52,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 |---|---|---|
 | Editar texto dos blocos | ✅ | 334 (modo vim) |
 | Tabela markdown comum (`\| a \| b \|`): ver em grade e editar | ✅ | 389 — Enter ou `A` abre colunas e linhas |
+| Editar bloco de código (e Mermaid) | ✅ | 390 — Enter ou `i`/`A` abre o editor de várias linhas; Esc grava |
 | Vim mode liga/desliga (sem vim: digitar edita direto) | ✅ | 376 — Enter cria o seguinte, Backspace apaga, Delete apaga o bloco, Ctrl+Z/Y |
 | Menu `/` (inserir bloco e embed) | ✅ | 347 — `/` num bloco novo vazio, ou "Inserir bloco ou embed…" |
 | Barra de seleção (negrito, itálico, link, cor) | ✅ | 357 — na inserção: `Ctrl+B` negrito, `Ctrl+T` menu Formatar (itálico, riscado, código, link, cor, fundo) |
