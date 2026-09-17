@@ -15,6 +15,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
+mod edicao;
+pub use edicao::{AcaoDaPergunta, Pergunta, Registro};
+use edicao::tecla_na_pergunta;
+
 use crate::sidebar::{self, Item};
 use crate::tela::{self, Linha};
 use crate::tema::{Realce, Tema};
@@ -98,6 +102,12 @@ pub struct Estado {
     pub aviso: Option<String>,
     /// A pergunta aberta no rodapé, quando uma edição precisa de texto.
     pub pergunta: Option<Pergunta>,
+    /// O que `yy`/`dd` guardaram pra `p` colar (ciclo 322).
+    pub registro: Option<Registro>,
+    /// Texto e cursor de antes de cada edição, pro `u` (ciclo 322).
+    pub desfazer: Vec<(String, Caminho)>,
+    /// O que o `u` desfez, pro `Ctrl+R`.
+    pub refazer: Vec<(String, Caminho)>,
     /// A visão de cada calendário (ciclo 316). Ausente é Mês.
     pub visoes: std::collections::HashMap<Caminho, anotadinho_core::analise::Visao>,
     /// A barra está capturando tecla?
@@ -145,6 +155,9 @@ impl Estado {
             gravacao: None,
             aviso: None,
             pergunta: None,
+            registro: None,
+            desfazer: Vec::new(),
+            refazer: Vec::new(),
         }
     }
 
@@ -168,6 +181,8 @@ impl Estado {
     pub fn abrir_texto(&mut self, texto: &str, versao: Option<String>) {
         let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(texto);
         self.abrir(anotadinho_core::analise::analisar(corpo));
+        self.desfazer.clear();
+        self.refazer.clear();
         self.texto_da_pagina = Some(texto.to_string());
         self.versao = versao;
     }
@@ -176,6 +191,18 @@ impl Estado {
     /// perder o lugar: cursor, âncoras, visões, dobras e rolagem ficam. A
     /// gravação fica pendente pro `main`.
     fn aplicar_edicao(&mut self, texto: String) {
+        if let Some(antes) = self.texto_da_pagina.clone() {
+            self.desfazer.push((antes, self.cursor.clone()));
+            if self.desfazer.len() > 200 {
+                self.desfazer.remove(0);
+            }
+        }
+        self.refazer.clear();
+        self.trocar_texto(texto);
+    }
+
+    /// Troca o texto da página sem mexer no histórico — o que o `u` usa.
+    fn trocar_texto(&mut self, texto: String) {
         let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
         self.arvore = anotadinho_core::analise::analisar(corpo);
         self.ancorar_calendarios();
@@ -420,784 +447,6 @@ impl Estado {
 /// Devolve `Some(caminho)` quando a página selecionada mudou e o laço
 /// precisa carregar outra árvore — carregar arquivo é I/O, e I/O não
 /// entra aqui.
-/// Uma pergunta no rodapé: o texto que a edição precisa (ciclo 318).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Pergunta {
-    /// O que se pergunta ("Novo evento em 12/08/2026").
-    pub rotulo: String,
-    /// O que já foi digitado.
-    pub texto: String,
-    /// O que fazer com a resposta.
-    pub acao: AcaoDaPergunta,
-}
-
-/// O que a resposta de uma pergunta faz.
-#[derive(Debug, Clone, PartialEq)]
-pub enum AcaoDaPergunta {
-    /// Cria um evento de dia inteiro nessa data.
-    NovoEvento {
-        /// O calendário.
-        embed: Caminho,
-        /// `AAAA-MM-DD`.
-        data: String,
-    },
-    /// Troca o título do evento.
-    RenomearEvento {
-        /// O calendário.
-        embed: Caminho,
-        /// A entrada, no arquivo.
-        indice: usize,
-    },
-    /// Cria uma barra no cronograma, de `inicio` a `fim` (ciclo 320).
-    NovaBarra {
-        /// O cronograma.
-        embed: Caminho,
-        /// `AAAA-MM-DD`.
-        inicio: String,
-        /// `AAAA-MM-DD`.
-        fim: String,
-    },
-    /// Troca o título da barra.
-    RenomearBarra {
-        /// O cronograma.
-        embed: Caminho,
-        /// O item, no arquivo.
-        indice: usize,
-    },
-    /// Cria um cartão no fim dessa coluna do kanban (ciclo 319).
-    NovoCartao {
-        /// O kanban.
-        embed: Caminho,
-        /// O nome da coluna.
-        coluna: String,
-    },
-    /// Troca o título do cartão.
-    RenomearCartao {
-        /// O kanban.
-        embed: Caminho,
-        /// O item, no arquivo.
-        indice: usize,
-    },
-    /// Troca o valor de uma célula da tabela (ciclo 321).
-    EditarCelula {
-        /// A tabela.
-        embed: Caminho,
-        /// A linha de dados.
-        linha: usize,
-        /// A coluna.
-        coluna: usize,
-    },
-    /// Troca o nome de uma coluna da tabela.
-    RenomearColunaDaTabela {
-        /// A tabela.
-        embed: Caminho,
-        /// A coluna.
-        coluna: usize,
-    },
-    /// Troca o nome da coluna (e dos cartões que apontam pra ela).
-    RenomearColuna {
-        /// O kanban.
-        embed: Caminho,
-        /// A posição da coluna.
-        coluna: usize,
-    },
-}
-
-/// Troca o trecho de um embed no texto da página pelo resultado de
-/// `mudar` sobre os dados dele (ciclo 318).
-///
-/// É a edição de embed inteira, e é pura: pega a FONTE do embed (o
-/// markdown original, com o intervalo de bytes que `analisar` guarda),
-/// muda os dados, serializa com `to_fence_text` — o mesmo que a janela
-/// grava — e costura de volta no texto do arquivo. O resto do arquivo
-/// volta byte a byte.
-fn editar_embed(
-    e: &mut Estado,
-    embed: &[usize],
-    mudar: impl FnOnce(&mut anotadinho_core::embed::EmbedData) -> Result<(), String>,
-) -> bool {
-    let Some(texto) = e.texto_da_pagina.clone() else {
-        e.aviso = Some("esta página não pode ser editada daqui".into());
-        return false;
-    };
-    let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
-    let base = texto.len() - corpo.len();
-    let Some(u) = e.arvore.em(embed) else { return false };
-    let (Some(faixa), Some(fonte)) = (u.intervalo.clone(), u.fonte.clone()) else { return false };
-    let Some(mut dados) = anotadinho_core::embed::segment(&fonte).into_iter().find_map(|s| match s {
-        anotadinho_core::embed::DocSegment::Embed(d) => Some(d),
-        _ => None,
-    }) else {
-        return false;
-    };
-    if let Err(motivo) = mudar(&mut dados) {
-        e.aviso = Some(motivo);
-        return false;
-    }
-    let mut novo = dados.to_fence_text();
-    if fonte.ends_with('\n') && !novo.ends_with('\n') {
-        novo.push('\n');
-    }
-    let novo_texto = format!("{}{}{}", &texto[..base + faixa.start], novo, &texto[base + faixa.end..]);
-    e.aplicar_edicao(novo_texto);
-    true
-}
-
-/// `editar_embed` pra um calendário, recusando o modo vault — o
-/// calendário do vault é só leitura, como na janela.
-fn editar_calendario(
-    e: &mut Estado,
-    embed: &[usize],
-    mudar: impl FnOnce(&mut anotadinho_core::embed::CalendarEmbedData) -> Result<(), String>,
-) -> bool {
-    editar_embed(e, embed, |dados| match dados {
-        anotadinho_core::embed::EmbedData::Calendar(d) if d.mode == anotadinho_core::embed::CalendarSource::Vault => {
-            Err("calendário do vault é só leitura: edite a página do evento".into())
-        }
-        anotadinho_core::embed::EmbedData::Calendar(d) => mudar(d),
-        _ => Err("isto não é um calendário".into()),
-    })
-}
-
-/// A entrada do calendário sob o cursor: o índice dela no arquivo.
-fn indice_do_cursor(e: &Estado) -> Option<usize> {
-    e.arvore
-        .em(&e.cursor)?
-        .filhos
-        .iter()
-        .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "indice"))
-        .and_then(|f| f.texto.parse().ok())
-}
-
-/// Onde está, na árvore de um calendário, o evento da entrada `indice`
-/// — de preferência o COMEÇO da barra, e na data `data` quando dada.
-fn achar_evento(arvore: &Unidade, embed: &[usize], indice: usize, data: Option<&str>) -> Option<Caminho> {
-    let mut achados: Vec<(Caminho, bool)> = Vec::new();
-    for (c, u) in arvore.em(embed)?.percorrer() {
-        let Tipo::Parte { nome, .. } = &u.tipo else { continue };
-        let e_evento = tela::e_evento(nome) || nome.starts_with("compromisso");
-        let mesmo = u.filhos.iter().any(|f| {
-            matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "indice") && f.texto == indice.to_string()
-        });
-        if e_evento && mesmo {
-            let mut caminho = embed.to_vec();
-            caminho.extend(c);
-            achados.push((caminho, nome != "evento-continua"));
-        }
-    }
-    if let Some(data) = data {
-        if let Some((c, _)) = achados.iter().find(|(c, _)| {
-            let mut dia = c.clone();
-            dia.pop();
-            tela::data_do_cursor(arvore, &dia).as_deref() == Some(data)
-        }) {
-            return Some(c.clone());
-        }
-    }
-    achados.iter().find(|(_, comeco)| *comeco).or(achados.first()).map(|(c, _)| c.clone())
-}
-
-/// Responde a pergunta aberta (ciclo 318).
-fn tecla_na_pergunta(e: &mut Estado, tecla: &str) {
-    let Some(p) = e.pergunta.as_mut() else { return };
-    match tecla {
-        "Escape" => e.pergunta = None,
-        "Backspace" => {
-            p.texto.pop();
-        }
-        "Enter" => {
-            let Some(p) = e.pergunta.take() else { return };
-            let titulo = p.texto.trim().to_string();
-            if titulo.is_empty() {
-                return;
-            }
-            match p.acao {
-                AcaoDaPergunta::NovoEvento { embed, data } => {
-                    let mut novo = None;
-                    if editar_calendario(e, &embed, |d| {
-                        d.add_entry(data.clone(), titulo.clone());
-                        novo = Some(d.entries.len() - 1);
-                        Ok(())
-                    }) {
-                        if let Some(c) = novo.and_then(|i| achar_evento(&e.arvore, &embed, i, Some(&data))) {
-                            e.cursor = c;
-                        }
-                    }
-                }
-                AcaoDaPergunta::NovaBarra { embed, inicio, fim } => {
-                    let mut novo = None;
-                    if editar_cronograma(e, &embed, |d| {
-                        d.add_item(titulo.clone(), inicio.clone(), fim.clone());
-                        novo = Some(d.items.len() - 1);
-                        Ok(())
-                    }) {
-                        if let Some(c) = novo.and_then(|i| achar_com_indice(&e.arvore, &embed, "barra", i)) {
-                            e.cursor = c;
-                        }
-                    }
-                }
-                AcaoDaPergunta::RenomearBarra { embed, indice } => {
-                    if editar_cronograma(e, &embed, |d| {
-                        let mut item = d.items.get(indice).cloned().ok_or("a barra sumiu do arquivo")?;
-                        item.title = titulo.clone();
-                        d.update_item(indice, item);
-                        Ok(())
-                    }) {
-                        if let Some(c) = achar_com_indice(&e.arvore, &embed, "barra", indice)
-                            .or_else(|| achar_com_indice(&e.arvore, &embed, "item", indice))
-                        {
-                            e.cursor = c;
-                        }
-                    }
-                }
-                AcaoDaPergunta::NovoCartao { embed, coluna } => {
-                    let mut novo = None;
-                    if editar_kanban(e, &embed, |d| {
-                        d.add_card(coluna.clone(), titulo.clone());
-                        novo = Some(d.items.len() - 1);
-                        Ok(())
-                    }) {
-                        if let Some(c) = novo.and_then(|i| achar_cartao(&e.arvore, &embed, i)) {
-                            e.cursor = c;
-                        }
-                    }
-                }
-                AcaoDaPergunta::RenomearCartao { embed, indice } => {
-                    if editar_kanban(e, &embed, |d| {
-                        if indice >= d.items.len() {
-                            return Err("o cartão sumiu do arquivo".into());
-                        }
-                        d.edit_card(indice, titulo.clone());
-                        Ok(())
-                    }) {
-                        if let Some(c) = achar_cartao(&e.arvore, &embed, indice) {
-                            e.cursor = c;
-                        }
-                    }
-                }
-                AcaoDaPergunta::EditarCelula { embed, linha, coluna } => {
-                    editar_tabela(e, &embed, |d| {
-                        let tipo = d.columns.get(coluna).map(|c| c.kind.clone()).ok_or("a coluna sumiu do arquivo")?;
-                        if linha >= d.rows.len() {
-                            return Err("a linha sumiu do arquivo".into());
-                        }
-                        // Valor novo num select vira opção — a criação
-                        // inline de tag da janela.
-                        let valor = match tipo {
-                            anotadinho_core::embed::ColumnKind::MultiSelect { .. } => {
-                                let tags: Vec<String> = titulo
-                                    .split(',')
-                                    .map(|t| t.trim().to_string())
-                                    .filter(|t| !t.is_empty())
-                                    .collect();
-                                for t in &tags {
-                                    d.add_column_option(coluna, t.clone());
-                                }
-                                tags.join(", ")
-                            }
-                            _ => {
-                                d.add_column_option(coluna, titulo.clone());
-                                titulo.clone()
-                            }
-                        };
-                        d.set_cell(linha, coluna, valor);
-                        Ok(())
-                    });
-                }
-                AcaoDaPergunta::RenomearColunaDaTabela { embed, coluna } => {
-                    editar_tabela(e, &embed, |d| {
-                        if coluna >= d.columns.len() {
-                            return Err("a coluna sumiu do arquivo".into());
-                        }
-                        d.set_column_name(coluna, titulo.clone());
-                        Ok(())
-                    });
-                }
-                AcaoDaPergunta::RenomearColuna { embed, coluna } => {
-                    editar_kanban(e, &embed, |d| {
-                        if coluna >= d.columns.len() {
-                            return Err("a coluna sumiu do arquivo".into());
-                        }
-                        d.rename_column(coluna, titulo.clone());
-                        Ok(())
-                    });
-                }
-                AcaoDaPergunta::RenomearEvento { embed, indice } => {
-                    let data_antes = tela::data_do_cursor(&e.arvore, &e.cursor);
-                    if editar_calendario(e, &embed, |d| {
-                        let mut entrada = d.entries.get(indice).cloned().ok_or("o evento sumiu do arquivo")?;
-                        entrada.title = titulo.clone();
-                        d.update_entry(indice, entrada);
-                        Ok(())
-                    }) {
-                        if let Some(c) = achar_evento(&e.arvore, &embed, indice, data_antes.as_deref()) {
-                            e.cursor = c;
-                        }
-                    }
-                }
-            }
-            e.seguir_cursor();
-        }
-        t if t.chars().count() == 1 => p.texto.push_str(t),
-        _ => {}
-    }
-}
-
-/// As teclas de EDIÇÃO do calendário (ciclo 318).
-///
-/// - `o` cria um evento no dia do cursor (num dia, num evento ou na
-///   agenda) — pergunta o título no rodapé.
-/// - `c` renomeia o evento sob o cursor.
-/// - `x` apaga o evento sob o cursor (`dd` também, pela gramática).
-/// - `<` e `>` movem o evento um dia, preservando a duração — o arrastar
-///   da janela.
-fn edicao_do_calendario(e: &mut Estado, tecla: &str) -> bool {
-    if !matches!(tecla, "o" | "c" | "x" | "<" | ">") {
-        return false;
-    }
-    let Some(embed) = tela::calendario_do_cursor(&e.arvore, &e.cursor) else { return false };
-    let data = tela::data_do_cursor(&e.arvore, &e.cursor);
-    let indice = indice_do_cursor(e);
-    match tecla {
-        "o" => {
-            let Some(data) = data else {
-                e.aviso = Some("escolha um dia pra criar o evento".into());
-                return true;
-            };
-            e.pergunta = Some(Pergunta {
-                rotulo: format!("Novo evento em {}", data_legivel(&data)),
-                texto: String::new(),
-                acao: AcaoDaPergunta::NovoEvento { embed, data },
-            });
-        }
-        "c" => {
-            let Some(indice) = indice else { return false };
-            let atual = e.arvore.em(&e.cursor).map(|u| u.texto.clone()).unwrap_or_default();
-            // Na semana o título vem com a hora na frente; o arquivo não.
-            let atual = e
-                .arvore
-                .em(&embed)
-                .and_then(|u| u.fonte.as_deref())
-                .and_then(dados_do_calendario)
-                .and_then(|d| d.entries.get(indice).map(|x| x.title.clone()))
-                .unwrap_or(atual);
-            e.pergunta = Some(Pergunta {
-                rotulo: "Renomear evento".into(),
-                texto: atual,
-                acao: AcaoDaPergunta::RenomearEvento { embed, indice },
-            });
-        }
-        "x" => apagar_evento(e),
-        _ => {
-            let Some(indice) = indice else { return false };
-            let delta = if tecla == ">" { 1 } else { -1 };
-            let mut destino = None;
-            let mudou = editar_calendario(e, &embed, |d| {
-                let entrada = d.entries.get(indice).ok_or("o evento sumiu do arquivo")?;
-                let inicio = entrada.date.clone().ok_or("evento sem data não se move por dia")?;
-                let novo = anotadinho_core::date_util::add_days(&inicio, delta).ok_or("data inválida")?;
-                d.move_entry(indice, novo.clone());
-                destino = Some(novo);
-                Ok(())
-            });
-            if mudou {
-                // O cursor acompanha o evento; se ele saiu do que está na
-                // tela, a âncora vai atrás.
-                let alvo = data.and_then(|d| anotadinho_core::date_util::add_days(&d, delta)).or(destino);
-                let mut achou = achar_evento(&e.arvore, &embed, indice, alvo.as_deref());
-                if achou.is_none() {
-                    if let Some(a) = alvo.clone() {
-                        e.ancorar(&embed, a);
-                        achou = achar_evento(&e.arvore, &embed, indice, alvo.as_deref());
-                    }
-                }
-                if let Some(c) = achou {
-                    e.cursor = c;
-                }
-                e.seguir_cursor();
-            }
-        }
-    }
-    true
-}
-
-/// `editar_embed` pra um kanban.
-fn editar_kanban(
-    e: &mut Estado,
-    embed: &[usize],
-    mudar: impl FnOnce(&mut anotadinho_core::embed::KanbanEmbedData) -> Result<(), String>,
-) -> bool {
-    editar_embed(e, embed, |dados| match dados {
-        anotadinho_core::embed::EmbedData::Kanban(d) => mudar(d),
-        _ => Err("isto não é um kanban".into()),
-    })
-}
-
-/// O embed do tipo `tipo` que contém o cursor (ou é ele).
-fn embed_do_cursor(e: &Estado, tipo: &str) -> Option<Caminho> {
-    (1..=e.cursor.len())
-        .map(|n| &e.cursor[..n])
-        .find(|c| matches!(e.arvore.em(c).map(|u| &u.tipo), Some(Tipo::Embed(n)) if n == tipo))
-        .map(|c| c.to_vec())
-}
-
-/// Onde está o cartão do item `indice` na árvore do kanban.
-fn achar_cartao(arvore: &Unidade, embed: &[usize], indice: usize) -> Option<Caminho> {
-    achar_com_indice(arvore, embed, "card", indice)
-}
-
-/// Onde está a parte `nome` que carrega o `indice` dado, dentro do embed.
-fn achar_com_indice(arvore: &Unidade, embed: &[usize], nome_da_parte: &str, indice: usize) -> Option<Caminho> {
-    arvore.em(embed)?.percorrer().into_iter().find_map(|(c, u)| {
-        let e_cartao = matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == nome_da_parte);
-        let mesmo = u.filhos.iter().any(|f| {
-            matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "indice") && f.texto == indice.to_string()
-        });
-        (e_cartao && mesmo).then(|| {
-            let mut caminho = embed.to_vec();
-            caminho.extend(c);
-            caminho
-        })
-    })
-}
-
-/// As teclas de EDIÇÃO do kanban (ciclo 319).
-///
-/// - `o` cria um cartão no fim da coluna do cursor (na coluna ou num
-///   cartão dela).
-/// - `c` renomeia o cartão — ou a coluna, com o cursor nela.
-/// - `x` (ou `dd`) apaga o cartão.
-/// - `<` e `>` levam o cartão pra coluna anterior/seguinte — o arrastar
-///   entre colunas da janela; o cursor vai junto.
-fn edicao_do_kanban(e: &mut Estado, tecla: &str) -> bool {
-    if !matches!(tecla, "o" | "c" | "x" | "<" | ">") {
-        return false;
-    }
-    let Some(embed) = embed_do_cursor(e, "kanban") else { return false };
-    let Some(&coluna) = e.cursor.get(embed.len()) else {
-        e.aviso = Some("entre numa coluna pra editar o kanban".into());
-        return true;
-    };
-    let nome_da_coluna = e
-        .arvore
-        .em(&[embed.as_slice(), &[coluna]].concat())
-        .map(|u| u.texto.clone())
-        .unwrap_or_default();
-    let indice = indice_do_cursor(e);
-    match (tecla, indice) {
-        ("o", _) => {
-            e.pergunta = Some(Pergunta {
-                rotulo: format!("Novo cartão em {nome_da_coluna}"),
-                texto: String::new(),
-                acao: AcaoDaPergunta::NovoCartao { embed, coluna: nome_da_coluna },
-            });
-        }
-        ("c", Some(indice)) => {
-            let atual = e.arvore.em(&e.cursor).map(|u| u.texto.clone()).unwrap_or_default();
-            e.pergunta = Some(Pergunta {
-                rotulo: "Renomear cartão".into(),
-                texto: atual,
-                acao: AcaoDaPergunta::RenomearCartao { embed, indice },
-            });
-        }
-        ("c", None) => {
-            e.pergunta = Some(Pergunta {
-                rotulo: "Renomear coluna".into(),
-                texto: nome_da_coluna,
-                acao: AcaoDaPergunta::RenomearColuna { embed, coluna },
-            });
-        }
-        ("x", Some(_)) => apagar_cartao(e),
-        ("<" | ">", Some(indice)) => {
-            let destino = if tecla == ">" { coluna + 1 } else { coluna.wrapping_sub(1) };
-            if editar_kanban(e, &embed, |d| {
-                let nova = d.columns.get(destino).cloned().ok_or("não há coluna desse lado")?;
-                let mut cartao = d.items.get(indice).cloned().ok_or("o cartão sumiu do arquivo")?;
-                cartao.column = nova;
-                d.update_card(indice, cartao);
-                Ok(())
-            }) {
-                if let Some(c) = achar_cartao(&e.arvore, &embed, indice) {
-                    e.cursor = c;
-                }
-                e.seguir_cursor();
-            }
-        }
-        _ => return false,
-    }
-    true
-}
-
-/// Apaga o cartão sob o cursor; o cursor fica na coluna.
-fn apagar_cartao(e: &mut Estado) {
-    let (Some(embed), Some(indice)) = (embed_do_cursor(e, "kanban"), indice_do_cursor(e)) else {
-        return;
-    };
-    let mut coluna = e.cursor.clone();
-    coluna.pop();
-    if editar_kanban(e, &embed, |d| {
-        if indice >= d.items.len() {
-            return Err("o cartão sumiu do arquivo".into());
-        }
-        d.remove_card(indice);
-        Ok(())
-    }) {
-        e.cursor = coluna;
-        e.aviso = Some("cartão apagado".into());
-        e.seguir_cursor();
-    }
-}
-
-/// `editar_embed` pra uma tabela.
-fn editar_tabela(
-    e: &mut Estado,
-    embed: &[usize],
-    mudar: impl FnOnce(&mut anotadinho_core::embed::TableEmbedData) -> Result<(), String>,
-) -> bool {
-    editar_embed(e, embed, |dados| match dados {
-        anotadinho_core::embed::EmbedData::Table(d) => mudar(d),
-        _ => Err("isto não é uma tabela".into()),
-    })
-}
-
-/// A tabela sob o cursor e a célula dele: (tabela, fileira, coluna) — a
-/// fileira 0 é o cabeçalho, a 1 é a primeira linha de dados.
-fn celula_do_cursor(e: &Estado) -> Option<(Caminho, usize, usize)> {
-    let embed = embed_do_cursor(e, "table")?;
-    let fileira = *e.cursor.get(embed.len())?;
-    // Na fileira inteira (sem célula), vale a primeira coluna.
-    let coluna = e.cursor.get(embed.len() + 1).copied().unwrap_or(0);
-    Some((embed, fileira, coluna))
-}
-
-/// As teclas de EDIÇÃO da tabela (ciclo 321).
-///
-/// - `c` edita a célula sob o cursor, com o valor atual na pergunta; no
-///   cabeçalho, renomeia a coluna. Num select, um valor que não é opção
-///   vira opção; num multiselect, as tags vão separadas por vírgula.
-/// - `x` limpa a célula.
-/// - `o` cria uma linha vazia embaixo da do cursor (no fim, fora de uma)
-///   e leva o cursor pra primeira célula dela.
-/// - `dd` apaga a linha.
-fn edicao_da_tabela(e: &mut Estado, tecla: &str) -> bool {
-    if !matches!(tecla, "o" | "c" | "x") {
-        return false;
-    }
-    let Some(embed) = embed_do_cursor(e, "table") else { return false };
-    let celula = celula_do_cursor(e);
-    match (tecla, celula) {
-        ("o", celula) => {
-            let depois = celula.map(|(_, f, _)| f);
-            let mut nova = 0;
-            if editar_tabela(e, &embed, |d| {
-                d.add_row();
-                let fim = d.rows.len() - 1;
-                nova = depois.map_or(fim, |f| f.min(fim));
-                let linha = d.rows.pop().unwrap_or_default();
-                d.rows.insert(nova, linha);
-                Ok(())
-            }) {
-                e.cursor = [embed.as_slice(), &[nova + 1, 0]].concat();
-                e.seguir_cursor();
-                e.aviso = Some("linha nova: c edita a célula".into());
-            }
-        }
-        ("c", Some((_, 0, coluna))) => {
-            let atual = e.arvore.em(&[embed.as_slice(), &[0, coluna]].concat()).map(|u| u.texto.clone()).unwrap_or_default();
-            e.pergunta = Some(Pergunta {
-                rotulo: "Renomear coluna".into(),
-                texto: atual,
-                acao: AcaoDaPergunta::RenomearColunaDaTabela { embed, coluna },
-            });
-        }
-        ("c", Some((_, fileira, coluna))) => {
-            let atual = e
-                .arvore
-                .em(&[embed.as_slice(), &[fileira, coluna]].concat())
-                .map(|u| u.texto.clone())
-                .unwrap_or_default();
-            let rotulo = e
-                .arvore
-                .em(&[embed.as_slice(), &[0, coluna]].concat())
-                .map(|u| u.texto.clone())
-                .unwrap_or_else(|| "Célula".into());
-            e.pergunta = Some(Pergunta {
-                rotulo,
-                texto: atual,
-                acao: AcaoDaPergunta::EditarCelula { embed, linha: fileira - 1, coluna },
-            });
-        }
-        ("x", Some((_, fileira, coluna))) if fileira > 0 => {
-            editar_tabela(e, &embed, |d| {
-                d.set_cell(fileira - 1, coluna, String::new());
-                Ok(())
-            });
-        }
-        ("x", Some(_)) => e.aviso = Some("o cabeçalho não se apaga com x".into()),
-        _ => e.aviso = Some("entre numa célula pra editar a tabela".into()),
-    }
-    true
-}
-
-/// Apaga a linha da tabela sob o cursor; o cursor fica na mesma altura.
-fn apagar_linha_da_tabela(e: &mut Estado) {
-    let Some((embed, fileira, coluna)) = celula_do_cursor(e) else { return };
-    if fileira == 0 {
-        e.aviso = Some("o cabeçalho não se apaga".into());
-        return;
-    }
-    let mut sobram = 0;
-    if editar_tabela(e, &embed, |d| {
-        d.remove_row(fileira - 1);
-        sobram = d.rows.len();
-        Ok(())
-    }) {
-        e.cursor = [embed.as_slice(), &[fileira.min(sobram), coluna]].concat();
-        e.aviso = Some("linha apagada".into());
-        e.seguir_cursor();
-    }
-}
-
-/// `editar_embed` pra um cronograma.
-fn editar_cronograma(
-    e: &mut Estado,
-    embed: &[usize],
-    mudar: impl FnOnce(&mut anotadinho_core::embed::TimelineEmbedData) -> Result<(), String>,
-) -> bool {
-    editar_embed(e, embed, |dados| match dados {
-        anotadinho_core::embed::EmbedData::Timeline(d) if d.source == anotadinho_core::embed::TimelineSource::Vault => {
-            Err("cronograma do vault é só leitura: edite a página".into())
-        }
-        anotadinho_core::embed::EmbedData::Timeline(d) => mudar(d),
-        _ => Err("isto não é um cronograma".into()),
-    })
-}
-
-/// As teclas de EDIÇÃO do cronograma (ciclo 320).
-///
-/// - `o` cria uma barra de uma semana — começando no dia seguinte ao fim
-///   da barra do cursor, ou hoje (ou no começo da janela) fora de uma.
-/// - `c` renomeia, `x` (ou `dd`) apaga.
-/// - `<` e `>` movem a barra um dia, preservando a duração; `-` e `+`
-///   encurtam e esticam o FIM — o `Alt+←/→` e o `Alt+Shift+←/→` da janela.
-fn edicao_do_cronograma(e: &mut Estado, tecla: &str) -> bool {
-    use anotadinho_core::date_util::add_days;
-    if !matches!(tecla, "o" | "c" | "x" | "<" | ">" | "+" | "-") {
-        return false;
-    }
-    let Some(embed) = embed_do_cursor(e, "timeline") else { return false };
-    let indice = indice_do_cursor(e);
-    let dados = e
-        .arvore
-        .em(&embed)
-        .and_then(|u| u.fonte.as_deref())
-        .and_then(|f| {
-            anotadinho_core::embed::segment(f).into_iter().find_map(|s| match s {
-                anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Timeline(d)) => Some(d),
-                _ => None,
-            })
-        });
-    match (tecla, indice) {
-        ("o", _) => {
-            let depois_da_barra = indice
-                .and_then(|i| dados.as_ref()?.items.get(i).cloned())
-                .and_then(|it| it.end.or(it.start))
-                .and_then(|fim| add_days(&fim, 1));
-            let janela = dados
-                .as_ref()
-                .and_then(|d| d.items.iter().filter_map(|i| i.start.clone()).min());
-            let Some(inicio) = depois_da_barra.or_else(|| e.hoje.clone()).or(janela) else {
-                e.aviso = Some("sem data de referência pra criar a barra".into());
-                return true;
-            };
-            let fim = add_days(&inicio, 6).unwrap_or_else(|| inicio.clone());
-            e.pergunta = Some(Pergunta {
-                rotulo: format!("Nova barra de {} a {}", data_legivel(&inicio), data_legivel(&fim)),
-                texto: String::new(),
-                acao: AcaoDaPergunta::NovaBarra { embed, inicio, fim },
-            });
-        }
-        ("c", Some(indice)) => {
-            let atual = e.arvore.em(&e.cursor).map(|u| u.texto.clone()).unwrap_or_default();
-            e.pergunta = Some(Pergunta {
-                rotulo: "Renomear barra".into(),
-                texto: atual,
-                acao: AcaoDaPergunta::RenomearBarra { embed, indice },
-            });
-        }
-        ("x", Some(_)) => apagar_barra(e),
-        ("<" | ">" | "+" | "-", Some(indice)) => {
-            let delta = if matches!(tecla, ">" | "+") { 1 } else { -1 };
-            let mover = matches!(tecla, "<" | ">");
-            if editar_cronograma(e, &embed, |d| {
-                let item = d.items.get(indice).cloned().ok_or("a barra sumiu do arquivo")?;
-                let inicio = item.start.clone().ok_or("item sem data não se move por dia")?;
-                if mover {
-                    d.move_item(indice, add_days(&inicio, delta).ok_or("data inválida")?);
-                } else {
-                    let fim = item.end.clone().unwrap_or(inicio);
-                    d.resize_item(indice, false, add_days(&fim, delta).ok_or("data inválida")?);
-                }
-                Ok(())
-            }) {
-                if let Some(c) = achar_com_indice(&e.arvore, &embed, "barra", indice) {
-                    e.cursor = c;
-                }
-                e.seguir_cursor();
-            }
-        }
-        _ => return false,
-    }
-    true
-}
-
-/// Apaga a barra (ou o item sem data) sob o cursor.
-fn apagar_barra(e: &mut Estado) {
-    let (Some(embed), Some(indice)) = (embed_do_cursor(e, "timeline"), indice_do_cursor(e)) else {
-        return;
-    };
-    if editar_cronograma(e, &embed, |d| {
-        if indice >= d.items.len() {
-            return Err("a barra sumiu do arquivo".into());
-        }
-        d.remove_item(indice);
-        Ok(())
-    }) {
-        e.aviso = Some("barra apagada".into());
-        e.seguir_cursor();
-    }
-}
-
-/// Apaga o evento sob o cursor; o cursor fica no dia dele.
-fn apagar_evento(e: &mut Estado) {
-    let (Some(embed), Some(indice)) = (tela::calendario_do_cursor(&e.arvore, &e.cursor), indice_do_cursor(e)) else {
-        return;
-    };
-    let mut dia = e.cursor.clone();
-    dia.pop();
-    if editar_calendario(e, &embed, |d| {
-        if indice >= d.entries.len() {
-            return Err("o evento sumiu do arquivo".into());
-        }
-        d.remove_entry(indice);
-        Ok(())
-    }) {
-        if e.arvore.em(&dia).is_some() {
-            e.cursor = dia;
-        }
-        e.aviso = Some("evento apagado".into());
-        e.seguir_cursor();
-    }
-}
-
-/// `AAAA-MM-DD` como `DD/MM/AAAA`.
-fn data_legivel(iso: &str) -> String {
-    match anotadinho_core::date_util::parse_date(iso) {
-        Some((y, m, d)) => format!("{d:02}/{m:02}/{y}"),
-        None => iso.to_string(),
-    }
-}
-
 pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
     // O aviso vale até a próxima tecla.
     e.aviso = None;
@@ -1338,21 +587,21 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
 }
 
 fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
-    if tecla_do_calendario(e, tecla)
-        || (!e.vim.em_curso()
-            && (edicao_do_calendario(e, tecla) || edicao_do_kanban(e, tecla)
-                || edicao_do_cronograma(e, tecla)
-                || edicao_da_tabela(e, tecla)))
-    {
+    if tecla_do_calendario(e, tecla) {
         return;
     }
+    // `Ctrl+R`, `Ctrl+A`, `Ctrl+X`: o `main` manda com o prefixo.
+    let (tecla, ctrl) = match tecla.strip_prefix("Ctrl+") {
+        Some(t) => (t, true),
+        None => (tecla, false),
+    };
     // A gramática do vim primeiro (ciclo 291).
     //
     // Ela mora no núcleo desde o ciclo 285 — contagem, operador,
     // movimento, `gg`/`G` — e ninguém a consultava. É ela que dá `10j` e
     // `G` sem uma linha de lógica nova aqui: a TUI só traduz o comando
     // fechado em passos de navegação.
-    match vim::tecla_normal(&mut e.vim, tecla, false) {
+    match vim::tecla_normal(&mut e.vim, tecla, ctrl) {
         vim::Passo::Aguardando => return,
         // A gramática já mapeia `/` pra busca desde o ciclo 254 — mais
         // uma coisa que estava escrita e não era consultada.
@@ -1362,8 +611,12 @@ fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
             e.barra_aberta = true;
             return;
         }
+        // Editar é comando de vim sobre o item sob o cursor (ciclo 322):
+        // `o`, `cc`, `dd`, `yy`, `p`, `>>`, `Ctrl+A`, `u`…
         vim::Passo::Pronto(c) => {
-            comando_de_vim(e, c);
+            if !vim::edicao_de(&c).is_some_and(|ed| edicao::editar_item(e, ed)) {
+                comando_de_vim(e, c);
+            }
             return;
         }
         // Seta, Escape, `z`: não são da gramática e seguem o caminho de
@@ -2885,21 +2138,6 @@ fn pular_pro_mes_com_evento(e: &mut Estado, adiante: bool) -> bool {
 /// não faz nada, em vez de vazar pro tratamento de tecla e disparar
 /// outra coisa por engano.
 fn comando_de_vim(e: &mut Estado, c: Comando) {
-    // `dd` num evento do calendário apaga o evento (ciclo 318).
-    if matches!(c, Comando::Apagar(Movimento::LinhaInteira, _)) && celula_do_cursor(e).is_some() {
-        apagar_linha_da_tabela(e);
-        return;
-    }
-    if matches!(c, Comando::Apagar(Movimento::LinhaInteira, _)) && indice_do_cursor(e).is_some() {
-        if embed_do_cursor(e, "kanban").is_some() {
-            apagar_cartao(e);
-        } else if embed_do_cursor(e, "timeline").is_some() {
-            apagar_barra(e);
-        } else {
-            apagar_evento(e);
-        }
-        return;
-    }
     let Comando::Mover(mov, vezes) = c else { return };
     // Onde o cursor está, o PAI arruma os filhos como? (ciclo 297)
     //
@@ -3359,6 +2597,7 @@ fn borda<'a>(titulo: &str, com_foco: bool, tema: &Tema) -> Block<'a> {
 mod testes {
     use super::*;
     use anotadinho_core::analise::analisar;
+    use edicao::achar_com_indice;
     use ratatui::backend::TestBackend;
     use ratatui::style::Color;
     use ratatui::Terminal;
@@ -4685,6 +3924,19 @@ mod testes {
         }
     }
 
+    /// O começo do evento `titulo` na grade.
+    fn achar_evento_na_tela(e: &Estado, titulo: &str) -> Caminho {
+        e.arvore
+            .percorrer()
+            .into_iter()
+            .find(|(_, u)| {
+                u.texto == titulo
+                    && matches!(&u.tipo, Tipo::Parte { nome, .. } if nome.starts_with("evento") && nome != "evento-continua")
+            })
+            .map(|(c, _)| c)
+            .expect("evento fora da tela")
+    }
+
     /// Os dados do calendário no texto que ficou pra gravar.
     fn gravado(e: &Estado) -> anotadinho_core::embed::CalendarEmbedData {
         let texto = e.gravacao.clone().expect("nada pra gravar");
@@ -4727,12 +3979,12 @@ mod testes {
     }
 
     #[test]
-    fn c_renomeia_e_x_apaga_o_evento() {
+    fn a_renomeia_e_x_apaga_o_evento() {
         let mut e = editavel();
         // A Reunião: semana 9–15, quarta 12, faixa 1.
         e.cursor = vec![1, 1, 2, 3, 1];
         assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Reunião");
-        tecla(&mut e, "c");
+        tecla(&mut e, "a");
         assert_eq!(e.pergunta.as_ref().unwrap().texto, "Reunião", "o título atual vem preenchido");
         for _ in 0.."Reunião".chars().count() {
             tecla(&mut e, "Backspace");
@@ -4761,10 +4013,11 @@ mod testes {
     }
 
     #[test]
-    fn maior_e_menor_movem_o_evento_preservando_a_duracao() {
+    fn maior_maior_move_o_evento_preservando_a_duracao() {
         let mut e = editavel();
         // A Sprint vista do dia 12 (no meio da barra).
         e.cursor = vec![1, 1, 2, 3, 0];
+        tecla(&mut e, ">");
         tecla(&mut e, ">");
         let d = gravado(&e);
         assert_eq!(d.entries[0].date.as_deref(), Some("2026-08-11"));
@@ -4772,6 +4025,8 @@ mod testes {
         // O cursor segue o evento, no dia seguinte.
         assert_eq!(tela::data_do_cursor(&e.arvore, &e.cursor).as_deref(), Some("2026-08-13"));
         assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Sprint");
+        tecla(&mut e, "<");
+        tecla(&mut e, "<");
         tecla(&mut e, "<");
         tecla(&mut e, "<");
         assert_eq!(gravado(&e).entries[0].date.as_deref(), Some("2026-08-09"));
@@ -4785,6 +4040,7 @@ mod testes {
         e.cursor = vec![1, 1, 2, 3, 1];
         for _ in 0..20 {
             tecla(&mut e, ">");
+            tecla(&mut e, ">");
         }
         assert_eq!(gravado(&e).entries[1].date.as_deref(), Some("2026-09-01"));
         // 1º de setembro ainda está na grade de agosto (as células do fim):
@@ -4793,6 +4049,7 @@ mod testes {
         assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Reunião");
         // Mais cinco: dia 6, fora da grade de agosto — a âncora vai junto.
         for _ in 0..5 {
+            tecla(&mut e, ">");
             tecla(&mut e, ">");
         }
         assert_eq!(gravado(&e).entries[1].date.as_deref(), Some("2026-09-06"));
@@ -4813,6 +4070,30 @@ mod testes {
         tecla(&mut e, "Enter");
         assert!(e.gravacao.is_none());
         assert!(desenho(&mut e, 120, 40).join("\n").contains("só leitura"));
+    }
+
+    #[test]
+    fn ctrl_a_estica_o_evento_e_yy_p_cola_no_dia_do_cursor() {
+        let mut e = editavel();
+        let reuniao = achar_evento_na_tela(&e, "Reunião");
+        e.cursor = reuniao;
+        tecla(&mut e, "3");
+        tecla(&mut e, "Ctrl+a");
+        assert_eq!(gravado(&e).entries[1].end_date.as_deref(), Some("2026-08-15"));
+        tecla(&mut e, "3");
+        tecla(&mut e, "Ctrl+x");
+        assert_eq!(gravado(&e).entries[1].end_date, None);
+        tecla(&mut e, "y");
+        tecla(&mut e, "y");
+        let mut dia = e.cursor.clone();
+        dia.pop();
+        *dia.last_mut().unwrap() += 1;
+        e.cursor = dia;
+        tecla(&mut e, "p");
+        let d = gravado(&e);
+        assert_eq!(d.entries.len(), 3);
+        assert_eq!(d.entries[2].title, "Reunião");
+        assert_eq!(d.entries[2].date.as_deref(), Some("2026-08-13"));
     }
 
     const PAGINA_COM_KANBAN: &str = "Antes.\n\n{{ type: \"kanban\" }}\ncolumns:\n- Backlog\n- Fazendo\n- Feito\nitems:\n- title: Escrever\n  column: Backlog\n  tags:\n  - doc\n- title: Revisar\n  column: Fazendo\n{{ /kanban }}\n\nDepois.\n";
@@ -4837,7 +4118,7 @@ mod testes {
     }
 
     #[test]
-    fn o_cria_cartao_na_coluna_e_c_renomeia() {
+    fn o_cria_cartao_na_coluna_e_a_renomeia() {
         let mut e = kanban_editavel();
         // Na coluna "Feito" (vazia).
         e.cursor = vec![1, 2];
@@ -4851,7 +4132,7 @@ mod testes {
         assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Publicar");
         // `c` no cartão.
         e.cursor = vec![1, 0, 0];
-        tecla(&mut e, "c");
+        tecla(&mut e, "a");
         assert_eq!(e.pergunta.as_ref().unwrap().texto, "Escrever");
         tecla(&mut e, "Backspace");
         tecla(&mut e, "Backspace");
@@ -4864,10 +4145,10 @@ mod testes {
     }
 
     #[test]
-    fn c_na_coluna_renomeia_a_coluna_e_os_cartoes_seguem() {
+    fn a_na_coluna_renomeia_a_coluna_e_os_cartoes_seguem() {
         let mut e = kanban_editavel();
         e.cursor = vec![1, 1];
-        tecla(&mut e, "c");
+        tecla(&mut e, "a");
         for _ in 0.."Fazendo".len() {
             tecla(&mut e, "Backspace");
         }
@@ -4879,14 +4160,17 @@ mod testes {
     }
 
     #[test]
-    fn maior_e_menor_levam_o_cartao_de_coluna_e_x_apaga() {
+    fn maior_maior_leva_o_cartao_de_coluna_e_x_apaga() {
         let mut e = kanban_editavel();
         e.cursor = vec![1, 0, 0];
+        tecla(&mut e, ">");
         tecla(&mut e, ">");
         assert_eq!(kanban_gravado(&e).items[0].column, "Fazendo");
         // O cursor foi junto, pra coluna do meio.
         assert_eq!(e.cursor[..2], [1, 1]);
         assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Escrever");
+        tecla(&mut e, ">");
+        tecla(&mut e, ">");
         tecla(&mut e, ">");
         tecla(&mut e, ">");
         assert_eq!(kanban_gravado(&e).items[0].column, "Feito");
@@ -4901,6 +4185,209 @@ mod testes {
         tecla(&mut e, "d");
         tecla(&mut e, "d");
         assert!(kanban_gravado(&e).items.is_empty());
+    }
+
+    #[test]
+    fn o_maiusculo_cria_antes_e_cc_comeca_vazio() {
+        let mut e = kanban_editavel();
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "O");
+        digitar(&mut e, "Planejar");
+        tecla(&mut e, "Enter");
+        let d = kanban_gravado(&e);
+        assert_eq!(d.items.iter().map(|c| c.title.as_str()).collect::<Vec<_>>(), vec!["Planejar", "Escrever", "Revisar"]);
+        assert_eq!(e.cursor, vec![1, 0, 0]);
+        tecla(&mut e, "c");
+        tecla(&mut e, "c");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "");
+        tecla(&mut e, "Escape");
+        tecla(&mut e, "a");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "Planejar");
+    }
+
+    #[test]
+    fn yy_p_duplica_e_dd_p_move_o_cartao() {
+        let mut e = kanban_editavel();
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "y");
+        tecla(&mut e, "y");
+        assert!(e.gravacao.is_none());
+        // Colar na coluna Feito, vazia.
+        e.cursor = vec![1, 2];
+        tecla(&mut e, "p");
+        let d = kanban_gravado(&e);
+        assert_eq!(d.items[2].title, "Escrever");
+        assert_eq!(d.items[2].column, "Feito");
+        assert_eq!(d.items[2].tags, vec!["doc".to_string()]);
+        e.cursor = vec![1, 1, 0];
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "P");
+        let d = kanban_gravado(&e);
+        let backlog: Vec<_> = d.items.iter().filter(|c| c.column == "Backlog").map(|c| c.title.as_str()).collect();
+        assert_eq!(backlog, vec!["Revisar", "Escrever"]);
+    }
+
+    #[test]
+    fn contagem_no_maior_maior_e_u_desfaz_e_ctrl_r_refaz() {
+        let mut e = kanban_editavel();
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "2");
+        tecla(&mut e, ">");
+        tecla(&mut e, ">");
+        assert_eq!(kanban_gravado(&e).items[0].column, "Feito");
+        assert_eq!(e.cursor, vec![1, 2, 0]);
+        tecla(&mut e, "u");
+        assert_eq!(e.gravacao.as_deref(), Some(PAGINA_COM_KANBAN));
+        assert_eq!(e.cursor, vec![1, 0, 0]);
+        tecla(&mut e, "u");
+        assert_eq!(e.aviso.as_deref(), Some("nada pra desfazer"));
+        tecla(&mut e, "Ctrl+r");
+        assert_eq!(kanban_gravado(&e).items[0].column, "Feito");
+        // Abrir outra página esquece o histórico.
+        e.abrir_texto(PAGINA_COM_KANBAN, Some("v2".into()));
+        tecla(&mut e, "u");
+        assert_eq!(e.aviso.as_deref(), Some("nada pra desfazer"));
+    }
+
+    #[test]
+    fn fora_de_embed_os_comandos_de_edicao_nao_fazem_nada() {
+        let mut e = kanban_editavel();
+        e.cursor = vec![0];
+        for t in ["o", "d", "d", "x", ">", ">", "Ctrl+a"] {
+            tecla(&mut e, t);
+        }
+        assert!(e.gravacao.is_none() && e.pergunta.is_none());
+    }
+
+    const PAGINA_COM_CALLOUT: &str = "Antes.\n\n{{ type: \"callout\" }}\nvariant: warning\ntitle: Cuidado\nbody: |\n  Primeiro parágrafo.\n\n  - um\n  - dois\n\n  Último.\n{{ /callout }}\n\nDepois.\n";
+
+    fn callout_editavel() -> Estado {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(PAGINA_COM_CALLOUT, Some("v1".into()));
+        e.foco = Foco::Conteudo;
+        e
+    }
+
+    fn callout_gravado(e: &Estado) -> anotadinho_core::embed::CalloutEmbedData {
+        let texto = e.gravacao.clone().expect("nada pra gravar");
+        assert!(texto.starts_with("Antes.\n\n") && texto.ends_with("\n\nDepois.\n"), "{texto}");
+        anotadinho_core::embed::segment(&texto)
+            .into_iter()
+            .find_map(|s| match s {
+                anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Callout(d)) => Some(d),
+                _ => None,
+            })
+            .expect("o callout sumiu")
+    }
+
+    /// O caminho da unidade com esse texto dentro do callout.
+    fn no_callout(e: &Estado, texto: &str) -> Caminho {
+        e.arvore.percorrer().into_iter().find(|(c, u)| c.first() == Some(&1) && u.texto == texto).map(|(c, _)| c).expect(texto)
+    }
+
+    #[test]
+    fn no_callout_a_renomeia_o_titulo_e_ctrl_a_gira_a_variante() {
+        let mut e = callout_editavel();
+        e.cursor = no_callout(&e, "Cuidado");
+        tecla(&mut e, "A");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "Cuidado");
+        digitar(&mut e, "!");
+        tecla(&mut e, "Enter");
+        let d = callout_gravado(&e);
+        assert_eq!(d.title, "Cuidado!");
+        assert_eq!(d.body, "Primeiro parágrafo.\n\n- um\n- dois\n\nÚltimo.\n");
+        tecla(&mut e, "Ctrl+a");
+        assert_eq!(callout_gravado(&e).variant, anotadinho_core::embed::CalloutVariant::Error);
+        tecla(&mut e, "2");
+        tecla(&mut e, "Ctrl+x");
+        assert_eq!(callout_gravado(&e).variant, anotadinho_core::embed::CalloutVariant::Success);
+        tecla(&mut e, "~");
+        assert!(callout_gravado(&e).collapsed);
+    }
+
+    #[test]
+    fn no_corpo_do_callout_cada_bloco_se_edita_cria_e_apaga() {
+        let mut e = callout_editavel();
+        e.cursor = no_callout(&e, "Primeiro parágrafo.");
+        tecla(&mut e, "o");
+        digitar(&mut e, "Segundo.");
+        tecla(&mut e, "Enter");
+        assert_eq!(callout_gravado(&e).body, "Primeiro parágrafo.\n\nSegundo.\n\n- um\n- dois\n\nÚltimo.\n");
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Segundo.");
+        // `cc` num item mantém a marca; `o` num item cria item vizinho.
+        e.cursor = no_callout(&e, "um");
+        tecla(&mut e, "c");
+        tecla(&mut e, "c");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "- ");
+        digitar(&mut e, "primeiro");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "o");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "- ");
+        digitar(&mut e, "meio");
+        tecla(&mut e, "Enter");
+        assert_eq!(callout_gravado(&e).body, "Primeiro parágrafo.\n\nSegundo.\n\n- primeiro\n- meio\n- dois\n\nÚltimo.\n");
+        e.cursor = no_callout(&e, "dois");
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        e.cursor = no_callout(&e, "Último.");
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert_eq!(callout_gravado(&e).body, "Primeiro parágrafo.\n\nSegundo.\n\n- primeiro\n- meio\n");
+        // O que o `dd` levou, o `P` devolve.
+        e.cursor = no_callout(&e, "Primeiro parágrafo.");
+        tecla(&mut e, "P");
+        assert_eq!(callout_gravado(&e).body, "Último.\n\nPrimeiro parágrafo.\n\nSegundo.\n\n- primeiro\n- meio\n");
+    }
+
+    const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";
+
+    fn acoes_gravadas(e: &Estado) -> anotadinho_core::embed::ActionsEmbedData {
+        let texto = e.gravacao.clone().expect("nada pra gravar");
+        assert!(texto.starts_with("Antes.\n\n") && texto.ends_with("\n\nDepois.\n"), "{texto}");
+        anotadinho_core::embed::segment(&texto)
+            .into_iter()
+            .find_map(|s| match s {
+                anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Actions(d)) => Some(d),
+                _ => None,
+            })
+            .expect("as ações sumiram")
+    }
+
+    #[test]
+    fn nas_acoes_o_cria_a_renomeia_maior_maior_reordena_e_til_destaca() {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(PAGINA_COM_ACOES, Some("v1".into()));
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "o");
+        digitar(&mut e, "Abrir");
+        tecla(&mut e, "Enter");
+        let d = acoes_gravadas(&e);
+        assert_eq!(d.buttons.iter().map(|b| b.label.as_str()).collect::<Vec<_>>(), vec!["Nova página", "Abrir", "Buscar"]);
+        assert_eq!(d.buttons[1].action, "open-page");
+        assert_eq!(e.cursor, vec![1, 0, 1]);
+        tecla(&mut e, "a");
+        digitar(&mut e, " hoje");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, ">");
+        tecla(&mut e, ">");
+        let d = acoes_gravadas(&e);
+        assert_eq!(d.buttons[2].label, "Abrir hoje");
+        assert_eq!(e.cursor, vec![1, 0, 2]);
+        tecla(&mut e, "~");
+        assert_eq!(acoes_gravadas(&e).buttons[2].variant.as_deref(), Some("primary"));
+        e.cursor = vec![1, 0, 1];
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        let d = acoes_gravadas(&e);
+        assert_eq!(d.buttons.len(), 2);
+        assert_eq!(e.cursor, vec![1, 0, 1]);
+        tecla(&mut e, "P");
+        let d = acoes_gravadas(&e);
+        assert_eq!(d.buttons[1].label, "Buscar");
+        assert_eq!(d.buttons[1].query.as_deref(), Some("tag"));
     }
 
     const PAGINA_COM_CRONOGRAMA: &str = "Antes.\n\n{{ type: \"timeline\" }}\nitems:\n- title: Levantar\n  start: 2026-08-03\n  end: 2026-08-10\n  tags:\n  - infra\n- title: Implementar\n  start: 2026-08-11\n  end: 2026-08-24\n{{ /timeline }}\n\nDepois.\n";
@@ -4925,7 +4412,7 @@ mod testes {
     }
 
     #[test]
-    fn o_cria_barra_depois_da_do_cursor_e_c_renomeia() {
+    fn o_cria_barra_depois_da_do_cursor_e_a_renomeia() {
         let mut e = cronograma_editavel();
         // embed → eixo, Levantar, Implementar.
         e.cursor = vec![1, 2];
@@ -4939,7 +4426,7 @@ mod testes {
         assert_eq!(d.items[2].end.as_deref(), Some("2026-08-31"));
         assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Publicar");
         e.cursor = vec![1, 1];
-        tecla(&mut e, "c");
+        tecla(&mut e, "a");
         assert_eq!(e.pergunta.as_ref().unwrap().texto, "Levantar");
         digitar(&mut e, " requisitos");
         tecla(&mut e, "Enter");
@@ -4949,25 +4436,47 @@ mod testes {
     }
 
     #[test]
-    fn maior_menor_movem_e_mais_menos_esticam_o_fim() {
+    fn maior_maior_move_e_ctrl_a_ctrl_x_esticam_o_fim() {
         let mut e = cronograma_editavel();
         e.cursor = vec![1, 1];
+        tecla(&mut e, ">");
         tecla(&mut e, ">");
         let d = cronograma_gravado(&e);
         assert_eq!((d.items[0].start.as_deref(), d.items[0].end.as_deref()), (Some("2026-08-04"), Some("2026-08-11")));
         assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Levantar");
-        tecla(&mut e, "+");
-        tecla(&mut e, "+");
+        tecla(&mut e, "Ctrl+a");
+        tecla(&mut e, "Ctrl+a");
         let d = cronograma_gravado(&e);
         assert_eq!(d.items[0].end.as_deref(), Some("2026-08-13"));
         // `-` não passa do começo.
         for _ in 0..20 {
-            tecla(&mut e, "-");
+            tecla(&mut e, "Ctrl+x");
         }
         let d = cronograma_gravado(&e);
         assert_eq!(d.items[0].end.as_deref(), Some("2026-08-04"));
         tecla(&mut e, "<");
+        tecla(&mut e, "<");
         assert_eq!(cronograma_gravado(&e).items[0].start.as_deref(), Some("2026-08-03"));
+    }
+
+    #[test]
+    fn o_maiusculo_poe_a_barra_antes_e_colar_mantem_a_duracao() {
+        let mut e = cronograma_editavel();
+        e.cursor = vec![1, 2];
+        tecla(&mut e, "O");
+        assert!(e.pergunta.as_ref().unwrap().rotulo.contains("de 04/08/2026 a 10/08/2026"));
+        digitar(&mut e, "Desenhar");
+        tecla(&mut e, "Enter");
+        let d = cronograma_gravado(&e);
+        assert_eq!(d.items[1].title, "Desenhar");
+        assert_eq!(d.items[2].title, "Implementar");
+        // Copiar Implementar (14 dias) e colar depois dele.
+        e.cursor = achar_com_indice(&e.arvore, &[1], "barra", 2).unwrap();
+        tecla(&mut e, "y");
+        tecla(&mut e, "y");
+        tecla(&mut e, "p");
+        let d = cronograma_gravado(&e);
+        assert_eq!((d.items[3].start.as_deref(), d.items[3].end.as_deref()), (Some("2026-08-25"), Some("2026-09-07")));
     }
 
     #[test]
@@ -5027,18 +4536,18 @@ mod testes {
     }
 
     #[test]
-    fn c_edita_a_celula_e_valor_novo_vira_opcao() {
+    fn a_edita_a_celula_e_valor_novo_vira_opcao() {
         let mut e = tabela_editavel();
         // tabela → cabeçalho, API, Docs.
         e.cursor = vec![1, 2, 0];
-        tecla(&mut e, "c");
+        tecla(&mut e, "a");
         assert_eq!(e.pergunta.as_ref().unwrap().texto, "Docs");
         assert_eq!(e.pergunta.as_ref().unwrap().rotulo, "Tarefa");
         digitar(&mut e, " da API");
         tecla(&mut e, "Enter");
         assert_eq!(tabela_gravada(&e).rows[1][0], "Docs da API");
         e.cursor = vec![1, 2, 1];
-        tecla(&mut e, "c");
+        tecla(&mut e, "a");
         for _ in 0..4 {
             tecla(&mut e, "Backspace");
         }
@@ -5048,7 +4557,7 @@ mod testes {
         assert_eq!(d.rows[1][1], "doing");
         assert_eq!(opcoes(&d, 1), vec!["todo", "done", "doing"]);
         e.cursor = vec![1, 2, 2];
-        tecla(&mut e, "c");
+        tecla(&mut e, "a");
         digitar(&mut e, "api ,web,");
         tecla(&mut e, "Enter");
         let d = tabela_gravada(&e);
@@ -5058,10 +4567,33 @@ mod testes {
     }
 
     #[test]
-    fn c_no_cabecalho_renomeia_e_x_limpa_a_celula() {
+    fn ctrl_a_gira_o_select_e_yy_p_copia_a_linha() {
+        let mut e = tabela_editavel();
+        e.cursor = vec![1, 2, 1];
+        tecla(&mut e, "Ctrl+a");
+        assert_eq!(tabela_gravada(&e).rows[1][1], "done");
+        tecla(&mut e, "Ctrl+a");
+        assert_eq!(tabela_gravada(&e).rows[1][1], "todo");
+        tecla(&mut e, "Ctrl+x");
+        assert_eq!(tabela_gravada(&e).rows[1][1], "done");
+        e.cursor = vec![1, 1, 0];
+        tecla(&mut e, "y");
+        tecla(&mut e, "y");
+        e.cursor = vec![1, 2, 0];
+        tecla(&mut e, "p");
+        let d = tabela_gravada(&e);
+        assert_eq!(d.rows.len(), 3);
+        assert_eq!(d.rows[2], vec!["API", "done", "api"]);
+        assert_eq!(e.cursor, vec![1, 3, 0]);
+        tecla(&mut e, "O");
+        assert_eq!(tabela_gravada(&e).rows[2], vec!["", "", ""]);
+    }
+
+    #[test]
+    fn a_no_cabecalho_renomeia_e_x_limpa_a_celula() {
         let mut e = tabela_editavel();
         e.cursor = vec![1, 0, 0];
-        tecla(&mut e, "c");
+        tecla(&mut e, "a");
         assert_eq!(e.pergunta.as_ref().unwrap().rotulo, "Renomear coluna");
         digitar(&mut e, "s");
         tecla(&mut e, "Enter");
@@ -5083,7 +4615,7 @@ mod testes {
         assert_eq!(d.rows[1], vec!["", "", ""]);
         assert_eq!(d.rows[2][0], "Docs");
         assert_eq!(e.cursor, vec![1, 2, 0]);
-        tecla(&mut e, "c");
+        tecla(&mut e, "a");
         digitar(&mut e, "Testes");
         tecla(&mut e, "Enter");
         assert_eq!(tabela_gravada(&e).rows[1][0], "Testes");

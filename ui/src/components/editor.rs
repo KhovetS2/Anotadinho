@@ -2164,6 +2164,9 @@ pub fn editor(props: &EditorProps) -> Html {
                     // algo reinjetasse HTML a partir de `content_md`.
                     Comando::Desfazer => do_undo.emit(()),
                     Comando::Refazer => do_redo_vim.emit(()),
+                    // `>>`/`<<` e `Ctrl+A`/`Ctrl+X` só editam itens de embed, na
+                    // TUI (ciclo 322); no texto da janela ainda não fazem nada.
+                    Comando::Deslocar { .. } | Comando::Somar(_) => {}
                     Comando::Busca => on_search_vim.emit(String::new()),
                     Comando::Visual => vim_modo.set(VimModo::Visual),
                     Comando::VisualLinha => {

@@ -43,6 +43,13 @@ struct Cli {
 /// recebem `&str`, então os dois funcionam num terminal sem uma linha de
 /// mudança.
 fn nome_da_tecla(k: &KeyEvent) -> Option<String> {
+    // `Ctrl+R` refaz, `Ctrl+A`/`Ctrl+X` somam (ciclo 322).
+    if k.modifiers.contains(KeyModifiers::CONTROL) {
+        return match k.code {
+            KeyCode::Char(c) => Some(format!("Ctrl+{}", c.to_ascii_lowercase())),
+            _ => None,
+        };
+    }
     Some(match k.code {
         KeyCode::Char(c) => c.to_string(),
         KeyCode::Enter => "Enter".into(),

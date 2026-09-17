@@ -99,7 +99,10 @@ pub enum Comando {
     /// Apagar e entrar em inserção.
     Mudar(Movimento, u32),
     ApagarCaractere { antes: bool, vezes: u32 },
-    Colar { antes: bool },
+    Colar {
+        /// `P`: antes do cursor.
+        antes: bool,
+    },
     Entrar(Insercao),
     Substituir(char),
     JuntarLinhas,
@@ -110,6 +113,78 @@ pub enum Comando {
     Visual,
     VisualLinha,
     VisualBloco,
+    /// `>>`/`<<` (ciclo 322): no texto, indentar; num item estruturado
+    /// (evento, cartão, barra, botão), andar com ele `vezes` passos.
+    Deslocar {
+        /// `>` é adiante.
+        adiante: bool,
+        /// A contagem (`3>>`).
+        vezes: u32,
+    },
+    /// `Ctrl+A`/`Ctrl+X` (ciclo 322): somar ao número sob o cursor — num
+    /// item estruturado, à duração ou à opção escolhida.
+    Somar(i64),
+}
+
+/// O que um comando de vim faz sobre um ITEM de embed (ciclo 322).
+///
+/// No texto, `dd` apaga uma linha e `cc` a reescreve. Num embed a
+/// "linha" é o item sob o cursor — o evento, o cartão, a barra, a
+/// célula, o botão —, e a mesma gramática vale: quem conhece o vim não
+/// aprende tecla nova pra editar um kanban. Esta tabela é o padrão; cada
+/// embed só diz o que "criar", "apagar" e "deslocar" significam pra ele.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Edicao {
+    /// `o` (depois) / `O` (antes): um item novo ao lado do cursor.
+    Criar {
+        /// `O`: antes do cursor.
+        antes: bool,
+    },
+    /// `i`, `a`, `I`, `A` editam o texto com o atual na pergunta;
+    /// `cc`, `S`, `C` começam vazios (`limpar`).
+    Reescrever {
+        /// Começa sem o texto atual.
+        limpar: bool,
+    },
+    /// `dd`, `D`: apaga o item (e guarda no registro, como o vim).
+    Apagar,
+    /// `x`: apaga o menor pedaço — numa célula, o valor; no resto, o item.
+    ApagarConteudo,
+    /// `yy`, `Y`: copia o item pro registro.
+    Copiar,
+    /// `p` (depois) / `P` (antes): cola o item do registro.
+    Colar { antes: bool },
+    /// `>>`/`<<`, com contagem: anda com o item.
+    Deslocar(i64),
+    /// `Ctrl+A`/`Ctrl+X`, com contagem: estica/encurta, ou troca a opção.
+    Somar(i64),
+    /// `~`: alterna um estado do item (recolhido, destaque).
+    Alternar,
+    /// `u`.
+    Desfazer,
+    /// `Ctrl+R`.
+    Refazer,
+}
+
+/// Traduz um comando fechado na edição de item que ele significa.
+/// `None` é "isto é navegação ou não tem sentido num item".
+pub fn edicao_de(c: &Comando) -> Option<Edicao> {
+    Some(match *c {
+        Comando::Entrar(Insercao::LinhaAbaixo) => Edicao::Criar { antes: false },
+        Comando::Entrar(Insercao::LinhaAcima) => Edicao::Criar { antes: true },
+        Comando::Entrar(_) => Edicao::Reescrever { limpar: false },
+        Comando::Mudar(Movimento::LinhaInteira | Movimento::FimDaLinha, _) => Edicao::Reescrever { limpar: true },
+        Comando::Apagar(Movimento::LinhaInteira | Movimento::FimDaLinha, _) => Edicao::Apagar,
+        Comando::ApagarCaractere { .. } => Edicao::ApagarConteudo,
+        Comando::Copiar(Movimento::LinhaInteira, _) => Edicao::Copiar,
+        Comando::Colar { antes } => Edicao::Colar { antes },
+        Comando::Deslocar { adiante, vezes } => Edicao::Deslocar(if adiante { vezes as i64 } else { -(vezes as i64) }),
+        Comando::Somar(n) => Edicao::Somar(n),
+        Comando::TrocarCaixa => Edicao::Alternar,
+        Comando::Desfazer => Edicao::Desfazer,
+        Comando::Refazer => Edicao::Refazer,
+        _ => return None,
+    })
 }
 
 /// O que a máquina ainda espera pra fechar um comando.
@@ -193,7 +268,16 @@ pub fn tecla_normal(p: &mut Pendente, tecla: &str, ctrl: bool) -> Passo {
     }
 
     if ctrl {
+        let vezes = p.total() as i64;
         return match tecla {
+            "a" | "A" => {
+                p.limpar();
+                Passo::Pronto(Comando::Somar(vezes))
+            }
+            "x" | "X" => {
+                p.limpar();
+                Passo::Pronto(Comando::Somar(-vezes))
+            }
             "r" | "R" => {
                 p.limpar();
                 Passo::Pronto(Comando::Refazer)
@@ -239,6 +323,16 @@ pub fn tecla_normal(p: &mut Pendente, tecla: &str, ctrl: bool) -> Passo {
 
     // Operador repetido age na linha inteira: `dd`, `yy`, `cc`.
     if let Some(op) = p.operador {
+        // `>>` e `<<` não levam movimento aqui: dobrados ou nada.
+        if matches!(op, '>' | '<') {
+            let vezes = p.total();
+            p.limpar();
+            return if tecla.starts_with(op) && tecla.chars().count() == 1 {
+                Passo::Pronto(Comando::Deslocar { adiante: op == '>', vezes })
+            } else {
+                Passo::Ignorada
+            };
+        }
         if tecla.chars().count() == 1 && tecla.starts_with(op) {
             let vezes = p.total();
             p.limpar();
@@ -255,7 +349,7 @@ pub fn tecla_normal(p: &mut Pendente, tecla: &str, ctrl: bool) -> Passo {
 
     // Um operador novo só abre se não houver outro aberto — `dc` não é
     // comando nenhum, e engolir a tecla calado seria pior que cancelar.
-    if matches!(tecla, "d" | "c" | "y") {
+    if matches!(tecla, "d" | "c" | "y" | ">" | "<") {
         if p.operador.is_some() {
             p.limpar();
             return Passo::Ignorada;
@@ -514,6 +608,49 @@ mod testes {
             tecla_normal(&mut p, "v", true),
             Passo::Pronto(Comando::VisualBloco)
         );
+    }
+
+    #[test]
+    fn deslocar_e_somar_levam_contagem() {
+        let mut p = Pendente::default();
+        assert_eq!(passo(&mut p, &[">"]), Passo::Aguardando);
+        assert_eq!(passo(&mut p, &[">"]), Passo::Pronto(Comando::Deslocar { adiante: true, vezes: 1 }));
+        assert_eq!(
+            passo(&mut p, &["3", "<", "<"]),
+            Passo::Pronto(Comando::Deslocar { adiante: false, vezes: 3 })
+        );
+        assert_eq!(passo(&mut p, &[">", "j"]), Passo::Ignorada);
+        assert!(!p.em_curso());
+        passo(&mut p, &["5"]);
+        assert_eq!(tecla_normal(&mut p, "a", true), Passo::Pronto(Comando::Somar(5)));
+        assert_eq!(tecla_normal(&mut p, "x", true), Passo::Pronto(Comando::Somar(-1)));
+    }
+
+    #[test]
+    fn a_tabela_de_edicao_de_item() {
+        let casos = [
+            (vec!["o"], Some(Edicao::Criar { antes: false })),
+            (vec!["O"], Some(Edicao::Criar { antes: true })),
+            (vec!["i"], Some(Edicao::Reescrever { limpar: false })),
+            (vec!["A"], Some(Edicao::Reescrever { limpar: false })),
+            (vec!["c", "c"], Some(Edicao::Reescrever { limpar: true })),
+            (vec!["S"], Some(Edicao::Reescrever { limpar: true })),
+            (vec!["d", "d"], Some(Edicao::Apagar)),
+            (vec!["x"], Some(Edicao::ApagarConteudo)),
+            (vec!["y", "y"], Some(Edicao::Copiar)),
+            (vec!["P"], Some(Edicao::Colar { antes: true })),
+            (vec!["2", ">", ">"], Some(Edicao::Deslocar(2))),
+            (vec!["<", "<"], Some(Edicao::Deslocar(-1))),
+            (vec!["~"], Some(Edicao::Alternar)),
+            (vec!["u"], Some(Edicao::Desfazer)),
+            (vec!["j"], None),
+            (vec!["d", "w"], None),
+        ];
+        for (teclas, esperado) in casos {
+            let mut p = Pendente::default();
+            let Passo::Pronto(c) = passo(&mut p, &teclas) else { panic!("{teclas:?} não fechou") };
+            assert_eq!(edicao_de(&c), esperado, "{teclas:?}");
+        }
     }
 
     #[test]
