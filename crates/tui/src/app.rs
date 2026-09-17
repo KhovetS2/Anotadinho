@@ -633,6 +633,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
             // Enter num evento do vault abre a página dele (ciclo 317), o
             // que o clique faz na janela.
             // Enter numa transição do fluxo move a etapa (ciclo 335).
+            // `=` configura o item (ciclo 344).
+            if tecla == "=" && !e.vim.em_curso() && edicao::configurar(e) {
+                return None;
+            }
             if tecla == "Enter"
                 && (edicao::transicao_do_cursor(e)
                     || edicao::cartao_na_coluna_vazia(e)
@@ -6863,6 +6867,78 @@ mod testes {
         tecla(&mut e, "Enter");
         assert!(e.modal.is_none());
         assert_eq!(gravado(&e).entries.len(), 1);
+    }
+
+    #[test]
+    fn propriedades_da_pagina_editam_o_frontmatter_e_mantem_o_corpo() {
+        let mut e = markdown_editavel();
+        tecla(&mut e, ":");
+        digitar(&mut e, "propriedades");
+        tecla(&mut e, "Enter");
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("Propriedades") && tela.contains("Notas") && tela.contains("Página normal"), "{tela}");
+        // tipo: gira pra landing
+        tecla(&mut e, "j");
+        tecla(&mut e, "~");
+        let texto = e.gravacao.clone().unwrap();
+        assert!(texto.starts_with("---\ntitle: Notas\ntype: landing\n---\n# Título"), "{texto}");
+        // propriedade livre
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "status: doing");
+        tecla(&mut e, "Enter");
+        let texto = e.gravacao.clone().unwrap();
+        assert!(texto.contains("status: doing") && texto.contains("> citação"), "{texto}");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "sem dois pontos");
+        tecla(&mut e, "Enter");
+        assert!(e.aviso.as_deref().unwrap_or("").contains("chave: valor"));
+    }
+
+    #[test]
+    fn igual_configura_o_botao_e_a_consulta() {
+        use anotadinho_core::embed::EmbedData;
+        let mut e = pagina_com("{{ type: \"actions\" }}\nbuttons:\n- label: Ir\n  action: open-page\n{{ /actions }}\n\n{{ type: \"query\" }}\nfrom: pages\n{{ /query }}\n");
+        e.cursor = vec![0, 0, 0];
+        tecla(&mut e, "=");
+        let Some(Modal::Detalhe { form, .. }) = &e.modal else { panic!() };
+        assert!(form.campos.iter().find(|c| c.chave == "query").unwrap().escondido);
+        // ação: open-page → new-from-template mostra template e pasta
+        for _ in 0..3 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "~");
+        let Some(Modal::Detalhe { form, .. }) = &e.modal else { panic!() };
+        assert!(!form.campos.iter().find(|c| c.chave == "template").unwrap().escondido);
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "templates/nota.md");
+        tecla(&mut e, "Enter");
+        let EmbedData::Actions(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!((d.buttons[0].action.as_str(), d.buttons[0].template.as_deref()), ("new-from-template", Some("templates/nota.md")));
+        tecla(&mut e, "Escape");
+        // A consulta.
+        e.cursor = vec![1];
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "=");
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "status!=done");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "=ruim");
+        tecla(&mut e, "Enter");
+        assert!(e.aviso.as_deref().unwrap_or("").contains("inválida"));
+        let texto = e.gravacao.clone().unwrap();
+        let q = anotadinho_core::embed::segment(&texto).into_iter().find_map(|s| match s {
+            anotadinho_core::embed::DocSegment::Embed(EmbedData::Query(q)) => Some(q),
+            _ => None,
+        });
+        assert_eq!(q.unwrap().conditions.len(), 1);
     }
 
     const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";

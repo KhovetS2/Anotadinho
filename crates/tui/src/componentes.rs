@@ -415,6 +415,9 @@ pub enum Valor {
     Lista(Vec<String>),
     /// Itens com caixa (a checklist).
     Checklist(Vec<(bool, String)>),
+    /// Uma escolha entre opções `(chave, rótulo)`, girada com `~`/Enter
+    /// (ciclo 344).
+    Opcoes(Vec<(String, String)>, usize),
 }
 
 /// Um campo de [`Formulario`].
@@ -505,6 +508,22 @@ impl Formulario {
         }
     }
 
+    /// A chave escolhida num campo de opções.
+    pub fn escolha(&self, chave: &str) -> String {
+        match self.valor(chave) {
+            Some(Valor::Opcoes(o, i)) => o.get(*i).map(|x| x.0.clone()).unwrap_or_default(),
+            _ => String::new(),
+        }
+    }
+
+    /// Os itens de um campo de lista.
+    pub fn lista(&self, chave: &str) -> Vec<String> {
+        match self.valor(chave) {
+            Some(Valor::Lista(l)) => l.clone(),
+            _ => Vec::new(),
+        }
+    }
+
     /// O liga/desliga de um campo.
     pub fn booleano(&self, chave: &str) -> bool {
         matches!(self.valor(chave), Some(Valor::Booleano(true)))
@@ -583,7 +602,7 @@ impl Formulario {
                             self.posicao.item = l.len();
                         }
                     }
-                    Valor::Booleano(_) => {}
+                    Valor::Booleano(_) | Valor::Opcoes(..) => {}
                 }
                 return RespostaDoFormulario::Mudou;
             }
@@ -614,6 +633,14 @@ impl Formulario {
             ("k" | "ArrowUp", _) => self.andar(-1),
             ("Enter" | "i" | "a" | " " | "~", Valor::Booleano(b)) => {
                 self.campos[p.campo].valor = Valor::Booleano(!b);
+                return RespostaDoFormulario::Mudou;
+            }
+            ("Enter" | "i" | "a" | " " | "~" | "l" | "ArrowRight", Valor::Opcoes(o, i)) if !o.is_empty() => {
+                self.campos[p.campo].valor = Valor::Opcoes(o.clone(), (i + 1) % o.len());
+                return RespostaDoFormulario::Mudou;
+            }
+            ("h" | "ArrowLeft", Valor::Opcoes(o, i)) if !o.is_empty() => {
+                self.campos[p.campo].valor = Valor::Opcoes(o.clone(), (i + o.len() - 1) % o.len());
                 return RespostaDoFormulario::Mudou;
             }
             ("Enter" | "i" | "a" | "A", Valor::Texto(t)) => self.editando = Some(Campo::com(t)),
@@ -692,6 +719,20 @@ impl Formulario {
                         Some(v) => spans.extend(v),
                         None if t.is_empty() => spans.push(Span::styled(c.dica.clone(), apagado)),
                         None => spans.push(Span::styled(t.clone(), texto)),
+                    }
+                    fora.push(linha(spans, esta));
+                }
+                Valor::Opcoes(o, atual) => {
+                    let p = Posicao { campo: i, item: 0 };
+                    let esta = self.posicao == p;
+                    let mut spans = vec![Span::styled(format!(" {:<14}", c.rotulo), if esta { apagado.fg(destaque) } else { apagado })];
+                    for (k, (_, rotulo)) in o.iter().enumerate() {
+                        let estilo = if k == *atual {
+                            Style::default().bg(destaque).fg(tema.var("bg-base"))
+                        } else {
+                            Style::default().bg(tema.var("bg-base")).fg(tema.var("text-muted"))
+                        };
+                        spans.push(Span::styled(format!(" {rotulo} "), estilo));
                     }
                     fora.push(linha(spans, esta));
                 }

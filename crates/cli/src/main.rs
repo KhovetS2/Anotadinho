@@ -7,7 +7,7 @@
 //! outro processo) conseguir consumir o vault programaticamente.
 
 use anotadinho_core::embed::{self, DocSegment, EmbedData, EmbedKind};
-use anotadinho_core::query::{Aggregate, AggregateOp, Condition, Query, QueryOp, Sort};
+use anotadinho_core::query::{Aggregate, Condition, Query, QueryOp, Sort};
 use anotadinho_ipc::{
     handle_create_page_from_template, handle_export_folder, handle_list_templates,
     handle_aplicar_proposta, handle_listar_propostas, handle_propor, handle_read_page,
@@ -1139,23 +1139,9 @@ pub(crate) fn parse_condition(raw: &str) -> Result<Condition, String> {
     Condition::parse(raw)
 }
 
-/// Parseia `count`, `sum:campo`, `avg:campo`, `min:campo`, `max:campo`.
+/// Parseia um agregado — a regra mora no núcleo (`Aggregate::parse`).
 fn parse_aggregate(raw: &str) -> Result<Aggregate, String> {
-    let (nome, campo) = match raw.split_once(':') {
-        Some((n, c)) => (n.trim(), c.trim().to_string()),
-        None => (raw.trim(), String::new()),
-    };
-    let op = AggregateOp::all()
-        .iter()
-        .copied()
-        .find(|o| o.slug() == nome.to_lowercase())
-        .ok_or_else(|| {
-            format!("agregado inválido: \"{raw}\". Use count, sum:campo, avg:campo, min:campo ou max:campo")
-        })?;
-    if op != AggregateOp::Count && campo.is_empty() {
-        return Err(format!("{} precisa de um campo: {}:campo", op.slug(), op.slug()));
-    }
-    Ok(Aggregate { field: campo, op })
+    Aggregate::parse(raw)
 }
 
 /// Lê a consulta declarada num embed `query`: `--from-embed

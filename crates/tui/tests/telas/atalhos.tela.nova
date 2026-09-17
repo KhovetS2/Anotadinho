@@ -1,0 +1,96 @@
+# cena atalhos · 140x40 · teclas: ?
+┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
+│cena                                    ││Antes.                                                                                          │
+│                                 ╭ Atalhos ─────────────────────────────────────────────────────────────╮▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
+│                                 │Geral                                                                 │                            z ⌄ ▌│
+│                                 │  : ou Ctrl+K     barra de comandos                                   │antiga.                         ▌│
+│                                 │  ?               estes atalhos                                       │                                ▌│
+│                                 │  Tab             trocar entre páginas e conteúdo                     │                                ▌│
+│                                 │  /               filtrar                                             │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
+│                                 │  q               sair                                                │                                 │
+│                                 │                                                                      │                                 │
+│                                 │Navegar                                                               │                                 │
+│                                 │  j k             próximo / anterior                                  │                                 │
+│                                 │  h l             lado a lado (colunas, cartões, células)             │                                 │
+│                                 │  Enter / Esc     entrar / sair de um nível                           │                                 │
+│                                 │  gg G            começo / fim                                        │                                 │
+│                                 │  z ou espaço     dobrar                                              │                                 │
+│                                 │  [ ] t m         período, hoje e visão (calendário, cronograma)      │                                 │
+│                                 │                                                                      │                                 │
+│                                 │Editar (modo vim)                                                     │                                 │
+│                                 │  i a I A         editar o texto                                      │                                 │
+│                                 │  cc S            reescrever do zero                                  │                                 │
+│                                 │  o O             criar depois / antes                                │                                 │
+│                                 │  dd x            apagar                                              │                                 │
+│                                 │  yy p P          copiar e colar                                      │                                 │
+│                                 │  >> <<           andar pro lado                                      │                                 │
+│                                 │  J K             descer / subir na ordem                             │                                 │
+│                                 │  Ctrl+A Ctrl+X   aumentar / diminuir (duração, nível, opção)         │                                 │
+│                                 │  ~               alternar (caixa, destaque, tipo)                    │                                 │
+│                                 │  =               configurar (botão, consulta)                        │                                 │
+│                                 │  u Ctrl+R        desfazer / refazer                                  │                                 │
+│                                 │  Esc             confirmar a inserção                                │                                 │
+│                                 ╰ j k rolar · Esc ─────────────────────────────────────────────────────╯                                 │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+└────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────────────────────────────────┘
+== estilos ==
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+accccddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfgggggggggffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhb
+adddddddddddddddddddddddddddddddddfiiiiijjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfkkkkkkkkkkkkkkkkkkkkkkkkkkkklllkhb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfnnnnnnnkkkkkkkkkkkkkkkkkkkkkkkkkhb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkhb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjfkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkhb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfiiiiiiijjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfiiiiiiiiiiiiiiiiijjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfmmmmmmmmmmmmmmmmmffffffffffffffffffffffffffffffffffffffffffffffffffffffdddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+a = fg #00b5ff bg #272930
+b = fg #3d404f bg #272930
+c = fg #272930 bg #00b5ff
+d = fg - bg #272930
+e = fg #e4e8f5 bg #272930
+f = fg #3d404f bg #32343f
+g = fg #e4e8f5 bg #32343f negrito
+h = fg #403a3d bg #272930
+i = fg #00b5ff bg #32343f negrito
+j = fg #e4e8f5 bg #32343f
+k = fg - bg #403a3d
+l = fg #989eb7 bg #403a3d
+m = fg #989eb7 bg #32343f
+n = fg #e4e8f5 bg #403a3d

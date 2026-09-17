@@ -191,6 +191,20 @@ pub enum AlvoDoDetalhe {
         /// A entrada no arquivo.
         indice: usize,
     },
+    /// O frontmatter da página aberta (ciclo 344).
+    Propriedades,
+    /// A configuração de um botão de ações.
+    Botao {
+        /// As ações.
+        embed: Caminho,
+        /// O botão.
+        indice: usize,
+    },
+    /// A configuração de uma consulta.
+    Consulta {
+        /// A consulta.
+        embed: Caminho,
+    },
 }
 
 /// O seletor de prompt padrão: a lista e os campos das variáveis.
@@ -269,6 +283,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Ir pra Hoje (journal)", "hoje"),
     ("Personalizar…", "personalizar"),
     ("Trocar agente…", "trocar-agente"),
+    ("Propriedades da página…", "propriedades"),
     ("Ver atalhos", "atalhos"),
     ("Excluir a página aberta", "excluir-pagina"),
 ];
@@ -387,6 +402,9 @@ fn executar(e: &mut Estado, chave: &str) {
             })
         }
         "trocar-agente" => e.modal = Some(escolha_de_agente(e)),
+        "propriedades" => {
+            super::edicao::abrir_propriedades(e);
+        }
         "atalhos" => e.modal = Some(Modal::Atalhos(0)),
         "excluir-pagina" => {
             if let Some(p) = e.paginas.get(e.pagina) {
@@ -604,6 +622,7 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("J K", "descer / subir na ordem"),
             ("Ctrl+A Ctrl+X", "aumentar / diminuir (duração, nível, opção)"),
             ("~", "alternar (caixa, destaque, tipo)"),
+            ("=", "configurar (botão, consulta)"),
             ("u Ctrl+R", "desfazer / refazer"),
             ("Esc", "confirmar a inserção"),
         ],

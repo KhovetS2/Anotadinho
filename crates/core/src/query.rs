@@ -81,7 +81,39 @@ pub struct Condition {
     pub value: String,
 }
 
+impl Aggregate {
+    /// Parseia `count`, `sum:campo`, `avg:campo`, `min:campo`, `max:campo`.
+    pub fn parse(raw: &str) -> Result<Aggregate, String> {
+        let (nome, campo) = match raw.split_once(':') {
+            Some((n, c)) => (n.trim(), c.trim().to_string()),
+            None => (raw.trim(), String::new()),
+        };
+        let op = AggregateOp::all()
+            .iter()
+            .copied()
+            .find(|o| o.slug() == nome.to_lowercase())
+            .ok_or_else(|| format!("agregado inválido: \"{raw}\". Use count, sum:campo, avg:campo, min:campo ou max:campo"))?;
+        if op != AggregateOp::Count && campo.is_empty() {
+            return Err(format!("{} precisa de um campo: {}:campo", op.slug(), op.slug()));
+        }
+        Ok(Aggregate { field: campo, op })
+    }
+
+    /// O agregado na forma que `parse` lê.
+    pub fn como_texto(&self) -> String {
+        if self.field.is_empty() { self.op.slug().to_string() } else { format!("{}:{}", self.op.slug(), self.field) }
+    }
+}
+
 impl Condition {
+    /// A condição na forma que `parse` lê.
+    pub fn como_texto(&self) -> String {
+        match self.op {
+            QueryOp::Exists => format!("{}?", self.field),
+            op => format!("{}{}{}", self.field, op.symbol(), self.value),
+        }
+    }
+
     /// Parseia `campo=valor` / `campo!=valor` / `campo~valor` / `campo?` /
     /// `campo>valor` / `campo<valor`.
     ///

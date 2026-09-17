@@ -87,6 +87,24 @@ impl MarkdownCodec {
         Ok(format!("{}\n{}", block, body))
     }
 
+    /// Troca o frontmatter inteiro do texto pelo `fm`, mantendo o corpo —
+    /// o painel de propriedades da TUI (ciclo 344). Frontmatter vazio
+    /// some.
+    pub fn substituir_frontmatter(text: &str, fm: &crate::Frontmatter) -> Result<String> {
+        let (_, body) = split_frontmatter_text(text);
+        if fm == &crate::Frontmatter::default() {
+            return Ok(body.to_string());
+        }
+        let yaml = serde_yaml::to_string(fm).map_err(|e| anyhow::anyhow!("frontmatter serialize: {}", e))?;
+        let mut block = String::from("---\n");
+        block.push_str(yaml.trim_start_matches("---\n"));
+        if !block.ends_with('\n') {
+            block.push('\n');
+        }
+        block.push_str("---");
+        Ok(format!("{}\n{}", block, body))
+    }
+
     /// Converte uma `Page` de volta em texto Markdown.
     pub fn serialize(page: &Page) -> Result<String> {
         let mut out = String::new();

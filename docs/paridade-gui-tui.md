@@ -36,7 +36,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | `type: assets` (arquivos, uso, excluir) | ❌ | |
 | `type: kanban` / `calendar` / `table` de página inteira | ❌ | |
 | `type: graph` | — | grafo 3D; talvez lista de conexões |
-| Cabeçalho de página tipada + propriedades | ❌ | |
+| Cabeçalho de página tipada + propriedades | 🟡 | 344 — propriedades pela barra |
 
 ## Editor
 
@@ -45,7 +45,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Editar texto dos blocos | ✅ | 334 (modo vim) |
 | Menu `/` (inserir bloco e embed) | ❌ | |
 | Barra de seleção (negrito, itálico, link, cor) | 🟡 | marcas digitadas à mão |
-| Painel de propriedades (frontmatter) | ❌ | |
+| Painel de propriedades (frontmatter) | ✅ | 344 — "Propriedades da página…" |
 | Imagem colada/arrastada, Mermaid, PDF | — | terminal |
 | Desfazer/refazer | ✅ | 322 |
 | Salvar (Ctrl+S) | ✅ | grava a cada edição |
@@ -59,9 +59,9 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Kanban: modal do cartão (descrição, tags, prazo, checklist, comentários, anexos) | ✅ | 343 — Enter no cartão |
 | Calendário: modal do evento (datas, horário, tags) | ✅ | 343 — Enter no evento |
 | Tabela: células, linhas, colunas, tipo, opções | ✅ | 321, 337, 339 |
-| Consulta: filtro, visão, limite | 🟡 | 335, 338; falta ordenar, agrupar, agregados, colunas |
+| Consulta: configuração completa | ✅ | 335, 338, 344 — `=` na consulta |
 | Ações: EXECUTAR o botão | ✅ | 342 — abrir, template, propriedade, busca |
-| Ações: configurar o botão (ação, destino) | ❌ | |
+| Ações: configurar o botão (ação, destino, ícone) | ✅ | 344 — `=` no botão |
 | Galeria: escolher arquivo de assets | 🟡 | caminho digitado |
 | Fluxo: transições, nota | ✅ | 335 |
 | Fluxo: planejar/executar/pedir alteração (abre conversa) | ❌ | |

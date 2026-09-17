@@ -2419,6 +2419,9 @@ pub(super) fn aplicar_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDetalh
                 Ok(())
             });
         }
+        AlvoDoDetalhe::Propriedades | AlvoDoDetalhe::Botao { .. } | AlvoDoDetalhe::Consulta { .. } => {
+            aplicar_configuracao(e, alvo, form);
+        }
         AlvoDoDetalhe::Evento { embed, indice } => {
             form.esconder("fim", !form.booleano("varios"));
             let horario = form.booleano("horario");
@@ -2479,6 +2482,20 @@ pub(super) fn excluir_do_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDet
                 e.seguir_cursor();
             }
         }
+        AlvoDoDetalhe::Botao { embed, indice } => {
+            let i = *indice;
+            if editar_acoes(e, embed, |d| {
+                d.remove_button(i);
+                Ok(())
+            }) {
+                e.aviso = Some("botão apagado".into());
+                if e.arvore.em(&e.cursor).is_none() {
+                    e.cursor = embed.clone();
+                }
+                e.seguir_cursor();
+            }
+        }
+        AlvoDoDetalhe::Propriedades | AlvoDoDetalhe::Consulta { .. } => {}
         AlvoDoDetalhe::Evento { embed, indice } => {
             let i = *indice;
             if editar_calendario(e, embed, |d| {
@@ -2489,5 +2506,259 @@ pub(super) fn excluir_do_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDet
                 e.seguir_cursor();
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Propriedades da página, configurar botão e consulta (ciclo 344)
+// ---------------------------------------------------------------------
+
+/// Os tipos de página que a janela oferece no painel de propriedades.
+const TIPOS_DE_PAGINA: &[(&str, &str)] = &[
+    ("", "Página normal"),
+    ("landing", "Landing"),
+    ("kanban", "Kanban"),
+    ("calendar", "Calendário"),
+    ("table", "Tabela"),
+    ("tags", "Tags"),
+    ("assets", "Assets"),
+    ("graph", "Grafo"),
+    ("conversa", "Conversa"),
+    ("prompt", "Prompt"),
+];
+
+fn yaml_como_texto(v: &serde_yaml::Value) -> String {
+    match v {
+        serde_yaml::Value::String(s) => s.clone(),
+        serde_yaml::Value::Null => String::new(),
+        outro => serde_yaml::to_string(outro).unwrap_or_default().trim().to_string(),
+    }
+}
+
+/// O painel de propriedades (frontmatter) da página aberta — o
+/// `PropertiesPanel` da janela: título, tipo, tags, criado, atualizado e
+/// as propriedades livres como `chave: valor`.
+pub(super) fn abrir_propriedades(e: &mut Estado) -> bool {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    let Some(texto) = e.texto_da_pagina.clone() else {
+        e.aviso = Some("esta página não pode ser editada daqui".into());
+        return true;
+    };
+    let fm = anotadinho_core::MarkdownCodec::split_frontmatter(&texto).map(|(fm, _)| fm).unwrap_or_default();
+    let mut tipos: Vec<(String, String)> = TIPOS_DE_PAGINA.iter().map(|(k, r)| (k.to_string(), r.to_string())).collect();
+    let atual = fm.page_type.clone().unwrap_or_default();
+    if !tipos.iter().any(|(k, _)| *k == atual) {
+        tipos.push((atual.clone(), atual.clone()));
+    }
+    let idx = tipos.iter().position(|(k, _)| *k == atual).unwrap_or(0);
+    let form = Formulario::novo(vec![
+        C::novo("titulo", "Título", Valor::Texto(fm.title.clone().unwrap_or_default())).com_dica("(nome do arquivo)"),
+        C::novo("tipo", "Tipo", Valor::Opcoes(tipos, idx)),
+        C::novo("tags", "Tags", Valor::Lista(fm.tags.clone())).com_dica("tag"),
+        C::novo("criado", "Criado", Valor::Texto(fm.created.clone().unwrap_or_default())).com_dica("AAAA-MM-DD"),
+        C::novo("atualizado", "Atualizado", Valor::Texto(fm.updated.clone().unwrap_or_default())).com_dica("AAAA-MM-DD"),
+        C::novo(
+            "extra",
+            "Propriedades",
+            Valor::Lista(fm.extra.iter().map(|(k, v)| format!("{k}: {}", yaml_como_texto(v))).collect()),
+        )
+        .com_dica("chave: valor"),
+    ]);
+    let titulo = e.paginas.get(e.pagina).map(|p| format!("Propriedades · {}", p.title)).unwrap_or_else(|| "Propriedades".into());
+    e.modal = Some(super::modais::Modal::Detalhe { titulo, form, alvo: super::modais::AlvoDoDetalhe::Propriedades });
+    true
+}
+
+const ICONES: &[&str] = &["", "search", "home", "file-text", "folder", "calendar", "check", "edit", "link", "clock", "image", "table", "settings", "zap"];
+const ACOES: &[(&str, &str)] = &[
+    ("open-page", "Abrir página"),
+    ("new-from-template", "Nova de template"),
+    ("set-property", "Gravar propriedade"),
+    ("run-search", "Buscar"),
+];
+
+fn esconder_campos_do_botao(form: &mut crate::componentes::Formulario) {
+    let acao = form.escolha("acao");
+    form.esconder("path", !matches!(acao.as_str(), "open-page" | "set-property"));
+    form.esconder("template", acao != "new-from-template");
+    form.esconder("folder", acao != "new-from-template");
+    form.esconder("field", acao != "set-property");
+    form.esconder("value", acao != "set-property");
+    form.esconder("query", acao != "run-search");
+}
+
+/// `=`: configurar o item sob o cursor (ciclo 344) — o botão de ações
+/// (`ActionButtonModal`) ou a consulta (`QuerySettingsModal`).
+pub(super) fn configurar(e: &mut Estado) -> bool {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    use super::modais::{AlvoDoDetalhe, Modal};
+    if let Some(embed) = embed_do_cursor(e, "actions") {
+        let Some(indice) = (e.cursor.len() == embed.len() + 2).then(|| e.cursor[embed.len() + 1]) else {
+            e.aviso = Some("entre num botão pra configurar".into());
+            return true;
+        };
+        let Some(b) = ler_acoes(e, &embed).and_then(|d| d.buttons.get(indice).cloned()) else { return false };
+        let icones: Vec<(String, String)> =
+            ICONES.iter().map(|i| (i.to_string(), if i.is_empty() { "—".into() } else { super::glifo_do_icone(i).to_string() })).collect();
+        let icone = icones.iter().position(|(k, _)| Some(k.as_str()) == b.icon.as_deref()).unwrap_or(0);
+        let acoes: Vec<(String, String)> = ACOES.iter().map(|(k, r)| (k.to_string(), r.to_string())).collect();
+        let acao = acoes.iter().position(|(k, _)| *k == b.action).unwrap_or(0);
+        let mut form = Formulario::novo(vec![
+            C::novo("label", "Rótulo", Valor::Texto(b.label.clone())),
+            C::novo("icon", "Ícone", Valor::Opcoes(icones, icone)),
+            C::novo("primary", "Destaque", Valor::Booleano(b.variant.as_deref() == Some("primary"))),
+            C::novo("acao", "Ação", Valor::Opcoes(acoes, acao)),
+            C::novo("path", "Página", Valor::Texto(b.path.clone().unwrap_or_default())).com_dica("pages/…md"),
+            C::novo("template", "Template", Valor::Texto(b.template.clone().unwrap_or_default())).com_dica("templates/…md"),
+            C::novo("folder", "Pasta", Valor::Texto(b.folder.clone().unwrap_or_default())).com_dica("pages/…"),
+            C::novo("field", "Campo", Valor::Texto(b.field.clone().unwrap_or_default())).com_dica("status"),
+            C::novo("value", "Valor", Valor::Texto(b.value.clone().unwrap_or_default())),
+            C::novo("query", "Busca", Valor::Texto(b.query.clone().unwrap_or_default())),
+        ]);
+        esconder_campos_do_botao(&mut form);
+        form.botoes.push(("excluir", "Excluir botão".into()));
+        e.modal = Some(Modal::Detalhe { titulo: "Botão".into(), form, alvo: AlvoDoDetalhe::Botao { embed, indice } });
+        return true;
+    }
+    if let Some(embed) = embed_do_cursor(e, "query") {
+        let Some(q) = ler_consulta(e, &embed) else { return false };
+        use anotadinho_core::query::QueryView;
+        let visoes: Vec<(String, String)> = QueryView::all().iter().map(|v| (v.slug().to_string(), v.label().to_string())).collect();
+        let visao = QueryView::all().iter().position(|v| *v == q.view).unwrap_or(0);
+        let form = Formulario::novo(vec![
+            C::novo("from", "Em", Valor::Texto(q.from.clone().unwrap_or_default())).com_dica("vault inteiro"),
+            C::novo("tags", "Com tags", Valor::Lista(q.tags.clone())).com_dica("tag"),
+            C::novo("where", "Condições", Valor::Lista(q.conditions.iter().map(|c| c.como_texto()).collect()))
+                .com_dica("campo=valor · campo!=valor · campo~texto · campo? · campo>valor"),
+            C::novo("sort", "Ordenar por", Valor::Texto(q.sort.as_ref().map(|s| s.field.clone()).unwrap_or_default())).com_dica("campo"),
+            C::novo("desc", "Decrescente", Valor::Booleano(q.sort.as_ref().is_some_and(|s| s.desc))),
+            C::novo("limit", "Limite", Valor::Texto(q.limit.map(|l| l.to_string()).unwrap_or_default())).com_dica("sem limite"),
+            C::novo("view", "Visão", Valor::Opcoes(visoes, visao)),
+            C::novo("columns", "Colunas", Valor::Lista(q.columns.clone())).com_dica("campo"),
+            C::novo("group", "Agrupar por", Valor::Texto(q.group_by.clone().unwrap_or_default())).com_dica("campo"),
+            C::novo("aggregate", "Agregados", Valor::Lista(q.aggregate.iter().map(|a| a.como_texto()).collect()))
+                .com_dica("count · sum:campo · avg:campo"),
+        ]);
+        e.modal = Some(Modal::Detalhe { titulo: "Consulta".into(), form, alvo: AlvoDoDetalhe::Consulta { embed } });
+        return true;
+    }
+    false
+}
+
+/// A parte do `aplicar_detalhe` dos formulários do ciclo 344.
+pub(super) fn aplicar_configuracao(e: &mut Estado, alvo: &super::modais::AlvoDoDetalhe, form: &mut crate::componentes::Formulario) {
+    use super::modais::AlvoDoDetalhe;
+    let opcional = |t: String| (!t.trim().is_empty()).then_some(t);
+    match alvo {
+        AlvoDoDetalhe::Propriedades => {
+            let Some(texto) = e.texto_da_pagina.clone() else { return };
+            let velho = anotadinho_core::MarkdownCodec::split_frontmatter(&texto).map(|(fm, _)| fm).unwrap_or_default();
+            let mut fm = velho.clone();
+            fm.title = opcional(form.texto("titulo"));
+            fm.page_type = opcional(form.escolha("tipo"));
+            fm.tags = form.lista("tags");
+            fm.created = opcional(form.texto("criado"));
+            fm.updated = opcional(form.texto("atualizado"));
+            let mut extra = std::collections::BTreeMap::new();
+            for linha in form.lista("extra") {
+                let Some((k, v)) = linha.split_once(':') else {
+                    e.aviso = Some(format!("\"{linha}\": use chave: valor"));
+                    return;
+                };
+                let (k, v) = (k.trim().to_string(), v.trim().to_string());
+                // Valor que não mudou mantém o tipo YAML de antes (lista,
+                // número); o que mudou vira texto.
+                let valor = match velho.extra.get(&k) {
+                    Some(antigo) if yaml_como_texto(antigo) == v => antigo.clone(),
+                    _ => serde_yaml::Value::String(v),
+                };
+                extra.insert(k, valor);
+            }
+            fm.extra = extra;
+            match anotadinho_core::MarkdownCodec::substituir_frontmatter(&texto, &fm) {
+                Ok(novo) if novo != texto => e.aplicar_edicao(novo),
+                Ok(_) => {}
+                Err(err) => e.aviso = Some(format!("não gravou: {err}")),
+            }
+        }
+        AlvoDoDetalhe::Botao { embed, indice } => {
+            esconder_campos_do_botao(form);
+            let i = *indice;
+            editar_acoes(e, embed, |d| {
+                let mut b = d.buttons.get(i).cloned().ok_or("o botão sumiu do arquivo")?;
+                let rotulo = form.texto("label");
+                if !rotulo.is_empty() {
+                    b.label = rotulo;
+                }
+                b.icon = opcional(form.escolha("icon"));
+                b.variant = form.booleano("primary").then(|| "primary".to_string());
+                b.action = form.escolha("acao");
+                let usa = |campo: &str| match b.action.as_str() {
+                    "open-page" => campo == "path",
+                    "set-property" => matches!(campo, "path" | "field" | "value"),
+                    "new-from-template" => matches!(campo, "template" | "folder"),
+                    "run-search" => campo == "query",
+                    _ => false,
+                };
+                b.path = if usa("path") { opcional(form.texto("path")) } else { None };
+                b.template = if usa("template") { opcional(form.texto("template")) } else { None };
+                b.folder = if usa("folder") { opcional(form.texto("folder")) } else { None };
+                b.field = if usa("field") { opcional(form.texto("field")) } else { None };
+                b.value = if usa("value") { opcional(form.texto("value")) } else { None };
+                b.query = if usa("query") { opcional(form.texto("query")) } else { None };
+                d.update_button(i, b);
+                Ok(())
+            });
+        }
+        AlvoDoDetalhe::Consulta { embed } => {
+            use anotadinho_core::query::{Aggregate, Condition, QueryView, Sort};
+            let mut condicoes = Vec::new();
+            for c in form.lista("where") {
+                match Condition::parse(&c) {
+                    Ok(x) => condicoes.push(x),
+                    Err(err) => {
+                        e.aviso = Some(err);
+                        return;
+                    }
+                }
+            }
+            let mut agregados = Vec::new();
+            for a in form.lista("aggregate") {
+                match Aggregate::parse(&a) {
+                    Ok(x) => agregados.push(x),
+                    Err(err) => {
+                        e.aviso = Some(err);
+                        return;
+                    }
+                }
+            }
+            let limite = form.texto("limit");
+            let limite = if limite.is_empty() {
+                None
+            } else {
+                match limite.parse::<usize>() {
+                    Ok(n) => Some(n),
+                    Err(_) => {
+                        e.aviso = Some("limite: um número".into());
+                        return;
+                    }
+                }
+            };
+            let visao = QueryView::all().iter().copied().find(|v| v.slug() == form.escolha("view")).unwrap_or_default();
+            let ordenar = opcional(form.texto("sort")).map(|field| Sort { field, desc: form.booleano("desc") });
+            editar_consulta(e, embed, |q| {
+                q.from = opcional(form.texto("from"));
+                q.tags = form.lista("tags");
+                q.conditions = condicoes;
+                q.sort = ordenar;
+                q.limit = limite;
+                q.view = visao;
+                q.columns = form.lista("columns");
+                q.group_by = opcional(form.texto("group"));
+                q.aggregate = agregados;
+                Ok(())
+            });
+        }
+        _ => {}
     }
 }
