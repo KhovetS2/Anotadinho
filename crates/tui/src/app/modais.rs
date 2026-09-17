@@ -37,6 +37,14 @@ pub enum Pedido {
         /// "Pedir alteração"; senão, avançar.
         alterar: bool,
     },
+    /// Ver o status do git e as ações (ciclo 349).
+    StatusDoGit,
+    /// `git pull`.
+    GitPull,
+    /// Commit de tudo e push, com a mensagem.
+    GitCommit(String),
+    /// Os commits que mexeram na página.
+    HistoricoDoGit(String),
     /// Listar `assets/` pro menu `/` (ciclo 347).
     AssetsParaInserir,
     /// Excluir um arquivo de `assets/`.
@@ -296,6 +304,8 @@ pub enum AcaoDaEntrada {
     Imagem,
     /// Código Mermaid pro bloco novo.
     Mermaid,
+    /// A mensagem do commit (ciclo 349).
+    Commit,
 }
 
 /// O que uma [`Modal::Escolha`] faz com o item escolhido.
@@ -324,6 +334,10 @@ pub enum AcaoDaEscolha {
     Inserir,
     /// O arquivo de `assets/` a inserir.
     Asset,
+    /// O menu do git (ciclo 349): pull, commit + push, abrir o arquivo.
+    Git,
+    /// Só mostra (o histórico da página).
+    Mostrar,
 }
 
 /// Os comandos da barra, como na janela.
@@ -347,6 +361,10 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Exportar pasta…", "exportar-pasta"),
     ("Exportar vault inteiro", "exportar-vault"),
     ("Inserir bloco ou embed…", "inserir"),
+    ("Git: status e sincronizar…", "git"),
+    ("Git: pull", "git-pull"),
+    ("Git: commit + push…", "git-commit"),
+    ("Histórico da página (git)", "git-historico"),
     ("Ver tags", "ver-tags"),
     ("Ver assets", "ver-assets"),
     ("Propostas do agente", "propostas"),
@@ -460,6 +478,14 @@ fn executar(e: &mut Estado, chave: &str) {
         }
         "hoje" => e.pedidos.push(Pedido::AbrirHoje),
         "inserir" => super::markdown::inserir_pela_barra(e),
+        "git" => e.pedidos.push(Pedido::StatusDoGit),
+        "git-pull" => e.pedidos.push(Pedido::GitPull),
+        "git-commit" => pedir_mensagem_do_commit(e),
+        "git-historico" => {
+            if let Some(p) = e.paginas.get(e.pagina) {
+                e.pedidos.push(Pedido::HistoricoDoGit(p.path.clone()));
+            }
+        }
         "ver-tags" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Tags)),
         "ver-assets" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Assets)),
         "propostas" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Propostas)),
@@ -543,6 +569,18 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 AcaoDaEscolha::Desanexar => super::conversa::mudar_anexo(e, &chave, false),
                 AcaoDaEscolha::AbrirPagina => e.pedidos.push(Pedido::AbrirPagina(chave)),
                 AcaoDaEscolha::Inserir => super::markdown::escolher(e, &chave),
+                AcaoDaEscolha::Git => match chave.as_str() {
+                    "pull" => e.pedidos.push(Pedido::GitPull),
+                    "commit" => pedir_mensagem_do_commit(e),
+                    arquivo => {
+                        if e.paginas.iter().any(|p| p.path == arquivo) {
+                            e.pedidos.push(Pedido::AbrirPagina(arquivo.to_string()));
+                        } else {
+                            e.modal = Some(Modal::Escolha { titulo, lista, acao });
+                        }
+                    }
+                },
+                AcaoDaEscolha::Mostrar => {}
                 AcaoDaEscolha::Asset => super::markdown::inserir_trecho(e, &super::markdown::markdown_do_asset(&chave)),
                 AcaoDaEscolha::Exportar => e.pedidos.push(Pedido::ExportarPasta(chave)),
                 AcaoDaEscolha::MoverPara => {
@@ -599,6 +637,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         AcaoDaEntrada::PaginaNaPasta(pasta) => Pedido::CriarPaginaNaPasta { pasta, titulo: t },
                         AcaoDaEntrada::NovaPasta(dentro) => Pedido::CriarPasta(format!("{dentro}/{t}")),
                         AcaoDaEntrada::PaginaDeTemplate { template, pasta } => Pedido::CriarDeTemplate { template, titulo: t, pasta },
+                        AcaoDaEntrada::Commit => Pedido::GitCommit(t),
                         AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid => return,
                     });
                 }
@@ -960,4 +999,52 @@ pub fn abrir_mover_pagina(e: &mut Estado) {
 /// Confirmação de excluir a página selecionada.
 pub fn confirmar_exclusao(e: &mut Estado) {
     executar(e, "excluir-pagina");
+}
+
+/// "Commit + Push": pede a mensagem (ciclo 349).
+fn pedir_mensagem_do_commit(e: &mut Estado) {
+    e.modal = Some(Modal::Entrada {
+        titulo: "Mensagem do commit".into(),
+        campo: crate::componentes::Campo::default(),
+        acao: AcaoDaEntrada::Commit,
+    });
+}
+
+/// O status do git chegou (ciclo 349): o popover da janela — os arquivos
+/// mudados com o código e as ações Pull e Commit + Push. `None` é vault
+/// fora de repositório.
+pub fn mostrar_git(e: &mut Estado, arquivos: Option<Vec<(String, String)>>) {
+    let Some(arquivos) = arquivos else {
+        e.aviso = Some("Este vault não é um repositório git (ou git não está instalado).".into());
+        return;
+    };
+    let mut itens = vec![
+        Item::novo("↓", "Pull", "pull").com_detalhe("traz o que mudou no remoto"),
+        Item::novo("↑", "Commit + Push…", "commit").com_detalhe("grava tudo e envia"),
+    ];
+    itens.extend(arquivos.into_iter().map(|(status, path)| Item::novo("⑂", path.clone(), path).com_detalhe(status)));
+    let n = itens.len() - 2;
+    e.modal = Some(Modal::Escolha {
+        titulo: if n == 0 { "Git · Sem mudanças".into() } else { format!("Git · {n} mudança(s)") },
+        lista: Lista::menu(itens),
+        acao: AcaoDaEscolha::Git,
+    });
+}
+
+/// O histórico da página chegou (ciclo 349), como o modal "Histórico" da
+/// janela.
+pub fn mostrar_historico(e: &mut Estado, commits: Option<Vec<(String, String, String)>>) {
+    let Some(commits) = commits else {
+        e.aviso = Some("Este vault não é um repositório git (ou git não está instalado).".into());
+        return;
+    };
+    if commits.is_empty() {
+        e.aviso = Some("Nenhum commit encontrado pra esta página.".into());
+        return;
+    }
+    let itens = commits
+        .into_iter()
+        .map(|(hash, data, mensagem)| Item::novo("◷", mensagem, hash.clone()).com_detalhe(format!("{hash} · {data}")))
+        .collect();
+    e.modal = Some(Modal::Escolha { titulo: "Histórico".into(), lista: Lista::menu(itens), acao: AcaoDaEscolha::Mostrar });
 }

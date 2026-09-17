@@ -8394,4 +8394,52 @@ mod testes {
         assert!(!c.escrevendo && e.pedidos.is_empty());
         assert!(desenho(&mut e, 120, 40).join("\n").contains("Leia a spec e planeje."));
     }
+
+    // --- Ciclo 349: git ----------------------------------------------------
+
+    #[test]
+    fn git_mostra_as_mudancas_e_pede_pull_ou_commit() {
+        let mut e = Estado::novo(paginas(), analisar("# x\n"));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, ":");
+        digitar(&mut e, "git status");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::StatusDoGit]);
+        e.pedidos.clear();
+        modais::mostrar_git(&mut e, Some(vec![("M".into(), "pages/beta.md".into()), ("??".into(), "assets/x.png".into())]));
+        let tela = desenho(&mut e, 100, 30).join("\n");
+        for esperado in ["Git · 2 mudança(s)", "Pull", "Commit + Push…", "pages/beta.md", "??"] {
+            assert!(tela.contains(esperado), "faltou {esperado}:\n{tela}");
+        }
+        // Um arquivo que é página abre; o que não é, fica.
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/beta.md".into())]);
+        e.pedidos.clear();
+        modais::mostrar_git(&mut e, Some(vec![]));
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert!(matches!(&e.modal, Some(Modal::Entrada { titulo, .. }) if titulo == "Mensagem do commit"));
+        digitar(&mut e, "notas de hoje");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::GitCommit("notas de hoje".into())]);
+        // Fora de repositório, o aviso da janela.
+        modais::mostrar_git(&mut e, None);
+        assert!(e.modal.is_none() && e.aviso.as_deref().unwrap().contains("não é um repositório git"));
+    }
+
+    #[test]
+    fn historico_da_pagina_lista_os_commits() {
+        let mut e = Estado::novo(paginas(), analisar("# x\n"));
+        tecla(&mut e, ":");
+        digitar(&mut e, "historico da pagina");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::HistoricoDoGit("pages/alfa.md".into())]);
+        modais::mostrar_historico(&mut e, Some(vec![("abc123".into(), "2026-09-17".into(), "feat: notas".into())]));
+        let tela = desenho(&mut e, 100, 30).join("\n");
+        assert!(tela.contains("Histórico") && tela.contains("feat: notas") && tela.contains("abc123 · 2026-09-17"), "{tela}");
+        modais::mostrar_historico(&mut e, Some(vec![]));
+        assert!(e.aviso.as_deref().unwrap().contains("Nenhum commit"));
+    }
 }
