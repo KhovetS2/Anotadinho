@@ -18,6 +18,7 @@ pub mod espacial;
 pub mod analise;
 pub mod navegacao;
 pub mod page;
+pub mod orcamento;
 pub mod permissoes;
 pub mod property;
 pub mod markdown;

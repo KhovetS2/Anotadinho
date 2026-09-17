@@ -226,6 +226,77 @@ fn acrescentar_mensagem(vault: &str, conversa: &str, mensagem: &anotadinho_core:
     Ok(corpo.to_string())
 }
 
+/// O que vai pro agente: o prompt montado e o peso de cada parte
+/// (ciclo 417).
+struct Envio {
+    prompt: String,
+    orcamento: anotadinho_core::orcamento::Orcamento,
+    /// O recado sobre a transclusão, quando há o que dizer.
+    aviso: Option<String>,
+}
+
+/// Monta o envio: lê os anexos com as transclusões resolvidas (ciclo
+/// 414), junta o prompt e pesa cada parte.
+///
+/// O envio e a PRÉVIA passam os dois por aqui. Se fossem dois caminhos,
+/// a prévia mentiria no primeiro dia em que um deles mudasse — e uma
+/// prévia que mente é pior que nenhuma.
+fn montar_envio(
+    vault: &str,
+    historico: &[anotadinho_core::conversa::Mensagem],
+    pergunta: &str,
+    anexos: &[String],
+    conversa_path: &str,
+    teto: usize,
+) -> Envio {
+    use anotadinho_core::conversa;
+    use anotadinho_core::orcamento::{Orcamento, Peso};
+    let mut trazidas: Vec<String> = Vec::new();
+    let mut avisos: Vec<String> = Vec::new();
+    let contextos: Vec<conversa::Contexto> = anexos
+        .iter()
+        .filter(|a| a.as_str() != conversa_path)
+        .filter_map(|a| {
+            let expandida = anotadinho_ipc::handle_ler_para_contexto(vault.to_string(), a.clone()).ok()?;
+            for t in expandida.trazidas {
+                if !trazidas.contains(&t) {
+                    trazidas.push(t);
+                }
+            }
+            avisos.extend(expandida.avisos);
+            Some(conversa::Contexto { nome: a.clone(), conteudo: expandida.texto })
+        })
+        .collect();
+    let prompt = conversa::montar_prompt(historico, pergunta, &contextos, app::conversa::HISTORICO_NO_PROMPT);
+    // O peso é por PARTE: quem precisa cortar quer saber qual anexo
+    // pesa, não só que o total estourou.
+    let mut partes: Vec<Peso> = contextos.iter().map(|c| Peso::novo(c.nome.clone(), &c.conteudo)).collect();
+    let recentes = historico.len().min(app::conversa::HISTORICO_NO_PROMPT);
+    let historico_texto: String = historico[historico.len() - recentes..]
+        .iter()
+        .map(|m| m.texto.clone())
+        .collect::<Vec<_>>()
+        .join("\n");
+    partes.push(Peso::novo(format!("histórico ({recentes} msg)"), &historico_texto));
+    partes.push(Peso::novo("pergunta", pergunta));
+    let mut nota = if trazidas.is_empty() {
+        String::new()
+    } else {
+        format!("transclusão trouxe {} página(s)", trazidas.len())
+    };
+    if !avisos.is_empty() {
+        if !nota.is_empty() {
+            nota.push_str(" · ");
+        }
+        nota.push_str(&avisos.join(" · "));
+    }
+    Envio {
+        prompt,
+        orcamento: Orcamento::novo(partes, teto),
+        aviso: (!nota.is_empty()).then_some(nota),
+    }
+}
+
 /// Grava a pergunta e dispara o agente com o histórico e os anexos —
 /// ou põe na fila, se o limite de paralelismo já está cheio (ciclo 408).
 ///
@@ -280,40 +351,10 @@ fn enviar_na_conversa(
         }
     };
     let historico = conversa::parse(&corpo_antes);
-    // O anexo entra com as transclusões resolvidas (ciclo 414): uma
-    // página-recorte feita de `![[Spec#Regras]]` chega ao agente com o
-    // conteúdo, não com o marcador.
-    let mut trazidas: Vec<String> = Vec::new();
-    let mut avisos: Vec<String> = Vec::new();
-    let contextos: Vec<conversa::Contexto> = anexos
-        .iter()
-        .filter(|a| a.as_str() != path)
-        .filter_map(|a| {
-            let expandida = anotadinho_ipc::handle_ler_para_contexto(vault.to_string(), a.clone()).ok()?;
-            for t in expandida.trazidas {
-                if !trazidas.contains(&t) {
-                    trazidas.push(t);
-                }
-            }
-            avisos.extend(expandida.avisos);
-            Some(conversa::Contexto { nome: a.clone(), conteudo: expandida.texto })
-        })
-        .collect();
-    if !trazidas.is_empty() || !avisos.is_empty() {
-        let mut nota = if trazidas.is_empty() {
-            String::new()
-        } else {
-            format!("transclusão trouxe {} página(s)", trazidas.len())
-        };
-        if !avisos.is_empty() {
-            if !nota.is_empty() {
-                nota.push_str(" · ");
-            }
-            nota.push_str(&avisos.join(" · "));
-        }
+    let Envio { prompt, aviso, .. } = montar_envio(vault, &historico, pergunta, anexos, path, estado.preferencias.teto_de_contexto);
+    if let Some(nota) = aviso {
         estado.aviso = Some(nota);
     }
-    let prompt = conversa::montar_prompt(&historico, pergunta, &contextos, app::conversa::HISTORICO_NO_PROMPT);
     let adaptador = estado.preferencias.agente.clone().unwrap_or_default().migrado();
     let cwd = if adaptador.cwd.trim().is_empty() {
         anotadinho_core::agente::raiz_do_projeto(vault, |d| d.join(".git").exists())
@@ -1152,6 +1193,41 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                 // página transcluída que transclui outra já vem inteira.
                 // A página de contexto (ciclo 416): os anexos viram
                 // transclusões numa página só, e ela vira O anexo.
+                // Só o peso, pro cabeçalho (ciclo 417).
+                Pedido::PesarContexto(conversa) => {
+                    let anexos = estado.conversa.as_ref().map(|c| c.anexos.clone()).unwrap_or_default();
+                    let historico = estado.conversa.as_ref().map(|c| c.mensagens.clone()).unwrap_or_default();
+                    let rascunho = estado.conversa.as_ref().map(|c| c.rascunho.texto.clone()).unwrap_or_default();
+                    let envio = montar_envio(
+                        vault,
+                        &historico,
+                        &rascunho,
+                        &anexos,
+                        &conversa,
+                        estado.preferencias.teto_de_contexto,
+                    );
+                    if let Some(c) = estado.conversa.as_mut() {
+                        c.peso = Some((envio.orcamento.resumo(), envio.orcamento.estourou()));
+                    }
+                }
+                // A prévia (ciclo 417): monta pelo MESMO caminho do
+                // envio, sem gravar nada nem disparar o agente.
+                Pedido::PreviaDoPrompt { conversa, pergunta } => {
+                    let anexos = estado.conversa.as_ref().map(|c| c.anexos.clone()).unwrap_or_default();
+                    let historico = estado.conversa.as_ref().map(|c| c.mensagens.clone()).unwrap_or_default();
+                    let envio = montar_envio(
+                        vault,
+                        &historico,
+                        &pergunta,
+                        &anexos,
+                        &conversa,
+                        estado.preferencias.teto_de_contexto,
+                    );
+                    if let Some(c) = estado.conversa.as_mut() {
+                        c.peso = Some((envio.orcamento.resumo(), envio.orcamento.estourou()));
+                    }
+                    app::conversa::mostrar_previa(estado, &envio.prompt, &envio.orcamento);
+                }
                 Pedido::GuardarContexto { titulo, anexos } => {
                     // O título do frontmatter primeiro: é ele que a
                     // pessoa lê e edita no marcador. O nome do arquivo

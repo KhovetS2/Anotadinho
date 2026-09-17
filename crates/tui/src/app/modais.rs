@@ -85,6 +85,13 @@ pub enum Pedido {
     ListarExecucoes,
     /// Ver o que está rodando e o que espera na fila (ciclo 408).
     VerAgentes,
+    /// Medir o contexto da conversa sem abrir a prévia (ciclo 417).
+    PesarContexto(String),
+    /// Montar o prompt sem enviar, pra ver o que vai (ciclo 417).
+    PreviaDoPrompt {
+        conversa: String,
+        pergunta: String,
+    },
     /// Criar a página de contexto com os anexos (ciclo 416) e pôr ela no
     /// lugar deles.
     GuardarContexto {
@@ -273,6 +280,16 @@ pub struct Preferencias {
     /// resto espera na fila. `0` = sem limite.
     #[serde(default = "limite_padrao")]
     pub limite_de_agentes: usize,
+    /// Teto de tokens estimados do contexto (ciclo 417); `0` = sem teto.
+    /// Serve de aviso, não de trava: quem manda no corte é a pessoa.
+    #[serde(default = "teto_padrao")]
+    pub teto_de_contexto: usize,
+}
+
+fn teto_padrao() -> usize {
+    // Folgado pra modelo de 128k e apertado o bastante pra avisar antes
+    // de a resposta piorar.
+    40_000
 }
 
 fn limite_padrao() -> usize {
@@ -293,7 +310,7 @@ fn verdadeiro() -> bool {
 
 impl Default for Preferencias {
     fn default() -> Self {
-        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default(), agentes: Vec::new(), ultimo_vault: None, salvar_automatico: true, modo_vim: true, limite_de_agentes: limite_padrao() }
+        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default(), agentes: Vec::new(), ultimo_vault: None, salvar_automatico: true, modo_vim: true, limite_de_agentes: limite_padrao(), teto_de_contexto: teto_padrao() }
     }
 }
 
@@ -337,6 +354,15 @@ pub enum Modal {
     Prompt(SeletorDePrompt),
     /// Um texto longo pra ler, com a rolagem (o "Visualizar").
     Visualizar(String, usize),
+    /// Texto CRU com rolagem (ciclo 417): linha por linha, sem render de
+    /// markdown. É o que a prévia do prompt precisa — desenhar o prompt
+    /// como página juntaria linhas e mostraria algo que o agente não
+    /// recebe.
+    TextoCru {
+        titulo: String,
+        texto: String,
+        rolagem: usize,
+    },
     /// Um editor de várias linhas (ciclo 390): Enter quebra a linha, as
     /// setas andam, Esc grava e fecha, Ctrl+C desiste.
     EditorDeTexto {
@@ -1319,6 +1345,14 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             }
             e.modal = Some(Modal::Conflito(c));
         }
+        Modal::TextoCru { titulo, texto, rolagem } => match tecla {
+            "Escape" | "q" | "Enter" => {}
+            "j" | "ArrowDown" => e.modal = Some(Modal::TextoCru { titulo, texto, rolagem: rolagem + 1 }),
+            "k" | "ArrowUp" => e.modal = Some(Modal::TextoCru { titulo, texto, rolagem: rolagem.saturating_sub(1) }),
+            "Ctrl+d" | "PageDown" => e.modal = Some(Modal::TextoCru { titulo, texto, rolagem: rolagem + 10 }),
+            "Ctrl+u" | "PageUp" => e.modal = Some(Modal::TextoCru { titulo, texto, rolagem: rolagem.saturating_sub(10) }),
+            _ => e.modal = Some(Modal::TextoCru { titulo, texto, rolagem }),
+        },
         Modal::Visualizar(texto, rolagem) => match tecla {
             "Escape" | "q" | "Enter" => {}
             "j" | "ArrowDown" => e.modal = Some(Modal::Visualizar(texto, rolagem + 1)),
@@ -1597,6 +1631,23 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
                     linhas.push(Line::from(vec![Span::styled(texto, estilo), Span::styled(" ".repeat(falta), estilo)]));
                 }
             }
+            f.render_widget(Paragraph::new(linhas), dentro);
+        }
+        Modal::TextoCru { titulo, texto, rolagem } => {
+            let area = componentes::area_do_modal(tela, 92, tela.height.saturating_sub(4));
+            let dentro = componentes::desenhar_modal(f, area, titulo, "j k rolar · Ctrl+D/U de 10 · Esc", t);
+            let largura = dentro.width as usize;
+            let comum = Style::default().fg(t.var("text-primary"));
+            let linhas: Vec<Line> = texto
+                .lines()
+                .skip(*rolagem)
+                .take(dentro.height as usize)
+                .map(|l| {
+                    // Corta, não quebra: o que importa aqui é a FORMA do
+                    // que vai — a linha longa continua sendo uma linha.
+                    Line::from(Span::styled(l.chars().take(largura).collect::<String>(), comum))
+                })
+                .collect();
             f.render_widget(Paragraph::new(linhas), dentro);
         }
         Modal::Visualizar(texto, rolagem) => {

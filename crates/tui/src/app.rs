@@ -335,6 +335,13 @@ impl Estado {
         let calendario = pagina_de_calendario(frontmatter);
         let corpo = if calendario { CALENDARIO_DA_PAGINA } else { corpo };
         self.abrir(anotadinho_core::analise::analisar(corpo));
+        // Conversa com anexo já abre dizendo quanto pesa (ciclo 417).
+        if let Some(c) = &self.conversa {
+            if !c.anexos.is_empty() && c.peso.is_none() {
+                let conversa = c.path.clone();
+                self.pedidos.push(Pedido::PesarContexto(conversa));
+            }
+        }
         // O conteúdo das transclusões vem de outras páginas, então é
         // pedido (ciclo 415). Até chegar, a página desenha o marcador
         // como está — nada pisca.
@@ -7286,6 +7293,9 @@ mod testes {
         e.abrir_texto(CONVERSA, Some("v1".into()));
         e.foco = Foco::Conteudo;
         e.agora = Some("2026-09-17 10:00".into());
+        // Abrir conversa com anexo pede a medição do contexto (ciclo
+        // 417); quem testa outra coisa não quer esse pedido no caminho.
+        e.pedidos.clear();
         e
     }
 
@@ -7363,12 +7373,16 @@ mod testes {
         tecla(&mut e, "Enter");
         digitar(&mut e, "beta");
         tecla(&mut e, "Enter");
+        // Anexar grava a lista e pede o peso novo (ciclo 417).
         assert_eq!(
             e.pedidos,
-            vec![Pedido::AnexosDaConversa {
-                conversa: "pages/alfa.md".into(),
-                lista: vec!["pages/specs/imagens.md".into(), "pages/beta.md".into()],
-            }]
+            vec![
+                Pedido::AnexosDaConversa {
+                    conversa: "pages/alfa.md".into(),
+                    lista: vec!["pages/specs/imagens.md".into(), "pages/beta.md".into()],
+                },
+                Pedido::PesarContexto("pages/alfa.md".into()),
+            ]
         );
     }
 
@@ -10885,5 +10899,68 @@ mod testes {
         conversa::executar(&mut e, "guardar-contexto");
         tecla(&mut e, "Enter");
         assert!(e.pedidos.is_empty() && e.aviso.as_deref().unwrap().contains("nome"));
+    }
+
+    // --- Ciclo 417: orçamento e prévia do prompt -------------------------------------
+
+    #[test]
+    fn a_conversa_com_anexo_pede_o_peso_e_mostra_no_cabecalho() {
+        // Sem o `clear` do helper: é o pedido da abertura que se testa.
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(CONVERSA, Some("v1".into()));
+        e.foco = Foco::Conteudo;
+        assert!(e.pedidos.iter().any(|p| matches!(p, Pedido::PesarContexto(_))), "{:?}", e.pedidos);
+        e.pedidos.clear();
+        // Sem medida, o cabeçalho continua como antes.
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("1 anexo(s)") && !tela.contains("tokens"), "{tela}");
+        // Com medida, ela aparece ao lado.
+        e.conversa.as_mut().unwrap().peso = Some(("~3,2k de 40k tokens".into(), false));
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("1 anexo(s) · ~3,2k de 40k tokens"), "{tela}");
+        // Mexer no anexo pede a medida de novo.
+        conversa::mudar_anexo(&mut e, "pages/beta.md", true);
+        assert!(e.pedidos.iter().any(|p| matches!(p, Pedido::PesarContexto(_))), "{:?}", e.pedidos);
+    }
+
+    #[test]
+    fn a_previa_mostra_o_peso_por_parte_e_o_prompt() {
+        use anotadinho_core::orcamento::{Orcamento, Peso};
+        let mut e = conversa_aberta();
+        e.pedidos.clear();
+        conversa::executar(&mut e, "previa");
+        assert!(
+            matches!(&e.pedidos[..], [Pedido::PreviaDoPrompt { conversa, .. }] if conversa == "pages/conversas/uma.md"
+                || conversa.ends_with(".md")),
+            "{:?}",
+            e.pedidos
+        );
+        let orcamento = Orcamento::novo(
+            vec![
+                Peso::novo("pages/specs/imagens.md", &"a".repeat(12_800)),
+                Peso::novo("histórico (2 msg)", &"b".repeat(400)),
+                Peso::novo("pergunta", "resuma"),
+            ],
+            40_000,
+        );
+        conversa::mostrar_previa(&mut e, "# Pergunta\n\nresuma", &orcamento);
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("O que vai pro agente") && tela.contains("~3,3k de 40k tokens"), "{tela}");
+        // A parte mais pesada primeiro, com o tamanho de cada uma.
+        let linha_anexo = tela.lines().position(|l| l.contains("pages/specs/imagens.md")).expect("anexo na tela");
+        let linha_pergunta = tela.lines().position(|l| l.contains("pergunta")).expect("pergunta na tela");
+        assert!(linha_anexo < linha_pergunta, "{tela}");
+        // E o prompt de verdade embaixo.
+        assert!(tela.contains("# Pergunta"), "{tela}");
+    }
+
+    #[test]
+    fn a_previa_avisa_quando_estoura_o_teto() {
+        use anotadinho_core::orcamento::{Orcamento, Peso};
+        let mut e = conversa_aberta();
+        let estourado = Orcamento::novo(vec![Peso::novo("enorme.md", &"a".repeat(200_000))], 40_000);
+        conversa::mostrar_previa(&mut e, "x", &estourado);
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("PASSOU DO TETO"), "{tela}");
     }
 }

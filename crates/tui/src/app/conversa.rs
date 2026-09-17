@@ -55,6 +55,9 @@ pub struct TelaDeConversa {
     pub trabalho: Option<(u64, String)>,
     /// A posição na fila (ciclo 408), quando o envio espera vaga.
     pub na_fila: Option<usize>,
+    /// O peso do contexto (ciclo 417): tokens estimados e se estourou o
+    /// teto. `None` enquanto ninguém mediu.
+    pub peso: Option<(String, bool)>,
     /// O erro da última execução.
     pub erro: Option<String>,
     /// O prompt padrão em uso (ciclo 341).
@@ -117,6 +120,7 @@ impl TelaDeConversa {
             escrevendo: false,
             trabalho: None,
             na_fila: None,
+            peso: None,
             erro: None,
             prompt: None,
         })
@@ -129,6 +133,7 @@ impl TelaDeConversa {
             self.escrevendo = velha.escrevendo;
             self.trabalho = velha.trabalho.clone();
             self.na_fila = velha.na_fila;
+            self.peso = velha.peso.clone();
             self.erro = velha.erro.clone();
             self.prompt = velha.prompt.clone();
             if velha.selecionada < velha.mensagens.len() {
@@ -293,6 +298,10 @@ pub fn escrever_no_campo(e: &mut Estado, texto: &str) {
 pub fn comandos(e: &Estado) -> Vec<Item> {
     let Some(c) = &e.conversa else { return Vec::new() };
     let mut v = vec![Item::novo("▤", "Usar prompt padrão…", "prompt"), Item::novo("⌁", "Anexar página…", "anexar")];
+    v.push(
+        Item::novo("▦", "Prévia do prompt", "previa")
+            .com_detalhe("o que o agente vai receber, com o peso de cada parte"),
+    );
     if !c.anexos.is_empty() {
         v.push(Item::novo("⌁", "Tirar anexo…", "desanexar"));
         v.push(
@@ -339,6 +348,10 @@ pub fn executar(e: &mut Estado, chave: &str) -> bool {
         // Os anexos viram um recorte do vault (ciclo 416): uma página de
         // transclusões, que passa a ser O anexo. Reutilizável em outra
         // conversa, versionada, e editável como qualquer página.
+        "previa" => {
+            let pergunta = c.rascunho.texto.trim().to_string();
+            e.pedidos.push(Pedido::PreviaDoPrompt { conversa: c.path.clone(), pergunta });
+        }
         "guardar-contexto" => {
             e.modal = Some(Modal::Entrada {
                 titulo: format!("Nome da página de contexto ({} anexo(s))", c.anexos.len()),
@@ -382,7 +395,9 @@ pub fn mudar_anexo(e: &mut Estado, path: &str, anexar: bool) {
         c.anexos.retain(|a| a != path);
     }
     let (conversa, lista) = (c.path.clone(), c.anexos.clone());
-    e.pedidos.push(Pedido::AnexosDaConversa { conversa, lista });
+    e.pedidos.push(Pedido::AnexosDaConversa { conversa: conversa.clone(), lista });
+    // Mudou o anexo, mudou o peso (ciclo 417).
+    e.pedidos.push(Pedido::PesarContexto(conversa));
 }
 
 // ---------------------------------------------------------------------
@@ -558,7 +573,12 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
     let mut topo: Vec<Line<'static>> = Vec::new();
     // Título comprido encurta com reticências: o agente e os anexos
     // ficam sempre à vista.
-    let direita = format!("⌁ {} anexo(s) ", c.anexos.len());
+    // O peso do contexto ao lado da contagem (ciclo 417): anexar às
+    // cegas era o padrão, e com transclusão um anexo traz outros.
+    let direita = match &c.peso {
+        Some((resumo, _)) => format!("⌁ {} anexo(s) · {resumo} ", c.anexos.len()),
+        None => format!("⌁ {} anexo(s) ", c.anexos.len()),
+    };
     let cabe = w.saturating_sub(direita.chars().count() + agente.nome.chars().count() + 8).max(8);
     let titulo = if c.titulo.chars().count() > cabe {
         format!("{}…", c.titulo.chars().take(cabe - 1).collect::<String>())
@@ -771,4 +791,28 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
     todas.extend(std::iter::repeat_n(Line::from(""), vazio));
     todas.extend(campo_linhas);
     f.render_widget(Paragraph::new(todas), dentro);
+}
+
+/// A prévia do prompt (ciclo 417): o cabeçalho com o peso de cada parte
+/// e, embaixo, o texto que vai pro agente — inteiro, como ele recebe.
+pub fn mostrar_previa(e: &mut Estado, prompt: &str, orcamento: &anotadinho_core::orcamento::Orcamento) {
+    use super::modais::Modal;
+    let mut texto = String::new();
+    texto.push_str(&format!("O que vai pro agente — {}\n", orcamento.resumo()));
+    if orcamento.estourou() {
+        texto.push_str("PASSOU DO TETO: tire um anexo ou aumente o teto nas preferências.\n");
+    } else if orcamento.apertado() {
+        texto.push_str("Perto do teto.\n");
+    }
+    texto.push('\n');
+    for p in &orcamento.partes {
+        texto.push_str(&format!(
+            "  {:>7}  {}\n",
+            format!("~{}", anotadinho_core::orcamento::humano(p.tokens)),
+            p.nome
+        ));
+    }
+    texto.push_str("\n────────────────────────────────────────\n\n");
+    texto.push_str(prompt);
+    e.modal = Some(Modal::TextoCru { titulo: "Prévia do prompt".into(), texto, rolagem: 0 });
 }
