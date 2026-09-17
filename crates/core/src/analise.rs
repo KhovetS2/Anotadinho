@@ -815,11 +815,16 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
             .columns
             .iter()
             .map(|coluna| {
+                // O cartão diz qual item do arquivo ele é (ciclo 319): é
+                // por ele que a edição acha o que mudar.
                 let cartoes = d
                     .items
                     .iter()
-                    .filter(|c| &c.column == coluna)
-                    .map(|c| item("card", c.title.clone()))
+                    .enumerate()
+                    .filter(|(_, c)| &c.column == coluna)
+                    .map(|(i, c)| {
+                        arranjado("card", c.title.clone(), vec![item("indice", i.to_string())], Arranjo::Folha)
+                    })
                     .collect();
                 grupo("column", coluna.clone(), cartoes)
             })

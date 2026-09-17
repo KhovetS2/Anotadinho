@@ -448,6 +448,27 @@ pub enum AcaoDaPergunta {
         /// A entrada, no arquivo.
         indice: usize,
     },
+    /// Cria um cartão no fim dessa coluna do kanban (ciclo 319).
+    NovoCartao {
+        /// O kanban.
+        embed: Caminho,
+        /// O nome da coluna.
+        coluna: String,
+    },
+    /// Troca o título do cartão.
+    RenomearCartao {
+        /// O kanban.
+        embed: Caminho,
+        /// O item, no arquivo.
+        indice: usize,
+    },
+    /// Troca o nome da coluna (e dos cartões que apontam pra ela).
+    RenomearColuna {
+        /// O kanban.
+        embed: Caminho,
+        /// A posição da coluna.
+        coluna: usize,
+    },
 }
 
 /// Troca o trecho de um embed no texto da página pelo resultado de
@@ -571,6 +592,40 @@ fn tecla_na_pergunta(e: &mut Estado, tecla: &str) {
                         }
                     }
                 }
+                AcaoDaPergunta::NovoCartao { embed, coluna } => {
+                    let mut novo = None;
+                    if editar_kanban(e, &embed, |d| {
+                        d.add_card(coluna.clone(), titulo.clone());
+                        novo = Some(d.items.len() - 1);
+                        Ok(())
+                    }) {
+                        if let Some(c) = novo.and_then(|i| achar_cartao(&e.arvore, &embed, i)) {
+                            e.cursor = c;
+                        }
+                    }
+                }
+                AcaoDaPergunta::RenomearCartao { embed, indice } => {
+                    if editar_kanban(e, &embed, |d| {
+                        if indice >= d.items.len() {
+                            return Err("o cartão sumiu do arquivo".into());
+                        }
+                        d.edit_card(indice, titulo.clone());
+                        Ok(())
+                    }) {
+                        if let Some(c) = achar_cartao(&e.arvore, &embed, indice) {
+                            e.cursor = c;
+                        }
+                    }
+                }
+                AcaoDaPergunta::RenomearColuna { embed, coluna } => {
+                    editar_kanban(e, &embed, |d| {
+                        if coluna >= d.columns.len() {
+                            return Err("a coluna sumiu do arquivo".into());
+                        }
+                        d.rename_column(coluna, titulo.clone());
+                        Ok(())
+                    });
+                }
                 AcaoDaPergunta::RenomearEvento { embed, indice } => {
                     let data_antes = tela::data_do_cursor(&e.arvore, &e.cursor);
                     if editar_calendario(e, &embed, |d| {
@@ -668,6 +723,128 @@ fn edicao_do_calendario(e: &mut Estado, tecla: &str) -> bool {
         }
     }
     true
+}
+
+/// `editar_embed` pra um kanban.
+fn editar_kanban(
+    e: &mut Estado,
+    embed: &[usize],
+    mudar: impl FnOnce(&mut anotadinho_core::embed::KanbanEmbedData) -> Result<(), String>,
+) -> bool {
+    editar_embed(e, embed, |dados| match dados {
+        anotadinho_core::embed::EmbedData::Kanban(d) => mudar(d),
+        _ => Err("isto não é um kanban".into()),
+    })
+}
+
+/// O embed do tipo `tipo` que contém o cursor (ou é ele).
+fn embed_do_cursor(e: &Estado, tipo: &str) -> Option<Caminho> {
+    (1..=e.cursor.len())
+        .map(|n| &e.cursor[..n])
+        .find(|c| matches!(e.arvore.em(c).map(|u| &u.tipo), Some(Tipo::Embed(n)) if n == tipo))
+        .map(|c| c.to_vec())
+}
+
+/// Onde está o cartão do item `indice` na árvore do kanban.
+fn achar_cartao(arvore: &Unidade, embed: &[usize], indice: usize) -> Option<Caminho> {
+    arvore.em(embed)?.percorrer().into_iter().find_map(|(c, u)| {
+        let e_cartao = matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "card");
+        let mesmo = u.filhos.iter().any(|f| {
+            matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "indice") && f.texto == indice.to_string()
+        });
+        (e_cartao && mesmo).then(|| {
+            let mut caminho = embed.to_vec();
+            caminho.extend(c);
+            caminho
+        })
+    })
+}
+
+/// As teclas de EDIÇÃO do kanban (ciclo 319).
+///
+/// - `o` cria um cartão no fim da coluna do cursor (na coluna ou num
+///   cartão dela).
+/// - `c` renomeia o cartão — ou a coluna, com o cursor nela.
+/// - `x` (ou `dd`) apaga o cartão.
+/// - `<` e `>` levam o cartão pra coluna anterior/seguinte — o arrastar
+///   entre colunas da janela; o cursor vai junto.
+fn edicao_do_kanban(e: &mut Estado, tecla: &str) -> bool {
+    if !matches!(tecla, "o" | "c" | "x" | "<" | ">") {
+        return false;
+    }
+    let Some(embed) = embed_do_cursor(e, "kanban") else { return false };
+    let Some(&coluna) = e.cursor.get(embed.len()) else {
+        e.aviso = Some("entre numa coluna pra editar o kanban".into());
+        return true;
+    };
+    let nome_da_coluna = e
+        .arvore
+        .em(&[embed.as_slice(), &[coluna]].concat())
+        .map(|u| u.texto.clone())
+        .unwrap_or_default();
+    let indice = indice_do_cursor(e);
+    match (tecla, indice) {
+        ("o", _) => {
+            e.pergunta = Some(Pergunta {
+                rotulo: format!("Novo cartão em {nome_da_coluna}"),
+                texto: String::new(),
+                acao: AcaoDaPergunta::NovoCartao { embed, coluna: nome_da_coluna },
+            });
+        }
+        ("c", Some(indice)) => {
+            let atual = e.arvore.em(&e.cursor).map(|u| u.texto.clone()).unwrap_or_default();
+            e.pergunta = Some(Pergunta {
+                rotulo: "Renomear cartão".into(),
+                texto: atual,
+                acao: AcaoDaPergunta::RenomearCartao { embed, indice },
+            });
+        }
+        ("c", None) => {
+            e.pergunta = Some(Pergunta {
+                rotulo: "Renomear coluna".into(),
+                texto: nome_da_coluna,
+                acao: AcaoDaPergunta::RenomearColuna { embed, coluna },
+            });
+        }
+        ("x", Some(_)) => apagar_cartao(e),
+        ("<" | ">", Some(indice)) => {
+            let destino = if tecla == ">" { coluna + 1 } else { coluna.wrapping_sub(1) };
+            if editar_kanban(e, &embed, |d| {
+                let nova = d.columns.get(destino).cloned().ok_or("não há coluna desse lado")?;
+                let mut cartao = d.items.get(indice).cloned().ok_or("o cartão sumiu do arquivo")?;
+                cartao.column = nova;
+                d.update_card(indice, cartao);
+                Ok(())
+            }) {
+                if let Some(c) = achar_cartao(&e.arvore, &embed, indice) {
+                    e.cursor = c;
+                }
+                e.seguir_cursor();
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// Apaga o cartão sob o cursor; o cursor fica na coluna.
+fn apagar_cartao(e: &mut Estado) {
+    let (Some(embed), Some(indice)) = (embed_do_cursor(e, "kanban"), indice_do_cursor(e)) else {
+        return;
+    };
+    let mut coluna = e.cursor.clone();
+    coluna.pop();
+    if editar_kanban(e, &embed, |d| {
+        if indice >= d.items.len() {
+            return Err("o cartão sumiu do arquivo".into());
+        }
+        d.remove_card(indice);
+        Ok(())
+    }) {
+        e.cursor = coluna;
+        e.aviso = Some("cartão apagado".into());
+        e.seguir_cursor();
+    }
 }
 
 /// Apaga o evento sob o cursor; o cursor fica no dia dele.
@@ -840,7 +1017,9 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
 }
 
 fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
-    if tecla_do_calendario(e, tecla) || (!e.vim.em_curso() && edicao_do_calendario(e, tecla)) {
+    if tecla_do_calendario(e, tecla)
+        || (!e.vim.em_curso() && (edicao_do_calendario(e, tecla) || edicao_do_kanban(e, tecla)))
+    {
         return;
     }
     // A gramática do vim primeiro (ciclo 291).
@@ -2384,7 +2563,11 @@ fn pular_pro_mes_com_evento(e: &mut Estado, adiante: bool) -> bool {
 fn comando_de_vim(e: &mut Estado, c: Comando) {
     // `dd` num evento do calendário apaga o evento (ciclo 318).
     if matches!(c, Comando::Apagar(Movimento::LinhaInteira, _)) && indice_do_cursor(e).is_some() {
-        apagar_evento(e);
+        if embed_do_cursor(e, "kanban").is_some() {
+            apagar_cartao(e);
+        } else {
+            apagar_evento(e);
+        }
         return;
     }
     let Comando::Mover(mov, vezes) = c else { return };
@@ -4300,6 +4483,94 @@ mod testes {
         tecla(&mut e, "Enter");
         assert!(e.gravacao.is_none());
         assert!(desenho(&mut e, 120, 40).join("\n").contains("só leitura"));
+    }
+
+    const PAGINA_COM_KANBAN: &str = "Antes.\n\n{{ type: \"kanban\" }}\ncolumns:\n- Backlog\n- Fazendo\n- Feito\nitems:\n- title: Escrever\n  column: Backlog\n  tags:\n  - doc\n- title: Revisar\n  column: Fazendo\n{{ /kanban }}\n\nDepois.\n";
+
+    fn kanban_editavel() -> Estado {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(PAGINA_COM_KANBAN, Some("v1".into()));
+        e.foco = Foco::Conteudo;
+        e
+    }
+
+    fn kanban_gravado(e: &Estado) -> anotadinho_core::embed::KanbanEmbedData {
+        let texto = e.gravacao.clone().expect("nada pra gravar");
+        assert!(texto.starts_with("Antes.\n\n") && texto.ends_with("\n\nDepois.\n"), "{texto}");
+        anotadinho_core::embed::segment(&texto)
+            .into_iter()
+            .find_map(|s| match s {
+                anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Kanban(d)) => Some(d),
+                _ => None,
+            })
+            .expect("o kanban sumiu")
+    }
+
+    #[test]
+    fn o_cria_cartao_na_coluna_e_c_renomeia() {
+        let mut e = kanban_editavel();
+        // Na coluna "Feito" (vazia).
+        e.cursor = vec![1, 2];
+        tecla(&mut e, "o");
+        assert!(desenho(&mut e, 100, 30).join("\n").contains("Novo cartão em Feito"));
+        digitar(&mut e, "Publicar");
+        tecla(&mut e, "Enter");
+        let d = kanban_gravado(&e);
+        assert_eq!(d.items.len(), 3);
+        assert_eq!((d.items[2].title.as_str(), d.items[2].column.as_str()), ("Publicar", "Feito"));
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Publicar");
+        // `c` no cartão.
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "c");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "Escrever");
+        tecla(&mut e, "Backspace");
+        tecla(&mut e, "Backspace");
+        digitar(&mut e, "am");
+        tecla(&mut e, "Enter");
+        let d = kanban_gravado(&e);
+        assert_eq!(d.items[0].title, "Escrevam");
+        // Os campos que a TUI não mexe continuam lá.
+        assert_eq!(d.items[0].tags, vec!["doc".to_string()]);
+    }
+
+    #[test]
+    fn c_na_coluna_renomeia_a_coluna_e_os_cartoes_seguem() {
+        let mut e = kanban_editavel();
+        e.cursor = vec![1, 1];
+        tecla(&mut e, "c");
+        for _ in 0.."Fazendo".len() {
+            tecla(&mut e, "Backspace");
+        }
+        digitar(&mut e, "Em andamento");
+        tecla(&mut e, "Enter");
+        let d = kanban_gravado(&e);
+        assert_eq!(d.columns[1], "Em andamento");
+        assert_eq!(d.items[1].column, "Em andamento");
+    }
+
+    #[test]
+    fn maior_e_menor_levam_o_cartao_de_coluna_e_x_apaga() {
+        let mut e = kanban_editavel();
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, ">");
+        assert_eq!(kanban_gravado(&e).items[0].column, "Fazendo");
+        // O cursor foi junto, pra coluna do meio.
+        assert_eq!(e.cursor[..2], [1, 1]);
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Escrever");
+        tecla(&mut e, ">");
+        tecla(&mut e, ">");
+        assert_eq!(kanban_gravado(&e).items[0].column, "Feito");
+        assert!(desenho(&mut e, 100, 30).join("\n").contains("não há coluna desse lado"));
+        tecla(&mut e, "x");
+        let d = kanban_gravado(&e);
+        assert_eq!(d.items.len(), 1);
+        assert_eq!(d.items[0].title, "Revisar");
+        assert_eq!(e.cursor, vec![1, 2]);
+        // `dd` também.
+        e.cursor = vec![1, 1, 0];
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert!(kanban_gravado(&e).items.is_empty());
     }
 
     #[test]
