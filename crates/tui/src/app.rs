@@ -17,7 +17,7 @@ use ratatui::Frame;
 
 pub mod conversa;
 pub mod especiais;
-mod edicao;
+pub mod edicao;
 pub mod markdown;
 mod wikilink;
 pub mod modais;
@@ -128,6 +128,9 @@ pub struct Estado {
     pub wikilink_dispensado: Option<usize>,
     /// As abas abertas, pelo caminho (ciclo 354), na ordem em que abriram.
     pub abas: Vec<String>,
+    /// A imagem nova da galeria esperando o arquivo escolhido em
+    /// `assets/` (ciclo 356).
+    pub imagem_pendente: Option<edicao::AcaoDaPergunta>,
     /// Propostas do agente esperando revisão (ciclo 355), como o botão do
     /// cabeçalho da janela.
     pub propostas_pendentes: usize,
@@ -208,6 +211,7 @@ impl Estado {
             wikilink_sel: 0,
             wikilink_dispensado: None,
             abas: Vec::new(),
+            imagem_pendente: None,
             propostas_pendentes: 0,
             mudancas_no_git: None,
             pedidos: Vec::new(),
@@ -6490,9 +6494,14 @@ mod testes {
         let EmbedData::Gallery(d) = embed_gravado(&e) else { panic!() };
         assert_eq!(d.items[1].caption, "Bê");
         tecla(&mut e, "O");
-        assert_eq!(e.pergunta.as_ref().unwrap().texto, "assets/");
+        // A lista de `assets/` (ciclo 356): só imagens, e digitar o caminho.
+        assert_eq!(e.pedidos, [Pedido::AssetsParaInserir]);
+        e.pedidos.clear();
+        markdown::escolher_asset(&mut e, vec!["assets/c.png".into(), "assets/doc.pdf".into()]);
+        let tela = desenho(&mut e, 100, 30).join("\n");
+        assert!(tela.contains("Imagem do vault") && tela.contains("Digitar o caminho") && !tela.contains("doc.pdf"), "{tela}");
         digitar(&mut e, "c.png");
-        tecla(&mut e, "Escape");
+        tecla(&mut e, "Enter");
         let EmbedData::Gallery(d) = embed_gravado(&e) else { panic!() };
         assert_eq!(d.items.iter().map(|i| i.path.as_str()).collect::<Vec<_>>(), ["assets/a.png", "assets/c.png", "assets/b.png"]);
         e.cursor = vec![0, 1, 0];

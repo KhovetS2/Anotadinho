@@ -675,6 +675,19 @@ pub(super) fn inserir_trecho(e: &mut Estado, trecho: &str) {
 /// Os assets chegaram: a escolha de qual inserir.
 pub fn escolher_asset(e: &mut Estado, assets: Vec<String>) {
     use super::modais::{AcaoDaEscolha, Modal};
+    // Pra galeria: só imagens, e digitar o caminho como saída.
+    if let Some(acao) = e.imagem_pendente.clone() {
+        let imagens: Vec<String> = assets.into_iter().filter(|a| markdown_do_asset(a).starts_with('!')).collect();
+        if imagens.is_empty() {
+            e.imagem_pendente = None;
+            perguntar(e, "Imagem (caminho)", "assets/".into(), acao);
+            return;
+        }
+        let mut itens = vec![crate::componentes::Item::novo("✎", "Digitar o caminho…", DIGITAR)];
+        itens.extend(imagens.into_iter().map(|a| crate::componentes::Item::novo("▨", a.clone(), a)));
+        e.modal = Some(Modal::Escolha { titulo: "Imagem do vault".into(), lista: crate::componentes::Lista::filtravel(itens), acao: AcaoDaEscolha::Asset });
+        return;
+    }
     if assets.is_empty() {
         e.bloco_a_inserir = None;
         e.aviso = Some("Nenhum arquivo em assets/ ainda.".into());
@@ -682,6 +695,19 @@ pub fn escolher_asset(e: &mut Estado, assets: Vec<String>) {
     }
     let itens = assets.into_iter().map(|a| crate::componentes::Item::novo("⌁", a.clone(), a)).collect();
     e.modal = Some(Modal::Escolha { titulo: "Inserir arquivo do vault".into(), lista: crate::componentes::Lista::filtravel(itens), acao: AcaoDaEscolha::Asset });
+}
+
+/// A chave de "Digitar o caminho…" na escolha de imagem.
+pub(super) const DIGITAR: &str = "\u{0}digitar";
+
+/// Um arquivo escolhido na lista de `assets/`: vai pra galeria que pediu
+/// (ciclo 356) ou vira bloco no lugar do menu `/`.
+pub(super) fn asset_escolhido(e: &mut Estado, chave: &str) {
+    match e.imagem_pendente.take() {
+        Some(acao) if chave == DIGITAR => perguntar(e, "Imagem (caminho)", "assets/".into(), acao),
+        Some(acao) => super::edicao::responder(e, acao, chave.to_string()),
+        None => inserir_trecho(e, &markdown_do_asset(chave)),
+    }
 }
 
 /// O markdown de um asset: imagem vira `![](…)`, o resto, link.

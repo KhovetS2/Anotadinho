@@ -529,7 +529,7 @@ pub(super) fn tecla_na_pergunta(e: &mut Estado, tecla: &str) {
     }
 }
 
-fn responder(e: &mut Estado, acao: AcaoDaPergunta, titulo: String) {
+pub(super) fn responder(e: &mut Estado, acao: AcaoDaPergunta, titulo: String) {
     match acao {
         AcaoDaPergunta::NovoEvento { embed, data } => {
             let mut novo = 0;
@@ -1509,7 +1509,10 @@ fn na_galeria(e: &mut Estado, ed: Edicao) -> bool {
             }
         }
         (Edicao::Criar { antes }, _, _) => {
-            perguntar(e, "Imagem (caminho)", "assets/".into(), AcaoDaPergunta::NovaImagem { embed, posicao: posicao(antes) });
+            // Escolhe de `assets/`, como o "adicionar do vault" da janela
+            // (ciclo 356); digitar o caminho continua na lista.
+            e.imagem_pendente = Some(AcaoDaPergunta::NovaImagem { embed, posicao: posicao(antes) });
+            e.pedidos.push(super::modais::Pedido::AssetsParaInserir);
         }
         (Edicao::Reescrever { limpar, .. }, Some(indice), Some(item)) => {
             let texto = if limpar { String::new() } else { item.caption };

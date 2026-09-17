@@ -604,7 +604,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         acao: AcaoDaEntrada::PaginaDeTemplate { template: chave, pasta: None },
                     })
                 }
-                AcaoDaEscolha::Asset => super::markdown::inserir_trecho(e, &super::markdown::markdown_do_asset(&chave)),
+                AcaoDaEscolha::Asset => super::markdown::asset_escolhido(e, &chave),
                 AcaoDaEscolha::Exportar => e.pedidos.push(Pedido::ExportarPasta(chave)),
                 AcaoDaEscolha::MoverPara => {
                     if let Some(p) = e.paginas.get(e.pagina) {
@@ -627,6 +627,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             Resposta::Fechar => {
                 if matches!(acao, AcaoDaEscolha::Inserir | AcaoDaEscolha::Asset) {
                     e.bloco_a_inserir = None;
+                    e.imagem_pendente = None;
                 }
             }
             Resposta::Nada => e.modal = Some(Modal::Escolha { titulo, lista, acao }),
