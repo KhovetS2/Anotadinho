@@ -72,6 +72,8 @@ pub enum Item {
     Pasta { caminho: String, nome: String },
     /// Uma página, com o índice dela na lista original.
     Pagina { indice: usize, titulo: String },
+    /// Um resultado da busca no conteúdo (ciclo 370): a página e o trecho.
+    Resultado { indice: usize, titulo: String, trecho: String },
 }
 
 /// Uma linha da sidebar.
@@ -214,7 +216,7 @@ mod testes {
             .iter()
             .map(|l| match &l.item {
                 Item::Pasta { nome, .. } => format!("{nome}/"),
-                Item::Pagina { titulo, .. } => titulo.clone(),
+                Item::Pagina { titulo, .. } | Item::Resultado { titulo, .. } => titulo.clone(),
             })
             .collect();
         assert_eq!(rotulos, ["produto/", "specs/", "solta"]);
@@ -236,7 +238,7 @@ mod testes {
             .iter()
             .map(|l| match &l.item {
                 Item::Pasta { nome, .. } => format!("{nome}/"),
-                Item::Pagina { titulo, .. } => titulo.clone(),
+                Item::Pagina { titulo, .. } | Item::Resultado { titulo, .. } => titulo.clone(),
             })
             .collect();
         assert_eq!(
@@ -303,7 +305,7 @@ mod testes {
             .iter()
             .map(|l| match &l.item {
                 Item::Pasta { nome, .. } => format!("{nome}/"),
-                Item::Pagina { titulo, .. } => titulo.clone(),
+                Item::Pagina { titulo, .. } | Item::Resultado { titulo, .. } => titulo.clone(),
             })
             .collect();
         assert_eq!(rotulos, ["produto/", "specs/", "zeta/", "solta", "Journals/", "2026-09-17", "2026-09-16"]);

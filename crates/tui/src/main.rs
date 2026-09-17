@@ -462,6 +462,13 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         }
                     }
                 }
+                Pedido::BuscarNaSidebar(termo) => {
+                    // Só vale se a pessoa ainda está nesse termo.
+                    if estado.busca == termo {
+                        let hits = anotadinho_ipc::handle_search_content(vault.to_string(), termo.clone()).unwrap_or_default();
+                        estado.resultados_da_busca = Some((termo, hits));
+                    }
+                }
                 Pedido::GravarPorCima { path, conteudo } => match handle_write_page(vault.to_string(), path.clone(), conteudo) {
                     Ok(_) => {
                         if let Ok((_, v)) = ler(vault, &path) {

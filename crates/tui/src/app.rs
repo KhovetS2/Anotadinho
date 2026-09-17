@@ -130,6 +130,9 @@ pub struct Estado {
     pub wikilink_dispensado: Option<usize>,
     /// As abas abertas, pelo caminho (ciclo 354), na ordem em que abriram.
     pub abas: Vec<String>,
+    /// O que a busca da sidebar achou no CONTEÚDO (ciclo 370): o termo e
+    /// os trechos, como a seção "Resultados" da janela.
+    pub resultados_da_busca: Option<(String, Vec<anotadinho_core::embed::SearchHit>)>,
     /// A página de início deste vault (ciclo 362): abre primeiro, e a aba
     /// dela fica fixa na frente.
     pub inicio: Option<String>,
@@ -221,6 +224,7 @@ impl Estado {
             wikilink_sel: 0,
             wikilink_dispensado: None,
             abas: Vec::new(),
+            resultados_da_busca: None,
             inicio: None,
             imagem_pendente: None,
             celula_pendente: None,
@@ -640,12 +644,26 @@ impl Estado {
                     .into_iter()
                     .filter(|l| match &l.item {
                         Item::Pagina { titulo, .. } => titulo.to_lowercase().contains(&alvo),
-                        Item::Pasta { .. } => false,
+                        Item::Pasta { .. } | Item::Resultado { .. } => false,
                     })
                     .map(|mut l| {
                         l.nivel = 0;
                         l
                     })
+                    .chain(
+                        self.resultados_da_busca
+                            .iter()
+                            .filter(|(t, _)| *t == termo)
+                            .flat_map(|(_, hits)| hits.iter())
+                            .filter_map(|h| {
+                                let indice = self.paginas.iter().position(|p| p.path == h.path)?;
+                                let trecho = h.snippet.replace("**", "").split_whitespace().collect::<Vec<_>>().join(" ");
+                                Some(sidebar::Linha {
+                                    nivel: 0,
+                                    item: Item::Resultado { indice, titulo: self.paginas[indice].title.clone(), trecho },
+                                })
+                            }),
+                    )
                     .collect()
             }
         }
@@ -679,7 +697,7 @@ impl Estado {
         };
         self.linha_sidebar = nova;
         // A página selecionada acompanha, pra o Enter abrir a certa.
-        if let Some(Item::Pagina { indice, .. }) = visiveis.get(nova).map(|l| &l.item) {
+        if let Some(Item::Pagina { indice, .. } | Item::Resultado { indice, .. }) = visiveis.get(nova).map(|l| &l.item) {
             self.pagina = *indice;
         }
     }
@@ -990,6 +1008,7 @@ fn tecla_na_busca(e: &mut Estado, tecla: &str) -> Option<String> {
             e.busca.pop();
             e.corrigir_cursor();
             e.corrigir_pagina();
+            buscar_conteudo_na_sidebar(e);
             None
         }
         // Uma tecla de um caractere é texto; o resto (setas, F1) não.
@@ -997,9 +1016,23 @@ fn tecla_na_busca(e: &mut Estado, tecla: &str) -> Option<String> {
             e.busca.push_str(t);
             e.corrigir_cursor();
             e.corrigir_pagina();
+            buscar_conteudo_na_sidebar(e);
             None
         }
         _ => None,
+    }
+}
+
+/// Com 3 letras ou mais na busca da sidebar, busca também no conteúdo
+/// (ciclo 370), como a sidebar da janela.
+fn buscar_conteudo_na_sidebar(e: &mut Estado) {
+    if e.busca_em != Foco::Paginas {
+        return;
+    }
+    if e.busca.chars().count() >= 3 {
+        e.pedidos.push(Pedido::BuscarNaSidebar(e.busca.clone()));
+    } else {
+        e.resultados_da_busca = None;
     }
 }
 
@@ -1215,6 +1248,12 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 Item::Pagina { titulo, .. } => Line::from(vec![
                     Span::styled(recuo, Style::default()),
                     Span::styled(titulo.clone(), estilo),
+                ]),
+                // Resultado no conteúdo: a página e o trecho apagado.
+                Item::Resultado { titulo, trecho, .. } => Line::from(vec![
+                    Span::styled("⌕ ", Style::default().fg(e.tema.var("text-muted"))),
+                    Span::styled(titulo.clone(), estilo),
+                    Span::styled(format!(" · {trecho}"), Style::default().fg(e.tema.var("text-muted"))),
                 ]),
             }
         })
@@ -9289,5 +9328,30 @@ mod testes {
         tecla(&mut e, "Enter");
         tecla(&mut e, "Enter");
         assert!(e.preferencias.agente.as_ref().unwrap().pastas_extras.is_empty());
+    }
+
+    // --- Ciclo 370: busca no conteúdo pela sidebar ----------------------------
+
+    #[test]
+    fn a_busca_da_sidebar_mostra_resultados_do_conteudo() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        tecla(&mut e, "/");
+        digitar(&mut e, "sp");
+        assert!(e.pedidos.is_empty(), "duas letras ainda não buscam no conteúdo");
+        digitar(&mut e, "r");
+        assert_eq!(e.pedidos.last(), Some(&Pedido::BuscarNaSidebar("spr".into())));
+        e.resultados_da_busca = Some((
+            "spr".into(),
+            vec![anotadinho_core::embed::SearchHit { path: "pages/gama.md".into(), snippet: "a **spr**int de agosto".into(), origem: None, ancora: None }],
+        ));
+        let tela = desenho(&mut e, 120, 12).join("\n");
+        assert!(tela.contains("⌕ gama · a sprint de agosto"), "{tela}");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "j");
+        assert_eq!(e.pagina, 2, "descer até o resultado seleciona a página dele");
+        // Outro termo: o resultado velho some.
+        tecla(&mut e, "/");
+        digitar(&mut e, "xyz");
+        assert!(!desenho(&mut e, 120, 12).join("\n").contains("⌕ gama"));
     }
 }
