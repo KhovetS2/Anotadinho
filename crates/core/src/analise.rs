@@ -711,11 +711,13 @@ pub fn partes_do_calendario_na_visao(
     };
 
     // A "gaveta" da janela: evento sem data não tem dia na grade.
+    // Cada um leva o índice, pra abrir o detalhe e ganhar data (ciclo 368).
     let sem_data: Vec<Unidade> = d
         .entries
         .iter()
-        .filter(|e| e.date.is_none())
-        .map(|e| item("entry", e.title.clone()))
+        .enumerate()
+        .filter(|(_, e)| e.date.is_none())
+        .map(|(i, e)| arranjado("entry", e.title.clone(), vec![item("indice", i.to_string())], Arranjo::Folha))
         .collect();
     // O cabeçalho da janela ancorada: a contagem, como o
     // `.calendar-grid__count` ("5 eventos"). Não é destino do cursor.
@@ -723,8 +725,11 @@ pub fn partes_do_calendario_na_visao(
         let n = d.entries.len();
         partes.insert(0, item("cabecalho", if n == 1 { "1 evento".to_string() } else { format!("{n} eventos") }));
     }
-    if !sem_data.is_empty() {
-        partes.push(grupo("sem-data", format!("Sem data ({})", sem_data.len()), sem_data));
+    // A gaveta fica sempre à vista nos eventos do embed, como na janela: é
+    // onde entra o "+ evento sem data".
+    if !sem_data.is_empty() || d.mode == embed::CalendarSource::Manual {
+        let n = sem_data.len();
+        partes.push(grupo("sem-data", format!("Sem data ({n})"), sem_data));
     }
     partes
 }

@@ -5705,7 +5705,8 @@ mod testes {
             (mes, u.texto.clone())
         };
         // Três meses de grade: agosto, setembro, outubro.
-        assert_eq!(e.arvore.filhos[0].filhos.len(), 3);
+        // (mais a gaveta "Sem data", ciclo 368)
+        assert_eq!(e.arvore.filhos[0].filhos.len(), 4);
         // Revisão, sexta 28 de agosto: semana 5 (23–29), coluna 5.
         e.cursor = vec![0, 0, 4, 5, 0];
         assert_eq!(onde(&e), ("Agosto 2026".into(), "Revisão".into()));
@@ -9236,5 +9237,33 @@ mod testes {
         e.cursor = vec![0, 1, 2];
         tecla(&mut e, "Enter");
         assert_eq!(e.pedidos.last(), Some(&Pedido::AbrirPagina("pages/beta.md".into())));
+    }
+
+    // --- Ciclo 368: evento sem data ---------------------------------------------
+
+    #[test]
+    fn gaveta_sem_data_cria_e_abre_evento_sem_data() {
+        use anotadinho_core::embed::EmbedData;
+        let mut e = pagina_com("{{ type: \"calendar\" }}\nentries:\n- date: 2026-08-10\n  title: Reunião\n{{ /calendar }}\n").com_hoje("2026-08-12");
+        e.foco = Foco::Conteudo;
+        let t = desenho(&mut e, 120, 40).join("\n");
+        assert!(t.contains("Sem data (0)") && t.contains("+ evento sem data"), "{t}");
+        let vazio = e
+            .arvore
+            .percorrer()
+            .into_iter()
+            .find(|(_, u)| matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "sem-data"))
+            .map(|(c, _)| c)
+            .expect("sem gaveta");
+        e.cursor = vazio;
+        tecla(&mut e, "o");
+        assert!(e.pergunta.as_ref().unwrap().rotulo.contains("sem data"));
+        digitar(&mut e, "Ideia");
+        tecla(&mut e, "Escape");
+        let EmbedData::Calendar(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!((d.entries[1].title.as_str(), d.entries[1].date.as_deref()), ("Ideia", None));
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Ideia");
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Detalhe { alvo: modais::AlvoDoDetalhe::Evento { indice: 1, .. }, .. })));
     }
 }

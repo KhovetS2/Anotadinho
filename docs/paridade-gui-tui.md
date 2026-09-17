@@ -65,6 +65,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Seletor de data nos formulários (prazo, início, fim, criado) | ✅ | 364 — Enter abre o mês; `c` digita |
 | Seletor de horário (15 em 15 min) | ✅ | 365 |
 | Cronograma: agendar item "Sem data" | ✅ | 366 — Enter na gaveta |
+| Calendário: gaveta "Sem data" sempre à vista, "+ evento sem data", abrir o evento sem data | ✅ | 368 — `o` na gaveta; Enter abre o detalhe (dá a data) |
 | Tabela: células, linhas, colunas, tipo, opções | ✅ | 321, 337, 339 |
 | Tabela: número ▲▼, data, coluna de página (escolher e abrir) | ✅ | 367 — Ctrl+A/X; Enter na página |
 | Consulta: configuração completa | ✅ | 335, 338, 344 — `=` na consulta |

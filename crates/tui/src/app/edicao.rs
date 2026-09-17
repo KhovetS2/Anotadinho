@@ -547,11 +547,19 @@ pub(super) fn responder(e: &mut Estado, acao: AcaoDaPergunta, titulo: String) {
         AcaoDaPergunta::NovoEvento { embed, data } => {
             let mut novo = 0;
             if editar_calendario(e, &embed, |d| {
-                d.add_entry(data.clone(), titulo.clone());
+                if data.is_empty() {
+                    d.add_unscheduled_entry(titulo.clone());
+                } else {
+                    d.add_entry(data.clone(), titulo.clone());
+                }
                 novo = d.entries.len() - 1;
                 Ok(())
             }) {
-                let destino = achar_evento(&e.arvore, &embed, novo, Some(&data));
+                let destino = if data.is_empty() {
+                    achar_com_indice(&e.arvore, &embed, "entry", novo)
+                } else {
+                    achar_evento(&e.arvore, &embed, novo, Some(&data))
+                };
                 ir(e, destino);
             }
         }
@@ -770,6 +778,14 @@ fn no_calendario(e: &mut Estado, ed: Edicao) -> bool {
     let entrada = indice.and_then(|i| ler_calendario(e, &embed)?.entries.get(i).cloned());
     match (ed, indice, entrada) {
         (Edicao::Criar { .. }, _, _) => {
+            let na_gaveta = (1..=e.cursor.len()).any(|n| {
+                matches!(e.arvore.em(&e.cursor[..n]).map(|u| &u.tipo), Some(Tipo::Parte { nome, .. }) if nome == "sem-data")
+            });
+            if na_gaveta {
+                // "+ evento sem data" (ciclo 368).
+                perguntar(e, "Novo evento sem data", String::new(), AcaoDaPergunta::NovoEvento { embed, data: String::new() });
+                return true;
+            }
             let Some(data) = data else {
                 e.aviso = Some("escolha um dia pra criar o evento".into());
                 return true;
