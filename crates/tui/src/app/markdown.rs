@@ -488,9 +488,40 @@ pub(super) fn no_markdown(e: &mut Estado, ed: Edicao, h: Hospedeiro) -> bool {
                 ir(e, destino);
             }
         }
+        // Num item, Ctrl+A aninha (dois espaços a mais) e Ctrl+X desaninha
+        // (ciclo 393) — a lista dentro da lista da janela.
+        Edicao::Somar(n) if tipo == Tipo::Item => {
+            // A faixa pode começar depois do recuo: volta até o começo da linha.
+            let inicio_da_linha = corpo_atual[..faixa.start].rfind('\n').map_or(0, |i| i + 1);
+            let bloco = &corpo_atual[inicio_da_linha..faixa.end];
+            let novo_bloco: String = bloco
+                .split('\n')
+                .map(|l| {
+                    if n > 0 {
+                        format!("{}{l}", "  ".repeat(n as usize))
+                    } else {
+                        let tirar = l.chars().take_while(|c| *c == ' ').count().min(2 * n.unsigned_abs() as usize);
+                        l[tirar..].to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            if novo_bloco == bloco {
+                e.aviso = Some("o item já está no primeiro nível".into());
+                return true;
+            }
+            let mut novo = corpo_atual.clone();
+            novo.replace_range(inicio_da_linha..faixa.end, &novo_bloco);
+            if gravar(e, &h, novo) {
+                let alvo = alvo.clone();
+                e.cursor = alvo;
+                e.aviso = Some(if n > 0 { "item aninhado" } else { "item desaninhado" }.into());
+                e.seguir_cursor();
+            }
+        }
         Edicao::Somar(n) => {
             let Tipo::Titulo(nivel) = tipo else {
-                e.aviso = Some("Ctrl+A/Ctrl+X mudam o nível de um título".into());
+                e.aviso = Some("Ctrl+A/Ctrl+X: nível do título ou do item de lista".into());
                 return true;
             };
             let Some((_, texto)) = decomposto else { return true };

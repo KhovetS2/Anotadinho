@@ -125,10 +125,17 @@ impl Renderizador for Linhas {
         } else {
             inline::visivel(&trechos)
         };
+        // Item de lista aninhada (`  - a1`) desce um degrau por recuo do
+        // arquivo (ciclo 393), como a janela desenha a lista dentro da
+        // lista — a árvore continua plana, só o desenho recua.
+        let recuo_do_item = match (&u.tipo, u.fonte.as_deref()) {
+            (Tipo::Item, Some(f)) => f.chars().take_while(|c| *c == ' ').count() / 2,
+            _ => 0,
+        };
         self.fora.push(Linha {
             caminho: self.caminho.clone(),
             enfeite: false,
-            nivel,
+            nivel: nivel + recuo_do_item,
             texto,
             resumo: contagem(u),
             marca: marca(&u.tipo),

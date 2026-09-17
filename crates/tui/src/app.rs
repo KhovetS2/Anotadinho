@@ -10006,4 +10006,22 @@ mod testes {
         tecla(&mut e, "Enter");
         assert!(e.preferencias.agentes.is_empty() && e.preferencias.agente.is_none(), "{:?}", e.preferencias.agentes);
     }
+
+    // --- Ciclo 393: lista aninhada ------------------------------------------------
+
+    #[test]
+    fn lista_aninhada_recua_no_desenho_e_ctrl_a_x_aninham() {
+        let mut e = pagina_com("# T\n\n- a\n  - a1\n- b\n");
+        let tela = desenho(&mut e, 80, 12).join("\n");
+        let col = |t: &str| tela.lines().find_map(|l| l.find(t).map(|i| l[..i].chars().count())).unwrap();
+        assert!(col("a1") > col(" a"), "a1 recuado:\n{tela}");
+        let b = e.arvore.percorrer().into_iter().find(|(_, u)| u.texto == "b").map(|(c, _)| c).unwrap();
+        e.cursor = b;
+        tecla(&mut e, "Ctrl+a");
+        assert!(e.gravacao.clone().unwrap().contains("  - a1\n  - b"), "{:?}", e.gravacao);
+        tecla(&mut e, "Ctrl+x");
+        assert!(e.gravacao.clone().unwrap().contains("  - a1\n- b"), "{:?}", e.gravacao);
+        tecla(&mut e, "Ctrl+x");
+        assert!(e.aviso.as_deref().unwrap().contains("primeiro nível"));
+    }
 }
