@@ -85,6 +85,20 @@ pub enum AcaoDaPergunta {
         /// O item, no arquivo.
         indice: usize,
     },
+    /// Cria uma coluna no kanban nesta posição (ciclo 337).
+    NovaColunaDoKanban {
+        /// O kanban.
+        embed: Caminho,
+        /// Onde ela entra.
+        posicao: usize,
+    },
+    /// Cria uma coluna de texto na tabela nesta posição (ciclo 337).
+    NovaColunaDaTabela {
+        /// A tabela.
+        embed: Caminho,
+        /// Onde ela entra.
+        posicao: usize,
+    },
     /// Troca o nome da coluna (e dos cartões que apontam pra ela).
     RenomearColuna {
         /// O kanban.
@@ -174,6 +188,10 @@ pub enum Registro {
     Bloco(String),
     /// Uma imagem da galeria.
     Imagem(em::GalleryItem),
+    /// Uma coluna do kanban, com os cartões dela.
+    ColunaDoKanban(String, Vec<em::KanbanCard>),
+    /// Uma coluna da tabela, com as células dela.
+    ColunaDaTabela(em::TableColumn, Vec<String>),
     /// Um painel de colunas.
     Painel(em::ColumnPane),
 }
@@ -569,6 +587,31 @@ fn responder(e: &mut Estado, acao: AcaoDaPergunta, titulo: String) {
                 ir(e, destino);
             }
         }
+        AcaoDaPergunta::NovaColunaDoKanban { embed, posicao } => {
+            let mut onde = 0;
+            if editar_kanban(e, &embed, |d| {
+                if d.columns.iter().any(|c| *c == titulo) {
+                    return Err(format!("já existe a coluna {titulo}"));
+                }
+                onde = posicao.min(d.columns.len());
+                d.columns.insert(onde, titulo.clone());
+                Ok(())
+            }) {
+                ir(e, Some([embed.as_slice(), &[onde]].concat()));
+            }
+        }
+        AcaoDaPergunta::NovaColunaDaTabela { embed, posicao } => {
+            let mut onde = 0;
+            if editar_tabela(e, &embed, |d| {
+                d.add_column(titulo.clone());
+                let fim = d.columns.len() - 1;
+                onde = posicao.min(fim);
+                mover_coluna_da_tabela(d, fim, onde);
+                Ok(())
+            }) {
+                ir(e, Some([embed.as_slice(), &[0, onde]].concat()));
+            }
+        }
         AcaoDaPergunta::RenomearColuna { embed, coluna } => {
             editar_kanban(e, &embed, |d| {
                 if coluna >= d.columns.len() {
@@ -821,6 +864,12 @@ fn no_kanban(e: &mut Estado, ed: Edicao) -> bool {
             None => None,
         }
     };
+    // Na COLUNA (não num cartão), os comandos são da coluna (ciclo 337):
+    // ela é o item, os cartões são o que ela contém — o mesmo desenho dos
+    // painéis de colunas.
+    if indice.is_none() {
+        return na_coluna_do_kanban(e, ed, embed, coluna, dados);
+    }
     match (ed, indice, cartao) {
         (Edicao::Criar { antes }, _, _) => {
             let antes_de = antes_de(antes);
@@ -848,9 +897,6 @@ fn no_kanban(e: &mut Estado, ed: Edicao) -> bool {
                 e.aviso = Some("cartão apagado".into());
                 e.seguir_cursor();
             }
-        }
-        (Edicao::Apagar | Edicao::ApagarConteudo, None, _) => {
-            e.aviso = Some("apagar coluna ainda é só na janela".into());
         }
         (Edicao::Copiar, Some(_), Some(cartao)) => {
             e.registro = Some(Registro::Cartao(cartao));
@@ -1069,6 +1115,12 @@ fn na_tabela(e: &mut Estado, ed: Edicao) -> bool {
         None => dados.rows.len(),
     };
     let valor = |f: usize, c: usize| dados.rows.get(f.wrapping_sub(1)).and_then(|r| r.get(c)).cloned().unwrap_or_default();
+    // No cabeçalho, os comandos são da COLUNA (ciclo 337).
+    if let Some((0, coluna)) = celula {
+        if !matches!(ed, Edicao::Desfazer | Edicao::Refazer) {
+            return no_cabecalho_da_tabela(e, ed, embed, coluna);
+        }
+    }
     match (ed, celula) {
         (Edicao::Criar { antes }, _) | (Edicao::Colar { antes }, _) => {
             let colando = matches!(ed, Edicao::Colar { .. });
@@ -1660,5 +1712,261 @@ fn na_consulta(e: &mut Estado, ed: Edicao) -> bool {
         e.cursor = embed;
     }
     e.seguir_cursor();
+    true
+}
+
+// ---------------------------------------------------------------------
+// Colunas do kanban e da tabela (ciclo 337)
+// ---------------------------------------------------------------------
+
+/// Numa coluna do kanban: `o`/`O` criam uma coluna ao lado, `a`/`cc`
+/// renomeiam (os cartões seguem), `dd` apaga com os cartões (fica pelo
+/// menos uma), `yy`/`p` duplicam com os cartões, `>>`/`<<` mudam a coluna
+/// de lugar. Colar um CARTÃO copiado numa coluna põe ele no fim dela.
+fn na_coluna_do_kanban(e: &mut Estado, ed: Edicao, embed: Caminho, coluna: usize, dados: em::KanbanEmbedData) -> bool {
+    let total = dados.columns.len();
+    let Some(nome) = dados.columns.get(coluna).cloned() else { return false };
+    let cartoes: Vec<em::KanbanCard> = dados.items.iter().filter(|c| c.column == nome).cloned().collect();
+    let na = |i: usize| [embed.as_slice(), &[i]].concat();
+    match ed {
+        Edicao::Criar { antes } => {
+            let posicao = if antes { coluna } else { coluna + 1 };
+            perguntar(e, "Nova coluna", String::new(), AcaoDaPergunta::NovaColunaDoKanban { embed, posicao });
+        }
+        Edicao::Reescrever { limpar, .. } => {
+            let texto = if limpar { String::new() } else { nome };
+            perguntar(e, "Renomear coluna", texto, AcaoDaPergunta::RenomearColuna { embed, coluna });
+        }
+        Edicao::Apagar | Edicao::ApagarConteudo => {
+            if total <= 1 {
+                e.aviso = Some("fica pelo menos uma coluna".into());
+                return true;
+            }
+            if editar_kanban(e, &embed, |d| {
+                d.remove_column(coluna);
+                Ok(())
+            }) {
+                e.registro = Some(Registro::ColunaDoKanban(nome.clone(), cartoes));
+                e.aviso = Some(format!("coluna {nome} apagada"));
+                ir(e, Some(na(coluna.min(total - 2))));
+            }
+        }
+        Edicao::Copiar => {
+            e.registro = Some(Registro::ColunaDoKanban(nome, cartoes));
+            e.aviso = Some("coluna copiada".into());
+        }
+        Edicao::Colar { antes } => match e.registro.clone() {
+            Some(Registro::ColunaDoKanban(copiada, cartoes)) => {
+                let onde = if antes { coluna } else { coluna + 1 };
+                // Nome repetido separaria mal os cartões: a cópia ganha
+                // um sufixo.
+                let mut novo_nome = copiada.clone();
+                while dados.columns.contains(&novo_nome) {
+                    novo_nome.push_str(" (cópia)");
+                }
+                if editar_kanban(e, &embed, |d| {
+                    d.columns.insert(onde.min(d.columns.len()), novo_nome.clone());
+                    for mut c in cartoes {
+                        c.column = novo_nome.clone();
+                        d.items.push(c);
+                    }
+                    Ok(())
+                }) {
+                    ir(e, Some(na(onde)));
+                }
+            }
+            Some(Registro::Cartao(mut cartao)) => {
+                cartao.column = nome.clone();
+                let mut onde = 0;
+                if editar_kanban(e, &embed, |d| {
+                    d.items.push(cartao);
+                    onde = d.items.len() - 1;
+                    Ok(())
+                }) {
+                    let destino = achar_com_indice(&e.arvore, &embed, "card", onde);
+                    ir(e, destino);
+                }
+            }
+            _ => e.aviso = Some("não há coluna nem cartão copiados".into()),
+        },
+        Edicao::Deslocar(n) => {
+            let destino = (coluna as i64 + n).clamp(0, total as i64 - 1) as usize;
+            if destino == coluna {
+                e.aviso = Some("não há coluna desse lado".into());
+                return true;
+            }
+            if editar_kanban(e, &embed, |d| {
+                let c = d.columns.remove(coluna);
+                d.columns.insert(destino, c);
+                Ok(())
+            }) {
+                ir(e, Some(na(destino)));
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// `Enter` numa coluna VAZIA do kanban abre o primeiro cartão dela — o
+/// "+ card" da janela. Devolve se a tecla foi usada.
+pub(super) fn cartao_na_coluna_vazia(e: &mut Estado) -> bool {
+    let Some(embed) = embed_do_cursor(e, "kanban") else { return false };
+    if e.cursor.len() != embed.len() + 1 {
+        return false;
+    }
+    let Some(u) = e.arvore.em(&e.cursor) else { return false };
+    if !u.filhos.is_empty() {
+        return false;
+    }
+    let coluna = u.texto.clone();
+    perguntar(e, format!("Novo cartão em {coluna}"), String::new(), AcaoDaPergunta::NovoCartao { embed, coluna, antes_de: None });
+    true
+}
+
+/// Leva a coluna `de` da tabela pra posição `para`, com as células.
+fn mover_coluna_da_tabela(d: &mut em::TableEmbedData, de: usize, para: usize) {
+    if de == para || de >= d.columns.len() {
+        return;
+    }
+    let c = d.columns.remove(de);
+    d.columns.insert(para.min(d.columns.len()), c);
+    for linha in &mut d.rows {
+        if de < linha.len() {
+            let v = linha.remove(de);
+            linha.insert(para.min(linha.len()), v);
+        }
+    }
+}
+
+/// Os tipos de coluna na ordem em que `~` gira (a do seletor da janela).
+fn tipos_de_coluna() -> [&'static str; 8] {
+    ["texto", "número", "data", "caixa", "seleção", "tags", "url", "página"]
+}
+
+fn nome_do_tipo(k: &em::ColumnKind) -> &'static str {
+    match k {
+        em::ColumnKind::Text => "texto",
+        em::ColumnKind::Number => "número",
+        em::ColumnKind::Date => "data",
+        em::ColumnKind::Checkbox => "caixa",
+        em::ColumnKind::Select { .. } => "seleção",
+        em::ColumnKind::MultiSelect { .. } => "tags",
+        em::ColumnKind::Url => "url",
+        em::ColumnKind::PageLink => "página",
+    }
+}
+
+/// O tipo pelo nome, com as opções tiradas dos valores que a coluna já
+/// tem — trocar pra seleção não pode perder o que estava escrito.
+fn tipo_pelo_nome(nome: &str, valores: &[String]) -> em::ColumnKind {
+    let opcoes = |separar: bool| -> Vec<String> {
+        let mut v: Vec<String> = Vec::new();
+        for x in valores {
+            let partes: Vec<&str> = if separar { x.split(',').collect() } else { vec![x.as_str()] };
+            for p in partes.into_iter().map(str::trim).filter(|p| !p.is_empty()) {
+                if !v.iter().any(|o| o == p) {
+                    v.push(p.to_string());
+                }
+            }
+        }
+        v
+    };
+    match nome {
+        "número" => em::ColumnKind::Number,
+        "data" => em::ColumnKind::Date,
+        "caixa" => em::ColumnKind::Checkbox,
+        "seleção" => em::ColumnKind::Select { options: opcoes(false) },
+        "tags" => em::ColumnKind::MultiSelect { options: opcoes(true) },
+        "url" => em::ColumnKind::Url,
+        "página" => em::ColumnKind::PageLink,
+        _ => em::ColumnKind::Text,
+    }
+}
+
+/// No cabeçalho da tabela: `o`/`O` criam uma coluna de texto ao lado,
+/// `a`/`cc` renomeiam, `dd`/`x` apagam (fica pelo menos uma), `yy`/`p`
+/// duplicam com as células, `>>`/`<<` mudam de lugar, e `~`
+/// (`Ctrl+A`/`Ctrl+X` pros dois lados) gira o tipo — texto, número, data,
+/// caixa, seleção, tags, url, página.
+pub(super) fn no_cabecalho_da_tabela(e: &mut Estado, ed: Edicao, embed: Caminho, coluna: usize) -> bool {
+    let Some(dados) = ler_tabela(e, &embed) else { return false };
+    let total = dados.columns.len();
+    let Some(col) = dados.columns.get(coluna).cloned() else { return false };
+    let celulas: Vec<String> = dados.rows.iter().map(|r| r.get(coluna).cloned().unwrap_or_default()).collect();
+    let no_cabecalho = |i: usize| [embed.as_slice(), &[0, i]].concat();
+    match ed {
+        Edicao::Criar { antes } => {
+            let posicao = if antes { coluna } else { coluna + 1 };
+            perguntar(e, "Nova coluna", String::new(), AcaoDaPergunta::NovaColunaDaTabela { embed, posicao });
+        }
+        Edicao::Reescrever { limpar, .. } => {
+            let texto = if limpar { String::new() } else { col.name };
+            perguntar(e, "Renomear coluna", texto, AcaoDaPergunta::RenomearColunaDaTabela { embed, coluna });
+        }
+        Edicao::Apagar | Edicao::ApagarConteudo => {
+            if total <= 1 {
+                e.aviso = Some("fica pelo menos uma coluna".into());
+                return true;
+            }
+            if editar_tabela(e, &embed, |d| {
+                d.remove_column(coluna);
+                Ok(())
+            }) {
+                e.registro = Some(Registro::ColunaDaTabela(col.clone(), celulas));
+                e.aviso = Some(format!("coluna {} apagada", col.name));
+                ir(e, Some(no_cabecalho(coluna.min(total - 2))));
+            }
+        }
+        Edicao::Copiar => {
+            e.registro = Some(Registro::ColunaDaTabela(col, celulas));
+            e.aviso = Some("coluna copiada".into());
+        }
+        Edicao::Colar { antes } => {
+            let Some(Registro::ColunaDaTabela(copiada, valores)) = e.registro.clone() else {
+                e.aviso = Some("não há coluna copiada".into());
+                return true;
+            };
+            let onde = if antes { coluna } else { coluna + 1 };
+            if editar_tabela(e, &embed, |d| {
+                d.columns.push(copiada);
+                for (k, linha) in d.rows.iter_mut().enumerate() {
+                    linha.push(valores.get(k).cloned().unwrap_or_default());
+                }
+                let fim = d.columns.len() - 1;
+                mover_coluna_da_tabela(d, fim, onde);
+                Ok(())
+            }) {
+                ir(e, Some(no_cabecalho(onde)));
+            }
+        }
+        Edicao::Deslocar(n) => {
+            let destino = (coluna as i64 + n).clamp(0, total as i64 - 1) as usize;
+            if destino == coluna {
+                e.aviso = Some("não há coluna desse lado".into());
+                return true;
+            }
+            if editar_tabela(e, &embed, |d| {
+                mover_coluna_da_tabela(d, coluna, destino);
+                Ok(())
+            }) {
+                ir(e, Some(no_cabecalho(destino)));
+            }
+        }
+        Edicao::Alternar | Edicao::Somar(_) => {
+            let passo = if let Edicao::Somar(n) = ed { n } else { 1 };
+            let tipos = tipos_de_coluna();
+            let agora = tipos.iter().position(|t| *t == nome_do_tipo(&col.kind)).unwrap_or(0) as i64;
+            let novo = tipos[(agora + passo).rem_euclid(tipos.len() as i64) as usize];
+            if editar_tabela(e, &embed, |d| {
+                d.set_column_kind(coluna, tipo_pelo_nome(novo, &celulas));
+                Ok(())
+            }) {
+                e.aviso = Some(format!("{}: {novo}", col.name));
+                ir(e, None);
+            }
+        }
+        Edicao::Desfazer | Edicao::Refazer => return false,
+    }
     true
 }

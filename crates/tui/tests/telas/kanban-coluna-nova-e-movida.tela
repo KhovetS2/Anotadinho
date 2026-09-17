@@ -1,29 +1,29 @@
-# cena kanban-cartao-aceso · 140x40 · teclas: Tab j Enter Enter
+# cena kanban-coluna-nova-e-movida · 140x40 · teclas: Tab j Enter o R e v i s ã o Escape < <
 ┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
 │cena                                    ││Antes.                                                                                          │
 │                                        ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
 │                                        ││▌  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖ ▌│
-│                                        ││▌  ▐ BACKLOG              1  × ▌  ▐ TODO                 0  × ▌  ▐ DONE                 2  × ▌ ▌│
-│                                        ││▌  ▐ ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖ ▌  ▐ ↵ + card                  ▌  ▐ ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖ ▌ ▌│
-│                                        ││▌  ▐ ▐ Tarefa 1              ▌ ▌  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘  ▐ ▐ Tarefa 2              ▌ ▌ ▌│
-│                                        ││▌  ▐ ▐  ✓ 1/2   2026-08-10   ▌ ▌                                 ▐ ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘ ▌ ▌│
-│                                        ││▌  ▐ ▐  urgente   bug        ▌ ▌                                 ▐ ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖ ▌ ▌│
-│                                        ││▌  ▐ ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘ ▌                                 ▐ ▐ Tarefa 3              ▌ ▌ ▌│
-│                                        ││▌  ▐ o + card                  ▌                                 ▐ ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘ ▌ ▌│
-│                                        ││▌  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘                                 ▐ o + card                  ▌ ▌│
-│                                        ││▌                                                                ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘ ▌│
+│                                        ││▌  ▐ REVISÃO              0  × ▌  ▐ BACKLOG              1  × ▌  ▐ TODO                 0  × ▌ ▌│
+│                                        ││▌  ▐ ↵ + card                  ▌  ▐ ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖ ▌  ▐ ↵ + card                  ▌ ▌│
+│                                        ││▌  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘  ▐ ▐ Tarefa 1              ▌ ▌  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘ ▌│
+│                                        ││▌                                 ▐ ▐  ✓ 1/2   2026-08-10   ▌ ▌                                ▌│
+│                                        ││▌                                 ▐ ▐  urgente   bug        ▌ ▌                                ▌│
+│                                        ││▌                                 ▐ ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘ ▌                                ▌│
+│                                        ││▌                                 ▐ o + card                  ▌                                ▌│
+│                                        ││▌                                 ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘                                ▌│
 │                                        ││▌                                                                                              ▌│
-│                                        ││▌  ┌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐                                                                   ▌│
-│                                        ││▌  ╎      o + coluna       ╎                                                                   ▌│
-│                                        ││▌  └╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┘                                                                   ▌│
+│                                        ││▌  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖  ┌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐                                    ▌│
+│                                        ││▌  ▐ DONE                 2  × ▌  ╎      o + coluna       ╎                                    ▌│
+│                                        ││▌  ▐ ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖ ▌  └╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┘                                    ▌│
+│                                        ││▌  ▐ ▐ Tarefa 2              ▌ ▌                                                               ▌│
+│                                        ││▌  ▐ ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘ ▌                                                               ▌│
+│                                        ││▌  ▐ ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖ ▌                                                               ▌│
+│                                        ││▌  ▐ ▐ Tarefa 3              ▌ ▌                                                               ▌│
+│                                        ││▌  ▐ ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘ ▌                                                               ▌│
+│                                        ││▌  ▐ o + card                  ▌                                                               ▌│
+│                                        ││▌  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘                                                               ▌│
 │                                        ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
 │                                        ││Depois.                                                                                         │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -44,27 +44,27 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhiiiiiiiiiiiiiiiiiiiiiiiiiiiiihfb
-addddddddddddddddddddddddddddddddddddddddabghhijkkkkkkkjjjjjjjjjjjjjlllmmjihhijkkkkjjjjjjjjjjjjjjjjlllmmjihhijkkkkjjjjjjjjjjjjjjjjlllmmjihfb
-addddddddddddddddddddddddddddddddddddddddabghhijnnnnnnnnnnnnnnnnnnnnnnnnnjihhijmmmmmmmmmmmmmmmmmmmmmmmmmjihhijooooooooooooooooooooooooojihfb
-addddddddddddddddddddddddddddddddddddddddabghhijnpqqqqqqqqppppppppppppppnjihhiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhijorssssssssrrrrrrrrrrrrrrojihfb
-addddddddddddddddddddddddddddddddddddddddabghhijnptttttttpttttttttttttppnjihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhijooooooooooooooooooooooooojihfb
-addddddddddddddddddddddddddddddddddddddddabghhijnpuuuuuuuuupuuuuupppppppnjihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhijooooooooooooooooooooooooojihfb
-addddddddddddddddddddddddddddddddddddddddabghhijnnnnnnnnnnnnnnnnnnnnnnnnnjihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhijorssssssssrrrrrrrrrrrrrrojihfb
-addddddddddddddddddddddddddddddddddddddddabghhijmmmmmmmmmmmmmmmmmmmmmmmmmjihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhijooooooooooooooooooooooooojihfb
-addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhijmmmmmmmmmmmmmmmmmmmmmmmmmjihfb
-addddddddddddddddddddddddddddddddddddddddabghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiihfb
+addddddddddddddddddddddddddddddddddddddddabghhijkkkkkkkjjjjjjjjjjjjjlllmmjihhijnnnnnnnjjjjjjjjjjjjjlllmmjihhijnnnnjjjjjjjjjjjjjjjjlllmmjihfb
+addddddddddddddddddddddddddddddddddddddddabghhijmmmmmmmmmmmmmmmmmmmmmmmmmjihhijooooooooooooooooooooooooojihhijmmmmmmmmmmmmmmmmmmmmmmmmmjihfb
+addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhijopqqqqqqqqppppppppppppppojihhiiiiiiiiiiiiiiiiiiiiiiiiiiiiihfb
+addddddddddddddddddddddddddddddddddddddddabghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhijoprrrrrrrprrrrrrrrrrrrppojihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhijopssssssssspssssspppppppojihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhijooooooooooooooooooooooooojihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhijmmmmmmmmmmmmmmmmmmmmmmmmmjihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhvvvvvvvvvvvvvvvvvvvvvvvvvhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhvwwwwwwwwwwwwwwwwwwwwwwwvhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhvvvvvvvvvvvvvvvvvvvvvvvvvhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhttttttttttttttttttttttttthhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhijnnnnjjjjjjjjjjjjjjjjlllmmjihhtuuuuuuuuuuuuuuuuuuuuuuuthhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhijooooooooooooooooooooooooojihhttttttttttttttttttttttttthhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhijopqqqqqqqqppppppppppppppojihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhijooooooooooooooooooooooooojihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhijooooooooooooooooooooooooojihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhijopqqqqqqqqppppppppppppppojihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhijooooooooooooooooooooooooojihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhijmmmmmmmmmmmmmmmmmmmmmmmmmjihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -86,20 +86,47 @@ c = fg - bg #272930 apagado
 d = fg - bg #272930
 e = fg #e4e8f5 bg #272930
 f = fg #37414e bg #272930
-g = fg #6fd3ff bg #37414e
+g = fg #00b5ff bg #37414e
 h = fg - bg #37414e
 i = fg #32343f bg #37414e
 j = fg - bg #32343f
-k = fg #989eb7 bg #32343f negrito
+k = fg #272930 bg #00b5ff negrito
 l = fg #989eb7 bg #3d404f
 m = fg #989eb7 bg #32343f
-n = fg #00b5ff bg #32343f
+n = fg #989eb7 bg #32343f negrito
 o = fg #3d404f bg #32343f
-p = fg - bg #00b5ff
-q = fg #272930 bg #00b5ff
-r = fg - bg #3d404f
-s = fg #e4e8f5 bg #3d404f
-t = fg #989eb7 bg #272930
-u = fg #00b5ff bg #213e4f
-v = fg #3d404f bg #37414e
-w = fg #989eb7 bg #37414e
+p = fg - bg #3d404f
+q = fg #e4e8f5 bg #3d404f
+r = fg #989eb7 bg #272930
+s = fg #00b5ff bg #213e4f
+t = fg #3d404f bg #37414e
+u = fg #989eb7 bg #37414e
+== arquivo ==
+Antes.
+
+{{ type: "kanban" }}
+columns:
+- Revisão
+- Backlog
+- Todo
+- Done
+items:
+- title: Tarefa 1
+  column: Backlog
+  description: Descrição da tarefa 1, com mais detalhes do que cabe no título.
+  tags:
+  - urgente
+  - bug
+  due: 2026-08-10
+  checklist:
+  - text: Sub-item 1
+    done: false
+  - text: Sub-item 2
+    done: true
+- title: Tarefa 2
+  column: Done
+- title: Tarefa 3
+  column: Done
+{{ /kanban }}
+
+Depois.

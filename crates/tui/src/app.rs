@@ -553,7 +553,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
             // Enter num evento do vault abre a página dele (ciclo 317), o
             // que o clique faz na janela.
             // Enter numa transição do fluxo move a etapa (ciclo 335).
-            if tecla == "Enter" && edicao::transicao_do_cursor(e) {
+            if tecla == "Enter" && (edicao::transicao_do_cursor(e) || edicao::cartao_na_coluna_vazia(e)) {
                 return None;
             }
             if tecla == "Enter" {
@@ -1659,7 +1659,12 @@ fn linhas_do_kanban(e: &Estado, dono: &[usize], largura: usize) -> Vec<Line<'sta
                 Faixa::default()
                     .mais("▐", borda_da_coluna)
                     .mais(" ", em_superficie)
-                    .mais(na_largura("+ card", dentro - 2), em_superficie.fg(apagado))
+                    // A tecla que cria: `Enter` na coluna vazia, `o` no
+                    // último cartão (ciclo 337).
+                    .mais(
+                        na_largura(if coluna.filhos.is_empty() { "↵ + card" } else { "o + card" }, dentro - 2),
+                        em_superficie.fg(apagado),
+                    )
                     .mais(" ", em_superficie)
                     .mais("▌", borda_da_coluna),
             );
@@ -1675,7 +1680,7 @@ fn linhas_do_kanban(e: &Estado, dono: &[usize], largura: usize) -> Vec<Line<'sta
         Faixa::default().mais(format!("┌{}┐", "╌".repeat(W_NOVA - 2)), tracejado),
         Faixa::default()
             .mais("╎", tracejado)
-            .mais(centralizado("+ coluna", W_NOVA - 2), Style::default().fg(apagado))
+            .mais(centralizado("o + coluna", W_NOVA - 2), Style::default().fg(apagado))
             .mais("╎", tracejado),
         Faixa::default().mais(format!("└{}┘", "╌".repeat(W_NOVA - 2)), tracejado),
     ];
@@ -5628,9 +5633,10 @@ mod testes {
     #[test]
     fn o_cria_cartao_na_coluna_e_a_renomeia() {
         let mut e = kanban_editavel();
-        // Na coluna "Feito" (vazia).
+        // Na coluna "Feito" (vazia), `Enter` abre o primeiro cartão — o
+        // "+ card" da janela (ciclo 337; `o` na coluna cria coluna).
         e.cursor = vec![1, 2];
-        tecla(&mut e, "o");
+        tecla(&mut e, "Enter");
         assert!(desenho(&mut e, 100, 30).join("\n").contains("Novo cartão em Feito"));
         digitar(&mut e, "Publicar");
         tecla(&mut e, "Enter");
@@ -6116,6 +6122,83 @@ mod testes {
         assert_eq!((q.view, q.limit), (QueryView::Table, Some(8)));
     }
 
+    #[test]
+    fn na_coluna_do_kanban_cria_move_duplica_e_apaga_coluna() {
+        let mut e = kanban_editavel();
+        // Backlog, Fazendo, Feito; cursor em Fazendo.
+        e.cursor = vec![1, 1];
+        tecla(&mut e, "o");
+        digitar(&mut e, "Revisão");
+        tecla(&mut e, "Escape");
+        assert_eq!(kanban_gravado(&e).columns, ["Backlog", "Fazendo", "Revisão", "Feito"]);
+        assert_eq!(e.cursor, vec![1, 2]);
+        // Nome repetido é recusado.
+        tecla(&mut e, "O");
+        digitar(&mut e, "Feito");
+        tecla(&mut e, "Escape");
+        assert!(e.aviso.as_deref().unwrap_or("").contains("já existe"));
+        e.cursor = vec![1, 1];
+        tecla(&mut e, ">");
+        tecla(&mut e, ">");
+        assert_eq!(kanban_gravado(&e).columns, ["Backlog", "Revisão", "Fazendo", "Feito"]);
+        assert_eq!(e.cursor, vec![1, 2]);
+        // yy + p duplica com os cartões, com nome novo.
+        tecla(&mut e, "y");
+        tecla(&mut e, "y");
+        tecla(&mut e, "p");
+        let d = kanban_gravado(&e);
+        assert_eq!(d.columns[3], "Fazendo (cópia)");
+        assert_eq!(d.items.iter().filter(|c| c.column == "Fazendo (cópia)").count(), 1);
+        // dd leva a coluna e os cartões.
+        e.cursor = vec![1, 0];
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        let d = kanban_gravado(&e);
+        assert!(!d.columns.contains(&"Backlog".to_string()));
+        assert!(d.items.iter().all(|c| c.title != "Escrever"));
+        tecla(&mut e, "u");
+        assert!(kanban_gravado(&e).columns.contains(&"Backlog".to_string()));
+    }
+
+    #[test]
+    fn no_cabecalho_da_tabela_cria_move_duplica_e_troca_o_tipo() {
+        use anotadinho_core::embed::ColumnKind;
+        let mut e = tabela_editavel();
+        // Tarefa, Status (select), Tags (multiselect); cursor em Tarefa.
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "o");
+        digitar(&mut e, "Prazo");
+        tecla(&mut e, "Escape");
+        let d = tabela_gravada(&e);
+        assert_eq!(d.columns.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Tarefa", "Prazo", "Status", "Tags"]);
+        assert_eq!(d.rows[0], ["API", "", "done", "api"]);
+        assert_eq!(e.cursor, vec![1, 0, 1]);
+        // `~` gira o tipo: texto → número → data.
+        tecla(&mut e, "~");
+        tecla(&mut e, "~");
+        assert_eq!(tabela_gravada(&e).columns[1].kind, ColumnKind::Date);
+        // Tarefa vira seleção com os valores que já tinha como opções.
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "4");
+        tecla(&mut e, "Ctrl+a");
+        let d = tabela_gravada(&e);
+        assert_eq!(d.columns[0].kind, ColumnKind::Select { options: vec!["API".into(), "Docs".into()] });
+        // >> leva a coluna com as células.
+        tecla(&mut e, "2");
+        tecla(&mut e, ">");
+        tecla(&mut e, ">");
+        let d = tabela_gravada(&e);
+        assert_eq!(d.columns[2].name, "Tarefa");
+        assert_eq!(d.rows[1][2], "Docs");
+        // yy + P duplica antes.
+        tecla(&mut e, "y");
+        tecla(&mut e, "y");
+        tecla(&mut e, "P");
+        let d = tabela_gravada(&e);
+        assert_eq!((d.columns[2].name.as_str(), d.columns[3].name.as_str()), ("Tarefa", "Tarefa"));
+        assert_eq!(d.rows[0].len(), 5);
+    }
+
     const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";
 
     fn acoes_gravadas(e: &Estado) -> anotadinho_core::embed::ActionsEmbedData {
@@ -6398,12 +6481,13 @@ mod testes {
         tecla(&mut e, "d");
         let d = tabela_gravada(&e);
         assert_eq!(d.rows.iter().map(|r| r[0].as_str()).collect::<Vec<_>>(), vec!["Testes", "Docs"]);
-        // O cabeçalho não se apaga.
+        // No cabeçalho, `dd` é da COLUNA (ciclo 337): ela sai com as células.
         e.cursor = vec![1, 0, 0];
         tecla(&mut e, "d");
         tecla(&mut e, "d");
-        assert_eq!(tabela_gravada(&e).columns.len(), 3);
-        assert!(e.aviso.is_some());
+        let d = tabela_gravada(&e);
+        assert_eq!(d.columns.len(), 2);
+        assert_eq!(d.rows[0].len(), 2);
     }
 
     #[test]

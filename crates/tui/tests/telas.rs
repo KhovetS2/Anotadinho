@@ -155,6 +155,9 @@ fn cenas() -> Vec<Cena> {
     v.push(cena("paineis-alarga-e-cria", so_o_embed("columns"), &["Tab", "j", "Enter", "Ctrl+a", "o"], 140, 40));
     v.push(cena("fluxo-avanco-natural", so_o_embed("fluxo"), &["Tab", "j", "Enter", ">", ">"], 140, 40));
     v.push(cena("consulta-filtro-e-visao", so_o_embed("query"), &com(&[&["Tab", "j", "A"], &digitado(" status=done"), &["Escape", "~"]]), 140, 40));
+    // Colunas do kanban e da tabela (ciclo 337).
+    v.push(cena("kanban-coluna-nova-e-movida", so_o_embed("kanban"), &com(&[&["Tab", "j", "Enter", "o"], &digitado("Revisão"), &["Escape", "<", "<"]]), 140, 40));
+    v.push(cena("tabela-coluna-nova-e-tipo", so_o_embed("table"), &com(&[&["Tab", "j", "Enter", "Enter", "o"], &digitado("Dono"), &["Escape", "~"]]), 160, 30));
     // O cronograma na janela da tela: manual, escala Mês, e as teclas.
     let manual = so_o_embed("timeline").replace("source: vault\n", "").replace("scale: quarter\n", "scale: month\n");
     v.push(cena("cronograma-manual-mes", manual.clone(), &[], 140, 30));
