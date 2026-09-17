@@ -45,6 +45,9 @@ pub enum Marca {
     Cor(&'static str),
     /// `<span class="fundo--vermelho">` — o realce.
     Fundo(&'static str),
+    /// `<span style="color:#rrggbb">` — a "Cor personalizada" da janela
+    /// (ciclo 394).
+    CorLivre(u8, u8, u8),
 }
 
 /// Os nomes da paleta que a barra de seleção da janela grava.
@@ -52,8 +55,18 @@ pub const PALETA: &[&str] = &["vermelho", "ambar", "verde", "azul", "roxo", "ros
 
 /// As marcas de cor de um `<span class="…">`.
 fn cores_do_span(html: &str) -> Vec<Marca> {
-    let Some(classe) = html.split("class=\"").nth(1).and_then(|r| r.split('"').next()) else { return Vec::new() };
-    classe
+    // A cor livre vem no `style`.
+    let livre = html.split("style=\"").nth(1).and_then(|r| r.split('"').next()).and_then(|estilo| {
+        let valor = estilo.split(';').find_map(|d| {
+            let (k, v) = d.split_once(':')?;
+            (k.trim().eq_ignore_ascii_case("color")).then(|| v.trim().trim_start_matches('#').to_string())
+        })?;
+        let canal = |i: usize| u8::from_str_radix(valor.get(i..i + 2)?, 16).ok();
+        (valor.len() == 6).then_some(())?;
+        Some(Marca::CorLivre(canal(0)?, canal(2)?, canal(4)?))
+    });
+    let Some(classe) = html.split("class=\"").nth(1).and_then(|r| r.split('"').next()) else { return livre.into_iter().collect() };
+    livre.into_iter().collect::<Vec<_>>().into_iter().chain(classe
         .split_whitespace()
         .filter_map(|c| {
             let achar = |slug: &str| PALETA.iter().copied().find(|p| *p == slug);
@@ -62,7 +75,7 @@ fn cores_do_span(html: &str) -> Vec<Marca> {
             } else {
                 c.strip_prefix("fundo--").and_then(achar).map(Marca::Fundo)
             }
-        })
+        }))
         .collect()
 }
 
@@ -408,5 +421,12 @@ mod testes {
         let alerta = t.iter().find(|x| x.texto == "alerta").unwrap();
         assert_eq!(alerta.marcas, [Marca::Cor("vermelho"), Marca::Fundo("ambar")]);
         assert!(t.iter().find(|x| x.texto == " aqui").unwrap().marcas.is_empty());
+    }
+
+    #[test]
+    fn span_com_cor_livre_vira_rgb() {
+        let t = trechos("a <span style=\"color:#ff8800\">quente</span>");
+        let q = t.iter().find(|x| x.texto == "quente").unwrap();
+        assert_eq!(q.marcas, [Marca::CorLivre(0xff, 0x88, 0x00)]);
     }
 }

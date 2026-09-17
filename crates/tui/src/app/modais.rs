@@ -437,6 +437,8 @@ pub enum AcaoDaEntrada {
     Commit,
     /// A URL do link do menu Formatar (ciclo 357).
     Link,
+    /// A cor personalizada do menu Formatar (ciclo 394).
+    CorLivre,
     /// A pasta do agente (ciclo 369): `true` é uma pasta extra.
     PastaDoAgente(bool),
     /// A pasta de outro vault (ciclo 373): `true` prepara um novo.
@@ -933,7 +935,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 if matches!(acao, AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid) {
                     e.bloco_a_inserir = None;
                 }
-                if acao == AcaoDaEntrada::Link {
+                if matches!(acao, AcaoDaEntrada::Link | AcaoDaEntrada::CorLivre) {
                     super::formatar::retomar(e);
                 }
             }
@@ -950,6 +952,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 let AcaoDaEntrada::PastaDoAgente(extra) = acao else { unreachable!() };
                 e.pedidos.push(Pedido::PastaDoAgente { pasta: campo.texto.trim().to_string(), extra });
             }
+            "Enter" if acao == AcaoDaEntrada::CorLivre => super::formatar::aplicar_cor_livre(e, &campo.texto),
             "Enter" if acao == AcaoDaEntrada::Link => {
                 let url = campo.texto.trim().to_string();
                 if url.is_empty() {
@@ -978,7 +981,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         AcaoDaEntrada::NovaPasta(dentro) => Pedido::CriarPasta(format!("{dentro}/{t}")),
                         AcaoDaEntrada::PaginaDeTemplate { template, pasta } => Pedido::CriarDeTemplate { template, titulo: t, pasta },
                         AcaoDaEntrada::Commit => Pedido::GitCommit(t),
-                        AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid | AcaoDaEntrada::Link | AcaoDaEntrada::PastaDoAgente(_) | AcaoDaEntrada::Vault(_) => return,
+                        AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid | AcaoDaEntrada::Link | AcaoDaEntrada::CorLivre | AcaoDaEntrada::PastaDoAgente(_) | AcaoDaEntrada::Vault(_) => return,
                     });
                 }
             }

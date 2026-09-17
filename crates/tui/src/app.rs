@@ -4840,6 +4840,7 @@ fn estilo_do_trecho(marcas: &[Marca], base: Style, tema: &Tema) -> Style {
         Marca::Wikilink => e.patch(tema.estilo(Realce::Wikilink)),
         Marca::Cor(nome) => e.fg(tema.var(&format!("cor-{nome}"))),
         Marca::Fundo(nome) => e.bg(tema.var(&format!("fundo-{nome}"))),
+        Marca::CorLivre(r, g, b) => e.fg(ratatui::style::Color::Rgb(*r, *g, *b)),
     })
 }
 
@@ -10023,5 +10024,36 @@ mod testes {
         assert!(e.gravacao.clone().unwrap().contains("  - a1\n- b"), "{:?}", e.gravacao);
         tecla(&mut e, "Ctrl+x");
         assert!(e.aviso.as_deref().unwrap().contains("primeiro nível"));
+    }
+
+    // --- Ciclo 394: cor personalizada ------------------------------------------------
+
+    #[test]
+    fn cor_personalizada_e_tirar_a_cor() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        digitar(&mut e, "bem quente");
+        tecla(&mut e, "Ctrl+t");
+        digitar(&mut e, "cor personalizada");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "Ctrl+u");
+        digitar(&mut e, "#FF8800");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "bem <span style=\"color:#ff8800\">quente</span>");
+        // Tirar a cor com o cursor dentro.
+        let p = e.pergunta.as_mut().unwrap();
+        p.cursor = 40;
+        tecla(&mut e, "Ctrl+t");
+        digitar(&mut e, "tirar a cor");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "bem quente");
+        // Hex inválido avisa e mantém a inserção.
+        tecla(&mut e, "Ctrl+t");
+        digitar(&mut e, "cor personalizada");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "zz");
+        tecla(&mut e, "Enter");
+        assert!(e.aviso.as_deref().unwrap().contains("#rrggbb") && e.pergunta.is_some());
     }
 }

@@ -73,6 +73,9 @@ pub(super) fn abrir_menu(e: &mut Estado) {
     ];
     itens.extend(PALETA.iter().map(|(slug, nome)| Item::novo("●", format!("Cor: {nome}"), format!("cor:{slug}"))));
     itens.extend(PALETA.iter().map(|(slug, nome)| Item::novo("▆", format!("Fundo: {nome}"), format!("fundo:{slug}"))));
+    // A "Cor personalizada" e o "Tirar a cor" da janela (ciclo 394).
+    itens.push(Item::novo("●", "Cor personalizada…", "cor-livre").com_detalhe("#rrggbb"));
+    itens.push(Item::novo("○", "Tirar a cor", "tirar-cor"));
     e.modal = Some(Modal::Escolha { titulo: "Formatar".into(), lista: Lista::filtravel(itens), acao: AcaoDaEscolha::Formatar });
 }
 
@@ -87,6 +90,17 @@ pub(super) fn retomar(e: &mut Estado) {
 pub(super) fn escolher(e: &mut Estado, chave: &str) {
     if chave == "link" {
         e.modal = Some(Modal::Entrada { titulo: "Link (URL)".into(), campo: Campo::default(), acao: AcaoDaEntrada::Link });
+        return;
+    }
+    if chave == "cor-livre" {
+        e.modal = Some(Modal::Entrada { titulo: "Cor (#rrggbb)".into(), campo: Campo::com("#"), acao: AcaoDaEntrada::CorLivre });
+        return;
+    }
+    if chave == "tirar-cor" {
+        retomar(e);
+        if let Some(p) = e.pergunta.as_mut() {
+            tirar_cor(p);
+        }
         return;
     }
     retomar(e);
@@ -109,4 +123,35 @@ pub(super) fn aplicar_link(e: &mut Estado, url: &str) {
     retomar(e);
     let Some(p) = e.pergunta.as_mut() else { return };
     embrulhar(p, "[", &format!("]({url})"));
+}
+
+/// A cor personalizada digitada: `<span style="color:#hex">`.
+pub(super) fn aplicar_cor_livre(e: &mut Estado, hex: &str) {
+    let hex = hex.trim().trim_start_matches('#');
+    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        retomar(e);
+        e.aviso = Some("cor: use #rrggbb".into());
+        return;
+    }
+    retomar(e);
+    let Some(p) = e.pergunta.as_mut() else { return };
+    embrulhar(p, &format!("<span style=\"color:#{}\">", hex.to_lowercase()), "</span>");
+}
+
+/// Tira o `<span …>` de cor que envolve o cursor.
+pub(super) fn tirar_cor(p: &mut Pergunta) {
+    let chars: Vec<char> = p.texto.chars().collect();
+    let texto: String = chars.iter().collect();
+    let byte = |c: usize| texto.char_indices().nth(c).map_or(texto.len(), |(i, _)| i);
+    let aqui = byte(p.cursor.min(chars.len()));
+    let Some(abre) = texto[..aqui].rfind("<span") else { return };
+    let Some(fim_abre) = texto[abre..].find('>').map(|i| abre + i + 1) else { return };
+    let Some(fecha) = texto[fim_abre..].find("</span>").map(|i| fim_abre + i) else { return };
+    if fecha + 7 < aqui {
+        return;
+    }
+    let miolo = &texto[fim_abre..fecha];
+    let novo = format!("{}{miolo}{}", &texto[..abre], &texto[fecha + 7..]);
+    p.cursor = texto[..abre].chars().count() + miolo.chars().count();
+    p.texto = novo;
 }
