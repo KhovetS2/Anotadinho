@@ -5222,19 +5222,38 @@ fn estampar_caminhos() {
         let Some(grupo) = bloco.get_attribute("data-nav-group") else {
             continue;
         };
-        let Ok(filhos) = doc.query_selector_all(&format!(
-            "[data-nav-item][data-nav-parent=\"{}\"]",
-            grupo.replace('"', "")
-        )) else {
+        estampar_filhos(&doc, &grupo, &i.to_string());
+    }
+}
+
+/// Estampa os filhos de um grupo e, recursivamente, os de uma LISTA
+/// DENTRO de um item (ciclo 403): o núcleo aninha os itens desde o 402,
+/// e sem descer aqui os endereços da sublista não existiam no DOM — a
+/// navegação por blocos parava no item que tem lista dentro.
+fn estampar_filhos(doc: &web_sys::Document, grupo: &str, prefixo: &str) {
+    let Ok(filhos) = doc.query_selector_all(&format!("[data-nav-item][data-nav-parent=\"{}\"]", grupo.replace('"', ""))) else {
+        return;
+    };
+    for j in 0..filhos.length() {
+        let Some(filho) = filhos.item(j).and_then(|n| n.dyn_into::<web_sys::Element>().ok()) else {
             continue;
         };
-        for j in 0..filhos.length() {
-            if let Some(filho) = filhos
-                .item(j)
-                .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
-            {
-                let _ = filho.set_attribute(ATTR_CAMINHO, &format!("{i}.{j}"));
+        let caminho = format!("{prefixo}.{j}");
+        let _ = filho.set_attribute(ATTR_CAMINHO, &caminho);
+        // Na árvore, a sublista é filha do ITEM; a ordem dela entre os
+        // filhos do item é a ordem entre as sublistas dele.
+        let netos = filho.children();
+        let mut m = 0usize;
+        for k in 0..netos.length() {
+            let Some(neto) = netos.item(k) else { continue };
+            if !matches!(neto.tag_name().to_lowercase().as_str(), "ul" | "ol") {
+                continue;
             }
+            let Some(sub) = neto.get_attribute("data-nav-group") else { continue };
+            let caminho_da_sub = format!("{caminho}.{m}");
+            let _ = neto.set_attribute(ATTR_CAMINHO, &caminho_da_sub);
+            estampar_filhos(doc, &sub, &caminho_da_sub);
+            m += 1;
         }
     }
 }
@@ -6859,12 +6878,31 @@ fn marcar_itens_da_lista(lista: &web_sys::Element, id_da_lista: &str) {
         if item.tag_name().to_lowercase() != "li" {
             continue;
         }
-        let _ = item.set_attribute("data-nav-item", &format!("{id_da_lista}-item-{j}"));
+        let id_do_item = format!("{id_da_lista}-item-{j}");
+        let _ = item.set_attribute("data-nav-item", &id_do_item);
         let _ = item.set_attribute("data-nav-parent", id_da_lista);
         let _ = item.set_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO, "texto");
         let _ = item.set_attribute("contenteditable", "true");
         let _ = item.class_list().add_1("editor__bloco");
         let _ = item.set_attribute("tabindex", "-1");
+        // Lista DENTRO do item é outro nível (ciclo 403), como no núcleo:
+        // ela é grupo e os itens dela navegam dentro dela.
+        let netos = item.children();
+        for k in 0..netos.length() {
+            let Some(sub) = netos.item(k) else { continue };
+            if !matches!(sub.tag_name().to_lowercase().as_str(), "ul" | "ol") {
+                continue;
+            }
+            let id_da_sub = format!("{id_do_item}-sub-{k}");
+            let _ = sub.set_attribute("data-nav-item", &id_da_sub);
+            let _ = sub.set_attribute("data-nav-parent", &id_do_item);
+            let _ = sub.set_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO, "grupo");
+            let _ = sub.set_attribute("data-nav-group", &id_da_sub);
+            let _ = sub.set_attribute("contenteditable", "false");
+            let _ = sub.class_list().remove_1("editor__bloco");
+            let _ = sub.set_attribute("tabindex", "-1");
+            marcar_itens_da_lista(&sub, &id_da_sub);
+        }
     }
 }
 
