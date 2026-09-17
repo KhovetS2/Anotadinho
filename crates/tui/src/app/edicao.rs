@@ -2195,3 +2195,98 @@ pub(super) fn tecla_nas_opcoes(e: &mut Estado, mut ed: super::modais::EditorDeOp
     }
     e.modal = Some(Modal::Opcoes(ed));
 }
+
+// ---------------------------------------------------------------------
+// Executar botões e seguir wikilinks (ciclo 342)
+// ---------------------------------------------------------------------
+
+/// `Enter` num botão de ações: faz o que ele declara, como na janela —
+/// abrir página, criar a partir de template (pede o título), gravar
+/// propriedade ou abrir a busca com o termo.
+pub(super) fn acionar_botao(e: &mut Estado) -> bool {
+    use super::modais::{AcaoDaEntrada, Modal, Pedido};
+    let Some(embed) = embed_do_cursor(e, "actions") else { return false };
+    if e.cursor.len() != embed.len() + 2 {
+        return false;
+    }
+    let indice = e.cursor[embed.len() + 1];
+    let Some(botao) = ler_acoes(e, &embed).and_then(|d| d.buttons.get(indice).cloned()) else { return false };
+    if !botao.is_runnable() {
+        e.aviso = Some(format!("\"{}\" não tem destino configurado", botao.label));
+        return true;
+    }
+    match botao.spec() {
+        em::ActionSpec::OpenPage { path } => e.pedidos.push(Pedido::AbrirPagina(path)),
+        em::ActionSpec::NewFromTemplate { template, folder } => {
+            e.modal = Some(Modal::Entrada {
+                titulo: "Título da nova página".into(),
+                campo: crate::componentes::Campo::default(),
+                acao: AcaoDaEntrada::PaginaDeTemplate { template, pasta: folder },
+            });
+        }
+        em::ActionSpec::SetProperty { path, field, value } => {
+            e.pedidos.push(Pedido::DefinirPropriedade { path, campo: field, valor: value });
+        }
+        em::ActionSpec::RunSearch { query } => {
+            super::modais::abrir_paleta(e);
+            if let Some(Modal::Paleta(l)) = e.modal.as_mut() {
+                l.filtro = Some(crate::componentes::Campo::com(query));
+            }
+        }
+        em::ActionSpec::Unknown(a) => e.aviso = Some(format!("ação desconhecida: {a}")),
+    }
+    true
+}
+
+/// A página de um `[[alvo]]`: pelo título (do frontmatter, sem caixa) ou
+/// pelo nome do arquivo.
+pub(super) fn resolver_wikilink(e: &Estado, alvo: &str) -> Option<String> {
+    let alvo = alvo.trim().to_lowercase();
+    let pelo_indice = e.indice_do_vault.iter().find(|p| p.title.to_lowercase() == alvo).map(|p| p.path.clone());
+    pelo_indice.or_else(|| {
+        e.paginas
+            .iter()
+            .find(|p| {
+                p.title.to_lowercase() == alvo
+                    || std::path::Path::new(&p.path).file_stem().is_some_and(|s| s.to_string_lossy().to_lowercase() == alvo)
+            })
+            .map(|p| p.path.clone())
+    })
+}
+
+/// `Enter` num bloco com `[[wikilink]]`: abre a página (com vários, pergunta
+/// qual; o que não existe se oferece pra criar).
+pub(super) fn seguir_wikilink(e: &mut Estado) -> bool {
+    use super::modais::{AcaoDaEscolha, Modal, Pedido};
+    let Some(u) = e.arvore.em(&e.cursor) else { return false };
+    if matches!(u.tipo, Tipo::Embed(_) | Tipo::Parte { .. }) {
+        return false;
+    }
+    let alvos = anotadinho_core::links::extract_wikilink_targets(&u.texto);
+    if alvos.is_empty() {
+        return false;
+    }
+    if alvos.len() == 1 {
+        match resolver_wikilink(e, &alvos[0]) {
+            Some(path) => e.pedidos.push(Pedido::AbrirPagina(path)),
+            None => {
+                e.modal = Some(Modal::Confirmar {
+                    titulo: "Página não existe".into(),
+                    mensagem: format!("Criar a página \"{}\"?", alvos[0]),
+                    acao: Pedido::CriarPaginaComTitulo { titulo: alvos[0].clone(), tipo: None },
+                })
+            }
+        }
+        return true;
+    }
+    let itens = alvos
+        .iter()
+        .filter_map(|a| resolver_wikilink(e, a).map(|p| crate::componentes::Item::novo("↗", a.clone(), p.clone()).com_detalhe(p)))
+        .collect::<Vec<_>>();
+    if itens.is_empty() {
+        e.aviso = Some("nenhum dos links aponta pra página existente".into());
+        return true;
+    }
+    e.modal = Some(Modal::Escolha { titulo: "Abrir link".into(), lista: crate::componentes::Lista::menu(itens), acao: AcaoDaEscolha::AbrirPagina });
+    true
+}

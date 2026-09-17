@@ -64,6 +64,26 @@ pub enum Pedido {
         /// A resposta do agente.
         texto: String,
     },
+    /// Criar uma página a partir de um template (botão de ação, ciclo 342).
+    CriarDeTemplate {
+        /// O template.
+        template: String,
+        /// O título.
+        titulo: String,
+        /// A pasta.
+        pasta: Option<String>,
+    },
+    /// Gravar uma propriedade no frontmatter de uma página.
+    DefinirPropriedade {
+        /// A página.
+        path: String,
+        /// O campo.
+        campo: String,
+        /// O valor.
+        valor: String,
+    },
+    /// Buscar no conteúdo das páginas.
+    BuscarConteudo(String),
     /// Ler a página de um prompt padrão e aplicar ao campo da conversa.
     CarregarPrompt(String),
     /// Regravar a lista de anexos da conversa.
@@ -131,8 +151,8 @@ pub enum Modal {
         titulo: String,
         /// O campo.
         campo: Campo,
-        /// O tipo da página nova.
-        tipo: Option<String>,
+        /// O que o texto faz.
+        acao: AcaoDaEntrada,
     },
     /// Os atalhos, com a rolagem.
     Atalhos(usize),
@@ -172,6 +192,20 @@ pub struct EditorDeOpcoes {
     pub d_pendente: bool,
 }
 
+/// O que o texto de uma [`Modal::Entrada`] faz.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AcaoDaEntrada {
+    /// Título de uma página nova, com o tipo.
+    NovaPagina(Option<String>),
+    /// Título de uma página nova a partir de um template (ciclo 342).
+    PaginaDeTemplate {
+        /// O template.
+        template: String,
+        /// A pasta onde ela nasce.
+        pasta: Option<String>,
+    },
+}
+
 /// O que uma [`Modal::Escolha`] faz com o item escolhido.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AcaoDaEscolha {
@@ -187,6 +221,9 @@ pub enum AcaoDaEscolha {
     Anexar,
     /// Tirar o anexo escolhido.
     Desanexar,
+    /// Abrir a página escolhida (chave = caminho) — resultados de busca,
+    /// wikilinks (ciclo 342).
+    AbrirPagina,
 }
 
 /// Os comandos da barra, como na janela.
@@ -278,12 +315,14 @@ fn executar(e: &mut Estado, chave: &str) {
         e.modal = Some(Modal::Entrada {
             titulo: format!("Nova página ({tipo})"),
             campo: Campo::default(),
-            tipo: Some(tipo.to_string()),
+            acao: AcaoDaEntrada::NovaPagina(Some(tipo.to_string())),
         });
         return;
     }
     match chave {
-        "nova-pagina" => e.modal = Some(Modal::Entrada { titulo: "Nova página".into(), campo: Campo::default(), tipo: None }),
+        "nova-pagina" => {
+            e.modal = Some(Modal::Entrada { titulo: "Nova página".into(), campo: Campo::default(), acao: AcaoDaEntrada::NovaPagina(None) })
+        }
         "nova-conversa" => {
             let Some(carimbo) = e.agora.clone() else {
                 e.aviso = Some("sem relógio pra datar a conversa".into());
@@ -337,6 +376,19 @@ fn executar(e: &mut Estado, chave: &str) {
 pub fn tecla(e: &mut Estado, tecla: &str) {
     let Some(modal) = e.modal.take() else { return };
     match modal {
+        Modal::Paleta(lista)
+            if tecla == "Ctrl+f" || (tecla == "Enter" && lista.visiveis().is_empty()) =>
+        {
+            // Busca no CONTEÚDO (ciclo 342), como a paleta da janela a
+            // partir de 3 letras — aqui sob pedido, porque indexar o vault
+            // a cada tecla travaria o terminal.
+            let termo = lista.filtro.as_ref().map(|c| c.texto.trim().to_string()).unwrap_or_default();
+            if termo.chars().count() >= 2 {
+                e.pedidos.push(Pedido::BuscarConteudo(termo));
+            } else {
+                e.modal = Some(Modal::Paleta(lista));
+            }
+        }
         Modal::Paleta(mut lista) => match lista.tecla(tecla) {
             Resposta::Escolhido(chave) => executar(e, &chave),
             Resposta::Fechar => {}
@@ -366,6 +418,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 AcaoDaEscolha::RespostaDoAgente(i) => super::conversa::acao_na_resposta(e, i, &chave),
                 AcaoDaEscolha::Anexar => super::conversa::mudar_anexo(e, &chave, true),
                 AcaoDaEscolha::Desanexar => super::conversa::mudar_anexo(e, &chave, false),
+                AcaoDaEscolha::AbrirPagina => e.pedidos.push(Pedido::AbrirPagina(chave)),
                 AcaoDaEscolha::Agente => {
                     if let Some(a) = chave.parse::<usize>().ok().and_then(|i| anotadinho_core::agente::Adaptador::presets().get(i).cloned()) {
                         e.aviso = Some(format!("agente: {}", a.nome));
@@ -382,17 +435,20 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             "n" | "Escape" | "q" => {}
             _ => e.modal = Some(Modal::Confirmar { titulo, mensagem, acao }),
         },
-        Modal::Entrada { titulo, mut campo, tipo } => match tecla {
+        Modal::Entrada { titulo, mut campo, acao } => match tecla {
             "Escape" => {}
             "Enter" => {
                 let t = campo.texto.trim().to_string();
                 if !t.is_empty() {
-                    e.pedidos.push(Pedido::CriarPaginaComTitulo { titulo: t, tipo });
+                    e.pedidos.push(match acao {
+                        AcaoDaEntrada::NovaPagina(tipo) => Pedido::CriarPaginaComTitulo { titulo: t, tipo },
+                        AcaoDaEntrada::PaginaDeTemplate { template, pasta } => Pedido::CriarDeTemplate { template, titulo: t, pasta },
+                    });
                 }
             }
             outra => {
                 campo.tecla(outra);
-                e.modal = Some(Modal::Entrada { titulo, campo, tipo });
+                e.modal = Some(Modal::Entrada { titulo, campo, acao });
             }
         },
         Modal::Atalhos(rolagem) => match tecla {
@@ -535,11 +591,12 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
             // A caixa encolhe com o que sobrou do filtro, como na janela.
             let altura = (lista.visiveis().len() as u16 + 4).clamp(6, 24);
             let area = componentes::area_do_modal(tela, 70, altura);
-            let dentro = componentes::desenhar_modal(f, area, "", "↑↓ escolher · Enter · Esc", t);
+            let dentro = componentes::desenhar_modal(f, area, "", "↑↓ escolher · Enter · Ctrl+F buscar no conteúdo · Esc", t);
             componentes::desenhar_lista(f, dentro, lista, "Buscar página ou comando...", t);
         }
         Modal::Escolha { titulo, lista, .. } => {
-            let altura = (lista.itens.len() as u16 + 2).min(20);
+            let filtro = if lista.filtro.is_some() { 2 } else { 0 };
+            let altura = (lista.visiveis().len().max(1) as u16 + 2 + filtro).min(22);
             let area = componentes::area_do_modal(tela, 56, altura);
             let dentro = componentes::desenhar_modal(f, area, titulo, "j k · Enter · Esc", t);
             componentes::desenhar_lista(f, dentro, lista, "", t);
@@ -663,4 +720,26 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
             f.render_widget(Paragraph::new(conteudo), linha);
         }
     }
+}
+
+/// Mostra os resultados da busca no conteúdo numa escolha (ciclo 342).
+pub fn mostrar_resultados_da_busca(e: &mut Estado, termo: &str, hits: &[anotadinho_core::embed::SearchHit]) {
+    if hits.is_empty() {
+        e.aviso = Some(format!("nada com \"{termo}\" no conteúdo"));
+        return;
+    }
+    let itens = hits
+        .iter()
+        .map(|h| {
+            let titulo = e.paginas.iter().find(|p| p.path == h.path).map(|p| p.title.clone()).unwrap_or_else(|| h.path.clone());
+            let trecho: String = h.snippet.replace("**", "").split_whitespace().collect::<Vec<_>>().join(" ");
+            let origem = h.origem.as_ref().map(|o| format!("{o} · ")).unwrap_or_default();
+            Item::novo("⌕", titulo, h.path.clone()).com_detalhe(format!("{origem}{}", trecho.chars().take(60).collect::<String>()))
+        })
+        .collect();
+    e.modal = Some(Modal::Escolha {
+        titulo: format!("\"{termo}\" no conteúdo"),
+        lista: Lista::filtravel(itens),
+        acao: AcaoDaEscolha::AbrirPagina,
+    });
 }

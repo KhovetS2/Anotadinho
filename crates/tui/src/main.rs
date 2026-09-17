@@ -298,6 +298,33 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
             Pedido::EnviarNaConversa { path, pergunta, anexos } => {
                 enviar_na_conversa(estado, vault, trabalhos, &path, &pergunta, &anexos);
             }
+            Pedido::CriarDeTemplate { template, titulo, pasta } => {
+                match anotadinho_ipc::handle_create_page_from_template(vault.to_string(), template, titulo, pasta) {
+                    Ok(meta) => {
+                        recarregar(estado);
+                        abrir(estado, vault, &meta.path);
+                    }
+                    Err(e) => estado.aviso = Some(format!("não criou: {e}")),
+                }
+            }
+            Pedido::DefinirPropriedade { path, campo, valor } => {
+                let feito = anotadinho_ipc::handle_read_page(vault.to_string(), path.clone())
+                    .and_then(|c| anotadinho_core::MarkdownCodec::set_frontmatter_field(&c, &campo, &valor).map_err(|e| e.to_string()))
+                    .and_then(|novo| handle_write_page(vault.to_string(), path.clone(), novo));
+                match feito {
+                    Ok(()) => {
+                        estado.aviso = Some(format!("{campo} de {path} agora é \"{valor}\""));
+                        if estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path) {
+                            abrir(estado, vault, &path);
+                        }
+                    }
+                    Err(e) => estado.aviso = Some(format!("não gravou {campo}: {e}")),
+                }
+            }
+            Pedido::BuscarConteudo(termo) => match anotadinho_ipc::handle_search_content(vault.to_string(), termo.clone()) {
+                Ok(hits) => app::modais::mostrar_resultados_da_busca(estado, &termo, &hits),
+                Err(e) => estado.aviso = Some(format!("a busca falhou: {e}")),
+            },
             Pedido::CarregarPrompt(path) => match anotadinho_ipc::handle_read_page(vault.to_string(), path.clone()) {
                 Ok(conteudo) => app::conversa::aplicar_prompt(estado, &path, &conteudo),
                 Err(e) => estado.aviso = Some(format!("não consegui ler o prompt: {e}")),

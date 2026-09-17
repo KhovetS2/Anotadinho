@@ -637,7 +637,9 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
                 && (edicao::transicao_do_cursor(e)
                     || edicao::cartao_na_coluna_vazia(e)
                     || edicao::busca_da_consulta(e)
-                    || edicao::abrir_opcoes(e))
+                    || edicao::abrir_opcoes(e)
+                    || edicao::acionar_botao(e)
+                    || edicao::seguir_wikilink(e))
             {
                 return None;
             }
@@ -6695,6 +6697,75 @@ mod testes {
         assert!(conta_destaque(&mut e) > antes + 100, "o contorno do campo não acendeu");
         tecla(&mut e, "Escape");
         assert!(!desenho(&mut e, 120, 40).join("\n").contains("-- INSERÇÃO --"));
+    }
+
+    #[test]
+    fn enter_no_botao_executa_a_acao() {
+        let mut e = pagina_com("{{ type: \"actions\" }}\nbuttons:\n- label: Abrir\n  action: open-page\n  path: pages/beta.md\n- label: Marcar\n  action: set-property\n  path: pages/beta.md\n  field: status\n  value: feito\n- label: Nota\n  action: new-from-template\n  template: templates/nota.md\n  folder: pages/notas\n- label: Buscar\n  action: run-search\n  query: kanban\n- label: Vazio\n  action: open-page\n{{ /actions }}\n");
+        e.cursor = vec![0, 0, 0];
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, vec![Pedido::AbrirPagina("pages/beta.md".into())]);
+        e.pedidos.clear();
+        e.cursor = vec![0, 0, 1];
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, vec![Pedido::DefinirPropriedade { path: "pages/beta.md".into(), campo: "status".into(), valor: "feito".into() }]);
+        e.pedidos.clear();
+        e.cursor = vec![0, 0, 2];
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "Reunião");
+        tecla(&mut e, "Enter");
+        assert_eq!(
+            e.pedidos,
+            vec![Pedido::CriarDeTemplate { template: "templates/nota.md".into(), titulo: "Reunião".into(), pasta: Some("pages/notas".into()) }]
+        );
+        e.pedidos.clear();
+        e.cursor = vec![0, 0, 3];
+        tecla(&mut e, "Enter");
+        let Some(Modal::Paleta(l)) = &e.modal else { panic!() };
+        assert_eq!(l.filtro.as_ref().unwrap().texto, "kanban");
+        tecla(&mut e, "Escape");
+        e.cursor = vec![0, 0, 4];
+        tecla(&mut e, "Enter");
+        assert!(e.pedidos.is_empty() && e.aviso.as_deref().unwrap_or("").contains("sem destino") || e.aviso.as_deref().unwrap_or("").contains("não tem destino"));
+    }
+
+    #[test]
+    fn enter_no_wikilink_abre_pergunta_ou_oferece_criar() {
+        let mut e = pagina_com("Veja [[beta]].\n\nVeja [[Inexistente]].\n\n[[alfa]] e [[gama]]\n");
+        e.cursor = vec![0];
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, vec![Pedido::AbrirPagina("pages/beta.md".into())]);
+        e.pedidos.clear();
+        e.cursor = vec![1];
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Confirmar { .. })));
+        tecla(&mut e, "y");
+        assert_eq!(e.pedidos, vec![Pedido::CriarPaginaComTitulo { titulo: "Inexistente".into(), tipo: None }]);
+        e.pedidos.clear();
+        e.cursor = vec![2];
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, vec![Pedido::AbrirPagina("pages/gama.md".into())]);
+    }
+
+    #[test]
+    fn ctrl_f_na_barra_busca_no_conteudo_e_mostra_os_trechos() {
+        let mut e = pagina_com("texto");
+        tecla(&mut e, ":");
+        digitar(&mut e, "sprint");
+        tecla(&mut e, "Ctrl+f");
+        assert_eq!(e.pedidos, vec![Pedido::BuscarConteudo("sprint".into())]);
+        e.pedidos.clear();
+        modais::mostrar_resultados_da_busca(
+            &mut e,
+            "sprint",
+            &[anotadinho_core::embed::SearchHit { path: "pages/beta.md".into(), snippet: "a **sprint** de agosto".into(), origem: Some("card em Backlog".into()), ancora: None }],
+        );
+        let tela = desenho(&mut e, 120, 30).join("\n");
+        assert!(tela.contains("beta") && tela.contains("a sprint de agosto"), "{tela}");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, vec![Pedido::AbrirPagina("pages/beta.md".into())]);
     }
 
     const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";

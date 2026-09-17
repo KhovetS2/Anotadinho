@@ -10,7 +10,7 @@
 │                                  │────────────────────────────────────────────────────────────────────│                                  │
 │                                  │ ϟ Alternar tema                                                    │                                  │
 │                                  │ ϟ Escolher tema…                                                   │                                  │
-│                                  ╰ ↑↓ escolher · Enter · Esc ─────────────────────────────────────────╯                                  │
+│                                  ╰ ↑↓ escolher · Enter · Ctrl+F buscar no conteúdo · Esc ─────────────╯                                  │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -47,7 +47,7 @@ addddddddddddddddddddddddddddddddddlmmmmmnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm
 addddddddddddddddddddddddddddddddddllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddloooppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppplddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddlqqqqqqqqqqqqqqqqqqqqqqqqqqqllllllllllllllllllllllllllllllllllllllllllddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddlqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqllllllllllllllddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
