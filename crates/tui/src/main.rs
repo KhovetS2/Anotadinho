@@ -25,9 +25,14 @@ use std::io::{self, IsTerminal};
     about = "O Anotadinho num terminal — só leitura por enquanto"
 )]
 struct Cli {
-    /// Path do vault.
+    /// Path do vault. Sem ele, reabre o último (ciclo 372), como a janela.
     #[arg(long)]
-    vault: String,
+    vault: Option<String>,
+
+    /// Prepara a pasta como vault novo — estrutura, templates, padrões,
+    /// prompts e o guia — sem perguntar. Nunca sobrescreve nada.
+    #[arg(long)]
+    criar: bool,
 
     /// Tema: escuro, papel, contraste ou claro.
     ///
@@ -37,6 +42,18 @@ struct Cli {
     /// e grava, ciclo 339).
     #[arg(long)]
     tema: Option<String>,
+}
+
+/// Pergunta sim/não no terminal, antes do modo cru. Sem terminal, não.
+fn perguntar_no_terminal(pergunta: &str) -> bool {
+    use std::io::Write;
+    if !io::stdin().is_terminal() {
+        return false;
+    }
+    eprint!("{pergunta}");
+    let _ = io::stderr().flush();
+    let mut resposta = String::new();
+    io::stdin().read_line(&mut resposta).is_ok() && matches!(resposta.trim().to_lowercase().as_str(), "s" | "sim" | "y" | "yes")
 }
 
 /// Traduz a tecla do crossterm pro nome que o NÚCLEO entende.
@@ -715,17 +732,43 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
 
 fn main() -> Result<(), String> {
     let cli = Cli::parse();
-    let paginas = handle_list_pages(cli.vault.clone())?;
-    if paginas.is_empty() {
-        return Err(format!("o vault {} não tem páginas", cli.vault));
-    }
     let mut preferencias = ler_preferencias();
+    let Some(vault) = cli.vault.clone().or_else(|| preferencias.ultimo_vault.clone()) else {
+        return Err("diga qual vault abrir: anotadinho-tui --vault <pasta> (com --criar pra começar um do zero)".into());
+    };
+    // Pasta vazia ou nova: o "Criar vault novo" da janela (ciclo 372).
+    let vazio = handle_list_pages(vault.clone()).map(|p| p.is_empty()).unwrap_or(true);
+    if vazio {
+        let criar = cli.criar || perguntar_no_terminal(&format!(
+            "{vault} ainda não é um vault com páginas. Preparar aqui um vault novo (estrutura, templates, padrões e o guia)? [s/N] "
+        ));
+        if !criar {
+            return Err(format!("o vault {vault} não tem páginas"));
+        }
+        let criados = anotadinho_ipc::handle_criar_vault(vault.clone())?;
+        eprintln!("vault preparado: {} arquivo(s) criado(s)", criados.len());
+    }
+    let paginas = handle_list_pages(vault.clone())?;
+    if paginas.is_empty() {
+        return Err(format!("o vault {vault} não tem páginas"));
+    }
+    let vault_absoluto = std::fs::canonicalize(&vault).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| vault.clone());
+    if preferencias.ultimo_vault.as_deref() != Some(vault_absoluto.as_str()) {
+        preferencias.ultimo_vault = Some(vault_absoluto);
+        let _ = gravar_preferencias(&preferencias);
+    }
+    let cli = Cli { vault: Some(vault), ..cli };
+    let vault_da_sessao = cli.vault.clone().unwrap_or_default();
     // Com página de início, ela abre primeiro (ciclo 362).
-    let inicio = preferencias.inicio.get(&cli.vault).filter(|c| paginas.iter().any(|p| p.path == **c)).cloned();
-    let (texto, versao) = ler(&cli.vault, inicio.as_deref().unwrap_or(&paginas[0].path))?;
+    // Vault recém-preparado abre no guia.
+    let guia = vazio.then(|| anotadinho_core::semente::PAGINA_INICIAL.to_string());
+    let existe = |c: &String| paginas.iter().any(|p| p.path == *c);
+    let inicio = preferencias.inicio.get(&vault_da_sessao).cloned().filter(existe);
+    let primeira_pagina = inicio.clone().or(guia.filter(existe)).unwrap_or_else(|| paginas[0].path.clone());
+    let (texto, versao) = ler(&vault_da_sessao, &primeira_pagina)?;
     // O índice do vault, varrido uma vez: calendários em modo vault e
     // consultas. Varrer falhando não impede a TUI — eles só ficam vazios.
-    let indice = handle_scan_vault(cli.vault.clone()).unwrap_or_default();
+    let indice = handle_scan_vault(vault_da_sessao.clone()).unwrap_or_default();
     let primeira = {
         let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
         anotadinho_core::analise::analisar(corpo)
@@ -745,9 +788,10 @@ fn main() -> Result<(), String> {
     }
     let mut estado = Estado::novo(paginas, primeira)
         .com_inicio(inicio)
+        .com_pagina(&primeira_pagina)
         .com_texto(&texto, versao.clone())
         .com_preferencias(preferencias)
-        .com_pastas(anotadinho_ipc::handle_list_folders(cli.vault.clone()).unwrap_or_default())
+        .com_pastas(anotadinho_ipc::handle_list_folders(vault_da_sessao.clone()).unwrap_or_default())
         .com_hoje(&hoje_local())
         // Os calendários em modo vault leem as páginas com data. Varrer
         // falhando não impede a TUI: o calendário só fica vazio.
@@ -778,7 +822,7 @@ fn main() -> Result<(), String> {
     execute!(saida, EnterAlternateScreen).map_err(|e| e.to_string())?;
     let mut term = Terminal::new(CrosstermBackend::new(saida)).map_err(|e| e.to_string())?;
 
-    let resultado = laco(&mut term, &mut estado, &cli.vault);
+    let resultado = laco(&mut term, &mut estado, &vault_da_sessao);
 
     disable_raw_mode().map_err(|e| e.to_string())?;
     execute!(term.backend_mut(), LeaveAlternateScreen).map_err(|e| e.to_string())?;

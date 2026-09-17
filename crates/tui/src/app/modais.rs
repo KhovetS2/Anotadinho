@@ -194,6 +194,9 @@ pub struct Preferencias {
     /// A página de início de cada vault (ciclo 362): vault → página.
     #[serde(default)]
     pub inicio: std::collections::BTreeMap<String, String>,
+    /// O último vault aberto (ciclo 372): sem `--vault`, é ele.
+    #[serde(default)]
+    pub ultimo_vault: Option<String>,
 }
 
 fn botoes_padrao() -> String {
@@ -209,7 +212,7 @@ fn verdadeiro() -> bool {
 
 impl Default for Preferencias {
     fn default() -> Self {
-        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default() }
+        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default(), ultimo_vault: None }
     }
 }
 

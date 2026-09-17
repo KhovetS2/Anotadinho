@@ -26,7 +26,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Autocompletar wikilink ao digitar | ✅ | 352 — `[[` na inserção; ↑↓, Enter/Tab completa, Esc fecha a lista |
 | Recarregar quando o arquivo muda por fora | ✅ | 351 — relê a cada segundo parado, sem perder o lugar; lista de páginas também |
 | Conflito: mudou no disco durante a edição (ver diferença, manter o meu, recarregar) | ✅ | 363 |
-| Escolher / criar vault | — | a TUI recebe `--vault` |
+| Escolher / criar vault | ✅ | 372 — sem `--vault` reabre o último; pasta vazia pergunta (ou `--criar`) e prepara o vault novo, abrindo o guia |
 | Controles da janela | — | |
 
 ## Páginas de tipo

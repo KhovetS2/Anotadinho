@@ -341,6 +341,14 @@ impl Estado {
         }
     }
 
+    /// Seleciona a página pelo caminho (ciclo 372).
+    pub fn com_pagina(mut self, path: &str) -> Self {
+        if let Some(i) = self.paginas.iter().position(|p| p.path == path) {
+            self.pagina = i;
+        }
+        self
+    }
+
     /// Diz qual é a página de início e a seleciona (ciclo 362).
     pub fn com_inicio(mut self, inicio: Option<String>) -> Self {
         if let Some(i) = inicio.as_ref().and_then(|c| self.paginas.iter().position(|p| p.path == *c)) {
