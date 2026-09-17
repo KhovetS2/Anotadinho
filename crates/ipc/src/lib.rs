@@ -1745,6 +1745,7 @@ mod testes_semente {
             prompt: 42,
             segundos: 3,
             fim,
+            uso: None,
         };
 
         assert!(handle_listar_execucoes(raiz.clone()).unwrap().is_empty());

@@ -2020,10 +2020,33 @@ pub fn mostrar_execucoes(e: &mut Estado, execucoes: &[anotadinho_core::execucao:
             // se couber. Como terminou e quanto durou no rótulo, quando e
             // com quem no detalhe; o resto fica no `execucoes.jsonl`.
             let rotulo = format!("{} · {} · {}s", x.quando, x.fim.rotulo(), x.segundos);
-            Item::novo(glifo, rotulo, x.conversa.clone()).com_detalhe(x.agente.clone())
+            // O que consumiu à direita (ciclo 422); sem medida, o
+            // agente. Compacto porque a linha do modal é estreita: aqui
+            // basta saber QUAL rodada foi cara — a conta detalhada está
+            // no título do dia e no `execucoes.jsonl`.
+            let detalhe = match &x.uso {
+                Some(u) => format!("~{}", anotadinho_core::orcamento::humano((u.entrada + u.saida) as usize)),
+                None => x.agente.clone(),
+            };
+            Item::novo(glifo, rotulo, x.conversa.clone()).com_detalhe(detalhe)
         })
         .collect();
-    e.modal = Some(Modal::Escolha { titulo: "Execuções do agente".into(), lista: Lista::filtravel(itens), acao: AcaoDaEscolha::AbrirPagina });
+    // O total do dia no título (ciclo 422): é a pergunta que se faz
+    // olhando essa tela — "quanto isso me custou hoje?".
+    let hoje = e.agora.clone().unwrap_or_default();
+    let dia = hoje.split_whitespace().next().unwrap_or("");
+    let titulo = match anotadinho_core::execucao::total_do_dia(execucoes, dia) {
+        // Curto de propósito: o título do modal é estreito, e um total
+        // cortado no meio não informa nada.
+        Some((total, contaram, quantas)) if contaram == quantas => {
+            format!("Execuções — hoje {}", total.rotulo())
+        }
+        Some((total, contaram, quantas)) => {
+            format!("Execuções — hoje {} ({contaram}/{quantas})", total.rotulo())
+        }
+        None => "Execuções do agente".to_string(),
+    };
+    e.modal = Some(Modal::Escolha { titulo, lista: Lista::filtravel(itens), acao: AcaoDaEscolha::AbrirPagina });
 }
 
 fn nome_de_arquivo(path: &str) -> String {

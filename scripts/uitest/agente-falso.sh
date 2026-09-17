@@ -74,18 +74,26 @@ case "$1" in
     sleep 1
     echo '{"type":"item.started","item":{"id":"i1","type":"command_execution","command":"ls -1"}}'
     sleep 1
-    printf '{"type":"item.completed","item":{"id":"i2","type":"agent_message","text":"RESPOSTA para: %s"}}\n' "$2"
+    ESCAPADO=$(printf '%s' "$2" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n\t' '  ')
+    printf '{"type":"item.completed","item":{"id":"i2","type":"agent_message","text":"RESPOSTA para: %s"}}\n' "$ESCAPADO"
     echo '{"type":"turn.completed","usage":{}}'
     exit 0
     ;;
   # Fala o dialeto `stream-json` do Claude Code (ciclo 213).
   --stream)
+    # O prompt entra em JSON, então precisa ser ESCAPADO: um prompt com
+    # aspas ou quebra de linha — que é o normal quando há contexto —
+    # produzia JSON inválido, a linha era ignorada e a resposta virava o
+    # "pensando alto" do evento anterior (achado no ciclo 422).
+    ESCAPADO=$(printf '%s' "$2" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n\t' '  ')
     echo '{"type":"system","subtype":"init"}'
     echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"}]}}'
     sleep 1
     echo '{"type":"assistant","message":{"content":[{"type":"text","text":"pensando alto"}]}}'
     sleep 1
-    printf '{"type":"result","is_error":false,"result":"RESPOSTA para: %s"}\n' "$2"
+    # Com `usage` e custo (ciclo 422): é o que o Claude Code manda, e é
+    # o que o registro de execuções guarda.
+    printf '{"type":"result","is_error":false,"result":"RESPOSTA para: %s","usage":{"input_tokens":12000,"output_tokens":800},"total_cost_usd":0.0432}\n' "$ESCAPADO"
     exit 0
     ;;
 esac

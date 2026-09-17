@@ -22,6 +22,8 @@ use anotadinho_core::agente::{Adaptador, FormatoSaida, LeitorStream};
 pub struct Trabalho {
     inicio: Instant,
     parcial: Arc<Mutex<String>>,
+    /// O que a execução consumiu, quando o agente conta (ciclo 422).
+    uso: Arc<Mutex<Option<anotadinho_core::agente::Uso>>>,
     fim: Arc<Mutex<Option<Result<String, String>>>>,
     cancelado: Arc<AtomicBool>,
     entregue: bool,
@@ -48,11 +50,13 @@ impl Trabalho {
             .map_err(|e| format!("não consegui executar \"{binario}\": {e}"))?;
 
         let parcial = Arc::new(Mutex::new(String::new()));
+        let uso: Arc<Mutex<Option<anotadinho_core::agente::Uso>>> = Arc::new(Mutex::new(None));
         let fim = Arc::new(Mutex::new(None));
         let cancelado = Arc::new(AtomicBool::new(false));
 
         let saida = filho.stdout.take();
         let acumulado = parcial.clone();
+        let uso_lido = uso.clone();
         let leitor = std::thread::spawn(move || -> Result<String, String> {
             let Some(saida) = saida else { return Err("não consegui ler a saída do agente".into()) };
             let mut stream = LeitorStream::novo();
@@ -76,7 +80,12 @@ impl Trabalho {
                 }
             }
             match formato {
-                FormatoSaida::StreamJson => stream.resposta(),
+                FormatoSaida::StreamJson => {
+                    if let (Ok(mut u), Some(lido)) = (uso_lido.lock(), stream.uso()) {
+                        *u = Some(lido);
+                    }
+                    stream.resposta()
+                }
                 FormatoSaida::Texto => Ok(bruto),
             }
         });
@@ -138,7 +147,7 @@ impl Trabalho {
             }
         });
 
-        Ok(Self { inicio: Instant::now(), parcial, fim, cancelado, entregue: false })
+        Ok(Self { inicio: Instant::now(), parcial, uso, fim, cancelado, entregue: false })
     }
 
     /// Há quantos segundos está rodando.
@@ -149,6 +158,11 @@ impl Trabalho {
     /// O que o agente já escreveu (ou o progresso, no stream).
     pub fn parcial(&self) -> String {
         self.parcial.lock().map(|p| p.clone()).unwrap_or_default()
+    }
+
+    /// O que a execução consumiu, se o agente contou (ciclo 422).
+    pub fn uso(&self) -> Option<anotadinho_core::agente::Uso> {
+        self.uso.lock().ok().and_then(|u| *u)
     }
 
     /// Pede pra parar.
@@ -214,5 +228,35 @@ mod testes {
         t.interromper();
         assert!(esperar(&mut t).unwrap_err().contains("interrompida"));
         assert!(Trabalho::iniciar(&agente("nao-existe-mesmo-xyz", &["{prompt}"]), "x", ".").is_err());
+    }
+}
+
+#[cfg(test)]
+mod testes_de_uso {
+    use super::*;
+
+    /// Ciclo 422: o que o agente contou chega ao `Trabalho` — é o que o
+    /// registro de execuções guarda.
+    #[test]
+    fn o_uso_do_stream_chega_ao_trabalho() {
+        let falso = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/uitest/agente-falso.sh");
+        let adaptador = Adaptador {
+            nome: "falso".into(),
+            binario: falso.into(),
+            args: vec!["--stream".into(), "{prompt}".into()],
+            formato: FormatoSaida::StreamJson,
+            timeout_s: 30,
+            ..Adaptador::default()
+        };
+        let mut t = Trabalho::iniciar(&adaptador, "oi", ".").expect("subiu");
+        for _ in 0..300 {
+            if t.terminou().is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let u = t.uso().expect("o stream trouxe o uso");
+        assert_eq!((u.entrada, u.saida), (12_000, 800));
+        assert_eq!(u.custo_usd, Some(0.0432));
     }
 }

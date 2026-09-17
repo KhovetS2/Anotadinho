@@ -1080,11 +1080,77 @@ pub struct LeitorStream {
     texto: String,
     resultado: Option<String>,
     erro: Option<String>,
+    uso: Option<Uso>,
+}
+
+/// O que a execução consumiu, quando o agente conta (ciclo 422).
+///
+/// Quem paga por token precisa do mostrador: duração não é preço, e uma
+/// conversa barata e uma cara levam o mesmo tempo. Nem todo agente
+/// informa — daí ser `Option` em tudo que carrega isto.
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub struct Uso {
+    /// Tokens que entraram (prompt + contexto).
+    #[serde(default)]
+    pub entrada: u64,
+    /// Tokens que saíram.
+    #[serde(default)]
+    pub saida: u64,
+    /// Custo em dólares, quando o agente calcula.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custo_usd: Option<f64>,
+}
+
+impl Uso {
+    /// Como se lê numa linha: `12k↓ 800↑ · US$ 0,04`.
+    pub fn rotulo(&self) -> String {
+        let curto = |n: u64| crate::orcamento::humano(n as usize);
+        let mut s = format!("{}↓ {}↑", curto(self.entrada), curto(self.saida));
+        if let Some(c) = self.custo_usd {
+            s.push_str(&format!(" · US$ {:.2}", c).replace('.', ","));
+        }
+        s
+    }
+
+    /// Soma de duas execuções — o total do dia.
+    pub fn somar(&self, outro: &Uso) -> Uso {
+        Uso {
+            entrada: self.entrada + outro.entrada,
+            saida: self.saida + outro.saida,
+            custo_usd: match (self.custo_usd, outro.custo_usd) {
+                (None, None) => None,
+                (a, b) => Some(a.unwrap_or(0.0) + b.unwrap_or(0.0)),
+            },
+        }
+    }
 }
 
 impl LeitorStream {
     pub fn novo() -> Self {
         Self::default()
+    }
+
+    /// O que a execução consumiu, se o agente contou.
+    pub fn uso(&self) -> Option<Uso> {
+        self.uso
+    }
+
+    /// Lê o bloco de uso dos dois dialetos. Campo ausente vira zero, não
+    /// erro: contar errado é pior que não contar, mas perder a resposta
+    /// por causa da contabilidade seria pior ainda.
+    fn anotar_uso(&mut self, usage: Option<&serde_json::Value>, custo: Option<&serde_json::Value>) {
+        let Some(u) = usage else { return };
+        let campo = |nomes: [&str; 2]| -> u64 {
+            nomes.iter().find_map(|n| u.get(*n).and_then(|v| v.as_u64())).unwrap_or(0)
+        };
+        let novo = Uso {
+            entrada: campo(["input_tokens", "prompt_tokens"]),
+            saida: campo(["output_tokens", "completion_tokens"]),
+            custo_usd: custo.and_then(|c| c.as_f64()),
+        };
+        if novo != Uso::default() {
+            self.uso = Some(novo);
+        }
     }
 
     /// Consome uma linha do stream. Linha que não é JSON é ignorada —
@@ -1128,6 +1194,7 @@ impl LeitorStream {
                 }
             }
             Some("result") => {
+                self.anotar_uso(v.get("usage"), v.get("total_cost_usd"));
                 if v.get("is_error").and_then(|e| e.as_bool()) == Some(true) {
                     self.erro = Some(
                         v.get("result")
@@ -1142,6 +1209,7 @@ impl LeitorStream {
 
             // ── dialeto do Codex ──
             Some("thread.started") => self.anotar("conectado"),
+            Some("turn.completed") => self.anotar_uso(v.get("usage"), v.get("total_cost_usd")),
             Some("item.started") | Some("item.completed") => {
                 let completo = v.get("type").and_then(|t| t.as_str()) == Some("item.completed");
                 let Some(item) = v.get("item") else { return };
@@ -1342,5 +1410,45 @@ mod testes_config {
         assert_eq!(a.validar(), Some(ProblemaConfig::SemMarcador));
         a.args = vec!["{prompt}".into(), "{prompt}".into()];
         assert_eq!(a.validar(), Some(ProblemaConfig::MarcadorRepetido));
+    }
+
+    // --- Ciclo 422: o que a execução consumiu ---------------------------------------
+
+    #[test]
+    fn o_uso_vem_do_result_do_claude_code() {
+        let mut l = LeitorStream::novo();
+        assert_eq!(l.uso(), None, "sem o campo, não se inventa número");
+        l.linha(r#"{"type":"assistant","message":{"content":[{"type":"text","text":"pronto"}]}}"#);
+        l.linha(
+            r#"{"type":"result","result":"pronto","usage":{"input_tokens":12000,"output_tokens":800},"total_cost_usd":0.0432}"#,
+        );
+        let u = l.uso().expect("o result trouxe o uso");
+        assert_eq!((u.entrada, u.saida), (12000, 800));
+        assert_eq!(u.custo_usd, Some(0.0432));
+        assert_eq!(u.rotulo(), "12k↓ 800↑ · US$ 0,04");
+    }
+
+    #[test]
+    fn o_uso_vem_do_turn_completed_do_codex() {
+        let mut l = LeitorStream::novo();
+        l.linha(r#"{"type":"turn.completed","usage":{"input_tokens":300,"output_tokens":90}}"#);
+        let u = l.uso().expect("o turn.completed trouxe o uso");
+        assert_eq!((u.entrada, u.saida), (300, 90));
+        assert_eq!(u.custo_usd, None, "o Codex não diz preço");
+        assert_eq!(u.rotulo(), "300↓ 90↑");
+        // Bloco vazio não vira zero fingindo que contou.
+        let mut vazio = LeitorStream::novo();
+        vazio.linha(r#"{"type":"turn.completed","usage":{}}"#);
+        assert_eq!(vazio.uso(), None);
+    }
+
+    #[test]
+    fn somar_junta_o_dia() {
+        let a = Uso { entrada: 100, saida: 10, custo_usd: Some(0.01) };
+        let b = Uso { entrada: 200, saida: 20, custo_usd: None };
+        let total = a.somar(&b);
+        assert_eq!((total.entrada, total.saida), (300, 30));
+        assert_eq!(total.custo_usd, Some(0.01), "quem não diz preço não zera o do outro");
+        assert_eq!(Uso::default().somar(&Uso::default()).custo_usd, None);
     }
 }

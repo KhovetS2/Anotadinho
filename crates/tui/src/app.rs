@@ -10426,17 +10426,23 @@ mod testes {
             prompt: 42,
             segundos: 7,
             fim,
+            uso: None,
         };
-        modais::mostrar_execucoes(
-            &mut e,
-            &[uma("2026-09-17 11:00", Fim::Falhou("saiu 1".into())), uma("2026-09-17 10:00", Fim::Respondeu)],
-        );
+        // Uma com medida (ciclo 422), outra sem.
+        let mut medida = uma("2026-09-17 11:00", Fim::Falhou("saiu 1".into()));
+        medida.uso = Some(anotadinho_core::agente::Uso { entrada: 12_000, saida: 800, custo_usd: Some(0.0432) });
+        e.agora = Some("2026-09-17 12:00".into());
+        modais::mostrar_execucoes(&mut e, &[medida, uma("2026-09-17 10:00", Fim::Respondeu)]);
         let tela = desenho(&mut e, 160, 20).join("\n");
-        assert!(tela.contains("Execuções do agente"), "{tela}");
+        assert!(tela.contains("Execuções — hoje"), "{tela}");
         assert!(tela.contains("falhou") && tela.contains("respondeu"), "{tela}");
         assert!(tela.contains("7s") && tela.contains("2026-09-17 11:00"), "{tela}");
-        // O agente que rodou fica no detalhe, à direita.
+        // O agente que rodou fica no detalhe, à direita — e quando há
+        // medida, ela toma o lugar (ciclo 422).
         assert!(tela.contains("falso"), "{tela}");
+        assert!(tela.contains("~13k"), "o total da rodada cabe na linha:\n{tela}");
+        // O total do dia no título, dizendo quantas contaram.
+        assert!(tela.contains("hoje 12k↓ 800↑ · US$ 0,04 (1/2)"), "{tela}");
         // Enter na execução abre a conversa dela.
         tecla(&mut e, "Enter");
         assert!(

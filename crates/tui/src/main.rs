@@ -408,10 +408,12 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila:
     let mut prontos = Vec::new();
     for (chave, a) in trabalhos.iter_mut() {
         if let Some(fim) = a.trabalho.terminou() {
-            prontos.push((chave.clone(), fim, a.trabalho.segundos()));
+            // O uso é lido JUNTO do fim: depois disto o trabalho sai do
+            // mapa e não há a quem perguntar.
+            prontos.push((chave.clone(), fim, a.trabalho.segundos(), a.trabalho.uso()));
         }
     }
-    for (chave, fim, segundos) in prontos {
+    for (chave, fim, segundos, uso) in prontos {
         let em_andamento = trabalhos.remove(&chave);
         // A resposta vai pro vault da conversa, mesmo que a TUI esteja em
         // outro agora (ciclo 396).
@@ -436,6 +438,7 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila:
                 prompt: a.prompt,
                 segundos,
                 fim: como,
+                uso,
             };
             if let Err(e) = anotadinho_ipc::handle_registrar_execucao(vault.to_string(), registro) {
                 estado.aviso = Some(format!("não registrou a execução: {e}"));
