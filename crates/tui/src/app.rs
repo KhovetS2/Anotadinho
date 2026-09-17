@@ -552,6 +552,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
         _ => {
             // Enter num evento do vault abre a página dele (ciclo 317), o
             // que o clique faz na janela.
+            // Enter numa transição do fluxo move a etapa (ciclo 335).
+            if tecla == "Enter" && edicao::transicao_do_cursor(e) {
+                return None;
+            }
             if tecla == "Enter" {
                 if let Some(pagina) = pagina_do_cursor(e) {
                     if let Some(i) = e.paginas.iter().position(|p| p.path == pagina) {
@@ -5909,6 +5913,138 @@ mod testes {
         let texto = e.gravacao.clone().unwrap();
         assert!(texto.contains("Direita. Mais."), "{texto}");
         assert!(texto.contains("Esquerda."), "{texto}");
+    }
+
+    /// Os dados do primeiro embed no texto gravado.
+    fn embed_gravado(e: &Estado) -> anotadinho_core::embed::EmbedData {
+        let texto = e.gravacao.clone().expect("nada pra gravar");
+        anotadinho_core::embed::segment(&texto)
+            .into_iter()
+            .find_map(|s| match s {
+                anotadinho_core::embed::DocSegment::Embed(d) => Some(d),
+                _ => None,
+            })
+            .expect("o embed sumiu")
+    }
+
+    fn pagina_com(fonte: &str) -> Estado {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(fonte, Some("v1".into()));
+        e.foco = Foco::Conteudo;
+        e
+    }
+
+    #[test]
+    fn na_galeria_legenda_imagem_nova_ordem_colunas_e_tamanho() {
+        use anotadinho_core::embed::{EmbedData, GallerySize};
+        let mut e = pagina_com("{{ type: \"gallery\" }}\nitems:\n- path: assets/a.png\n  caption: A\n- path: assets/b.png\n{{ /gallery }}\n");
+        // embed → cabeçalho, fileira [a, b].
+        e.cursor = vec![0, 1, 1];
+        tecla(&mut e, "a");
+        digitar(&mut e, "Bê");
+        tecla(&mut e, "Escape");
+        let EmbedData::Gallery(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.items[1].caption, "Bê");
+        tecla(&mut e, "O");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "assets/");
+        digitar(&mut e, "c.png");
+        tecla(&mut e, "Escape");
+        let EmbedData::Gallery(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.items.iter().map(|i| i.path.as_str()).collect::<Vec<_>>(), ["assets/a.png", "assets/c.png", "assets/b.png"]);
+        e.cursor = vec![0, 1, 0];
+        tecla(&mut e, ">");
+        tecla(&mut e, ">");
+        let EmbedData::Gallery(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.items[1].path, "assets/a.png");
+        tecla(&mut e, "2");
+        tecla(&mut e, "Ctrl+x");
+        tecla(&mut e, "~");
+        let EmbedData::Gallery(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!((d.columns, d.size), (1, GallerySize::Lg));
+        // Com uma coluna a grade virou três fileiras de uma.
+        e.cursor = vec![0, 2, 0];
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        let EmbedData::Gallery(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.items.len(), 2);
+    }
+
+    #[test]
+    fn nos_paineis_cria_alarga_reordena_e_escreve_no_vazio() {
+        use anotadinho_core::embed::EmbedData;
+        let mut e = pagina_com("{{ type: \"columns\" }}\ncolumns:\n- width: 1\n  body: |\n    Esquerda.\n- width: 1\n  body: ''\n{{ /columns }}\n");
+        e.cursor = vec![0, 1];
+        tecla(&mut e, "Ctrl+a");
+        let EmbedData::Columns(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.columns[1].width, 2);
+        // `a` num painel vazio começa o primeiro parágrafo dele.
+        tecla(&mut e, "a");
+        digitar(&mut e, "Direita.");
+        tecla(&mut e, "Escape");
+        let EmbedData::Columns(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.columns[1].body.trim(), "Direita.");
+        e.cursor = vec![0, 0];
+        tecla(&mut e, "o");
+        let EmbedData::Columns(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.columns.len(), 3);
+        assert_eq!(e.cursor, vec![0, 1]);
+        tecla(&mut e, "<");
+        tecla(&mut e, "<");
+        let EmbedData::Columns(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.columns[1].body.trim(), "Esquerda.");
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        let EmbedData::Columns(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.columns.len(), 2);
+    }
+
+    #[test]
+    fn no_fluxo_enter_na_transicao_move_e_a_edita_a_nota() {
+        use anotadinho_core::embed::EmbedData;
+        use anotadinho_core::fluxo::Etapa;
+        let mut e = pagina_com("{{ type: \"fluxo\" }}\nartefato: proposta\netapa: em-revisao\n{{ /fluxo }}\n");
+        let transicao = e
+            .arvore
+            .percorrer()
+            .into_iter()
+            .find(|(_, u)| u.texto == "Rascunho" && matches!(&u.tipo, Tipo::Parte { nome, .. } if nome.starts_with("transicao")))
+            .map(|(c, _)| c)
+            .unwrap();
+        e.cursor = transicao;
+        tecla(&mut e, "Enter");
+        let EmbedData::Fluxo(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.etapa, Etapa::Rascunho);
+        // Dentro do fluxo (no próprio embed, `>>` move o bloco da página).
+        e.cursor = vec![0, 1];
+        tecla(&mut e, ">");
+        tecla(&mut e, ">");
+        let EmbedData::Fluxo(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.etapa, Etapa::EmRevisao);
+        tecla(&mut e, "a");
+        digitar(&mut e, "falta o teste");
+        tecla(&mut e, "Escape");
+        let EmbedData::Fluxo(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.nota.as_deref(), Some("falta o teste"));
+    }
+
+    #[test]
+    fn na_consulta_a_edita_o_filtro_til_gira_a_visao_e_ctrl_a_o_limite() {
+        use anotadinho_core::embed::EmbedData;
+        use anotadinho_core::query::QueryView;
+        let mut e = pagina_com("{{ type: \"query\" }}\nfrom: pages\nlimit: 5\n{{ /query }}\n");
+        e.cursor = vec![0];
+        tecla(&mut e, "A");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "from:pages limit:5");
+        digitar(&mut e, " status=done");
+        tecla(&mut e, "Escape");
+        let EmbedData::Query(q) = embed_gravado(&e) else { panic!() };
+        assert_eq!(q.conditions.len(), 1);
+        assert_eq!(q.limit, Some(5));
+        tecla(&mut e, "~");
+        tecla(&mut e, "3");
+        tecla(&mut e, "Ctrl+a");
+        let EmbedData::Query(q) = embed_gravado(&e) else { panic!() };
+        assert_eq!((q.view, q.limit), (QueryView::Table, Some(8)));
     }
 
     const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";

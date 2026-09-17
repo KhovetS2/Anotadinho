@@ -1133,35 +1133,10 @@ fn mutate_embed(
     doc.save(vault, page_path)
 }
 
-/// Parseia `campo=valor` / `campo!=valor` / `campo~valor` / `campo?` /
-/// `campo>valor` / `campo<valor` numa `Condition`.
-///
-/// A ordem de teste importa: `!=` tem que vir antes de `=`, senão
-/// `status!=done` viraria o campo `status!` igual a `done`.
+/// Parseia uma condição (`campo=valor`, `campo?`…) — a regra mora no
+/// núcleo (`Condition::parse`), que a TUI também usa.
 pub(crate) fn parse_condition(raw: &str) -> Result<Condition, String> {
-    let raw = raw.trim();
-    if let Some(field) = raw.strip_suffix('?') {
-        return Ok(Condition {
-            field: field.trim().to_string(),
-            op: QueryOp::Exists,
-            value: String::new(),
-        });
-    }
-    for op in [QueryOp::Neq, QueryOp::Eq, QueryOp::Contains, QueryOp::Gt, QueryOp::Lt] {
-        if let Some((field, value)) = raw.split_once(op.symbol()) {
-            if field.trim().is_empty() {
-                break;
-            }
-            return Ok(Condition {
-                field: field.trim().to_string(),
-                op,
-                value: value.trim().to_string(),
-            });
-        }
-    }
-    Err(format!(
-        "condição inválida: \"{raw}\". Use campo=valor, campo!=valor, campo~valor, campo?, campo>valor ou campo<valor"
-    ))
+    Condition::parse(raw)
 }
 
 /// Parseia `count`, `sum:campo`, `avg:campo`, `min:campo`, `max:campo`.

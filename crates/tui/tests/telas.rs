@@ -99,7 +99,7 @@ fn so_o_embed(tipo: &str) -> String {
         .into_iter()
         .find(|(_, s)| matches!(s, DocSegment::Embed(d) if d.kind().type_name() == tipo))
         .unwrap_or_else(|| panic!("os exemplos não têm {tipo}"));
-    format!("Antes.\n\n{}\n\nDepois.\n", &EXEMPLOS[faixa])
+    format!("Antes.\n\n{}\n\nDepois.\n", EXEMPLOS[faixa].trim_end())
 }
 
 fn cena(nome: &'static str, pagina: String, teclas: &[&'static str], largura: u16, altura: u16) -> Cena {
@@ -150,6 +150,11 @@ fn cenas() -> Vec<Cena> {
         altura: 20,
         com_indice: false,
     });
+    // Edição dos embeds que faltavam (ciclo 335), com o arquivo na foto.
+    v.push(cena("galeria-legenda-e-colunas", so_o_embed("gallery"), &com(&[&["Tab", "j", "Enter", "j", "Enter", "a"], &digitado(" nova"), &["Escape", "Ctrl+a"]]), 140, 40));
+    v.push(cena("paineis-alarga-e-cria", so_o_embed("columns"), &["Tab", "j", "Enter", "Ctrl+a", "o"], 140, 40));
+    v.push(cena("fluxo-avanco-natural", so_o_embed("fluxo"), &["Tab", "j", "Enter", ">", ">"], 140, 40));
+    v.push(cena("consulta-filtro-e-visao", so_o_embed("query"), &com(&[&["Tab", "j", "A"], &digitado(" status=done"), &["Escape", "~"]]), 140, 40));
     // O cronograma na janela da tela: manual, escala Mês, e as teclas.
     let manual = so_o_embed("timeline").replace("source: vault\n", "").replace("scale: quarter\n", "scale: month\n");
     v.push(cena("cronograma-manual-mes", manual.clone(), &[], 140, 30));

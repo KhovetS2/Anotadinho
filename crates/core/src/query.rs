@@ -82,6 +82,29 @@ pub struct Condition {
 }
 
 impl Condition {
+    /// Parseia `campo=valor` / `campo!=valor` / `campo~valor` / `campo?` /
+    /// `campo>valor` / `campo<valor`.
+    ///
+    /// A ordem de teste importa: `!=` tem que vir antes de `=`, senão
+    /// `status!=done` viraria o campo `status!` igual a `done`.
+    pub fn parse(raw: &str) -> Result<Condition, String> {
+        let raw = raw.trim();
+        if let Some(field) = raw.strip_suffix('?') {
+            return Ok(Condition { field: field.trim().to_string(), op: QueryOp::Exists, value: String::new() });
+        }
+        for op in [QueryOp::Neq, QueryOp::Eq, QueryOp::Contains, QueryOp::Gt, QueryOp::Lt] {
+            if let Some((field, value)) = raw.split_once(op.symbol()) {
+                if field.trim().is_empty() {
+                    break;
+                }
+                return Ok(Condition { field: field.trim().to_string(), op, value: value.trim().to_string() });
+            }
+        }
+        Err(format!(
+            "condição inválida: \"{raw}\". Use campo=valor, campo!=valor, campo~valor, campo?, campo>valor ou campo<valor"
+        ))
+    }
+
     /// Avalia a condição contra uma entrada.
     pub fn matches(&self, entry: &PageIndexEntry) -> bool {
         let actual = entry.field(&self.field);
@@ -495,6 +518,69 @@ impl Query {
         parts.join(" · ")
     }
 
+    /// A consulta como uma linha de filtro curta (ciclo 335), a mesma
+    /// sintaxe do CLI: `from:pages tag:x type? status=done sort:-date
+    /// group:type limit:10`. É o que a TUI põe no rodapé pra editar.
+    pub fn linha_de_filtro(&self) -> String {
+        let mut partes = Vec::new();
+        if let Some(from) = self.from.as_ref().filter(|f| !f.is_empty()) {
+            partes.push(format!("from:{from}"));
+        }
+        for t in &self.tags {
+            partes.push(format!("tag:{t}"));
+        }
+        for c in &self.conditions {
+            partes.push(match c.op {
+                QueryOp::Exists => format!("{}?", c.field),
+                op => format!("{}{}{}", c.field, op.symbol(), c.value),
+            });
+        }
+        if let Some(s) = &self.sort {
+            partes.push(format!("sort:{}{}", if s.desc { "-" } else { "" }, s.field));
+        }
+        if let Some(g) = &self.group_by {
+            partes.push(format!("group:{g}"));
+        }
+        if let Some(l) = self.limit {
+            partes.push(format!("limit:{l}"));
+        }
+        partes.join(" ")
+    }
+
+    /// Troca o recorte pelo de uma linha de filtro (`linha_de_filtro`).
+    /// Visão, colunas, agregados e grupos recolhidos ficam.
+    pub fn aplicar_linha_de_filtro(&mut self, linha: &str) -> Result<(), String> {
+        let mut nova = Query {
+            view: self.view,
+            columns: self.columns.clone(),
+            aggregate: self.aggregate.clone(),
+            collapsed: self.collapsed.clone(),
+            max_height: self.max_height,
+            ..Default::default()
+        };
+        for termo in linha.split_whitespace() {
+            if let Some(v) = termo.strip_prefix("from:") {
+                nova.from = Some(v.to_string());
+            } else if let Some(v) = termo.strip_prefix("tag:") {
+                nova.tags.push(v.to_string());
+            } else if let Some(v) = termo.strip_prefix("sort:") {
+                let (desc, campo) = match v.strip_prefix('-') {
+                    Some(c) => (true, c),
+                    None => (false, v),
+                };
+                nova.sort = Some(Sort { field: campo.to_string(), desc });
+            } else if let Some(v) = termo.strip_prefix("group:") {
+                nova.group_by = Some(v.to_string());
+            } else if let Some(v) = termo.strip_prefix("limit:") {
+                nova.limit = Some(v.parse().map_err(|_| format!("limite inválido: \"{v}\""))?);
+            } else {
+                nova.conditions.push(Condition::parse(termo)?);
+            }
+        }
+        *self = nova;
+        Ok(())
+    }
+
     /// Se o grupo está recolhido.
     pub fn recolhido(&self, valor: &str) -> bool {
         self.collapsed.iter().any(|c| c == valor)
@@ -684,6 +770,15 @@ mod tests {
         let all = sample();
         let q = Query { limit: Some(2), ..Default::default() };
         assert_eq!(q.run(&all).len(), 2);
+    }
+
+    #[test]
+    fn a_linha_de_filtro_vai_e_volta() {
+        let mut q = Query::default();
+        q.aplicar_linha_de_filtro("from:pages/specs tag:a status!=done prio? sort:-date group:status limit:5").unwrap();
+        assert_eq!(q.linha_de_filtro(), "from:pages/specs tag:a status!=done prio? sort:-date group:status limit:5");
+        assert_eq!(q.conditions[0].op, QueryOp::Neq);
+        assert!(q.aplicar_linha_de_filtro("=x").is_err());
     }
 
     #[test]

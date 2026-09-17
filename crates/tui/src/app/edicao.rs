@@ -116,6 +116,30 @@ pub enum AcaoDaPergunta {
     /// Reescreve ou cria um bloco de markdown — da página, do corpo de um
     /// callout ou de um painel (ciclo 334).
     Bloco(super::markdown::EdicaoDeBloco),
+    /// Troca a legenda de uma imagem da galeria (ciclo 335).
+    LegendaDaImagem {
+        /// A galeria.
+        embed: Caminho,
+        /// O item.
+        indice: usize,
+    },
+    /// Põe uma imagem na galeria, pelo caminho.
+    NovaImagem {
+        /// A galeria.
+        embed: Caminho,
+        /// Onde ela entra.
+        posicao: usize,
+    },
+    /// Troca a nota do fluxo.
+    NotaDoFluxo {
+        /// O fluxo.
+        embed: Caminho,
+    },
+    /// Troca o recorte da consulta pela linha de filtro.
+    FiltroDaConsulta {
+        /// A consulta.
+        embed: Caminho,
+    },
     /// Cria um botão no embed de ações (ciclo 324).
     NovoBotao {
         /// As ações.
@@ -148,6 +172,10 @@ pub enum Registro {
     Botao(em::ActionButton),
     /// Um bloco de markdown do corpo de um callout.
     Bloco(String),
+    /// Uma imagem da galeria.
+    Imagem(em::GalleryItem),
+    /// Um painel de colunas.
+    Painel(em::ColumnPane),
 }
 
 /// Troca o trecho de um embed no texto da página pelo resultado de
@@ -223,6 +251,10 @@ tipado!(ler_kanban, editar_kanban, Kanban, em::KanbanEmbedData, "isto não é um
 tipado!(ler_tabela, editar_tabela, Table, em::TableEmbedData, "isto não é uma tabela");
 tipado!(ler_callout, editar_callout, Callout, em::CalloutEmbedData, "isto não é um callout");
 tipado!(ler_acoes, editar_acoes, Actions, em::ActionsEmbedData, "isto não é um embed de ações");
+tipado!(ler_galeria, editar_galeria, Gallery, em::GalleryEmbedData, "isto não é uma galeria");
+tipado!(ler_colunas, editar_colunas, Columns, em::ColumnsEmbedData, "isto não é um embed de colunas");
+tipado!(ler_fluxo, editar_fluxo, Fluxo, em::FluxoEmbedData, "isto não é um fluxo");
+tipado!(ler_consulta, editar_consulta, Query, anotadinho_core::query::Query, "isto não é uma consulta");
 
 /// O item do arquivo que a parte sob o cursor representa.
 pub(super) fn indice_do_cursor(e: &Estado) -> Option<usize> {
@@ -345,6 +377,14 @@ pub(super) fn editar_item(e: &mut Estado, ed: Edicao) -> bool {
         no_callout(e, ed)
     } else if embed_do_cursor(e, "actions").is_some() {
         nas_acoes(e, ed)
+    } else if embed_do_cursor(e, "gallery").is_some() {
+        na_galeria(e, ed)
+    } else if embed_do_cursor(e, "fluxo").is_some() {
+        no_fluxo(e, ed)
+    } else if embed_do_cursor(e, "query").is_some() {
+        na_consulta(e, ed)
+    } else if embed_do_cursor(e, "columns").is_some_and(|c| e.cursor.len() <= c.len() + 1) {
+        nos_paineis(e, ed)
     } else if let Some(h) = super::markdown::hospedeiro_do_cursor(e) {
         // O markdown: a página, ou o corpo de um painel de colunas.
         if !super::markdown::no_markdown(e, ed, h) {
@@ -586,6 +626,39 @@ fn responder(e: &mut Estado, acao: AcaoDaPergunta, titulo: String) {
         }
         // Respondido por `markdown::responder`, em `tecla_na_pergunta`.
         AcaoDaPergunta::Bloco(_) => {}
+        AcaoDaPergunta::LegendaDaImagem { embed, indice } => {
+            editar_galeria(e, &embed, |d| {
+                if indice >= d.items.len() {
+                    return Err("a imagem sumiu do arquivo".into());
+                }
+                d.set_caption(indice, titulo.clone());
+                Ok(())
+            });
+        }
+        AcaoDaPergunta::NovaImagem { embed, posicao } => {
+            let mut onde = 0;
+            if editar_galeria(e, &embed, |d| {
+                d.add_item(titulo.clone());
+                let item = d.items.pop().ok_or("a imagem não entrou")?;
+                onde = posicao.min(d.items.len());
+                d.items.insert(onde, item);
+                Ok(())
+            }) {
+                let destino = achar_com_indice(&e.arvore, &embed, "miniatura", onde);
+                ir(e, destino);
+            }
+        }
+        AcaoDaPergunta::NotaDoFluxo { embed } => {
+            editar_fluxo(e, &embed, |d| {
+                d.nota = Some(titulo.clone());
+                Ok(())
+            });
+        }
+        AcaoDaPergunta::FiltroDaConsulta { embed } => {
+            if editar_consulta(e, &embed, |q| q.aplicar_linha_de_filtro(&titulo)) {
+                e.aviso = Some("consulta atualizada".into());
+            }
+        }
         AcaoDaPergunta::NovoBotao { embed, posicao } => {
             let mut novo = 0;
             if editar_acoes(e, &embed, |d| {
@@ -1274,5 +1347,318 @@ fn nas_acoes(e: &mut Estado, ed: Edicao) -> bool {
         }
         _ => return false,
     }
+    true
+}
+
+// ---------------------------------------------------------------------
+// Galeria (ciclo 335)
+// ---------------------------------------------------------------------
+
+/// A galeria: `a`/`cc` a legenda, `o`/`O` uma imagem nova (pelo caminho,
+/// como o "+ imagem" da janela), `dd` tira, `yy`/`p` duplicam, `>>`/`<<`
+/// reordenam, `Ctrl+A`/`Ctrl+X` mudam as colunas da grade e `~` gira o
+/// tamanho das miniaturas (P → M → G).
+fn na_galeria(e: &mut Estado, ed: Edicao) -> bool {
+    let Some(embed) = embed_do_cursor(e, "gallery") else { return false };
+    let Some(dados) = ler_galeria(e, &embed) else { return false };
+    let indice = indice_do_cursor(e).filter(|i| *i < dados.items.len());
+    let item = indice.and_then(|i| dados.items.get(i).cloned());
+    let posicao = |antes: bool| indice.map(|i| if antes { i } else { i + 1 }).unwrap_or(dados.items.len());
+    match (ed, indice, item) {
+        (Edicao::Somar(n), _, _) => {
+            let nova = (dados.columns as i64 + n).clamp(1, 6) as u8;
+            if editar_galeria(e, &embed, |d| {
+                d.columns = nova;
+                Ok(())
+            }) {
+                e.aviso = Some(format!("{nova} colunas"));
+                e.seguir_cursor();
+            }
+        }
+        (Edicao::Alternar, _, _) => {
+            let todos = em::GallerySize::all();
+            let agora = todos.iter().position(|t| *t == dados.size).unwrap_or(0);
+            let novo = todos[(agora + 1) % todos.len()];
+            if editar_galeria(e, &embed, |d| {
+                d.set_size(novo);
+                Ok(())
+            }) {
+                e.aviso = Some(format!("miniaturas {}", novo.label()));
+            }
+        }
+        (Edicao::Criar { antes }, _, _) => {
+            perguntar(e, "Imagem (caminho)", "assets/".into(), AcaoDaPergunta::NovaImagem { embed, posicao: posicao(antes) });
+        }
+        (Edicao::Reescrever { limpar, .. }, Some(indice), Some(item)) => {
+            let texto = if limpar { String::new() } else { item.caption };
+            perguntar(e, "Legenda", texto, AcaoDaPergunta::LegendaDaImagem { embed, indice });
+        }
+        (Edicao::Apagar | Edicao::ApagarConteudo, Some(indice), Some(item)) => {
+            if editar_galeria(e, &embed, |d| {
+                d.remove_item(indice);
+                Ok(())
+            }) {
+                e.registro = Some(Registro::Imagem(item));
+                e.aviso = Some("imagem tirada da galeria".into());
+                e.seguir_cursor();
+            }
+        }
+        (Edicao::Copiar, Some(_), Some(item)) => {
+            e.registro = Some(Registro::Imagem(item));
+            e.aviso = Some("imagem copiada".into());
+        }
+        (Edicao::Colar { antes }, _, _) => {
+            let Some(Registro::Imagem(nova)) = e.registro.clone() else {
+                e.aviso = Some("não há imagem copiada".into());
+                return true;
+            };
+            let onde = posicao(antes);
+            if editar_galeria(e, &embed, |d| {
+                d.items.insert(onde.min(d.items.len()), nova);
+                Ok(())
+            }) {
+                let destino = achar_com_indice(&e.arvore, &embed, "miniatura", onde);
+                ir(e, destino);
+            }
+        }
+        (Edicao::Deslocar(n), Some(indice), Some(item)) => {
+            let destino = (indice as i64 + n).clamp(0, dados.items.len() as i64 - 1) as usize;
+            if destino == indice {
+                e.aviso = Some("não há imagem desse lado".into());
+                return true;
+            }
+            if editar_galeria(e, &embed, |d| {
+                d.items.remove(indice);
+                d.items.insert(destino, item);
+                Ok(())
+            }) {
+                let destino = achar_com_indice(&e.arvore, &embed, "miniatura", destino);
+                ir(e, destino);
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+// ---------------------------------------------------------------------
+// Painéis de colunas (ciclo 335)
+// ---------------------------------------------------------------------
+
+/// Os painéis: `o`/`O` criam um vazio ao lado (até 4), `dd` tira (fica
+/// pelo menos um), `yy`/`p` duplicam, `>>`/`<<` reordenam, `Ctrl+A`/
+/// `Ctrl+X` alargam e estreitam, e `i`/`a` começam a escrever no começo
+/// do painel. Dentro dele, o markdown é o da página (`markdown.rs`).
+fn nos_paineis(e: &mut Estado, ed: Edicao) -> bool {
+    let Some(embed) = embed_do_cursor(e, "columns") else { return false };
+    let Some(dados) = ler_colunas(e, &embed) else { return false };
+    let Some(&painel) = e.cursor.get(embed.len()) else {
+        e.aviso = Some("entre num painel pra editar as colunas".into());
+        return true;
+    };
+    let total = dados.columns.len();
+    let no_painel = |i: usize| [embed.as_slice(), &[i]].concat();
+    match ed {
+        Edicao::Criar { antes } | Edicao::Colar { antes } => {
+            let colando = matches!(ed, Edicao::Colar { .. });
+            let novo = match (&e.registro, colando) {
+                (_, false) => em::ColumnPane { width: 1, body: String::new() },
+                (Some(Registro::Painel(p)), true) => p.clone(),
+                _ => {
+                    e.aviso = Some("não há painel copiado".into());
+                    return true;
+                }
+            };
+            if total >= em::ColumnsEmbedData::MAX_COLUMNS {
+                e.aviso = Some(format!("no máximo {} colunas", em::ColumnsEmbedData::MAX_COLUMNS));
+                return true;
+            }
+            let onde = if antes { painel } else { painel + 1 };
+            if editar_colunas(e, &embed, |d| {
+                d.columns.insert(onde.min(d.columns.len()), novo);
+                Ok(())
+            }) {
+                ir(e, Some(no_painel(onde)));
+            }
+        }
+        Edicao::Apagar | Edicao::ApagarConteudo => {
+            if total <= 1 {
+                e.aviso = Some("fica pelo menos um painel".into());
+                return true;
+            }
+            let tirado = dados.columns[painel].clone();
+            if editar_colunas(e, &embed, |d| {
+                d.remove_column(painel);
+                Ok(())
+            }) {
+                e.registro = Some(Registro::Painel(tirado));
+                e.aviso = Some("painel apagado".into());
+                ir(e, Some(no_painel(painel.min(total - 2))));
+            }
+        }
+        Edicao::Copiar => {
+            e.registro = Some(Registro::Painel(dados.columns[painel].clone()));
+            e.aviso = Some("painel copiado".into());
+        }
+        Edicao::Deslocar(n) => {
+            let destino = (painel as i64 + n).clamp(0, total as i64 - 1) as usize;
+            if destino == painel {
+                e.aviso = Some("não há painel desse lado".into());
+                return true;
+            }
+            if editar_colunas(e, &embed, |d| {
+                let p = d.columns.remove(painel);
+                d.columns.insert(destino, p);
+                Ok(())
+            }) {
+                ir(e, Some(no_painel(destino)));
+            }
+        }
+        Edicao::Somar(n) => {
+            let nova = (dados.columns[painel].width as i64 + n).clamp(1, 6) as u8;
+            if editar_colunas(e, &embed, |d| {
+                d.columns[painel].width = nova;
+                Ok(())
+            }) {
+                e.aviso = Some(format!("largura {nova}fr"));
+                e.seguir_cursor();
+            }
+        }
+        Edicao::Reescrever { .. } => {
+            let alvo = e
+                .arvore
+                .em(&no_painel(painel))
+                .and_then(|u| u.filhos.iter().position(|f| !matches!(f.tipo, Tipo::Parte { .. })))
+                .map(|k| [embed.as_slice(), &[painel, k]].concat())
+                .unwrap_or_else(|| no_painel(painel));
+            perguntar(
+                e,
+                "-- INSERÇÃO --",
+                String::new(),
+                AcaoDaPergunta::Bloco(super::markdown::EdicaoDeBloco {
+                    hospedeiro: super::markdown::Hospedeiro::Painel(embed, painel),
+                    faixa: 0..0,
+                    prefixo: String::new(),
+                    de_lista: false,
+                    alvo,
+                    novo: true,
+                    antes: true,
+                }),
+            );
+        }
+        _ => return false,
+    }
+    true
+}
+
+// ---------------------------------------------------------------------
+// Fluxo (ciclo 335)
+// ---------------------------------------------------------------------
+
+/// O fluxo: `Enter` numa transição move pra ela (`fluxo_do_cursor`),
+/// `>>` dá o avanço natural, `a`/`cc` editam a nota.
+fn no_fluxo(e: &mut Estado, ed: Edicao) -> bool {
+    let Some(embed) = embed_do_cursor(e, "fluxo") else { return false };
+    let Some(dados) = ler_fluxo(e, &embed) else { return false };
+    match ed {
+        Edicao::Deslocar(n) if n > 0 => {
+            let Some(destino) = dados.etapa.avanco_natural() else {
+                e.aviso = Some("esta etapa não tem avanço natural".into());
+                return true;
+            };
+            mover_fluxo(e, &embed, destino);
+        }
+        Edicao::Reescrever { limpar, .. } => {
+            let texto = if limpar { String::new() } else { dados.nota.unwrap_or_default() };
+            perguntar(e, "Nota", texto, AcaoDaPergunta::NotaDoFluxo { embed });
+        }
+        Edicao::Apagar | Edicao::ApagarConteudo if dados.nota.is_some() => {
+            if editar_fluxo(e, &embed, |d| {
+                d.nota = None;
+                Ok(())
+            }) {
+                e.aviso = Some("nota apagada".into());
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+fn mover_fluxo(e: &mut Estado, embed: &[usize], destino: anotadinho_core::fluxo::Etapa) {
+    if editar_fluxo(e, embed, |d| {
+        if d.ir_para(destino, d.nota.clone()) {
+            Ok(())
+        } else {
+            Err(format!("não dá pra ir pra {}", destino.label()))
+        }
+    }) {
+        e.aviso = Some(format!("etapa: {}", destino.label()));
+        if e.arvore.em(&e.cursor).is_none() {
+            e.cursor = embed.to_vec();
+        }
+        e.seguir_cursor();
+    }
+}
+
+/// `Enter` num botão de transição do fluxo: move pra etapa dele. Devolve
+/// se a tecla foi usada.
+pub(super) fn transicao_do_cursor(e: &mut Estado) -> bool {
+    let Some(embed) = embed_do_cursor(e, "fluxo") else { return false };
+    let Some(u) = e.arvore.em(&e.cursor) else { return false };
+    if !matches!(&u.tipo, Tipo::Parte { nome, .. } if nome.starts_with("transicao")) {
+        return false;
+    }
+    let Some(destino) = anotadinho_core::fluxo::Etapa::all().iter().copied().find(|x| x.label() == u.texto) else {
+        return false;
+    };
+    mover_fluxo(e, &embed, destino);
+    true
+}
+
+// ---------------------------------------------------------------------
+// Consulta (ciclo 335)
+// ---------------------------------------------------------------------
+
+/// A consulta: `a`/`cc` editam o recorte como linha de filtro
+/// (`from:pages status=done sort:-date limit:10`), `~` gira a visão
+/// (lista → tabela → cartões) e `Ctrl+A`/`Ctrl+X` mudam o limite.
+fn na_consulta(e: &mut Estado, ed: Edicao) -> bool {
+    use anotadinho_core::query::QueryView;
+    let Some(embed) = embed_do_cursor(e, "query") else { return false };
+    let Some(q) = ler_consulta(e, &embed) else { return false };
+    match ed {
+        Edicao::Reescrever { limpar, .. } => {
+            let texto = if limpar { String::new() } else { q.linha_de_filtro() };
+            perguntar(e, "Filtro", texto, AcaoDaPergunta::FiltroDaConsulta { embed: embed.clone() });
+        }
+        Edicao::Alternar => {
+            let nova = match q.view {
+                QueryView::List => QueryView::Table,
+                QueryView::Table => QueryView::Cards,
+                QueryView::Cards => QueryView::List,
+            };
+            if editar_consulta(e, &embed, |q| {
+                q.view = nova;
+                Ok(())
+            }) {
+                e.aviso = Some(format!("visão: {}", nova.label()));
+            }
+        }
+        Edicao::Somar(n) => {
+            let novo = (q.limit.unwrap_or(10) as i64 + n).max(1) as usize;
+            if editar_consulta(e, &embed, |q| {
+                q.limit = Some(novo);
+                Ok(())
+            }) {
+                e.aviso = Some(format!("limite {novo}"));
+            }
+        }
+        _ => return false,
+    }
+    if e.arvore.em(&e.cursor).is_none() {
+        e.cursor = embed;
+    }
+    e.seguir_cursor();
     true
 }

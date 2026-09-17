@@ -1,14 +1,15 @@
-# cena cronograma-m-troca-a-escala · 140x30 · teclas: Tab j Enter m
+# cena paineis-alarga-e-cria · 140x40 · teclas: Tab j Enter Ctrl+a o
 ┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
 │cena                                    ││Antes.                                                                                          │
 │                                        ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
-│                                        ││▌  [ ‹  21/07/2026 · Trimestre  ] ›   t Hoje  m  Semana  Mês  Trimestre    ~ Manual   o + etapa▌│
-│                                        ││▌  21/07  28/07  04/08  11/08  18/08  25/08  01/09   08/09  15/09  22/09  29/09  06/10  13/10  ▌│
-│                                        ││▌  ┬──────┬──────┬──────┬┼─────┬──────┬──────┬───────┬──────┬──────┬──────┬──────┬──────┬──────▌│
-│                                        ││▌                Levant… │                                                                     ▌│
-│                                        ││▌                        Implementar                                                           ▌│
-│                                        ││▌                        │             Revis…                                                  ▌│
-│                                        ││▌  Levantar requisitos · 03/08/2026 → 10/08/2026 · 8 dias · #infra                             ▌│
+│                                        ││▌  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖▌│
+│                                        ││▌  ▐                             2fr ▌  ▐           1fr ▌  ▐                              2fr ▌▌│
+│                                        ││▌  ▐ ### O que entra                 ▌  ▐ Painel vazio  ▌  ▐ ### O que não entra              ▌▌│
+│                                        ││▌  ▐   - o que já foi decidido       ▌  ▐               ▌  ▐ Ideia solta vive em Propostas,   ▌▌│
+│                                        ││▌  ▐   - o que está em revisão       ▌  ▐               ▌  ▐ não aqui. Esta coluna é mais     ▌▌│
+│                                        ││▌  ▐                                 ▌  ▐               ▌  ▐ larga porque o texto dela é mais ▌▌│
+│                                        ││▌  ▐                                 ▌  ▐               ▌  ▐ longo.                           ▌▌│
+│                                        ││▌  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘▌│
 │                                        ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
 │                                        ││Depois.                                                                                         │
 │                                        ││                                                                                                │
@@ -28,18 +29,28 @@
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
-└────────────────────────────────────────┘└ escala: Trimestre ─────────────────────────────────────────────────────────────────────────────┘
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+└────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────────────────────────────────┘
 == estilos ==
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhiijjjjjjjjjjjjjkkkkkkkkkkkiiiiiiiiiiiiiiiiiiiiiiifb
-addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifb
-addddddddddddddddddddddddddddddddddddddddabghhllllllllllllllllllllllmlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllfb
-addddddddddddddddddddddddddddddddddddddddabmhhhhhhhhhhhhhhhnnnnnnnnhohhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhhhhhhhhhhhhhhhhhhhhhhpppppppppppppphhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhhhhhhhhhhhhhhhhhhhhhhhohhhhhhhhhhhhppppppphhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhqqqqqqqqqqqqqqqqqqqiiirrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhjjjjjjjjjjjjjjjjjhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifb
+addddddddddddddddddddddddddddddddddddddddabghhidkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkdihhjdkkkkkkkkkkkkkdjhhidkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkdifb
+addddddddddddddddddddddddddddddddddddddddabghhidkkkkllllllllllldddddddddddddddddihhjdmmmmmmmmmmmmmdjhhidkkkklllllllllllllllddddddddddddddifb
+addddddddddddddddddddddddddddddddddddddddabghhidddkkeeeeeeeeeeeeeeeeeeeeedddddddihhjdddddddddddddddjhhideeeeeeeeeeeeeeeeeeeennnnnnnnnedddifb
+addddddddddddddddddddddddddddddddddddddddabghhidddkkeeeeeeeeeeeeeeeeeeeeedddddddihhjdddddddddddddddjhhideeeeeeeeeeeeeeeeeeeeeeeeeeeedddddifb
+addddddddddddddddddddddddddddddddddddddddabghhidddddddddddddddddddddddddddddddddihhjdddddddddddddddjhhideeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedifb
+addddddddddddddddddddddddddddddddddddddddabghhidddddddddddddddddddddddddddddddddihhjdddddddddddddddjhhideeeeeedddddddddddddddddddddddddddifb
+addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhjjjjjjjjjjjjjjjjjhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -59,45 +70,48 @@ addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabsssssssssssssssssssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 a = fg #3d404f bg #272930
 b = fg #00b5ff bg #272930
 c = fg - bg #272930 apagado
 d = fg - bg #272930
 e = fg #e4e8f5 bg #272930
-f = fg #313a42 bg #272930
-g = fg #248569 bg #313a42
-h = fg - bg #313a42
-i = fg #989eb7 bg #313a42
-j = fg #989eb7 bg #3d404f
-k = fg #272930 bg #00b5ff
-l = fg #606475 bg #313a42
-m = fg #00b5ff bg #313a42
-n = fg #272930 bg #00b5ff negrito
-o = fg #1481b2 bg #313a42
-p = fg #00b5ff bg #213e4f
-q = fg #e4e8f5 bg #313a42 negrito
-r = fg #989eb7 bg #313a42 itálico
-s = fg #db7e21 bg #272930
+f = fg #3e3c4e bg #272930
+g = fg #c79bff bg #3e3c4e
+h = fg - bg #3e3c4e
+i = fg #606475 bg #3e3c4e
+j = fg #00b5ff bg #3e3c4e
+k = fg #989eb7 bg #272930
+l = fg #9327ff bg #272930 negrito
+m = fg #989eb7 bg #272930 itálico
+n = fg #00b5ff bg #272930 sublinhado
 == arquivo ==
 Antes.
 
-{{ type: "timeline" }}
-scale: quarter
-items:
-- title: Levantar requisitos
-  start: 2026-08-03
-  end: 2026-08-10
-  tags:
-  - infra
-- title: Implementar
-  start: 2026-08-11
-  end: 2026-08-24
-- title: Revisar e publicar
-  start: 2026-08-25
-  end: 2026-08-31
-  tags:
-  - urgente
-{{ /timeline }}
+{{ type: "columns" }}
+columns:
+- width: 2
+  body: |
+    ### O que entra
+    - o que já foi decidido
+    - o que está em revisão
+- width: 1
+  body: ''
+- width: 2
+  body: |
+    ### O que não entra
+
+    Ideia solta vive em [[Propostas]], não aqui. Esta coluna é mais
+    larga porque o texto dela é mais longo.
+{{ /columns }}
 
 Depois.
