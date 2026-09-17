@@ -325,6 +325,42 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                 Ok(hits) => app::modais::mostrar_resultados_da_busca(estado, &termo, &hits),
                 Err(e) => estado.aviso = Some(format!("a busca falhou: {e}")),
             },
+            Pedido::CriarPasta(pasta) => match anotadinho_ipc::handle_create_folder(vault.to_string(), pasta.clone()) {
+                Ok(()) => {
+                    estado.pastas_do_vault = anotadinho_ipc::handle_list_folders(vault.to_string()).unwrap_or_default();
+                    recarregar(estado);
+                    estado.aviso = Some(format!("pasta {pasta} criada"));
+                }
+                Err(e) => estado.aviso = Some(format!("não criou a pasta: {e}")),
+            },
+            Pedido::CriarPaginaNaPasta { pasta, titulo } => {
+                match anotadinho_ipc::handle_create_page_in_folder(vault.to_string(), pasta, titulo, "md".into()) {
+                    Ok(meta) => {
+                        recarregar(estado);
+                        abrir(estado, vault, &meta.path);
+                    }
+                    Err(e) => estado.aviso = Some(format!("não criou: {e}")),
+                }
+            }
+            Pedido::MoverPagina { de, para } => match anotadinho_ipc::handle_move_page(vault.to_string(), de, para.clone()) {
+                Ok(meta) => {
+                    recarregar(estado);
+                    abrir(estado, vault, &meta.path);
+                    estado.aviso = Some(format!("movida pra {para}"));
+                }
+                Err(e) => estado.aviso = Some(format!("não moveu: {e}")),
+            },
+            Pedido::ExportarPasta(pasta) => match anotadinho_ipc::handle_export_folder(vault.to_string(), pasta.clone()) {
+                Ok(texto) => {
+                    let nome = if pasta.is_empty() { "vault".to_string() } else { pasta.replace('/', "-") };
+                    let destino = std::env::current_dir().unwrap_or_default().join(format!("anotadinho-{nome}.md"));
+                    match std::fs::write(&destino, texto) {
+                        Ok(()) => estado.aviso = Some(format!("exportado em {}", destino.display())),
+                        Err(e) => estado.aviso = Some(format!("não exportou: {e}")),
+                    }
+                }
+                Err(e) => estado.aviso = Some(format!("não exportou: {e}")),
+            },
             Pedido::CarregarPrompt(path) => match anotadinho_ipc::handle_read_page(vault.to_string(), path.clone()) {
                 Ok(conteudo) => app::conversa::aplicar_prompt(estado, &path, &conteudo),
                 Err(e) => estado.aviso = Some(format!("não consegui ler o prompt: {e}")),
@@ -408,6 +444,7 @@ fn main() -> Result<(), String> {
     let mut estado = Estado::novo(paginas, primeira)
         .com_texto(&texto, versao)
         .com_preferencias(preferencias)
+        .com_pastas(anotadinho_ipc::handle_list_folders(cli.vault.clone()).unwrap_or_default())
         .com_hoje(&hoje_local())
         // Os calendários em modo vault leem as páginas com data. Varrer
         // falhando não impede a TUI: o calendário só fica vazio.

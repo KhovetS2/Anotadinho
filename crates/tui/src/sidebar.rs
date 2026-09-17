@@ -38,6 +38,33 @@ pub fn arvore(paginas: &[PageMeta]) -> No {
     raiz
 }
 
+/// Acrescenta as pastas que existem no disco mas não têm página (ciclo
+/// 345) — uma pasta recém-criada sumiria da árvore sem isso. `pastas` são
+/// caminhos do vault (`pages/produto/specs`).
+pub fn com_pastas(mut raiz: No, pastas: &[String]) -> No {
+    for pasta in pastas {
+        let rel = pasta.strip_prefix("pages/").unwrap_or(pasta);
+        if rel.is_empty() || rel == "pages" {
+            continue;
+        }
+        let mut no = &mut raiz;
+        for seg in rel.split('/').filter(|s| !s.is_empty()) {
+            no = no.pastas.entry(seg.to_string()).or_default();
+        }
+    }
+    raiz
+}
+
+/// Todas as pastas da árvore, como caminho do vault (`pages/…`), com a
+/// raiz `pages` primeiro.
+pub fn todas_as_pastas(raiz: &No) -> Vec<String> {
+    let mut fora = vec!["pages".to_string()];
+    let mut caminhos = BTreeSet::new();
+    juntar_caminhos(raiz, "", &mut caminhos);
+    fora.extend(caminhos.into_iter().filter(|c| !c.starts_with("journals")).map(|c| format!("pages/{c}")));
+    fora
+}
+
 /// O que aparece numa linha da sidebar.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {

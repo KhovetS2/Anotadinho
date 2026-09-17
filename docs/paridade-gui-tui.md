@@ -11,10 +11,10 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Sidebar em árvore de pastas, filtro | ✅ | 299, 292 |
 | Seção Journals + "Journal de hoje" | 🟡 | "Ir pra Hoje" na barra (339); sem seção própria |
 | Nova página / por tipo | ✅ | 339 |
-| Nova pasta, nova página na pasta | ❌ | |
-| Mover página pra pasta | ❌ | |
-| Excluir página | ✅ | 339 |
-| Exportar pasta / vault | ❌ | |
+| Nova pasta, nova página na pasta | ✅ | 345 — `O`/`o` na sidebar, "Nova pasta…" |
+| Mover página pra pasta | ✅ | 345 — `m` na sidebar |
+| Excluir página | ✅ | 339, 345 — `dd` na sidebar |
+| Exportar pasta / vault | ✅ | 345 — grava `anotadinho-<pasta>.md` na pasta atual |
 | Abas de documentos (Ctrl+1..9) | ❌ | |
 | Paleta de comandos (Ctrl+K) | ✅ | 339 |
 | Busca no CONTEÚDO na paleta (FTS) | ✅ | 342 — `Ctrl+F` (ou Enter sem resultado) |

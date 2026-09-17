@@ -1,13 +1,12 @@
 # cena paleta-aberta · 140x36 · teclas: :
 ┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
 │cena                                    ││Antes.                                                                                          │
-│                                        ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
-│                                  ╭────────────────────────────────────────────────────────────────────╮                             z ⌄ ▌│
-│                                  │  Buscar página ou comando...                                       │ antiga.                         ▌│
-│                                  │────────────────────────────────────────────────────────────────────│                                 ▌│
+│                                  ╭────────────────────────────────────────────────────────────────────╮▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
+│                                  │  Buscar página ou comando...                                       │                             z ⌄ ▌│
+│                                  │────────────────────────────────────────────────────────────────────│ antiga.                         ▌│
 │                                  │ ϟ Nova conversa com o agente                                       │                                 ▌│
-│                                  │ ϟ Nova página                                                      │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
-│                                  │ ϟ Nova página: Kanban                                              │                                  │
+│                                  │ ϟ Nova página                                                      │                                 ▌│
+│                                  │ ϟ Nova página: Kanban                                              │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
 │                                  │ ϟ Nova página: Calendário                                          │                                  │
 │                                  │ ϟ Nova página: Tabela de tarefas                                   │                                  │
 │                                  │ ϟ Nova página: Conversa                                            │                                  │
@@ -19,12 +18,13 @@
 │                                  │ ϟ Trocar agente…                                                   │                                  │
 │                                  │ ϟ Propriedades da página…                                          │                                  │
 │                                  │ ϟ Ver atalhos                                                      │                                  │
+│                                  │ ϟ Nova pasta…                                                      │                                  │
+│                                  │ ϟ Mover página pra pasta…                                          │                                  │
+│                                  │ ϟ Exportar pasta…                                                  │                                  │
+│                                  │ ϟ Exportar vault inteiro                                           │                                  │
 │                                  │ ϟ Excluir a página aberta                                          │                                  │
 │                                  │ ≡ cena                                               pages/cena.md │                                  │
 │                                  ╰ ↑↓ escolher · Enter · Ctrl+F buscar no conteúdo · Esc ─────────────╯                                  │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -38,30 +38,30 @@
 == estilos ==
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddgggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggghhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiihfb
-addddddddddddddddddddddddddddddddddgjkllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgmmmmmmmmhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddgggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddgnnnoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddgllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjllllllllllllljgddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddglllllllllllllllllllllllllllllllllllllllllllllllllllllllggggggggggggggddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffggggggggggggggggggggggggggggggggggb
+addddddddddddddddddddddddddddddddddfhijjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllkgb
+addddddddddddddddddddddddddddddddddffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkgb
+addddddddddddddddddddddddddddddddddfnnnooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooofkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfggggggggggggggggggggggggggggggggggb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhjjjjjjjjjjjjjhfddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddfjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjffffffffffffffddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -77,13 +77,13 @@ b = fg #3d404f bg #272930
 c = fg #272930 bg #00b5ff
 d = fg - bg #272930
 e = fg #e4e8f5 bg #272930
-f = fg #403a3d bg #272930
-g = fg #3d404f bg #32343f
-h = fg - bg #403a3d
-i = fg #989eb7 bg #403a3d
-j = fg #e4e8f5 bg #32343f
-k = fg #272930 bg #e4e8f5
-l = fg #989eb7 bg #32343f
+f = fg #3d404f bg #32343f
+g = fg #403a3d bg #272930
+h = fg #e4e8f5 bg #32343f
+i = fg #272930 bg #e4e8f5
+j = fg #989eb7 bg #32343f
+k = fg - bg #403a3d
+l = fg #989eb7 bg #403a3d
 m = fg #e4e8f5 bg #403a3d
 n = fg #00b5ff bg #3d404f
 o = fg #e4e8f5 bg #3d404f

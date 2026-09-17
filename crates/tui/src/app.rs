@@ -45,6 +45,9 @@ pub struct Estado {
     pub pagina: usize,
     /// A árvore de pastas da sidebar (ciclo 299).
     pub arvore_sidebar: sidebar::No,
+    /// As pastas do disco, inclusive vazias (`pages/…`), pro `main` dizer
+    /// (ciclo 345).
+    pub pastas_do_vault: Vec<String>,
     /// As pastas fechadas, pelo caminho.
     pub pastas_fechadas: std::collections::BTreeSet<String>,
     /// Que linha da sidebar está selecionada.
@@ -130,6 +133,8 @@ pub struct Estado {
     pub refazer: Vec<(String, Caminho)>,
     /// A visão de cada calendário (ciclo 316). Ausente é Mês.
     pub visoes: std::collections::HashMap<Caminho, anotadinho_core::analise::Visao>,
+    /// O primeiro `d` do `dd` na sidebar.
+    pub d_na_sidebar: bool,
     /// A barra está capturando tecla?
     ///
     /// Separado do termo de propósito. Na primeira versão os dois eram o
@@ -150,12 +155,14 @@ impl Estado {
         Self {
             dobrados,
             arvore_sidebar,
+            pastas_do_vault: Vec::new(),
             pastas_fechadas,
             linha_sidebar: 0,
             vim: vim::Pendente::default(),
             busca: String::new(),
             busca_em: Foco::Paginas,
             barra_aberta: false,
+            d_na_sidebar: false,
             paginas,
             pagina: 0,
             arvore,
@@ -375,6 +382,29 @@ impl Estado {
         self
     }
 
+    /// As pastas do disco, pra a árvore mostrar as vazias também.
+    pub fn com_pastas(mut self, pastas: Vec<String>) -> Self {
+        self.pastas_do_vault = pastas;
+        let paginas = self.paginas.clone();
+        self.atualizar_paginas(paginas);
+        self
+    }
+
+    /// A pasta sob o cursor da sidebar (`pages/…`): a própria pasta, ou a
+    /// da página.
+    pub fn pasta_da_sidebar(&self) -> String {
+        match self.sidebar_visivel().get(self.linha_sidebar).map(|l| l.item.clone()) {
+            Some(Item::Pasta { caminho, .. }) => {
+                if caminho.starts_with("journals") { caminho } else { format!("pages/{caminho}") }
+            }
+            _ => self
+                .paginas
+                .get(self.pagina)
+                .and_then(|p| std::path::Path::new(&p.path).parent().map(|x| x.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "pages".into()),
+        }
+    }
+
     /// Aplica as preferências gravadas (ciclo 339).
     pub fn com_preferencias(mut self, p: Preferencias) -> Self {
         self.tema = Tema::novo(&p.tema);
@@ -387,7 +417,7 @@ impl Estado {
 
     /// Troca a lista de páginas (depois de criar ou apagar uma).
     pub fn atualizar_paginas(&mut self, paginas: Vec<PageMeta>) {
-        self.arvore_sidebar = sidebar::arvore(&paginas);
+        self.arvore_sidebar = sidebar::com_pastas(sidebar::arvore(&paginas), &self.pastas_do_vault);
         self.paginas = paginas;
         self.pagina = self.pagina.min(self.paginas.len().saturating_sub(1));
     }
@@ -712,6 +742,9 @@ fn tecla_na_busca(e: &mut Estado, tecla: &str) -> Option<String> {
 }
 
 fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
+    if tecla != "d" {
+        e.d_na_sidebar = false;
+    }
     if tecla == "/" {
         e.busca.clear();
         e.busca_em = Foco::Paginas;
@@ -741,6 +774,36 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
         // espera de pasta em qualquer lugar (ciclo 299).
         "l" | "ArrowRight" | "h" | "ArrowLeft" => {
             e.dobrar_pasta();
+            None
+        }
+        // Na sidebar, os comandos de vim são de PÁGINA e PASTA (ciclo 345):
+        // `o` página nova na pasta do cursor, `O` pasta nova, `m` mover a
+        // página, `dd` excluir.
+        "o" => {
+            modais::abrir_entrada_na_pasta(e, false);
+            None
+        }
+        "O" => {
+            modais::abrir_entrada_na_pasta(e, true);
+            None
+        }
+        "m" => {
+            modais::abrir_mover_pagina(e);
+            None
+        }
+        "d" if e.d_na_sidebar => {
+            e.d_na_sidebar = false;
+            // Só página se exclui por aqui; numa pasta, nada.
+            let na_pagina = matches!(e.sidebar_visivel().get(e.linha_sidebar).map(|l| &l.item), Some(Item::Pagina { .. }));
+            if na_pagina {
+                modais::confirmar_exclusao(e);
+            } else {
+                e.aviso = Some("dd exclui página; pasta ainda não".into());
+            }
+            None
+        }
+        "d" => {
+            e.d_na_sidebar = true;
             None
         }
         "Enter" => {
@@ -6939,6 +7002,51 @@ mod testes {
             _ => None,
         });
         assert_eq!(q.unwrap().conditions.len(), 1);
+    }
+
+    #[test]
+    fn na_sidebar_o_cria_pagina_na_pasta_o_maiusculo_pasta_m_move_dd_exclui() {
+        let paginas = vec![
+            PageMeta { path: "pages/raiz.md".into(), title: "raiz".into(), section: "pages".into() },
+            PageMeta { path: "pages/specs/editor.md".into(), title: "editor".into(), section: "pages".into() },
+        ];
+        let mut e = Estado::novo(paginas, analisar("")).com_pastas(vec!["pages/specs".into(), "pages/vazia".into()]);
+        e.foco = Foco::Paginas;
+        // A pasta vazia aparece.
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("vazia/"), "{tela}");
+        // Cursor na pasta specs (primeira linha).
+        e.linha_sidebar = 0;
+        tecla(&mut e, "o");
+        digitar(&mut e, "Nova spec");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, vec![Pedido::CriarPaginaNaPasta { pasta: "pages/specs".into(), titulo: "Nova spec".into() }]);
+        e.pedidos.clear();
+        tecla(&mut e, "O");
+        digitar(&mut e, "antigas");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, vec![Pedido::CriarPasta("pages/specs/antigas".into())]);
+        e.pedidos.clear();
+        // Numa página: m move, dd exclui (com confirmação).
+        let linha_raiz = e.sidebar_visivel().iter().position(|l| matches!(&l.item, Item::Pagina { titulo, .. } if titulo == "raiz")).unwrap();
+        e.linha_sidebar = linha_raiz;
+        e.pagina = 0;
+        tecla(&mut e, "m");
+        digitar(&mut e, "specs");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, vec![Pedido::MoverPagina { de: "pages/raiz.md".into(), para: "pages/specs/raiz.md".into() }]);
+        e.pedidos.clear();
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert!(matches!(e.modal, Some(Modal::Confirmar { .. })));
+        tecla(&mut e, "y");
+        assert_eq!(e.pedidos, vec![Pedido::ExcluirPagina("pages/raiz.md".into())]);
+        // dd numa pasta não exclui nada.
+        e.pedidos.clear();
+        e.linha_sidebar = 0;
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert!(e.modal.is_none() && e.pedidos.is_empty());
     }
 
     const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";

@@ -84,6 +84,24 @@ pub enum Pedido {
     },
     /// Buscar no conteúdo das páginas.
     BuscarConteudo(String),
+    /// Criar uma pasta (`pages/…`).
+    CriarPasta(String),
+    /// Criar uma página numa pasta.
+    CriarPaginaNaPasta {
+        /// A pasta (`pages/…`).
+        pasta: String,
+        /// O título.
+        titulo: String,
+    },
+    /// Mover uma página.
+    MoverPagina {
+        /// De onde.
+        de: String,
+        /// Pra onde.
+        para: String,
+    },
+    /// Exportar uma pasta num arquivo só.
+    ExportarPasta(String),
     /// Ler a página de um prompt padrão e aplicar ao campo da conversa.
     CarregarPrompt(String),
     /// Regravar a lista de anexos da conversa.
@@ -240,6 +258,10 @@ pub struct EditorDeOpcoes {
 pub enum AcaoDaEntrada {
     /// Título de uma página nova, com o tipo.
     NovaPagina(Option<String>),
+    /// Título de uma página nova dentro de uma pasta (ciclo 345).
+    PaginaNaPasta(String),
+    /// Nome de uma pasta nova dentro de outra.
+    NovaPasta(String),
     /// Título de uma página nova a partir de um template (ciclo 342).
     PaginaDeTemplate {
         /// O template.
@@ -264,6 +286,10 @@ pub enum AcaoDaEscolha {
     Anexar,
     /// Tirar o anexo escolhido.
     Desanexar,
+    /// Mover a página aberta pra pasta escolhida (ciclo 345).
+    MoverPara,
+    /// Exportar a pasta escolhida.
+    Exportar,
     /// Abrir a página escolhida (chave = caminho) — resultados de busca,
     /// wikilinks (ciclo 342).
     AbrirPagina,
@@ -285,6 +311,10 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Trocar agente…", "trocar-agente"),
     ("Propriedades da página…", "propriedades"),
     ("Ver atalhos", "atalhos"),
+    ("Nova pasta…", "nova-pasta"),
+    ("Mover página pra pasta…", "mover-pagina"),
+    ("Exportar pasta…", "exportar-pasta"),
+    ("Exportar vault inteiro", "exportar-vault"),
     ("Excluir a página aberta", "excluir-pagina"),
 ];
 
@@ -406,6 +436,13 @@ fn executar(e: &mut Estado, chave: &str) {
             super::edicao::abrir_propriedades(e);
         }
         "atalhos" => e.modal = Some(Modal::Atalhos(0)),
+        "nova-pasta" => abrir_entrada_na_pasta(e, true),
+        "mover-pagina" => abrir_mover_pagina(e),
+        "exportar-vault" => e.pedidos.push(Pedido::ExportarPasta(String::new())),
+        "exportar-pasta" => {
+            let itens = crate::sidebar::todas_as_pastas(&e.arvore_sidebar).into_iter().map(|p| Item::novo("▭", p.clone(), p)).collect();
+            e.modal = Some(Modal::Escolha { titulo: "Exportar pasta".into(), lista: Lista::filtravel(itens), acao: AcaoDaEscolha::Exportar });
+        }
         "excluir-pagina" => {
             if let Some(p) = e.paginas.get(e.pagina) {
                 e.modal = Some(Modal::Confirmar {
@@ -466,6 +503,16 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 AcaoDaEscolha::Anexar => super::conversa::mudar_anexo(e, &chave, true),
                 AcaoDaEscolha::Desanexar => super::conversa::mudar_anexo(e, &chave, false),
                 AcaoDaEscolha::AbrirPagina => e.pedidos.push(Pedido::AbrirPagina(chave)),
+                AcaoDaEscolha::Exportar => e.pedidos.push(Pedido::ExportarPasta(chave)),
+                AcaoDaEscolha::MoverPara => {
+                    if let Some(p) = e.paginas.get(e.pagina) {
+                        let arquivo = std::path::Path::new(&p.path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                        let para = format!("{chave}/{arquivo}");
+                        if para != p.path {
+                            e.pedidos.push(Pedido::MoverPagina { de: p.path.clone(), para });
+                        }
+                    }
+                }
                 AcaoDaEscolha::Agente => {
                     if let Some(a) = chave.parse::<usize>().ok().and_then(|i| anotadinho_core::agente::Adaptador::presets().get(i).cloned()) {
                         e.aviso = Some(format!("agente: {}", a.nome));
@@ -489,6 +536,9 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 if !t.is_empty() {
                     e.pedidos.push(match acao {
                         AcaoDaEntrada::NovaPagina(tipo) => Pedido::CriarPaginaComTitulo { titulo: t, tipo },
+                        AcaoDaEntrada::PaginaNaPasta(pasta) if pasta == "pages" => Pedido::CriarPaginaComTitulo { titulo: t, tipo: None },
+                        AcaoDaEntrada::PaginaNaPasta(pasta) => Pedido::CriarPaginaNaPasta { pasta, titulo: t },
+                        AcaoDaEntrada::NovaPasta(dentro) => Pedido::CriarPasta(format!("{dentro}/{t}")),
                         AcaoDaEntrada::PaginaDeTemplate { template, pasta } => Pedido::CriarDeTemplate { template, titulo: t, pasta },
                     });
                 }
@@ -815,4 +865,39 @@ pub fn mostrar_resultados_da_busca(e: &mut Estado, termo: &str, hits: &[anotadin
         lista: Lista::filtravel(itens),
         acao: AcaoDaEscolha::AbrirPagina,
     });
+}
+
+/// Entrada de página nova (ou pasta nova) na pasta do cursor da sidebar.
+pub fn abrir_entrada_na_pasta(e: &mut Estado, pasta_nova: bool) {
+    let pasta = if e.foco == super::Foco::Paginas {
+        e.pasta_da_sidebar()
+    } else {
+        e.paginas
+            .get(e.pagina)
+            .and_then(|p| std::path::Path::new(&p.path).parent().map(|x| x.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "pages".into())
+    };
+    let pasta = if pasta.starts_with("journals") { "pages".to_string() } else { pasta };
+    e.modal = Some(if pasta_nova {
+        Modal::Entrada { titulo: format!("Nova pasta em {pasta}"), campo: Campo::default(), acao: AcaoDaEntrada::NovaPasta(pasta) }
+    } else {
+        Modal::Entrada { titulo: format!("Nova página em {pasta}"), campo: Campo::default(), acao: AcaoDaEntrada::PaginaNaPasta(pasta) }
+    });
+}
+
+/// Escolha da pasta de destino da página selecionada.
+pub fn abrir_mover_pagina(e: &mut Estado) {
+    let Some(p) = e.paginas.get(e.pagina) else { return };
+    let atual = std::path::Path::new(&p.path).parent().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
+    let itens = crate::sidebar::todas_as_pastas(&e.arvore_sidebar)
+        .into_iter()
+        .filter(|x| *x != atual)
+        .map(|x| Item::novo("▭", x.clone(), x))
+        .collect();
+    e.modal = Some(Modal::Escolha { titulo: format!("Mover {} pra…", p.title), lista: Lista::filtravel(itens), acao: AcaoDaEscolha::MoverPara });
+}
+
+/// Confirmação de excluir a página selecionada.
+pub fn confirmar_exclusao(e: &mut Estado) {
+    executar(e, "excluir-pagina");
 }
