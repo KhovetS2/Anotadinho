@@ -266,15 +266,26 @@ fn blocos<'a>(e: &'a Estado, h: &Hospedeiro) -> Vec<(Caminho, &'a Unidade)> {
         }
         let c = [base.as_slice(), &[i]].concat();
         if matches!(u.tipo, Tipo::Lista | Tipo::ListaOrdenada) {
-            for (k, item) in u.filhos.iter().enumerate() {
-                if item.intervalo.is_some() {
-                    v.push(([c.as_slice(), &[k]].concat(), item));
-                }
-            }
+            itens_da_lista(&c, u, &mut v);
         }
         v.push((c, u));
     }
     v
+}
+
+/// Os itens de uma lista, inclusive os das listas aninhadas (ciclo 402).
+fn itens_da_lista<'a>(base: &Caminho, lista: &'a Unidade, fora: &mut Vec<(Caminho, &'a Unidade)>) {
+    for (k, item) in lista.filhos.iter().enumerate() {
+        let c = [base.as_slice(), &[k]].concat();
+        if item.intervalo.is_some() {
+            fora.push((c.clone(), item));
+        }
+        for (j, dentro) in item.filhos.iter().enumerate() {
+            if matches!(dentro.tipo, Tipo::Lista | Tipo::ListaOrdenada) {
+                itens_da_lista(&[c.as_slice(), &[j]].concat(), dentro, fora);
+            }
+        }
+    }
 }
 
 /// O bloco que começa em `inicio` — o mais fundo: uma lista e o primeiro
@@ -513,10 +524,11 @@ pub(super) fn no_markdown(e: &mut Estado, ed: Edicao, h: Hospedeiro) -> bool {
             let mut novo = corpo_atual.clone();
             novo.replace_range(inicio_da_linha..faixa.end, &novo_bloco);
             if gravar(e, &h, novo) {
-                let alvo = alvo.clone();
-                e.cursor = alvo;
+                // O caminho muda: aninhar move o item pra dentro da lista
+                // de cima (ciclo 402). Reacha pelo byte onde ele começa.
+                let destino = bloco_em(e, &h, inicio_da_linha);
+                ir(e, destino);
                 e.aviso = Some(if n > 0 { "item aninhado" } else { "item desaninhado" }.into());
-                e.seguir_cursor();
             }
         }
         Edicao::Somar(n) => {

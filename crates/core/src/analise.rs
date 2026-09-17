@@ -150,7 +150,7 @@ fn unidades_de_texto(texto: &str) -> Vec<Unidade> {
             if let Some(a) = lista.take() {
                 let tipo = if lista_ordenada { Tipo::ListaOrdenada } else { Tipo::Lista };
                 fora.push(
-                    Unidade::com_filhos(tipo, std::mem::take(&mut itens))
+                    Unidade::com_filhos(tipo.clone(), aninhar(std::mem::take(&mut itens), tipo))
                         .da_fonte(a.linhas.join("\n"))
                         .no_intervalo(a.inicio..a.fim),
                 );
@@ -554,6 +554,48 @@ fn acao_do_fluxo(d: &embed::FluxoEmbedData) -> Option<(String, String)> {
         )),
         _ => None,
     }
+}
+
+/// Aninha os itens de uma lista pelo RECUO do arquivo (ciclo 402).
+///
+/// A lista vinha plana: `- a` e `  - a1` saíam irmãos, e navegar não
+/// entrava nem saía de nível — a janela mostra (e o markdown diz) que um
+/// está DENTRO do outro. Cada degrau vira uma lista filha do item de
+/// cima, com a fonte e o intervalo do trecho que ela cobre.
+fn aninhar(itens: Vec<Unidade>, tipo: Tipo) -> Vec<Unidade> {
+    let recuo = |u: &Unidade| u.fonte.as_deref().unwrap_or("").chars().take_while(|c| *c == ' ').count();
+    let fechar = |pilha: &mut Vec<(usize, Vec<Unidade>)>, tipo: &Tipo| {
+        let Some((_, filhos)) = pilha.pop() else { return };
+        let (inicio, fim) = match (filhos.first().and_then(|u| u.intervalo.clone()), filhos.last().and_then(|u| u.intervalo.clone())) {
+            (Some(a), Some(b)) => (a.start, b.end),
+            _ => (0, 0),
+        };
+        let fonte = filhos.iter().filter_map(|u| u.fonte.clone()).collect::<Vec<_>>().join("\n");
+        let sublista = Unidade::com_filhos(tipo.clone(), filhos).da_fonte(fonte).no_intervalo(inicio..fim);
+        if let Some((_, acima)) = pilha.last_mut() {
+            if let Some(dono) = acima.last_mut() {
+                dono.filhos.push(sublista);
+            }
+        }
+    };
+    let mut pilha: Vec<(usize, Vec<Unidade>)> = vec![(0, Vec::new())];
+    for item in itens {
+        let ind = recuo(&item);
+        while pilha.len() > 1 && ind < pilha.last().map_or(0, |(i, _)| *i) {
+            fechar(&mut pilha, &tipo);
+        }
+        let (nivel_atual, tem_dono) = pilha.last().map(|(i, v)| (*i, !v.is_empty())).unwrap_or((0, false));
+        if ind > nivel_atual && tem_dono {
+            pilha.push((ind, Vec::new()));
+        }
+        if let Some((_, atual)) = pilha.last_mut() {
+            atual.push(item);
+        }
+    }
+    while pilha.len() > 1 {
+        fechar(&mut pilha, &tipo);
+    }
+    pilha.pop().map(|(_, v)| v).unwrap_or_default()
 }
 
 /// `AAAA-MM-DD` como `DD/MM/AAAA`, o jeito de ler data em português.

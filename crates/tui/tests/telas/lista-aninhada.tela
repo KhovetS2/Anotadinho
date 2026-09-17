@@ -1,0 +1,41 @@
+# cena lista-aninhada · 120x16 · teclas: Tab j Enter Enter j
+┌páginas───────────────────────────┐┌cena──────────────────────────────────────────────────────────────────────────────┐
+│cena                              ││# Notas                                                                           │
+│                                  ││  - primeiro                                                                      │
+│                                  ││      - dentro um                                                                 │
+│                                  ││┌────────────────────────────────────────────────────────────────────────────────┐│
+│                                  │││      - dentro dois                                                             ││
+│                                  │││          - mais fundo                                                          ││
+│                                  ││└────────────────────────────────────────────────────────────────────────────────┘│
+│                                  ││  - segundo                                                                       │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+└──────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────┘
+== estilos ==
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+accccddddddddddddddddddddddddddddddabeeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
+addddddddddddddddddddddddddddddddddabddeeggggggggddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddabddddddeegggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+addddddddddddddddddddddddddddddddddabbddddddeegggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbb
+addddddddddddddddddddddddddddddddddabbddddddddddeeggggggggggddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbb
+addddddddddddddddddddddddddddddddddabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+addddddddddddddddddddddddddddddddddabddeegggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+a = fg #45475a bg #1e1e2e
+b = fg #89b4fa bg #1e1e2e
+c = fg - bg #1e1e2e apagado
+d = fg - bg #1e1e2e
+e = fg #a6adc8 bg #1e1e2e
+f = fg #89b4fa bg #45475a negrito
+g = fg #cdd6f4 bg #1e1e2e

@@ -1424,7 +1424,38 @@ fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
         e.dobrados.remove(&e.cursor);
     }
     e.cursor = tela::andar(&e.arvore, &e.cursor, passo);
+    // A LISTA não é parada do cursor (ciclo 402): entrar num item vai
+    // direto pro primeiro item de dentro, e sair de um item de dentro
+    // volta pro item de fora — a lista aninhada é um nível, não dois.
+    pular_nivel_de_lista(e, passo);
     e.seguir_cursor();
+}
+
+fn pular_nivel_de_lista(e: &mut Estado, passo: Passo) {
+    let e_lista = |c: &[usize]| matches!(e.arvore.em(c).map(|u| &u.tipo), Some(Tipo::Lista | Tipo::ListaOrdenada));
+    for _ in 0..4 {
+        if !e_lista(&e.cursor) || e.cursor.is_empty() {
+            return;
+        }
+        match passo {
+            Passo::Entrar => {
+                e.dobrados.remove(&e.cursor);
+                let dentro = tela::andar(&e.arvore, &e.cursor, Passo::Entrar);
+                if dentro == e.cursor {
+                    return;
+                }
+                e.cursor = dentro;
+            }
+            Passo::Sair => {
+                let acima = tela::andar(&e.arvore, &e.cursor, Passo::Sair);
+                if acima == e.cursor {
+                    return;
+                }
+                e.cursor = acima;
+            }
+            _ => return,
+        }
+    }
 }
 
 /// Desenha o quadro inteiro.
@@ -10097,6 +10128,32 @@ mod testes {
         assert!(e.gravacao.clone().unwrap().contains("  - a1\n- b"), "{:?}", e.gravacao);
         tecla(&mut e, "Ctrl+x");
         assert!(e.aviso.as_deref().unwrap().contains("primeiro nível"));
+    }
+
+    #[test]
+    fn a_lista_aninhada_e_um_nivel_de_verdade() {
+        let mut e = pagina_com("# T\n\n- a\n  - a1\n  - a2\n- b\n");
+        e.foco = Foco::Conteudo;
+        // A lista tem dois itens no topo; `a` tem a sublista dentro.
+        let lista = e.arvore.filhos.iter().position(|u| matches!(u.tipo, Tipo::Lista)).unwrap();
+        assert_eq!(e.arvore.filhos[lista].filhos.len(), 2);
+        assert!(matches!(e.arvore.filhos[lista].filhos[0].filhos.first().map(|u| &u.tipo), Some(Tipo::Lista)));
+        // Entrar no item desce pra sublista; Esc volta.
+        e.cursor = vec![lista, 0];
+        tecla(&mut e, "Enter");
+        assert_eq!(e.arvore.em(&e.cursor).map(|u| u.texto.clone()).unwrap_or_default(), "a1", "Enter vai direto ao item de dentro");
+        tecla(&mut e, "j");
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "a2");
+        // Editar e apagar um item de dentro continuam funcionando.
+        tecla(&mut e, "A");
+        digitar(&mut e, "!");
+        tecla(&mut e, "Escape");
+        assert!(e.gravacao.clone().unwrap().contains("  - a2!"), "{:?}", e.gravacao);
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert!(!e.gravacao.clone().unwrap().contains("a2"), "{:?}", e.gravacao);
+        tecla(&mut e, "Escape");
+        assert_eq!(e.arvore.em(&e.cursor).map(|u| u.texto.clone()).unwrap_or_default(), "a", "Esc volta pro item de fora");
     }
 
     // --- Ciclo 394: cor personalizada ------------------------------------------------
