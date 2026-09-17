@@ -479,6 +479,23 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         }
                     }
                 }
+                Pedido::TrocarVault { pasta, criar } => {
+                    let pasta = match (pasta.strip_prefix('~'), std::env::var("HOME")) {
+                        (Some(resto), Ok(casa)) => format!("{casa}{resto}"),
+                        _ => pasta,
+                    };
+                    let tem_paginas = handle_list_pages(pasta.clone()).is_ok_and(|p| !p.is_empty());
+                    if criar {
+                        match anotadinho_ipc::handle_criar_vault(pasta.clone()) {
+                            Ok(_) => estado.trocar_de_vault = Some((pasta, !tem_paginas)),
+                            Err(e) => estado.aviso = Some(format!("não preparou o vault: {e}")),
+                        }
+                    } else if tem_paginas {
+                        estado.trocar_de_vault = Some((pasta, false));
+                    } else {
+                        estado.aviso = Some(format!("{pasta} não é um vault com páginas — \"Criar vault novo…\" prepara um"));
+                    }
+                }
                 Pedido::BuscarNaSidebar(termo) => {
                     // Só vale se a pessoa ainda está nesse termo.
                     if estado.busca == termo {
@@ -730,6 +747,46 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
     }
 }
 
+/// Monta a TUI pra um vault (ciclo 373: também ao trocar de vault).
+fn montar_estado(vault: &str, recem_criado: bool, mut preferencias: Preferencias) -> Result<Estado, String> {
+    let paginas = handle_list_pages(vault.to_string())?;
+    if paginas.is_empty() {
+        return Err(format!("o vault {vault} não tem páginas"));
+    }
+    let vault_absoluto = std::fs::canonicalize(vault).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| vault.to_string());
+    if preferencias.ultimo_vault.as_deref() != Some(vault_absoluto.as_str()) {
+        preferencias.ultimo_vault = Some(vault_absoluto);
+        let _ = gravar_preferencias(&preferencias);
+    }
+    // Com página de início, ela abre primeiro (ciclo 362); vault
+    // recém-preparado abre no guia.
+    let guia = recem_criado.then(|| anotadinho_core::semente::PAGINA_INICIAL.to_string());
+    let existe = |c: &String| paginas.iter().any(|p| p.path == *c);
+    let inicio = preferencias.inicio.get(vault).cloned().filter(existe);
+    let primeira_pagina = inicio.clone().or(guia.filter(existe)).unwrap_or_else(|| paginas[0].path.clone());
+    let (texto, versao) = ler(vault, &primeira_pagina)?;
+    // O índice do vault, varrido uma vez: calendários em modo vault e
+    // consultas. Varrer falhando não impede a TUI — eles só ficam vazios.
+    let indice = handle_scan_vault(vault.to_string()).unwrap_or_default();
+    let primeira = {
+        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
+        anotadinho_core::analise::analisar(corpo)
+    };
+    let mut estado = Estado::novo(paginas, primeira)
+        .com_inicio(inicio)
+        .com_pagina(&primeira_pagina)
+        .com_texto(&texto, versao.clone())
+        .com_preferencias(preferencias)
+        .com_pastas(anotadinho_ipc::handle_list_folders(vault.to_string()).unwrap_or_default())
+        .com_hoje(&hoje_local())
+        .com_eventos_do_vault(anotadinho_core::calendario::entradas_do_vault(&indice))
+        .com_indice_do_vault(indice);
+    // Abre de novo pelo caminho de sempre: a primeira página pode ser uma
+    // conversa, tags ou propostas, que têm tela própria.
+    estado.abrir_texto(&texto, versao);
+    Ok(estado)
+}
+
 fn main() -> Result<(), String> {
     let cli = Cli::parse();
     let mut preferencias = ler_preferencias();
@@ -748,31 +805,6 @@ fn main() -> Result<(), String> {
         let criados = anotadinho_ipc::handle_criar_vault(vault.clone())?;
         eprintln!("vault preparado: {} arquivo(s) criado(s)", criados.len());
     }
-    let paginas = handle_list_pages(vault.clone())?;
-    if paginas.is_empty() {
-        return Err(format!("o vault {vault} não tem páginas"));
-    }
-    let vault_absoluto = std::fs::canonicalize(&vault).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| vault.clone());
-    if preferencias.ultimo_vault.as_deref() != Some(vault_absoluto.as_str()) {
-        preferencias.ultimo_vault = Some(vault_absoluto);
-        let _ = gravar_preferencias(&preferencias);
-    }
-    let cli = Cli { vault: Some(vault), ..cli };
-    let vault_da_sessao = cli.vault.clone().unwrap_or_default();
-    // Com página de início, ela abre primeiro (ciclo 362).
-    // Vault recém-preparado abre no guia.
-    let guia = vazio.then(|| anotadinho_core::semente::PAGINA_INICIAL.to_string());
-    let existe = |c: &String| paginas.iter().any(|p| p.path == *c);
-    let inicio = preferencias.inicio.get(&vault_da_sessao).cloned().filter(existe);
-    let primeira_pagina = inicio.clone().or(guia.filter(existe)).unwrap_or_else(|| paginas[0].path.clone());
-    let (texto, versao) = ler(&vault_da_sessao, &primeira_pagina)?;
-    // O índice do vault, varrido uma vez: calendários em modo vault e
-    // consultas. Varrer falhando não impede a TUI — eles só ficam vazios.
-    let indice = handle_scan_vault(vault_da_sessao.clone()).unwrap_or_default();
-    let primeira = {
-        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
-        anotadinho_core::analise::analisar(corpo)
-    };
     if let Some(tema) = &cli.tema {
         if !anotadinho_tui::tema::TEMAS.contains(&tema.as_str()) {
             return Err(format!(
@@ -786,21 +818,8 @@ fn main() -> Result<(), String> {
     if !anotadinho_tui::tema::TEMAS.contains(&preferencias.tema.as_str()) {
         preferencias.tema = "escuro".into();
     }
-    let mut estado = Estado::novo(paginas, primeira)
-        .com_inicio(inicio)
-        .com_pagina(&primeira_pagina)
-        .com_texto(&texto, versao.clone())
-        .com_preferencias(preferencias)
-        .com_pastas(anotadinho_ipc::handle_list_folders(vault_da_sessao.clone()).unwrap_or_default())
-        .com_hoje(&hoje_local())
-        // Os calendários em modo vault leem as páginas com data. Varrer
-        // falhando não impede a TUI: o calendário só fica vazio.
-        .com_eventos_do_vault(anotadinho_core::calendario::entradas_do_vault(&indice))
-        // As consultas rodam sobre o mesmo índice (ciclo 331).
-        .com_indice_do_vault(indice);
-    // Abre de novo pelo caminho de sempre: a primeira página pode ser uma
-    // conversa, tags ou propostas, que têm tela própria.
-    estado.abrir_texto(&texto, versao);
+    let mut vault_da_sessao = vault;
+    let mut estado = montar_estado(&vault_da_sessao, vazio, preferencias)?;
 
     // Sem terminal de verdade, `enable_raw_mode` falha com
     // "No such device or address (os error 6)" — que não diz nada a
@@ -822,7 +841,20 @@ fn main() -> Result<(), String> {
     execute!(saida, EnterAlternateScreen).map_err(|e| e.to_string())?;
     let mut term = Terminal::new(CrosstermBackend::new(saida)).map_err(|e| e.to_string())?;
 
-    let resultado = laco(&mut term, &mut estado, &vault_da_sessao);
+    // Trocar de vault (ciclo 373) monta tudo de novo sem sair do terminal.
+    let resultado = loop {
+        match laco(&mut term, &mut estado, &vault_da_sessao) {
+            Ok(Some((outro, criado))) => match montar_estado(&outro, criado, estado.preferencias.clone()) {
+                Ok(novo) => {
+                    estado = novo;
+                    estado.aviso = Some(format!("vault: {outro}"));
+                    vault_da_sessao = outro;
+                }
+                Err(e) => estado.aviso = Some(format!("não abriu {outro}: {e}")),
+            },
+            outro => break outro.map(|_| ()),
+        }
+    };
 
     disable_raw_mode().map_err(|e| e.to_string())?;
     execute!(term.backend_mut(), LeaveAlternateScreen).map_err(|e| e.to_string())?;
@@ -834,14 +866,17 @@ fn laco<B: ratatui::backend::Backend>(
     term: &mut Terminal<B>,
     estado: &mut Estado,
     vault: &str,
-) -> Result<(), String> {
+) -> Result<Option<(String, bool)>, String> {
     let mut trabalhos = Trabalhos::new();
     let mut voltas_sem_tecla: u64 = 0;
     loop {
         estado.agora = Some(agora_local());
         term.draw(|f| app::desenhar(f, estado)).map_err(|e| e.to_string())?;
         if estado.sair {
-            return Ok(());
+            return Ok(None);
+        }
+        if let Some(outro) = estado.trocar_de_vault.take() {
+            return Ok(Some(outro));
         }
         // Espera tecla por um instante e redesenha mesmo sem ela: o que
         // roda por fora (o agente de uma conversa) precisa aparecer
@@ -865,7 +900,7 @@ fn laco<B: ratatui::backend::Backend>(
             continue;
         }
         if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
-            return Ok(());
+            return Ok(None);
         }
         let Some(nome) = nome_da_tecla(&k) else { continue };
         if let Some(caminho) = app::tecla(estado, &nome) {

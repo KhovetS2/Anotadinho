@@ -47,6 +47,13 @@ pub enum Pedido {
         /// Pasta extra.
         extra: bool,
     },
+    /// Abrir outro vault, ou preparar um novo (ciclo 373).
+    TrocarVault {
+        /// A pasta.
+        pasta: String,
+        /// Preparar com a semente.
+        criar: bool,
+    },
     /// Buscar no conteúdo pra sidebar (ciclo 370).
     BuscarNaSidebar(String),
     /// Gravar por cima do disco, sem a trava de versão (ciclo 363).
@@ -379,6 +386,8 @@ pub enum AcaoDaEntrada {
     Link,
     /// A pasta do agente (ciclo 369): `true` é uma pasta extra.
     PastaDoAgente(bool),
+    /// A pasta de outro vault (ciclo 373): `true` prepara um novo.
+    Vault(bool),
 }
 
 /// O que uma [`Modal::Escolha`] faz com o item escolhido.
@@ -459,6 +468,8 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Próxima aba", "aba-proxima"),
     ("Aba anterior", "aba-anterior"),
     ("Fechar aba", "aba-fechar"),
+    ("Abrir outro vault…", "abrir-vault"),
+    ("Criar vault novo…", "criar-vault"),
     ("Ver tags", "ver-tags"),
     ("Ver assets", "ver-assets"),
     ("Propostas do agente", "propostas"),
@@ -603,6 +614,14 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "aba-anterior" => super::comando_de_aba(e, "Alt+h"),
         "aba-fechar" => super::comando_de_aba(e, "Alt+q"),
         "git" => e.pedidos.push(Pedido::StatusDoGit),
+        "abrir-vault" | "criar-vault" => {
+            let criar = chave == "criar-vault";
+            e.modal = Some(Modal::Entrada {
+                titulo: if criar { "Criar vault novo em (pasta)".into() } else { "Abrir o vault da pasta".into() },
+                campo: Campo::default(),
+                acao: AcaoDaEntrada::Vault(criar),
+            });
+        }
         "inicio" | "exportar-html" => {
             if let Some(p) = e.paginas.get(e.pagina).map(|p| p.path.clone()) {
                 e.pedidos.push(if chave == "inicio" { Pedido::AlternarInicio(p) } else { Pedido::ExportarHtml(p) });
@@ -786,6 +805,15 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     super::formatar::retomar(e);
                 }
             }
+            "Enter" if matches!(acao, AcaoDaEntrada::Vault(_)) => {
+                let AcaoDaEntrada::Vault(criar) = acao else { unreachable!() };
+                let pasta = campo.texto.trim().to_string();
+                if pasta.is_empty() {
+                    e.modal = Some(Modal::Entrada { titulo, campo, acao: AcaoDaEntrada::Vault(criar) });
+                } else {
+                    e.pedidos.push(Pedido::TrocarVault { pasta, criar });
+                }
+            }
             "Enter" if matches!(acao, AcaoDaEntrada::PastaDoAgente(_)) => {
                 let AcaoDaEntrada::PastaDoAgente(extra) = acao else { unreachable!() };
                 e.pedidos.push(Pedido::PastaDoAgente { pasta: campo.texto.trim().to_string(), extra });
@@ -818,7 +846,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         AcaoDaEntrada::NovaPasta(dentro) => Pedido::CriarPasta(format!("{dentro}/{t}")),
                         AcaoDaEntrada::PaginaDeTemplate { template, pasta } => Pedido::CriarDeTemplate { template, titulo: t, pasta },
                         AcaoDaEntrada::Commit => Pedido::GitCommit(t),
-                        AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid | AcaoDaEntrada::Link | AcaoDaEntrada::PastaDoAgente(_) => return,
+                        AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid | AcaoDaEntrada::Link | AcaoDaEntrada::PastaDoAgente(_) | AcaoDaEntrada::Vault(_) => return,
                     });
                 }
             }

@@ -27,6 +27,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Recarregar quando o arquivo muda por fora | ✅ | 351 — relê a cada segundo parado, sem perder o lugar; lista de páginas também |
 | Conflito: mudou no disco durante a edição (ver diferença, manter o meu, recarregar) | ✅ | 363 |
 | Escolher / criar vault | ✅ | 372 — sem `--vault` reabre o último; pasta vazia pergunta (ou `--criar`) e prepara o vault novo, abrindo o guia |
+| Trocar de vault sem sair (abrir outro, criar novo) | ✅ | 373 — "Abrir outro vault…", "Criar vault novo…" |
 | Controles da janela | — | |
 
 ## Páginas de tipo

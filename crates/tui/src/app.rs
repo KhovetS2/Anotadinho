@@ -136,6 +136,9 @@ pub struct Estado {
     /// O termo buscado no conteúdo: a página aberta a seguir leva o
     /// cursor até ele (ciclo 371), como a janela revela o trecho.
     pub alvo_de_busca: Option<String>,
+    /// Pedido pra trocar de vault (ciclo 373): a pasta e se acabou de ser
+    /// preparada. Quem troca é o `main`.
+    pub trocar_de_vault: Option<(String, bool)>,
     /// A página de início deste vault (ciclo 362): abre primeiro, e a aba
     /// dela fica fixa na frente.
     pub inicio: Option<String>,
@@ -229,6 +232,7 @@ impl Estado {
             abas: Vec::new(),
             resultados_da_busca: None,
             alvo_de_busca: None,
+            trocar_de_vault: None,
             inicio: None,
             imagem_pendente: None,
             celula_pendente: None,
@@ -9410,5 +9414,23 @@ mod testes {
         // A próxima página abre normal.
         e.abrir_texto("# Outra\n\nSprint aqui também.\n", None);
         assert_eq!(e.cursor, tela::primeiro(&e.arvore).unwrap_or_default());
+    }
+
+    // --- Ciclo 373: trocar de vault -------------------------------------------
+
+    #[test]
+    fn abrir_e_criar_vault_pedem_a_troca() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::executar(&mut e, "abrir-vault");
+        digitar(&mut e, "~/notas");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::TrocarVault { pasta: "~/notas".into(), criar: false }]);
+        e.pedidos.clear();
+        modais::executar(&mut e, "criar-vault");
+        tecla(&mut e, "Enter");
+        assert!(e.pedidos.is_empty(), "pasta vazia não pede nada");
+        digitar(&mut e, "/tmp/novo");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::TrocarVault { pasta: "/tmp/novo".into(), criar: true }]);
     }
 }
