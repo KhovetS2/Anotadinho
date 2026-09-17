@@ -494,7 +494,8 @@ pub fn partes_da_consulta(q: &crate::query::Query, entries: &[crate::index::Page
     };
     if q.group_by.is_some() || !q.aggregate.is_empty() {
         for g in q.run_grouped(entries) {
-            let mut filhos = vec![item("total", g.itens.len().to_string())];
+            // `chave` é o valor do grupo, o que `collapsed` guarda (ciclo 377).
+            let mut filhos = vec![item("total", g.itens.len().to_string()), item("chave", g.valor.clone())];
             filhos.extend(g.agregados.iter().map(|(r, v)| item("agregado", format!("{r}: {v}"))));
             if !q.recolhido(&g.valor) {
                 filhos.extend(g.itens.iter().map(|e| resultado(e)));

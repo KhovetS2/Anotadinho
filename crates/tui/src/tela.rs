@@ -389,7 +389,7 @@ pub fn fica_fora_da_tela(nome: &str) -> bool {
             // largura do painel (ciclos 325 e 326): dado de desenho.
             | "tamanho" | "colunas" | "caminho" | "largura"
             // A contagem, os campos e os agregados da consulta (ciclo 331).
-            | "contagem" | "campo" | "total" | "agregado"
+            | "contagem" | "campo" | "total" | "agregado" | "chave"
             // A janela do cronograma e a cor da barra (ciclo 332).
             | "escala" | "fonte" | "dias" | "hoje" | "cor"
     )

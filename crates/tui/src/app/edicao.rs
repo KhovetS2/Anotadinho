@@ -1864,6 +1864,33 @@ pub(super) fn transicao_do_cursor(e: &mut Estado) -> bool {
     true
 }
 
+/// `z`/espaço num grupo da consulta recolhe ou abre ele NO ARQUIVO
+/// (ciclo 377), como a seta do grupo na janela — que guarda em
+/// `collapsed` pra abrir do mesmo jeito da próxima vez.
+pub(super) fn recolher_grupo_da_consulta(e: &mut Estado) -> bool {
+    let Some(embed) = embed_do_cursor(e, "query") else { return false };
+    let Some(u) = e.arvore.em(&e.cursor) else { return false };
+    if !matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "grupo") {
+        return false;
+    }
+    let Some(chave) = u.filhos.iter().find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "chave")).map(|f| f.texto.clone()) else {
+        return false;
+    };
+    let cursor = e.cursor.clone();
+    let mut recolheu = false;
+    if editar_consulta(e, &embed, |q| {
+        q.alternar_recolhido(&chave);
+        recolheu = q.recolhido(&chave);
+        Ok(())
+    }) {
+        e.dobrados.remove(&cursor);
+        e.cursor = cursor;
+        e.aviso = Some(if recolheu { "grupo recolhido" } else { "grupo aberto" }.into());
+        e.seguir_cursor();
+    }
+    true
+}
+
 /// Enter na ação do fluxo (ciclo 348): "Planejar implementação",
 /// "Executar" ou "Pedir alteração" abrem a conversa com a página anexada,
 /// como na janela.

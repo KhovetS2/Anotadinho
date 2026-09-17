@@ -1246,6 +1246,9 @@ fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
     // tecla pede; a régua de "dá ou não dá" é da árvore (ciclo 281).
     // Dobrar é do painel, não da árvore: o modelo não sabe o que está
     // escondido.
+    if (tecla == "z" || tecla == " ") && edicao::recolher_grupo_da_consulta(e) {
+        return;
+    }
     if tecla == "z" || tecla == " " {
         e.dobrar();
         e.seguir_cursor();
@@ -9545,5 +9548,36 @@ mod testes {
         assert!(!corpo_gravado(&e).contains("novo"));
         tecla(&mut e, "Ctrl+k");
         assert!(matches!(e.modal, Some(Modal::Paleta(_))));
+    }
+
+    // --- Ciclo 377: recolher grupo da consulta ---------------------------------
+
+    #[test]
+    fn z_num_grupo_da_consulta_grava_o_recolhido() {
+        use anotadinho_core::embed::EmbedData;
+        let pagina = |path: &str, tipo: &str| anotadinho_core::index::PageIndexEntry {
+            path: path.into(),
+            title: path.into(),
+            page_type: tipo.into(),
+            ..Default::default()
+        };
+        let mut e = pagina_com("{{ type: \"query\" }}\nfrom: pages\ngroup_by: type\n{{ /query }}\n")
+            .com_indice_do_vault(vec![pagina("pages/a.md", "spec"), pagina("pages/b.md", "spec"), pagina("pages/c.md", "nota")]);
+        e.foco = Foco::Conteudo;
+        let grupo = e
+            .arvore
+            .percorrer()
+            .into_iter()
+            .find(|(_, u)| matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "grupo") && u.texto.contains("spec"))
+            .map(|(c, _)| c)
+            .expect("sem grupo spec");
+        e.cursor = grupo.clone();
+        tecla(&mut e, "z");
+        let EmbedData::Query(q) = embed_gravado(&e) else { panic!() };
+        assert_eq!(q.collapsed, ["spec"]);
+        assert!(!desenho(&mut e, 100, 30).join("\n").contains("pages/a.md"), "recolhido não mostra as páginas");
+        tecla(&mut e, "z");
+        let EmbedData::Query(q) = embed_gravado(&e) else { panic!() };
+        assert!(q.collapsed.is_empty());
     }
 }

@@ -74,6 +74,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Tabela: células, linhas, colunas, tipo, opções | ✅ | 321, 337, 339 |
 | Tabela: número ▲▼, data, coluna de página (escolher e abrir) | ✅ | 367 — Ctrl+A/X; Enter na página |
 | Consulta: configuração completa | ✅ | 335, 338, 344 — `=` na consulta |
+| Consulta: recolher grupo (guardado no arquivo) | ✅ | 377 — `z` no grupo |
 | Ações: EXECUTAR o botão | ✅ | 342 — abrir, template, propriedade, busca |
 | Ações: configurar o botão (ação, destino, ícone) | ✅ | 344 — `=` no botão |
 | Galeria: escolher arquivo de assets | ✅ | 356 — `o` lista as imagens de assets/ (ou digita o caminho) |
