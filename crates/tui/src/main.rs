@@ -801,6 +801,44 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                     }
                     decidido(estado, vault, r);
                 }
+                // Lote (ciclo 409): cada uma segue o mesmo caminho de
+                // uma só — inclusive o registro da decisão —, e o que
+                // falhar não impede as outras.
+                Pedido::DecidirVarias { ids, aplicar, motivo } => {
+                    let (mut feitas, mut falhas) = (0usize, Vec::new());
+                    for id in ids {
+                        let dados = proposta_por_id(vault, &id);
+                        let alvo = dados.as_ref().map(|p| p.alvo.clone()).unwrap_or_else(|| id.clone());
+                        let r = if aplicar {
+                            anotadinho_ipc::handle_aplicar_proposta(vault.to_string(), id.clone())
+                        } else {
+                            anotadinho_ipc::handle_recusar_proposta(vault.to_string(), id.clone()).map(|_| String::new())
+                        };
+                        match r {
+                            Ok(_) => {
+                                let acao = if aplicar {
+                                    anotadinho_core::decisao::Acao::Aplicada
+                                } else {
+                                    anotadinho_core::decisao::Acao::Recusada
+                                };
+                                registrar_decisao(estado, vault, dados, acao, motivo.clone());
+                                feitas += 1;
+                            }
+                            Err(e) => falhas.push(format!("{alvo}: {e}")),
+                        }
+                    }
+                    if let Some(t) = estado.especial.as_mut() {
+                        t.marcadas.clear();
+                    }
+                    let verbo = if aplicar { "apliquei" } else { "recusei" };
+                    estado.aviso = Some(if falhas.is_empty() {
+                        format!("{verbo} {feitas}")
+                    } else {
+                        format!("{verbo} {feitas}; falhou — {}", falhas.join(" · "))
+                    });
+                    recarregar(estado);
+                    carregar_especial(estado, vault, TipoEspecial::Propostas);
+                }
                 Pedido::DecidirProposta { id, aplicar, motivo } => {
                     let dados = proposta_por_id(vault, &id);
                     let r = if aplicar {

@@ -216,6 +216,8 @@ pub struct TelaEspecial {
     pub trecho: usize,
     /// Os trechos TIRADOS da aplicação, por `id#índice`.
     pub fora: BTreeSet<String>,
+    /// As propostas marcadas pra ação em lote (ciclo 409).
+    pub marcadas: BTreeSet<String>,
     /// Rolagem dentro do item selecionado.
     pub deslocamento: usize,
     /// O erro da última ação.
@@ -234,6 +236,7 @@ impl TelaEspecial {
             visualizando: BTreeSet::new(),
             trecho: 0,
             fora: BTreeSet::new(),
+            marcadas: BTreeSet::new(),
             deslocamento: 0,
             erro: None,
             d_pendente: false,
@@ -477,6 +480,55 @@ fn tecla_nas_propostas(e: &mut Estado, tecla: &str) -> bool {
                 t.fora.insert(chave);
             }
         }
+        // Marcar pra agir em lote (ciclo 409): revisar uma por uma e
+        // decidir todas de uma vez é o caminho de quem acumulou fila.
+        "m" => {
+            if !t.marcadas.remove(&p.id) {
+                t.marcadas.insert(p.id.clone());
+            }
+            let n = t.marcadas.len();
+            e.aviso = Some(if n == 0 { "nenhuma marcada".into() } else { format!("{n} marcada(s)") });
+        }
+        "M" => {
+            if t.marcadas.len() == lista.len() {
+                t.marcadas.clear();
+                e.aviso = Some("desmarquei todas".into());
+            } else {
+                t.marcadas = lista.iter().map(|x| x.proposta.id.clone()).collect();
+                e.aviso = Some(format!("{} marcada(s)", t.marcadas.len()));
+            }
+        }
+        // Com marcadas, `a` e `r` valem pra elas — e só inteiras: um
+        // lote não é lugar de escolher trecho.
+        "a" | "Enter" if !t.marcadas.is_empty() => {
+            let ids: Vec<String> = lista
+                .iter()
+                .map(|x| x.proposta.id.clone())
+                .filter(|id| t.marcadas.contains(id))
+                .collect();
+            let alvos: Vec<String> = lista
+                .iter()
+                .filter(|x| t.marcadas.contains(&x.proposta.id))
+                .map(|x| x.proposta.alvo.clone())
+                .collect();
+            e.modal = Some(Modal::Confirmar {
+                titulo: format!("Aplicar {} proposta(s)", ids.len()),
+                mensagem: format!("Gravar inteiras: {}?", alvos.join(", ")),
+                acao: Pedido::DecidirVarias { ids, aplicar: true, motivo: String::new() },
+            });
+        }
+        "r" if !t.marcadas.is_empty() => {
+            let ids: Vec<String> = lista
+                .iter()
+                .map(|x| x.proposta.id.clone())
+                .filter(|id| t.marcadas.contains(id))
+                .collect();
+            e.modal = Some(Modal::Entrada {
+                titulo: format!("Recusar {} proposta(s) — por quê?", ids.len()),
+                campo: crate::componentes::Campo::default(),
+                acao: super::modais::AcaoDaEntrada::MotivoDaRecusaVarias(ids),
+            });
+        }
         "A" if !trechos.is_empty() => {
             let ids: Vec<String> = lista.iter().map(|x| x.proposta.id.clone()).collect();
             t.fora.retain(|c| !ids.iter().any(|id| c.starts_with(&format!("{id}#"))));
@@ -691,7 +743,7 @@ pub fn linhas_da_tela(t: &TelaEspecial, pagina: &str, tema: &Tema, w: usize, no_
                 let inicio = fora.len();
                 let visualizar = t.visualizando.contains(&p.proposta.id);
                 let cursor_do_trecho = (i == t.selecionado && no_foco).then_some(t.trecho);
-                fora.extend(cartao_da_proposta(tema, p, visualizar, i == t.selecionado, no_foco, w, cursor_do_trecho, &t.fora));
+                fora.extend(cartao_da_proposta(tema, p, visualizar, i == t.selecionado, no_foco, w, cursor_do_trecho, &t.fora, t.marcadas.contains(&p.proposta.id), t.marcadas.len()));
                 faixas.push((inicio, fora.len()));
             }
         }
@@ -856,6 +908,10 @@ fn cartao_da_proposta(
     w: usize,
     cursor_do_trecho: Option<usize>,
     fora_da_aplicacao: &BTreeSet<String>,
+    // `marcada`: esta proposta entra no lote (ciclo 409); `em_lote`:
+    // quantas marcadas na tela — com marcadas, os botões mudam.
+    marcada: bool,
+    em_lote: usize,
 ) -> Vec<Line<'static>> {
     let proposta = &p.proposta;
     let apagado = Style::default().fg(tema.var("text-muted"));
@@ -866,6 +922,7 @@ fn cartao_da_proposta(
         Operacao::Substituir => ("SUBSTITUIR", Realce::BadgeAtencao),
     };
     let esquerda = vec![
+        Span::styled(if marcada { "◉ " } else { "  " }.to_string(), Style::default().fg(tema.var("accent-blue"))),
         Span::styled(format!(" {op} "), tema.pilula(papel)),
         Span::raw(" "),
         Span::styled(proposta.alvo.clone(), Style::default().fg(tema.var("text-primary")).add_modifier(Modifier::BOLD)),
@@ -951,12 +1008,23 @@ fn cartao_da_proposta(
     } else {
         " Aplicar a ".to_string()
     };
+    // Com propostas marcadas, `a`/`r` valem pro lote — o botão diz isso
+    // em vez de mentir que age só nesta (ciclo 409).
+    let (rotulo_aplicar, rotulo_recusar, dica) = if em_lote > 0 {
+        (
+            format!(" Aplicar {em_lote} marcada(s) a "),
+            format!(" Recusar {em_lote} r "),
+            " m marca/desmarca · M todas ".to_string(),
+        )
+    } else {
+        (rotulo_aplicar, " Recusar r ".to_string(), " h l trecho · espaço tira/põe · A tudo · m marca ".to_string())
+    };
     miolo.push(Line::from(vec![
         Span::styled(rotulo_aplicar, primario),
         Span::raw(" "),
-        Span::styled(" Recusar r ", fantasma),
+        Span::styled(rotulo_recusar, fantasma),
         Span::raw(" "),
-        Span::styled(" h l trecho · espaço tira/põe · A tudo de volta ", apagado),
+        Span::styled(dica, apagado),
     ]));
     let mut fora = caixa(tema, miolo, w, cor_da_borda(tema, selecionado, no_foco));
     fora.push(Line::default());

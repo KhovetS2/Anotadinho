@@ -106,6 +106,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Registro de execuções do agente (o que rodou, duração, como terminou) | ✅ | 406 — só na TUI; `execucoes.jsonl` no vault, "Execuções do agente" na barra |
 | Contrato de ferramentas do agente (conjunto fechado, MCP) | ✅ | 407 — declarado no núcleo; "Ferramentas do agente" na barra; MCP deriva dele |
 | Vários agentes em paralelo com fila e limite | ✅ | 408 — só na TUI; limite nas preferências, "Agentes em andamento…" (`x` para tudo) |
+| Decidir várias propostas de uma vez (marcar, aplicar/recusar em lote) | ✅ | 409 — só na TUI; `m` marca, `M` todas, um motivo pro lote |
 | Git: status, pull, commit & push | ✅ | 349 — "Git: status e sincronizar…" na barra; histórico da página |
 | Nova página a partir de template | ✅ | 350 — "Nova página" pergunta o template quando há |
 

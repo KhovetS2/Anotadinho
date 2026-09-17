@@ -10496,4 +10496,83 @@ mod testes {
         tecla(&mut e, "Ctrl+x");
         assert_eq!(e.pedidos, [Pedido::InterromperAgente(e.conversa.as_ref().unwrap().path.clone())]);
     }
+
+    // --- Ciclo 409: lote na tela de aprovações ---------------------------------------
+
+    fn duas_propostas() -> Estado {
+        use anotadinho_core::proposta::{Operacao, Proposta};
+        let mut e = especial_aberto("propostas");
+        let uma = Proposta {
+            id: "p1".into(),
+            autor: "claude".into(),
+            quando: "2026-09-17 10:00".into(),
+            motivo: String::new(),
+            alvo: "pages/alfa.md".into(),
+            operacao: Operacao::Substituir,
+            conteudo: "A\n".into(),
+        };
+        let outra = Proposta {
+            id: "p2".into(),
+            autor: "claude".into(),
+            quando: "2026-09-17 10:01".into(),
+            motivo: String::new(),
+            alvo: "pages/beta.md".into(),
+            operacao: Operacao::Criar,
+            conteudo: "# Beta\n".into(),
+        };
+        especiais::carregar(
+            &mut e,
+            especiais::Dados::Propostas(vec![
+                especiais::PropostaNaTela { proposta: uma, atual: "a\n".into() },
+                especiais::PropostaNaTela { proposta: outra, atual: String::new() },
+            ]),
+        );
+        e.pedidos.clear();
+        e
+    }
+
+    #[test]
+    fn marcar_propostas_aplica_em_lote() {
+        let mut e = duas_propostas();
+        tecla(&mut e, "m");
+        assert!(e.aviso.as_deref().unwrap().contains("1 marcada"));
+        let tela = desenho(&mut e, 120, 44).join("\n");
+        // A marcada aparece marcada, e os botões passam a falar do lote.
+        assert!(tela.contains("◉") && tela.contains("Aplicar 1 marcada(s) a") && tela.contains("Recusar 1 r"), "{tela}");
+        assert!(tela.contains("m marca/desmarca · M todas"), "{tela}");
+        // `M` marca todas.
+        tecla(&mut e, "M");
+        assert!(e.aviso.as_deref().unwrap().contains("2 marcada"));
+        tecla(&mut e, "a");
+        tecla(&mut e, "y");
+        assert_eq!(
+            e.pedidos,
+            [Pedido::DecidirVarias { ids: vec!["p1".into(), "p2".into()], aplicar: true, motivo: String::new() }]
+        );
+        // `M` de novo desmarca todas, e `a` volta a valer só pra esta.
+        e.pedidos.clear();
+        tecla(&mut e, "M");
+        assert!(e.aviso.as_deref().unwrap().contains("desmarquei"));
+        tecla(&mut e, "a");
+        tecla(&mut e, "y");
+        assert_eq!(e.pedidos, [Pedido::DecidirProposta { id: "p1".into(), aplicar: true, motivo: String::new() }]);
+    }
+
+    #[test]
+    fn recusar_em_lote_pede_um_motivo_pra_todas() {
+        let mut e = duas_propostas();
+        tecla(&mut e, "M");
+        tecla(&mut e, "r");
+        assert!(matches!(&e.modal, Some(Modal::Entrada { titulo, .. }) if titulo.contains("2 proposta(s)")));
+        digitar(&mut e, "fora do escopo");
+        tecla(&mut e, "Enter");
+        assert_eq!(
+            e.pedidos,
+            [Pedido::DecidirVarias {
+                ids: vec!["p1".into(), "p2".into()],
+                aplicar: false,
+                motivo: "fora do escopo".into()
+            }]
+        );
+    }
 }

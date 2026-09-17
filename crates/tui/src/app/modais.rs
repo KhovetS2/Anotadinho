@@ -69,6 +69,12 @@ pub enum Pedido {
     ExportarHtml(String),
     /// Ver o registro de decisões sobre propostas (ciclo 404).
     ListarDecisoes,
+    /// Aplicar ou recusar várias propostas de uma vez (ciclo 409).
+    DecidirVarias {
+        ids: Vec<String>,
+        aplicar: bool,
+        motivo: String,
+    },
     /// Ver o registro de execuções do agente (ciclo 406).
     ListarExecucoes,
     /// Ver o que está rodando e o que espera na fila (ciclo 408).
@@ -482,6 +488,8 @@ pub enum AcaoDaEntrada {
     MotivoDaRecusa(String),
     /// Quantos agentes rodam em paralelo (ciclo 408).
     LimiteDeAgentes,
+    /// O motivo de recusar várias propostas de uma vez (ciclo 409).
+    MotivoDaRecusaVarias(Vec<String>),
 }
 
 /// O que uma [`Modal::Escolha`] faz com o item escolhido.
@@ -1030,6 +1038,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                 }
             }
+            "Enter" if matches!(acao, AcaoDaEntrada::MotivoDaRecusaVarias(_)) => {
+                let AcaoDaEntrada::MotivoDaRecusaVarias(ids) = acao else { unreachable!() };
+                e.pedidos.push(Pedido::DecidirVarias { ids, aplicar: false, motivo: campo.texto.trim().to_string() });
+            }
             "Enter" if matches!(acao, AcaoDaEntrada::MotivoDaRecusa(_)) => {
                 let AcaoDaEntrada::MotivoDaRecusa(id) = acao else { unreachable!() };
                 e.pedidos.push(Pedido::DecidirProposta { id, aplicar: false, motivo: campo.texto.trim().to_string() });
@@ -1081,6 +1093,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         | AcaoDaEntrada::PastaDoAgente(_)
                         | AcaoDaEntrada::Vault(_)
                         | AcaoDaEntrada::MotivoDaRecusa(_)
+                        | AcaoDaEntrada::MotivoDaRecusaVarias(_)
                         | AcaoDaEntrada::LimiteDeAgentes => return,
                     });
                 }
