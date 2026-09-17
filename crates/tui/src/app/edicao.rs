@@ -2398,8 +2398,8 @@ pub(super) fn abrir_detalhe_do_evento(e: &mut Estado) -> bool {
         C::novo("varios", "Vários dias", Valor::Booleano(varios)),
         C::novo("fim", "Fim", Valor::Texto(ev.end_date.clone().unwrap_or_default())).com_dica("AAAA-MM-DD").como_data(),
         C::novo("horario", "Horário específico", Valor::Booleano(horario)),
-        C::novo("hora_inicio", "Das", Valor::Texto(ev.start_time.clone().unwrap_or_default())).com_dica("HH:MM"),
-        C::novo("hora_fim", "Até", Valor::Texto(ev.end_time.clone().unwrap_or_default())).com_dica("HH:MM"),
+        C::novo("hora_inicio", "Das", Valor::Texto(ev.start_time.clone().unwrap_or_default())).com_dica("HH:MM").como_hora(),
+        C::novo("hora_fim", "Até", Valor::Texto(ev.end_time.clone().unwrap_or_default())).com_dica("HH:MM").como_hora(),
         C::novo("tags", "Tags", Valor::Lista(ev.all_tags())).com_dica("tag"),
     ]);
     form.esconder("fim", !varios);

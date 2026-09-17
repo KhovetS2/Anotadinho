@@ -436,12 +436,20 @@ pub struct CampoDoFormulario {
     /// Texto que é data `AAAA-MM-DD`: `Enter` abre o seletor de data
     /// (ciclo 364), `c` digita.
     pub data: bool,
+    /// Texto que é hora `HH:MM`: `Enter` abre o seletor de 15 em 15
+    /// minutos (ciclo 365).
+    pub hora: bool,
 }
 
 impl CampoDoFormulario {
     /// Um campo.
     pub fn novo(chave: &'static str, rotulo: impl Into<String>, valor: Valor) -> Self {
-        Self { chave, rotulo: rotulo.into(), valor, dica: String::new(), escondido: false, data: false }
+        Self { chave, rotulo: rotulo.into(), valor, dica: String::new(), escondido: false, data: false, hora: false }
+    }
+    /// Um campo de hora, com o seletor.
+    pub fn como_hora(mut self) -> Self {
+        self.hora = true;
+        self
     }
     /// Um campo de data, com o seletor.
     pub fn como_data(mut self) -> Self {
@@ -499,12 +507,14 @@ pub struct Formulario {
     pub calendario: Option<String>,
     /// Hoje, pro `t` do seletor.
     pub hoje: Option<String>,
+    /// O seletor de hora aberto: os minutos desde a meia-noite (ciclo 365).
+    pub relogio: Option<u32>,
 }
 
 impl Formulario {
     /// Um formulário.
     pub fn novo(campos: Vec<CampoDoFormulario>) -> Self {
-        Self { campos, botoes: Vec::new(), posicao: Posicao::default(), editando: None, d_pendente: false, calendario: None, hoje: None }
+        Self { campos, botoes: Vec::new(), posicao: Posicao::default(), editando: None, d_pendente: false, calendario: None, hoje: None, relogio: None }
     }
 
     /// O valor de um campo pela chave.
@@ -583,6 +593,27 @@ impl Formulario {
         // O seletor de data, como o `DatePicker` da janela: `h`/`l` o dia,
         // `j`/`k` a semana, `[`/`]` o mês, `t` hoje, `x` limpa, `Enter`
         // escolhe, `Esc` desiste.
+        // O seletor de hora, como o `TimePicker` da janela: de 15 em 15
+        // minutos (`j`/`k`), de hora em hora (`h`/`l`).
+        if let Some(min) = self.relogio.take() {
+            const DIA: u32 = 24 * 60;
+            let novo = match tecla {
+                "j" | "ArrowDown" => (min + 15) % DIA,
+                "k" | "ArrowUp" => (min + DIA - 15) % DIA,
+                "l" | "ArrowRight" => (min + 60) % DIA,
+                "h" | "ArrowLeft" => (min + DIA - 60) % DIA,
+                "Escape" | "q" => return RespostaDoFormulario::Nada,
+                "Enter" | "x" => {
+                    if let Some(c) = self.campos.get_mut(p.campo) {
+                        c.valor = Valor::Texto(if tecla == "x" { String::new() } else { format!("{:02}:{:02}", min / 60, min % 60) });
+                    }
+                    return RespostaDoFormulario::Mudou;
+                }
+                _ => min,
+            };
+            self.relogio = Some(novo);
+            return RespostaDoFormulario::Nada;
+        }
         if let Some(dia) = self.calendario.take() {
             use anotadinho_core::date_util as du;
             let mes = |d: &str, passo: i32| -> String {
@@ -685,6 +716,11 @@ impl Formulario {
                 self.campos[p.campo].valor = Valor::Opcoes(o.clone(), (i + o.len() - 1) % o.len());
                 return RespostaDoFormulario::Mudou;
             }
+            ("Enter", Valor::Texto(t)) if self.campos[p.campo].hora => {
+                // Hora quebrada arredonda pro quarto de hora de baixo.
+                let min = anotadinho_core::date_util::parse_time(&t).map(|(h, m)| h * 60 + m - m % 15).unwrap_or(9 * 60);
+                self.relogio = Some(min);
+            }
             ("Enter", Valor::Texto(t)) if self.campos[p.campo].data => {
                 let valido = anotadinho_core::date_util::parse_date(&t).map(|_| t.clone());
                 self.calendario = valido.or_else(|| self.hoje.clone()).or_else(|| Some("2026-01-01".into()));
@@ -766,8 +802,20 @@ impl Formulario {
                         None if t.is_empty() => spans.push(Span::styled(c.dica.clone(), apagado)),
                         None => spans.push(Span::styled(t.clone(), texto)),
                     }
-                    if c.data && esta && self.calendario.is_none() && self.editando.is_none() {
+                    if (c.data || c.hora) && esta && self.calendario.is_none() && self.relogio.is_none() && self.editando.is_none() {
                         spans.push(Span::styled("  ◷ Enter escolhe · c digita", apagado));
+                    }
+                    if let (true, Some(min)) = (esta, self.relogio) {
+                        let mut faixa = vec![Span::raw(" ".repeat(16))];
+                        for passo in -3i32..=3 {
+                            let m = (min as i32 + passo * 15).rem_euclid(24 * 60) as u32;
+                            let rotulo = format!(" {:02}:{:02} ", m / 60, m % 60);
+                            faixa.push(Span::styled(rotulo, if passo == 0 { tema.estilo(crate::tema::Realce::Cursor).add_modifier(Modifier::BOLD) } else { apagado }));
+                        }
+                        faixa.push(Span::styled("  j k 15 min · h l hora · x limpa", apagado));
+                        fora.push(linha(spans, esta));
+                        fora.push(Line::from(faixa));
+                        continue;
                     }
                     fora.push(linha(spans, esta));
                     if let (true, Some(dia)) = (esta, &self.calendario) {
@@ -861,7 +909,7 @@ impl Formulario {
     /// Em que linha da tela está o cursor (pra rolar). Com o seletor de
     /// data aberto, o fim dele.
     pub fn linha_do_cursor(&self) -> usize {
-        self.linha_do_campo() + if self.calendario.is_some() { 8 } else { 0 }
+        self.linha_do_campo() + if self.calendario.is_some() { 8 } else if self.relogio.is_some() { 1 } else { 0 }
     }
 
     fn linha_do_campo(&self) -> usize {
@@ -1016,5 +1064,35 @@ mod testes_do_formulario {
         // `c` continua digitando.
         f.tecla("c");
         assert!(f.editando.is_some() && f.calendario.is_none());
+    }
+
+    #[test]
+    fn campo_de_hora_anda_de_quarto_em_quarto_e_de_hora_em_hora() {
+        let mut f = Formulario::novo(vec![CampoDoFormulario::novo("h", "Das", Valor::Texto("10:07".into())).como_hora()]);
+        f.tecla("Enter");
+        assert_eq!(f.relogio, Some(600));
+        f.tecla("j");
+        f.tecla("l");
+        f.tecla("k");
+        f.tecla("k");
+        let tema = crate::tema::Tema::novo("escuro");
+        let tela: String = f.linhas(80, &tema).iter().map(|l| l.spans.iter().map(|s| s.content.to_string()).collect::<String>() + "\n").collect();
+        assert!(tela.contains(" 10:45 ") && tela.contains("15 min"), "{tela}");
+        f.tecla("Enter");
+        assert_eq!(f.texto("h"), "10:45");
+        f.tecla("Enter");
+        f.tecla("h");
+        f.tecla("h");
+        f.tecla("h");
+        f.tecla("h");
+        f.tecla("h");
+        f.tecla("h");
+        f.tecla("h");
+        f.tecla("h");
+        f.tecla("h");
+        f.tecla("h");
+        f.tecla("h");
+        f.tecla("Enter");
+        assert_eq!(f.texto("h"), "23:45", "volta pela meia-noite");
     }
 }

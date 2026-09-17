@@ -7202,7 +7202,7 @@ mod testes {
         tecla(&mut e, "j");
         tecla(&mut e, " ");
         tecla(&mut e, "j");
-        tecla(&mut e, "Enter");
+        tecla(&mut e, "c");
         digitar(&mut e, "9h");
         tecla(&mut e, "Enter");
         assert!(e.aviso.as_deref().unwrap_or("").contains("HH:MM"));
