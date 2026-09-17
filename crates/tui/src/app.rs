@@ -478,6 +478,22 @@ pub enum AcaoDaPergunta {
         /// O item, no arquivo.
         indice: usize,
     },
+    /// Troca o valor de uma célula da tabela (ciclo 321).
+    EditarCelula {
+        /// A tabela.
+        embed: Caminho,
+        /// A linha de dados.
+        linha: usize,
+        /// A coluna.
+        coluna: usize,
+    },
+    /// Troca o nome de uma coluna da tabela.
+    RenomearColunaDaTabela {
+        /// A tabela.
+        embed: Caminho,
+        /// A coluna.
+        coluna: usize,
+    },
     /// Troca o nome da coluna (e dos cartões que apontam pra ela).
     RenomearColuna {
         /// O kanban.
@@ -658,6 +674,44 @@ fn tecla_na_pergunta(e: &mut Estado, tecla: &str) {
                             e.cursor = c;
                         }
                     }
+                }
+                AcaoDaPergunta::EditarCelula { embed, linha, coluna } => {
+                    editar_tabela(e, &embed, |d| {
+                        let tipo = d.columns.get(coluna).map(|c| c.kind.clone()).ok_or("a coluna sumiu do arquivo")?;
+                        if linha >= d.rows.len() {
+                            return Err("a linha sumiu do arquivo".into());
+                        }
+                        // Valor novo num select vira opção — a criação
+                        // inline de tag da janela.
+                        let valor = match tipo {
+                            anotadinho_core::embed::ColumnKind::MultiSelect { .. } => {
+                                let tags: Vec<String> = titulo
+                                    .split(',')
+                                    .map(|t| t.trim().to_string())
+                                    .filter(|t| !t.is_empty())
+                                    .collect();
+                                for t in &tags {
+                                    d.add_column_option(coluna, t.clone());
+                                }
+                                tags.join(", ")
+                            }
+                            _ => {
+                                d.add_column_option(coluna, titulo.clone());
+                                titulo.clone()
+                            }
+                        };
+                        d.set_cell(linha, coluna, valor);
+                        Ok(())
+                    });
+                }
+                AcaoDaPergunta::RenomearColunaDaTabela { embed, coluna } => {
+                    editar_tabela(e, &embed, |d| {
+                        if coluna >= d.columns.len() {
+                            return Err("a coluna sumiu do arquivo".into());
+                        }
+                        d.set_column_name(coluna, titulo.clone());
+                        Ok(())
+                    });
                 }
                 AcaoDaPergunta::RenomearColuna { embed, coluna } => {
                     editar_kanban(e, &embed, |d| {
@@ -890,6 +944,116 @@ fn apagar_cartao(e: &mut Estado) {
     }) {
         e.cursor = coluna;
         e.aviso = Some("cartão apagado".into());
+        e.seguir_cursor();
+    }
+}
+
+/// `editar_embed` pra uma tabela.
+fn editar_tabela(
+    e: &mut Estado,
+    embed: &[usize],
+    mudar: impl FnOnce(&mut anotadinho_core::embed::TableEmbedData) -> Result<(), String>,
+) -> bool {
+    editar_embed(e, embed, |dados| match dados {
+        anotadinho_core::embed::EmbedData::Table(d) => mudar(d),
+        _ => Err("isto não é uma tabela".into()),
+    })
+}
+
+/// A tabela sob o cursor e a célula dele: (tabela, fileira, coluna) — a
+/// fileira 0 é o cabeçalho, a 1 é a primeira linha de dados.
+fn celula_do_cursor(e: &Estado) -> Option<(Caminho, usize, usize)> {
+    let embed = embed_do_cursor(e, "table")?;
+    let fileira = *e.cursor.get(embed.len())?;
+    // Na fileira inteira (sem célula), vale a primeira coluna.
+    let coluna = e.cursor.get(embed.len() + 1).copied().unwrap_or(0);
+    Some((embed, fileira, coluna))
+}
+
+/// As teclas de EDIÇÃO da tabela (ciclo 321).
+///
+/// - `c` edita a célula sob o cursor, com o valor atual na pergunta; no
+///   cabeçalho, renomeia a coluna. Num select, um valor que não é opção
+///   vira opção; num multiselect, as tags vão separadas por vírgula.
+/// - `x` limpa a célula.
+/// - `o` cria uma linha vazia embaixo da do cursor (no fim, fora de uma)
+///   e leva o cursor pra primeira célula dela.
+/// - `dd` apaga a linha.
+fn edicao_da_tabela(e: &mut Estado, tecla: &str) -> bool {
+    if !matches!(tecla, "o" | "c" | "x") {
+        return false;
+    }
+    let Some(embed) = embed_do_cursor(e, "table") else { return false };
+    let celula = celula_do_cursor(e);
+    match (tecla, celula) {
+        ("o", celula) => {
+            let depois = celula.map(|(_, f, _)| f);
+            let mut nova = 0;
+            if editar_tabela(e, &embed, |d| {
+                d.add_row();
+                let fim = d.rows.len() - 1;
+                nova = depois.map_or(fim, |f| f.min(fim));
+                let linha = d.rows.pop().unwrap_or_default();
+                d.rows.insert(nova, linha);
+                Ok(())
+            }) {
+                e.cursor = [embed.as_slice(), &[nova + 1, 0]].concat();
+                e.seguir_cursor();
+                e.aviso = Some("linha nova: c edita a célula".into());
+            }
+        }
+        ("c", Some((_, 0, coluna))) => {
+            let atual = e.arvore.em(&[embed.as_slice(), &[0, coluna]].concat()).map(|u| u.texto.clone()).unwrap_or_default();
+            e.pergunta = Some(Pergunta {
+                rotulo: "Renomear coluna".into(),
+                texto: atual,
+                acao: AcaoDaPergunta::RenomearColunaDaTabela { embed, coluna },
+            });
+        }
+        ("c", Some((_, fileira, coluna))) => {
+            let atual = e
+                .arvore
+                .em(&[embed.as_slice(), &[fileira, coluna]].concat())
+                .map(|u| u.texto.clone())
+                .unwrap_or_default();
+            let rotulo = e
+                .arvore
+                .em(&[embed.as_slice(), &[0, coluna]].concat())
+                .map(|u| u.texto.clone())
+                .unwrap_or_else(|| "Célula".into());
+            e.pergunta = Some(Pergunta {
+                rotulo,
+                texto: atual,
+                acao: AcaoDaPergunta::EditarCelula { embed, linha: fileira - 1, coluna },
+            });
+        }
+        ("x", Some((_, fileira, coluna))) if fileira > 0 => {
+            editar_tabela(e, &embed, |d| {
+                d.set_cell(fileira - 1, coluna, String::new());
+                Ok(())
+            });
+        }
+        ("x", Some(_)) => e.aviso = Some("o cabeçalho não se apaga com x".into()),
+        _ => e.aviso = Some("entre numa célula pra editar a tabela".into()),
+    }
+    true
+}
+
+/// Apaga a linha da tabela sob o cursor; o cursor fica na mesma altura.
+fn apagar_linha_da_tabela(e: &mut Estado) {
+    let Some((embed, fileira, coluna)) = celula_do_cursor(e) else { return };
+    if fileira == 0 {
+        e.aviso = Some("o cabeçalho não se apaga".into());
+        return;
+    }
+    let mut sobram = 0;
+    if editar_tabela(e, &embed, |d| {
+        d.remove_row(fileira - 1);
+        sobram = d.rows.len();
+        Ok(())
+    }) {
+        e.cursor = [embed.as_slice(), &[fileira.min(sobram), coluna]].concat();
+        e.aviso = Some("linha apagada".into());
         e.seguir_cursor();
     }
 }
@@ -1176,7 +1340,9 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
 fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
     if tecla_do_calendario(e, tecla)
         || (!e.vim.em_curso()
-            && (edicao_do_calendario(e, tecla) || edicao_do_kanban(e, tecla) || edicao_do_cronograma(e, tecla)))
+            && (edicao_do_calendario(e, tecla) || edicao_do_kanban(e, tecla)
+                || edicao_do_cronograma(e, tecla)
+                || edicao_da_tabela(e, tecla)))
     {
         return;
     }
@@ -2720,6 +2886,10 @@ fn pular_pro_mes_com_evento(e: &mut Estado, adiante: bool) -> bool {
 /// outra coisa por engano.
 fn comando_de_vim(e: &mut Estado, c: Comando) {
     // `dd` num evento do calendário apaga o evento (ciclo 318).
+    if matches!(c, Comando::Apagar(Movimento::LinhaInteira, _)) && celula_do_cursor(e).is_some() {
+        apagar_linha_da_tabela(e);
+        return;
+    }
     if matches!(c, Comando::Apagar(Movimento::LinhaInteira, _)) && indice_do_cursor(e).is_some() {
         if embed_do_cursor(e, "kanban").is_some() {
             apagar_cartao(e);
@@ -4801,6 +4971,21 @@ mod testes {
     }
 
     #[test]
+    fn cronograma_do_vault_nao_se_edita() {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(&PAGINA_COM_CRONOGRAMA.replace("\"timeline\" }}\n", "\"timeline\" }}\nsource: vault\n"), Some("v1".into()));
+        e.foco = Foco::Conteudo;
+        // No modo vault as barras vêm das páginas; a daqui não aparece,
+        // então o cursor fica no próprio embed.
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        digitar(&mut e, "Nova");
+        tecla(&mut e, "Enter");
+        assert!(e.gravacao.is_none());
+        assert!(e.aviso.as_deref().unwrap_or("").contains("só leitura"));
+    }
+
+    #[test]
     fn x_e_dd_apagam_a_barra() {
         let mut e = cronograma_editavel();
         e.cursor = vec![1, 2];
@@ -4810,6 +4995,109 @@ mod testes {
         tecla(&mut e, "d");
         tecla(&mut e, "d");
         assert!(cronograma_gravado(&e).items.is_empty());
+    }
+
+    const PAGINA_COM_TABELA: &str = "Antes.\n\n{{ type: \"table\" }}\ncolumns:\n- name: Tarefa\n- name: Status\n  type: select\n  options: [todo, done]\n- name: Tags\n  type: multiselect\n  options: [api]\n---\n| Tarefa | Status | Tags |\n| --- | --- | --- |\n| API | done | api |\n| Docs | todo |  |\n{{ /table }}\n\nDepois.\n";
+
+    fn tabela_editavel() -> Estado {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(PAGINA_COM_TABELA, Some("v1".into()));
+        e.foco = Foco::Conteudo;
+        e
+    }
+
+    fn tabela_gravada(e: &Estado) -> anotadinho_core::embed::TableEmbedData {
+        let texto = e.gravacao.clone().expect("nada pra gravar");
+        assert!(texto.starts_with("Antes.\n\n") && texto.ends_with("\n\nDepois.\n"), "{texto}");
+        anotadinho_core::embed::segment(&texto)
+            .into_iter()
+            .find_map(|s| match s {
+                anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Table(d)) => Some(d),
+                _ => None,
+            })
+            .expect("a tabela sumiu")
+    }
+
+    fn opcoes(d: &anotadinho_core::embed::TableEmbedData, coluna: usize) -> Vec<String> {
+        match &d.columns[coluna].kind {
+            anotadinho_core::embed::ColumnKind::Select { options }
+            | anotadinho_core::embed::ColumnKind::MultiSelect { options } => options.clone(),
+            _ => vec![],
+        }
+    }
+
+    #[test]
+    fn c_edita_a_celula_e_valor_novo_vira_opcao() {
+        let mut e = tabela_editavel();
+        // tabela → cabeçalho, API, Docs.
+        e.cursor = vec![1, 2, 0];
+        tecla(&mut e, "c");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "Docs");
+        assert_eq!(e.pergunta.as_ref().unwrap().rotulo, "Tarefa");
+        digitar(&mut e, " da API");
+        tecla(&mut e, "Enter");
+        assert_eq!(tabela_gravada(&e).rows[1][0], "Docs da API");
+        e.cursor = vec![1, 2, 1];
+        tecla(&mut e, "c");
+        for _ in 0..4 {
+            tecla(&mut e, "Backspace");
+        }
+        digitar(&mut e, "doing");
+        tecla(&mut e, "Enter");
+        let d = tabela_gravada(&e);
+        assert_eq!(d.rows[1][1], "doing");
+        assert_eq!(opcoes(&d, 1), vec!["todo", "done", "doing"]);
+        e.cursor = vec![1, 2, 2];
+        tecla(&mut e, "c");
+        digitar(&mut e, "api ,web,");
+        tecla(&mut e, "Enter");
+        let d = tabela_gravada(&e);
+        assert_eq!(d.rows[1][2], "api, web");
+        assert_eq!(opcoes(&d, 2), vec!["api", "web"]);
+        assert_eq!(d.rows[0], vec!["API", "done", "api"]);
+    }
+
+    #[test]
+    fn c_no_cabecalho_renomeia_e_x_limpa_a_celula() {
+        let mut e = tabela_editavel();
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "c");
+        assert_eq!(e.pergunta.as_ref().unwrap().rotulo, "Renomear coluna");
+        digitar(&mut e, "s");
+        tecla(&mut e, "Enter");
+        let d = tabela_gravada(&e);
+        assert_eq!(d.columns[0].name, "Tarefas");
+        assert_eq!(opcoes(&d, 1), vec!["todo", "done"]);
+        e.cursor = vec![1, 1, 1];
+        tecla(&mut e, "x");
+        assert_eq!(tabela_gravada(&e).rows[0], vec!["API", "", "api"]);
+    }
+
+    #[test]
+    fn o_cria_linha_embaixo_e_dd_apaga() {
+        let mut e = tabela_editavel();
+        e.cursor = vec![1, 1, 2];
+        tecla(&mut e, "o");
+        let d = tabela_gravada(&e);
+        assert_eq!(d.rows.len(), 3);
+        assert_eq!(d.rows[1], vec!["", "", ""]);
+        assert_eq!(d.rows[2][0], "Docs");
+        assert_eq!(e.cursor, vec![1, 2, 0]);
+        tecla(&mut e, "c");
+        digitar(&mut e, "Testes");
+        tecla(&mut e, "Enter");
+        assert_eq!(tabela_gravada(&e).rows[1][0], "Testes");
+        e.cursor = vec![1, 1, 0];
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        let d = tabela_gravada(&e);
+        assert_eq!(d.rows.iter().map(|r| r[0].as_str()).collect::<Vec<_>>(), vec!["Testes", "Docs"]);
+        // O cabeçalho não se apaga.
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert_eq!(tabela_gravada(&e).columns.len(), 3);
+        assert!(e.aviso.is_some());
     }
 
     #[test]
