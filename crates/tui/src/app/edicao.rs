@@ -590,7 +590,7 @@ fn responder(e: &mut Estado, acao: AcaoDaPergunta, titulo: String) {
         AcaoDaPergunta::NovaColunaDoKanban { embed, posicao } => {
             let mut onde = 0;
             if editar_kanban(e, &embed, |d| {
-                if d.columns.iter().any(|c| *c == titulo) {
+                if d.columns.contains(&titulo) {
                     return Err(format!("já existe a coluna {titulo}"));
                 }
                 onde = posicao.min(d.columns.len());
