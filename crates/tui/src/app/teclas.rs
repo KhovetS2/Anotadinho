@@ -115,12 +115,13 @@ pub fn abrir(e: &mut Estado) {
     let mut campos: Vec<C> = VIM
         .iter()
         .map(|(acao, rotulo, padrao)| {
-            C::novo(acao, format!("Vim · {rotulo}"), Valor::Texto(tecla_de(&p.teclas_vim, acao, padrao).to_string())).com_dica(*padrao)
+            C::novo(acao, format!("Vim · {rotulo}"), Valor::Texto(tecla_de(&p.teclas_vim, acao, padrao).to_string())).com_dica(*padrao).como_tecla()
         })
         .collect();
     campos.extend(GLOBAIS.iter().map(|(acao, rotulo, padrao)| {
         C::novo(acao, format!("Global · {rotulo}"), Valor::Texto(tecla_de(&p.teclas_globais, acao, padrao).to_string()))
             .com_dica(if padrao.is_empty() { "sem tecla — ex.: Ctrl+n, Alt+t" } else { padrao })
+            .como_tecla()
     }));
     let mut form = Formulario::novo(campos);
     form.botoes.push(("salvar", "Salvar".into()));

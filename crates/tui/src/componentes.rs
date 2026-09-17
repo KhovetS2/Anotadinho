@@ -439,12 +439,20 @@ pub struct CampoDoFormulario {
     /// Texto que é hora `HH:MM`: `Enter` abre o seletor de 15 em 15
     /// minutos (ciclo 365).
     pub hora: bool,
+    /// Texto que é uma TECLA: `Enter` espera a próxima tecla apertada e
+    /// guarda o nome dela (ciclo 383), `c` digita.
+    pub captura: bool,
 }
 
 impl CampoDoFormulario {
     /// Um campo.
     pub fn novo(chave: &'static str, rotulo: impl Into<String>, valor: Valor) -> Self {
-        Self { chave, rotulo: rotulo.into(), valor, dica: String::new(), escondido: false, data: false, hora: false }
+        Self { chave, rotulo: rotulo.into(), valor, dica: String::new(), escondido: false, data: false, hora: false, captura: false }
+    }
+    /// Um campo de tecla, capturada ao apertar.
+    pub fn como_tecla(mut self) -> Self {
+        self.captura = true;
+        self
     }
     /// Um campo de hora, com o seletor.
     pub fn como_hora(mut self) -> Self {
@@ -509,12 +517,14 @@ pub struct Formulario {
     pub hoje: Option<String>,
     /// O seletor de hora aberto: os minutos desde a meia-noite (ciclo 365).
     pub relogio: Option<u32>,
+    /// Esperando a tecla de um campo de tecla (ciclo 383).
+    pub capturando: bool,
 }
 
 impl Formulario {
     /// Um formulário.
     pub fn novo(campos: Vec<CampoDoFormulario>) -> Self {
-        Self { campos, botoes: Vec::new(), posicao: Posicao::default(), editando: None, d_pendente: false, calendario: None, hoje: None, relogio: None }
+        Self { campos, botoes: Vec::new(), posicao: Posicao::default(), editando: None, d_pendente: false, calendario: None, hoje: None, relogio: None, capturando: false }
     }
 
     /// O valor de um campo pela chave.
@@ -593,6 +603,16 @@ impl Formulario {
         // O seletor de data, como o `DatePicker` da janela: `h`/`l` o dia,
         // `j`/`k` a semana, `[`/`]` o mês, `t` hoje, `x` limpa, `Enter`
         // escolhe, `Esc` desiste.
+        // A tecla apertada vira o valor; `Esc` desiste.
+        if std::mem::take(&mut self.capturando) {
+            if tecla == "Escape" {
+                return RespostaDoFormulario::Nada;
+            }
+            if let Some(c) = self.campos.get_mut(p.campo) {
+                c.valor = Valor::Texto(tecla.to_string());
+            }
+            return RespostaDoFormulario::Mudou;
+        }
         // O seletor de hora, como o `TimePicker` da janela: de 15 em 15
         // minutos (`j`/`k`), de hora em hora (`h`/`l`).
         if let Some(min) = self.relogio.take() {
@@ -716,6 +736,7 @@ impl Formulario {
                 self.campos[p.campo].valor = Valor::Opcoes(o.clone(), (i + o.len() - 1) % o.len());
                 return RespostaDoFormulario::Mudou;
             }
+            ("Enter", Valor::Texto(_)) if self.campos[p.campo].captura => self.capturando = true,
             ("Enter", Valor::Texto(t)) if self.campos[p.campo].hora => {
                 // Hora quebrada arredonda pro quarto de hora de baixo.
                 let min = anotadinho_core::date_util::parse_time(&t).map(|(h, m)| h * 60 + m - m % 15).unwrap_or(9 * 60);
@@ -804,6 +825,12 @@ impl Formulario {
                     }
                     if (c.data || c.hora) && esta && self.calendario.is_none() && self.relogio.is_none() && self.editando.is_none() {
                         spans.push(Span::styled("  ◷ Enter escolhe · c digita", apagado));
+                    }
+                    if c.captura && esta && self.editando.is_none() {
+                        spans.push(Span::styled(
+                            if self.capturando { "  ⌨ aperte a tecla… (Esc desiste)" } else { "  ⌨ Enter captura · c digita" },
+                            if self.capturando { texto.fg(destaque) } else { apagado },
+                        ));
                     }
                     if let (true, Some(min)) = (esta, self.relogio) {
                         let mut faixa = vec![Span::raw(" ".repeat(16))];
@@ -1094,5 +1121,21 @@ mod testes_do_formulario {
         f.tecla("h");
         f.tecla("Enter");
         assert_eq!(f.texto("h"), "23:45", "volta pela meia-noite");
+    }
+
+    #[test]
+    fn campo_de_tecla_captura_a_proxima_tecla() {
+        let mut f = Formulario::novo(vec![CampoDoFormulario::novo("down", "Descer", Valor::Texto("j".into())).como_tecla()]);
+        f.tecla("Enter");
+        assert!(f.capturando);
+        // Até `j` e `q` viram o valor, em vez de andar ou fechar.
+        assert_eq!(f.tecla("Ctrl+n"), RespostaDoFormulario::Mudou);
+        assert_eq!(f.texto("down"), "Ctrl+n");
+        f.tecla("Enter");
+        f.tecla("Escape");
+        assert_eq!(f.texto("down"), "Ctrl+n");
+        f.tecla("Enter");
+        f.tecla("q");
+        assert_eq!(f.texto("down"), "q");
     }
 }
