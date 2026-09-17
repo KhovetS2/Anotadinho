@@ -303,6 +303,33 @@ fn conversa_do_fluxo(estado: &mut Estado, vault: &str, pagina: &str, alterar: bo
     app::conversa::escrever_no_campo(estado, &pergunta);
 }
 
+/// O que mudou no disco por fora (ciclo 351): a página aberta, a cada
+/// segundo parado, e a lista de páginas e pastas a cada dois — o watcher
+/// da janela, por consulta.
+fn vigiar_disco(estado: &mut Estado, vault: &str, tambem_a_lista: bool) {
+    if tambem_a_lista {
+        if let Ok(p) = handle_list_pages(vault.to_string()) {
+            let chave = |l: &[anotadinho_ipc::PageMeta]| l.iter().map(|x| (x.path.clone(), x.title.clone())).collect::<Vec<_>>();
+            if chave(&p) != chave(&estado.paginas) {
+                estado.pastas_do_vault = anotadinho_ipc::handle_list_folders(vault.to_string()).unwrap_or_default();
+                estado.atualizar_paginas(p);
+            }
+        }
+    }
+    let Some(caminho) = estado.paginas.get(estado.pagina).map(|p| p.path.clone()) else { return };
+    // Com gravação pendente, quem manda é ela (e a trava de versão).
+    if estado.gravacao.is_some() || estado.versao.is_none() {
+        return;
+    }
+    if let Ok((texto, versao)) = ler(vault, &caminho) {
+        if versao.is_some() && versao != estado.versao && estado.texto_da_pagina.as_deref() != Some(texto.as_str()) {
+            estado.recarregar_do_disco(&texto, versao);
+        } else if versao != estado.versao {
+            estado.versao = versao;
+        }
+    }
+}
+
 /// Lê do vault o que a tela de tags, assets ou propostas mostra (ciclo 346).
 fn carregar_especial(estado: &mut Estado, vault: &str, tipo: TipoEspecial) {
     let dados = match tipo {
@@ -664,6 +691,7 @@ fn laco<B: ratatui::backend::Backend>(
     vault: &str,
 ) -> Result<(), String> {
     let mut trabalhos = Trabalhos::new();
+    let mut voltas_sem_tecla: u64 = 0;
     loop {
         estado.agora = Some(agora_local());
         term.draw(|f| app::desenhar(f, estado)).map_err(|e| e.to_string())?;
@@ -675,6 +703,10 @@ fn laco<B: ratatui::backend::Backend>(
         // enquanto a pessoa só olha.
         if !event::poll(std::time::Duration::from_millis(250)).map_err(|e| e.to_string())? {
             app::tique(estado);
+            voltas_sem_tecla += 1;
+            if voltas_sem_tecla % 4 == 0 {
+                vigiar_disco(estado, vault, voltas_sem_tecla % 8 == 0);
+            }
             acompanhar(estado, vault, &mut trabalhos);
             atender(estado, vault, &mut trabalhos);
             continue;

@@ -21,7 +21,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Atalhos (`?`) | ✅ | 339 |
 | Wikilink `[[Título]]` abre a página | ✅ | 342 — Enter; oferece criar a que não existe |
 | Autocompletar wikilink ao digitar | ❌ | |
-| Recarregar quando o arquivo muda por fora | ❌ | a TUI só recusa gravar |
+| Recarregar quando o arquivo muda por fora | ✅ | 351 — relê a cada segundo parado, sem perder o lugar; lista de páginas também |
 | Escolher / criar vault | — | a TUI recebe `--vault` |
 | Controles da janela | — | |
 

@@ -434,9 +434,47 @@ impl Estado {
 
     /// Troca a lista de páginas (depois de criar ou apagar uma).
     pub fn atualizar_paginas(&mut self, paginas: Vec<PageMeta>) {
+        // A selecionada segue pelo CAMINHO: uma página nova antes dela na
+        // lista não pode trocar a aberta de lugar (ciclo 351).
+        let atual = self.paginas.get(self.pagina).map(|p| p.path.clone());
         self.arvore_sidebar = sidebar::com_pastas(sidebar::arvore(&paginas), &self.pastas_do_vault);
         self.paginas = paginas;
-        self.pagina = self.pagina.min(self.paginas.len().saturating_sub(1));
+        self.pagina = atual
+            .and_then(|a| self.paginas.iter().position(|p| p.path == a))
+            .unwrap_or(self.pagina)
+            .min(self.paginas.len().saturating_sub(1));
+    }
+
+    /// O arquivo aberto mudou no disco por outro programa (ciclo 351),
+    /// como o watcher da janela: relê sem perder o lugar — cursor, dobras,
+    /// rolagem — e zera o desfazer, que regravaria o conteúdo velho.
+    ///
+    /// Com uma edição aberta (inserção, formulário) não mexe: devolve
+    /// `false` e quem vigia tenta de novo depois.
+    pub fn recarregar_do_disco(&mut self, texto: &str, versao: Option<String>) -> bool {
+        if self.pergunta.is_some() || matches!(self.modal, Some(Modal::Detalhe { .. } | Modal::Opcoes(_))) {
+            return false;
+        }
+        if self.conversa.is_some() || self.especial.is_some() {
+            self.abrir_texto(texto, versao);
+            return true;
+        }
+        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(texto);
+        self.arvore = anotadinho_core::analise::analisar(corpo);
+        self.ancorar_calendarios();
+        self.linhas = tela::linhas(&self.arvore);
+        while !self.cursor.is_empty() && self.arvore.em(&self.cursor).is_none() {
+            self.cursor.pop();
+        }
+        if self.cursor.is_empty() {
+            self.cursor = tela::primeiro(&self.arvore).unwrap_or_default();
+        }
+        self.texto_da_pagina = Some(texto.to_string());
+        self.versao = versao;
+        self.desfazer.clear();
+        self.refazer.clear();
+        self.aviso = Some("a página mudou por fora e foi relida".into());
+        true
     }
 
     /// Troca a página aberta, recomeçando o cursor.
@@ -8492,5 +8530,37 @@ mod testes {
         let a = e.preferencias.agente.as_ref().unwrap();
         assert_eq!((a.nome.as_str(), a.binario.as_str(), a.args.len()), ("meu", "/opt/agente", 2));
         assert!(e.pedidos.contains(&Pedido::GravarPreferencias));
+    }
+
+    // --- Ciclo 351: arquivo mudado por fora --------------------------------
+
+    #[test]
+    fn mudanca_por_fora_rele_sem_perder_o_lugar() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![2, 1];
+        tecla(&mut e, "~");
+        assert!(!e.desfazer.is_empty());
+        e.gravacao = None;
+        let novo = PAGINA_MARKDOWN.replace("tarefa dois", "tarefa dois (editada no outro editor)");
+        assert!(e.recarregar_do_disco(&novo, Some("v2".into())));
+        assert_eq!(e.cursor, vec![2, 1], "o cursor ficou onde estava");
+        assert!(e.arvore.em(&e.cursor).unwrap().texto.contains("editada no outro editor"));
+        assert!(e.desfazer.is_empty() && e.gravacao.is_none());
+        assert_eq!(e.versao.as_deref(), Some("v2"));
+        assert!(desenho(&mut e, 100, 20).join("\n").contains("mudou por fora"));
+        // Inserindo, espera.
+        tecla(&mut e, "A");
+        assert!(!e.recarregar_do_disco(PAGINA_MARKDOWN, Some("v3".into())));
+        assert_eq!(e.versao.as_deref(), Some("v2"));
+    }
+
+    #[test]
+    fn a_lista_nova_mantem_a_pagina_aberta_pelo_caminho() {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.pagina = 1; // beta
+        let mut novas = paginas();
+        novas.insert(0, PageMeta { path: "pages/aaa.md".into(), title: "aaa".into(), section: "pages".into() });
+        e.atualizar_paginas(novas);
+        assert_eq!(e.paginas[e.pagina].path, "pages/beta.md");
     }
 }
