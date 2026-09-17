@@ -144,6 +144,8 @@ pub struct Estado {
     pub nao_salvo: Option<(String, String)>,
     /// `Ctrl+S` pediu pra gravar agora.
     pub salvar_agora: bool,
+    /// O termo que a barra de comandos quer buscar no conteúdo (ciclo 379).
+    pub busca_na_paleta: Option<String>,
     /// A página de início deste vault (ciclo 362): abre primeiro, e a aba
     /// dela fica fixa na frente.
     pub inicio: Option<String>,
@@ -240,6 +242,7 @@ impl Estado {
             trocar_de_vault: None,
             nao_salvo: None,
             salvar_agora: false,
+            busca_na_paleta: None,
             inicio: None,
             imagem_pendente: None,
             celula_pendente: None,
@@ -9604,5 +9607,26 @@ mod testes {
         assert_eq!(hora(1), ("Reunião", Some("10:00"), Some("11:00")));
         assert_eq!(hora(2), ("Café", Some("14:30"), Some("15:00")));
         assert_eq!(hora(3), ("Dia todo", None, None));
+    }
+
+    // --- Ciclo 379: conteúdo na barra de comandos ------------------------------
+
+    #[test]
+    fn a_barra_mostra_resultados_do_conteudo_enquanto_digita() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        tecla(&mut e, ":");
+        digitar(&mut e, "spr");
+        assert_eq!(e.busca_na_paleta.as_deref(), Some("spr"));
+        let termo = e.busca_na_paleta.take().unwrap();
+        modais::resultados_na_paleta(
+            &mut e,
+            &termo,
+            &[anotadinho_core::embed::SearchHit { path: "pages/gama.md".into(), snippet: "a **spr**int".into(), origem: Some("card em Backlog".into()), ancora: None }],
+        );
+        let tela = desenho(&mut e, 120, 30).join("\n");
+        assert!(tela.contains("gama") && tela.contains("card em Backlog · a sprint"), "{tela}");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/gama.md".into())]);
+        assert_eq!(e.alvo_de_busca.as_deref(), Some("spr"));
     }
 }

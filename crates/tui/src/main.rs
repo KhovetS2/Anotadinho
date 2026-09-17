@@ -403,6 +403,14 @@ fn carregar_especial(estado: &mut Estado, vault: &str, tipo: TipoEspecial) {
     }
 }
 
+/// A busca no conteúdo que a barra de comandos aberta pediu (ciclo 379).
+fn buscar_na_paleta(estado: &mut Estado, vault: &str) {
+    if let Some(termo) = estado.busca_na_paleta.take() {
+        let hits = anotadinho_ipc::handle_search_content(vault.to_string(), termo.clone()).unwrap_or_default();
+        app::modais::resultados_na_paleta(estado, &termo, &hits);
+    }
+}
+
 /// Executa o que a TUI pediu e só quem tem o vault pode fazer (ciclo 339).
 fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
     let recarregar = |estado: &mut Estado| {
@@ -916,6 +924,7 @@ fn laco<B: ratatui::backend::Backend>(
             }
             acompanhar(estado, vault, &mut trabalhos);
             atender(estado, vault, &mut trabalhos);
+            buscar_na_paleta(estado, vault);
             continue;
         }
         let Event::Key(k) = event::read().map_err(|e| e.to_string())? else {

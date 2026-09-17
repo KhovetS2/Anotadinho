@@ -20,7 +20,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Abas de documentos (Ctrl+1..9) | ✅ | 354 — `Alt+1…9`, `Ctrl+W`/`Alt+H/L`, `Alt+Q` fecha; barra na borda de cima |
 | Paleta de comandos (Ctrl+K) | ✅ | 339 |
 | Cabeçalho: propostas pendentes e status do git | ✅ | 355 — no rodapé da sidebar |
-| Busca no CONTEÚDO na paleta (FTS) | ✅ | 342 — `Ctrl+F` (ou Enter sem resultado) |
+| Busca no CONTEÚDO na paleta (FTS) | ✅ | 342, 379 — aparece enquanto digita (3 letras); `Ctrl+F` lista só o conteúdo |
 | Atalhos (`?`) | ✅ | 339 |
 | Wikilink `[[Título]]` abre a página | ✅ | 342 — Enter; oferece criar a que não existe |
 | Links de fora (texto, célula de URL, imagem da galeria) abrem no sistema | ✅ | 374 — Enter; `xdg-open`/`open` |

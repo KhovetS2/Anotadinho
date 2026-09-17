@@ -579,6 +579,12 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
     if super::conversa::executar(e, chave) {
         return;
     }
+    // Um resultado no conteúdo: abre no trecho (ciclos 371 e 379).
+    if let Some((termo, path)) = chave.strip_prefix("resultado:").and_then(|r| r.split_once('\u{0}')) {
+        e.alvo_de_busca = Some(termo.to_string());
+        e.pedidos.push(Pedido::AbrirPagina(path.to_string()));
+        return;
+    }
     if let Some(path) = chave.strip_prefix("pagina:") {
         e.pedidos.push(Pedido::AbrirPagina(path.to_string()));
         return;
@@ -717,11 +723,24 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 e.modal = Some(Modal::Paleta(lista));
             }
         }
-        Modal::Paleta(mut lista) => match lista.tecla(tecla) {
-            Resposta::Escolhido(chave) => executar(e, &chave),
-            Resposta::Fechar => {}
-            Resposta::Nada => e.modal = Some(Modal::Paleta(lista)),
-        },
+        Modal::Paleta(mut lista) => {
+            let antes = lista.filtro.as_ref().map(|c| c.texto.clone()).unwrap_or_default();
+            match lista.tecla(tecla) {
+                Resposta::Escolhido(chave) => executar(e, &chave),
+                Resposta::Fechar => {}
+                Resposta::Nada => {
+                    // Com 3 letras, o conteúdo também (ciclo 379), como a
+                    // paleta da janela.
+                    let agora = lista.filtro.as_ref().map(|c| c.texto.trim().to_string()).unwrap_or_default();
+                    if agora != antes.trim() {
+                        lista.itens.retain(|it| !it.chave.starts_with("resultado:"));
+                        // Só a última vale: digitar rápido não enfileira buscas.
+                        e.busca_na_paleta = (agora.chars().count() >= 3).then_some(agora);
+                    }
+                    e.modal = Some(Modal::Paleta(lista));
+                }
+            }
+        }
         Modal::Escolha { titulo, mut lista, acao } => match lista.tecla(tecla) {
             Resposta::Escolhido(chave) => match acao {
                 AcaoDaEscolha::Personalizar => match chave.as_str() {
@@ -1435,4 +1454,20 @@ fn salvar_agente(e: &mut Estado, form: &crate::componentes::Formulario) -> bool 
     e.preferencias.agente = Some(a);
     e.pedidos.push(Pedido::GravarPreferencias);
     true
+}
+
+/// Os resultados no conteúdo chegaram pra barra aberta (ciclo 379): entram
+/// depois dos comandos e páginas, se o filtro ainda é aquele.
+pub fn resultados_na_paleta(e: &mut Estado, termo: &str, hits: &[anotadinho_core::embed::SearchHit]) {
+    let Some(Modal::Paleta(lista)) = e.modal.as_mut() else { return };
+    if lista.filtro.as_ref().map(|c| c.texto.trim()) != Some(termo) {
+        return;
+    }
+    lista.itens.retain(|it| !it.chave.starts_with("resultado:"));
+    for h in hits {
+        let titulo = e.paginas.iter().find(|p| p.path == h.path).map(|p| p.title.clone()).unwrap_or_else(|| h.path.clone());
+        let trecho: String = h.snippet.replace("**", "").split_whitespace().collect::<Vec<_>>().join(" ");
+        let origem = h.origem.as_ref().map(|o| format!("{o} · ")).unwrap_or_default();
+        lista.itens.push(Item::novo("⌕", titulo, format!("resultado:{termo}\u{0}{}", h.path)).com_detalhe(format!("{origem}{trecho}")));
+    }
 }
