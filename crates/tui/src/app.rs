@@ -10575,4 +10575,55 @@ mod testes {
             }]
         );
     }
+
+    // --- Ciclo 410: realce palavra a palavra -----------------------------------------
+
+    #[test]
+    fn o_diff_realca_so_a_palavra_que_mudou() {
+        use anotadinho_core::proposta::{Operacao, Proposta};
+        let mut e = especial_aberto("propostas");
+        let p = Proposta {
+            id: "p1".into(),
+            autor: "claude".into(),
+            quando: "2026-09-17 10:00".into(),
+            motivo: String::new(),
+            alvo: "pages/alfa.md".into(),
+            operacao: Operacao::Substituir,
+            conteudo: "entrega combinada para segunda\n".into(),
+        };
+        especiais::carregar(
+            &mut e,
+            especiais::Dados::Propostas(vec![especiais::PropostaNaTela {
+                proposta: p,
+                atual: "entrega combinada para sexta\n".into(),
+            }]),
+        );
+        e.pedidos.clear();
+        let mut term = Terminal::new(TestBackend::new(120, 30)).unwrap();
+        term.draw(|f| desenhar(f, &mut e)).unwrap();
+        let buf = term.backend().buffer().clone();
+        // Na linha que sai, "sexta" tem fundo diferente de "entrega".
+        let fundo_de = |texto: &str, palavra: &str| -> Option<ratatui::style::Color> {
+            for y in 0..buf.area.height {
+                let linha: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect();
+                if !linha.contains(texto) {
+                    continue;
+                }
+                // A linha tem moldura (│ ╭ …), que é multibyte: a coluna
+                // é o índice em CARACTERES, não em bytes.
+                let bytes = linha.find(palavra)?;
+                let coluna = linha[..bytes].chars().count();
+                return Some(buf[(coluna as u16, y)].style().bg?);
+            }
+            None
+        };
+        let comum = fundo_de("-entrega combinada", "entrega").expect("achou a linha que sai");
+        let mudou = fundo_de("-entrega combinada", "sexta").expect("achou a palavra que saiu");
+        assert_ne!(comum, mudou, "a palavra trocada tem que destacar do resto da linha");
+        let comum_b = fundo_de("+entrega combinada", "entrega").expect("achou a linha que entra");
+        let mudou_b = fundo_de("+entrega combinada", "segunda").expect("achou a palavra que entrou");
+        assert_ne!(comum_b, mudou_b);
+        // E os dois lados não se confundem: sai é sai, entra é entra.
+        assert_ne!(comum, comum_b);
+    }
 }

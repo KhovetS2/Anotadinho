@@ -963,6 +963,18 @@ fn cartao_da_proposta(
         // (ciclo 404).
         let trechos = anotadinho_core::diff::trechos(&linhas);
         let esta_fora = |k: usize| fora_da_aplicacao.contains(&format!("{}#{k}", proposta.id));
+        // O realce fino (ciclo 410): numa troca de linha, a PALAVRA que
+        // mudou fica mais forte que o resto. Sem isto, uma linha longa
+        // em que mudou uma data pinta inteira, e a pessoa relê tudo pra
+        // achar o quê.
+        let mut par_de: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+        for t in &trechos {
+            for (i, j) in anotadinho_core::diff::pares_do_trecho(&linhas, t) {
+                par_de.insert(i, j);
+                par_de.insert(j, i);
+            }
+        }
+        let forte = |base: Style, cor: &str| base.bg(misturar(tema.var(cor), tema.var("bg-surface"), 0.42)).add_modifier(Modifier::BOLD);
         for (i, l) in linhas.iter().enumerate() {
             let k = trechos.iter().position(|t| i >= t.inicio && i < t.fim);
             if let Some(k) = k.filter(|k| trechos[*k].inicio == i) {
@@ -989,11 +1001,34 @@ fn cartao_da_proposta(
                 LinhaDiff::Removida { .. } => ("-", sai),
                 LinhaDiff::Adicionada { .. } => ("+", entra),
             };
-            let conteudo: String = format!("{marca}{}", l.texto()).chars().take(dentro).collect();
-            let falta = dentro.saturating_sub(conteudo.chars().count());
-            let mut spans = vec![Span::styled(conteudo, estilo)];
+            // Os pedaços da linha, quando ela tem par parecido.
+            let pedacos = par_de.get(&i).filter(|_| l.mudou() && !dentro_de_fora).and_then(|&outra| {
+                let (a, b) = (linhas[i.min(outra)].texto(), linhas[i.max(outra)].texto());
+                anotadinho_core::diff::diff_palavras(a, b)
+                    .map(|(lado_a, lado_b)| if i < outra { lado_a } else { lado_b })
+            });
+            let mut spans = vec![Span::styled(marca.to_string(), estilo)];
+            let mut usado = 1;
+            match pedacos {
+                Some(pedacos) => {
+                    let realcado = forte(estilo, if matches!(l, LinhaDiff::Removida { .. }) { "error" } else { "success" });
+                    for pedaco in pedacos {
+                        let cabe: String = pedaco.texto.chars().take(dentro.saturating_sub(usado)).collect();
+                        if cabe.is_empty() {
+                            break;
+                        }
+                        usado += cabe.chars().count();
+                        spans.push(Span::styled(cabe, if pedaco.mudou { realcado } else { estilo }));
+                    }
+                }
+                None => {
+                    let cabe: String = l.texto().chars().take(dentro.saturating_sub(usado)).collect();
+                    usado += cabe.chars().count();
+                    spans.push(Span::styled(cabe, estilo));
+                }
+            }
             if l.mudou() && !dentro_de_fora {
-                spans.push(Span::styled(" ".repeat(falta), estilo));
+                spans.push(Span::styled(" ".repeat(dentro.saturating_sub(usado)), estilo));
             }
             miolo.push(Line::from(spans));
         }

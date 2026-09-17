@@ -254,3 +254,165 @@ mod tests {
         assert_eq!(aplicar_trechos(&d, &ts, &[false, false]), atual);
     }
 }
+
+// ---------------------------------------------------------------------
+// Realce palavra a palavra (ciclo 410)
+// ---------------------------------------------------------------------
+
+/// Um pedaço de linha no realce fino.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Pedaco {
+    pub texto: String,
+    /// `true` quando este pedaço é o que difere da outra linha.
+    pub mudou: bool,
+}
+
+/// Quão parecidas as linhas precisam ser pra valer o realce fino. Abaixo
+/// disso são linhas DIFERENTES, não uma linha editada: pintar palavra
+/// por palavra aí só produz confete.
+const SEMELHANCA_MINIMA: f32 = 0.34;
+
+/// Quebra a linha em palavras e separadores, mantendo tudo — juntar os
+/// pedaços de volta devolve a linha original.
+fn palavras(linha: &str) -> Vec<String> {
+    let mut fora: Vec<String> = Vec::new();
+    let mut atual = String::new();
+    let mut em_palavra = false;
+    for c in linha.chars() {
+        let palavra = c.is_alphanumeric() || c == '_';
+        if !atual.is_empty() && palavra != em_palavra {
+            fora.push(std::mem::take(&mut atual));
+        }
+        em_palavra = palavra;
+        atual.push(c);
+    }
+    if !atual.is_empty() {
+        fora.push(atual);
+    }
+    fora
+}
+
+/// Compara duas linhas palavra a palavra.
+///
+/// Devolve os pedaços de cada lado (o de cá e o de lá) com a marca de
+/// mudou, ou `None` quando as linhas são parecidas demais (iguais) ou
+/// diferentes demais pra o realce ajudar.
+pub fn diff_palavras(a: &str, b: &str) -> Option<(Vec<Pedaco>, Vec<Pedaco>)> {
+    if a == b {
+        return None;
+    }
+    let (pa, pb) = (palavras(a), palavras(b));
+    let (n, m) = (pa.len(), pb.len());
+    if n == 0 || m == 0 {
+        return None;
+    }
+    // LCS nas palavras, o mesmo método das linhas.
+    let mut tabela = vec![vec![0usize; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            tabela[i][j] = if pa[i] == pb[j] {
+                tabela[i + 1][j + 1] + 1
+            } else {
+                tabela[i + 1][j].max(tabela[i][j + 1])
+            };
+        }
+    }
+    // Só conta como semelhança o que não é espaço em branco: duas linhas
+    // que só compartilham a indentação não são a mesma linha editada.
+    let comuns = {
+        let (mut i, mut j, mut pesa) = (0, 0, 0usize);
+        while i < n && j < m {
+            if pa[i] == pb[j] {
+                if !pa[i].trim().is_empty() {
+                    pesa += pa[i].chars().count();
+                }
+                i += 1;
+                j += 1;
+            } else if tabela[i + 1][j] >= tabela[i][j + 1] {
+                i += 1;
+            } else {
+                j += 1;
+            }
+        }
+        pesa
+    };
+    let maior = a.trim().chars().count().max(b.trim().chars().count()).max(1);
+    if (comuns as f32) / (maior as f32) < SEMELHANCA_MINIMA {
+        return None;
+    }
+
+    let (mut lado_a, mut lado_b): (Vec<Pedaco>, Vec<Pedaco>) = (Vec::new(), Vec::new());
+    let junta = |lado: &mut Vec<Pedaco>, texto: &str, mudou: bool| {
+        match lado.last_mut() {
+            Some(p) if p.mudou == mudou => p.texto.push_str(texto),
+            _ => lado.push(Pedaco { texto: texto.to_string(), mudou }),
+        };
+    };
+    let (mut i, mut j) = (0, 0);
+    while i < n || j < m {
+        if i < n && j < m && pa[i] == pb[j] {
+            junta(&mut lado_a, &pa[i], false);
+            junta(&mut lado_b, &pb[j], false);
+            i += 1;
+            j += 1;
+        } else if j >= m || (i < n && tabela[i + 1][j] >= tabela[i][j + 1]) {
+            junta(&mut lado_a, &pa[i], true);
+            i += 1;
+        } else {
+            junta(&mut lado_b, &pb[j], true);
+            j += 1;
+        }
+    }
+    Some((lado_a, lado_b))
+}
+
+/// Os pares de linhas de um trecho (ciclo 410): a k-ésima removida com a
+/// k-ésima adicionada. É a leitura natural de "esta linha virou aquela",
+/// e é o que permite o realce fino.
+pub fn pares_do_trecho(diff: &[LinhaDiff], trecho: &Trecho) -> Vec<(usize, usize)> {
+    let saem: Vec<usize> = (trecho.inicio..trecho.fim)
+        .filter(|&i| matches!(diff.get(i), Some(LinhaDiff::Removida { .. })))
+        .collect();
+    let entram: Vec<usize> = (trecho.inicio..trecho.fim)
+        .filter(|&i| matches!(diff.get(i), Some(LinhaDiff::Adicionada { .. })))
+        .collect();
+    saem.into_iter().zip(entram).collect()
+}
+
+#[cfg(test)]
+mod testes_de_palavras {
+    use super::*;
+
+    #[test]
+    fn os_pedacos_remontam_a_linha_e_marcam_so_o_que_mudou() {
+        let (a, b) = diff_palavras("o prazo é sexta", "o prazo é segunda").expect("parecidas");
+        assert_eq!(a.iter().map(|p| p.texto.clone()).collect::<String>(), "o prazo é sexta");
+        assert_eq!(b.iter().map(|p| p.texto.clone()).collect::<String>(), "o prazo é segunda");
+        let mudou = |lado: &[Pedaco]| lado.iter().filter(|p| p.mudou).map(|p| p.texto.clone()).collect::<Vec<_>>();
+        assert_eq!(mudou(&a), ["sexta"]);
+        assert_eq!(mudou(&b), ["segunda"]);
+    }
+
+    #[test]
+    fn linha_igual_ou_diferente_demais_nao_ganha_realce() {
+        assert_eq!(diff_palavras("igual", "igual"), None);
+        assert_eq!(diff_palavras("", "outra"), None);
+        // Nada em comum: pintar palavra por palavra aqui atrapalha.
+        assert_eq!(diff_palavras("- [ ] revisar o PR", "## Conclusões da semana"), None);
+        // Só a indentação em comum também não conta.
+        assert_eq!(diff_palavras("    alfa beta", "    gama delta"), None);
+    }
+
+    #[test]
+    fn os_pares_do_trecho_casam_removida_com_adicionada() {
+        let diff = diff_linhas("a\nb\nc\n", "a\nB\nC\nD\n");
+        let t = &trechos(&diff)[0];
+        let pares = pares_do_trecho(&diff, t);
+        assert_eq!(pares.len(), 2, "duas saem, três entram: sobra uma sem par");
+        for (i, j) in pares {
+            assert!(matches!(diff[i], LinhaDiff::Removida { .. }));
+            assert!(matches!(diff[j], LinhaDiff::Adicionada { .. }));
+        }
+    }
+}
+
