@@ -139,6 +139,11 @@ pub struct Estado {
     /// Pedido pra trocar de vault (ciclo 373): a pasta e se acabou de ser
     /// preparada. Quem troca é o `main`.
     pub trocar_de_vault: Option<(String, bool)>,
+    /// Edição ainda não gravada, com o salvamento automático desligado
+    /// (ciclo 375): a página e o texto.
+    pub nao_salvo: Option<(String, String)>,
+    /// `Ctrl+S` pediu pra gravar agora.
+    pub salvar_agora: bool,
     /// A página de início deste vault (ciclo 362): abre primeiro, e a aba
     /// dela fica fixa na frente.
     pub inicio: Option<String>,
@@ -233,6 +238,8 @@ impl Estado {
             resultados_da_busca: None,
             alvo_de_busca: None,
             trocar_de_vault: None,
+            nao_salvo: None,
+            salvar_agora: false,
             inicio: None,
             imagem_pendente: None,
             celula_pendente: None,
@@ -847,6 +854,11 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
     // da janela, com `Alt` porque o terminal come `Ctrl+número`.
     if let Some(destino) = tecla_das_abas(e, tecla) {
         return destino;
+    }
+    // `Ctrl+S` salva (ciclo 375), como na janela.
+    if tecla == "Ctrl+s" {
+        e.salvar_agora = true;
+        return None;
     }
     // A barra de comandos: `:` (o modo de comando do vim) ou `Ctrl+K` (o
     // atalho da janela); `?` mostra os atalhos.
@@ -1774,7 +1786,8 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     let titulo = e
         .paginas
         .get(e.pagina)
-        .map(|p| p.title.clone())
+        // `●` é edição ainda não salva (ciclo 375).
+        .map(|p| if e.nao_salvo.as_ref().is_some_and(|(c, _)| *c == p.path) { format!("{} ●", p.title) } else { p.title.clone() })
         .unwrap_or_default();
     // O que está digitado pela metade aparece no rodapé, como o "2d3"
     // do canto do vim. Sem isso, teclar `1` `0` e não ver nada faz a
@@ -9454,5 +9467,23 @@ mod testes {
             anotadinho_core::links::links_externos("a [b](c) ![d](e)"),
             [("b".to_string(), "c".to_string()), ("d".to_string(), "e".to_string())]
         );
+    }
+
+    // --- Ciclo 375: salvamento automático ---------------------------------------
+
+    #[test]
+    fn salvamento_automatico_desligado_marca_a_pagina_e_ctrl_s_pede_gravar() {
+        let mut e = markdown_editavel();
+        modais::executar(&mut e, "salvamento-automatico");
+        assert!(!e.preferencias.salvar_automatico);
+        assert!(e.aviso.as_deref().unwrap().contains("Ctrl+S"));
+        e.nao_salvo = Some(("pages/alfa.md".into(), "# x\n".into()));
+        assert!(desenho(&mut e, 100, 10)[0].contains("alfa ●"));
+        tecla(&mut e, "Ctrl+s");
+        assert!(e.salvar_agora);
+        // Religar pede pra gravar o pendente.
+        e.salvar_agora = false;
+        modais::executar(&mut e, "salvamento-automatico");
+        assert!(e.preferencias.salvar_automatico && e.salvar_agora);
     }
 }

@@ -206,6 +206,9 @@ pub struct Preferencias {
     /// O último vault aberto (ciclo 372): sem `--vault`, é ele.
     #[serde(default)]
     pub ultimo_vault: Option<String>,
+    /// Grava a cada edição (ciclo 375); desligado, só no `Ctrl+S`.
+    #[serde(default = "verdadeiro")]
+    pub salvar_automatico: bool,
 }
 
 fn botoes_padrao() -> String {
@@ -221,7 +224,7 @@ fn verdadeiro() -> bool {
 
 impl Default for Preferencias {
     fn default() -> Self {
-        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default(), ultimo_vault: None }
+        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default(), ultimo_vault: None, salvar_automatico: true }
     }
 }
 
@@ -453,6 +456,8 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Estilo dos botões…", "botoes"),
     ("Remapear teclas…", "remapear-teclas"),
     ("Alternar sidebar", "alternar-sidebar"),
+    ("Alternar salvamento automático", "salvamento-automatico"),
+    ("Salvar (Ctrl+S)", "salvar"),
     ("Ir pra Hoje (journal)", "hoje"),
     ("Personalizar…", "personalizar"),
     ("Trocar agente…", "trocar-agente"),
@@ -502,6 +507,7 @@ fn menu_de_personalizacao(e: &Estado) -> Lista {
         Item::novo("●", "Cor de destaque", "destaque").com_detalhe(if e.preferencias.destaque.is_empty() { "do tema".to_string() } else { e.preferencias.destaque.clone() }),
         Item::novo("▢", "Botões", "botoes").com_detalhe(e.preferencias.botoes.clone()),
         Item::novo("▤", "Sidebar", "sidebar").com_detalhe(if e.preferencias.sidebar { "visível" } else { "escondida" }),
+        Item::novo("⤓", "Salvamento automático", "salvamento").com_detalhe(if e.preferencias.salvar_automatico { "ligado" } else { "desligado" }),
         Item::novo("ϟ", "Agente das conversas", "agente").com_detalhe(agente),
         Item::novo("?", "Ver atalhos", "atalhos"),
     ])
@@ -618,6 +624,16 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "aba-anterior" => super::comando_de_aba(e, "Alt+h"),
         "aba-fechar" => super::comando_de_aba(e, "Alt+q"),
         "git" => e.pedidos.push(Pedido::StatusDoGit),
+        "salvar" => e.salvar_agora = true,
+        "salvamento-automatico" => {
+            e.preferencias.salvar_automatico = !e.preferencias.salvar_automatico;
+            e.aviso = Some(if e.preferencias.salvar_automatico { "salvamento automático ligado" } else { "salvamento automático desligado: Ctrl+S salva" }.into());
+            // Religar grava o que estava pendente.
+            if e.preferencias.salvar_automatico {
+                e.salvar_agora = true;
+            }
+            e.pedidos.push(Pedido::GravarPreferencias);
+        }
         "abrir-vault" | "criar-vault" => {
             let criar = chave == "criar-vault";
             e.modal = Some(Modal::Entrada {
@@ -714,6 +730,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         });
                     }
                     "agente" => e.modal = Some(escolha_de_agente(e)),
+                    "salvamento" => executar(e, "salvamento-automatico"),
                     "atalhos" => e.modal = Some(Modal::Atalhos(0)),
                     _ => {}
                 },

@@ -168,6 +168,7 @@ fn gravar_preferencias(p: &Preferencias) -> Result<(), String> {
 /// Abre uma página pelo caminho: a lista aponta pra ela e o texto vem do
 /// disco.
 fn abrir(estado: &mut Estado, vault: &str, caminho: &str) {
+    salvar_pendente(estado, vault);
     if let Some(i) = estado.paginas.iter().position(|p| p.path == caminho) {
         estado.pagina = i;
     }
@@ -344,7 +345,7 @@ fn vigiar_disco(estado: &mut Estado, vault: &str, tambem_a_lista: bool) {
     }
     let Some(caminho) = estado.paginas.get(estado.pagina).map(|p| p.path.clone()) else { return };
     // Com gravação pendente, quem manda é ela (e a trava de versão).
-    if estado.gravacao.is_some() || estado.versao.is_none() {
+    if estado.gravacao.is_some() || estado.nao_salvo.is_some() || estado.versao.is_none() {
         return;
     }
     if let Ok((texto, versao)) = ler(vault, &caminho) {
@@ -929,7 +930,11 @@ fn laco<B: ratatui::backend::Backend>(
             return Ok(None);
         }
         let Some(nome) = nome_da_tecla(&k) else { continue };
-        if let Some(caminho) = app::tecla(estado, &nome) {
+        let destino = app::tecla(estado, &nome);
+        if destino.is_some() || estado.sair || estado.trocar_de_vault.is_some() {
+            salvar_pendente(estado, vault);
+        }
+        if let Some(caminho) = destino {
             // Página que não abre não derruba a sessão: a pessoa
             // continua no que estava.
             if let Ok((texto, versao)) = ler(vault, &caminho) {
@@ -941,9 +946,21 @@ fn laco<B: ratatui::backend::Backend>(
         // Uma edição deixou texto novo: grava com a trava de versão. Se
         // o arquivo mudou por fora, a gravação é recusada, a página volta
         // a ser a do disco e o rodapé diz por quê (ciclo 318).
+        // Sem salvamento automático (ciclo 375), a edição fica pendente até
+        // o Ctrl+S — ou até sair da página, do vault ou da TUI.
         if let Some(conteudo) = estado.gravacao.take() {
             let caminho = estado.paginas.get(estado.pagina).map(|p| p.path.clone());
+            if !estado.preferencias.salvar_automatico && !estado.salvar_agora {
+                if let Some(c) = caminho {
+                    estado.nao_salvo = Some((c, conteudo));
+                }
+                continue;
+            }
+            if std::mem::take(&mut estado.salvar_agora) {
+                estado.aviso = Some("salvo".into());
+            }
             if let Some(caminho) = caminho {
+                estado.nao_salvo = None;
                 let conteudo_tentado = conteudo.clone();
                 match handle_write_page_checked(vault.to_string(), caminho.clone(), conteudo, estado.versao.clone()) {
                     Ok(v) => estado.versao = Some(v),
@@ -966,6 +983,42 @@ fn laco<B: ratatui::backend::Backend>(
                         Err(_) => estado.aviso = Some(format!("não gravou: {motivo}")),
                     },
                 }
+            }
+        }
+        if std::mem::take(&mut estado.salvar_agora) {
+            match estado.nao_salvo.is_some() {
+                true => {
+                    salvar_pendente(estado, vault);
+                    estado.aviso.get_or_insert_with(|| "salvo".into());
+                }
+                false => estado.aviso = Some("nada pra salvar".into()),
+            }
+        }
+    }
+}
+
+/// Grava a edição pendente (salvamento automático desligado, ciclo 375).
+fn salvar_pendente(estado: &mut Estado, vault: &str) {
+    if let Some((caminho, conteudo)) = estado.nao_salvo.take() {
+        let aberta = estado.paginas.get(estado.pagina).is_some_and(|p| p.path == caminho);
+        match handle_write_page_checked(vault.to_string(), caminho.clone(), conteudo.clone(), if aberta { estado.versao.clone() } else { None }) {
+            Ok(v) => {
+                if aberta {
+                    estado.versao = Some(v);
+                }
+            }
+            Err(motivo) => {
+                // Mudou por fora: a pessoa decide, como na gravação de sempre.
+                let disco = ler(vault, &caminho).map(|(t, _)| t).unwrap_or_default();
+                estado.modal = Some(app::Modal::Conflito(app::modais::Conflito {
+                    path: caminho,
+                    meu: conteudo,
+                    disco,
+                    opcao: 0,
+                    diff: false,
+                    rolagem: 0,
+                }));
+                estado.aviso = Some(format!("não gravou: {motivo}"));
             }
         }
     }

@@ -54,7 +54,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Painel de propriedades (frontmatter) | ✅ | 344 — "Propriedades da página…" |
 | Imagem colada/arrastada, Mermaid, PDF | — | terminal |
 | Desfazer/refazer | ✅ | 322 |
-| Salvar (Ctrl+S) | ✅ | grava a cada edição |
+| Salvar (Ctrl+S) e salvamento automático liga/desliga | ✅ | 375 — desligado, a página ganha ● e grava no Ctrl+S (ou ao sair dela) |
 | Definir como início (abre primeiro, aba fixa) | ✅ | 362 |
 | Exportar HTML da página | ✅ | 362 — grava `<página>.html` na pasta atual |
 
