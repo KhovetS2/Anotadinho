@@ -51,6 +51,13 @@ struct Cli {
 /// mudança.
 fn nome_da_tecla(k: &KeyEvent) -> Option<String> {
     // `Ctrl+R` refaz, `Ctrl+A`/`Ctrl+X` somam (ciclo 322).
+    // `Alt+1`…`Alt+9`, `Alt+H/L/Q`: as abas (ciclo 354).
+    if k.modifiers.contains(KeyModifiers::ALT) {
+        return match k.code {
+            KeyCode::Char(c) => Some(format!("Alt+{}", c.to_ascii_lowercase())),
+            _ => None,
+        };
+    }
     if k.modifiers.contains(KeyModifiers::CONTROL) {
         return match k.code {
             KeyCode::Char(c) => Some(format!("Ctrl+{}", c.to_ascii_lowercase())),

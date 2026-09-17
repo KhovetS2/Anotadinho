@@ -6,7 +6,10 @@
 │                                 │  : ou Ctrl+K     barra de comandos                                   │antiga.                         ▌│
 │                                 │  ?               estes atalhos                                       │                                ▌│
 │                                 │  Tab             trocar entre páginas e conteúdo                     │                                ▌│
-│                                 │  /               filtrar                                             │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
+│                                 │  Alt+1…9         ir pra aba                                          │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
+│                                 │  Ctrl+W Alt+H/L  próxima / anterior aba                              │                                 │
+│                                 │  Alt+Q           fechar a aba                                        │                                 │
+│                                 │  /               filtrar                                             │                                 │
 │                                 │  q               sair                                                │                                 │
 │                                 │                                                                      │                                 │
 │                                 │Navegar                                                               │                                 │
@@ -27,9 +30,6 @@
 │                                 │  J K             descer / subir na ordem                             │                                 │
 │                                 │  Ctrl+A Ctrl+X   aumentar / diminuir (duração, nível, opção)         │                                 │
 │                                 │  ~               alternar (caixa, destaque, tipo)                    │                                 │
-│                                 │  =               configurar (botão, consulta)                        │                                 │
-│                                 │  u Ctrl+R        desfazer / refazer                                  │                                 │
-│                                 │  Esc             confirmar a inserção                                │                                 │
 │                                 ╰ j k rolar · Esc ─────────────────────────────────────────────────────╯                                 │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -47,7 +47,10 @@ adddddddddddddddddddddddddddddddddfiiiiijjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfnnnnnnnkkkkkkkkkkkkkkkkkkkkkkkkkhb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkhb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjfkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkhb
-adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfiiiiiiijjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
@@ -68,9 +71,6 @@ adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjj
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
-adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
-adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
-adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfmmmmmmmmmmmmmmmmmffffffffffffffffffffffffffffffffffffffffffffffffffffffdddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb

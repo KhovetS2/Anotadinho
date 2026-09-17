@@ -15,7 +15,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Mover página pra pasta | ✅ | 345 — `m` na sidebar |
 | Excluir página | ✅ | 339, 345 — `dd` na sidebar |
 | Exportar pasta / vault | ✅ | 345 — grava `anotadinho-<pasta>.md` na pasta atual |
-| Abas de documentos (Ctrl+1..9) | ❌ | |
+| Abas de documentos (Ctrl+1..9) | ✅ | 354 — `Alt+1…9`, `Ctrl+W`/`Alt+H/L`, `Alt+Q` fecha; barra na borda de cima |
 | Paleta de comandos (Ctrl+K) | ✅ | 339 |
 | Busca no CONTEÚDO na paleta (FTS) | ✅ | 342 — `Ctrl+F` (ou Enter sem resultado) |
 | Atalhos (`?`) | ✅ | 339 |

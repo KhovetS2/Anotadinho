@@ -126,6 +126,8 @@ pub struct Estado {
     pub wikilink_sel: usize,
     /// O `[[` cuja lista a pessoa fechou com `Esc`.
     pub wikilink_dispensado: Option<usize>,
+    /// As abas abertas, pelo caminho (ciclo 354), na ordem em que abriram.
+    pub abas: Vec<String>,
     /// O modal aberto — barra de comandos, escolha, confirmação (ciclo 339).
     pub modal: Option<Modal>,
     /// O que só o `main` pode fazer (abrir, criar, apagar, gravar
@@ -200,6 +202,7 @@ impl Estado {
             bloco_a_inserir: None,
             wikilink_sel: 0,
             wikilink_dispensado: None,
+            abas: Vec::new(),
             pedidos: Vec::new(),
             preferencias: Preferencias::default(),
             agora: None,
@@ -220,6 +223,11 @@ impl Estado {
     pub fn com_texto(mut self, texto: &str, versao: Option<String>) -> Self {
         self.texto_da_pagina = Some(texto.to_string());
         self.versao = versao;
+        if let Some(p) = self.paginas.get(self.pagina).map(|p| p.path.clone()) {
+            if !self.abas.contains(&p) {
+                self.abas.push(p);
+            }
+        }
         self
     }
 
@@ -229,6 +237,10 @@ impl Estado {
         // Conversa abre como conversa (ciclo 340); o que é da tela (o
         // rascunho, o agente rodando) atravessa a releitura.
         let (path, titulo) = self.paginas.get(self.pagina).map(|p| (p.path.clone(), p.title.clone())).unwrap_or_default();
+        // Toda página aberta ganha aba (ciclo 354), como na janela.
+        if !path.is_empty() && !self.abas.contains(&path) {
+            self.abas.push(path.clone());
+        }
         let velha = self.conversa.take();
         self.conversa = conversa::TelaDeConversa::do_arquivo(&path, &titulo, texto).map(|mut nova| {
             if let Some(v) = &velha {
@@ -455,6 +467,8 @@ impl Estado {
         // lista não pode trocar a aberta de lugar (ciclo 351).
         let atual = self.paginas.get(self.pagina).map(|p| p.path.clone());
         self.arvore_sidebar = sidebar::com_pastas(sidebar::arvore(&paginas), &self.pastas_do_vault);
+        // Página que sumiu (apagada, movida) perde a aba.
+        self.abas.retain(|a| paginas.iter().any(|p| p.path == *a));
         self.paginas = paginas;
         self.pagina = atual
             .and_then(|a| self.paginas.iter().position(|p| p.path == a))
@@ -710,6 +724,12 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
         conversa::tecla(e, tecla);
         return None;
     }
+    // As abas (ciclo 354): `Alt+1`…`Alt+9` vão direto, `Ctrl+W` (ou
+    // `Alt+L`) passa pra próxima, `Alt+H` volta, `Alt+Q` fecha — as teclas
+    // da janela, com `Alt` porque o terminal come `Ctrl+número`.
+    if let Some(destino) = tecla_das_abas(e, tecla) {
+        return destino;
+    }
     // A barra de comandos: `:` (o modo de comando do vim) ou `Ctrl+K` (o
     // atalho da janela); `?` mostra os atalhos.
     if tecla == "Ctrl+k" || (matches!(tecla, ":" | "?") && !e.vim.em_curso()) {
@@ -778,6 +798,92 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
             None
         }
     }
+}
+
+/// Uma tecla de aba. `None` é "não é de aba"; `Some(destino)` é o que
+/// `tecla` devolve (a página a carregar, se mudou).
+fn tecla_das_abas(e: &mut Estado, tecla: &str) -> Option<Option<String>> {
+    if e.vim.em_curso() {
+        return None;
+    }
+    let atual = e.paginas.get(e.pagina).map(|p| p.path.clone()).unwrap_or_default();
+    let pos = e.abas.iter().position(|a| *a == atual);
+    let n = e.abas.len();
+    let alvo = match tecla {
+        "Ctrl+w" | "Alt+l" if n > 0 => pos.map_or(0, |p| (p + 1) % n),
+        "Alt+h" if n > 0 => pos.map_or(0, |p| (p + n - 1) % n),
+        "Alt+q" => return Some(fechar_aba(e)),
+        _ => match tecla.strip_prefix("Alt+").and_then(|d| d.parse::<usize>().ok()) {
+            Some(d) if (1..=9).contains(&d) => {
+                if d > n {
+                    e.aviso = Some(format!("não há aba {d}"));
+                    return Some(None);
+                }
+                d - 1
+            }
+            _ => return None,
+        },
+    };
+    Some(ir_pra_aba(e, alvo))
+}
+
+/// Os comandos de aba da barra (ciclo 354): pedem pra abrir a página.
+pub(super) fn comando_de_aba(e: &mut Estado, tecla: &str) {
+    if let Some(Some(path)) = tecla_das_abas(e, tecla) {
+        e.pedidos.push(Pedido::AbrirPagina(path));
+    }
+}
+
+fn ir_pra_aba(e: &mut Estado, i: usize) -> Option<String> {
+    let path = e.abas.get(i)?.clone();
+    let atual = e.paginas.get(e.pagina).map(|p| p.path.clone());
+    if atual.as_deref() == Some(path.as_str()) {
+        return None;
+    }
+    e.pagina = e.paginas.iter().position(|p| p.path == path)?;
+    Some(path)
+}
+
+/// Fecha a aba da página aberta e abre a vizinha (a da direita, ou a da
+/// esquerda se era a última). A última aba não fecha: sempre há uma
+/// página na tela.
+fn fechar_aba(e: &mut Estado) -> Option<String> {
+    let atual = e.paginas.get(e.pagina).map(|p| p.path.clone())?;
+    let pos = e.abas.iter().position(|a| *a == atual)?;
+    if e.abas.len() <= 1 {
+        e.aviso = Some("é a única aba".into());
+        return None;
+    }
+    e.abas.remove(pos);
+    ir_pra_aba(e, pos.min(e.abas.len() - 1))
+}
+
+/// A barra de abas, na borda de cima do conteúdo (ciclo 354): o número,
+/// o título e a aberta acesa, como a `TabBar` da janela. Com uma aba só,
+/// a borda mostra o título como sempre.
+fn desenhar_abas(f: &mut Frame, e: &Estado, area: ratatui::layout::Rect) {
+    if e.abas.len() < 2 || area.width < 20 {
+        return;
+    }
+    let atual = e.paginas.get(e.pagina).map(|p| p.path.as_str()).unwrap_or("");
+    let mut spans = Vec::new();
+    for (i, path) in e.abas.iter().enumerate() {
+        let titulo = e.paginas.iter().find(|p| p.path == *path).map(|p| p.title.clone()).unwrap_or_else(|| path.clone());
+        let curto: String = if titulo.chars().count() > 22 { format!("{}…", titulo.chars().take(21).collect::<String>()) } else { titulo };
+        let (num, nome) = if path == atual {
+            (e.tema.estilo(Realce::Cursor).add_modifier(Modifier::BOLD), e.tema.estilo(Realce::Cursor))
+        } else {
+            (Style::default().fg(e.tema.var("text-muted")).bg(e.tema.var("bg-surface")), Style::default().fg(e.tema.var("text-primary")).bg(e.tema.var("bg-surface")))
+        };
+        if i < 9 {
+            spans.push(Span::styled(format!(" {}", i + 1), num));
+        }
+        spans.push(Span::styled(format!(" {curto} "), nome));
+        spans.push(Span::raw(" "));
+    }
+    let barra = ratatui::layout::Rect { x: area.x + 1, y: area.y, width: area.width.saturating_sub(2), height: 1 };
+    f.render_widget(ratatui::widgets::Clear, barra);
+    f.render_widget(Paragraph::new(Line::from(spans)).style(e.tema.estilo(Realce::Fundo)), barra);
 }
 
 /// A página pra onde a parte sob o cursor aponta, se aponta.
@@ -1053,11 +1159,13 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     // Uma conversa tem tela própria (ciclo 340).
     if e.conversa.is_some() {
         conversa::desenhar(f, e, colunas[1]);
+        desenhar_abas(f, e, colunas[1]);
         modais::desenhar(f, e);
         return;
     }
     if e.especial.is_some() {
         especiais::desenhar(f, e, colunas[1]);
+        desenhar_abas(f, e, colunas[1]);
         modais::desenhar(f, e);
         return;
     }
@@ -1538,6 +1646,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         );
     }
     f.render_widget(Paragraph::new(visiveis).block(bloco), colunas[1]);
+    desenhar_abas(f, e, colunas[1]);
     wikilink::desenhar(f, e, colunas[1]);
     // Os modais por cima de tudo (ciclo 339).
     modais::desenhar(f, e);
@@ -8681,5 +8790,45 @@ mod testes {
         let mut e = pagina_com("---\ntitle: Agenda\ntype: calendar\n---\n\n- \n");
         assert!(e.texto_da_pagina.is_none());
         assert!(matches!(e.arvore.filhos.first().map(|u| &u.tipo), Some(Tipo::Embed(n)) if n == "calendar"));
+    }
+
+    // --- Ciclo 354: abas ----------------------------------------------------
+
+    #[test]
+    fn abas_abrem_com_as_paginas_e_alt_numero_troca() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n")).com_texto("# a\n", None);
+        assert_eq!(e.abas, ["pages/alfa.md"]);
+        e.pagina = 2;
+        e.abrir_texto("# gama\n", None);
+        e.pagina = 1;
+        e.abrir_texto("# beta\n", None);
+        assert_eq!(e.abas, ["pages/alfa.md", "pages/gama.md", "pages/beta.md"]);
+        let tela = desenho(&mut e, 120, 10).join("\n");
+        assert!(tela.contains("1 alfa") && tela.contains("2 gama") && tela.contains("3 beta"), "{tela}");
+        assert_eq!(tecla(&mut e, "Alt+1"), Some("pages/alfa.md".into()));
+        assert_eq!(e.pagina, 0);
+        assert_eq!(tecla(&mut e, "Ctrl+w"), Some("pages/gama.md".into()));
+        assert_eq!(tecla(&mut e, "Alt+h"), Some("pages/alfa.md".into()));
+        assert_eq!(tecla(&mut e, "Alt+h"), Some("pages/beta.md".into()), "volta dá a volta");
+        assert_eq!(tecla(&mut e, "Alt+9"), None);
+        assert!(e.aviso.as_deref().unwrap().contains("não há aba 9"));
+        // Fechar a aba abre a vizinha; a última não fecha.
+        assert_eq!(tecla(&mut e, "Alt+q"), Some("pages/gama.md".into()), "beta era a última: abre a da esquerda");
+        assert_eq!(e.abas, ["pages/alfa.md", "pages/gama.md"]);
+        tecla(&mut e, "Alt+q");
+        assert_eq!(tecla(&mut e, "Alt+q"), None);
+        assert_eq!(e.abas.len(), 1);
+        // Com uma aba só, a borda volta ao título.
+        assert!(!desenho(&mut e, 120, 10).join("\n").contains("1 alfa"));
+    }
+
+    #[test]
+    fn pagina_apagada_perde_a_aba() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n")).com_texto("# a\n", None);
+        e.pagina = 1;
+        e.abrir_texto("# beta\n", None);
+        let sem_beta: Vec<PageMeta> = paginas().into_iter().filter(|p| p.path != "pages/beta.md").collect();
+        e.atualizar_paginas(sem_beta);
+        assert_eq!(e.abas, ["pages/alfa.md"]);
     }
 }
