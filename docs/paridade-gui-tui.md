@@ -84,4 +84,4 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Tema | ✅ | 339 |
 | Cor de destaque, botões | ✅ | 358 — "Cor de destaque…" e "Estilo dos botões…" (também em Personalizar), gravados |
 | Sidebar escondível | ✅ | 339 |
-| Remapear atalhos globais e do vim | ❌ | |
+| Remapear atalhos globais e do vim | ✅ | 359 — "Remapear teclas…": ações do vim de uma tecla e comandos globais, com checagem de repetição |

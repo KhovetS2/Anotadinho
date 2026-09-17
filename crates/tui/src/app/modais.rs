@@ -164,6 +164,12 @@ pub struct Preferencias {
     /// O estilo dos botões.
     #[serde(default = "botoes_padrao")]
     pub botoes: String,
+    /// As teclas do vim trocadas (ciclo 359): ação → tecla.
+    #[serde(default)]
+    pub teclas_vim: std::collections::BTreeMap<String, String>,
+    /// As teclas dos comandos globais: comando → tecla.
+    #[serde(default)]
+    pub teclas_globais: std::collections::BTreeMap<String, String>,
 }
 
 fn botoes_padrao() -> String {
@@ -179,7 +185,7 @@ fn verdadeiro() -> bool {
 
 impl Default for Preferencias {
     fn default() -> Self {
-        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao() }
+        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default() }
     }
 }
 
@@ -268,6 +274,8 @@ pub enum AlvoDoDetalhe {
     },
     /// O agente das conversas (ciclo 350).
     Agente,
+    /// O remapeamento de teclas (ciclo 359).
+    Teclas,
 }
 
 /// O seletor de prompt padrão: a lista e os campos das variáveis.
@@ -376,6 +384,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Escolher tema…", "escolher-tema"),
     ("Cor de destaque…", "destaque"),
     ("Estilo dos botões…", "botoes"),
+    ("Remapear teclas…", "remapear-teclas"),
     ("Alternar sidebar", "alternar-sidebar"),
     ("Ir pra Hoje (journal)", "hoje"),
     ("Personalizar…", "personalizar"),
@@ -524,6 +533,7 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "escolher-tema" => e.modal = Some(escolha_de_tema(e)),
         "destaque" => e.modal = Some(escolha_de_destaque(e)),
         "botoes" => e.modal = Some(escolha_de_botoes(e)),
+        "remapear-teclas" => super::teclas::abrir(e),
         "alternar-sidebar" => {
             e.preferencias.sidebar = !e.preferencias.sidebar;
             if !e.preferencias.sidebar {
@@ -759,6 +769,16 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                 }
                 R::Mudou if alvo == AlvoDoDetalhe::Agente => {}
+                R::Botao("salvar") if alvo == AlvoDoDetalhe::Teclas => {
+                    if super::teclas::salvar(e, &form) {
+                        return;
+                    }
+                }
+                R::Botao("padrao") if alvo == AlvoDoDetalhe::Teclas => {
+                    super::teclas::padrao(e);
+                    return;
+                }
+                R::Mudou if alvo == AlvoDoDetalhe::Teclas => {}
                 R::Botao("excluir") => {
                     super::edicao::excluir_do_detalhe(e, &alvo);
                     return;

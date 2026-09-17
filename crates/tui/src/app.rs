@@ -21,6 +21,7 @@ pub mod edicao;
 pub mod markdown;
 mod wikilink;
 mod formatar;
+pub mod teclas;
 pub mod modais;
 pub use edicao::{AcaoDaPergunta, Pergunta, Registro};
 pub use modais::{Modal, Pedido, Preferencias};
@@ -739,6 +740,24 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
         conversa::tecla(e, tecla);
         return None;
     }
+    // As teclas remapeadas (ciclo 359) valem daqui pra baixo: o que vem
+    // antes é onde se digita texto.
+    let traduzida;
+    let tecla = match teclas::traduzir(e, tecla) {
+        teclas::Remapeada::Traduzida(t) => {
+            traduzida = t;
+            traduzida.as_str()
+        }
+        teclas::Remapeada::Comando("paleta") => {
+            modais::abrir_paleta(e);
+            return None;
+        }
+        teclas::Remapeada::Comando(c) => {
+            modais::executar(e, c);
+            return None;
+        }
+        teclas::Remapeada::Nada => return None,
+    };
     // As abas (ciclo 354): `Alt+1`…`Alt+9` vão direto, `Ctrl+W` (ou
     // `Alt+L`) passa pra próxima, `Alt+H` volta, `Alt+Q` fecha — as teclas
     // da janela, com `Alt` porque o terminal come `Ctrl+número`.
@@ -8974,5 +8993,52 @@ mod testes {
         assert_eq!(e.preferencias.botoes, "reto");
         let tela = desenho(&mut e, 100, 20).join("\n");
         assert!(tela.contains("┌") && tela.contains("Abrir"), "{tela}");
+    }
+
+    // --- Ciclo 359: remapear teclas -------------------------------------------
+
+    #[test]
+    fn tecla_remapeada_faz_a_acao_e_a_antiga_deixa_de_fazer() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![0];
+        e.preferencias.teclas_vim.insert("down".into(), "n".into());
+        e.preferencias.teclas_globais.insert("alternar-tema".into(), "Ctrl+t".into());
+        tecla(&mut e, "n");
+        assert_eq!(e.cursor, vec![1], "n desce");
+        tecla(&mut e, "j");
+        assert_eq!(e.cursor, vec![1], "j não desce mais");
+        let tema = e.preferencias.tema.clone();
+        tecla(&mut e, "Ctrl+t");
+        assert_ne!(e.preferencias.tema, tema, "Ctrl+T alternou o tema");
+        // Inserindo, n é texto.
+        tecla(&mut e, "A");
+        tecla(&mut e, "n");
+        assert!(e.pergunta.as_ref().unwrap().texto.ends_with('n'));
+    }
+
+    #[test]
+    fn o_formulario_de_teclas_valida_repeticao_e_grava() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::executar(&mut e, "remapear-teclas");
+        let tela = desenho(&mut e, 100, 40).join("\n");
+        assert!(tela.contains("Remapear teclas") && tela.contains("Vim · Descer"), "{tela}");
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        let i = form.campos.iter().position(|c| c.chave == "down").unwrap();
+        form.campos[i].valor = crate::componentes::Valor::Texto("k".into());
+        let Some(Modal::Detalhe { form, .. }) = e.modal.clone() else { panic!() };
+        let mut e2 = Estado::novo(paginas(), analisar("# a\n"));
+        assert!(!teclas::salvar(&mut e2, &form));
+        assert!(e2.aviso.as_deref().unwrap().contains("\"k\""), "{:?}", e2.aviso);
+        let mut form = form;
+        let i = form.campos.iter().position(|c| c.chave == "down").unwrap();
+        form.campos[i].valor = crate::componentes::Valor::Texto("n".into());
+        let g = form.campos.iter().position(|c| c.chave == "hoje").unwrap();
+        form.campos[g].valor = crate::componentes::Valor::Texto("Ctrl+d".into());
+        assert!(teclas::salvar(&mut e2, &form));
+        assert_eq!(e2.preferencias.teclas_vim.get("down").map(String::as_str), Some("n"));
+        assert_eq!(e2.preferencias.teclas_globais.get("hoje").map(String::as_str), Some("Ctrl+d"));
+        assert_eq!(e2.preferencias.teclas_vim.len(), 1, "só o que mudou é gravado");
+        tecla(&mut e2, "Ctrl+d");
+        assert!(e2.pedidos.contains(&Pedido::AbrirHoje));
     }
 }
