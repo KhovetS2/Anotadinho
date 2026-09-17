@@ -91,6 +91,10 @@ pub enum Pedido {
     ListarExecucoes,
     /// Ver o que está rodando e o que espera na fila (ciclo 408).
     VerAgentes,
+    /// Pôr no campo o resumo das decisões desde este instante (421).
+    ContarDecisoes {
+        desde: String,
+    },
     /// Medir o contexto da conversa sem abrir a prévia (ciclo 417).
     PesarContexto(String),
     /// Montar o prompt sem enviar, pra ver o que vai (ciclo 417).

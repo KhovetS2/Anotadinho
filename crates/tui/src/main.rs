@@ -1244,6 +1244,19 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                 // página transcluída que transclui outra já vem inteira.
                 // A página de contexto (ciclo 416): os anexos viram
                 // transclusões numa página só, e ela vira O anexo.
+                Pedido::ContarDecisoes { desde } => {
+                    match anotadinho_ipc::handle_listar_decisoes(vault.to_string()) {
+                        Ok(decisoes) => {
+                            let texto = anotadinho_core::decisao::resumo_para_agente(&decisoes, &desde);
+                            if texto.is_empty() {
+                                estado.aviso = Some("nenhuma decisão desde a última mensagem".into());
+                            } else {
+                                app::conversa::escrever_no_campo(estado, &texto);
+                            }
+                        }
+                        Err(e) => estado.aviso = Some(format!("não leu as decisões: {e}")),
+                    }
+                }
                 // Só o peso, pro cabeçalho (ciclo 417).
                 Pedido::PesarContexto(conversa) => {
                     let anexos = estado.conversa.as_ref().map(|c| c.anexos.clone()).unwrap_or_default();

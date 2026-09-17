@@ -10977,4 +10977,21 @@ mod testes {
         // E diz o que a poda fez (ciclo 419).
         assert!(tela.contains("Podado pra caber") && tela.contains("enorme.md: só os cabeçalhos"), "{tela}");
     }
+
+    // --- Ciclo 421: contar as decisões ao agente -------------------------------------
+
+    #[test]
+    fn contar_decisoes_pede_o_registro_desde_a_ultima_mensagem() {
+        let mut e = conversa_aberta();
+        let chaves: Vec<String> = conversa::comandos(&e).into_iter().map(|i| i.chave).collect();
+        assert!(chaves.iter().any(|k| k == "contar-decisoes"), "{chaves:?}");
+        conversa::executar(&mut e, "contar-decisoes");
+        let ultima = e.conversa.as_ref().unwrap().mensagens.last().unwrap().quando.clone();
+        assert_eq!(e.pedidos, [Pedido::ContarDecisoes { desde: ultima }]);
+        // O resumo cai no CAMPO — dá pra completar antes de mandar.
+        conversa::escrever_no_campo(&mut e, "O que eu decidi sobre o que você propôs:\n\n- pages/a.md: aplicada");
+        let c = e.conversa.as_ref().unwrap();
+        assert!(c.rascunho.texto.contains("pages/a.md: aplicada"));
+        assert!(!c.escrevendo, "não envia sozinho");
+    }
 }

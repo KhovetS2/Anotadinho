@@ -299,6 +299,10 @@ pub fn comandos(e: &Estado) -> Vec<Item> {
     let Some(c) = &e.conversa else { return Vec::new() };
     let mut v = vec![Item::novo("▤", "Usar prompt padrão…", "prompt"), Item::novo("⌁", "Anexar página…", "anexar")];
     v.push(
+        Item::novo("✓", "Contar o que eu decidi", "contar-decisoes")
+            .com_detalhe("o que foi aplicado e o que foi recusado, com o motivo"),
+    );
+    v.push(
         Item::novo("▦", "Prévia do prompt", "previa")
             .com_detalhe("o que o agente vai receber, com o peso de cada parte"),
     );
@@ -348,6 +352,13 @@ pub fn executar(e: &mut Estado, chave: &str) -> bool {
         // Os anexos viram um recorte do vault (ciclo 416): uma página de
         // transclusões, que passa a ser O anexo. Reutilizável em outra
         // conversa, versionada, e editável como qualquer página.
+        // Fecha o laço (ciclo 421): o agente propôs, você decidiu, e
+        // ele só sabe se alguém contar. Vai pro campo, não é enviado —
+        // dá pra completar antes de mandar.
+        "contar-decisoes" => {
+            let desde = c.mensagens.last().map(|m| m.quando.clone()).unwrap_or_default();
+            e.pedidos.push(Pedido::ContarDecisoes { desde });
+        }
         "previa" => {
             let pergunta = c.rascunho.texto.trim().to_string();
             e.pedidos.push(Pedido::PreviaDoPrompt { conversa: c.path.clone(), pergunta });
