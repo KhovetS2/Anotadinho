@@ -23,13 +23,13 @@
 │                                 │Editar (modo vim)                                                     │                                 │
 │                                 │  i a I A         editar o texto                                      │                                 │
 │                                 │  cc S            reescrever do zero                                  │                                 │
+│                                 │  Ctrl+B Ctrl+T   negrito / formatar a palavra (inserindo)            │                                 │
 │                                 │  o O             criar depois / antes                                │                                 │
 │                                 │  dd x            apagar                                              │                                 │
 │                                 │  yy p P          copiar e colar                                      │                                 │
 │                                 │  >> <<           andar pro lado                                      │                                 │
 │                                 │  J K             descer / subir na ordem                             │                                 │
 │                                 │  Ctrl+A Ctrl+X   aumentar / diminuir (duração, nível, opção)         │                                 │
-│                                 │  ~               alternar (caixa, destaque, tipo)                    │                                 │
 │                                 ╰ j k rolar · Esc ─────────────────────────────────────────────────────╯                                 │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -64,13 +64,13 @@ adddddddddddddddddddddddddddddddddfjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 adddddddddddddddddddddddddddddddddfiiiiiiiiiiiiiiiiijjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjfdddddddddddddddddddddddddddddddddb
-adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfmmmmmmmmmmmmmmmmmffffffffffffffffffffffffffffffffffffffffffffffffffffffdddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb

@@ -20,6 +20,7 @@ pub mod especiais;
 pub mod edicao;
 pub mod markdown;
 mod wikilink;
+mod formatar;
 pub mod modais;
 pub use edicao::{AcaoDaPergunta, Pergunta, Registro};
 pub use modais::{Modal, Pedido, Preferencias};
@@ -131,6 +132,8 @@ pub struct Estado {
     /// A imagem nova da galeria esperando o arquivo escolhido em
     /// `assets/` (ciclo 356).
     pub imagem_pendente: Option<edicao::AcaoDaPergunta>,
+    /// A inserção guardada enquanto o menu Formatar está aberto (ciclo 357).
+    pub pergunta_suspensa: Option<edicao::Pergunta>,
     /// Propostas do agente esperando revisão (ciclo 355), como o botão do
     /// cabeçalho da janela.
     pub propostas_pendentes: usize,
@@ -212,6 +215,7 @@ impl Estado {
             wikilink_dispensado: None,
             abas: Vec::new(),
             imagem_pendente: None,
+            pergunta_suspensa: None,
             propostas_pendentes: 0,
             mudancas_no_git: None,
             pedidos: Vec::new(),
@@ -8869,5 +8873,52 @@ mod testes {
         e.mudancas_no_git = Some(3);
         let tela = desenho(&mut e, 120, 12).join("\n");
         assert!(tela.contains("✓ 2 proposta(s)") && tela.contains("⑂ 3"), "{tela}");
+    }
+
+    // --- Ciclo 357: formatar na inserção --------------------------------------
+
+    #[test]
+    fn ctrl_b_poe_e_tira_negrito_na_palavra_do_cursor() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        digitar(&mut e, "muito importante");
+        tecla(&mut e, "Ctrl+b");
+        let p = e.pergunta.as_ref().unwrap();
+        assert_eq!((p.texto.as_str(), p.cursor), ("muito **importante**", 20));
+        tecla(&mut e, "Ctrl+b");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "muito importante");
+        // Sem palavra: o par vazio, cursor no meio.
+        digitar(&mut e, " ");
+        tecla(&mut e, "Ctrl+b");
+        digitar(&mut e, "x");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "muito importante **x**");
+    }
+
+    #[test]
+    fn ctrl_t_abre_o_menu_formatar_com_link_e_cor() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        digitar(&mut e, "veja docs");
+        tecla(&mut e, "Ctrl+t");
+        assert!(e.pergunta.is_none());
+        let tela = desenho(&mut e, 100, 40).join("\n");
+        assert!(tela.contains("Formatar") && tela.contains("Itálico") && tela.contains("Cor: Vermelho"), "{tela}");
+        digitar(&mut e, "link");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "https://x.dev");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "veja [docs](https://x.dev)");
+        // Cor pela paleta; Esc no menu devolve a inserção intacta.
+        tecla(&mut e, "Ctrl+t");
+        tecla(&mut e, "Escape");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "veja [docs](https://x.dev)");
+        digitar(&mut e, " alerta");
+        tecla(&mut e, "Ctrl+t");
+        digitar(&mut e, "cor: verm");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).contains("veja [docs](https://x.dev) <span class=\"cor--vermelho\">alerta</span>"), "{}", corpo_gravado(&e));
     }
 }

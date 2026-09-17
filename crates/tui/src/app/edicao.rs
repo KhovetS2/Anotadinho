@@ -451,6 +451,19 @@ pub(super) fn tecla_na_pergunta(e: &mut Estado, tecla: &str) {
     if super::wikilink::tecla(e, tecla) {
         return;
     }
+    match tecla {
+        "Ctrl+b" => {
+            if let Some(p) = e.pergunta.as_mut() {
+                super::formatar::embrulhar(p, "**", "**");
+            }
+            return;
+        }
+        "Ctrl+t" => {
+            super::formatar::abrir_menu(e);
+            return;
+        }
+        _ => {}
+    }
     if tecla == "Escape" || tecla == "Enter" {
         e.wikilink_dispensado = None;
     }

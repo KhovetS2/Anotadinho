@@ -310,6 +310,8 @@ pub enum AcaoDaEntrada {
     Mermaid,
     /// A mensagem do commit (ciclo 349).
     Commit,
+    /// A URL do link do menu Formatar (ciclo 357).
+    Link,
 }
 
 /// O que uma [`Modal::Escolha`] faz com o item escolhido.
@@ -344,6 +346,8 @@ pub enum AcaoDaEscolha {
     Mostrar,
     /// O template da página nova (ciclo 350); chave vazia é em branco.
     Template,
+    /// A marca do menu Formatar (ciclo 357).
+    Formatar,
 }
 
 /// Os comandos da barra, como na janela.
@@ -596,6 +600,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                 },
                 AcaoDaEscolha::Mostrar => {}
+                AcaoDaEscolha::Formatar => super::formatar::escolher(e, &chave),
                 AcaoDaEscolha::Template if chave.is_empty() => pedir_titulo_da_pagina(e),
                 AcaoDaEscolha::Template => {
                     e.modal = Some(Modal::Entrada {
@@ -629,6 +634,9 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     e.bloco_a_inserir = None;
                     e.imagem_pendente = None;
                 }
+                if acao == AcaoDaEscolha::Formatar {
+                    super::formatar::retomar(e);
+                }
             }
             Resposta::Nada => e.modal = Some(Modal::Escolha { titulo, lista, acao }),
         },
@@ -641,6 +649,17 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             "Escape" => {
                 if matches!(acao, AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid) {
                     e.bloco_a_inserir = None;
+                }
+                if acao == AcaoDaEntrada::Link {
+                    super::formatar::retomar(e);
+                }
+            }
+            "Enter" if acao == AcaoDaEntrada::Link => {
+                let url = campo.texto.trim().to_string();
+                if url.is_empty() {
+                    super::formatar::retomar(e);
+                } else {
+                    super::formatar::aplicar_link(e, &url);
                 }
             }
             "Enter" if matches!(acao, AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid) => {
@@ -663,7 +682,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         AcaoDaEntrada::NovaPasta(dentro) => Pedido::CriarPasta(format!("{dentro}/{t}")),
                         AcaoDaEntrada::PaginaDeTemplate { template, pasta } => Pedido::CriarDeTemplate { template, titulo: t, pasta },
                         AcaoDaEntrada::Commit => Pedido::GitCommit(t),
-                        AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid => return,
+                        AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid | AcaoDaEntrada::Link => return,
                     });
                 }
             }
@@ -798,6 +817,7 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("i a I A", "editar o texto"),
             ("cc S", "reescrever do zero"),
+            ("Ctrl+B Ctrl+T", "negrito / formatar a palavra (inserindo)"),
             ("o O", "criar depois / antes"),
             ("dd x", "apagar"),
             ("yy p P", "copiar e colar"),
