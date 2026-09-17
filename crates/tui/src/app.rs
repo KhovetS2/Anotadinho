@@ -1277,13 +1277,17 @@ fn linhas_da_semana(
         while col < dias.len() {
             let slot = faixas_de(dias[col]).get(faixa).cloned();
             let nome_slot = slot.as_ref().map(&nome).unwrap_or_default();
-            // O evento sob o cursor acende (ciclo 309): a faixa é a
+            // O cursor num slot desta faixa, no dia `c`? A faixa é a
             // POSIÇÃO dela entre os filhos do dia, que vêm primeiro.
-            let aceso = cursor.is_some_and(|c| {
-                l.segmentos
-                    .get(col)
-                    .is_some_and(|s| c.len() == s.caminho.len() + 1 && c.starts_with(&s.caminho) && c[s.caminho.len()] == faixa)
-            });
+            let no_slot = |c_dia: usize| {
+                cursor.is_some_and(|c| {
+                    l.segmentos.get(c_dia).is_some_and(|s| {
+                        c.len() == s.caminho.len() + 1
+                            && c.starts_with(&s.caminho)
+                            && c[s.caminho.len()] == faixa
+                    })
+                })
+            };
             if nome_slot.starts_with("evento") {
                 let mut k = 1;
                 while col + k < dias.len()
@@ -1295,6 +1299,10 @@ fn linhas_da_semana(
                 }
                 let w = k * cel + (k - 1);
                 let texto = slot.map(|s| s.texto).unwrap_or_default();
+                // A barra INTEIRA acende com o cursor em qualquer dia
+                // dela (ciclo 310): no começo ou no meio, é o mesmo
+                // evento.
+                let aceso = (col..col + k).any(no_slot);
                 let estilo = if aceso {
                     tema.estilo(Realce::Cursor)
                 } else {
@@ -2936,8 +2944,8 @@ mod testes {
     #[test]
     fn entrar_num_dia_pousa_no_primeiro_evento_e_j_anda_entre_eles() {
         // Os eventos do dia são navegáveis (ciclo 309): Enter no dia vai
-        // pro primeiro, `j`/`k` andam entre eles pulando faixa vazia e
-        // continuação de barra, Backspace volta pro dia.
+        // pro primeiro, `j`/`k` andam entre eles pulando faixa vazia,
+        // Backspace volta pro dia.
         let arvore = analisar(
             "{{ type: \"calendar\" }}\nentries:\n\
              - date: 2026-08-10\n  title: Sprint\n  end_date: 2026-08-14\n\
@@ -2948,17 +2956,47 @@ mod testes {
         // embed → mês → semana de 9 a 15 → quarta, dia 12. As faixas
         // dele: [continuação da sprint, Reunião, Almoço].
         let dia: Caminho = vec![0, 0, 2, 3];
-        let primeiro = tela::andar(&arvore, &dia, Passo::Entrar);
-        assert_eq!(primeiro, vec![0, 0, 2, 3, 1], "não pulou a continuação da sprint");
+        // Desde o ciclo 310 a continuação da sprint é destino: é ela o
+        // primeiro evento do dia 12.
+        let sprint = tela::andar(&arvore, &dia, Passo::Entrar);
+        assert_eq!(sprint, vec![0, 0, 2, 3, 0]);
+        assert_eq!(arvore.em(&sprint).unwrap().texto, "Sprint");
+        let primeiro = tela::andar(&arvore, &sprint, Passo::Proximo);
+        assert_eq!(primeiro, vec![0, 0, 2, 3, 1]);
         assert_eq!(arvore.em(&primeiro).unwrap().texto, "Reunião");
         let segundo = tela::andar(&arvore, &primeiro, Passo::Proximo);
         assert_eq!(arvore.em(&segundo).unwrap().texto, "Almoço");
         assert_eq!(tela::andar(&arvore, &segundo, Passo::Proximo), segundo);
-        assert_eq!(tela::andar(&arvore, &primeiro, Passo::Anterior), primeiro);
+        assert_eq!(tela::andar(&arvore, &sprint, Passo::Anterior), sprint);
         assert_eq!(tela::andar(&arvore, &segundo, Passo::Sair), dia);
         // Dia sem evento nenhum: Enter não leva a lugar sem linha.
         let domingo: Caminho = vec![0, 0, 2, 0];
         assert_eq!(tela::andar(&arvore, &domingo, Passo::Entrar), domingo);
+    }
+
+    #[test]
+    fn no_meio_da_barra_o_cursor_acende_a_barra_inteira() {
+        // Quarta, dia 12, no meio da sprint de 10 a 14: Enter no dia
+        // pousa na continuação, e é a barra TODA que acende — o título
+        // está no dia 10, e é ali que a cor do cursor tem que aparecer.
+        let mut e = Estado::novo(paginas(), com_calendario());
+        let dia: Caminho = vec![0, 0, 2, 3];
+        e.cursor = tela::andar(&e.arvore, &dia, Passo::Entrar);
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Sprint de agosto");
+        e.foco = Foco::Conteudo;
+        let cursor = e.tema.estilo(Realce::Cursor);
+        let linhas = desenho(&mut e, 140, 40);
+        let buf = quadro(&mut e, 140, 40);
+        let y = linhas
+            .iter()
+            .position(|l| l.contains("Sprint"))
+            .unwrap_or_else(|| panic!("a sprint sumiu:\n{}", linhas.join("\n")));
+        let linha = &linhas[y];
+        let inicio = linha.find("Sprint").map(|b| linha[..b].chars().count()).unwrap() as u16;
+        // O título (no dia 10) e o trecho que passa pelo dia 12.
+        assert_eq!(buf[(inicio, y as u16)].style().bg, cursor.bg, "o começo da barra não acendeu");
+        let fim_do_titulo = inicio + "Sprint de agosto".chars().count() as u16 + 12;
+        assert_eq!(buf[(fim_do_titulo, y as u16)].style().bg, cursor.bg, "o meio da barra não acendeu");
     }
 
     #[test]

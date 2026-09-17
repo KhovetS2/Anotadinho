@@ -687,7 +687,14 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
                                                     &nome_do_evento(&d.entries[b.entry_idx]),
                                                     d.entries[b.entry_idx].title.clone(),
                                                 ),
-                                                Some(_) => item("evento-continua", String::new()),
+                                                // A continuação leva o título também
+                                                // (ciclo 310): o cursor pode pousar
+                                                // nela, no meio da barra, e ali ela
+                                                // É o evento.
+                                                Some(b) => item(
+                                                    "evento-continua",
+                                                    d.entries[b.entry_idx].title.clone(),
+                                                ),
                                                 None => item("vazio", String::new()),
                                             }
                                         })
@@ -1727,6 +1734,8 @@ mod partes_de_embed {
         assert_eq!(partes(&semana.filhos[1]), ["parte:evento--info", "parte:vazio"]);
         assert_eq!(semana.filhos[1].filhos[0].texto, "Sprint de agosto");
         assert_eq!(partes(&semana.filhos[3]), ["parte:evento-continua", "parte:evento"]);
+        // A continuação diz de que evento ela é (ciclo 310).
+        assert_eq!(semana.filhos[3].filhos[0].texto, "Sprint de agosto");
         assert_eq!(semana.filhos[3].filhos[1].texto, "Reunião");
         assert_eq!(partes(&semana.filhos[6]), ["parte:vazio", "parte:vazio"]);
         // Semana de 2 a 8: Revisão (urgente, índice 1) só no dia 6.

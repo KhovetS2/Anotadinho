@@ -388,16 +388,18 @@ pub fn fica_fora_da_tela(nome: &str) -> bool {
 ///
 /// Quase todo dado de desenho é só isso — dado. O evento do calendário é
 /// a exceção (ciclo 309): ele não tem linha (quem o desenha é a semana),
-/// mas é CONTEÚDO, e Enter num dia tem que poder chegar nele. As faixas
-/// vazias e a continuação de uma barra de vários dias continuam sendo
-/// puladas.
+/// mas é CONTEÚDO, e Enter num dia tem que poder chegar nele. Desde o
+/// ciclo 310 isso vale também no MEIO de uma barra de vários dias: a
+/// continuação é o mesmo evento, visto de outro dia. Só a faixa vazia é
+/// pulada.
 pub fn cursor_passa_por_cima(nome: &str) -> bool {
     fica_fora_da_tela(nome) && !e_evento(nome)
 }
 
-/// O começo de um evento na grade do mês (`evento`, `evento--info`…).
+/// Um evento na grade do mês — o começo dele (`evento`,
+/// `evento--info`…) ou a continuação da barra num dia seguinte.
 pub fn e_evento(nome: &str) -> bool {
-    nome == "evento" || nome.starts_with("evento--")
+    nome == "evento" || nome == "evento-continua" || nome.starts_with("evento--")
 }
 
 /// A página inteira em linhas, na ordem em que se lê.
