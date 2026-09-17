@@ -67,6 +67,30 @@ fn arvore_de(vault: &str, caminho: &str) -> Result<anotadinho_core::unidade::Uni
     Ok(anotadinho_core::analise::analisar(corpo))
 }
 
+/// O dia de hoje no fuso da pessoa, `AAAA-MM-DD` (ciclo 315).
+///
+/// O núcleo não lê relógio de propósito; quem lê é quem roda. No Unix o
+/// fuso vem do `localtime_r`; fora dele, UTC — um dia a menos ou a mais
+/// perto da meia-noite, e só isso.
+fn hoje_local() -> String {
+    let agora = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    #[cfg(unix)]
+    {
+        let t: libc::time_t = agora as libc::time_t;
+        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+        // SAFETY: `t` e `tm` são locais válidos; `localtime_r` só escreve
+        // em `tm` e devolve nulo se falhar.
+        let ok = unsafe { !libc::localtime_r(&t, &mut tm).is_null() };
+        if ok {
+            return anotadinho_core::date_util::format_date(tm.tm_year + 1900, (tm.tm_mon + 1) as u32, tm.tm_mday as u32);
+        }
+    }
+    anotadinho_core::date_util::add_days("1970-01-01", agora.div_euclid(86_400)).unwrap_or_default()
+}
+
 fn main() -> Result<(), String> {
     let cli = Cli::parse();
     let paginas = handle_list_pages(cli.vault.clone())?;
@@ -81,7 +105,9 @@ fn main() -> Result<(), String> {
             anotadinho_tui::tema::TEMAS.join(", ")
         ));
     }
-    let mut estado = Estado::novo(paginas, primeira).com_tema(&cli.tema);
+    let mut estado = Estado::novo(paginas, primeira)
+        .com_tema(&cli.tema)
+        .com_hoje(&hoje_local());
 
     // Sem terminal de verdade, `enable_raw_mode` falha com
     // "No such device or address (os error 6)" — que não diz nada a

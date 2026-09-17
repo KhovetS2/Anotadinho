@@ -430,6 +430,172 @@ fn detalhe_do_dia(y: i32, m: u32, d: u32, quantos: usize) -> String {
     format!("{dia_da_semana}, {d} de {mes} de {y} · {eventos}")
 }
 
+/// Uma parte folha: carrega texto, não comporta filhos.
+fn item(nome: &str, texto: impl Into<String>) -> Unidade {
+    Unidade::com_texto(
+        Tipo::Parte {
+            nome: nome.to_string(),
+            arranjo: Arranjo::Folha,
+        },
+        texto,
+    )
+}
+/// Uma parte que comporta outras, empilhadas.
+fn grupo(nome: &str, texto: impl Into<String>, filhos: Vec<Unidade>) -> Unidade {
+    arranjado(nome, texto, filhos, Arranjo::Coluna)
+}
+/// Uma parte cujos filhos ficam LADO A LADO (ciclo 297).
+fn fileira(nome: &str, filhos: Vec<Unidade>) -> Unidade {
+    arranjado(nome, String::new(), filhos, Arranjo::Linha)
+}
+fn arranjado(
+    nome: &str,
+    texto: impl Into<String>,
+    filhos: Vec<Unidade>,
+    arranjo: Arranjo,
+) -> Unidade {
+    let mut u = Unidade::com_filhos(
+        Tipo::Parte {
+            nome: nome.to_string(),
+            arranjo,
+        },
+        filhos,
+    );
+    u.texto = texto.into();
+    u
+}
+
+/// A árvore de um calendário (ciclos 306 e 315).
+///
+/// Sem `ancora`, é o que o arquivo sozinho diz: um "mes" por mês que tem
+/// evento — é o que `analisar` usa, e o que o CLI mostra, porque o núcleo
+/// não lê relógio.
+///
+/// Com `ancora` (uma data `AAAA-MM-DD`), é a janela: UM mês, o da
+/// âncora, com um "cabecalho" na frente (a contagem de eventos) — a TUI
+/// ancora no dia de hoje e anda de mês com `[`/`]`, como os botões ‹ › da
+/// janela. `hoje`, quando vem, marca o dia de hoje como "dia-hoje".
+pub fn partes_do_calendario(
+    d: &embed::CalendarEmbedData,
+    ancora: Option<&str>,
+    hoje: Option<&str>,
+) -> Vec<Unidade> {
+    use crate::calendario::{existing_tags, month_cells, months_with_events, pack_days};
+    let tags = existing_tags(&d.entries);
+    let nome_do_evento = |e: &embed::CalendarEntry| -> String {
+        match e.all_tags().first() {
+            Some(t) => {
+                let classe = embed::badge_class(&tags, t);
+                format!("evento{}", classe.strip_prefix("badge").unwrap_or(""))
+            }
+            None => "evento".to_string(),
+        }
+    };
+
+    let meses = match ancora.and_then(crate::date_util::parse_date) {
+        Some((y, m, _)) => vec![(y, m)],
+        None => months_with_events(&d.entries),
+    };
+    let mut partes: Vec<Unidade> = meses
+        .into_iter()
+        .map(|(ano, mes)| {
+            let semanas = month_cells(ano, mes)
+                .chunks(7)
+                // A sexta semana costuma ser toda do mês seguinte:
+                // a janela reserva a altura, o terminal não tem
+                // linha pra gastar com ela.
+                .filter(|semana| semana.iter().any(|c| c.3))
+                .map(|semana| {
+                    let datas: Vec<String> = semana
+                        .iter()
+                        .map(|&(y, m, dia, _)| crate::date_util::format_date(y, m, dia))
+                        .collect();
+                    let (barras, excesso) = pack_days(&d.entries, &datas, false);
+                    let faixas = barras.iter().map(|b| b.lane + 1).max().unwrap_or(0);
+                    let dias = semana
+                        .iter()
+                        .enumerate()
+                        .map(|(col, &(y, m, dia, do_mes))| {
+                            // Cada evento leva o DETALHE (ciclo 314):
+                            // datas, horário e tags — o que a janela
+                            // mostra no modal do evento.
+                            let evento = |nome: &str, b: &crate::calendario::Bar| {
+                                let entrada = &d.entries[b.entry_idx];
+                                grupo(
+                                    nome,
+                                    entrada.title.clone(),
+                                    vec![item("detalhe", detalhe_do_evento(entrada))],
+                                )
+                            };
+                            let mut slots: Vec<Unidade> = (0..faixas)
+                                .map(|faixa| {
+                                    match barras.iter().find(|b| {
+                                        b.lane == faixa && b.start_col <= col && col <= b.end_col
+                                    }) {
+                                        Some(b) if b.start_col == col => {
+                                            evento(&nome_do_evento(&d.entries[b.entry_idx]), b)
+                                        }
+                                        // A continuação leva o título também
+                                        // (ciclo 310): o cursor pode pousar
+                                        // nela, no meio da barra, e ali ela
+                                        // É o evento.
+                                        Some(b) => evento("evento-continua", b),
+                                        None => item("vazio", String::new()),
+                                    }
+                                })
+                                .collect();
+                            if excesso[col] > 0 {
+                                slots.push(item("mais", format!("+{} mais", excesso[col])));
+                            }
+                            // O dia também tem detalhe: a data por
+                            // extenso e quantos eventos ele tem —
+                            // inclusive os que não couberam.
+                            let quantos = barras
+                                .iter()
+                                .filter(|b| b.start_col <= col && col <= b.end_col)
+                                .count()
+                                + excesso[col];
+                            slots.push(item("detalhe", detalhe_do_dia(y, m, dia, quantos)));
+                            let nome_do_dia = if !do_mes {
+                                "dia-fora"
+                            } else if hoje == Some(crate::date_util::format_date(y, m, dia).as_str()) {
+                                "dia-hoje"
+                            } else {
+                                "dia"
+                            };
+                            grupo(nome_do_dia, dia.to_string(), slots)
+                        })
+                        .collect();
+                    fileira("semana", dias)
+                })
+                .collect();
+            grupo(
+                "mes",
+                format!("{} {}", crate::date_util::month_name(mes), ano),
+                semanas,
+            )
+        })
+        .collect();
+
+    // A "gaveta" da janela: evento sem data não tem dia na grade.
+    let sem_data: Vec<Unidade> = d
+        .entries
+        .iter()
+        .filter(|e| e.date.is_none())
+        .map(|e| item("entry", e.title.clone()))
+        .collect();
+    // O cabeçalho da janela ancorada: a contagem, como o
+    // `.calendar-grid__count` ("5 eventos"). Não é destino do cursor.
+    if ancora.is_some() {
+        let n = d.entries.len();
+        partes.insert(0, item("cabecalho", if n == 1 { "1 evento".to_string() } else { format!("{n} eventos") }));
+    }
+    if !sem_data.is_empty() {
+        partes.push(grupo("sem-data", format!("Sem data ({})", sem_data.len()), sem_data));
+    }
+    partes
+}
+
 /// O conteúdo de um embed, como unidades.
 ///
 /// **Conteúdo, não controle.** O DOM de um embed mistura as duas coisas:
@@ -444,41 +610,6 @@ fn detalhe_do_dia(y: i32, m: u32, d: u32, quantos: usize) -> String {
 /// linhas são runtime. O mesmo vale pro calendário em modo vault.
 fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
     use embed::EmbedData;
-
-    /// Uma parte folha: carrega texto, não comporta filhos.
-    fn item(nome: &str, texto: impl Into<String>) -> Unidade {
-        Unidade::com_texto(
-            Tipo::Parte {
-                nome: nome.to_string(),
-                arranjo: Arranjo::Folha,
-            },
-            texto,
-        )
-    }
-    /// Uma parte que comporta outras, empilhadas.
-    fn grupo(nome: &str, texto: impl Into<String>, filhos: Vec<Unidade>) -> Unidade {
-        arranjado(nome, texto, filhos, Arranjo::Coluna)
-    }
-    /// Uma parte cujos filhos ficam LADO A LADO (ciclo 297).
-    fn fileira(nome: &str, filhos: Vec<Unidade>) -> Unidade {
-        arranjado(nome, String::new(), filhos, Arranjo::Linha)
-    }
-    fn arranjado(
-        nome: &str,
-        texto: impl Into<String>,
-        filhos: Vec<Unidade>,
-        arranjo: Arranjo,
-    ) -> Unidade {
-        let mut u = Unidade::com_filhos(
-            Tipo::Parte {
-                nome: nome.to_string(),
-                arranjo,
-            },
-            filhos,
-        );
-        u.texto = texto.into();
-        u
-    }
 
     match dados {
         // Coluna é grupo, cartão é folha — é a forma que o board tem, e
@@ -718,105 +849,7 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
         // de `badge_class` sobre as tags do calendário inteiro. Nenhuma
         // dessas partes vira linha na tela — é o desenho da semana que
         // as lê.
-        EmbedData::Calendar(d) => {
-            use crate::calendario::{existing_tags, month_cells, months_with_events, pack_days};
-            let tags = existing_tags(&d.entries);
-            let nome_do_evento = |e: &embed::CalendarEntry| -> String {
-                match e.all_tags().first() {
-                    Some(t) => {
-                        let classe = embed::badge_class(&tags, t);
-                        format!("evento{}", classe.strip_prefix("badge").unwrap_or(""))
-                    }
-                    None => "evento".to_string(),
-                }
-            };
-
-            let mut partes: Vec<Unidade> = months_with_events(&d.entries)
-                .into_iter()
-                .map(|(ano, mes)| {
-                    let semanas = month_cells(ano, mes)
-                        .chunks(7)
-                        // A sexta semana costuma ser toda do mês seguinte:
-                        // a janela reserva a altura, o terminal não tem
-                        // linha pra gastar com ela.
-                        .filter(|semana| semana.iter().any(|c| c.3))
-                        .map(|semana| {
-                            let datas: Vec<String> = semana
-                                .iter()
-                                .map(|&(y, m, dia, _)| crate::date_util::format_date(y, m, dia))
-                                .collect();
-                            let (barras, excesso) = pack_days(&d.entries, &datas, false);
-                            let faixas = barras.iter().map(|b| b.lane + 1).max().unwrap_or(0);
-                            let dias = semana
-                                .iter()
-                                .enumerate()
-                                .map(|(col, &(y, m, dia, do_mes))| {
-                                    // Cada evento leva o DETALHE (ciclo 314):
-                                    // datas, horário e tags — o que a janela
-                                    // mostra no modal do evento.
-                                    let evento = |nome: &str, b: &crate::calendario::Bar| {
-                                        let entrada = &d.entries[b.entry_idx];
-                                        grupo(
-                                            nome,
-                                            entrada.title.clone(),
-                                            vec![item("detalhe", detalhe_do_evento(entrada))],
-                                        )
-                                    };
-                                    let mut slots: Vec<Unidade> = (0..faixas)
-                                        .map(|faixa| {
-                                            match barras.iter().find(|b| {
-                                                b.lane == faixa && b.start_col <= col && col <= b.end_col
-                                            }) {
-                                                Some(b) if b.start_col == col => {
-                                                    evento(&nome_do_evento(&d.entries[b.entry_idx]), b)
-                                                }
-                                                // A continuação leva o título também
-                                                // (ciclo 310): o cursor pode pousar
-                                                // nela, no meio da barra, e ali ela
-                                                // É o evento.
-                                                Some(b) => evento("evento-continua", b),
-                                                None => item("vazio", String::new()),
-                                            }
-                                        })
-                                        .collect();
-                                    if excesso[col] > 0 {
-                                        slots.push(item("mais", format!("+{} mais", excesso[col])));
-                                    }
-                                    // O dia também tem detalhe: a data por
-                                    // extenso e quantos eventos ele tem —
-                                    // inclusive os que não couberam.
-                                    let quantos = barras
-                                        .iter()
-                                        .filter(|b| b.start_col <= col && col <= b.end_col)
-                                        .count()
-                                        + excesso[col];
-                                    slots.push(item("detalhe", detalhe_do_dia(y, m, dia, quantos)));
-                                    grupo(if do_mes { "dia" } else { "dia-fora" }, dia.to_string(), slots)
-                                })
-                                .collect();
-                            fileira("semana", dias)
-                        })
-                        .collect();
-                    grupo(
-                        "mes",
-                        format!("{} {}", crate::date_util::month_name(mes), ano),
-                        semanas,
-                    )
-                })
-                .collect();
-
-            // A "gaveta" da janela: evento sem data não tem dia na grade.
-            let sem_data: Vec<Unidade> = d
-                .entries
-                .iter()
-                .filter(|e| e.date.is_none())
-                .map(|e| item("entry", e.title.clone()))
-                .collect();
-            if !sem_data.is_empty() {
-                partes.push(grupo("sem-data", format!("Sem data ({})", sem_data.len()), sem_data));
-            }
-            partes
-        }
+        EmbedData::Calendar(d) => partes_do_calendario(d, None, None),
 
         // A consulta declara a definição, que é o que está escrito; as
         // linhas são runtime.
@@ -1855,6 +1888,33 @@ mod partes_de_embed {
         assert_eq!(detalhe(&quarta12.filhos[0]), "10/08/2026 → 14/08/2026 · 5 dias");
         let domingo9 = &c.filhos[0].filhos[2].filhos[0];
         assert_eq!(detalhe(domingo9), "domingo, 9 de agosto de 2026 · sem eventos");
+    }
+
+    #[test]
+    fn o_calendario_ancorado_mostra_um_mes_so_com_cabecalho_e_hoje() {
+        let c = calendario_de_agosto();
+        let dados = match embed::segment(&c.fonte.clone().unwrap()).remove(0) {
+            DocSegment::Embed(embed::EmbedData::Calendar(d)) => d,
+            outro => panic!("{outro:?}"),
+        };
+        // Âncora em setembro: a grade de setembro, sem os eventos de
+        // agosto — como a janela, que mostra o mês da âncora.
+        let set = partes_do_calendario(&dados, Some("2026-09-17"), Some("2026-09-17"));
+        let nomes: Vec<String> = set.iter().map(|u| u.tipo.resumo()).collect();
+        assert_eq!(nomes, ["parte:cabecalho", "parte:mes", "parte:sem-data"]);
+        assert_eq!(set[0].texto, "4 eventos");
+        assert_eq!(set[1].texto, "Setembro 2026");
+        // 17 de setembro de 2026 é quinta; setembro começa numa terça, então
+        // a semana 3 (13–19) tem o 17 na coluna 4.
+        let dia17 = &set[1].filhos[2].filhos[4];
+        assert_eq!(dia17.texto, "17");
+        assert_eq!(dia17.tipo.resumo(), "parte:dia-hoje");
+        // Âncora em agosto, hoje em setembro: nenhum dia de agosto é hoje.
+        let ago = partes_do_calendario(&dados, Some("2026-08-01"), Some("2026-09-17"));
+        assert_eq!(ago[1].texto, "Agosto 2026");
+        assert!(ago[1].filhos.iter().flat_map(|s| &s.filhos).all(|d| d.tipo.resumo() != "parte:dia-hoje"));
+        // Sem âncora, nada muda: o que `analisar` sempre fez.
+        assert_eq!(partes_do_calendario(&dados, None, None), c.filhos);
     }
 
     #[test]

@@ -109,6 +109,7 @@ dependencies = [
  "anotadinho-ipc",
  "clap",
  "crossterm",
+ "libc",
  "ratatui",
 ]
 

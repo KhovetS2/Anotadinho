@@ -291,6 +291,8 @@ const PARTES_SEM_ROTULO: &[&str] = &[
     "dia-fora",
     "sem-data",
     "tags",
+    "dia-hoje",
+    "cabecalho",
 ];
 
 /// A marca que abre a linha de cada tipo.
@@ -399,7 +401,7 @@ pub fn fica_fora_da_tela(nome: &str) -> bool {
 /// linha — é desenhado —, mas é régua, não conteúdo, e o cursor passa
 /// por cima dele.
 pub fn cursor_passa_por_cima(nome: &str) -> bool {
-    (fica_fora_da_tela(nome) && !e_evento(nome)) || nome == "eixo"
+    (fica_fora_da_tela(nome) && !e_evento(nome)) || nome == "eixo" || nome == "cabecalho"
 }
 
 /// A barra vizinha NO TEMPO, com o cursor numa barra do cronograma
@@ -470,6 +472,43 @@ fn dias_do_mes(mes: &Unidade) -> Vec<(String, usize, usize, bool)> {
             (anotadinho_core::date_util::format_date(y, mm, d), i / 7, i % 7, do_mes)
         })
         .collect()
+}
+
+/// O calendário que contém o cursor (ou é ele), como caminho do embed.
+pub fn calendario_do_cursor(raiz: &Unidade, cursor: &[usize]) -> Option<Caminho> {
+    (1..=cursor.len())
+        .map(|n| &cursor[..n])
+        .find(|c| matches!(raiz.em(c).map(|u| &u.tipo), Some(Tipo::Embed(n)) if n == "calendar"))
+        .map(|c| c.to_vec())
+}
+
+/// A data (`AAAA-MM-DD`) do dia em que o cursor está — no dia ou num
+/// evento dele —, dentro de um calendário.
+pub fn data_do_cursor(raiz: &Unidade, cursor: &[usize]) -> Option<String> {
+    let embed = calendario_do_cursor(raiz, cursor)?;
+    let k = embed.len();
+    let (m, s, d) = (*cursor.get(k)?, *cursor.get(k + 1)?, *cursor.get(k + 2)?);
+    let mes = raiz.em(&embed)?.filhos.get(m)?;
+    dias_do_mes(mes).into_iter().find(|(_, ss, dd, _)| (*ss, *dd) == (s, d)).map(|x| x.0)
+}
+
+/// O caminho do DIA com essa data num calendário — na grade do próprio
+/// mês dele, não na célula de fora de outra grade.
+pub fn dia_com_data(raiz: &Unidade, embed: &[usize], data: &str) -> Option<Caminho> {
+    let cal = raiz.em(embed)?;
+    cal.filhos.iter().enumerate().find_map(|(m, mes)| {
+        if !matches!(&mes.tipo, Tipo::Parte { nome, .. } if nome == "mes") {
+            return None;
+        }
+        dias_do_mes(mes)
+            .into_iter()
+            .find(|(dt, _, _, do_mes)| *do_mes && dt == data)
+            .map(|(_, s, d, _)| {
+                let mut c = embed.to_vec();
+                c.extend([m, s, d]);
+                c
+            })
+    })
 }
 
 /// O evento do dia vizinho, com o cursor num evento do calendário
