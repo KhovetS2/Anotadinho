@@ -795,7 +795,12 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
 
 /// A prévia do prompt (ciclo 417): o cabeçalho com o peso de cada parte
 /// e, embaixo, o texto que vai pro agente — inteiro, como ele recebe.
-pub fn mostrar_previa(e: &mut Estado, prompt: &str, orcamento: &anotadinho_core::orcamento::Orcamento) {
+pub fn mostrar_previa(
+    e: &mut Estado,
+    prompt: &str,
+    orcamento: &anotadinho_core::orcamento::Orcamento,
+    cortes: &[anotadinho_core::orcamento::Corte],
+) {
     use super::modais::Modal;
     let mut texto = String::new();
     texto.push_str(&format!("O que vai pro agente — {}\n", orcamento.resumo()));
@@ -811,6 +816,12 @@ pub fn mostrar_previa(e: &mut Estado, prompt: &str, orcamento: &anotadinho_core:
             format!("~{}", anotadinho_core::orcamento::humano(p.tokens)),
             p.nome
         ));
+    }
+    if !cortes.is_empty() {
+        texto.push_str("\nPodado pra caber:\n");
+        for c in cortes {
+            texto.push_str(&format!("  · {}\n", c.rotulo()));
+        }
     }
     texto.push_str("\n────────────────────────────────────────\n\n");
     texto.push_str(prompt);

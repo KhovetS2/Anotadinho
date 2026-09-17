@@ -153,3 +153,240 @@ mod testes {
         assert_eq!(humano(41_400), "41k");
     }
 }
+
+// ---------------------------------------------------------------------
+// Poda (ciclo 419)
+// ---------------------------------------------------------------------
+
+/// Quantas mensagens do histórico a poda nunca tira. Abaixo disso a
+/// conversa perde o fio e o agente responde a pergunta errada.
+pub const HISTORICO_MINIMO: usize = 4;
+
+/// O que a poda fez, pra tela contar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Corte {
+    /// Mensagens antigas que saíram.
+    Historico { de: usize, para: usize },
+    /// Anexo reduzido aos cabeçalhos.
+    Esqueleto { nome: String, de: usize, para: usize },
+    /// Anexo cortado no meio, porque nem o esqueleto coube.
+    Truncado { nome: String, de: usize, para: usize },
+}
+
+impl Corte {
+    /// Como se lê na prévia.
+    pub fn rotulo(&self) -> String {
+        match self {
+            Self::Historico { de, para } => format!("histórico: {de} → {para} mensagens"),
+            Self::Esqueleto { nome, de, para } => {
+                format!("{nome}: só os cabeçalhos (~{} → ~{})", humano(*de), humano(*para))
+            }
+            Self::Truncado { nome, de, para } => {
+                format!("{nome}: cortado (~{} → ~{})", humano(*de), humano(*para))
+            }
+        }
+    }
+}
+
+/// O texto reduzido aos cabeçalhos, dizendo o que ficou de fora.
+///
+/// Um anexo grande vira o ÍNDICE dele: o agente continua sabendo que a
+/// página existe e do que ela trata, e pede o resto se precisar — em vez
+/// de receber metade de um parágrafo cortado no meio de uma frase.
+pub fn esqueleto(texto: &str) -> String {
+    let mut fora: Vec<String> = Vec::new();
+    let mut omitidas = 0usize;
+    for linha in texto.lines() {
+        if linha.trim_start().starts_with('#') {
+            if omitidas > 0 {
+                fora.push(format!("… {omitidas} linha(s)"));
+                omitidas = 0;
+            }
+            fora.push(linha.to_string());
+        } else if !linha.trim().is_empty() {
+            omitidas += 1;
+        }
+    }
+    if omitidas > 0 {
+        fora.push(format!("… {omitidas} linha(s)"));
+    }
+    fora.join("\n")
+}
+
+/// Corta um texto em `tokens` tokens, avisando no fim.
+fn truncar(texto: &str, tokens_alvo: usize) -> String {
+    let limite = tokens_alvo.saturating_mul(CARACTERES_POR_TOKEN);
+    if texto.chars().count() <= limite {
+        return texto.to_string();
+    }
+    let cortado: String = texto.chars().take(limite).collect();
+    format!("{cortado}\n… [cortado pra caber no contexto]")
+}
+
+/// Faz o contexto caber no teto, do que menos importa pro que mais.
+///
+/// A ordem é deliberada: primeiro o histórico ANTIGO (numa conversa
+/// longa o começo é o que menos pesa na resposta), depois o anexo mais
+/// gordo vira esqueleto, e só então se corta texto no meio. Nada disso é
+/// silencioso — cada corte volta na lista, e quem chama mostra.
+///
+/// `0` no teto desliga a poda.
+pub fn podar(
+    contextos: &mut Vec<crate::conversa::Contexto>,
+    historico: &mut Vec<crate::conversa::Mensagem>,
+    pergunta: &str,
+    teto: usize,
+) -> Vec<Corte> {
+    let mut cortes = Vec::new();
+    if teto == 0 {
+        return cortes;
+    }
+    let total = |c: &Vec<crate::conversa::Contexto>, h: &Vec<crate::conversa::Mensagem>| -> usize {
+        c.iter().map(|x| tokens(&x.conteudo)).sum::<usize>()
+            + h.iter().map(|m| tokens(&m.texto)).sum::<usize>()
+            + tokens(pergunta)
+    };
+    if total(contextos, historico) <= teto {
+        return cortes;
+    }
+
+    // 1. O histórico antigo.
+    if historico.len() > HISTORICO_MINIMO {
+        let antes = historico.len();
+        while historico.len() > HISTORICO_MINIMO && total(contextos, historico) > teto {
+            historico.remove(0);
+        }
+        if historico.len() < antes {
+            cortes.push(Corte::Historico { de: antes, para: historico.len() });
+        }
+    }
+
+    // 2. O anexo mais gordo COM cabeçalho vira esqueleto, do maior pro
+    //    menor. Sem cabeçalho não há esqueleto que preste — "… 400
+    //    linha(s)" não é índice de nada —, e o caso é do passo 3.
+    while total(contextos, historico) > teto {
+        let Some(i) = maior(contextos, true) else { break };
+        let de = tokens(&contextos[i].conteudo);
+        let reduzido = esqueleto(&contextos[i].conteudo);
+        let para = tokens(&reduzido);
+        if para >= de {
+            break;
+        }
+        let nome = contextos[i].nome.clone();
+        contextos[i].conteudo = reduzido;
+        cortes.push(Corte::Esqueleto { nome, de, para });
+    }
+
+    // 3. Ainda não coube: corta o maior no tamanho que sobra.
+    if total(contextos, historico) > teto {
+        if let Some(i) = maior(contextos, false) {
+            let outros: usize = total(contextos, historico) - tokens(&contextos[i].conteudo);
+            let sobra = teto.saturating_sub(outros);
+            let de = tokens(&contextos[i].conteudo);
+            let cortado = truncar(&contextos[i].conteudo, sobra);
+            let para = tokens(&cortado);
+            let nome = contextos[i].nome.clone();
+            contextos[i].conteudo = cortado;
+            cortes.push(Corte::Truncado { nome, de, para });
+        }
+    }
+    cortes
+}
+
+/// O índice do anexo mais pesado que ainda tem o que cortar.
+///
+/// `com_cabecalho` restringe aos que têm `#` — os únicos que viram
+/// esqueleto útil.
+fn maior(contextos: &[crate::conversa::Contexto], com_cabecalho: bool) -> Option<usize> {
+    contextos
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| !c.conteudo.trim().is_empty())
+        .filter(|(_, c)| !com_cabecalho || c.conteudo.lines().any(|l| l.trim_start().starts_with('#')))
+        .max_by_key(|(_, c)| tokens(&c.conteudo))
+        .map(|(i, _)| i)
+}
+
+#[cfg(test)]
+mod testes_de_poda {
+    use super::*;
+    use crate::conversa::{Autor, Contexto, Mensagem};
+
+    fn ctx(nome: &str, tokens: usize) -> Contexto {
+        Contexto { nome: nome.into(), conteudo: "a".repeat(tokens * CARACTERES_POR_TOKEN) }
+    }
+
+    fn msg(i: usize) -> Mensagem {
+        Mensagem { autor: Autor::Voce, quando: "2026-09-17 10:00".into(), texto: format!("mensagem {i}") }
+    }
+
+    #[test]
+    fn cabendo_no_teto_nada_e_cortado() {
+        let mut c = vec![ctx("a.md", 100)];
+        let mut h = vec![msg(1), msg(2)];
+        assert!(podar(&mut c, &mut h, "pergunta", 1000).is_empty());
+        assert_eq!(tokens(&c[0].conteudo), 100);
+        assert_eq!(h.len(), 2);
+        // Teto 0 desliga.
+        let mut c = vec![ctx("a.md", 100_000)];
+        assert!(podar(&mut c, &mut h, "pergunta", 0).is_empty());
+    }
+
+    #[test]
+    fn o_historico_antigo_sai_primeiro_e_o_minimo_fica() {
+        let mut c = vec![ctx("a.md", 50)];
+        let mut h: Vec<Mensagem> = (0..10).map(msg).collect();
+        // Teto com folga pro anexo: o histórico basta pra caber.
+        let cortes = podar(&mut c, &mut h, "p", 75);
+        assert!(matches!(cortes[0], Corte::Historico { de: 10, .. }), "{cortes:?}");
+        assert!(h.len() >= HISTORICO_MINIMO, "o fio da conversa não se perde: {}", h.len());
+        // As que ficaram são as ÚLTIMAS.
+        assert_eq!(h.last().unwrap().texto, "mensagem 9");
+        // O anexo não foi tocado: o histórico bastou.
+        assert_eq!(tokens(&c[0].conteudo), 50);
+    }
+
+    #[test]
+    fn o_anexo_mais_gordo_vira_esqueleto() {
+        let grande = Contexto {
+            nome: "spec.md".into(),
+            conteudo: format!("# Título\n\n{}\n\n## Parte\n\n{}\n", "x".repeat(4000), "y".repeat(4000)),
+        };
+        let mut c = vec![grande, ctx("pequeno.md", 10)];
+        let mut h = vec![msg(1)];
+        let cortes = podar(&mut c, &mut h, "p", 100);
+        assert!(matches!(&cortes[0], Corte::Esqueleto { nome, .. } if nome == "spec.md"), "{cortes:?}");
+        assert!(c[0].conteudo.contains("# Título") && c[0].conteudo.contains("## Parte"), "{}", c[0].conteudo);
+        assert!(c[0].conteudo.contains("… 1 linha(s)"), "diz o que sumiu:\n{}", c[0].conteudo);
+        assert_eq!(tokens(&c[1].conteudo), 10, "o pequeno fica inteiro");
+    }
+
+    #[test]
+    fn sem_cabecalho_o_corte_e_no_texto() {
+        let mut c = vec![ctx("plano.md", 1000)];
+        let mut h = vec![msg(1)];
+        let cortes = podar(&mut c, &mut h, "p", 100);
+        assert!(matches!(&cortes.last(), Some(Corte::Truncado { nome, .. }) if nome == "plano.md"), "{cortes:?}");
+        assert!(c[0].conteudo.contains("cortado pra caber"), "{}", c[0].conteudo);
+        let sobrou: usize = tokens(&c[0].conteudo) + h.iter().map(|m| tokens(&m.texto)).sum::<usize>() + tokens("p");
+        assert!(sobrou <= 110, "coube com folga de arredondamento: {sobrou}");
+    }
+
+    #[test]
+    fn o_rotulo_do_corte_e_legivel() {
+        assert_eq!(
+            Corte::Historico { de: 12, para: 4 }.rotulo(),
+            "histórico: 12 → 4 mensagens"
+        );
+        assert_eq!(
+            Corte::Esqueleto { nome: "spec.md".into(), de: 3200, para: 120 }.rotulo(),
+            "spec.md: só os cabeçalhos (~3,2k → ~120)"
+        );
+    }
+
+    #[test]
+    fn o_esqueleto_guarda_os_cabecalhos_e_conta_o_resto() {
+        let e = esqueleto("# A\n\numa\nduas\n\n## B\n\ntrês\n");
+        assert_eq!(e, "# A\n… 2 linha(s)\n## B\n… 1 linha(s)");
+    }
+}

@@ -10943,7 +10943,7 @@ mod testes {
             ],
             40_000,
         );
-        conversa::mostrar_previa(&mut e, "# Pergunta\n\nresuma", &orcamento);
+        conversa::mostrar_previa(&mut e, "# Pergunta\n\nresuma", &orcamento, &[]);
         let tela = desenho(&mut e, 120, 40).join("\n");
         assert!(tela.contains("O que vai pro agente") && tela.contains("~3,3k de 40k tokens"), "{tela}");
         // A parte mais pesada primeiro, com o tamanho de cada uma.
@@ -10959,8 +10959,15 @@ mod testes {
         use anotadinho_core::orcamento::{Orcamento, Peso};
         let mut e = conversa_aberta();
         let estourado = Orcamento::novo(vec![Peso::novo("enorme.md", &"a".repeat(200_000))], 40_000);
-        conversa::mostrar_previa(&mut e, "x", &estourado);
+        conversa::mostrar_previa(
+            &mut e,
+            "x",
+            &estourado,
+            &[anotadinho_core::orcamento::Corte::Esqueleto { nome: "enorme.md".into(), de: 50_000, para: 300 }],
+        );
         let tela = desenho(&mut e, 120, 40).join("\n");
         assert!(tela.contains("PASSOU DO TETO"), "{tela}");
+        // E diz o que a poda fez (ciclo 419).
+        assert!(tela.contains("Podado pra caber") && tela.contains("enorme.md: só os cabeçalhos"), "{tela}");
     }
 }

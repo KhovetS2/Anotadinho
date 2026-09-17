@@ -233,6 +233,8 @@ struct Envio {
     orcamento: anotadinho_core::orcamento::Orcamento,
     /// O recado sobre a transclusão, quando há o que dizer.
     aviso: Option<String>,
+    /// O que a poda cortou pra caber no teto (ciclo 419).
+    cortes: Vec<anotadinho_core::orcamento::Corte>,
 }
 
 /// Monta o envio: lê os anexos com as transclusões resolvidas (ciclo
@@ -267,16 +269,20 @@ fn montar_envio(
             Some(conversa::Contexto { nome: a.clone(), conteudo: expandida.texto })
         })
         .collect();
-    let prompt = conversa::montar_prompt(historico, pergunta, &contextos, app::conversa::HISTORICO_NO_PROMPT);
+    // Passando do teto, corta o que menos importa — e diz o que cortou
+    // (ciclo 419). O corte é explícito justamente porque o silencioso já
+    // acontece sozinho, do outro lado, quando o modelo trunca.
+    let mut contextos = contextos;
+    let recortado: Vec<anotadinho_core::conversa::Mensagem> =
+        historico[historico.len() - historico.len().min(app::conversa::HISTORICO_NO_PROMPT)..].to_vec();
+    let mut podado = recortado;
+    let cortes = anotadinho_core::orcamento::podar(&mut contextos, &mut podado, pergunta, teto);
+    let prompt = conversa::montar_prompt(&podado, pergunta, &contextos, app::conversa::HISTORICO_NO_PROMPT);
     // O peso é por PARTE: quem precisa cortar quer saber qual anexo
     // pesa, não só que o total estourou.
     let mut partes: Vec<Peso> = contextos.iter().map(|c| Peso::novo(c.nome.clone(), &c.conteudo)).collect();
-    let recentes = historico.len().min(app::conversa::HISTORICO_NO_PROMPT);
-    let historico_texto: String = historico[historico.len() - recentes..]
-        .iter()
-        .map(|m| m.texto.clone())
-        .collect::<Vec<_>>()
-        .join("\n");
+    let recentes = podado.len();
+    let historico_texto: String = podado.iter().map(|m| m.texto.clone()).collect::<Vec<_>>().join("\n");
     partes.push(Peso::novo(format!("histórico ({recentes} msg)"), &historico_texto));
     partes.push(Peso::novo("pergunta", pergunta));
     let mut nota = if trazidas.is_empty() {
@@ -294,6 +300,7 @@ fn montar_envio(
         prompt,
         orcamento: Orcamento::novo(partes, teto),
         aviso: (!nota.is_empty()).then_some(nota),
+        cortes,
     }
 }
 
@@ -351,9 +358,17 @@ fn enviar_na_conversa(
         }
     };
     let historico = conversa::parse(&corpo_antes);
-    let Envio { prompt, aviso, .. } = montar_envio(vault, &historico, pergunta, anexos, path, estado.preferencias.teto_de_contexto);
+    let Envio { prompt, aviso, cortes, .. } =
+        montar_envio(vault, &historico, pergunta, anexos, path, estado.preferencias.teto_de_contexto);
     if let Some(nota) = aviso {
         estado.aviso = Some(nota);
+    }
+    if !cortes.is_empty() {
+        // A poda não pode ser surpresa: ela mudou o que o agente vai ler.
+        estado.aviso = Some(format!(
+            "contexto podado pra caber — {}",
+            cortes.iter().map(|c| c.rotulo()).collect::<Vec<_>>().join(" · ")
+        ));
     }
     let adaptador = estado.preferencias.agente.clone().unwrap_or_default().migrado();
     let cwd = if adaptador.cwd.trim().is_empty() {
@@ -1226,7 +1241,7 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                     if let Some(c) = estado.conversa.as_mut() {
                         c.peso = Some((envio.orcamento.resumo(), envio.orcamento.estourou()));
                     }
-                    app::conversa::mostrar_previa(estado, &envio.prompt, &envio.orcamento);
+                    app::conversa::mostrar_previa(estado, &envio.prompt, &envio.orcamento, &envio.cortes);
                 }
                 Pedido::GuardarContexto { titulo, anexos } => {
                     // O título do frontmatter primeiro: é ele que a
