@@ -1342,6 +1342,38 @@ pub fn handle_registrar_decisao(
         .map_err(|e| e.to_string())
 }
 
+/// Acrescenta uma execução ao registro (ciclo 406).
+pub fn handle_registrar_execucao(
+    vault_path: String,
+    execucao: anotadinho_core::execucao::Execucao,
+) -> Result<(), String> {
+    use std::io::Write;
+    let arquivo = std::path::Path::new(&vault_path).join(anotadinho_core::execucao::ARQUIVO);
+    if let Some(pai) = arquivo.parent() {
+        std::fs::create_dir_all(pai).map_err(|e| e.to_string())?;
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&arquivo)
+        .map_err(|e| e.to_string())?;
+    f.write_all(anotadinho_core::execucao::linha(&execucao).as_bytes())
+        .map_err(|e| e.to_string())
+}
+
+/// O registro de execuções, do mais novo pro mais velho (ciclo 406).
+pub fn handle_listar_execucoes(
+    vault_path: String,
+) -> Result<Vec<anotadinho_core::execucao::Execucao>, String> {
+    let arquivo = std::path::Path::new(&vault_path).join(anotadinho_core::execucao::ARQUIVO);
+    let Ok(texto) = std::fs::read_to_string(&arquivo) else {
+        return Ok(Vec::new());
+    };
+    let mut lidas = anotadinho_core::execucao::ler(&texto);
+    lidas.reverse();
+    Ok(lidas)
+}
+
 /// O registro de decisões, do mais novo pro mais velho (ciclo 404).
 pub fn handle_listar_decisoes(
     vault_path: String,
@@ -1367,6 +1399,35 @@ pub fn handle_recusar_proposta(vault_path: String, id: String) -> Result<(), Str
 mod testes_semente {
     use super::*;
     use tempfile::TempDir;
+
+    /// Ciclo 406: o registro de execuções acumula e sai do mais novo pro
+    /// mais velho — é o que a tela do agente mostra.
+    #[test]
+    fn o_registro_de_execucoes_acumula_e_volta_do_mais_novo() {
+        use anotadinho_core::execucao::{Execucao, Fim};
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        let uma = |quando: &str, fim: Fim| Execucao {
+            quando: quando.into(),
+            conversa: "pages/conversas/c.md".into(),
+            agente: "falso".into(),
+            binario: "/bin/agente".into(),
+            anexos: 1,
+            prompt: 42,
+            segundos: 3,
+            fim,
+        };
+
+        assert!(handle_listar_execucoes(raiz.clone()).unwrap().is_empty());
+        handle_registrar_execucao(raiz.clone(), uma("2026-09-17 10:00", Fim::Respondeu)).unwrap();
+        handle_registrar_execucao(raiz.clone(), uma("2026-09-17 11:00", Fim::Falhou("saiu 1".into()))).unwrap();
+
+        let lidas = handle_listar_execucoes(raiz).unwrap();
+        assert_eq!(lidas.len(), 2);
+        assert_eq!(lidas[0].quando, "2026-09-17 11:00");
+        assert!(matches!(&lidas[0].fim, Fim::Falhou(e) if e == "saiu 1"));
+        assert_eq!(lidas[1].segundos, 3);
+    }
 
     #[test]
     fn vault_novo_nasce_navegavel() {

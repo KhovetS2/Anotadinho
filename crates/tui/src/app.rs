@@ -10367,4 +10367,45 @@ mod testes {
             })]
         );
     }
+
+    // --- Ciclo 406: registro de execuções do agente ----------------------------------
+
+    #[test]
+    fn o_registro_de_execucoes_lista_o_que_rodou() {
+        use anotadinho_core::execucao::{Execucao, Fim};
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::executar(&mut e, "execucoes");
+        assert_eq!(e.pedidos, [Pedido::ListarExecucoes]);
+        e.pedidos.clear();
+        // Sem nada registrado a tela não abre — só avisa.
+        modais::mostrar_execucoes(&mut e, &[]);
+        assert!(e.modal.is_none() && e.aviso.as_deref().unwrap().contains("nenhuma execução"));
+        let uma = |quando: &str, fim: Fim| Execucao {
+            quando: quando.into(),
+            conversa: "pages/conversas/conversa-1.md".into(),
+            agente: "falso".into(),
+            binario: "/bin/agente".into(),
+            anexos: 2,
+            prompt: 42,
+            segundos: 7,
+            fim,
+        };
+        modais::mostrar_execucoes(
+            &mut e,
+            &[uma("2026-09-17 11:00", Fim::Falhou("saiu 1".into())), uma("2026-09-17 10:00", Fim::Respondeu)],
+        );
+        let tela = desenho(&mut e, 160, 20).join("\n");
+        assert!(tela.contains("Execuções do agente"), "{tela}");
+        assert!(tela.contains("falhou") && tela.contains("respondeu"), "{tela}");
+        assert!(tela.contains("7s") && tela.contains("2026-09-17 11:00"), "{tela}");
+        // O agente que rodou fica no detalhe, à direita.
+        assert!(tela.contains("falso"), "{tela}");
+        // Enter na execução abre a conversa dela.
+        tecla(&mut e, "Enter");
+        assert!(
+            e.pedidos.iter().any(|p| matches!(p, Pedido::AbrirPagina(path) if path == "pages/conversas/conversa-1.md")),
+            "{:?}",
+            e.pedidos
+        );
+    }
 }

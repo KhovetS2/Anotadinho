@@ -69,6 +69,8 @@ pub enum Pedido {
     ExportarHtml(String),
     /// Ver o registro de decisões sobre propostas (ciclo 404).
     ListarDecisoes,
+    /// Ver o registro de execuções do agente (ciclo 406).
+    ListarExecucoes,
     /// Ler as permissões de escrita do agente (ciclo 405).
     LerPermissoes,
     /// Gravar as permissões no vault.
@@ -558,6 +560,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Ver assets", "ver-assets"),
     ("Propostas do agente", "propostas"),
     ("Decisões sobre as propostas", "decisoes"),
+    ("Execuções do agente", "execucoes"),
     ("Onde o agente pode propor…", "permissoes"),
     ("Definir/remover como início", "inicio"),
     ("Exportar HTML da página", "exportar-html"),
@@ -766,6 +769,7 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "ver-assets" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Assets)),
         "propostas" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Propostas)),
         "decisoes" => e.pedidos.push(Pedido::ListarDecisoes),
+        "execucoes" => e.pedidos.push(Pedido::ListarExecucoes),
         "permissoes" => e.pedidos.push(Pedido::LerPermissoes),
         "personalizar" => {
             e.modal = Some(Modal::Escolha {
@@ -1750,4 +1754,34 @@ pub fn abrir_permissoes(e: &mut Estado, p: &anotadinho_core::permissoes::Permiss
     ]);
     form.botoes.push(("salvar", "Salvar no vault".into()));
     e.modal = Some(Modal::Detalhe { titulo: "Onde o agente pode propor".into(), form, alvo: AlvoDoDetalhe::Permissoes });
+}
+
+/// O registro de execuções (ciclo 406): quando rodou, quanto durou e como
+/// terminou. Enter abre a conversa.
+pub fn mostrar_execucoes(e: &mut Estado, execucoes: &[anotadinho_core::execucao::Execucao]) {
+    use anotadinho_core::execucao::Fim;
+    if execucoes.is_empty() {
+        e.aviso = Some("nenhuma execução registrada ainda".into());
+        return;
+    }
+    let itens = execucoes
+        .iter()
+        .map(|x| {
+            let glifo = match x.fim {
+                Fim::Respondeu => "✓",
+                Fim::Falhou(_) => "✗",
+                Fim::Interrompida => "■",
+            };
+            // A linha é curta de propósito: o detalhe à direita só aparece
+            // se couber. Como terminou e quanto durou no rótulo, quando e
+            // com quem no detalhe; o resto fica no `execucoes.jsonl`.
+            let rotulo = format!("{} · {} · {}s", x.quando, x.fim.rotulo(), x.segundos);
+            Item::novo(glifo, rotulo, x.conversa.clone()).com_detalhe(x.agente.clone())
+        })
+        .collect();
+    e.modal = Some(Modal::Escolha { titulo: "Execuções do agente".into(), lista: Lista::filtravel(itens), acao: AcaoDaEscolha::AbrirPagina });
+}
+
+fn nome_de_arquivo(path: &str) -> String {
+    std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string())
 }

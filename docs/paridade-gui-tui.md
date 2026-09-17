@@ -103,6 +103,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Propostas do agente (diff, aplicar, recusar) | ✅ | 346 — "Propostas do agente" na barra |
 | Aprovar trecho a trecho, recusar com motivo, registro das decisões | ✅ | 404 — só na TUI (a janela ainda é tudo-ou-nada) |
 | Permissões de escrita do agente por pasta | ✅ | 405 — no vault, valem pro CLI, TUI e janela; forma na TUI |
+| Registro de execuções do agente (o que rodou, duração, como terminou) | ✅ | 406 — só na TUI; `execucoes.jsonl` no vault, "Execuções do agente" na barra |
 | Git: status, pull, commit & push | ✅ | 349 — "Git: status e sincronizar…" na barra; histórico da página |
 | Nova página a partir de template | ✅ | 350 — "Nova página" pergunta o template quando há |
 

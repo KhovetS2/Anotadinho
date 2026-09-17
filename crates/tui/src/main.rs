@@ -194,7 +194,21 @@ fn abrir(estado: &mut Estado, vault: &str, caminho: &str) {
 /// As execuções do agente, por conversa (ciclo 340). Vivem aqui, fora do
 /// estado da tela: sair da conversa não para o agente, e a resposta cai no
 /// arquivo quando ele acaba — como o registro de jobs do backend da janela.
-type Trabalhos = std::collections::HashMap<String, anotadinho_tui::agente::Trabalho>;
+type Trabalhos = std::collections::HashMap<String, EmAndamento>;
+
+/// Uma execução rodando e o que o registro vai precisar dela no fim
+/// (ciclo 406).
+struct EmAndamento {
+    trabalho: anotadinho_tui::agente::Trabalho,
+    /// O começo, pro registro dizer quando foi.
+    quando: String,
+    /// Nome e executável do agente que está rodando.
+    agente: String,
+    binario: String,
+    /// Quantas páginas foram de contexto e o tamanho do prompt.
+    anexos: usize,
+    prompt: usize,
+}
 
 /// A chave de uma execução: o vault e a conversa (ciclo 396).
 fn chave_do_trabalho(vault: &str, conversa: &str) -> String {
@@ -246,7 +260,17 @@ fn enviar_na_conversa(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalho
     };
     match anotadinho_tui::agente::Trabalho::iniciar(&adaptador, &prompt, &cwd) {
         Ok(t) => {
-            trabalhos.insert(chave_do_trabalho(vault, path), t);
+            trabalhos.insert(
+                chave_do_trabalho(vault, path),
+                EmAndamento {
+                    trabalho: t,
+                    quando: agora_local(),
+                    agente: adaptador.nome.clone(),
+                    binario: adaptador.binario.clone(),
+                    anexos: anexos.len(),
+                    prompt: prompt.chars().count(),
+                },
+            );
         }
         Err(e) => {
             if let Some(c) = estado.conversa.as_mut() {
@@ -264,18 +288,41 @@ fn enviar_na_conversa(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalho
 fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
     use anotadinho_core::conversa::{Autor, Mensagem};
     let mut prontos = Vec::new();
-    for (chave, t) in trabalhos.iter_mut() {
-        if let Some(fim) = t.terminou() {
-            prontos.push((chave.clone(), fim));
+    for (chave, a) in trabalhos.iter_mut() {
+        if let Some(fim) = a.trabalho.terminou() {
+            prontos.push((chave.clone(), fim, a.trabalho.segundos()));
         }
     }
-    for (chave, fim) in prontos {
-        trabalhos.remove(&chave);
+    for (chave, fim, segundos) in prontos {
+        let em_andamento = trabalhos.remove(&chave);
         // A resposta vai pro vault da conversa, mesmo que a TUI esteja em
         // outro agora (ciclo 396).
         let (vault_da_conversa, path) = chave.split_once('\u{0}').map(|(v, p)| (v.to_string(), p.to_string())).unwrap_or_default();
         let deste_vault = vault_da_conversa == vault;
         let vault = vault_da_conversa.as_str();
+        // O registro da execução (ciclo 406): o que rodou, quanto durou e
+        // como terminou. Vai pro vault da conversa.
+        if let Some(a) = &em_andamento {
+            use anotadinho_core::execucao::{Execucao, Fim};
+            let como = match &fim {
+                Ok(_) => Fim::Respondeu,
+                Err(e) if e.contains("interrompida") => Fim::Interrompida,
+                Err(e) => Fim::Falhou(e.clone()),
+            };
+            let registro = Execucao {
+                quando: a.quando.clone(),
+                conversa: path.clone(),
+                agente: a.agente.clone(),
+                binario: a.binario.clone(),
+                anexos: a.anexos,
+                prompt: a.prompt,
+                segundos,
+                fim: como,
+            };
+            if let Err(e) = anotadinho_ipc::handle_registrar_execucao(vault.to_string(), registro) {
+                estado.aviso = Some(format!("não registrou a execução: {e}"));
+            }
+        }
         let erro = match fim {
             Ok(texto) => acrescentar_mensagem(vault, &path, &Mensagem { autor: Autor::Agente, quando: agora_local(), texto })
                 .err()
@@ -297,7 +344,7 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
         }
     }
     if let Some(c) = estado.conversa.as_mut() {
-        c.trabalho = trabalhos.get(&chave_do_trabalho(vault, &c.path)).map(|t| (t.segundos(), t.parcial()));
+        c.trabalho = trabalhos.get(&chave_do_trabalho(vault, &c.path)).map(|a| (a.trabalho.segundos(), a.trabalho.parcial()));
     }
 }
 
@@ -654,6 +701,10 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         Err(e) => format!("não gravou as permissões: {e}"),
                     });
                 }
+                Pedido::ListarExecucoes => match anotadinho_ipc::handle_listar_execucoes(vault.to_string()) {
+                    Ok(x) => app::modais::mostrar_execucoes(estado, &x),
+                    Err(e) => estado.aviso = Some(format!("não leu as execuções: {e}")),
+                },
                 Pedido::ListarDecisoes => match anotadinho_ipc::handle_listar_decisoes(vault.to_string()) {
                     Ok(d) => app::modais::mostrar_decisoes(estado, &d),
                     Err(e) => estado.aviso = Some(format!("não leu as decisões: {e}")),
@@ -817,8 +868,8 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                     Err(e) => estado.aviso = Some(format!("não consegui ler o prompt: {e}")),
                 },
                 Pedido::InterromperAgente(path) => {
-                    if let Some(t) = trabalhos.get(&chave_do_trabalho(vault, &path)) {
-                        t.interromper();
+                    if let Some(a) = trabalhos.get(&chave_do_trabalho(vault, &path)) {
+                        a.trabalho.interromper();
                     }
                 }
                 Pedido::AnexosDaConversa { conversa, lista } => {
