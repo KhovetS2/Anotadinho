@@ -1256,7 +1256,7 @@ fn linhas_da_semana(
         _ => String::new(),
     };
     let faixas_de = |dia: &Unidade| -> Vec<Unidade> {
-        dia.filhos.iter().filter(|f| nome(f) != "mais").cloned().collect()
+        dia.filhos.iter().filter(|f| !matches!(nome(f).as_str(), "mais" | "detalhe")).cloned().collect()
     };
     let dias: Vec<&Unidade> = semana.filhos.iter().collect();
     let mut fora = Vec::new();
@@ -1366,12 +1366,16 @@ fn linha_de_detalhe<'a>(e: &Estado, dono: &[usize]) -> Option<Line<'a>> {
         .filhos
         .iter()
         .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "detalhe"))?;
-    Some(Line::from(vec![
-        Span::styled("  ", Style::default()),
-        Span::styled(u.texto.clone(), e.tema.estilo(Realce::TituloCartao)),
-        Span::styled(" · ", e.tema.estilo(Realce::Marca)),
-        Span::styled(detalhe.texto.clone(), e.tema.estilo(Realce::Dica)),
-    ]))
+    // O dia do calendário já diz a data por extenso no detalhe; o
+    // número dele na frente seria a mesma coisa duas vezes.
+    let e_dia = matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "dia" || nome == "dia-fora");
+    let mut spans = vec![Span::styled("  ", Style::default())];
+    if !e_dia {
+        spans.push(Span::styled(u.texto.clone(), e.tema.estilo(Realce::TituloCartao)));
+        spans.push(Span::styled(" · ", e.tema.estilo(Realce::Marca)));
+    }
+    spans.push(Span::styled(detalhe.texto.clone(), e.tema.estilo(Realce::Dica)));
+    Some(Line::from(spans))
 }
 
 /// Abreviação do mês pro eixo do cronograma — a da janela (`03 ago`).
@@ -3253,6 +3257,21 @@ mod testes {
             assert_eq!(tela::ano_e_mes(&rotulo), Some((2026, m)), "{rotulo}");
         }
         assert_eq!(tela::ano_e_mes("Sem data (1)"), None);
+    }
+
+    #[test]
+    fn o_evento_e_o_dia_selecionados_mostram_o_detalhe() {
+        let mut e = Estado::novo(paginas(), com_calendario());
+        e.foco = Foco::Conteudo;
+        // Revisão, quinta 6 de agosto.
+        e.cursor = vec![0, 0, 1, 4, 0];
+        let tudo = desenho(&mut e, 140, 45).join("\n");
+        assert!(tudo.contains("Revisão de código · 06/08/2026 · #urgente"), "{tudo}");
+        // O dia 9, sem evento: a data por extenso, sem o "9 ·" na frente.
+        e.cursor = vec![0, 0, 2, 0];
+        let tudo = desenho(&mut e, 140, 45).join("\n");
+        assert!(tudo.contains("domingo, 9 de agosto de 2026 · sem eventos"), "{tudo}");
+        assert!(!tudo.contains("9 · domingo"), "{tudo}");
     }
 
     #[test]

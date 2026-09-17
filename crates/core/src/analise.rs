@@ -391,6 +391,45 @@ fn data_curta(iso: &str) -> String {
     }
 }
 
+/// O detalhe de um evento do calendário (ciclo 314): datas, duração,
+/// horário e tags, numa linha.
+fn detalhe_do_evento(e: &embed::CalendarEntry) -> String {
+    let inicio = e.date.as_deref().unwrap_or("");
+    let fim = e.end_date.as_deref().filter(|f| *f > inicio);
+    let mut t = match fim {
+        Some(f) => {
+            let dias = crate::date_util::days_between(inicio, f).unwrap_or(0) + 1;
+            format!("{} → {} · {dias} dias", data_curta(inicio), data_curta(f))
+        }
+        None => data_curta(inicio),
+    };
+    match (e.start_time.as_deref(), e.end_time.as_deref()) {
+        (Some(a), Some(b)) => t.push_str(&format!(" · {a}–{b}")),
+        (Some(a), None) => t.push_str(&format!(" · {a}")),
+        _ => {}
+    }
+    for tag in e.all_tags() {
+        t.push_str(&format!(" · #{tag}"));
+    }
+    if let Some(p) = &e.page_path {
+        t.push_str(&format!(" · {p}"));
+    }
+    t
+}
+
+/// O detalhe de um dia da grade: a data por extenso e quantos eventos.
+fn detalhe_do_dia(y: i32, m: u32, d: u32, quantos: usize) -> String {
+    const SEMANA: [&str; 7] = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+    let dia_da_semana = SEMANA[crate::date_util::weekday_of(y, m, d) as usize];
+    let mes = crate::date_util::month_name(m).to_lowercase();
+    let eventos = match quantos {
+        0 => "sem eventos".to_string(),
+        1 => "1 evento".to_string(),
+        n => format!("{n} eventos"),
+    };
+    format!("{dia_da_semana}, {d} de {mes} de {y} · {eventos}")
+}
+
 /// O conteúdo de um embed, como unidades.
 ///
 /// **Conteúdo, não controle.** O DOM de um embed mistura as duas coisas:
@@ -711,24 +750,31 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
                             let dias = semana
                                 .iter()
                                 .enumerate()
-                                .map(|(col, &(_, _, dia, do_mes))| {
+                                .map(|(col, &(y, m, dia, do_mes))| {
+                                    // Cada evento leva o DETALHE (ciclo 314):
+                                    // datas, horário e tags — o que a janela
+                                    // mostra no modal do evento.
+                                    let evento = |nome: &str, b: &crate::calendario::Bar| {
+                                        let entrada = &d.entries[b.entry_idx];
+                                        grupo(
+                                            nome,
+                                            entrada.title.clone(),
+                                            vec![item("detalhe", detalhe_do_evento(entrada))],
+                                        )
+                                    };
                                     let mut slots: Vec<Unidade> = (0..faixas)
                                         .map(|faixa| {
                                             match barras.iter().find(|b| {
                                                 b.lane == faixa && b.start_col <= col && col <= b.end_col
                                             }) {
-                                                Some(b) if b.start_col == col => item(
-                                                    &nome_do_evento(&d.entries[b.entry_idx]),
-                                                    d.entries[b.entry_idx].title.clone(),
-                                                ),
+                                                Some(b) if b.start_col == col => {
+                                                    evento(&nome_do_evento(&d.entries[b.entry_idx]), b)
+                                                }
                                                 // A continuação leva o título também
                                                 // (ciclo 310): o cursor pode pousar
                                                 // nela, no meio da barra, e ali ela
                                                 // É o evento.
-                                                Some(b) => item(
-                                                    "evento-continua",
-                                                    d.entries[b.entry_idx].title.clone(),
-                                                ),
+                                                Some(b) => evento("evento-continua", b),
                                                 None => item("vazio", String::new()),
                                             }
                                         })
@@ -736,6 +782,15 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
                                     if excesso[col] > 0 {
                                         slots.push(item("mais", format!("+{} mais", excesso[col])));
                                     }
+                                    // O dia também tem detalhe: a data por
+                                    // extenso e quantos eventos ele tem —
+                                    // inclusive os que não couberam.
+                                    let quantos = barras
+                                        .iter()
+                                        .filter(|b| b.start_col <= col && col <= b.end_col)
+                                        .count()
+                                        + excesso[col];
+                                    slots.push(item("detalhe", detalhe_do_dia(y, m, dia, quantos)));
                                     grupo(if do_mes { "dia" } else { "dia-fora" }, dia.to_string(), slots)
                                 })
                                 .collect();
@@ -1763,18 +1818,43 @@ mod partes_de_embed {
         // Semana de 9 a 15: Sprint de 10 a 14 na faixa 0, Reunião no dia
         // 12 na faixa 1 — então TODO dia da semana tem duas faixas.
         let semana = &c.filhos[0].filhos[2];
-        assert!(semana.filhos.iter().all(|d| d.filhos.len() == 2));
+        // Duas faixas e o detalhe do dia, em todo dia da semana.
+        assert!(semana.filhos.iter().all(|d| d.filhos.len() == 3));
         // tags do calendário: [infra, urgente] → infra é índice 0.
-        assert_eq!(partes(&semana.filhos[1]), ["parte:evento--info", "parte:vazio"]);
+        assert_eq!(partes(&semana.filhos[1]), ["parte:evento--info", "parte:vazio", "parte:detalhe"]);
         assert_eq!(semana.filhos[1].filhos[0].texto, "Sprint de agosto");
-        assert_eq!(partes(&semana.filhos[3]), ["parte:evento-continua", "parte:evento"]);
+        assert_eq!(partes(&semana.filhos[3]), ["parte:evento-continua", "parte:evento", "parte:detalhe"]);
         // A continuação diz de que evento ela é (ciclo 310).
         assert_eq!(semana.filhos[3].filhos[0].texto, "Sprint de agosto");
         assert_eq!(semana.filhos[3].filhos[1].texto, "Reunião");
-        assert_eq!(partes(&semana.filhos[6]), ["parte:vazio", "parte:vazio"]);
+        assert_eq!(partes(&semana.filhos[6]), ["parte:vazio", "parte:vazio", "parte:detalhe"]);
         // Semana de 2 a 8: Revisão (urgente, índice 1) só no dia 6.
         let semana2 = &c.filhos[0].filhos[1];
-        assert_eq!(partes(&semana2.filhos[4]), ["parte:evento--success"]);
+        assert_eq!(partes(&semana2.filhos[4]), ["parte:evento--success", "parte:detalhe"]);
+    }
+
+    #[test]
+    fn evento_e_dia_trazem_o_detalhe() {
+        let c = embed_de(
+            "{{ type: \"calendar\" }}\nentries:\n\
+             - date: 2026-08-07\n  title: Deploy\n  start_time: '14:30'\n  end_time: '15:15'\n  tags:\n  - infra\n\
+             - date: 2026-08-10\n  title: Sprint\n  end_date: 2026-08-14\n\
+             {{ /calendar }}\n",
+        );
+        let detalhe = |u: &Unidade| {
+            u.filhos
+                .iter()
+                .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "detalhe"))
+                .map(|f| f.texto.clone())
+                .unwrap()
+        };
+        let sexta7 = &c.filhos[0].filhos[1].filhos[5];
+        assert_eq!(detalhe(&sexta7.filhos[0]), "07/08/2026 · 14:30–15:15 · #infra");
+        assert_eq!(detalhe(sexta7), "sexta, 7 de agosto de 2026 · 1 evento");
+        let quarta12 = &c.filhos[0].filhos[2].filhos[3];
+        assert_eq!(detalhe(&quarta12.filhos[0]), "10/08/2026 → 14/08/2026 · 5 dias");
+        let domingo9 = &c.filhos[0].filhos[2].filhos[0];
+        assert_eq!(detalhe(domingo9), "domingo, 9 de agosto de 2026 · sem eventos");
     }
 
     #[test]
