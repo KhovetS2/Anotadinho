@@ -26,63 +26,10 @@ use std::io::{BufRead, Write};
 /// Versão do protocolo que este servidor fala.
 const VERSAO_PROTOCOLO: &str = "2024-11-05";
 
-/// Descrição de cada ferramenta, no formato que o MCP espera.
+/// Descrição de cada ferramenta, no formato que o MCP espera. A lista
+/// vem do contrato do núcleo (ciclo 407) — aqui só se traduz.
 fn ferramentas() -> Value {
-    json!([
-        {
-            "name": "listar_paginas",
-            "description": "Lista as páginas do vault com título, path e seção.",
-            "inputSchema": { "type": "object", "properties": {} }
-        },
-        {
-            "name": "ler_pagina",
-            "description": "Lê o markdown de uma página.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "path": { "type": "string", "description": "Path relativo ao vault" } },
-                "required": ["path"]
-            }
-        },
-        {
-            "name": "buscar",
-            "description": "Busca full-text no vault. Resultados de dentro de embeds vêm com a origem (ex: 'Kanban · coluna Backlog').",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "termo": { "type": "string" } },
-                "required": ["termo"]
-            }
-        },
-        {
-            "name": "consultar",
-            "description": "Recorte do vault por filtro — o MESMO motor do embed de consulta. Ex: from='pages/specs', where=['status=rascunho'].",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "from": { "type": "string" },
-                    "where": { "type": "array", "items": { "type": "string" } },
-                    "limit": { "type": "integer" }
-                }
-            }
-        },
-        {
-            "name": "propor",
-            "description": "PROPÕE uma escrita pra revisão humana. Não grava a página: a mudança só é aplicada depois que a pessoa vê o diff e aprova. Esta é a única forma de escrever.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string", "description": "Página alvo, relativa ao vault" },
-                    "conteudo": { "type": "string", "description": "Markdown completo da página" },
-                    "motivo": { "type": "string", "description": "Por que esta mudança" }
-                },
-                "required": ["path", "conteudo"]
-            }
-        },
-        {
-            "name": "propostas_pendentes",
-            "description": "Lista o que já foi proposto e ainda aguarda revisão.",
-            "inputSchema": { "type": "object", "properties": {} }
-        }
-    ])
+    Value::Array(anotadinho_core::ferramentas::CONTRATO.iter().map(|f| f.para_mcp()).collect())
 }
 
 /// Roda o servidor até o stdin fechar.
@@ -232,6 +179,10 @@ fn chamar(vault: &str, id: Value, params: Option<&Value>) -> Value {
                 Err(e) => texto_erro(id, e),
             }
         }
+        "onde_posso_escrever" => match anotadinho_ipc::handle_ler_permissoes(vault.to_string()) {
+            Ok(p) => texto(id, serde_json::to_string_pretty(&p).unwrap_or_default()),
+            Err(e) => texto_erro(id, e),
+        },
         "propostas_pendentes" => {
             match anotadinho_ipc::handle_listar_propostas(vault.to_string()) {
                 Ok(l) => texto(id, serde_json::to_string_pretty(&l).unwrap_or_default()),
@@ -239,5 +190,46 @@ fn chamar(vault: &str, id: Value, params: Option<&Value>) -> Value {
             }
         }
         outro => texto_erro(id, format!("ferramenta desconhecida: {outro}")),
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    /// O contrato do núcleo e o despachante daqui não podem divergir
+    /// (ciclo 407): publicar uma ferramenta que ninguém atende daria
+    /// "ferramenta desconhecida" na cara do agente.
+    #[test]
+    fn toda_ferramenta_publicada_tem_quem_atenda() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault = dir.path().to_string_lossy().to_string();
+        let publicadas = ferramentas();
+        assert_eq!(
+            publicadas.as_array().unwrap().len(),
+            anotadinho_core::ferramentas::CONTRATO.len()
+        );
+        for f in anotadinho_core::ferramentas::CONTRATO {
+            let params = json!({ "name": f.nome, "arguments": {} });
+            let r = chamar(&vault, json!(1), Some(&params));
+            let texto = serde_json::to_string(&r).unwrap();
+            assert!(!texto.contains("ferramenta desconhecida"), "{} não tem branch", f.nome);
+        }
+        // E o contrário: nome de fora do contrato é recusado.
+        let params = json!({ "name": "apagar_vault", "arguments": {} });
+        let r = chamar(&vault, json!(1), Some(&params));
+        assert!(serde_json::to_string(&r).unwrap().contains("ferramenta desconhecida"));
+    }
+
+    /// A ferramenta de permissões (ciclo 407) responde o padrão num
+    /// vault sem arquivo — é o que o agente lê antes de propor.
+    #[test]
+    fn onde_posso_escrever_responde_as_permissoes() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault = dir.path().to_string_lossy().to_string();
+        let params = json!({ "name": "onde_posso_escrever", "arguments": {} });
+        let r = chamar(&vault, json!(1), Some(&params));
+        let texto = serde_json::to_string(&r).unwrap();
+        assert!(texto.contains("nunca") && texto.contains("journals/"), "{texto}");
     }
 }

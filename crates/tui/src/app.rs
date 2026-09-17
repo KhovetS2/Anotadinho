@@ -10408,4 +10408,25 @@ mod testes {
             e.pedidos
         );
     }
+
+    // --- Ciclo 407: contrato de ferramentas do agente --------------------------------
+
+    #[test]
+    fn a_tela_mostra_o_contrato_de_ferramentas() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::executar(&mut e, "ferramentas");
+        // Vem do núcleo: nada de pedido de IO.
+        assert!(e.pedidos.is_empty());
+        let tela = desenho(&mut e, 160, 24).join("\n");
+        assert!(tela.contains("Ferramentas do agente"), "{tela}");
+        assert!(tela.contains("ler_pagina(path)") && tela.contains("propor(path, conteudo"), "{tela}");
+        // A de escrita aparece marcada, e as de leitura também se declaram.
+        assert!(tela.contains("✎ propor") && tela.contains("leitura"), "{tela}");
+        // Uma linha por ferramenta do contrato.
+        let linhas = anotadinho_core::ferramentas::CONTRATO
+            .iter()
+            .filter(|f| tela.contains(&f.assinatura()))
+            .count();
+        assert_eq!(linhas, anotadinho_core::ferramentas::CONTRATO.len(), "{tela}");
+    }
 }

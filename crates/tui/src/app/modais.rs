@@ -561,6 +561,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Propostas do agente", "propostas"),
     ("Decisões sobre as propostas", "decisoes"),
     ("Execuções do agente", "execucoes"),
+    ("Ferramentas do agente", "ferramentas"),
     ("Onde o agente pode propor…", "permissoes"),
     ("Definir/remover como início", "inicio"),
     ("Exportar HTML da página", "exportar-html"),
@@ -770,6 +771,7 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "propostas" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Propostas)),
         "decisoes" => e.pedidos.push(Pedido::ListarDecisoes),
         "execucoes" => e.pedidos.push(Pedido::ListarExecucoes),
+        "ferramentas" => mostrar_ferramentas(e),
         "permissoes" => e.pedidos.push(Pedido::LerPermissoes),
         "personalizar" => {
             e.modal = Some(Modal::Escolha {
@@ -1784,4 +1786,23 @@ pub fn mostrar_execucoes(e: &mut Estado, execucoes: &[anotadinho_core::execucao:
 
 fn nome_de_arquivo(path: &str) -> String {
     std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string())
+}
+
+/// O contrato de ferramentas (ciclo 407): o que o agente alcança do
+/// vault, com a de escrita marcada. Vem do núcleo, não de IO.
+pub fn mostrar_ferramentas(e: &mut Estado) {
+    let itens = anotadinho_core::ferramentas::CONTRATO
+        .iter()
+        .map(|f| {
+            let glifo = if f.escreve { "✎" } else { "⌕" };
+            let assinatura = f.assinatura();
+            Item::novo(glifo, assinatura.clone(), assinatura)
+                .com_detalhe(if f.escreve { "escreve · revisão" } else { "leitura" })
+        })
+        .collect();
+    e.modal = Some(Modal::Escolha {
+        titulo: "Ferramentas do agente".into(),
+        lista: Lista::filtravel(itens),
+        acao: AcaoDaEscolha::Mostrar,
+    });
 }

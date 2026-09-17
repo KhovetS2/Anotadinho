@@ -35,6 +35,7 @@ pub mod conversa;
 pub mod decisao;
 pub mod diff;
 pub mod execucao;
+pub mod ferramentas;
 pub mod fluxo;
 pub mod sanitize;
 pub mod semente;
