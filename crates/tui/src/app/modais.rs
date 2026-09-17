@@ -323,6 +323,13 @@ pub enum AlvoDoDetalhe {
     Teclas,
     /// A imagem do menu `/` (ciclo 388).
     Imagem,
+    /// Uma tabela markdown comum (ciclo 389): onde mora e onde começa.
+    TabelaMd {
+        /// O markdown que a contém.
+        hospedeiro: super::markdown::Hospedeiro,
+        /// O byte onde a tabela começa no corpo.
+        inicio: usize,
+    },
     /// Uma etapa do cronograma (ciclo 385).
     Barra {
         /// O cronograma.

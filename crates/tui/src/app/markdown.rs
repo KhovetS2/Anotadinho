@@ -337,6 +337,12 @@ pub(super) fn no_markdown(e: &mut Estado, ed: Edicao, h: Hospedeiro) -> bool {
     let decomposto = decompor(&tipo, &fonte);
     let e_embed = matches!(tipo, Tipo::Embed(_));
 
+    // Tabela markdown (ciclo 389): editar é pelo formulário, não pela linha
+    // única do rodapé, que juntaria as linhas e quebraria a tabela.
+    if matches!(ed, Edicao::Reescrever { .. }) && tipo == Tipo::Paragrafo && anotadinho_core::tabela_md::ler(&fonte).is_some() {
+        abrir_tabela_md(e, h, faixa.start);
+        return true;
+    }
     match ed {
         Edicao::Reescrever { limpar, no_fim } => {
             let Some((prefixo, texto)) = decomposto else {
@@ -799,4 +805,67 @@ pub(super) fn markdown_do_asset(path: &str) -> String {
     } else {
         format!("[{path}]({path})")
     }
+}
+
+// ---------------------------------------------------------------------
+// Tabela markdown (ciclo 389)
+// ---------------------------------------------------------------------
+
+/// O formulário da tabela markdown: o cabeçalho e as linhas, cada uma com
+/// as células separadas por `|`.
+pub(super) fn abrir_tabela_md(e: &mut Estado, h: Hospedeiro, inicio: usize) {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    let Some(corpo_atual) = corpo(e, &h) else { return };
+    let Some((cab, linhas)) = bloco_no_inicio(e, &h, inicio).and_then(|r| anotadinho_core::tabela_md::ler(corpo_atual.get(r)?)) else {
+        return;
+    };
+    let form = Formulario::novo(vec![
+        C::novo("cabecalho", "Colunas", Valor::Texto(cab.join(" | "))).com_dica("A | B | C"),
+        C::novo("linhas", "Linhas", Valor::Lista(linhas.iter().map(|l| l.join(" | ")).collect())).com_dica("célula | célula"),
+    ]);
+    e.modal = Some(super::modais::Modal::Detalhe { titulo: "Tabela".into(), form, alvo: super::modais::AlvoDoDetalhe::TabelaMd { hospedeiro: h, inicio } });
+}
+
+/// A faixa (aparada) do bloco que começa em `inicio`.
+fn bloco_no_inicio(e: &Estado, h: &Hospedeiro, inicio: usize) -> Option<Range<usize>> {
+    let corpo_atual = corpo(e, h)?;
+    let (_, u) = blocos(e, h).into_iter().find(|(_, u)| u.intervalo.as_ref().is_some_and(|r| r.start == inicio))?;
+    let r = u.intervalo.clone()?;
+    let t = corpo_atual.get(r.clone())?;
+    Some(r.start..r.start + t.trim_end().len())
+}
+
+/// Grava o formulário na tabela.
+pub(super) fn aplicar_tabela_md(e: &mut Estado, h: &Hospedeiro, inicio: usize, form: &crate::componentes::Formulario) {
+    let celulas = |t: &str| -> Vec<String> { t.split('|').map(|c| c.trim().to_string()).collect() };
+    let cab = celulas(&form.texto("cabecalho"));
+    if cab.iter().all(|c| c.is_empty()) {
+        e.aviso = Some("a tabela precisa de colunas".into());
+        return;
+    }
+    let linhas: Vec<Vec<String>> = form.lista("linhas").iter().map(|l| {
+        let mut c = celulas(l);
+        c.resize(cab.len(), String::new());
+        c
+    }).collect();
+    let Some(corpo_atual) = corpo(e, h) else { return };
+    let Some(faixa) = bloco_no_inicio(e, h, inicio) else {
+        e.aviso = Some("a tabela sumiu do arquivo".into());
+        return;
+    };
+    let mut novo = corpo_atual.clone();
+    novo.replace_range(faixa, &anotadinho_core::tabela_md::escrever(&cab, &linhas));
+    gravar(e, h, novo);
+}
+
+/// Enter numa tabela markdown abre o formulário.
+pub(super) fn enter_na_tabela_md(e: &mut Estado) -> bool {
+    let Some(h) = hospedeiro_do_cursor(e) else { return false };
+    let Some(u) = e.arvore.em(&e.cursor) else { return false };
+    if u.tipo != Tipo::Paragrafo || anotadinho_core::tabela_md::ler(&u.texto).is_none() {
+        return false;
+    }
+    let Some(inicio) = u.intervalo.as_ref().map(|r| r.start) else { return false };
+    abrir_tabela_md(e, h, inicio);
+    true
 }

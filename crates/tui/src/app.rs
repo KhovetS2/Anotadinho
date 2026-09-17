@@ -936,6 +936,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
                     || edicao::acao_do_fluxo(e)
                     || edicao::agendar_sem_data(e)
                     || edicao::abrir_detalhe_da_barra(e)
+                    || markdown::enter_na_tabela_md(e)
                     || edicao::abrir_pagina_da_celula(e)
                     || edicao::cartao_na_coluna_vazia(e)
                     || edicao::busca_da_consulta(e)
@@ -1099,6 +1100,48 @@ fn sem_vim(e: &mut Estado, tecla: &str) -> bool {
         _ => return false,
     }
     true
+}
+
+/// A tabela markdown comum desenhada em grade (ciclo 389), como a janela
+/// mostra a `<table>`: cabeçalho em negrito, bordas finas.
+fn linhas_da_tabela_md(cab: &[String], corpo: &[Vec<String>], recuo: usize, largura: usize, tema: &Tema) -> Vec<Line<'static>> {
+    let n = cab.len().max(1);
+    let disponivel = largura.saturating_sub(recuo + 1 + 3 * n).max(n * 3);
+    let mut larguras: Vec<usize> = (0..n)
+        .map(|i| std::iter::once(cab.get(i)).chain(corpo.iter().map(|l| l.get(i))).flatten().map(|c| c.chars().count()).max().unwrap_or(0).max(1))
+        .collect();
+    while larguras.iter().sum::<usize>() > disponivel {
+        let Some(maior) = larguras.iter().enumerate().max_by_key(|(_, w)| **w).map(|(i, _)| i) else { break };
+        if larguras[maior] <= 3 {
+            break;
+        }
+        larguras[maior] -= 1;
+    }
+    let borda = Style::default().fg(tema.var("border"));
+    let texto = Style::default().fg(tema.var("text-primary"));
+    let esp = " ".repeat(recuo);
+    let regua = |e: &str, m: &str, d: &str| -> Line<'static> {
+        let meio: Vec<String> = larguras.iter().map(|w| "─".repeat(w + 2)).collect();
+        Line::from(vec![Span::raw(esp.clone()), Span::styled(format!("{e}{}{d}", meio.join(m)), borda)])
+    };
+    let fileira = |celulas: &[String], estilo: Style| -> Line<'static> {
+        let mut spans = vec![Span::raw(esp.clone()), Span::styled("│", borda)];
+        for (i, w) in larguras.iter().enumerate() {
+            let c = celulas.get(i).map(String::as_str).unwrap_or("");
+            let mut v: String = c.chars().take(*w).collect();
+            if c.chars().count() > *w && *w > 1 {
+                v = format!("{}…", c.chars().take(w - 1).collect::<String>());
+            }
+            let falta = w.saturating_sub(v.chars().count());
+            spans.push(Span::styled(format!(" {v}{} ", " ".repeat(falta)), estilo));
+            spans.push(Span::styled("│", borda));
+        }
+        Line::from(spans)
+    };
+    let mut fora = vec![regua("┌", "┬", "┐"), fileira(cab, texto.add_modifier(Modifier::BOLD)), regua("├", "┼", "┤")];
+    fora.extend(corpo.iter().map(|l| fileira(l, texto)));
+    fora.push(regua("└", "┴", "┘"));
+    fora
 }
 
 /// Leva o cursor pra dentro do embed seguinte (ou anterior) da página.
@@ -1764,6 +1807,11 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                     ultima,
                     Some(&e.cursor),
                 )]
+            } else if let Some((cab, corpo)) = (l.tipo == Tipo::Paragrafo && l.embed_dono.is_none())
+                .then(|| e.arvore.em(&l.caminho).and_then(|u| anotadinho_core::tabela_md::ler(&u.texto)))
+                .flatten()
+            {
+                linhas_da_tabela_md(&cab, &corpo, 2 * l.nivel, largura_conteudo, &e.tema).into_iter().map(|x| vec![x]).collect()
             } else if !l.segmentos.is_empty() {
                 linhas_de_fileira(l, &e.arvore, &e.tema, largura_conteudo, Some(&e.cursor))
             } else if let Some(modo) = e.arvore.em(&l.caminho).and_then(caixa_avulsa) {
@@ -9859,5 +9907,33 @@ mod testes {
         e.pedidos.clear();
         tecla(&mut e, "Enter");
         assert_eq!(e.pedidos, [Pedido::AbrirExterno("assets/gato.png".into())]);
+    }
+
+    // --- Ciclo 389: tabela markdown comum ------------------------------------------
+
+    #[test]
+    fn tabela_markdown_e_desenhada_em_grade_e_editada_pelo_formulario() {
+        let mut e = pagina_com("# T\n\n| Nome | Nota |\n| --- | --- |\n| Ana | 10 |\n\nFim.\n");
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("┌") && tela.contains("│ Nome │ Nota │") && tela.contains("│ Ana  │ 10   │"), "{tela}");
+        assert!(!tela.contains("| --- |"), "{tela}");
+        e.cursor = vec![1];
+        tecla(&mut e, "A");
+        assert!(e.pergunta.is_none(), "não abre a linha única");
+        let Some(Modal::Detalhe { mut form, alvo, .. }) = e.modal.clone() else { panic!("{:?}", e.modal) };
+        form.campos[0].valor = crate::componentes::Valor::Texto("Nome | Nota | Obs".into());
+        form.campos[1].valor = crate::componentes::Valor::Lista(vec!["Ana | 10 | ok".into(), "Bia | 9".into()]);
+        edicao::aplicar_detalhe(&mut e, &alvo, &mut form);
+        let texto = e.gravacao.clone().unwrap();
+        assert!(texto.contains("| Nome | Nota | Obs |\n| ---- | ---- | --- |\n| Ana  | 10   | ok  |\n| Bia  | 9    |     |\n\nFim."), "{texto}");
+        // De novo, com a tabela já mudada de tamanho.
+        form.campos[1].valor = crate::componentes::Valor::Lista(vec!["Ana | 10 | ok".into()]);
+        edicao::aplicar_detalhe(&mut e, &alvo, &mut form);
+        assert!(!e.gravacao.clone().unwrap().contains("Bia"));
+        // Enter também abre.
+        e.modal = None;
+        e.cursor = vec![1];
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Detalhe { alvo: modais::AlvoDoDetalhe::TabelaMd { .. }, .. })));
     }
 }

@@ -2690,6 +2690,7 @@ pub(super) fn aplicar_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDetalh
         }
         // O agente e as teclas gravam só no botão.
         AlvoDoDetalhe::Agente | AlvoDoDetalhe::Teclas | AlvoDoDetalhe::Imagem => {}
+        AlvoDoDetalhe::TabelaMd { hospedeiro, inicio } => super::markdown::aplicar_tabela_md(e, hospedeiro, *inicio, form),
         AlvoDoDetalhe::Barra { embed, indice } => {
             let (inicio, fim) = (form.texto("inicio"), form.texto("fim"));
             for (nome, v) in [("início", &inicio), ("fim", &fim)] {
@@ -2789,7 +2790,7 @@ pub(super) fn excluir_do_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDet
                 e.seguir_cursor();
             }
         }
-        AlvoDoDetalhe::Propriedades | AlvoDoDetalhe::Consulta { .. } | AlvoDoDetalhe::Agente | AlvoDoDetalhe::Teclas | AlvoDoDetalhe::Imagem => {}
+        AlvoDoDetalhe::Propriedades | AlvoDoDetalhe::Consulta { .. } | AlvoDoDetalhe::Agente | AlvoDoDetalhe::Teclas | AlvoDoDetalhe::Imagem | AlvoDoDetalhe::TabelaMd { .. } => {}
         AlvoDoDetalhe::Barra { embed, indice } => {
             let i = *indice;
             if editar_cronograma(e, embed, |d| {
