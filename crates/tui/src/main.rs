@@ -196,6 +196,11 @@ fn abrir(estado: &mut Estado, vault: &str, caminho: &str) {
 /// arquivo quando ele acaba — como o registro de jobs do backend da janela.
 type Trabalhos = std::collections::HashMap<String, anotadinho_tui::agente::Trabalho>;
 
+/// A chave de uma execução: o vault e a conversa (ciclo 396).
+fn chave_do_trabalho(vault: &str, conversa: &str) -> String {
+    format!("{vault}\u{0}{conversa}")
+}
+
 /// Lê o arquivo, acrescenta a mensagem e grava de volta (com o
 /// frontmatter).
 fn acrescentar_mensagem(vault: &str, conversa: &str, mensagem: &anotadinho_core::conversa::Mensagem) -> Result<String, String> {
@@ -210,7 +215,7 @@ fn acrescentar_mensagem(vault: &str, conversa: &str, mensagem: &anotadinho_core:
 /// Grava a pergunta e dispara o agente com o histórico e os anexos.
 fn enviar_na_conversa(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, path: &str, pergunta: &str, anexos: &[String]) {
     use anotadinho_core::conversa::{self, Autor, Mensagem};
-    if trabalhos.contains_key(path) {
+    if trabalhos.contains_key(&chave_do_trabalho(vault, path)) {
         estado.aviso = Some("já tem uma execução em andamento nesta conversa".into());
         return;
     }
@@ -241,7 +246,7 @@ fn enviar_na_conversa(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalho
     };
     match anotadinho_tui::agente::Trabalho::iniciar(&adaptador, &prompt, &cwd) {
         Ok(t) => {
-            trabalhos.insert(path.to_string(), t);
+            trabalhos.insert(chave_do_trabalho(vault, path), t);
         }
         Err(e) => {
             if let Some(c) = estado.conversa.as_mut() {
@@ -259,20 +264,25 @@ fn enviar_na_conversa(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalho
 fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
     use anotadinho_core::conversa::{Autor, Mensagem};
     let mut prontos = Vec::new();
-    for (path, t) in trabalhos.iter_mut() {
+    for (chave, t) in trabalhos.iter_mut() {
         if let Some(fim) = t.terminou() {
-            prontos.push((path.clone(), fim));
+            prontos.push((chave.clone(), fim));
         }
     }
-    for (path, fim) in prontos {
-        trabalhos.remove(&path);
+    for (chave, fim) in prontos {
+        trabalhos.remove(&chave);
+        // A resposta vai pro vault da conversa, mesmo que a TUI esteja em
+        // outro agora (ciclo 396).
+        let (vault_da_conversa, path) = chave.split_once('\u{0}').map(|(v, p)| (v.to_string(), p.to_string())).unwrap_or_default();
+        let deste_vault = vault_da_conversa == vault;
+        let vault = vault_da_conversa.as_str();
         let erro = match fim {
             Ok(texto) => acrescentar_mensagem(vault, &path, &Mensagem { autor: Autor::Agente, quando: agora_local(), texto })
                 .err()
                 .map(|e| format!("não gravou a resposta: {e}")),
             Err(e) => Some(e),
         };
-        let aberta = estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path);
+        let aberta = deste_vault && estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path);
         if aberta {
             if let Some(c) = estado.conversa.as_mut() {
                 c.trabalho = None;
@@ -287,7 +297,7 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
         }
     }
     if let Some(c) = estado.conversa.as_mut() {
-        c.trabalho = trabalhos.get(&c.path).map(|t| (t.segundos(), t.parcial()));
+        c.trabalho = trabalhos.get(&chave_do_trabalho(vault, &c.path)).map(|t| (t.segundos(), t.parcial()));
     }
 }
 
@@ -747,7 +757,7 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                     Err(e) => estado.aviso = Some(format!("não consegui ler o prompt: {e}")),
                 },
                 Pedido::InterromperAgente(path) => {
-                    if let Some(t) = trabalhos.get(&path) {
+                    if let Some(t) = trabalhos.get(&chave_do_trabalho(vault, &path)) {
                         t.interromper();
                     }
                 }
@@ -894,8 +904,12 @@ fn main() -> Result<(), String> {
     let mut term = Terminal::new(CrosstermBackend::new(saida)).map_err(|e| e.to_string())?;
 
     // Trocar de vault (ciclo 373) monta tudo de novo sem sair do terminal.
+    // As execuções do agente vivem fora do laço (ciclo 396): trocar de
+    // vault não mata o que está rodando, e a resposta cai na conversa
+    // quando ele acaba.
+    let mut trabalhos = Trabalhos::new();
     let resultado = loop {
-        match laco(&mut term, &mut estado, &vault_da_sessao) {
+        match laco(&mut term, &mut estado, &vault_da_sessao, &mut trabalhos) {
             Ok(Some((outro, criado))) => match montar_estado(&outro, criado, estado.preferencias.clone()) {
                 Ok(novo) => {
                     estado = novo;
@@ -918,8 +932,8 @@ fn laco<B: ratatui::backend::Backend>(
     term: &mut Terminal<B>,
     estado: &mut Estado,
     vault: &str,
+    trabalhos: &mut Trabalhos,
 ) -> Result<Option<(String, bool)>, String> {
-    let mut trabalhos = Trabalhos::new();
     let mut voltas_sem_tecla: u64 = 0;
     loop {
         estado.agora = Some(agora_local());
@@ -939,8 +953,8 @@ fn laco<B: ratatui::backend::Backend>(
             if voltas_sem_tecla % 4 == 0 {
                 vigiar_disco(estado, vault, voltas_sem_tecla % 8 == 0);
             }
-            acompanhar(estado, vault, &mut trabalhos);
-            atender(estado, vault, &mut trabalhos);
+            acompanhar(estado, vault, trabalhos);
+            atender(estado, vault, trabalhos);
             buscar_na_paleta(estado, vault);
             continue;
         }
@@ -968,8 +982,8 @@ fn laco<B: ratatui::backend::Backend>(
                 estado.abrir_texto(&texto, versao);
             }
         }
-        atender(estado, vault, &mut trabalhos);
-        acompanhar(estado, vault, &mut trabalhos);
+        atender(estado, vault, trabalhos);
+        acompanhar(estado, vault, trabalhos);
         // Uma edição deixou texto novo: grava com a trava de versão. Se
         // o arquivo mudou por fora, a gravação é recusada, a página volta
         // a ser a do disco e o rodapé diz por quê (ciclo 318).

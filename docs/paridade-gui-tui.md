@@ -96,6 +96,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 |---|---|---|
 | Conversa, anexos, prompt padrão, virar spec/proposta/execução | ✅ | 340, 341 |
 | Conversa: pasta de trabalho e pastas extras do agente | ✅ | 369 — no topo; trocar/dar alcance/tirar pela barra |
+| Agente continua rodando ao trocar de vault | ✅ | 396 — a resposta cai na conversa do vault dela |
 | Configurar agente (binário, args, pasta, pastas extras) | ✅ | 350 — "Configurar agente…" (formulário, valida `{prompt}`) |
 | Lista de agentes (presets + criados, novo, remover) | ✅ | 392 — em "Trocar agente…" |
 | Propostas do agente (diff, aplicar, recusar) | ✅ | 346 — "Propostas do agente" na barra |
