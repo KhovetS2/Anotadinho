@@ -209,6 +209,10 @@ pub struct Preferencias {
     /// Grava a cada edição (ciclo 375); desligado, só no `Ctrl+S`.
     #[serde(default = "verdadeiro")]
     pub salvar_automatico: bool,
+    /// A gramática do vim no conteúdo (ciclo 376); desligada, digitar
+    /// edita direto.
+    #[serde(default = "verdadeiro")]
+    pub modo_vim: bool,
 }
 
 fn botoes_padrao() -> String {
@@ -224,7 +228,7 @@ fn verdadeiro() -> bool {
 
 impl Default for Preferencias {
     fn default() -> Self {
-        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default(), ultimo_vault: None, salvar_automatico: true }
+        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default(), ultimo_vault: None, salvar_automatico: true, modo_vim: true }
     }
 }
 
@@ -457,6 +461,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Remapear teclas…", "remapear-teclas"),
     ("Alternar sidebar", "alternar-sidebar"),
     ("Alternar salvamento automático", "salvamento-automatico"),
+    ("Alternar modo vim", "modo-vim"),
     ("Salvar (Ctrl+S)", "salvar"),
     ("Ir pra Hoje (journal)", "hoje"),
     ("Personalizar…", "personalizar"),
@@ -507,6 +512,7 @@ fn menu_de_personalizacao(e: &Estado) -> Lista {
         Item::novo("●", "Cor de destaque", "destaque").com_detalhe(if e.preferencias.destaque.is_empty() { "do tema".to_string() } else { e.preferencias.destaque.clone() }),
         Item::novo("▢", "Botões", "botoes").com_detalhe(e.preferencias.botoes.clone()),
         Item::novo("▤", "Sidebar", "sidebar").com_detalhe(if e.preferencias.sidebar { "visível" } else { "escondida" }),
+        Item::novo("⌨", "Modo vim", "vim").com_detalhe(if e.preferencias.modo_vim { "ligado" } else { "desligado" }),
         Item::novo("⤓", "Salvamento automático", "salvamento").com_detalhe(if e.preferencias.salvar_automatico { "ligado" } else { "desligado" }),
         Item::novo("ϟ", "Agente das conversas", "agente").com_detalhe(agente),
         Item::novo("?", "Ver atalhos", "atalhos"),
@@ -625,6 +631,11 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "aba-fechar" => super::comando_de_aba(e, "Alt+q"),
         "git" => e.pedidos.push(Pedido::StatusDoGit),
         "salvar" => e.salvar_agora = true,
+        "modo-vim" => {
+            e.preferencias.modo_vim = !e.preferencias.modo_vim;
+            e.aviso = Some(if e.preferencias.modo_vim { "modo vim ligado" } else { "modo vim desligado: digite pra editar, Ctrl+K abre a barra" }.into());
+            e.pedidos.push(Pedido::GravarPreferencias);
+        }
         "salvamento-automatico" => {
             e.preferencias.salvar_automatico = !e.preferencias.salvar_automatico;
             e.aviso = Some(if e.preferencias.salvar_automatico { "salvamento automático ligado" } else { "salvamento automático desligado: Ctrl+S salva" }.into());
@@ -731,6 +742,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                     "agente" => e.modal = Some(escolha_de_agente(e)),
                     "salvamento" => executar(e, "salvamento-automatico"),
+                    "vim" => executar(e, "modo-vim"),
                     "atalhos" => e.modal = Some(Modal::Atalhos(0)),
                     _ => {}
                 },

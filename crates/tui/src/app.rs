@@ -862,7 +862,8 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
     }
     // A barra de comandos: `:` (o modo de comando do vim) ou `Ctrl+K` (o
     // atalho da janela); `?` mostra os atalhos.
-    if tecla == "Ctrl+k" || (matches!(tecla, ":" | "?") && !e.vim.em_curso()) {
+    let digitando_direto = !e.preferencias.modo_vim && e.foco == Foco::Conteudo;
+    if tecla == "Ctrl+k" || (matches!(tecla, ":" | "?") && !e.vim.em_curso() && !digitando_direto) {
         if tecla == "?" {
             e.modal = Some(Modal::Atalhos(0));
         } else {
@@ -917,6 +918,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
                     || edicao::seguir_wikilink(e)
                     || edicao::abrir_link_externo(e))
             {
+                return None;
+            }
+            // Sem o modo vim (ciclo 376), digitar edita direto.
+            if !e.preferencias.modo_vim && e.conversa.is_none() && e.especial.is_none() && sem_vim(e, tecla) {
                 return None;
             }
             if tecla == "Enter" {
@@ -1023,6 +1028,35 @@ fn desenhar_abas(f: &mut Frame, e: &Estado, area: ratatui::layout::Rect) {
     let barra = ratatui::layout::Rect { x: area.x + 1, y: area.y, width: area.width.saturating_sub(2), height: 1 };
     f.render_widget(ratatui::widgets::Clear, barra);
     f.render_widget(Paragraph::new(Line::from(spans)).style(e.tema.estilo(Realce::Fundo)), barra);
+}
+
+/// O modo sem vim (ciclo 376), como o editor da janela com o "Vim mode"
+/// desligado: digitar escreve no fim do bloco sob o cursor (o `A` e a
+/// letra), `Backspace` apaga do fim, `Enter` num bloco de texto cria o
+/// seguinte, `Delete` apaga o bloco, `Ctrl+Z`/`Ctrl+Y` desfazem e refazem.
+/// As setas andam, `Esc` sobe de nível e `Ctrl+K` abre a barra.
+fn sem_vim(e: &mut Estado, tecla: &str) -> bool {
+    let editar = |e: &mut Estado, teclas: &[&str]| {
+        for t in teclas {
+            if e.pergunta.is_some() {
+                edicao::tecla_na_pergunta(e, t);
+            } else {
+                tecla_no_conteudo(e, t);
+            }
+        }
+    };
+    let bloco_de_texto = markdown::hospedeiro_do_cursor(e).is_some()
+        && !matches!(e.arvore.em(&e.cursor).map(|u| &u.tipo), Some(Tipo::Embed(_) | Tipo::Parte { .. }) | None);
+    match tecla {
+        "Ctrl+z" => editar(e, &["u"]),
+        "Ctrl+y" => editar(e, &["Ctrl+r"]),
+        "Delete" => editar(e, &["d", "d"]),
+        "Enter" if bloco_de_texto => editar(e, &["o"]),
+        "Backspace" => editar(e, &["A", "Backspace"]),
+        t if t.chars().count() == 1 => editar(e, &["A", t]),
+        _ => return false,
+    }
+    true
 }
 
 /// A página pra onde a parte sob o cursor aponta, se aponta.
@@ -9485,5 +9519,31 @@ mod testes {
         e.salvar_agora = false;
         modais::executar(&mut e, "salvamento-automatico");
         assert!(e.preferencias.salvar_automatico && e.salvar_agora);
+    }
+
+    // --- Ciclo 376: sem o modo vim ----------------------------------------------
+
+    #[test]
+    fn sem_vim_digitar_edita_direto_e_enter_cria_o_seguinte() {
+        let mut e = markdown_editavel();
+        modais::executar(&mut e, "modo-vim");
+        assert!(!e.preferencias.modo_vim);
+        e.cursor = vec![1];
+        // `j` é letra, não "descer".
+        digitar(&mut e, " jk");
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).contains("Um parágrafo com **negrito**. jk\n"), "{}", corpo_gravado(&e));
+        tecla(&mut e, "Backspace");
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).contains("**negrito**. j\n"), "{}", corpo_gravado(&e));
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "novo");
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).contains("**negrito**. j\n\nnovo\n"), "{}", corpo_gravado(&e));
+        // `:` é texto; Ctrl+K abre a barra; Ctrl+Z desfaz.
+        tecla(&mut e, "Ctrl+z");
+        assert!(!corpo_gravado(&e).contains("novo"));
+        tecla(&mut e, "Ctrl+k");
+        assert!(matches!(e.modal, Some(Modal::Paleta(_))));
     }
 }
