@@ -133,6 +133,9 @@ pub struct Estado {
     /// O que a busca da sidebar achou no CONTEÚDO (ciclo 370): o termo e
     /// os trechos, como a seção "Resultados" da janela.
     pub resultados_da_busca: Option<(String, Vec<anotadinho_core::embed::SearchHit>)>,
+    /// O termo buscado no conteúdo: a página aberta a seguir leva o
+    /// cursor até ele (ciclo 371), como a janela revela o trecho.
+    pub alvo_de_busca: Option<String>,
     /// A página de início deste vault (ciclo 362): abre primeiro, e a aba
     /// dela fica fixa na frente.
     pub inicio: Option<String>,
@@ -225,6 +228,7 @@ impl Estado {
             wikilink_dispensado: None,
             abas: Vec::new(),
             resultados_da_busca: None,
+            alvo_de_busca: None,
             inicio: None,
             imagem_pendente: None,
             celula_pendente: None,
@@ -303,6 +307,29 @@ impl Estado {
         self.refazer.clear();
         self.texto_da_pagina = (!calendario).then(|| texto.to_string());
         self.versao = versao;
+        if let Some(termo) = self.alvo_de_busca.take() {
+            self.revelar(&termo);
+        }
+    }
+
+    /// Leva o cursor ao primeiro bloco que contém `termo`, abrindo as
+    /// dobras no caminho (ciclo 371).
+    pub fn revelar(&mut self, termo: &str) {
+        let alvo = termo.to_lowercase();
+        let achado = self
+            .arvore
+            .percorrer()
+            .into_iter()
+            .find(|(_, u)| !u.texto.is_empty() && u.texto.to_lowercase().contains(&alvo))
+            .map(|(c, _)| c);
+        if let Some(c) = achado {
+            for n in 1..c.len() {
+                self.dobrados.remove(&c[..n].to_vec());
+            }
+            self.cursor = c;
+            self.foco = Foco::Conteudo;
+            self.seguir_cursor();
+        }
     }
 
     /// A aba do início vai pra frente, sem mexer na ordem das outras —
@@ -1102,6 +1129,9 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
             None
         }
         "Enter" => {
+            if matches!(e.sidebar_visivel().get(e.linha_sidebar).map(|l| &l.item), Some(Item::Resultado { .. })) {
+                e.alvo_de_busca = Some(e.busca.clone());
+            }
             // Enter numa PASTA abre ou fecha; numa página, abre a
             // página. A mesma tecla, o que faz sentido pro que está sob
             // o cursor.
@@ -9353,5 +9383,24 @@ mod testes {
         tecla(&mut e, "/");
         digitar(&mut e, "xyz");
         assert!(!desenho(&mut e, 120, 12).join("\n").contains("⌕ gama"));
+    }
+
+    #[test]
+    fn abrir_pelo_resultado_leva_o_cursor_ao_trecho() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::mostrar_resultados_da_busca(
+            &mut e,
+            "sprint",
+            &[anotadinho_core::embed::SearchHit { path: "pages/beta.md".into(), snippet: "a **sprint**".into(), origem: None, ancora: None }],
+        );
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/beta.md".into())]);
+        e.pagina = 1;
+        e.abrir_texto("# Beta\n\nIntro.\n\n## Planos\n\n- revisar a Sprint de agosto\n", None);
+        assert!(e.arvore.em(&e.cursor).unwrap().texto.contains("Sprint"), "{:?}", e.cursor);
+        assert_eq!(e.foco, Foco::Conteudo);
+        // A próxima página abre normal.
+        e.abrir_texto("# Outra\n\nSprint aqui também.\n", None);
+        assert_eq!(e.cursor, tela::primeiro(&e.arvore).unwrap_or_default());
     }
 }

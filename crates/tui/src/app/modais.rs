@@ -763,6 +763,9 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 if acao == AcaoDaEscolha::Formatar {
                     super::formatar::retomar(e);
                 }
+                if acao == AcaoDaEscolha::AbrirPagina {
+                    e.alvo_de_busca = None;
+                }
             }
             Resposta::Nada => e.modal = Some(Modal::Escolha { titulo, lista, acao }),
         },
@@ -1212,6 +1215,7 @@ pub fn mostrar_resultados_da_busca(e: &mut Estado, termo: &str, hits: &[anotadin
             Item::novo("⌕", titulo, h.path.clone()).com_detalhe(format!("{origem}{}", trecho.chars().take(60).collect::<String>()))
         })
         .collect();
+    e.alvo_de_busca = Some(termo.to_string());
     e.modal = Some(Modal::Escolha {
         titulo: format!("\"{termo}\" no conteúdo"),
         lista: Lista::filtravel(itens),

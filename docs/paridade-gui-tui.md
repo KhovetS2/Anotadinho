@@ -10,6 +10,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 |---|---|---|
 | Sidebar em árvore de pastas, filtro | ✅ | 299, 292 |
 | Busca da sidebar também no conteúdo ("Resultados") | ✅ | 370 — a partir de 3 letras, com o trecho |
+| Abrir resultado de busca já no trecho | ✅ | 371 — cursor no bloco, dobras abertas |
 | Seção Journals + "Journal de hoje" | ✅ | 339, 355 — seção no fim da sidebar, o mais novo em cima |
 | Nova página / por tipo | ✅ | 339 |
 | Nova pasta, nova página na pasta | ✅ | 345 — `O`/`o` na sidebar, "Nova pasta…" |
