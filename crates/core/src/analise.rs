@@ -670,7 +670,13 @@ fn semana_da_grade(
                     (Some(h), true) => format!("{h} {}", entrada.title),
                     _ => entrada.title.clone(),
                 };
-                grupo(nome, titulo, vec![item("detalhe", detalhe_do_evento(entrada))])
+                let mut filhos = vec![item("detalhe", detalhe_do_evento(entrada))];
+                // Evento do vault aponta pra página dele (ciclo 317): é
+                // pra onde o Enter leva, como o clique na janela.
+                if let Some(p) = &entrada.page_path {
+                    filhos.push(item("pagina", p.clone()));
+                }
+                grupo(nome, titulo, filhos)
             };
             let mut slots: Vec<Unidade> = (0..faixas)
                 .map(|faixa| {
@@ -743,7 +749,13 @@ fn agenda_do_dia(d: &embed::CalendarEmbedData, tags: &[String], ancora: &str) ->
             grupo(
                 &nome_com_cor("compromisso", e, tags),
                 e.title.clone(),
-                vec![item("hora", hora), item("detalhe", detalhe_do_evento(e))],
+                {
+                    let mut filhos = vec![item("hora", hora), item("detalhe", detalhe_do_evento(e))];
+                    if let Some(p) = &e.page_path {
+                        filhos.push(item("pagina", p.clone()));
+                    }
+                    filhos
+                },
             )
         })
         .collect();

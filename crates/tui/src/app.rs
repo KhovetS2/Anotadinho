@@ -79,6 +79,10 @@ pub struct Estado {
     /// A âncora de cada calendário da página aberta, pelo caminho do
     /// embed — o mês que ele mostra. Ausente é "o mês de hoje".
     pub ancoras: std::collections::HashMap<Caminho, String>,
+    /// Os eventos que as páginas do vault declaram (`date::`), pros
+    /// calendários em modo vault (ciclo 317). Quem varre o vault é o
+    /// `main`; vazio é "ninguém varreu".
+    pub eventos_do_vault: Vec<anotadinho_core::embed::CalendarEntry>,
     /// A visão de cada calendário (ciclo 316). Ausente é Mês.
     pub visoes: std::collections::HashMap<Caminho, anotadinho_core::analise::Visao>,
     /// A barra está capturando tecla?
@@ -120,6 +124,7 @@ impl Estado {
             hoje: None,
             ancoras: std::collections::HashMap::new(),
             visoes: std::collections::HashMap::new(),
+            eventos_do_vault: Vec::new(),
         }
     }
 
@@ -128,6 +133,13 @@ impl Estado {
         self.hoje = Some(hoje.to_string());
         self.ancorar_calendarios();
         self.cursor = tela::primeiro(&self.arvore).unwrap_or_default();
+        self
+    }
+
+    /// Entrega os eventos do vault e remonta os calendários em modo vault.
+    pub fn com_eventos_do_vault(mut self, eventos: Vec<anotadinho_core::embed::CalendarEntry>) -> Self {
+        self.eventos_do_vault = eventos;
+        self.ancorar_calendarios();
         self
     }
 
@@ -144,7 +156,12 @@ impl Estado {
             if !matches!(&u.tipo, Tipo::Embed(n) if n == "calendar") {
                 continue;
             }
-            let Some(dados) = u.fonte.as_deref().and_then(dados_do_calendario) else { continue };
+            let Some(mut dados) = u.fonte.as_deref().and_then(dados_do_calendario) else { continue };
+            // Modo vault: os eventos são as páginas com data, não o que
+            // está escrito no embed — como a janela faz.
+            if dados.mode == anotadinho_core::embed::CalendarSource::Vault {
+                dados.entries = self.eventos_do_vault.clone();
+            }
             let ancora = self.ancoras.get(&vec![i]).cloned().unwrap_or_else(|| hoje.clone());
             let visao = self.visoes.get(&vec![i]).copied().unwrap_or_default();
             self.arvore.filhos[i].filhos = anotadinho_core::analise::partes_do_calendario_na_visao(
@@ -370,10 +387,30 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
         }
         _ if e.foco == Foco::Paginas => tecla_nas_paginas(e, tecla),
         _ => {
+            // Enter num evento do vault abre a página dele (ciclo 317), o
+            // que o clique faz na janela.
+            if tecla == "Enter" {
+                if let Some(pagina) = pagina_do_cursor(e) {
+                    if let Some(i) = e.paginas.iter().position(|p| p.path == pagina) {
+                        e.pagina = i;
+                    }
+                    return Some(pagina);
+                }
+            }
             tecla_no_conteudo(e, tecla);
             None
         }
     }
+}
+
+/// A página pra onde a parte sob o cursor aponta, se aponta.
+fn pagina_do_cursor(e: &Estado) -> Option<String> {
+    e.arvore
+        .em(&e.cursor)?
+        .filhos
+        .iter()
+        .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "pagina"))
+        .map(|f| f.texto.clone())
 }
 
 /// O que uma tecla faz com a barra de busca aberta.
@@ -3725,6 +3762,39 @@ mod testes {
         tecla(&mut e, "]");
         let tudo = desenho(&mut e, 120, 30).join("\n");
         assert!(tudo.contains("quinta, 20 de agosto de 2026") && tudo.contains("sem eventos"), "{tudo}");
+    }
+
+    #[test]
+    fn calendario_em_modo_vault_mostra_as_paginas_com_data_e_enter_abre() {
+        let arvore = analisar("{{ type: \"calendar\" }}\nmode: vault\n{{ /calendar }}\n");
+        let eventos = anotadinho_core::calendario::entradas_do_vault(&[anotadinho_core::PageIndexEntry {
+            path: "journals/diario.md".into(),
+            title: "Diário de 19".into(),
+            properties: [("date".to_string(), "2026-08-19".to_string())].into_iter().collect(),
+            ..Default::default()
+        }]);
+        let mut paginas = paginas();
+        paginas.push(PageMeta {
+            path: "journals/diario.md".into(),
+            title: "Diário de 19".into(),
+            section: "journals".into(),
+        });
+        let mut e = Estado::novo(paginas, arvore).com_hoje("2026-08-10").com_eventos_do_vault(eventos);
+        e.foco = Foco::Conteudo;
+        let tudo = desenho(&mut e, 140, 40).join("\n");
+        assert!(tudo.contains("Diário d") && tudo.contains("1 evento"), "{tudo}");
+        // Quarta, 19 de agosto: semana 16–22, coluna 3, a primeira faixa.
+        e.cursor = vec![0, 1, 3, 3, 0];
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Diário de 19");
+        assert!(desenho(&mut e, 140, 40).join("\n").contains("journals/diario.md"), "o detalhe diz a página");
+        assert_eq!(tecla(&mut e, "Enter").as_deref(), Some("journals/diario.md"));
+        assert_eq!(e.paginas[e.pagina].path, "journals/diario.md");
+        // Evento escrito no embed (não do vault) não abre nada.
+        let mut m = Estado::novo(super::testes::paginas(), com_calendario()).com_hoje("2026-08-10");
+        m.foco = Foco::Conteudo;
+        m.cursor = vec![0, 1, 1, 4, 0];
+        assert_eq!(m.arvore.em(&m.cursor).unwrap().texto, "Revisão de código");
+        assert_eq!(tecla(&mut m, "Enter"), None);
     }
 
     #[test]

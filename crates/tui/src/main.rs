@@ -3,7 +3,7 @@
 //! Tudo que dá pra testar mora em `app` e `tela`. Aqui fica só o que
 //! precisa de um terminal de verdade — e é curto de propósito.
 
-use anotadinho_ipc::{handle_list_pages, handle_read_page};
+use anotadinho_ipc::{handle_list_pages, handle_read_page, handle_scan_vault};
 use anotadinho_tui::app::{self, Estado};
 use clap::Parser;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -107,7 +107,14 @@ fn main() -> Result<(), String> {
     }
     let mut estado = Estado::novo(paginas, primeira)
         .com_tema(&cli.tema)
-        .com_hoje(&hoje_local());
+        .com_hoje(&hoje_local())
+        // Os calendários em modo vault leem as páginas com data. Varrer
+        // falhando não impede a TUI: o calendário só fica vazio.
+        .com_eventos_do_vault(
+            handle_scan_vault(cli.vault.clone())
+                .map(|p| anotadinho_core::calendario::entradas_do_vault(&p))
+                .unwrap_or_default(),
+        );
 
     // Sem terminal de verdade, `enable_raw_mode` falha com
     // "No such device or address (os error 6)" — que não diz nada a

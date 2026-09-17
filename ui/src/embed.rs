@@ -22,22 +22,9 @@ pub async fn scan_vault_calendar_entries(vault_path: &str) -> Vec<CalendarEntry>
     let Ok(pages) = crate::api::scan_vault(vault_path).await else {
         return Vec::new();
     };
-    pages
-        .iter()
-        .filter_map(|page| {
-            let date = page.properties.get("date")?.clone();
-            Some(CalendarEntry {
-                date: Some(date),
-                title: page.title.clone(),
-                end_date: page.properties.get("end_date").cloned(),
-                tags: Vec::new(),
-                legacy_tag: None,
-                start_time: page.properties.get("time").cloned(),
-                end_time: None,
-                page_path: Some(page.path.clone()),
-            })
-        })
-        .collect()
+    // A tradução de página em evento mora no núcleo desde o ciclo 317 —
+    // a TUI mostra o mesmo calendário.
+    anotadinho_core::calendario::entradas_do_vault(&pages)
 }
 
 /// Escaneia o vault inteiro por tags usadas em embeds inline (cards de

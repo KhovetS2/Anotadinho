@@ -146,6 +146,32 @@ pub fn existing_tags(entries: &[CalendarEntry]) -> Vec<String> {
     set.into_iter().collect()
 }
 
+/// Os eventos de um calendário em modo vault: uma entrada por página com
+/// `date` (frontmatter ou `date::` no corpo), com `end_date` e `time`
+/// quando houver e o caminho da página (ciclo 317).
+///
+/// Morava na janela (`scan_vault_calendar_entries`), colado à chamada de
+/// IPC. A varredura continua sendo de quem roda; a TRADUÇÃO de página em
+/// evento é uma só, pros dois lados mostrarem o mesmo calendário.
+pub fn entradas_do_vault(paginas: &[crate::PageIndexEntry]) -> Vec<CalendarEntry> {
+    paginas
+        .iter()
+        .filter_map(|page| {
+            let date = page.properties.get("date")?.clone();
+            Some(CalendarEntry {
+                date: Some(date),
+                title: page.title.clone(),
+                end_date: page.properties.get("end_date").cloned(),
+                tags: Vec::new(),
+                legacy_tag: None,
+                start_time: page.properties.get("time").cloned(),
+                end_time: None,
+                page_path: Some(page.path.clone()),
+            })
+        })
+        .collect()
+}
+
 /// Os meses `(ano, mês)` que algum evento com data toca, em ordem.
 ///
 /// Sem "mês corrente" — o terminal e o CLI não têm navegação — a grade
@@ -239,5 +265,25 @@ mod testes {
         let mut b = evento("2026-08-10", None, "B");
         b.tags = vec!["infra".into(), "urgente".into()];
         assert_eq!(existing_tags(&[a, b]), vec!["infra".to_string(), "urgente".to_string()]);
+    }
+
+    #[test]
+    fn pagina_com_date_vira_evento_do_vault() {
+        let pagina = |path: &str, props: &[(&str, &str)]| crate::PageIndexEntry {
+            path: path.into(),
+            title: path.trim_end_matches(".md").rsplit('/').next().unwrap().into(),
+            properties: props.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            ..Default::default()
+        };
+        let eventos = entradas_do_vault(&[
+            pagina("journals/diario.md", &[("date", "2026-08-19"), ("time", "10:00")]),
+            pagina("pages/sem-data.md", &[("status", "rascunho")]),
+            pagina("pages/viagem.md", &[("date", "2026-08-20"), ("end_date", "2026-08-22")]),
+        ]);
+        assert_eq!(eventos.len(), 2);
+        assert_eq!(eventos[0].title, "diario");
+        assert_eq!(eventos[0].start_time.as_deref(), Some("10:00"));
+        assert_eq!(eventos[0].page_path.as_deref(), Some("journals/diario.md"));
+        assert_eq!(eventos[1].end_date.as_deref(), Some("2026-08-22"));
     }
 }

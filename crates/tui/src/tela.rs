@@ -384,7 +384,7 @@ fn achatar_fileiras(linhas: Vec<Linha>, raiz: &Unidade) -> Vec<Linha> {
 pub fn fica_fora_da_tela(nome: &str) -> bool {
     matches!(
         nome,
-        "inicio" | "duracao" | "evento-continua" | "vazio" | "mais" | "variante" | "detalhe" | "data" | "hora"
+        "inicio" | "duracao" | "evento-continua" | "vazio" | "mais" | "variante" | "detalhe" | "data" | "hora" | "pagina"
     )
         || nome == "evento"
         || nome.starts_with("evento--")
