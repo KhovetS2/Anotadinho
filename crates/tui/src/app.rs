@@ -9257,12 +9257,12 @@ mod testes {
         let i = form.campos.iter().position(|c| c.chave == "down").unwrap();
         form.campos[i].valor = crate::componentes::Valor::Texto("n".into());
         let g = form.campos.iter().position(|c| c.chave == "hoje").unwrap();
-        form.campos[g].valor = crate::componentes::Valor::Texto("Ctrl+d".into());
+        form.campos[g].valor = crate::componentes::Valor::Texto("Alt+d".into());
         assert!(teclas::salvar(&mut e2, &form));
         assert_eq!(e2.preferencias.teclas_vim.get("down").map(String::as_str), Some("n"));
-        assert_eq!(e2.preferencias.teclas_globais.get("hoje").map(String::as_str), Some("Ctrl+d"));
+        assert_eq!(e2.preferencias.teclas_globais.get("hoje").map(String::as_str), Some("Alt+d"));
         assert_eq!(e2.preferencias.teclas_vim.len(), 1, "só o que mudou é gravado");
-        tecla(&mut e2, "Ctrl+d");
+        tecla(&mut e2, "Alt+d");
         assert!(e2.pedidos.contains(&Pedido::AbrirHoje));
     }
 
@@ -9720,5 +9720,30 @@ mod testes {
         assert_eq!(e.foco, Foco::Paginas);
         tecla(&mut e, "Ctrl+l");
         assert_eq!(e.foco, Foco::Conteudo);
+    }
+
+    // --- Ciclo 382: atalhos globais da janela -----------------------------------
+
+    #[test]
+    fn os_atalhos_globais_da_janela_valem_por_padrao() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "Ctrl+n");
+        assert_eq!(e.pedidos, [Pedido::ListarTemplates]);
+        e.pedidos.clear();
+        tecla(&mut e, "Ctrl+d");
+        assert_eq!(e.pedidos, [Pedido::AbrirHoje]);
+        e.pedidos.clear();
+        tecla(&mut e, "Ctrl+g");
+        assert_eq!(e.pedidos, [Pedido::AbrirEspecial(especiais::TipoEspecial::Tags)]);
+        let sidebar = e.preferencias.sidebar;
+        tecla(&mut e, "Ctrl+b");
+        assert_ne!(e.preferencias.sidebar, sidebar);
+        // Nas telas de tags e propostas, Ctrl+D ainda rola.
+        let mut e = especial_aberto("propostas");
+        especiais::carregar(&mut e, especiais::Dados::Propostas(vec![]));
+        e.pedidos.clear();
+        tecla(&mut e, "Ctrl+d");
+        assert!(e.pedidos.is_empty());
     }
 }

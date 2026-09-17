@@ -11,6 +11,9 @@
 │                                 │  Alt+Q           fechar a aba                                        │                                 │
 │                                 │  Alt+. Alt+,     embed seguinte / anterior                           │                                 │
 │                                 │  Ctrl+E Ctrl+L   foco na sidebar / no conteúdo                       │                                 │
+│                                 │  Ctrl+N Ctrl+F   nova página / nova pasta                            │                                 │
+│                                 │  Ctrl+T Ctrl+B   alternar tema / sidebar                             │                                 │
+│                                 │  Ctrl+D Ctrl+G Ctrl+Uhoje / tags / assets                            │                                 │
 │                                 │  /               filtrar                                             │                                 │
 │                                 │  q               sair                                                │                                 │
 │                                 │                                                                      │                                 │
@@ -27,9 +30,6 @@
 │                                 │  cc S            reescrever do zero                                  │                                 │
 │                                 │  Ctrl+B Ctrl+T   negrito / formatar a palavra (inserindo)            │                                 │
 │                                 │  o O             criar depois / antes                                │                                 │
-│                                 │  dd x            apagar                                              │                                 │
-│                                 │  yy p P          copiar e colar                                      │                                 │
-│                                 │  >> <<           andar pro lado                                      │                                 │
 │                                 ╰ j k rolar · Esc ─────────────────────────────────────────────────────╯                                 │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -52,6 +52,9 @@ adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmjjjjj
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggggggmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
@@ -68,9 +71,6 @@ adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjj
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
-adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
-adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
-adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfmmmmmmmmmmmmmmmmmffffffffffffffffffffffffffffffffffffffffffffffffffffffdddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb

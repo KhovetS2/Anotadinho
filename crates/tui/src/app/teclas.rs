@@ -42,13 +42,14 @@ pub const VIM: &[(&str, &str, &str)] = &[
 /// padrão (vazia é sem tecla).
 pub const GLOBAIS: &[(&str, &str, &str)] = &[
     ("paleta", "Barra de comandos", "Ctrl+k"),
-    ("nova-pagina", "Nova página", ""),
-    ("nova-pasta", "Nova pasta", ""),
-    ("alternar-tema", "Alternar tema", ""),
-    ("alternar-sidebar", "Alternar sidebar", ""),
-    ("hoje", "Ir pra Hoje", ""),
-    ("ver-tags", "Ver tags", ""),
-    ("ver-assets", "Ver assets", ""),
+    // As mesmas teclas da janela (ciclo 382), com o Ctrl implícito dela.
+    ("nova-pagina", "Nova página", "Ctrl+n"),
+    ("nova-pasta", "Nova pasta", "Ctrl+f"),
+    ("alternar-tema", "Alternar tema", "Ctrl+t"),
+    ("alternar-sidebar", "Alternar sidebar", "Ctrl+b"),
+    ("hoje", "Ir pra Hoje", "Ctrl+d"),
+    ("ver-tags", "Ver tags", "Ctrl+g"),
+    ("ver-assets", "Ver assets", "Ctrl+u"),
     ("aba-proxima", "Próxima aba", "Ctrl+w"),
     ("aba-anterior", "Aba anterior", "Alt+h"),
     ("aba-fechar", "Fechar aba", "Alt+q"),
@@ -72,7 +73,8 @@ pub(super) enum Remapeada {
 /// Traduz a tecla pelo remapeamento das preferências.
 pub(super) fn traduzir(e: &Estado, tecla: &str) -> Remapeada {
     let p = &e.preferencias;
-    if p.teclas_globais.is_empty() && p.teclas_vim.is_empty() {
+    // As telas de tags/propostas rolam com Ctrl+D/Ctrl+U.
+    if e.especial.is_some() && matches!(tecla, "Ctrl+d" | "Ctrl+u") {
         return Remapeada::Traduzida(tecla.to_string());
     }
     // Globais que mudaram: a nova executa; a padrão antiga fica livre
@@ -80,7 +82,9 @@ pub(super) fn traduzir(e: &Estado, tecla: &str) -> Remapeada {
     // caminho de sempre, então a antiga para de funcionar abaixo).
     for (acao, _, padrao) in GLOBAIS {
         let atual = tecla_de(&p.teclas_globais, acao, padrao);
-        if !atual.is_empty() && atual == tecla && atual != *padrao {
+        // A barra e as abas já têm caminho próprio pra tecla padrão.
+        let tem_caminho = matches!(*acao, "paleta" | "aba-proxima" | "aba-anterior" | "aba-fechar");
+        if !atual.is_empty() && atual == tecla && (atual != *padrao || !tem_caminho) {
             return Remapeada::Comando(acao);
         }
         if !padrao.is_empty() && *padrao == tecla && atual != *padrao {
