@@ -13,20 +13,34 @@ if [ -f "$HOME/.cargo/env" ]; then
 fi
 export PATH="$HOME/.cargo/bin:$PATH"
 
-# Garante target wasm32
-if ! rustup target list --installed 2>/dev/null | grep -qF wasm32-unknown-unknown; then
-    rustup target add wasm32-unknown-unknown 2>/dev/null || {
-        echo "ERRO: não foi possível instalar o target wasm32-unknown-unknown" >&2
-        echo "Verifique se o rustup está instalado e tente manualmente:" >&2
-        echo "  rustup target add wasm32-unknown-unknown" >&2
+# Garante target wasm32.
+#
+# Olha a biblioteca do alvo no sysroot do rustc em vez de perguntar ao
+# rustup: um Rust de distro (o `rust` do Fedora, por exemplo) não tem
+# rustup, e o alvo vem num pacote à parte
+# (`rust-std-static-wasm32-unknown-unknown`). Perguntar só ao rustup
+# fazia o script morrer com o alvo já instalado.
+if [ ! -d "$(rustc --print sysroot)/lib/rustlib/wasm32-unknown-unknown" ]; then
+    if command -v rustup >/dev/null 2>&1; then
+        rustup target add wasm32-unknown-unknown || {
+            echo "ERRO: não foi possível instalar o target wasm32-unknown-unknown" >&2
+            exit 1
+        }
+    else
+        echo "ERRO: falta o target wasm32-unknown-unknown e não há rustup." >&2
+        echo "Num Rust de distro, instale o pacote do alvo, por exemplo:" >&2
+        echo "  sudo dnf install rust-std-static-wasm32-unknown-unknown" >&2
         exit 1
-    }
+    fi
 fi
 
 # Verifica tauri-cli
 if ! command -v cargo-tauri >/dev/null 2>&1; then
     echo "Instalando tauri-cli..."
-    cargo install tauri-cli --version "^2.0"
+    # `--locked`: sem ele o cargo resolve dependências mais novas que o
+    # Cargo.lock publicado, e elas podem pedir um rustc mais novo que o
+    # instalado.
+    cargo install tauri-cli --version "^2.0" --locked
 fi
 
 # Verifica trunk (prefere cargo-binstall pra binário)
