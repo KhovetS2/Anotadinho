@@ -1342,6 +1342,30 @@ pub fn handle_registrar_decisao(
         .map_err(|e| e.to_string())
 }
 
+/// Os gatilhos do vault (ciclo 412). Sem arquivo, lista vazia.
+pub fn handle_ler_gatilhos(
+    vault_path: String,
+) -> Result<Vec<anotadinho_core::gatilho::Gatilho>, String> {
+    let arquivo = std::path::Path::new(&vault_path).join(anotadinho_core::gatilho::ARQUIVO);
+    let Ok(texto) = std::fs::read_to_string(&arquivo) else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_str(&texto).map_err(|e| format!("gatilhos.json ilegível: {e}"))
+}
+
+/// Grava os gatilhos.
+pub fn handle_gravar_gatilhos(
+    vault_path: String,
+    gatilhos: Vec<anotadinho_core::gatilho::Gatilho>,
+) -> Result<(), String> {
+    let arquivo = std::path::Path::new(&vault_path).join(anotadinho_core::gatilho::ARQUIVO);
+    if let Some(pai) = arquivo.parent() {
+        std::fs::create_dir_all(pai).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(&gatilhos).map_err(|e| e.to_string())?;
+    std::fs::write(&arquivo, json).map_err(|e| e.to_string())
+}
+
 /// Acrescenta uma execução ao registro (ciclo 406).
 pub fn handle_registrar_execucao(
     vault_path: String,

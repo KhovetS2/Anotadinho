@@ -109,6 +109,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Decidir várias propostas de uma vez (marcar, aplicar/recusar em lote) | ✅ | 409 — só na TUI; `m` marca, `M` todas, um motivo pro lote |
 | Realce palavra a palavra no diff da proposta | ✅ | 410 — só na TUI; a palavra trocada destaca dentro da linha |
 | Editar a proposta antes de aplicar | ✅ | 411 — só na TUI; `e` abre o conteúdo, registro diz "editada" |
+| Gatilhos: agente dispara por mudança, consulta ou hora | ✅ | 412 — só na TUI; `gatilhos.json` no vault, "Gatilhos do agente…" na barra |
 | Git: status, pull, commit & push | ✅ | 349 — "Git: status e sincronizar…" na barra; histórico da página |
 | Nova página a partir de template | ✅ | 350 — "Nova página" pergunta o template quando há |
 

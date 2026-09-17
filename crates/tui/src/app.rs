@@ -10677,4 +10677,131 @@ mod testes {
         assert!(e.aviso.as_deref().unwrap().contains("recuse a proposta"));
         assert!(matches!(&e.modal, Some(Modal::Detalhe { .. })), "o formulário fica aberto");
     }
+
+    // --- Ciclo 412: gatilhos do agente -----------------------------------------------
+
+    #[test]
+    fn a_tela_de_gatilhos_liga_desliga_cria_e_apaga() {
+        use anotadinho_core::gatilho::{Gatilho, Quando};
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::executar(&mut e, "gatilhos");
+        assert_eq!(e.pedidos, [Pedido::ListarGatilhos]);
+        e.pedidos.clear();
+        // Sem nenhum, a tela convida a criar.
+        modais::mostrar_gatilhos(&mut e, &[]);
+        let tela = desenho(&mut e, 120, 24).join("\n");
+        assert!(tela.contains("Gatilhos do agente") && tela.contains("nenhum gatilho"), "{tela}");
+        tecla(&mut e, "Enter");
+        assert!(matches!(&e.modal, Some(Modal::Detalhe { titulo, .. }) if titulo == "Gatilho"));
+        // Com gatilhos: a regra aparece, Enter alterna, `=` edita, `dd` apaga.
+        modais::mostrar_gatilhos(
+            &mut e,
+            &[
+                Gatilho {
+                    nome: "revisar-specs".into(),
+                    quando: Quando::Mudou { prefixo: "pages/specs".into() },
+                    prompt: "revise o que ficou inconsistente".into(),
+                    ativo: true,
+                    ultimo: String::new(),
+                },
+                Gatilho {
+                    nome: "resumo".into(),
+                    quando: Quando::Diario { hora: "07:30".into() },
+                    prompt: "resuma o dia".into(),
+                    ativo: false,
+                    ultimo: String::new(),
+                },
+            ],
+        );
+        let tela = desenho(&mut e, 120, 24).join("\n");
+        assert!(tela.contains("revisar-specs · quando mudar pages/specs"), "{tela}");
+        assert!(tela.contains("◉") && tela.contains("○"), "ligado e desligado se distinguem:\n{tela}");
+        assert!(tela.contains("resumo · todo dia às 07:30"), "{tela}");
+        tecla(&mut e, "=");
+        assert_eq!(e.pedidos, [Pedido::EditarGatilho("revisar-specs".into())]);
+        e.pedidos.clear();
+        modais::mostrar_gatilhos(&mut e, &[Gatilho {
+            nome: "revisar-specs".into(),
+            quando: Quando::Mudou { prefixo: "pages/specs".into() },
+            prompt: "revise".into(),
+            ativo: true,
+            ultimo: String::new(),
+        }]);
+        tecla(&mut e, "d");
+        tecla(&mut e, "y");
+        assert_eq!(e.pedidos, [Pedido::ApagarGatilho("revisar-specs".into())]);
+        e.pedidos.clear();
+        modais::mostrar_gatilhos(&mut e, &[Gatilho {
+            nome: "revisar-specs".into(),
+            quando: Quando::Mudou { prefixo: "pages/specs".into() },
+            prompt: "revise".into(),
+            ativo: true,
+            ultimo: String::new(),
+        }]);
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AlternarGatilho("revisar-specs".into())]);
+    }
+
+    #[test]
+    fn o_formulario_do_gatilho_valida_e_monta_a_regra() {
+        use anotadinho_core::gatilho::{Gatilho, Quando};
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::editar_gatilho(&mut e, &modais::gatilho_vazio());
+        let tela = desenho(&mut e, 120, 24).join("\n");
+        assert!(tela.contains("Quando") && tela.contains("uma página mudar") && tela.contains("Prompt"), "{tela}");
+        let salvar = |e: &mut Estado| {
+            let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!("sem formulário") };
+            let quantos = form.campos.len();
+            for _ in 0..quantos + 4 {
+                tecla(e, "j");
+            }
+            tecla(e, "Enter");
+        };
+        // Sem nome não salva, e o formulário fica aberto.
+        salvar(&mut e);
+        assert!(e.pedidos.is_empty() && e.aviso.as_deref().unwrap().contains("nome"));
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[0].valor = crate::componentes::Valor::Texto("revisar".into());
+        salvar(&mut e);
+        assert!(e.pedidos.is_empty() && e.aviso.as_deref().unwrap().contains("prompt"), "{:?}", e.aviso);
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[3].valor = crate::componentes::Valor::Texto("revise".into());
+        form.campos[2].valor = crate::componentes::Valor::Texto("pages/specs".into());
+        salvar(&mut e);
+        assert_eq!(
+            e.pedidos,
+            [Pedido::GravarGatilho(Gatilho {
+                nome: "revisar".into(),
+                quando: Quando::Mudou { prefixo: "pages/specs".into() },
+                prompt: "revise".into(),
+                ativo: true,
+                ultimo: String::new(),
+            })]
+        );
+        // Diário com hora inválida é recusado: um gatilho que nunca
+        // dispara é pior que um erro na hora de salvar.
+        e.pedidos.clear();
+        modais::editar_gatilho(&mut e, &modais::gatilho_vazio());
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[0].valor = crate::componentes::Valor::Texto("resumo".into());
+        form.campos[3].valor = crate::componentes::Valor::Texto("resuma".into());
+        form.campos[2].valor = crate::componentes::Valor::Texto("sete e meia".into());
+        let crate::componentes::Valor::Opcoes(_, i) = &mut form.campos[1].valor else { panic!() };
+        *i = 2;
+        salvar(&mut e);
+        assert!(e.pedidos.is_empty() && e.aviso.as_deref().unwrap().contains("HH:MM"), "{:?}", e.aviso);
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[2].valor = crate::componentes::Valor::Texto("07:30".into());
+        salvar(&mut e);
+        assert_eq!(
+            e.pedidos,
+            [Pedido::GravarGatilho(Gatilho {
+                nome: "resumo".into(),
+                quando: Quando::Diario { hora: "07:30".into() },
+                prompt: "resuma".into(),
+                ativo: true,
+                ultimo: String::new(),
+            })]
+        );
+    }
 }

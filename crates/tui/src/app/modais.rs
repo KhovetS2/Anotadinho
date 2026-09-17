@@ -85,6 +85,16 @@ pub enum Pedido {
     ListarExecucoes,
     /// Ver o que está rodando e o que espera na fila (ciclo 408).
     VerAgentes,
+    /// Ver os gatilhos do vault (ciclo 412).
+    ListarGatilhos,
+    /// Ligar ou desligar um gatilho pelo nome.
+    AlternarGatilho(String),
+    /// Gravar um gatilho novo ou mudado.
+    GravarGatilho(anotadinho_core::gatilho::Gatilho),
+    /// Apagar o gatilho pelo nome.
+    ApagarGatilho(String),
+    /// Abrir o formulário do gatilho pelo nome.
+    EditarGatilho(String),
     /// Interromper tudo: o que roda e o que espera (ciclo 408).
     InterromperTodos,
     /// Ler as permissões de escrita do agente (ciclo 405).
@@ -379,6 +389,10 @@ pub enum AlvoDoDetalhe {
     Agente,
     /// As pastas onde o agente pode propor (ciclo 405).
     Permissoes,
+    /// Um gatilho do agente (ciclo 412); nome vazio é novo.
+    Gatilho {
+        nome: String,
+    },
     /// O conteúdo de uma proposta, editado antes de aplicar (ciclo 411).
     PropostaEditada {
         /// O id da proposta.
@@ -538,6 +552,9 @@ pub enum AcaoDaEscolha {
     /// A tela dos agentes em andamento (ciclo 408): Enter abre a
     /// conversa, `x` interrompe tudo.
     Agentes,
+    /// A tela dos gatilhos (ciclo 412): Enter liga/desliga, `o` cria,
+    /// `dd` apaga.
+    Gatilhos,
     /// O template da página nova (ciclo 350); chave vazia é em branco.
     Template,
     /// A marca do menu Formatar (ciclo 357).
@@ -601,6 +618,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Execuções do agente", "execucoes"),
     ("Ferramentas do agente", "ferramentas"),
     ("Agentes em andamento…", "agentes_rodando"),
+    ("Gatilhos do agente…", "gatilhos"),
     ("Limite de agentes em paralelo…", "limite_agentes"),
     ("Onde o agente pode propor…", "permissoes"),
     ("Definir/remover como início", "inicio"),
@@ -813,6 +831,7 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "execucoes" => e.pedidos.push(Pedido::ListarExecucoes),
         "ferramentas" => mostrar_ferramentas(e),
         "agentes_rodando" => e.pedidos.push(Pedido::VerAgentes),
+        "gatilhos" => e.pedidos.push(Pedido::ListarGatilhos),
         "limite_agentes" => {
             let atual = e.preferencias.limite_de_agentes;
             e.modal = Some(Modal::Entrada {
@@ -889,6 +908,23 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 }
             }
         }
+        // Na tela dos gatilhos (ciclo 412): `o` cria, `=` edita, `dd`
+        // apaga o que está sob o cursor.
+        Modal::Escolha { titulo, lista, acao: AcaoDaEscolha::Gatilhos } if matches!(tecla, "o" | "=" | "d") => {
+            let escolhido = lista.atual().map(|it| it.chave.clone()).unwrap_or_default();
+            match tecla {
+                "o" => editar_gatilho(e, &gatilho_vazio()),
+                "=" if !escolhido.starts_with('\u{0}') => e.pedidos.push(Pedido::EditarGatilho(escolhido)),
+                "d" if !escolhido.starts_with('\u{0}') => {
+                    e.modal = Some(Modal::Confirmar {
+                        titulo: "Apagar gatilho".into(),
+                        mensagem: format!("Apagar o gatilho {escolhido}?"),
+                        acao: Pedido::ApagarGatilho(escolhido),
+                    });
+                }
+                _ => e.modal = Some(Modal::Escolha { titulo, lista, acao: AcaoDaEscolha::Gatilhos }),
+            }
+        }
         // `x` na tela dos agentes interrompe tudo (ciclo 408) — a
         // lista não usa essa tecla.
         Modal::Escolha { titulo, lista, acao: AcaoDaEscolha::Agentes } if tecla == "x" => {
@@ -940,6 +976,11 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 },
                 AcaoDaEscolha::Mostrar => {}
                 AcaoDaEscolha::Agentes => e.pedidos.push(Pedido::AbrirPagina(chave)),
+                // Enter liga/desliga o gatilho; a linha de "nenhum" cria.
+                AcaoDaEscolha::Gatilhos if chave.starts_with('\u{0}') => {
+                    editar_gatilho(e, &gatilho_vazio());
+                }
+                AcaoDaEscolha::Gatilhos => e.pedidos.push(Pedido::AlternarGatilho(chave)),
                 AcaoDaEscolha::Formatar => super::formatar::escolher(e, &chave),
                 AcaoDaEscolha::PaginaDaCelula => super::edicao::pagina_escolhida(e, &chave),
                 AcaoDaEscolha::AbrirExterno => e.pedidos.push(Pedido::AbrirExterno(chave)),
@@ -1160,6 +1201,19 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     return;
                 }
                 R::Mudou if matches!(alvo, AlvoDoDetalhe::PropostaEditada { .. }) => {}
+                R::Botao("salvar") if matches!(alvo, AlvoDoDetalhe::Gatilho { .. }) => {
+                    if salvar_gatilho(e, &form) {
+                        return;
+                    }
+                    e.modal = Some(Modal::Detalhe { titulo, form, alvo });
+                    return;
+                }
+                R::Botao("remover") if matches!(alvo, AlvoDoDetalhe::Gatilho { .. }) => {
+                    let AlvoDoDetalhe::Gatilho { nome } = &alvo else { unreachable!() };
+                    e.pedidos.push(Pedido::ApagarGatilho(nome.clone()));
+                    return;
+                }
+                R::Mudou if matches!(alvo, AlvoDoDetalhe::Gatilho { .. }) => {}
                 R::Botao("remover") if alvo == AlvoDoDetalhe::Agente => {
                     remover_agente(e);
                     return;
@@ -1948,4 +2002,116 @@ pub fn editar_proposta(e: &mut Estado, id: &str, alvo: &str, conteudo: &str) {
         form,
         alvo: AlvoDoDetalhe::PropostaEditada { id: id.to_string(), alvo: alvo.to_string() },
     });
+}
+
+/// Os gatilhos do vault (ciclo 412): a regra, o prompt e se está ligado.
+/// Enter liga ou desliga; `o` cria; `dd` apaga.
+pub fn mostrar_gatilhos(e: &mut Estado, gatilhos: &[anotadinho_core::gatilho::Gatilho]) {
+    let mut itens: Vec<Item> = gatilhos
+        .iter()
+        .map(|g| {
+            let primeira: String = g.prompt.lines().next().unwrap_or("").chars().take(40).collect();
+            Item::novo(
+                if g.ativo { "◉" } else { "○" },
+                format!("{} · {}", g.nome, g.quando.rotulo()),
+                g.nome.clone(),
+            )
+            .com_detalhe(primeira)
+        })
+        .collect();
+    if itens.is_empty() {
+        itens.push(Item::novo("+", "nenhum gatilho — o cria um", "\u{0}novo").com_detalhe("vazio"));
+    }
+    e.modal = Some(Modal::Escolha {
+        titulo: "Gatilhos do agente".into(),
+        lista: Lista::filtravel(itens),
+        acao: AcaoDaEscolha::Gatilhos,
+    });
+}
+
+/// O formulário de um gatilho (ciclo 412). `nome` vazio é gatilho novo.
+pub fn editar_gatilho(e: &mut Estado, g: &anotadinho_core::gatilho::Gatilho) {
+    use anotadinho_core::gatilho::Quando;
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    let (tipo, alvo) = match &g.quando {
+        Quando::Mudou { prefixo } => (0, prefixo.clone()),
+        Quando::Consulta { de, onde } => (1, if onde.is_empty() { de.clone() } else { format!("{de} {}", onde.join(" ")) }),
+        Quando::Diario { hora } => (2, hora.clone()),
+    };
+    let mut form = Formulario::novo(vec![
+        C::novo("nome", "Nome", Valor::Texto(g.nome.clone())).com_dica("revisar-specs"),
+        C::novo(
+            "quando",
+            "Quando",
+            Valor::Opcoes(
+                vec![
+                    ("mudou".into(), "uma página mudar".into()),
+                    ("consulta".into(), "uma consulta ter resultado".into()),
+                    ("diario".into(), "todo dia".into()),
+                ],
+                tipo,
+            ),
+        ),
+        C::novo("alvo", "Alvo", Valor::Texto(alvo))
+            .com_dica("pages/specs · pages/specs status=rascunho · 07:30"),
+        C::novo("prompt", "Prompt", Valor::Texto(g.prompt.clone())).como_multilinha(),
+        C::novo("ativo", "Ligado", Valor::Booleano(g.ativo)),
+    ]);
+    form.botoes.push(("salvar", "Salvar no vault".into()));
+    if !g.nome.is_empty() {
+        form.botoes.push(("remover", "Apagar".into()));
+    }
+    e.modal = Some(Modal::Detalhe { titulo: "Gatilho".into(), form, alvo: AlvoDoDetalhe::Gatilho { nome: g.nome.clone() } });
+}
+
+/// Um gatilho em branco, pro formulário de criação.
+pub fn gatilho_vazio() -> anotadinho_core::gatilho::Gatilho {
+    anotadinho_core::gatilho::Gatilho {
+        nome: String::new(),
+        quando: anotadinho_core::gatilho::Quando::Mudou { prefixo: "pages".into() },
+        prompt: String::new(),
+        ativo: true,
+        ultimo: String::new(),
+    }
+}
+
+/// Lê o formulário do gatilho. `true` quando salvou.
+fn salvar_gatilho(e: &mut Estado, form: &crate::componentes::Formulario) -> bool {
+    use anotadinho_core::gatilho::{Gatilho, Quando};
+    let nome = form.texto("nome").trim().to_string();
+    if nome.is_empty() {
+        e.aviso = Some("o gatilho precisa de um nome".into());
+        return false;
+    }
+    let alvo = form.texto("alvo").trim().to_string();
+    let quando = match form.escolha("quando").as_str() {
+        "diario" => {
+            // Hora inválida viraria um gatilho que nunca dispara, ou que
+            // dispara sempre.
+            if anotadinho_core::date_util::parse_time(&alvo).is_none() {
+                e.aviso = Some("hora: use HH:MM".into());
+                return false;
+            }
+            Quando::Diario { hora: alvo }
+        }
+        "consulta" => {
+            let mut partes = alvo.split_whitespace();
+            let de = partes.next().unwrap_or("pages").to_string();
+            Quando::Consulta { de, onde: partes.map(|x| x.to_string()).collect() }
+        }
+        _ => Quando::Mudou { prefixo: if alvo.is_empty() { "pages".into() } else { alvo } },
+    };
+    let prompt = form.texto("prompt").trim().to_string();
+    if prompt.is_empty() {
+        e.aviso = Some("o gatilho precisa de um prompt".into());
+        return false;
+    }
+    e.pedidos.push(Pedido::GravarGatilho(Gatilho {
+        nome,
+        quando,
+        prompt,
+        ativo: form.booleano("ativo"),
+        ultimo: String::new(),
+    }));
+    true
 }

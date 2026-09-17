@@ -520,6 +520,147 @@ fn vigiar_disco(estado: &mut Estado, vault: &str, tambem_a_lista: bool) {
     }
 }
 
+/// Os gatilhos em memória (ciclo 412), com o que já se sabe do disco:
+/// reler o arquivo a cada volta do laço seria varredura sem motivo.
+struct Gatilhos {
+    lista: Vec<anotadinho_core::gatilho::Gatilho>,
+    /// O minuto da última checagem, pro diário não ser avaliado a cada
+    /// 250 ms.
+    minuto: String,
+    /// Quando as páginas foram fotografadas, pra saber o que mudou.
+    visto: std::collections::HashMap<String, std::time::SystemTime>,
+}
+
+impl Gatilhos {
+    fn novo(vault: &str) -> Self {
+        let mut g = Self {
+            lista: anotadinho_ipc::handle_ler_gatilhos(vault.to_string()).unwrap_or_default(),
+            minuto: String::new(),
+            visto: std::collections::HashMap::new(),
+        };
+        // A primeira foto não dispara nada: o que existia antes de abrir
+        // o programa não é mudança.
+        g.visto = fotografar(vault);
+        g
+    }
+}
+
+/// A data de modificação de cada `.md` do vault.
+fn fotografar(vault: &str) -> std::collections::HashMap<String, std::time::SystemTime> {
+    let raiz = std::path::Path::new(vault);
+    handle_list_pages(vault.to_string())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|p| {
+            let quando = std::fs::metadata(raiz.join(&p.path)).and_then(|m| m.modified()).ok()?;
+            Some((p.path, quando))
+        })
+        .collect()
+}
+
+/// As páginas que mudaram desde a última foto, atualizando a foto.
+fn mudaram_desde(g: &mut Gatilhos, vault: &str) -> Vec<String> {
+    let agora = fotografar(vault);
+    let mut mudaram: Vec<String> = agora
+        .iter()
+        .filter(|(path, quando)| g.visto.get(*path).is_none_or(|antes| antes != *quando))
+        .map(|(path, _)| path.clone())
+        .collect();
+    mudaram.sort();
+    g.visto = agora;
+    mudaram
+}
+
+/// Dispara os gatilhos devidos (ciclo 412): abre uma conversa pro
+/// gatilho e manda o prompt pelo mesmo caminho de um envio humano —
+/// fila, limite, registro de execução e propostas pra aprovar.
+fn disparar_gatilhos(
+    estado: &mut Estado,
+    vault: &str,
+    trabalhos: &mut Trabalhos,
+    fila: &mut anotadinho_tui::fila::Fila,
+    g: &mut Gatilhos,
+    mudou_algo: bool,
+) {
+    use anotadinho_core::gatilho::{self, Quando};
+    let agora = agora_local();
+    let minuto = agora.clone();
+    // Sem mudança no disco, só vale reavaliar uma vez por minuto (o
+    // diário e as consultas).
+    if !mudou_algo && g.minuto == minuto {
+        return;
+    }
+    let mudaram = if mudou_algo { mudaram_desde(g, vault) } else { Vec::new() };
+    if g.minuto != minuto {
+        g.minuto = minuto;
+        // O arquivo pode ter sido editado à mão; relê de minuto em
+        // minuto, preservando o `ultimo` que esta sessão já marcou.
+        if let Ok(do_disco) = anotadinho_ipc::handle_ler_gatilhos(vault.to_string()) {
+            let meus: std::collections::HashMap<String, String> =
+                g.lista.iter().map(|x| (x.nome.clone(), x.ultimo.clone())).collect();
+            g.lista = do_disco
+                .into_iter()
+                .map(|mut x| {
+                    if let Some(meu) = meus.get(&x.nome) {
+                        if meu > &x.ultimo {
+                            x.ultimo = meu.clone();
+                        }
+                    }
+                    x
+                })
+                .collect();
+        }
+    }
+    if g.lista.is_empty() {
+        return;
+    }
+    // As consultas: quem tem o índice responde se há resultado.
+    let com_resultado: Vec<String> = g
+        .lista
+        .iter()
+        .filter_map(|x| match &x.quando {
+            Quando::Consulta { de, onde } => {
+                let q = anotadinho_core::query::Query {
+                    from: Some(de.clone()),
+                    conditions: onde
+                        .iter()
+                        .filter_map(|c| anotadinho_core::query::Condition::parse(c).ok())
+                        .collect(),
+                    ..Default::default()
+                };
+                let tem = !q.run(&estado.indice_do_vault).is_empty();
+                tem.then(|| x.nome.clone())
+            }
+            _ => None,
+        })
+        .collect();
+
+    for i in gatilho::devidos(&g.lista, &agora, &mudaram, &com_resultado) {
+        let nome = g.lista[i].nome.clone();
+        let prompt = g.lista[i].prompt.clone();
+        let regra = g.lista[i].quando.rotulo();
+        let path = format!("pages/conversas/{}.md", anotadinho_core::conversa::nome_de_arquivo(&format!("gatilho-{nome}-{agora}")));
+        let titulo = format!("Gatilho: {nome}");
+        let md = anotadinho_core::conversa::montar_pagina(&titulo, None, &[]);
+        if let Err(e) = handle_write_page(vault.to_string(), path.clone(), md) {
+            estado.aviso = Some(format!("gatilho {nome}: não criou a conversa: {e}"));
+            continue;
+        }
+        gatilho::marcar(&mut g.lista[i], &agora);
+        if let Err(e) = anotadinho_ipc::handle_gravar_gatilhos(vault.to_string(), g.lista.clone()) {
+            estado.aviso = Some(format!("gatilho {nome}: não gravou o disparo: {e}"));
+        }
+        // A conversa nova precisa estar na lista antes do envio, senão
+        // `enviar_na_conversa` não acha a página pra reabrir.
+        if let Ok(p) = handle_list_pages(vault.to_string()) {
+            estado.atualizar_paginas(p);
+        }
+        let pergunta = format!("{prompt}\n\n(disparado pelo gatilho \"{nome}\": {regra})");
+        enviar_na_conversa(estado, vault, vault, trabalhos, fila, &path, &pergunta, &[]);
+        estado.aviso = Some(format!("gatilho {nome} disparou"));
+    }
+}
+
 /// Lê do vault o que a tela de tags, assets ou propostas mostra (ciclo 346).
 fn carregar_especial(estado: &mut Estado, vault: &str, tipo: TipoEspecial) {
     let dados = match tipo {
@@ -979,6 +1120,68 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                         }
                     }
                 }
+                // Os gatilhos (ciclo 412). Toda escrita relê a lista do
+                // disco antes: o arquivo é editável à mão.
+                Pedido::ListarGatilhos => match anotadinho_ipc::handle_ler_gatilhos(vault.to_string()) {
+                    Ok(g) => app::modais::mostrar_gatilhos(estado, &g),
+                    Err(e) => estado.aviso = Some(format!("não leu os gatilhos: {e}")),
+                },
+                Pedido::EditarGatilho(nome) => match anotadinho_ipc::handle_ler_gatilhos(vault.to_string()) {
+                    Ok(g) => match g.iter().find(|x| x.nome == nome) {
+                        Some(x) => app::modais::editar_gatilho(estado, x),
+                        None => estado.aviso = Some(format!("gatilho {nome} não existe mais")),
+                    },
+                    Err(e) => estado.aviso = Some(format!("não leu os gatilhos: {e}")),
+                },
+                Pedido::AlternarGatilho(nome) => {
+                    let mut lista = anotadinho_ipc::handle_ler_gatilhos(vault.to_string()).unwrap_or_default();
+                    let mut ligado = None;
+                    for g in lista.iter_mut().filter(|g| g.nome == nome) {
+                        g.ativo = !g.ativo;
+                        ligado = Some(g.ativo);
+                    }
+                    match anotadinho_ipc::handle_gravar_gatilhos(vault.to_string(), lista.clone()) {
+                        Ok(()) => {
+                            estado.aviso = Some(match ligado {
+                                Some(true) => format!("gatilho {nome} ligado"),
+                                Some(false) => format!("gatilho {nome} desligado"),
+                                None => format!("gatilho {nome} não existe mais"),
+                            });
+                            app::modais::mostrar_gatilhos(estado, &lista);
+                        }
+                        Err(e) => estado.aviso = Some(format!("não gravou: {e}")),
+                    }
+                }
+                Pedido::GravarGatilho(novo) => {
+                    let mut lista = anotadinho_ipc::handle_ler_gatilhos(vault.to_string()).unwrap_or_default();
+                    // Mesmo nome é o MESMO gatilho: salvar substitui, e o
+                    // último disparo sobrevive pra não repetir.
+                    match lista.iter_mut().find(|g| g.nome == novo.nome) {
+                        Some(antigo) => {
+                            let ultimo = antigo.ultimo.clone();
+                            *antigo = novo.clone();
+                            antigo.ultimo = ultimo;
+                        }
+                        None => lista.push(novo.clone()),
+                    }
+                    match anotadinho_ipc::handle_gravar_gatilhos(vault.to_string(), lista) {
+                        Ok(()) => estado.aviso = Some(format!("gatilho {} salvo", novo.nome)),
+                        Err(e) => estado.aviso = Some(format!("não gravou: {e}")),
+                    }
+                }
+                Pedido::ApagarGatilho(nome) => {
+                    let mut lista = anotadinho_ipc::handle_ler_gatilhos(vault.to_string()).unwrap_or_default();
+                    let antes = lista.len();
+                    lista.retain(|g| g.nome != nome);
+                    if lista.len() == antes {
+                        estado.aviso = Some(format!("gatilho {nome} não existe mais"));
+                    } else {
+                        match anotadinho_ipc::handle_gravar_gatilhos(vault.to_string(), lista) {
+                            Ok(()) => estado.aviso = Some(format!("gatilho {nome} apagado")),
+                            Err(e) => estado.aviso = Some(format!("não apagou: {e}")),
+                        }
+                    }
+                }
                 Pedido::VerAgentes => {
                     let rodando: Vec<(String, String, u64)> = trabalhos
                         .iter()
@@ -1181,6 +1384,7 @@ fn laco<B: ratatui::backend::Backend>(
     // janela; a consulta periódica fica de rede de segurança (e pro que
     // não é .md: propostas e git).
     let watcher = anotadinho_vault::VaultWatcher::start(std::path::PathBuf::from(vault)).ok();
+    let mut gatilhos = Gatilhos::novo(vault);
     loop {
         estado.agora = Some(agora_local());
         term.draw(|f| app::desenhar(f, estado)).map_err(|e| e.to_string())?;
@@ -1202,6 +1406,9 @@ fn laco<B: ratatui::backend::Backend>(
             } else if voltas_sem_tecla % 8 == 0 {
                 vigiar_disco(estado, vault, voltas_sem_tecla % 16 == 0);
             }
+            // Os gatilhos (ciclo 412): na mudança, na hora, ou quando a
+            // consulta passa a ter resposta.
+            disparar_gatilhos(estado, vault, trabalhos, fila, &mut gatilhos, avisado);
             acompanhar(estado, vault, trabalhos, fila);
             atender(estado, vault, trabalhos, fila);
             buscar_na_paleta(estado, vault);
