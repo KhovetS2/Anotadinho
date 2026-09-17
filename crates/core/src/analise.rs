@@ -966,7 +966,7 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
                 partes.push(item("eixo", format!("{a} {b}")));
             }
             let mut sem_data: Vec<Unidade> = Vec::new();
-            for i in &d.items {
+            for (n, i) in d.items.iter().enumerate() {
                 let span = inicio_janela.and_then(|ini| {
                     embed::bar_span(i.start.as_deref(), i.end.as_deref(), ini, dias_da_janela)
                 });
@@ -996,12 +996,20 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
                                 item("inicio", inicio_pct.round().to_string()),
                                 item("duracao", largura_pct.round().max(1.0).to_string()),
                                 item("detalhe", detalhe),
+                                // O item do arquivo (ciclo 320): é por ele que
+                                // a edição acha o que mudar.
+                                item("indice", n.to_string()),
                             ],
                         ));
                     }
                     // Sem data: a "gaveta" da janela, depois das barras —
                     // a mesma forma da gaveta do calendário.
-                    _ => sem_data.push(item("item", i.title.clone())),
+                    _ => sem_data.push(arranjado(
+                        "item",
+                        i.title.clone(),
+                        vec![item("indice", n.to_string())],
+                        Arranjo::Folha,
+                    )),
                 }
             }
             if !sem_data.is_empty() {

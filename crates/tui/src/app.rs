@@ -448,6 +448,22 @@ pub enum AcaoDaPergunta {
         /// A entrada, no arquivo.
         indice: usize,
     },
+    /// Cria uma barra no cronograma, de `inicio` a `fim` (ciclo 320).
+    NovaBarra {
+        /// O cronograma.
+        embed: Caminho,
+        /// `AAAA-MM-DD`.
+        inicio: String,
+        /// `AAAA-MM-DD`.
+        fim: String,
+    },
+    /// Troca o título da barra.
+    RenomearBarra {
+        /// O cronograma.
+        embed: Caminho,
+        /// O item, no arquivo.
+        indice: usize,
+    },
     /// Cria um cartão no fim dessa coluna do kanban (ciclo 319).
     NovoCartao {
         /// O kanban.
@@ -588,6 +604,32 @@ fn tecla_na_pergunta(e: &mut Estado, tecla: &str) {
                         Ok(())
                     }) {
                         if let Some(c) = novo.and_then(|i| achar_evento(&e.arvore, &embed, i, Some(&data))) {
+                            e.cursor = c;
+                        }
+                    }
+                }
+                AcaoDaPergunta::NovaBarra { embed, inicio, fim } => {
+                    let mut novo = None;
+                    if editar_cronograma(e, &embed, |d| {
+                        d.add_item(titulo.clone(), inicio.clone(), fim.clone());
+                        novo = Some(d.items.len() - 1);
+                        Ok(())
+                    }) {
+                        if let Some(c) = novo.and_then(|i| achar_com_indice(&e.arvore, &embed, "barra", i)) {
+                            e.cursor = c;
+                        }
+                    }
+                }
+                AcaoDaPergunta::RenomearBarra { embed, indice } => {
+                    if editar_cronograma(e, &embed, |d| {
+                        let mut item = d.items.get(indice).cloned().ok_or("a barra sumiu do arquivo")?;
+                        item.title = titulo.clone();
+                        d.update_item(indice, item);
+                        Ok(())
+                    }) {
+                        if let Some(c) = achar_com_indice(&e.arvore, &embed, "barra", indice)
+                            .or_else(|| achar_com_indice(&e.arvore, &embed, "item", indice))
+                        {
                             e.cursor = c;
                         }
                     }
@@ -747,8 +789,13 @@ fn embed_do_cursor(e: &Estado, tipo: &str) -> Option<Caminho> {
 
 /// Onde está o cartão do item `indice` na árvore do kanban.
 fn achar_cartao(arvore: &Unidade, embed: &[usize], indice: usize) -> Option<Caminho> {
+    achar_com_indice(arvore, embed, "card", indice)
+}
+
+/// Onde está a parte `nome` que carrega o `indice` dado, dentro do embed.
+fn achar_com_indice(arvore: &Unidade, embed: &[usize], nome_da_parte: &str, indice: usize) -> Option<Caminho> {
     arvore.em(embed)?.percorrer().into_iter().find_map(|(c, u)| {
-        let e_cartao = matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "card");
+        let e_cartao = matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == nome_da_parte);
         let mesmo = u.filhos.iter().any(|f| {
             matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "indice") && f.texto == indice.to_string()
         });
@@ -843,6 +890,116 @@ fn apagar_cartao(e: &mut Estado) {
     }) {
         e.cursor = coluna;
         e.aviso = Some("cartão apagado".into());
+        e.seguir_cursor();
+    }
+}
+
+/// `editar_embed` pra um cronograma.
+fn editar_cronograma(
+    e: &mut Estado,
+    embed: &[usize],
+    mudar: impl FnOnce(&mut anotadinho_core::embed::TimelineEmbedData) -> Result<(), String>,
+) -> bool {
+    editar_embed(e, embed, |dados| match dados {
+        anotadinho_core::embed::EmbedData::Timeline(d) if d.source == anotadinho_core::embed::TimelineSource::Vault => {
+            Err("cronograma do vault é só leitura: edite a página".into())
+        }
+        anotadinho_core::embed::EmbedData::Timeline(d) => mudar(d),
+        _ => Err("isto não é um cronograma".into()),
+    })
+}
+
+/// As teclas de EDIÇÃO do cronograma (ciclo 320).
+///
+/// - `o` cria uma barra de uma semana — começando no dia seguinte ao fim
+///   da barra do cursor, ou hoje (ou no começo da janela) fora de uma.
+/// - `c` renomeia, `x` (ou `dd`) apaga.
+/// - `<` e `>` movem a barra um dia, preservando a duração; `-` e `+`
+///   encurtam e esticam o FIM — o `Alt+←/→` e o `Alt+Shift+←/→` da janela.
+fn edicao_do_cronograma(e: &mut Estado, tecla: &str) -> bool {
+    use anotadinho_core::date_util::add_days;
+    if !matches!(tecla, "o" | "c" | "x" | "<" | ">" | "+" | "-") {
+        return false;
+    }
+    let Some(embed) = embed_do_cursor(e, "timeline") else { return false };
+    let indice = indice_do_cursor(e);
+    let dados = e
+        .arvore
+        .em(&embed)
+        .and_then(|u| u.fonte.as_deref())
+        .and_then(|f| {
+            anotadinho_core::embed::segment(f).into_iter().find_map(|s| match s {
+                anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Timeline(d)) => Some(d),
+                _ => None,
+            })
+        });
+    match (tecla, indice) {
+        ("o", _) => {
+            let depois_da_barra = indice
+                .and_then(|i| dados.as_ref()?.items.get(i).cloned())
+                .and_then(|it| it.end.or(it.start))
+                .and_then(|fim| add_days(&fim, 1));
+            let janela = dados
+                .as_ref()
+                .and_then(|d| d.items.iter().filter_map(|i| i.start.clone()).min());
+            let Some(inicio) = depois_da_barra.or_else(|| e.hoje.clone()).or(janela) else {
+                e.aviso = Some("sem data de referência pra criar a barra".into());
+                return true;
+            };
+            let fim = add_days(&inicio, 6).unwrap_or_else(|| inicio.clone());
+            e.pergunta = Some(Pergunta {
+                rotulo: format!("Nova barra de {} a {}", data_legivel(&inicio), data_legivel(&fim)),
+                texto: String::new(),
+                acao: AcaoDaPergunta::NovaBarra { embed, inicio, fim },
+            });
+        }
+        ("c", Some(indice)) => {
+            let atual = e.arvore.em(&e.cursor).map(|u| u.texto.clone()).unwrap_or_default();
+            e.pergunta = Some(Pergunta {
+                rotulo: "Renomear barra".into(),
+                texto: atual,
+                acao: AcaoDaPergunta::RenomearBarra { embed, indice },
+            });
+        }
+        ("x", Some(_)) => apagar_barra(e),
+        ("<" | ">" | "+" | "-", Some(indice)) => {
+            let delta = if matches!(tecla, ">" | "+") { 1 } else { -1 };
+            let mover = matches!(tecla, "<" | ">");
+            if editar_cronograma(e, &embed, |d| {
+                let item = d.items.get(indice).cloned().ok_or("a barra sumiu do arquivo")?;
+                let inicio = item.start.clone().ok_or("item sem data não se move por dia")?;
+                if mover {
+                    d.move_item(indice, add_days(&inicio, delta).ok_or("data inválida")?);
+                } else {
+                    let fim = item.end.clone().unwrap_or(inicio);
+                    d.resize_item(indice, false, add_days(&fim, delta).ok_or("data inválida")?);
+                }
+                Ok(())
+            }) {
+                if let Some(c) = achar_com_indice(&e.arvore, &embed, "barra", indice) {
+                    e.cursor = c;
+                }
+                e.seguir_cursor();
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// Apaga a barra (ou o item sem data) sob o cursor.
+fn apagar_barra(e: &mut Estado) {
+    let (Some(embed), Some(indice)) = (embed_do_cursor(e, "timeline"), indice_do_cursor(e)) else {
+        return;
+    };
+    if editar_cronograma(e, &embed, |d| {
+        if indice >= d.items.len() {
+            return Err("a barra sumiu do arquivo".into());
+        }
+        d.remove_item(indice);
+        Ok(())
+    }) {
+        e.aviso = Some("barra apagada".into());
         e.seguir_cursor();
     }
 }
@@ -1018,7 +1175,8 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
 
 fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
     if tecla_do_calendario(e, tecla)
-        || (!e.vim.em_curso() && (edicao_do_calendario(e, tecla) || edicao_do_kanban(e, tecla)))
+        || (!e.vim.em_curso()
+            && (edicao_do_calendario(e, tecla) || edicao_do_kanban(e, tecla) || edicao_do_cronograma(e, tecla)))
     {
         return;
     }
@@ -2565,6 +2723,8 @@ fn comando_de_vim(e: &mut Estado, c: Comando) {
     if matches!(c, Comando::Apagar(Movimento::LinhaInteira, _)) && indice_do_cursor(e).is_some() {
         if embed_do_cursor(e, "kanban").is_some() {
             apagar_cartao(e);
+        } else if embed_do_cursor(e, "timeline").is_some() {
+            apagar_barra(e);
         } else {
             apagar_evento(e);
         }
@@ -4571,6 +4731,85 @@ mod testes {
         tecla(&mut e, "d");
         tecla(&mut e, "d");
         assert!(kanban_gravado(&e).items.is_empty());
+    }
+
+    const PAGINA_COM_CRONOGRAMA: &str = "Antes.\n\n{{ type: \"timeline\" }}\nitems:\n- title: Levantar\n  start: 2026-08-03\n  end: 2026-08-10\n  tags:\n  - infra\n- title: Implementar\n  start: 2026-08-11\n  end: 2026-08-24\n{{ /timeline }}\n\nDepois.\n";
+
+    fn cronograma_editavel() -> Estado {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(PAGINA_COM_CRONOGRAMA, Some("v1".into()));
+        e.foco = Foco::Conteudo;
+        e
+    }
+
+    fn cronograma_gravado(e: &Estado) -> anotadinho_core::embed::TimelineEmbedData {
+        let texto = e.gravacao.clone().expect("nada pra gravar");
+        assert!(texto.starts_with("Antes.\n\n") && texto.ends_with("\n\nDepois.\n"), "{texto}");
+        anotadinho_core::embed::segment(&texto)
+            .into_iter()
+            .find_map(|s| match s {
+                anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Timeline(d)) => Some(d),
+                _ => None,
+            })
+            .expect("o cronograma sumiu")
+    }
+
+    #[test]
+    fn o_cria_barra_depois_da_do_cursor_e_c_renomeia() {
+        let mut e = cronograma_editavel();
+        // embed → eixo, Levantar, Implementar.
+        e.cursor = vec![1, 2];
+        tecla(&mut e, "o");
+        assert!(desenho(&mut e, 120, 30).join("\n").contains("Nova barra de 25/08/2026 a 31/08/2026"));
+        digitar(&mut e, "Publicar");
+        tecla(&mut e, "Enter");
+        let d = cronograma_gravado(&e);
+        assert_eq!(d.items[2].title, "Publicar");
+        assert_eq!(d.items[2].start.as_deref(), Some("2026-08-25"));
+        assert_eq!(d.items[2].end.as_deref(), Some("2026-08-31"));
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Publicar");
+        e.cursor = vec![1, 1];
+        tecla(&mut e, "c");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "Levantar");
+        digitar(&mut e, " requisitos");
+        tecla(&mut e, "Enter");
+        let d = cronograma_gravado(&e);
+        assert_eq!(d.items[0].title, "Levantar requisitos");
+        assert_eq!(d.items[0].tags, vec!["infra".to_string()]);
+    }
+
+    #[test]
+    fn maior_menor_movem_e_mais_menos_esticam_o_fim() {
+        let mut e = cronograma_editavel();
+        e.cursor = vec![1, 1];
+        tecla(&mut e, ">");
+        let d = cronograma_gravado(&e);
+        assert_eq!((d.items[0].start.as_deref(), d.items[0].end.as_deref()), (Some("2026-08-04"), Some("2026-08-11")));
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Levantar");
+        tecla(&mut e, "+");
+        tecla(&mut e, "+");
+        let d = cronograma_gravado(&e);
+        assert_eq!(d.items[0].end.as_deref(), Some("2026-08-13"));
+        // `-` não passa do começo.
+        for _ in 0..20 {
+            tecla(&mut e, "-");
+        }
+        let d = cronograma_gravado(&e);
+        assert_eq!(d.items[0].end.as_deref(), Some("2026-08-04"));
+        tecla(&mut e, "<");
+        assert_eq!(cronograma_gravado(&e).items[0].start.as_deref(), Some("2026-08-03"));
+    }
+
+    #[test]
+    fn x_e_dd_apagam_a_barra() {
+        let mut e = cronograma_editavel();
+        e.cursor = vec![1, 2];
+        tecla(&mut e, "x");
+        assert_eq!(cronograma_gravado(&e).items.len(), 1);
+        e.cursor = vec![1, 1];
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert!(cronograma_gravado(&e).items.is_empty());
     }
 
     #[test]
