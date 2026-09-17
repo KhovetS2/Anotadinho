@@ -9,6 +9,8 @@
 │                                 │  Alt+1…9         ir pra aba                                          │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
 │                                 │  Ctrl+W Alt+H/L  próxima / anterior aba                              │                                 │
 │                                 │  Alt+Q           fechar a aba                                        │                                 │
+│                                 │  Alt+. Alt+,     embed seguinte / anterior                           │                                 │
+│                                 │  Ctrl+E Ctrl+L   foco na sidebar / no conteúdo                       │                                 │
 │                                 │  /               filtrar                                             │                                 │
 │                                 │  q               sair                                                │                                 │
 │                                 │                                                                      │                                 │
@@ -28,8 +30,6 @@
 │                                 │  dd x            apagar                                              │                                 │
 │                                 │  yy p P          copiar e colar                                      │                                 │
 │                                 │  >> <<           andar pro lado                                      │                                 │
-│                                 │  J K             descer / subir na ordem                             │                                 │
-│                                 │  Ctrl+A Ctrl+X   aumentar / diminuir (duração, nível, opção)         │                                 │
 │                                 ╰ j k rolar · Esc ─────────────────────────────────────────────────────╯                                 │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -50,6 +50,8 @@ adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmm
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
@@ -69,8 +71,6 @@ adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmjjjjjjj
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
-adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
-adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfmmmmmmmmmmmmmmmmmffffffffffffffffffffffffffffffffffffffffffffffffffffffdddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb

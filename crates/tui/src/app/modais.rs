@@ -1042,6 +1042,8 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("Alt+1…9", "ir pra aba"),
             ("Ctrl+W Alt+H/L", "próxima / anterior aba"),
             ("Alt+Q", "fechar a aba"),
+            ("Alt+. Alt+,", "embed seguinte / anterior"),
+            ("Ctrl+E Ctrl+L", "foco na sidebar / no conteúdo"),
             ("/", "filtrar"),
             ("q", "sair"),
         ],

@@ -861,6 +861,24 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
     if let Some(destino) = tecla_das_abas(e, tecla) {
         return destino;
     }
+    // Os atalhos de foco e de embed da janela (ciclo 381): `Ctrl+E` vai
+    // pra sidebar, `Ctrl+L` pro conteúdo, `Alt+.`/`Alt+,` pro embed
+    // seguinte/anterior (o `Ctrl+.` da janela, que o terminal não manda).
+    match tecla {
+        "Ctrl+e" if e.preferencias.sidebar => {
+            e.foco = Foco::Paginas;
+            return None;
+        }
+        "Ctrl+l" => {
+            e.foco = Foco::Conteudo;
+            return None;
+        }
+        "Alt+." | "Alt+," => {
+            pular_pro_embed(e, tecla == "Alt+.");
+            return None;
+        }
+        _ => {}
+    }
     // `Ctrl+S` salva (ciclo 375), como na janela.
     if tecla == "Ctrl+s" {
         e.salvar_agora = true;
@@ -1063,6 +1081,26 @@ fn sem_vim(e: &mut Estado, tecla: &str) -> bool {
         _ => return false,
     }
     true
+}
+
+/// Leva o cursor pra dentro do embed seguinte (ou anterior) da página.
+fn pular_pro_embed(e: &mut Estado, adiante: bool) {
+    let atual = e.cursor.first().copied();
+    let embeds: Vec<usize> =
+        e.arvore.filhos.iter().enumerate().filter(|(_, u)| matches!(u.tipo, Tipo::Embed(_))).map(|(i, _)| i).collect();
+    let alvo = if adiante {
+        embeds.iter().copied().find(|i| atual.is_none_or(|a| *i > a))
+    } else {
+        embeds.iter().rev().copied().find(|i| atual.is_some_and(|a| *i < a))
+    };
+    let Some(i) = alvo else {
+        e.aviso = Some(if adiante { "não há embed depois" } else { "não há embed antes" }.into());
+        return;
+    };
+    e.foco = Foco::Conteudo;
+    e.dobrados.remove(&vec![i]);
+    e.cursor = tela::andar(&e.arvore, &vec![i], Passo::Entrar);
+    e.seguir_cursor();
 }
 
 /// A página pra onde a parte sob o cursor aponta, se aponta.
@@ -9661,5 +9699,26 @@ mod testes {
         let tela = desenho(&mut e, 120, 20).join("\n");
         let linha = tela.lines().find(|l| l.contains(" A ")).expect("sem o botão A");
         assert!(linha.contains("A                "), "o A não esticou:\n{tela}");
+    }
+
+    // --- Ciclo 381: pular entre embeds e focar ----------------------------------
+
+    #[test]
+    fn alt_ponto_pula_pro_embed_e_ctrl_e_l_trocam_o_foco() {
+        let mut e = pagina_com("# T\n\nTexto.\n\n{{ type: \"callout\" }}\nvariant: info\ntitle: Nota\nbody: Corpo\n{{ /callout }}\n\nMeio.\n\n{{ type: \"fluxo\" }}\nartefato: spec\netapa: rascunho\n{{ /fluxo }}\n");
+        e.cursor = vec![0];
+        tecla(&mut e, "Alt+.");
+        assert_eq!(e.cursor.first(), Some(&2), "{:?}", e.cursor);
+        assert!(e.cursor.len() > 1, "entrou no embed");
+        tecla(&mut e, "Alt+.");
+        assert_eq!(e.cursor.first(), Some(&4));
+        tecla(&mut e, "Alt+.");
+        assert!(e.aviso.as_deref().unwrap().contains("depois"));
+        tecla(&mut e, "Alt+,");
+        assert_eq!(e.cursor.first(), Some(&2));
+        tecla(&mut e, "Ctrl+e");
+        assert_eq!(e.foco, Foco::Paginas);
+        tecla(&mut e, "Ctrl+l");
+        assert_eq!(e.foco, Foco::Conteudo);
     }
 }

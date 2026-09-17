@@ -22,6 +22,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Cabeçalho: propostas pendentes e status do git | ✅ | 355 — no rodapé da sidebar |
 | Busca no CONTEÚDO na paleta (FTS) | ✅ | 342, 379 — aparece enquanto digita (3 letras); `Ctrl+F` lista só o conteúdo |
 | Atalhos (`?`) | ✅ | 339 |
+| Embed seguinte/anterior, foco na sidebar/editor | ✅ | 381 — `Alt+.`/`Alt+,`, `Ctrl+E`/`Ctrl+L` |
 | Wikilink `[[Título]]` abre a página | ✅ | 342 — Enter; oferece criar a que não existe |
 | Links de fora (texto, célula de URL, imagem da galeria) abrem no sistema | ✅ | 374 — Enter; `xdg-open`/`open` |
 | Autocompletar wikilink ao digitar | ✅ | 352 — `[[` na inserção; ↑↓, Enter/Tab completa, Esc fecha a lista |
