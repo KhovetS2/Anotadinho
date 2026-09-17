@@ -1618,6 +1618,23 @@ fn comando_de_vim(e: &mut Estado, c: Comando) {
         .checked_sub(1)
         .and_then(|n| e.arvore.em(&e.cursor[..n]))
         .is_some_and(|pai| pai.tipo.arranjo() == Arranjo::Linha);
+    // Num evento do calendário, `h`/`l` andam de DIA com o evento
+    // selecionado (ciclo 311) — ver `tela::evento_ao_lado`.
+    if matches!(mov, Movimento::Direita | Movimento::Esquerda)
+        && tela::evento_ao_lado(&e.arvore, &e.cursor, true)
+            .or_else(|| tela::evento_ao_lado(&e.arvore, &e.cursor, false))
+            .is_some()
+    {
+        let adiante = matches!(mov, Movimento::Direita);
+        for _ in 0..vezes.max(1) {
+            match tela::evento_ao_lado(&e.arvore, &e.cursor, adiante) {
+                Some(c) => e.cursor = c,
+                None => break,
+            }
+        }
+        e.seguir_cursor();
+        return;
+    }
     match mov {
         // Num galho em linha, `j`/`k` não têm pra onde ir: os irmãos
         // estão lado a lado. Ficam parados.
@@ -2997,6 +3014,54 @@ mod testes {
         assert_eq!(buf[(inicio, y as u16)].style().bg, cursor.bg, "o começo da barra não acendeu");
         let fim_do_titulo = inicio + "Sprint de agosto".chars().count() as u16 + 12;
         assert_eq!(buf[(fim_do_titulo, y as u16)].style().bg, cursor.bg, "o meio da barra não acendeu");
+    }
+
+    #[test]
+    fn h_e_l_andam_de_dia_com_o_evento_selecionado() {
+        // Sprint de 10 a 14 na faixa 0; Reunião no dia 12 e Almoço no 15,
+        // ambos na faixa 1 (a do 15 fica vaga na 0).
+        let mut e = Estado::novo(
+            paginas(),
+            analisar(
+                "{{ type: \"calendar\" }}\nentries:\n\
+                 - date: 2026-08-06\n  title: Revisão\n\
+                 - date: 2026-08-10\n  title: Sprint\n  end_date: 2026-08-14\n\
+                 - date: 2026-08-12\n  title: Reunião\n\
+                 - date: 2026-08-17\n  title: Retro\n\
+                 {{ /calendar }}\n",
+            ),
+        );
+        e.foco = Foco::Conteudo;
+        let texto = |e: &Estado| e.arvore.em(&e.cursor).unwrap().texto.clone();
+        // Começo da sprint: segunda, dia 10.
+        e.cursor = vec![0, 0, 2, 1, 0];
+        assert_eq!(texto(&e), "Sprint");
+        // `l` percorre a barra dia a dia, mantendo a faixa.
+        tecla(&mut e, "l");
+        assert_eq!(e.cursor, vec![0, 0, 2, 2, 0]);
+        tecla(&mut e, "l");
+        assert_eq!(e.cursor, vec![0, 0, 2, 3, 0], "no dia 12 devia seguir na sprint, não na reunião");
+        assert_eq!(texto(&e), "Sprint");
+        // `3l`: 13, 14 e — acabou a barra, e o 15 e o 16 não têm evento —
+        // a Retro no dia 17, já na semana seguinte.
+        tecla(&mut e, "3");
+        tecla(&mut e, "l");
+        assert_eq!(texto(&e), "Retro");
+        assert_eq!(e.cursor, vec![0, 0, 3, 1, 0]);
+        // E de volta: `h` pula os dias vazios até o fim da sprint.
+        tecla(&mut e, "h");
+        assert_eq!(e.cursor, vec![0, 0, 2, 5, 0]);
+        // Da Reunião (faixa 1 do dia 12), `h` vai pro dia 11, onde a faixa
+        // 1 está vazia: cai no primeiro evento de lá, a sprint.
+        e.cursor = vec![0, 0, 2, 3, 1];
+        assert_eq!(texto(&e), "Reunião");
+        tecla(&mut e, "h");
+        assert_eq!(e.cursor, vec![0, 0, 2, 2, 0]);
+        // Na ponta: nada antes da Revisão, o cursor fica.
+        e.cursor = vec![0, 0, 1, 4, 0];
+        assert_eq!(texto(&e), "Revisão");
+        tecla(&mut e, "h");
+        assert_eq!(e.cursor, vec![0, 0, 1, 4, 0]);
     }
 
     #[test]

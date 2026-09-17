@@ -402,6 +402,69 @@ pub fn e_evento(nome: &str) -> bool {
     nome == "evento" || nome == "evento-continua" || nome.starts_with("evento--")
 }
 
+/// O evento do dia vizinho, com o cursor num evento do calendário
+/// (ciclo 311).
+///
+/// `h`/`l` num evento andam de DIA, não de irmão: os irmãos de um evento
+/// são as outras faixas do mesmo dia, empilhadas — `j`/`k` já andam
+/// entre elas. Andar de dia mantém o nível: o cursor sai de um evento e
+/// pousa num evento.
+///
+/// No dia ao lado, a preferência é a MESMA faixa — dentro de uma barra
+/// de vários dias, é a continuação dela, e `l` percorre a barra dia a
+/// dia com o evento selecionado. Se a faixa ali não é evento, vai pro
+/// primeiro evento do dia; dia sem evento é pulado. A semana vira junto
+/// (sábado → domingo seguinte), dentro do mesmo mês. Sem evento adiante,
+/// `None`: o cursor fica.
+pub fn evento_ao_lado(raiz: &Unidade, cursor: &[usize], adiante: bool) -> Option<Caminho> {
+    let nome_de = |u: &Unidade| match &u.tipo {
+        Tipo::Parte { nome, .. } => Some(nome.clone()),
+        _ => None,
+    };
+    let n = cursor.len();
+    if n < 4 {
+        return None;
+    }
+    let atual = raiz.em(cursor)?;
+    if !nome_de(atual).is_some_and(|nm| e_evento(&nm)) {
+        return None;
+    }
+    let (mes_c, semana, dia, faixa) = (&cursor[..n - 3], cursor[n - 3], cursor[n - 2], cursor[n - 1]);
+    let mes = raiz.em(mes_c)?;
+    if nome_de(mes).as_deref() != Some("mes") {
+        return None;
+    }
+    let dias_por_semana: Vec<usize> = mes.filhos.iter().map(|s| s.filhos.len()).collect();
+    // Posição linear do dia no mês, pra atravessar a virada da semana.
+    let linear = |s: usize, d: usize| dias_por_semana[..s].iter().sum::<usize>() + d;
+    let total: usize = dias_por_semana.iter().sum();
+    let mut pos = linear(semana, dia) as isize;
+    loop {
+        pos += if adiante { 1 } else { -1 };
+        if pos < 0 || pos as usize >= total {
+            return None;
+        }
+        // De volta pra (semana, dia).
+        let (mut s, mut d) = (0usize, pos as usize);
+        while d >= dias_por_semana[s] {
+            d -= dias_por_semana[s];
+            s += 1;
+        }
+        let o_dia = &mes.filhos[s].filhos[d];
+        let e_ev = |i: usize| o_dia.filhos.get(i).and_then(nome_de).is_some_and(|nm| e_evento(&nm));
+        let alvo = if e_ev(faixa) {
+            Some(faixa)
+        } else {
+            (0..o_dia.filhos.len()).find(|i| e_ev(*i))
+        };
+        if let Some(f) = alvo {
+            let mut c = mes_c.to_vec();
+            c.extend([s, d, f]);
+            return Some(c);
+        }
+    }
+}
+
 /// A página inteira em linhas, na ordem em que se lê.
 pub fn linhas(raiz: &Unidade) -> Vec<Linha> {
     let mut r = Linhas::default();
