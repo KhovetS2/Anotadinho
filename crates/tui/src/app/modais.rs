@@ -218,7 +218,8 @@ fn botoes_padrao() -> String {
 }
 
 fn tema_padrao() -> String {
-    "escuro".into()
+    // Catppuccin Mocha (ciclo 387), como na janela.
+    "mocha".into()
 }
 fn verdadeiro() -> bool {
     true

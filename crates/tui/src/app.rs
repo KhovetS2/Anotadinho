@@ -222,7 +222,7 @@ impl Estado {
             altura: 20,
             foco: Foco::Paginas,
             sair: false,
-            tema: Tema::novo("escuro"),
+            tema: Tema::novo("mocha"),
             hoje: None,
             ancoras: std::collections::HashMap::new(),
             visoes: std::collections::HashMap::new(),
@@ -7015,7 +7015,7 @@ mod testes {
         digitar(&mut e, "alternar tema");
         tecla(&mut e, "Enter");
         assert!(e.modal.is_none());
-        assert_eq!(e.preferencias.tema, "papel");
+        assert_eq!(e.preferencias.tema, "escuro", "depois do Mocha vem o escuro");
         assert_eq!(e.pedidos, vec![Pedido::GravarPreferencias]);
         e.pedidos.clear();
         // Página pelo nome.

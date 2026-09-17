@@ -80,20 +80,20 @@ addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-a = fg #00b5ff bg #272930
-b = fg #3d404f bg #272930
-c = fg #272930 bg #00b5ff
-d = fg - bg #272930
-e = fg #e4e8f5 bg #272930
-f = fg #3a334e bg #272930
-g = fg #9327ff bg #3a334e
-h = fg - bg #3a334e
-i = fg #989eb7 bg #3a334e
-j = fg #00b5ff bg #2a495e negrito
-k = fg #248569 bg #303f45
-l = fg #e4e8f5 bg #275069
-m = fg #989eb7 bg #3d404f
-n = fg #3d404f bg #3a334e
-o = fg #e4e8f5 bg #3d404f negrito
-p = fg #4a6eff bg #3a334e
-q = fg #ffffff bg #4a6eff negrito
+a = fg #89b4fa bg #1e1e2e
+b = fg #45475a bg #1e1e2e
+c = fg #1e1e2e bg #89b4fa
+d = fg - bg #1e1e2e
+e = fg #cdd6f4 bg #1e1e2e
+f = fg #3d3b52 bg #1e1e2e
+g = fg #cba6f7 bg #3d3b52
+h = fg - bg #3d3b52
+i = fg #a6adc8 bg #3d3b52
+j = fg #89b4fa bg #3f4761 negrito
+k = fg #a6e3a1 bg #414b51
+l = fg #cdd6f4 bg #444f6c
+m = fg #a6adc8 bg #45475a
+n = fg #45475a bg #3d3b52
+o = fg #cdd6f4 bg #45475a negrito
+p = fg #aaadf9 bg #3d3b52
+q = fg #ffffff bg #aaadf9 negrito

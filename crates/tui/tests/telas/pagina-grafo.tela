@@ -60,18 +60,18 @@ addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabooooooooooooooooooooooooooooooooooooooobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-a = fg #3d404f bg #272930
-b = fg #00b5ff bg #272930
-c = fg - bg #272930 apagado
-d = fg - bg #272930
-e = fg #00b5ff bg #272930 negrito
-f = fg #989eb7 bg #272930
-g = fg #e4e8f5 bg #272930 negrito
-h = fg #00b5ff bg #32343f
-i = fg #e4e8f5 bg #32343f negrito
-j = fg - bg #32343f
-k = fg #989eb7 bg #32343f
-l = fg #e4e8f5 bg #3d404f
-m = fg #272930 bg #00b5ff
-n = fg #3d404f bg #32343f
-o = fg #989eb7 bg #272930 itálico
+a = fg #45475a bg #1e1e2e
+b = fg #89b4fa bg #1e1e2e
+c = fg - bg #1e1e2e apagado
+d = fg - bg #1e1e2e
+e = fg #89b4fa bg #1e1e2e negrito
+f = fg #a6adc8 bg #1e1e2e
+g = fg #cdd6f4 bg #1e1e2e negrito
+h = fg #89b4fa bg #313244
+i = fg #cdd6f4 bg #313244 negrito
+j = fg - bg #313244
+k = fg #a6adc8 bg #313244
+l = fg #cdd6f4 bg #45475a
+m = fg #1e1e2e bg #89b4fa
+n = fg #45475a bg #313244
+o = fg #a6adc8 bg #1e1e2e itálico

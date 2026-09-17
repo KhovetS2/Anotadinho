@@ -101,7 +101,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 
 | Janela | TUI | Ciclo / nota |
 |---|---|---|
-| Tema | ✅ | 339 |
+| Tema | ✅ | 339, 387 — Catppuccin Mocha é o padrão (janela e TUI) |
 | Cor de destaque, botões | ✅ | 358 — "Cor de destaque…" e "Estilo dos botões…" (também em Personalizar), gravados |
 | Sidebar escondível | ✅ | 339 |
 | Remapear atalhos globais e do vim | ✅ | 359 — "Remapear teclas…": ações do vim de uma tecla e comandos globais, com checagem de repetição |

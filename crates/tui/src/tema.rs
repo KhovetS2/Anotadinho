@@ -25,7 +25,7 @@ use ratatui::style::{Color, Modifier, Style};
 const CSS: &str = include_str!("../../../ui/src/styles/main.css");
 
 /// Os temas que o app oferece.
-pub const TEMAS: [&str; 4] = ["escuro", "papel", "contraste", "claro"];
+pub const TEMAS: [&str; 5] = ["mocha", "escuro", "papel", "contraste", "claro"];
 
 /// O papel de um pedaço da tela — o nome que o tema resolve.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

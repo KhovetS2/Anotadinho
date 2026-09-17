@@ -80,20 +80,20 @@ addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabnnnnnnnnnnnnnnnnbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-a = fg #3d404f bg #272930
-b = fg #00b5ff bg #272930
-c = fg - bg #272930 apagado
-d = fg - bg #272930
-e = fg #e4e8f5 bg #272930
-f = fg #40323e bg #272930
-g = fg #00b5ff bg #40323e
-h = fg - bg #40323e
-i = fg #989eb7 bg #40323e
-j = fg #3d404f bg #40323e
-k = fg #e4e8f5 bg #272930 negrito
-l = fg #989eb7 bg #272930
-m = fg #e4e8f5 bg #533a7b
-n = fg #db7e21 bg #272930
+a = fg #45475a bg #1e1e2e
+b = fg #89b4fa bg #1e1e2e
+c = fg - bg #1e1e2e apagado
+d = fg - bg #1e1e2e
+e = fg #cdd6f4 bg #1e1e2e
+f = fg #41394c bg #1e1e2e
+g = fg #89b4fa bg #41394c
+h = fg - bg #41394c
+i = fg #a6adc8 bg #41394c
+j = fg #45475a bg #41394c
+k = fg #cdd6f4 bg #1e1e2e negrito
+l = fg #a6adc8 bg #1e1e2e
+m = fg #cdd6f4 bg #675f81
+n = fg #fab387 bg #1e1e2e
 == arquivo ==
 Antes.
 

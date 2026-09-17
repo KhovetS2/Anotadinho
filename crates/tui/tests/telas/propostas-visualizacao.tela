@@ -80,25 +80,25 @@ addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-a = fg #3d404f bg #272930
-b = fg #00b5ff bg #272930
-c = fg - bg #272930 apagado
-d = fg - bg #272930
-e = fg #e4e8f5 bg #272930 negrito
-f = fg #989eb7 bg #272930
-g = fg #00b5ff bg #32343f
-h = fg #db7e21 bg #42362e
-i = fg - bg #32343f
-j = fg #e4e8f5 bg #32343f negrito
-k = fg #9327ff bg #32343f
-l = fg #989eb7 bg #32343f
-m = fg #e4e8f5 bg #32343f
-n = fg #e4e8f5 bg #3d404f negrito
-o = fg #00b5ff bg #3d404f negrito
-p = fg #9327ff bg #32343f negrito sublinhado
-q = fg #272930 bg #00b5ff negrito
-r = fg #e4e8f5 bg #3d404f
-s = fg #3d404f bg #32343f
-t = fg #248569 bg #273739
-u = fg #e4e8f5 bg #304146
-v = fg #989eb7 bg #272930 itálico
+a = fg #45475a bg #1e1e2e
+b = fg #89b4fa bg #1e1e2e
+c = fg - bg #1e1e2e apagado
+d = fg - bg #1e1e2e
+e = fg #cdd6f4 bg #1e1e2e negrito
+f = fg #a6adc8 bg #1e1e2e
+g = fg #89b4fa bg #313244
+h = fg #fab387 bg #3f343b
+i = fg - bg #313244
+j = fg #cdd6f4 bg #313244 negrito
+k = fg #cba6f7 bg #313244
+l = fg #a6adc8 bg #313244
+m = fg #cdd6f4 bg #313244
+n = fg #cdd6f4 bg #45475a negrito
+o = fg #89b4fa bg #45475a negrito
+p = fg #cba6f7 bg #313244 negrito sublinhado
+q = fg #1e1e2e bg #89b4fa negrito
+r = fg #cdd6f4 bg #45475a
+s = fg #45475a bg #313244
+t = fg #a6e3a1 bg #323c3f
+u = fg #cdd6f4 bg #444e53
+v = fg #a6adc8 bg #1e1e2e itálico

@@ -132,6 +132,43 @@
     --fundo-cinza: #E8E1D4;
 }
 
+/* Catppuccin Mocha (ciclo 387) — o tema padrão. As cores são as da
+   paleta oficial: base/surface/overlay pro fundo, text/subtext pro texto,
+   blue de destaque e mauve de segundo acento. */
+:root[data-theme="mocha"] {
+    color-scheme: dark;
+
+    --bg-base: #1E1E2E;
+    --bg-surface: #313244;
+    --bg-elevated: #45475A;
+    --text-primary: #CDD6F4;
+    --text-muted: #A6ADC8;
+    --accent-blue: var(--destaque, #89B4FA);
+    --accent-blue-hover: var(--destaque-hover, #74C7EC);
+    --accent-purple: #CBA6F7;
+    --accent-purple-hover: #B4BEFE;
+    --border: #45475A;
+    --success: #A6E3A1;
+    --warning: #FAB387;
+    --error: #F38BA8;
+
+    --cor-vermelho: #F38BA8;
+    --cor-ambar: #F9E2AF;
+    --cor-verde: #A6E3A1;
+    --cor-azul: #89B4FA;
+    --cor-roxo: #CBA6F7;
+    --cor-rosa: #F5C2E7;
+    --cor-cinza: #9399B2;
+
+    --fundo-vermelho: #4D3649;
+    --fundo-ambar: #4E494A;
+    --fundo-verde: #3C4947;
+    --fundo-azul: #363F5B;
+    --fundo-roxo: #443C5A;
+    --fundo-rosa: #4D4257;
+    --fundo-cinza: #38394B;
+}
+
 /* Alto contraste: preto puro e texto branco. Existe pra quem precisa,
    não pra quem prefere — por isso as bordas são visíveis de verdade em
    vez de sugeridas. */

@@ -80,15 +80,15 @@ addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-a = fg #00b5ff bg #272930
-b = fg #3d404f bg #272930
-c = fg #272930 bg #00b5ff
-d = fg - bg #272930
-e = fg #e4e8f5 bg #272930
-f = fg #2e3e4e bg #272930
-g = fg #00b5ff bg #2e3e4e
-h = fg - bg #2e3e4e
-i = fg #32343f bg #2e3e4e
-j = fg #3d404f bg #2e3e4e
-k = fg #e4e8f5 bg #32343f
-l = fg #989eb7 bg #3d404f
+a = fg #89b4fa bg #1e1e2e
+b = fg #45475a bg #1e1e2e
+c = fg #1e1e2e bg #89b4fa
+d = fg - bg #1e1e2e
+e = fg #cdd6f4 bg #1e1e2e
+f = fg #383c53 bg #1e1e2e
+g = fg #89b4fa bg #383c53
+h = fg - bg #383c53
+i = fg #313244 bg #383c53
+j = fg #45475a bg #383c53
+k = fg #cdd6f4 bg #313244
+l = fg #a6adc8 bg #45475a

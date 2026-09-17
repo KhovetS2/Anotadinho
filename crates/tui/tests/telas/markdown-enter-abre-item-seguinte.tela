@@ -40,17 +40,17 @@ addddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabkkkkkkkkkkkkkkkkbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-a = fg #3d404f bg #272930
-b = fg #00b5ff bg #272930
-c = fg - bg #272930 apagado
-d = fg - bg #272930
-e = fg #989eb7 bg #272930
-f = fg #00b5ff bg #3d404f negrito
-g = fg #e4e8f5 bg #272930
-h = fg #e4e8f5 bg #272930 negrito
-i = fg #272930 bg #e4e8f5
-j = fg #989eb7 bg #272930 itálico
-k = fg #272930 bg #00b5ff
+a = fg #45475a bg #1e1e2e
+b = fg #89b4fa bg #1e1e2e
+c = fg - bg #1e1e2e apagado
+d = fg - bg #1e1e2e
+e = fg #a6adc8 bg #1e1e2e
+f = fg #89b4fa bg #45475a negrito
+g = fg #cdd6f4 bg #1e1e2e
+h = fg #cdd6f4 bg #1e1e2e negrito
+i = fg #1e1e2e bg #cdd6f4
+j = fg #a6adc8 bg #1e1e2e itálico
+k = fg #1e1e2e bg #89b4fa
 == arquivo ==
 ---
 title: Notas

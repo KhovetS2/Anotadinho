@@ -472,7 +472,10 @@ pub fn app() -> Html {
                 // snapshot visual distingue um tema do outro. A classe
                 // continua acompanhando o alternador claro/escuro, que
                 // ainda é o caminho mais rápido pra quem só quer isso.
-                let _ = html.set_attribute("data-theme", &ap.tema);
+                // O alternador claro/escuro do cabeçalho vale por cima de
+                // um tema escuro com bloco próprio (o Mocha, ciclo 387).
+                let tema = if *light && !matches!(ap.tema.as_str(), "claro" | "papel") { "claro" } else { ap.tema.as_str() };
+                let _ = html.set_attribute("data-theme", tema);
                 let _ = html.set_attribute("data-botoes", &ap.botoes);
                 if *light { html.class_list().add_1("theme-light").ok(); }
                 else { html.class_list().remove_1("theme-light").ok(); }

@@ -80,25 +80,25 @@ addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-a = fg #3d404f bg #272930
-b = fg #00b5ff bg #272930
-c = fg - bg #272930 apagado
-d = fg - bg #272930
-e = fg #e4e8f5 bg #272930
-f = fg #3d404f bg #32343f
-g = fg #e4e8f5 bg #32343f negrito
-h = fg #37414e bg #272930
-i = fg #989eb7 bg #32343f
-j = fg #e4e8f5 bg #32343f
-k = fg #32343f bg #37414e
-l = fg - bg #37414e
-m = fg - bg #32343f
-n = fg #989eb7 bg #32343f negrito
-o = fg #989eb7 bg #3d404f
-p = fg - bg #3d404f
-q = fg #e4e8f5 bg #3d404f
-r = fg #00b5ff bg #3d404f
-s = fg #272930 bg #00b5ff negrito
-t = fg #00b5ff bg #32343f sublinhado
-u = fg #248569 bg #32343f
-v = fg #e71d32 bg #32343f
+a = fg #45475a bg #1e1e2e
+b = fg #89b4fa bg #1e1e2e
+c = fg - bg #1e1e2e apagado
+d = fg - bg #1e1e2e
+e = fg #cdd6f4 bg #1e1e2e
+f = fg #45475a bg #313244
+g = fg #cdd6f4 bg #313244 negrito
+h = fg #383c53 bg #1e1e2e
+i = fg #a6adc8 bg #313244
+j = fg #cdd6f4 bg #313244
+k = fg #313244 bg #383c53
+l = fg - bg #383c53
+m = fg - bg #313244
+n = fg #a6adc8 bg #313244 negrito
+o = fg #a6adc8 bg #45475a
+p = fg - bg #45475a
+q = fg #cdd6f4 bg #45475a
+r = fg #89b4fa bg #45475a
+s = fg #1e1e2e bg #89b4fa negrito
+t = fg #89b4fa bg #313244 sublinhado
+u = fg #a6e3a1 bg #313244
+v = fg #f38ba8 bg #313244

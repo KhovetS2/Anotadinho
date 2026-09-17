@@ -60,25 +60,25 @@ addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabssssssssssssssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-a = fg #3d404f bg #272930
-b = fg #00b5ff bg #272930
-c = fg - bg #272930 apagado
-d = fg - bg #272930
-e = fg #e4e8f5 bg #272930
-f = fg #423f40 bg #272930
-g = fg #00b5ff bg #423f40
-h = fg - bg #423f40
-i = fg #606475 bg #423f40
-j = fg #989eb7 bg #423f40 negrito
-k = fg #272930 bg #00b5ff
-l = fg #ffc24d bg #423f40
-m = fg #e4e8f5 bg #423f40
-n = fg #db7e21 bg #42362e
-o = fg #248569 bg #273739
-p = fg #00b5ff bg #213e4f
-q = fg #e71d32 bg #442730
-r = fg #989eb7 bg #423f40
-s = fg #db7e21 bg #272930
+a = fg #45475a bg #1e1e2e
+b = fg #89b4fa bg #1e1e2e
+c = fg - bg #1e1e2e apagado
+d = fg - bg #1e1e2e
+e = fg #cdd6f4 bg #1e1e2e
+f = fg #41404d bg #1e1e2e
+g = fg #89b4fa bg #41404d
+h = fg - bg #41404d
+i = fg #66697f bg #41404d
+j = fg #a6adc8 bg #41404d negrito
+k = fg #1e1e2e bg #89b4fa
+l = fg #f9e2af bg #41404d
+m = fg #cdd6f4 bg #41404d
+n = fg #fab387 bg #3f343b
+o = fg #a6e3a1 bg #323c3f
+p = fg #89b4fa bg #2e354d
+q = fg #f38ba8 bg #3e2e40
+r = fg #a6adc8 bg #41404d
+s = fg #fab387 bg #1e1e2e
 == arquivo ==
 Antes.
 

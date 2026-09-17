@@ -701,7 +701,7 @@ pub struct Aparencia {
 impl Default for Aparencia {
     fn default() -> Self {
         Self {
-            tema: "escuro".into(),
+            tema: "mocha".into(),
             destaque: String::new(),
             botoes: "arredondado".into(),
         }
@@ -725,6 +725,12 @@ pub struct TemaOferecido {
 /// ilegível porque não existe uma na lista. Tema escrito pelo usuário é
 /// fora de escopo justamente por isso: aí a garantia acabaria.
 pub const TEMAS: &[TemaOferecido] = &[
+    // O padrão (ciclo 387).
+    TemaOferecido {
+        id: "mocha",
+        nome: "Catppuccin Mocha",
+        amostra: ["#1E1E2E", "#CDD6F4", "#89B4FA"],
+    },
     TemaOferecido {
         id: "escuro",
         nome: "Escuro",
@@ -774,7 +780,7 @@ pub fn load_aparencia() -> Aparencia {
         tema: if antigo.as_deref() == Some("light") {
             "claro".into()
         } else {
-            "escuro".into()
+            "mocha".into()
         },
         ..Default::default()
     }

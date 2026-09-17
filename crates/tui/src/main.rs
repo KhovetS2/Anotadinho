@@ -34,7 +34,7 @@ struct Cli {
     #[arg(long)]
     criar: bool,
 
-    /// Tema: escuro, papel, contraste ou claro.
+    /// Tema: mocha (o padrão), escuro, papel, contraste ou claro.
     ///
     /// São os mesmos quatro da janela, e as cores saem do mesmo
     /// `main.css` (ciclo 288).
@@ -855,7 +855,7 @@ fn main() -> Result<(), String> {
         preferencias.tema = tema.clone();
     }
     if !anotadinho_tui::tema::TEMAS.contains(&preferencias.tema.as_str()) {
-        preferencias.tema = "escuro".into();
+        preferencias.tema = "mocha".into();
     }
     let mut vault_da_sessao = vault;
     let mut estado = montar_estado(&vault_da_sessao, vazio, preferencias)?;
