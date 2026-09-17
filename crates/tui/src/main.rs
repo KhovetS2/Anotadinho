@@ -3,7 +3,11 @@
 //! Tudo que dá pra testar mora em `app` e `tela`. Aqui fica só o que
 //! precisa de um terminal de verdade — e é curto de propósito.
 
-use anotadinho_ipc::{handle_list_pages, handle_read_page_versioned, handle_scan_vault, handle_write_page_checked};
+use anotadinho_ipc::{
+    handle_create_page_typed, handle_delete_page, handle_list_pages, handle_open_today_journal, handle_read_page_versioned,
+    handle_scan_vault, handle_write_page, handle_write_page_checked,
+};
+use anotadinho_tui::app::{Pedido, Preferencias};
 use anotadinho_tui::app::{self, Estado};
 use clap::Parser;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -28,8 +32,10 @@ struct Cli {
     ///
     /// São os mesmos quatro da janela, e as cores saem do mesmo
     /// `main.css` (ciclo 288).
-    #[arg(long, default_value = "escuro")]
-    tema: String,
+    /// Sem ele, vale o tema das preferências (a barra de comandos troca
+    /// e grava, ciclo 339).
+    #[arg(long)]
+    tema: Option<String>,
 }
 
 /// Traduz a tecla do crossterm pro nome que o NÚCLEO entende.
@@ -82,6 +88,12 @@ fn ler(vault: &str, caminho: &str) -> Result<(String, Option<String>), String> {
 /// fuso vem do `localtime_r`; fora dele, UTC — um dia a menos ou a mais
 /// perto da meia-noite, e só isso.
 fn hoje_local() -> String {
+    agora_local().split(' ').next().unwrap_or_default().to_string()
+}
+
+/// Agora, `AAAA-MM-DD HH:MM`, no fuso da pessoa — o carimbo das conversas
+/// (ciclo 339).
+fn agora_local() -> String {
     let agora = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -94,10 +106,102 @@ fn hoje_local() -> String {
         // em `tm` e devolve nulo se falhar.
         let ok = unsafe { !libc::localtime_r(&t, &mut tm).is_null() };
         if ok {
-            return anotadinho_core::date_util::format_date(tm.tm_year + 1900, (tm.tm_mon + 1) as u32, tm.tm_mday as u32);
+            let dia = anotadinho_core::date_util::format_date(tm.tm_year + 1900, (tm.tm_mon + 1) as u32, tm.tm_mday as u32);
+            return format!("{dia} {:02}:{:02}", tm.tm_hour, tm.tm_min);
         }
     }
-    anotadinho_core::date_util::add_days("1970-01-01", agora.div_euclid(86_400)).unwrap_or_default()
+    let dia = anotadinho_core::date_util::add_days("1970-01-01", agora.div_euclid(86_400)).unwrap_or_default();
+    let s = agora.rem_euclid(86_400);
+    format!("{dia} {:02}:{:02}", s / 3600, (s % 3600) / 60)
+}
+
+/// Onde as preferências da TUI moram: fora do vault, na pasta de
+/// configuração da pessoa.
+fn caminho_das_preferencias() -> Option<std::path::PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))?;
+    Some(base.join("anotadinho").join("tui.json"))
+}
+
+fn ler_preferencias() -> Preferencias {
+    caminho_das_preferencias()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn gravar_preferencias(p: &Preferencias) -> Result<(), String> {
+    let caminho = caminho_das_preferencias().ok_or("sem pasta de configuração")?;
+    if let Some(pai) = caminho.parent() {
+        std::fs::create_dir_all(pai).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(p).map_err(|e| e.to_string())?;
+    std::fs::write(caminho, json).map_err(|e| e.to_string())
+}
+
+/// Abre uma página pelo caminho: a lista aponta pra ela e o texto vem do
+/// disco.
+fn abrir(estado: &mut Estado, vault: &str, caminho: &str) {
+    if let Some(i) = estado.paginas.iter().position(|p| p.path == caminho) {
+        estado.pagina = i;
+    }
+    match ler(vault, caminho) {
+        Ok((texto, versao)) => estado.abrir_texto(&texto, versao),
+        Err(e) => estado.aviso = Some(format!("não abriu: {e}")),
+    }
+}
+
+/// Executa o que a TUI pediu e só quem tem o vault pode fazer (ciclo 339).
+fn atender(estado: &mut Estado, vault: &str) {
+    let recarregar = |estado: &mut Estado| {
+        if let Ok(p) = handle_list_pages(vault.to_string()) {
+            estado.atualizar_paginas(p);
+        }
+    };
+    for pedido in std::mem::take(&mut estado.pedidos) {
+        match pedido {
+            Pedido::AbrirPagina(caminho) => abrir(estado, vault, &caminho),
+            Pedido::CriarPagina { path, conteudo } => match handle_write_page(vault.to_string(), path.clone(), conteudo) {
+                Ok(()) => {
+                    recarregar(estado);
+                    abrir(estado, vault, &path);
+                }
+                Err(e) => estado.aviso = Some(format!("não criou: {e}")),
+            },
+            Pedido::CriarPaginaComTitulo { titulo, tipo } => {
+                match handle_create_page_typed(vault.to_string(), titulo, tipo.unwrap_or_else(|| "md".into())) {
+                    Ok(meta) => {
+                        recarregar(estado);
+                        abrir(estado, vault, &meta.path);
+                    }
+                    Err(e) => estado.aviso = Some(format!("não criou: {e}")),
+                }
+            }
+            Pedido::AbrirHoje => match handle_open_today_journal(vault.to_string()) {
+                Ok(meta) => {
+                    recarregar(estado);
+                    abrir(estado, vault, &meta.path);
+                }
+                Err(e) => estado.aviso = Some(format!("não abriu o diário: {e}")),
+            },
+            Pedido::ExcluirPagina(caminho) => match handle_delete_page(vault.to_string(), caminho.clone()) {
+                Ok(()) => {
+                    recarregar(estado);
+                    if let Some(p) = estado.paginas.first().map(|p| p.path.clone()) {
+                        abrir(estado, vault, &p);
+                    }
+                    estado.aviso = Some(format!("{caminho} excluída"));
+                }
+                Err(e) => estado.aviso = Some(format!("não excluiu: {e}")),
+            },
+            Pedido::GravarPreferencias => {
+                if let Err(e) = gravar_preferencias(&estado.preferencias) {
+                    estado.aviso = Some(format!("não gravou as preferências: {e}"));
+                }
+            }
+        }
+    }
 }
 
 fn main() -> Result<(), String> {
@@ -114,16 +218,23 @@ fn main() -> Result<(), String> {
         let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
         anotadinho_core::analise::analisar(corpo)
     };
-    if !anotadinho_tui::tema::TEMAS.contains(&cli.tema.as_str()) {
-        return Err(format!(
-            "tema \"{}\" não existe — os que existem são: {}",
-            cli.tema,
-            anotadinho_tui::tema::TEMAS.join(", ")
-        ));
+    let mut preferencias = ler_preferencias();
+    if let Some(tema) = &cli.tema {
+        if !anotadinho_tui::tema::TEMAS.contains(&tema.as_str()) {
+            return Err(format!(
+                "tema \"{}\" não existe — os que existem são: {}",
+                tema,
+                anotadinho_tui::tema::TEMAS.join(", ")
+            ));
+        }
+        preferencias.tema = tema.clone();
+    }
+    if !anotadinho_tui::tema::TEMAS.contains(&preferencias.tema.as_str()) {
+        preferencias.tema = "escuro".into();
     }
     let mut estado = Estado::novo(paginas, primeira)
         .com_texto(&texto, versao)
-        .com_tema(&cli.tema)
+        .com_preferencias(preferencias)
         .com_hoje(&hoje_local())
         // Os calendários em modo vault leem as páginas com data. Varrer
         // falhando não impede a TUI: o calendário só fica vazio.
@@ -165,9 +276,18 @@ fn laco<B: ratatui::backend::Backend>(
     vault: &str,
 ) -> Result<(), String> {
     loop {
+        estado.agora = Some(agora_local());
         term.draw(|f| app::desenhar(f, estado)).map_err(|e| e.to_string())?;
         if estado.sair {
             return Ok(());
+        }
+        // Espera tecla por um instante e redesenha mesmo sem ela: o que
+        // roda por fora (o agente de uma conversa) precisa aparecer
+        // enquanto a pessoa só olha.
+        if !event::poll(std::time::Duration::from_millis(250)).map_err(|e| e.to_string())? {
+            app::tique(estado);
+            atender(estado, vault);
+            continue;
         }
         let Event::Key(k) = event::read().map_err(|e| e.to_string())? else {
             continue;
@@ -188,6 +308,7 @@ fn laco<B: ratatui::backend::Backend>(
                 estado.abrir_texto(&texto, versao);
             }
         }
+        atender(estado, vault);
         // Uma edição deixou texto novo: grava com a trava de versão. Se
         // o arquivo mudou por fora, a gravação é recusada, a página volta
         // a ser a do disco e o rodapé diz por quê (ciclo 318).

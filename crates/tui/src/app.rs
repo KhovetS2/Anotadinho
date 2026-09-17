@@ -17,7 +17,9 @@ use ratatui::Frame;
 
 mod edicao;
 mod markdown;
+pub mod modais;
 pub use edicao::{AcaoDaPergunta, Pergunta, Registro};
+pub use modais::{Modal, Pedido, Preferencias};
 pub use markdown::{EdicaoDeBloco, Hospedeiro};
 use edicao::tecla_na_pergunta;
 
@@ -107,6 +109,15 @@ pub struct Estado {
     pub aviso: Option<String>,
     /// A pergunta aberta no rodapé, quando uma edição precisa de texto.
     pub pergunta: Option<Pergunta>,
+    /// O modal aberto — barra de comandos, escolha, confirmação (ciclo 339).
+    pub modal: Option<Modal>,
+    /// O que só o `main` pode fazer (abrir, criar, apagar, gravar
+    /// preferências), na ordem em que foi pedido.
+    pub pedidos: Vec<Pedido>,
+    /// As preferências da TUI (tema, sidebar, agente).
+    pub preferencias: Preferencias,
+    /// Agora, `AAAA-MM-DD HH:MM`, quando o `main` diz.
+    pub agora: Option<String>,
     /// O que `yy`/`dd` guardaram pra `p` colar (ciclo 322).
     pub registro: Option<Registro>,
     /// Texto e cursor de antes de cada edição, pro `u` (ciclo 322).
@@ -162,6 +173,10 @@ impl Estado {
             aviso: None,
             pergunta: None,
             registro: None,
+            modal: None,
+            pedidos: Vec::new(),
+            preferencias: Preferencias::default(),
+            agora: None,
             desfazer: Vec::new(),
             refazer: Vec::new(),
         }
@@ -341,7 +356,25 @@ impl Estado {
     /// Troca a paleta.
     pub fn com_tema(mut self, nome: &str) -> Self {
         self.tema = Tema::novo(nome);
+        self.preferencias.tema = nome.to_string();
         self
+    }
+
+    /// Aplica as preferências gravadas (ciclo 339).
+    pub fn com_preferencias(mut self, p: Preferencias) -> Self {
+        self.tema = Tema::novo(&p.tema);
+        if !p.sidebar {
+            self.foco = Foco::Conteudo;
+        }
+        self.preferencias = p;
+        self
+    }
+
+    /// Troca a lista de páginas (depois de criar ou apagar uma).
+    pub fn atualizar_paginas(&mut self, paginas: Vec<PageMeta>) {
+        self.arvore_sidebar = sidebar::arvore(&paginas);
+        self.paginas = paginas;
+        self.pagina = self.pagina.min(self.paginas.len().saturating_sub(1));
     }
 
     /// Troca a página aberta, recomeçando o cursor.
@@ -516,6 +549,10 @@ impl Estado {
     }
 }
 
+/// O tempo passou sem tecla: quem acompanha coisa que roda por fora
+/// (o agente de uma conversa) atualiza aqui.
+pub fn tique(_e: &mut Estado) {}
+
 /// O que uma tecla pedida faz.
 ///
 /// Devolve `Some(caminho)` quando a página selecionada mudou e o laço
@@ -536,9 +573,28 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
     if e.barra_aberta {
         return tecla_na_busca(e, tecla);
     }
+    // Um modal recebe tudo (ciclo 339).
+    if e.modal.is_some() {
+        modais::tecla(e, tecla);
+        return None;
+    }
+    // A barra de comandos: `:` (o modo de comando do vim) ou `Ctrl+K` (o
+    // atalho da janela); `?` mostra os atalhos.
+    if tecla == "Ctrl+k" || (matches!(tecla, ":" | "?") && !e.vim.em_curso()) {
+        if tecla == "?" {
+            e.modal = Some(Modal::Atalhos(0));
+        } else {
+            modais::abrir_paleta(e);
+        }
+        return None;
+    }
     match tecla {
         "q" => {
             e.sair = true;
+            None
+        }
+        "Tab" if !e.preferencias.sidebar => {
+            e.foco = Foco::Conteudo;
             None
         }
         "Tab" => {
@@ -554,7 +610,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
             // que o clique faz na janela.
             // Enter numa transição do fluxo move a etapa (ciclo 335).
             if tecla == "Enter"
-                && (edicao::transicao_do_cursor(e) || edicao::cartao_na_coluna_vazia(e) || edicao::busca_da_consulta(e))
+                && (edicao::transicao_do_cursor(e)
+                    || edicao::cartao_na_coluna_vazia(e)
+                    || edicao::busca_da_consulta(e)
+                    || edicao::abrir_opcoes(e))
             {
                 return None;
             }
@@ -747,9 +806,15 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         ratatui::widgets::Block::default().style(e.tema.estilo(Realce::Fundo)),
         f.area(),
     );
+    // Sem sidebar (preferência, ciclo 339), o conteúdo toma a tela.
+    let divisao = if e.preferencias.sidebar {
+        [Constraint::Percentage(30), Constraint::Percentage(70)]
+    } else {
+        [Constraint::Length(0), Constraint::Percentage(100)]
+    };
     let colunas = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+        .constraints(divisao)
         .split(f.area());
 
     // A altura útil exclui a borda de cima e a de baixo.
@@ -1280,6 +1345,8 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         );
     }
     f.render_widget(Paragraph::new(visiveis).block(bloco), colunas[1]);
+    // Os modais por cima de tudo (ciclo 339).
+    modais::desenhar(f, e);
     // Guardado só agora: `linhas_visiveis` empresta `e` até aqui, e o
     // topo corrigido precisa sobreviver pro próximo quadro — senão a
     // tela "conserta" e desconserta a cada tecla.
@@ -6332,6 +6399,104 @@ mod testes {
         tecla(&mut e, "Escape");
         tecla(&mut e, "j");
         assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "A");
+    }
+
+    #[test]
+    fn a_barra_de_comandos_filtra_executa_e_abre_pagina() {
+        let mut e = Estado::novo(paginas(), analisar("texto"));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, ":");
+        assert!(matches!(e.modal, Some(Modal::Paleta(_))));
+        let tela = desenho(&mut e, 120, 30).join("\n");
+        assert!(tela.contains("Buscar página ou comando") && tela.contains("Nova conversa com o agente"), "{tela}");
+        digitar(&mut e, "alternar tema");
+        tecla(&mut e, "Enter");
+        assert!(e.modal.is_none());
+        assert_eq!(e.preferencias.tema, "papel");
+        assert_eq!(e.pedidos, vec![Pedido::GravarPreferencias]);
+        e.pedidos.clear();
+        // Página pelo nome.
+        tecla(&mut e, "Ctrl+k");
+        digitar(&mut e, "beta");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, vec![Pedido::AbrirPagina("pages/beta.md".into())]);
+        // Escape fecha sem fazer nada.
+        e.pedidos.clear();
+        tecla(&mut e, ":");
+        tecla(&mut e, "Escape");
+        assert!(e.modal.is_none() && e.pedidos.is_empty());
+    }
+
+    #[test]
+    fn personalizar_troca_sidebar_e_nova_pagina_pede_titulo() {
+        let mut e = Estado::novo(paginas(), analisar("texto"));
+        tecla(&mut e, ":");
+        digitar(&mut e, "personalizar");
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Escolha { .. })));
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert!(!e.preferencias.sidebar);
+        assert_eq!(e.foco, Foco::Conteudo);
+        let tela = desenho(&mut e, 100, 20);
+        assert!(!tela[0].contains("páginas"), "a sidebar continuou: {}", tela[0]);
+        tecla(&mut e, "Escape");
+        tecla(&mut e, ":");
+        digitar(&mut e, "nova página: kanban");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "Quadro");
+        tecla(&mut e, "Enter");
+        assert!(e.pedidos.contains(&Pedido::CriarPaginaComTitulo { titulo: "Quadro".into(), tipo: Some("kanban".into()) }));
+        // Nova conversa usa o relógio e anexa a página aberta.
+        e.agora = Some("2026-09-17 10:30".into());
+        tecla(&mut e, ":");
+        digitar(&mut e, "nova conversa");
+        tecla(&mut e, "Enter");
+        let Some(Pedido::CriarPagina { path, conteudo }) = e.pedidos.last() else { panic!("{:?}", e.pedidos) };
+        assert!(path.starts_with("pages/conversas/"), "{path}");
+        assert!(conteudo.contains("type: conversa") && conteudo.contains("pages/alfa.md"), "{conteudo}");
+    }
+
+    #[test]
+    fn o_editor_de_opcoes_cria_renomeia_reordena_e_apaga() {
+        use anotadinho_core::embed::ColumnKind;
+        let mut e = tabela_editavel();
+        // Status: select [todo, done]; API=done, Docs=todo.
+        e.cursor = vec![1, 0, 1];
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Opcoes(_))));
+        tecla(&mut e, "o");
+        digitar(&mut e, "doing");
+        tecla(&mut e, "Enter");
+        let opcoes = |e: &Estado| match &tabela_gravada(e).columns[1].kind {
+            ColumnKind::Select { options } => options.clone(),
+            _ => panic!(),
+        };
+        assert_eq!(opcoes(&e), ["todo", "done", "doing"]);
+        // Renomear "done" leva as células junto.
+        tecla(&mut e, "k");
+        tecla(&mut e, "a");
+        for _ in 0..4 {
+            tecla(&mut e, "Backspace");
+        }
+        digitar(&mut e, "feito");
+        tecla(&mut e, "Escape");
+        assert_eq!(opcoes(&e), ["todo", "feito", "doing"]);
+        assert_eq!(tabela_gravada(&e).rows[0][1], "feito");
+        tecla(&mut e, "K");
+        assert_eq!(opcoes(&e), ["feito", "todo", "doing"]);
+        // dd apaga a opção e limpa as células.
+        tecla(&mut e, "j");
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert_eq!(opcoes(&e), ["feito", "doing"]);
+        assert_eq!(tabela_gravada(&e).rows[1][1], "");
+        tecla(&mut e, "Escape");
+        assert!(e.modal.is_none());
+        // Coluna de texto não abre o editor.
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "Enter");
+        assert!(e.modal.is_none());
     }
 
     const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";

@@ -1,0 +1,488 @@
+//! Os modais da TUI (ciclo 339): a barra de comandos, os seletores, a
+//! confirmação, a entrada de texto, os atalhos e o editor de opções de uma
+//! coluna de seleção — todos feitos dos [`componentes`](crate::componentes).
+//!
+//! A barra de comandos é a `CommandPalette` da janela: `:` (o modo de
+//! comando do vim) ou `Ctrl+K` abrem; digitar filtra comandos e páginas;
+//! `Enter` escolhe. Os comandos são os mesmos da janela, mais os que a TUI
+//! precisa pra ser personalizada (tema, sidebar, agente).
+//!
+//! Ações que mexem em arquivo não acontecem aqui: viram [`Pedido`]s que o
+//! `main` executa, como a gravação de edição.
+
+use anotadinho_core::unidade::Caminho;
+use ratatui::layout::Rect;
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
+use ratatui::Frame;
+
+use super::Estado;
+use crate::componentes::{self, Campo, Item, Lista, Resposta};
+
+/// Algo que só o `main` (que tem o vault) pode fazer.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pedido {
+    /// Abrir esta página.
+    AbrirPagina(String),
+    /// Gravar uma página nova com este conteúdo e abri-la.
+    CriarPagina {
+        /// Caminho no vault.
+        path: String,
+        /// O arquivo inteiro.
+        conteudo: String,
+    },
+    /// Criar uma página pelo título (e tipo) e abri-la.
+    CriarPaginaComTitulo {
+        /// O título.
+        titulo: String,
+        /// `type:` do frontmatter.
+        tipo: Option<String>,
+    },
+    /// Abrir (ou criar) o diário de hoje.
+    AbrirHoje,
+    /// Apagar a página.
+    ExcluirPagina(String),
+    /// Gravar as preferências da TUI.
+    GravarPreferencias,
+}
+
+/// As preferências da TUI, gravadas fora do vault (ciclo 339).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Preferencias {
+    /// O tema (`escuro`, `papel`, `contraste`, `claro`).
+    #[serde(default = "tema_padrao")]
+    pub tema: String,
+    /// A lista de páginas à esquerda.
+    #[serde(default = "verdadeiro")]
+    pub sidebar: bool,
+    /// O agente das conversas.
+    #[serde(default)]
+    pub agente: Option<anotadinho_core::agente::Adaptador>,
+}
+
+fn tema_padrao() -> String {
+    "escuro".into()
+}
+fn verdadeiro() -> bool {
+    true
+}
+
+impl Default for Preferencias {
+    fn default() -> Self {
+        Self { tema: tema_padrao(), sidebar: true, agente: None }
+    }
+}
+
+/// O modal aberto.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Modal {
+    /// A barra de comandos.
+    Paleta(Lista),
+    /// Uma escolha numa lista, com o que fazer com ela.
+    Escolha {
+        /// O título da caixa.
+        titulo: String,
+        /// As opções.
+        lista: Lista,
+        /// O que a escolha faz.
+        acao: AcaoDaEscolha,
+    },
+    /// Sim ou não.
+    Confirmar {
+        /// O título.
+        titulo: String,
+        /// A pergunta.
+        mensagem: String,
+        /// O que o sim faz.
+        acao: Pedido,
+    },
+    /// Um texto pra digitar.
+    Entrada {
+        /// O título.
+        titulo: String,
+        /// O campo.
+        campo: Campo,
+        /// O tipo da página nova.
+        tipo: Option<String>,
+    },
+    /// Os atalhos, com a rolagem.
+    Atalhos(usize),
+    /// As opções de uma coluna de seleção da tabela.
+    Opcoes(EditorDeOpcoes),
+}
+
+/// O editor das opções de uma coluna de seleção (ciclo 339).
+#[derive(Debug, Clone, PartialEq)]
+pub struct EditorDeOpcoes {
+    /// A tabela.
+    pub embed: Caminho,
+    /// A coluna.
+    pub coluna: usize,
+    /// O nome dela, pro título.
+    pub nome: String,
+    /// As opções.
+    pub lista: Lista,
+    /// Uma opção sendo escrita: `Some(i)` renomeia a `i`, `None` é nova.
+    pub editando: Option<(Option<usize>, Campo)>,
+    /// O primeiro `d` do `dd`.
+    pub d_pendente: bool,
+}
+
+/// O que uma [`Modal::Escolha`] faz com o item escolhido.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AcaoDaEscolha {
+    /// O menu de personalização.
+    Personalizar,
+    /// Trocar o tema pela chave.
+    Tema,
+    /// Trocar o agente pelo índice do preset.
+    Agente,
+}
+
+/// Os comandos da barra, como na janela.
+const COMANDOS: &[(&str, &str)] = &[
+    ("Nova conversa com o agente", "nova-conversa"),
+    ("Nova página", "nova-pagina"),
+    ("Nova página: Kanban", "nova-pagina:kanban"),
+    ("Nova página: Calendário", "nova-pagina:calendar"),
+    ("Nova página: Tabela de tarefas", "nova-pagina:table"),
+    ("Nova página: Conversa", "nova-pagina:conversa"),
+    ("Alternar tema", "alternar-tema"),
+    ("Escolher tema…", "escolher-tema"),
+    ("Alternar sidebar", "alternar-sidebar"),
+    ("Ir pra Hoje (journal)", "hoje"),
+    ("Personalizar…", "personalizar"),
+    ("Trocar agente…", "trocar-agente"),
+    ("Ver atalhos", "atalhos"),
+    ("Excluir a página aberta", "excluir-pagina"),
+];
+
+/// Abre a barra de comandos: os comandos, depois as páginas.
+pub fn abrir_paleta(e: &mut Estado) {
+    let mut itens: Vec<Item> = COMANDOS.iter().map(|(r, c)| Item::novo("ϟ", *r, *c)).collect();
+    itens.extend(
+        e.paginas
+            .iter()
+            .map(|p| Item::novo("≡", p.title.clone(), format!("pagina:{}", p.path)).com_detalhe(p.path.clone())),
+    );
+    e.modal = Some(Modal::Paleta(Lista::filtravel(itens)));
+}
+
+fn menu_de_personalizacao(e: &Estado) -> Lista {
+    let agente = e.preferencias.agente.as_ref().map(|a| a.nome.clone()).unwrap_or_else(|| "padrão".into());
+    Lista::menu(vec![
+        Item::novo("◐", "Tema", "tema").com_detalhe(e.preferencias.tema.clone()),
+        Item::novo("▤", "Sidebar", "sidebar").com_detalhe(if e.preferencias.sidebar { "visível" } else { "escondida" }),
+        Item::novo("ϟ", "Agente das conversas", "agente").com_detalhe(agente),
+        Item::novo("?", "Ver atalhos", "atalhos"),
+    ])
+}
+
+fn escolha_de_tema(e: &Estado) -> Modal {
+    let mut lista = Lista::menu(
+        crate::tema::TEMAS
+            .iter()
+            .map(|t| Item::novo(if *t == e.preferencias.tema { "●" } else { "○" }, *t, *t))
+            .collect(),
+    );
+    lista.selecionado = crate::tema::TEMAS.iter().position(|t| *t == e.preferencias.tema).unwrap_or(0);
+    Modal::Escolha { titulo: "Tema".into(), lista, acao: AcaoDaEscolha::Tema }
+}
+
+fn escolha_de_agente(e: &Estado) -> Modal {
+    let atual = e.preferencias.agente.as_ref().map(|a| a.nome.clone());
+    let presets = anotadinho_core::agente::Adaptador::presets();
+    let lista = Lista::menu(
+        presets
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                Item::novo(if Some(&a.nome) == atual.as_ref() { "●" } else { "○" }, a.nome.clone(), i.to_string())
+                    .com_detalhe(a.binario.clone())
+            })
+            .collect(),
+    );
+    Modal::Escolha { titulo: "Agente das conversas".into(), lista, acao: AcaoDaEscolha::Agente }
+}
+
+/// Aplica o tema e pede pra gravar a preferência.
+pub fn trocar_tema(e: &mut Estado, tema: &str) {
+    e.tema = crate::tema::Tema::novo(tema);
+    e.preferencias.tema = tema.to_string();
+    e.pedidos.push(Pedido::GravarPreferencias);
+    e.aviso = Some(format!("tema: {tema}"));
+}
+
+fn executar(e: &mut Estado, chave: &str) {
+    e.modal = None;
+    if let Some(path) = chave.strip_prefix("pagina:") {
+        e.pedidos.push(Pedido::AbrirPagina(path.to_string()));
+        return;
+    }
+    if let Some(tipo) = chave.strip_prefix("nova-pagina:") {
+        e.modal = Some(Modal::Entrada {
+            titulo: format!("Nova página ({tipo})"),
+            campo: Campo::default(),
+            tipo: Some(tipo.to_string()),
+        });
+        return;
+    }
+    match chave {
+        "nova-pagina" => e.modal = Some(Modal::Entrada { titulo: "Nova página".into(), campo: Campo::default(), tipo: None }),
+        "nova-conversa" => {
+            let Some(carimbo) = e.agora.clone() else {
+                e.aviso = Some("sem relógio pra datar a conversa".into());
+                return;
+            };
+            let titulo = format!("Conversa de {carimbo}");
+            let atual = e.paginas.get(e.pagina).map(|p| p.path.clone());
+            let anexos: Vec<String> = atual.iter().cloned().collect();
+            let conteudo = anotadinho_core::conversa::montar_pagina(&titulo, atual.as_deref(), &anexos);
+            let path = format!("pages/conversas/{}.md", anotadinho_core::conversa::nome_de_arquivo(&carimbo));
+            e.pedidos.push(Pedido::CriarPagina { path, conteudo });
+        }
+        "alternar-tema" => {
+            let temas = crate::tema::TEMAS;
+            let agora = temas.iter().position(|t| *t == e.preferencias.tema).unwrap_or(0);
+            let proximo = temas[(agora + 1) % temas.len()];
+            trocar_tema(e, proximo);
+        }
+        "escolher-tema" => e.modal = Some(escolha_de_tema(e)),
+        "alternar-sidebar" => {
+            e.preferencias.sidebar = !e.preferencias.sidebar;
+            if !e.preferencias.sidebar {
+                e.foco = super::Foco::Conteudo;
+            }
+            e.pedidos.push(Pedido::GravarPreferencias);
+        }
+        "hoje" => e.pedidos.push(Pedido::AbrirHoje),
+        "personalizar" => {
+            e.modal = Some(Modal::Escolha {
+                titulo: "Personalizar".into(),
+                lista: menu_de_personalizacao(e),
+                acao: AcaoDaEscolha::Personalizar,
+            })
+        }
+        "trocar-agente" => e.modal = Some(escolha_de_agente(e)),
+        "atalhos" => e.modal = Some(Modal::Atalhos(0)),
+        "excluir-pagina" => {
+            if let Some(p) = e.paginas.get(e.pagina) {
+                e.modal = Some(Modal::Confirmar {
+                    titulo: "Excluir página".into(),
+                    mensagem: format!("Excluir \"{}\"? O arquivo {} sai do vault.", p.title, p.path),
+                    acao: Pedido::ExcluirPagina(p.path.clone()),
+                });
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Uma tecla com um modal aberto. O modal recebe TUDO.
+pub fn tecla(e: &mut Estado, tecla: &str) {
+    let Some(modal) = e.modal.take() else { return };
+    match modal {
+        Modal::Paleta(mut lista) => match lista.tecla(tecla) {
+            Resposta::Escolhido(chave) => executar(e, &chave),
+            Resposta::Fechar => {}
+            Resposta::Nada => e.modal = Some(Modal::Paleta(lista)),
+        },
+        Modal::Escolha { titulo, mut lista, acao } => match lista.tecla(tecla) {
+            Resposta::Escolhido(chave) => match acao {
+                AcaoDaEscolha::Personalizar => match chave.as_str() {
+                    "tema" => e.modal = Some(escolha_de_tema(e)),
+                    "sidebar" => {
+                        executar(e, "alternar-sidebar");
+                        e.modal = Some(Modal::Escolha {
+                            titulo,
+                            lista: {
+                                let mut l = menu_de_personalizacao(e);
+                                l.selecionado = 1;
+                                l
+                            },
+                            acao,
+                        });
+                    }
+                    "agente" => e.modal = Some(escolha_de_agente(e)),
+                    "atalhos" => e.modal = Some(Modal::Atalhos(0)),
+                    _ => {}
+                },
+                AcaoDaEscolha::Tema => trocar_tema(e, &chave),
+                AcaoDaEscolha::Agente => {
+                    if let Some(a) = chave.parse::<usize>().ok().and_then(|i| anotadinho_core::agente::Adaptador::presets().get(i).cloned()) {
+                        e.aviso = Some(format!("agente: {}", a.nome));
+                        e.preferencias.agente = Some(a);
+                        e.pedidos.push(Pedido::GravarPreferencias);
+                    }
+                }
+            },
+            Resposta::Fechar => {}
+            Resposta::Nada => e.modal = Some(Modal::Escolha { titulo, lista, acao }),
+        },
+        Modal::Confirmar { titulo, mensagem, acao } => match tecla {
+            "y" | "s" | "Enter" => e.pedidos.push(acao),
+            "n" | "Escape" | "q" => {}
+            _ => e.modal = Some(Modal::Confirmar { titulo, mensagem, acao }),
+        },
+        Modal::Entrada { titulo, mut campo, tipo } => match tecla {
+            "Escape" => {}
+            "Enter" => {
+                let t = campo.texto.trim().to_string();
+                if !t.is_empty() {
+                    e.pedidos.push(Pedido::CriarPaginaComTitulo { titulo: t, tipo });
+                }
+            }
+            outra => {
+                campo.tecla(outra);
+                e.modal = Some(Modal::Entrada { titulo, campo, tipo });
+            }
+        },
+        Modal::Atalhos(rolagem) => match tecla {
+            "Escape" | "q" | "?" => {}
+            "j" | "ArrowDown" => e.modal = Some(Modal::Atalhos(rolagem + 1)),
+            "k" | "ArrowUp" => e.modal = Some(Modal::Atalhos(rolagem.saturating_sub(1))),
+            _ => e.modal = Some(Modal::Atalhos(rolagem)),
+        },
+        Modal::Opcoes(editor) => super::edicao::tecla_nas_opcoes(e, editor, tecla),
+    }
+}
+
+/// Os atalhos, por assunto — o `CheatsheetModal` da janela.
+pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "Geral",
+        &[
+            (": ou Ctrl+K", "barra de comandos"),
+            ("?", "estes atalhos"),
+            ("Tab", "trocar entre páginas e conteúdo"),
+            ("/", "filtrar"),
+            ("q", "sair"),
+        ],
+    ),
+    (
+        "Navegar",
+        &[
+            ("j k", "próximo / anterior"),
+            ("h l", "lado a lado (colunas, cartões, células)"),
+            ("Enter / Esc", "entrar / sair de um nível"),
+            ("gg G", "começo / fim"),
+            ("z ou espaço", "dobrar"),
+            ("[ ] t m", "período, hoje e visão (calendário, cronograma)"),
+        ],
+    ),
+    (
+        "Editar (modo vim)",
+        &[
+            ("i a I A", "editar o texto"),
+            ("cc S", "reescrever do zero"),
+            ("o O", "criar depois / antes"),
+            ("dd x", "apagar"),
+            ("yy p P", "copiar e colar"),
+            (">> <<", "andar pro lado"),
+            ("J K", "descer / subir na ordem"),
+            ("Ctrl+A Ctrl+X", "aumentar / diminuir (duração, nível, opção)"),
+            ("~", "alternar (caixa, destaque, tipo)"),
+            ("u Ctrl+R", "desfazer / refazer"),
+            ("Esc", "confirmar a inserção"),
+        ],
+    ),
+    (
+        "Conversa",
+        &[
+            ("i", "escrever a mensagem"),
+            ("Enter", "enviar (na mensagem)"),
+            ("Ctrl+J", "quebrar linha na mensagem"),
+            ("j k", "passar pelas mensagens"),
+            ("Enter", "ações da resposta do agente"),
+        ],
+    ),
+];
+
+/// Desenha o modal aberto por cima de tudo.
+pub fn desenhar(f: &mut Frame, e: &Estado) {
+    let Some(modal) = &e.modal else { return };
+    let tela = f.area();
+    let t = &e.tema;
+    match modal {
+        Modal::Paleta(lista) => {
+            // A caixa encolhe com o que sobrou do filtro, como na janela.
+            let altura = (lista.visiveis().len() as u16 + 4).clamp(6, 24);
+            let area = componentes::area_do_modal(tela, 70, altura);
+            let dentro = componentes::desenhar_modal(f, area, "", "↑↓ escolher · Enter · Esc", t);
+            componentes::desenhar_lista(f, dentro, lista, "Buscar página ou comando...", t);
+        }
+        Modal::Escolha { titulo, lista, .. } => {
+            let altura = (lista.itens.len() as u16 + 2).min(20);
+            let area = componentes::area_do_modal(tela, 56, altura);
+            let dentro = componentes::desenhar_modal(f, area, titulo, "j k · Enter · Esc", t);
+            componentes::desenhar_lista(f, dentro, lista, "", t);
+        }
+        Modal::Confirmar { titulo, mensagem, .. } => {
+            let area = componentes::area_do_modal(tela, 60, 6);
+            let dentro = componentes::desenhar_modal(f, area, titulo, "y sim · n não", t);
+            let texto = Paragraph::new(vec![
+                Line::from(Span::styled(mensagem.clone(), Style::default().fg(t.var("text-primary")))),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled(" y ", Style::default().bg(t.var("error")).fg(t.var("bg-base")).add_modifier(Modifier::BOLD)),
+                    Span::raw("  "),
+                    Span::styled(" n ", Style::default().bg(t.var("bg-elevated")).fg(t.var("text-primary"))),
+                ]),
+            ])
+            .wrap(ratatui::widgets::Wrap { trim: true });
+            f.render_widget(texto, dentro);
+        }
+        Modal::Entrada { titulo, campo, .. } => {
+            let area = componentes::area_do_modal(tela, 60, 3);
+            let dentro = componentes::desenhar_modal(f, area, titulo, "Enter criar · Esc", t);
+            let mut spans = vec![Span::raw(" ")];
+            spans.extend(campo.spans(Style::default().fg(t.var("text-primary")), "Título da página", t));
+            f.render_widget(Paragraph::new(Line::from(spans)), dentro);
+        }
+        Modal::Atalhos(rolagem) => {
+            let area = componentes::area_do_modal(tela, 72, 30);
+            let dentro = componentes::desenhar_modal(f, area, "Atalhos", "j k rolar · Esc", t);
+            let mut linhas = Vec::new();
+            for (grupo, itens) in ATALHOS {
+                linhas.push(Line::from(Span::styled(
+                    grupo.to_string(),
+                    Style::default().fg(t.var("accent-blue")).add_modifier(Modifier::BOLD),
+                )));
+                for (teclas, o_que) in *itens {
+                    linhas.push(Line::from(vec![
+                        Span::styled(format!("  {teclas:<16}"), Style::default().fg(t.var("text-primary")).add_modifier(Modifier::BOLD)),
+                        Span::styled(o_que.to_string(), Style::default().fg(t.var("text-muted"))),
+                    ]));
+                }
+                linhas.push(Line::from(""));
+            }
+            let max = linhas.len().saturating_sub(dentro.height as usize);
+            f.render_widget(Paragraph::new(linhas).scroll(((*rolagem).min(max) as u16, 0)), dentro);
+        }
+        Modal::Opcoes(ed) => {
+            let altura = (ed.lista.itens.len() as u16 + 4).clamp(6, 20);
+            let area = componentes::area_do_modal(tela, 50, altura);
+            let dentro =
+                componentes::desenhar_modal(f, area, &format!("Opções de {}", ed.nome), "o nova · a renomear · dd · J K · Esc", t);
+            let lista_area = Rect { height: dentro.height.saturating_sub(2), ..dentro };
+            componentes::desenhar_lista(f, lista_area, &ed.lista, "", t);
+            let linha = Rect { y: dentro.y + dentro.height.saturating_sub(1), height: 1, ..dentro };
+            let conteudo = match &ed.editando {
+                Some((alvo, campo)) => {
+                    let mut spans = vec![Span::styled(
+                        if alvo.is_some() { " renomear: " } else { " nova: " },
+                        Style::default().fg(t.var("text-muted")),
+                    )];
+                    spans.extend(campo.spans(Style::default().fg(t.var("text-primary")), "", t));
+                    Line::from(spans)
+                }
+                None if ed.lista.itens.is_empty() => {
+                    Line::from(Span::styled(" nenhuma opção ainda — o cria", Style::default().fg(t.var("text-muted"))))
+                }
+                None => Line::from(""),
+            };
+            f.render_widget(Paragraph::new(conteudo), linha);
+        }
+    }
+}

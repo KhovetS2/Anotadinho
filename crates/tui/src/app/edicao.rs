@@ -2030,9 +2030,168 @@ pub(super) fn no_cabecalho_da_tabela(e: &mut Estado, ed: Edicao, embed: Caminho,
 
 /// `Enter` na barra de busca de uma consulta: edita o filtro (ciclo 338).
 pub(super) fn busca_da_consulta(e: &mut Estado) -> bool {
-    let Some(embed) = embed_do_cursor(e, "query") else { return false };
+    if embed_do_cursor(e, "query").is_none() {
+        return false;
+    }
     if !e.arvore.em(&e.cursor).is_some_and(|u| matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "busca")) {
         return false;
     }
     na_consulta(e, Edicao::Reescrever { limpar: false, no_fim: true })
+}
+
+// ---------------------------------------------------------------------
+// Opções de uma coluna de seleção (ciclo 339)
+// ---------------------------------------------------------------------
+
+fn opcoes_da_coluna(e: &Estado, embed: &[usize], coluna: usize) -> Option<(String, Vec<String>, bool)> {
+    let d = ler_tabela(e, embed)?;
+    let c = d.columns.get(coluna)?;
+    match &c.kind {
+        em::ColumnKind::Select { options } => Some((c.name.clone(), options.clone(), false)),
+        em::ColumnKind::MultiSelect { options } => Some((c.name.clone(), options.clone(), true)),
+        _ => None,
+    }
+}
+
+fn lista_de_opcoes(opcoes: &[String], multi: bool) -> crate::componentes::Lista {
+    crate::componentes::Lista::menu(
+        opcoes
+            .iter()
+            .enumerate()
+            .map(|(i, o)| crate::componentes::Item::novo(if multi { "◇" } else { "○" }, o.clone(), i.to_string()))
+            .collect(),
+    )
+}
+
+/// `Enter` no cabeçalho de uma coluna de seleção (ou tags) abre o editor
+/// das opções dela — o que o modal de configuração de coluna da janela
+/// faz.
+pub(super) fn abrir_opcoes(e: &mut Estado) -> bool {
+    let Some((embed, 0, coluna)) = celula_do_cursor(e) else { return false };
+    if e.cursor.len() != embed.len() + 2 {
+        return false;
+    }
+    let Some((nome, opcoes, multi)) = opcoes_da_coluna(e, &embed, coluna) else { return false };
+    e.modal = Some(super::modais::Modal::Opcoes(super::modais::EditorDeOpcoes {
+        embed,
+        coluna,
+        nome,
+        lista: lista_de_opcoes(&opcoes, multi),
+        editando: None,
+        d_pendente: false,
+    }));
+    true
+}
+
+/// Uma tecla no editor de opções: `j`/`k` andam, `o` cria, `a`/`i`/`cc`
+/// renomeiam (as células com o nome velho acompanham), `dd` apaga (e tira
+/// das células), `J`/`K` reordenam, `Esc` fecha. Escrevendo, `Enter` ou
+/// `Esc` confirmam.
+pub(super) fn tecla_nas_opcoes(e: &mut Estado, mut ed: super::modais::EditorDeOpcoes, tecla: &str) {
+    use super::modais::Modal;
+    let recarregar = |e: &Estado, ed: &mut super::modais::EditorDeOpcoes| {
+        if let Some((_, opcoes, multi)) = opcoes_da_coluna(e, &ed.embed, ed.coluna) {
+            let sel = ed.lista.selecionado;
+            ed.lista = lista_de_opcoes(&opcoes, multi);
+            ed.lista.selecionado = sel.min(opcoes.len().saturating_sub(1));
+        }
+    };
+    if let Some((alvo, mut campo)) = ed.editando.take() {
+        match tecla {
+            "Enter" | "Escape" => {
+                let nome = campo.texto.trim().to_string();
+                let (embed, coluna) = (ed.embed.clone(), ed.coluna);
+                if !nome.is_empty() {
+                    editar_tabela(e, &embed, |d| {
+                        let (opcoes, multi) = match &mut d.columns.get_mut(coluna).ok_or("a coluna sumiu")?.kind {
+                            em::ColumnKind::Select { options } => (options, false),
+                            em::ColumnKind::MultiSelect { options } => (options, true),
+                            _ => return Err("a coluna não é mais de seleção".into()),
+                        };
+                        if opcoes.iter().any(|o| *o == nome) {
+                            return Err(format!("já existe a opção {nome}"));
+                        }
+                        match alvo {
+                            None => opcoes.push(nome.clone()),
+                            Some(i) => {
+                                let velho = opcoes.get(i).cloned().ok_or("a opção sumiu")?;
+                                opcoes[i] = nome.clone();
+                                for linha in &mut d.rows {
+                                    let Some(cel) = linha.get_mut(coluna) else { continue };
+                                    if multi {
+                                        let partes: Vec<String> = cel
+                                            .split(',')
+                                            .map(|p| if p.trim() == velho { nome.clone() } else { p.trim().to_string() })
+                                            .filter(|p| !p.is_empty())
+                                            .collect();
+                                        *cel = partes.join(", ");
+                                    } else if *cel == velho {
+                                        *cel = nome.clone();
+                                    }
+                                }
+                            }
+                        }
+                        Ok(())
+                    });
+                    recarregar(e, &mut ed);
+                    if alvo.is_none() {
+                        ed.lista.selecionado = ed.lista.itens.len().saturating_sub(1);
+                    }
+                }
+            }
+            outra => {
+                campo.tecla(outra);
+                ed.editando = Some((alvo, campo));
+            }
+        }
+        e.modal = Some(Modal::Opcoes(ed));
+        return;
+    }
+    let atual = ed.lista.selecionado;
+    let total = ed.lista.itens.len();
+    let d_antes = std::mem::take(&mut ed.d_pendente);
+    match tecla {
+        "Escape" | "q" => return,
+        "o" | "O" => ed.editando = Some((None, crate::componentes::Campo::default())),
+        "a" | "i" | "A" | "Enter" if total > 0 => {
+            ed.editando = Some((Some(atual), crate::componentes::Campo::com(ed.lista.itens[atual].rotulo.clone())));
+        }
+        "c" if total > 0 => ed.editando = Some((Some(atual), crate::componentes::Campo::default())),
+        "d" if !d_antes => ed.d_pendente = true,
+        "d" | "x" if total > 0 => {
+            let opcao = ed.lista.itens[atual].rotulo.clone();
+            let (embed, coluna) = (ed.embed.clone(), ed.coluna);
+            if editar_tabela(e, &embed, |d| {
+                d.remove_column_option(coluna, &opcao);
+                Ok(())
+            }) {
+                e.aviso = Some(format!("opção {opcao} apagada"));
+            }
+            recarregar(e, &mut ed);
+        }
+        "J" | "K" if total > 1 => {
+            let destino = if tecla == "J" { (atual + 1).min(total - 1) } else { atual.saturating_sub(1) };
+            if destino != atual {
+                let (embed, coluna) = (ed.embed.clone(), ed.coluna);
+                editar_tabela(e, &embed, |d| {
+                    if let Some(em::ColumnKind::Select { options } | em::ColumnKind::MultiSelect { options }) =
+                        d.columns.get_mut(coluna).map(|c| &mut c.kind)
+                    {
+                        options.swap(atual, destino);
+                    }
+                    Ok(())
+                });
+                recarregar(e, &mut ed);
+                ed.lista.selecionado = destino;
+            }
+        }
+        "u" => {
+            desfazer(e, true);
+            recarregar(e, &mut ed);
+        }
+        outra => {
+            ed.lista.tecla(outra);
+        }
+    }
+    e.modal = Some(Modal::Opcoes(ed));
 }

@@ -158,6 +158,12 @@ fn cenas() -> Vec<Cena> {
     // Colunas do kanban e da tabela (ciclo 337).
     v.push(cena("kanban-coluna-nova-e-movida", so_o_embed("kanban"), &com(&[&["Tab", "j", "Enter", "o"], &digitado("Revisão"), &["Escape", "<", "<"]]), 140, 40));
     v.push(cena("tabela-coluna-nova-e-tipo", so_o_embed("table"), &com(&[&["Tab", "j", "Enter", "Enter", "o"], &digitado("Dono"), &["Escape", "~"]]), 160, 30));
+    // Componentes (ciclo 339): a barra de comandos, filtrada, e o editor
+    // de opções de uma coluna de seleção.
+    v.push(cena("paleta-aberta", so_o_embed("callout"), &[":"], 140, 36));
+    v.push(cena("paleta-filtrada", so_o_embed("callout"), &com(&[&[":"], &digitado("tema")]), 140, 36));
+    v.push(cena("opcoes-da-selecao", so_o_embed("table"), &["Tab", "j", "Enter", "Enter", "l", "Enter"], 160, 36));
+    v.push(cena("atalhos", so_o_embed("callout"), &["?"], 140, 40));
     // O cronograma na janela da tela: manual, escala Mês, e as teclas.
     let manual = so_o_embed("timeline").replace("source: vault\n", "").replace("scale: quarter\n", "scale: month\n");
     v.push(cena("cronograma-manual-mes", manual.clone(), &[], 140, 30));
