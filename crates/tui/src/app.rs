@@ -136,6 +136,9 @@ pub struct Estado {
     /// O termo buscado no conteúdo: a página aberta a seguir leva o
     /// cursor até ele (ciclo 371), como a janela revela o trecho.
     pub alvo_de_busca: Option<String>,
+    /// A âncora do resultado (`segmento:registro`, ciclo 397): leva ao
+    /// embed e ao registro certos, e não ao primeiro bloco com o termo.
+    pub alvo_ancora: Option<String>,
     /// Pedido pra trocar de vault (ciclo 373): a pasta e se acabou de ser
     /// preparada. Quem troca é o `main`.
     pub trocar_de_vault: Option<(String, bool)>,
@@ -245,6 +248,7 @@ impl Estado {
             abas: Vec::new(),
             resultados_da_busca: None,
             alvo_de_busca: None,
+            alvo_ancora: None,
             trocar_de_vault: None,
             nao_salvo: None,
             salvar_agora: false,
@@ -330,9 +334,45 @@ impl Estado {
         self.refazer.clear();
         self.texto_da_pagina = (!calendario).then(|| texto.to_string());
         self.versao = versao;
+        let ancora = self.alvo_ancora.take();
         if let Some(termo) = self.alvo_de_busca.take() {
-            self.revelar(&termo);
+            match ancora.as_deref().and_then(|a| self.caminho_da_ancora(a, &termo)) {
+                Some(c) => self.ir_revelando(c),
+                None => self.revelar(&termo),
+            }
         }
+    }
+
+    /// Onde está o registro da âncora `segmento:registro` (ciclo 397): o
+    /// embed daquele segmento e, dentro dele, a parte com aquele índice —
+    /// ou a que contém o termo, ou o próprio embed.
+    fn caminho_da_ancora(&self, ancora: &str, termo: &str) -> Option<Caminho> {
+        let (seg, registro) = ancora.split_once(':')?;
+        let seg: usize = seg.parse().ok()?;
+        let texto = self.texto_da_pagina.as_deref()?;
+        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(texto);
+        let (faixa, _) = anotadinho_core::embed::segment_com_intervalos(corpo).into_iter().nth(seg)?;
+        let i = self.arvore.filhos.iter().position(|u| u.intervalo.as_ref().is_some_and(|r| r.start == faixa.start))?;
+        let embed = vec![i];
+        let dentro = self.arvore.em(&embed)?.percorrer();
+        let com_indice = dentro.iter().find(|(_, u)| {
+            u.filhos.iter().any(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "indice") && f.texto == registro)
+        });
+        let alvo = termo.to_lowercase();
+        let com_termo = dentro.iter().find(|(_, u)| !u.texto.is_empty() && u.texto.to_lowercase().contains(&alvo));
+        Some(match com_indice.or(com_termo) {
+            Some((c, _)) => [embed.as_slice(), c.as_slice()].concat(),
+            None => embed,
+        })
+    }
+
+    fn ir_revelando(&mut self, c: Caminho) {
+        for n in 1..c.len() {
+            self.dobrados.remove(&c[..n].to_vec());
+        }
+        self.cursor = c;
+        self.foco = Foco::Conteudo;
+        self.seguir_cursor();
     }
 
     /// Leva o cursor ao primeiro bloco que contém `termo`, abrindo as
@@ -718,7 +758,7 @@ impl Estado {
                                 let trecho = h.snippet.replace("**", "").split_whitespace().collect::<Vec<_>>().join(" ");
                                 Some(sidebar::Linha {
                                     nivel: 0,
-                                    item: Item::Resultado { indice, titulo: self.paginas[indice].title.clone(), trecho },
+                                    item: Item::Resultado { indice, titulo: self.paginas[indice].title.clone(), trecho, ancora: h.ancora.clone() },
                                 })
                             }),
                     )
@@ -1298,8 +1338,9 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
             None
         }
         "Enter" => {
-            if matches!(e.sidebar_visivel().get(e.linha_sidebar).map(|l| &l.item), Some(Item::Resultado { .. })) {
+            if let Some(Item::Resultado { ancora, .. }) = e.sidebar_visivel().get(e.linha_sidebar).map(|l| l.item.clone()) {
                 e.alvo_de_busca = Some(e.busca.clone());
+                e.alvo_ancora = ancora;
             }
             // Enter numa PASTA abre ou fecha; numa página, abre a
             // página. A mesma tecla, o que faz sentido pro que está sob
@@ -10100,5 +10141,26 @@ mod testes {
         assert_eq!(e.pergunta.as_ref().unwrap().texto, "**um dois** 3");
         let tela = desenho(&mut e, 100, 20).join("\n");
         assert!(tela.contains("**um dois** 3"), "{tela}");
+    }
+
+    // --- Ciclo 397: âncora do resultado ------------------------------------------------
+
+    #[test]
+    fn a_ancora_leva_ao_registro_certo_e_nao_ao_primeiro_termo() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::mostrar_resultados_da_busca(
+            &mut e,
+            "deploy",
+            &[anotadinho_core::embed::SearchHit { path: "pages/beta.md".into(), snippet: "**deploy**".into(), origem: Some("Kanban · Done".into()), ancora: Some("1:2".into()) }],
+        );
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/beta.md".into())]);
+        e.pagina = 1;
+        e.abrir_texto(
+            "# Beta\n\nFalar do deploy aqui.\n\n{{ type: \"kanban\" }}\ncolumns:\n- Todo\n- Done\nitems:\n- title: Primeiro deploy\n  column: Todo\n- title: Outra\n  column: Todo\n- title: Deploy final\n  column: Done\n{{ /kanban }}\n",
+            None,
+        );
+        let u = e.arvore.em(&e.cursor).unwrap();
+        assert_eq!(u.texto, "Deploy final", "{:?}", e.cursor);
     }
 }

@@ -73,7 +73,7 @@ pub enum Item {
     /// Uma página, com o índice dela na lista original.
     Pagina { indice: usize, titulo: String },
     /// Um resultado da busca no conteúdo (ciclo 370): a página e o trecho.
-    Resultado { indice: usize, titulo: String, trecho: String },
+    Resultado { indice: usize, titulo: String, trecho: String, ancora: Option<String> },
 }
 
 /// Uma linha da sidebar.

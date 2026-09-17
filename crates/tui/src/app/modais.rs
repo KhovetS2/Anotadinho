@@ -636,8 +636,10 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         return;
     }
     // Um resultado no conteúdo: abre no trecho (ciclos 371 e 379).
-    if let Some((termo, path)) = chave.strip_prefix("resultado:").and_then(|r| r.split_once('\u{0}')) {
+    if let Some((termo, resto)) = chave.strip_prefix("resultado:").and_then(|r| r.split_once('\u{0}')) {
+        let (path, ancora) = resto.split_once('\u{0}').unwrap_or((resto, ""));
         e.alvo_de_busca = Some(termo.to_string());
+        e.alvo_ancora = (!ancora.is_empty()).then(|| ancora.to_string());
         e.pedidos.push(Pedido::AbrirPagina(path.to_string()));
         return;
     }
@@ -833,6 +835,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 AcaoDaEscolha::RespostaDoAgente(i) => super::conversa::acao_na_resposta(e, i, &chave),
                 AcaoDaEscolha::Anexar => super::conversa::mudar_anexo(e, &chave, true),
                 AcaoDaEscolha::Desanexar => super::conversa::mudar_anexo(e, &chave, false),
+                AcaoDaEscolha::AbrirPagina if chave.starts_with("resultado:") => executar(e, &chave),
                 AcaoDaEscolha::AbrirPagina => e.pedidos.push(Pedido::AbrirPagina(chave)),
                 AcaoDaEscolha::Inserir => super::markdown::escolher(e, &chave),
                 AcaoDaEscolha::Git => match chave.as_str() {
@@ -1464,10 +1467,10 @@ pub fn mostrar_resultados_da_busca(e: &mut Estado, termo: &str, hits: &[anotadin
             let titulo = e.paginas.iter().find(|p| p.path == h.path).map(|p| p.title.clone()).unwrap_or_else(|| h.path.clone());
             let trecho: String = h.snippet.replace("**", "").split_whitespace().collect::<Vec<_>>().join(" ");
             let origem = h.origem.as_ref().map(|o| format!("{o} · ")).unwrap_or_default();
-            Item::novo("⌕", titulo, h.path.clone()).com_detalhe(format!("{origem}{}", trecho.chars().take(60).collect::<String>()))
+            Item::novo("⌕", titulo, format!("resultado:{termo}\u{0}{}\u{0}{}", h.path, h.ancora.clone().unwrap_or_default()))
+                .com_detalhe(format!("{origem}{}", trecho.chars().take(60).collect::<String>()))
         })
         .collect();
-    e.alvo_de_busca = Some(termo.to_string());
     e.modal = Some(Modal::Escolha {
         titulo: format!("\"{termo}\" no conteúdo"),
         lista: Lista::filtravel(itens),
@@ -1665,6 +1668,7 @@ pub fn resultados_na_paleta(e: &mut Estado, termo: &str, hits: &[anotadinho_core
         let titulo = e.paginas.iter().find(|p| p.path == h.path).map(|p| p.title.clone()).unwrap_or_else(|| h.path.clone());
         let trecho: String = h.snippet.replace("**", "").split_whitespace().collect::<Vec<_>>().join(" ");
         let origem = h.origem.as_ref().map(|o| format!("{o} · ")).unwrap_or_default();
-        lista.itens.push(Item::novo("⌕", titulo, format!("resultado:{termo}\u{0}{}", h.path)).com_detalhe(format!("{origem}{trecho}")));
+        let ancora = h.ancora.clone().unwrap_or_default();
+        lista.itens.push(Item::novo("⌕", titulo, format!("resultado:{termo}\u{0}{}\u{0}{ancora}", h.path)).com_detalhe(format!("{origem}{trecho}")));
     }
 }
