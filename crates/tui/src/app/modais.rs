@@ -71,6 +71,10 @@ pub enum Pedido {
     ListarDecisoes,
     /// Ver o registro de execuções do agente (ciclo 406).
     ListarExecucoes,
+    /// Ver o que está rodando e o que espera na fila (ciclo 408).
+    VerAgentes,
+    /// Interromper tudo: o que roda e o que espera (ciclo 408).
+    InterromperTodos,
     /// Ler as permissões de escrita do agente (ciclo 405).
     LerPermissoes,
     /// Gravar as permissões no vault.
@@ -235,6 +239,14 @@ pub struct Preferencias {
     /// edita direto.
     #[serde(default = "verdadeiro")]
     pub modo_vim: bool,
+    /// Quantas execuções do agente rodam em paralelo (ciclo 408); o
+    /// resto espera na fila. `0` = sem limite.
+    #[serde(default = "limite_padrao")]
+    pub limite_de_agentes: usize,
+}
+
+fn limite_padrao() -> usize {
+    crate::fila::LIMITE_PADRAO
 }
 
 fn botoes_padrao() -> String {
@@ -251,7 +263,7 @@ fn verdadeiro() -> bool {
 
 impl Default for Preferencias {
     fn default() -> Self {
-        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default(), agentes: Vec::new(), ultimo_vault: None, salvar_automatico: true, modo_vim: true }
+        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default(), agentes: Vec::new(), ultimo_vault: None, salvar_automatico: true, modo_vim: true, limite_de_agentes: limite_padrao() }
     }
 }
 
@@ -468,6 +480,8 @@ pub enum AcaoDaEntrada {
     Vault(bool),
     /// O motivo da recusa de uma proposta (ciclo 404).
     MotivoDaRecusa(String),
+    /// Quantos agentes rodam em paralelo (ciclo 408).
+    LimiteDeAgentes,
 }
 
 /// O que uma [`Modal::Escolha`] faz com o item escolhido.
@@ -500,6 +514,9 @@ pub enum AcaoDaEscolha {
     Git,
     /// Só mostra (o histórico da página).
     Mostrar,
+    /// A tela dos agentes em andamento (ciclo 408): Enter abre a
+    /// conversa, `x` interrompe tudo.
+    Agentes,
     /// O template da página nova (ciclo 350); chave vazia é em branco.
     Template,
     /// A marca do menu Formatar (ciclo 357).
@@ -562,6 +579,8 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Decisões sobre as propostas", "decisoes"),
     ("Execuções do agente", "execucoes"),
     ("Ferramentas do agente", "ferramentas"),
+    ("Agentes em andamento…", "agentes_rodando"),
+    ("Limite de agentes em paralelo…", "limite_agentes"),
     ("Onde o agente pode propor…", "permissoes"),
     ("Definir/remover como início", "inicio"),
     ("Exportar HTML da página", "exportar-html"),
@@ -772,6 +791,15 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "decisoes" => e.pedidos.push(Pedido::ListarDecisoes),
         "execucoes" => e.pedidos.push(Pedido::ListarExecucoes),
         "ferramentas" => mostrar_ferramentas(e),
+        "agentes_rodando" => e.pedidos.push(Pedido::VerAgentes),
+        "limite_agentes" => {
+            let atual = e.preferencias.limite_de_agentes;
+            e.modal = Some(Modal::Entrada {
+                titulo: "Quantos agentes em paralelo (0 = sem limite)".into(),
+                campo: Campo::com(atual.to_string()),
+                acao: AcaoDaEntrada::LimiteDeAgentes,
+            });
+        }
         "permissoes" => e.pedidos.push(Pedido::LerPermissoes),
         "personalizar" => {
             e.modal = Some(Modal::Escolha {
@@ -840,6 +868,13 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 }
             }
         }
+        // `x` na tela dos agentes interrompe tudo (ciclo 408) — a
+        // lista não usa essa tecla.
+        Modal::Escolha { titulo, lista, acao: AcaoDaEscolha::Agentes } if tecla == "x" => {
+            e.pedidos.push(Pedido::InterromperTodos);
+            // A tela fica aberta: quem manda parar quer ver parando.
+            e.modal = Some(Modal::Escolha { titulo, lista, acao: AcaoDaEscolha::Agentes });
+        }
         Modal::Escolha { titulo, mut lista, acao } => match lista.tecla(tecla) {
             Resposta::Escolhido(chave) => match acao {
                 AcaoDaEscolha::Personalizar => match chave.as_str() {
@@ -883,6 +918,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                 },
                 AcaoDaEscolha::Mostrar => {}
+                AcaoDaEscolha::Agentes => e.pedidos.push(Pedido::AbrirPagina(chave)),
                 AcaoDaEscolha::Formatar => super::formatar::escolher(e, &chave),
                 AcaoDaEscolha::PaginaDaCelula => super::edicao::pagina_escolhida(e, &chave),
                 AcaoDaEscolha::AbrirExterno => e.pedidos.push(Pedido::AbrirExterno(chave)),
@@ -975,6 +1011,25 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     super::formatar::retomar(e);
                 }
             }
+            "Enter" if acao == AcaoDaEntrada::LimiteDeAgentes => {
+                match campo.texto.trim().parse::<usize>() {
+                    Ok(n) => {
+                        e.preferencias.limite_de_agentes = n;
+                        e.pedidos.push(Pedido::GravarPreferencias);
+                        e.aviso = Some(if n == 0 {
+                            "sem limite de agentes em paralelo".into()
+                        } else {
+                            format!("até {n} agente(s) em paralelo; o resto espera na fila")
+                        });
+                    }
+                    // Texto que não é número devolve o campo, em vez de
+                    // engolir o que a pessoa digitou.
+                    Err(_) => {
+                        e.aviso = Some("digite um número".into());
+                        e.modal = Some(Modal::Entrada { titulo, campo, acao });
+                    }
+                }
+            }
             "Enter" if matches!(acao, AcaoDaEntrada::MotivoDaRecusa(_)) => {
                 let AcaoDaEntrada::MotivoDaRecusa(id) = acao else { unreachable!() };
                 e.pedidos.push(Pedido::DecidirProposta { id, aplicar: false, motivo: campo.texto.trim().to_string() });
@@ -1025,7 +1080,8 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         | AcaoDaEntrada::CorLivre
                         | AcaoDaEntrada::PastaDoAgente(_)
                         | AcaoDaEntrada::Vault(_)
-                        | AcaoDaEntrada::MotivoDaRecusa(_) => return,
+                        | AcaoDaEntrada::MotivoDaRecusa(_)
+                        | AcaoDaEntrada::LimiteDeAgentes => return,
                     });
                 }
             }
@@ -1804,5 +1860,36 @@ pub fn mostrar_ferramentas(e: &mut Estado) {
         titulo: "Ferramentas do agente".into(),
         lista: Lista::filtravel(itens),
         acao: AcaoDaEscolha::Mostrar,
+    });
+}
+
+/// O que o agente está fazendo agora (ciclo 408): o que roda, há quanto
+/// tempo, e quem espera vaga. `Ctrl+X`/`x` interrompe tudo.
+pub fn mostrar_agentes(e: &mut Estado, rodando: &[(String, String, u64)], esperando: &[String]) {
+    if rodando.is_empty() && esperando.is_empty() {
+        e.aviso = Some("nenhum agente rodando".into());
+        return;
+    }
+    let mut itens: Vec<Item> = rodando
+        .iter()
+        .map(|(conversa, agente, segundos)| {
+            Item::novo(
+                "▶",
+                format!("{} · {}", nome_de_arquivo(conversa), anotadinho_core::conversa::duracao_legivel(*segundos)),
+                conversa.clone(),
+            )
+            .com_detalhe(agente.clone())
+        })
+        .collect();
+    for (i, conversa) in esperando.iter().enumerate() {
+        itens.push(
+            Item::novo("⋯", format!("{} · {}º na fila", nome_de_arquivo(conversa), i + 1), conversa.clone())
+                .com_detalhe("esperando"),
+        );
+    }
+    e.modal = Some(Modal::Escolha {
+        titulo: format!("Agentes em andamento ({} rodando, {} na fila)", rodando.len(), esperando.len()),
+        lista: Lista::filtravel(itens),
+        acao: AcaoDaEscolha::Agentes,
     });
 }

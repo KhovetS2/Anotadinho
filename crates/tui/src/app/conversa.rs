@@ -53,6 +53,8 @@ pub struct TelaDeConversa {
     pub escrevendo: bool,
     /// O agente rodando: há quantos segundos, e o que já saiu.
     pub trabalho: Option<(u64, String)>,
+    /// A posição na fila (ciclo 408), quando o envio espera vaga.
+    pub na_fila: Option<usize>,
     /// O erro da última execução.
     pub erro: Option<String>,
     /// O prompt padrão em uso (ciclo 341).
@@ -114,6 +116,7 @@ impl TelaDeConversa {
             rascunho: Campo::default(),
             escrevendo: false,
             trabalho: None,
+            na_fila: None,
             erro: None,
             prompt: None,
         })
@@ -125,6 +128,7 @@ impl TelaDeConversa {
             self.rascunho = velha.rascunho.clone();
             self.escrevendo = velha.escrevendo;
             self.trabalho = velha.trabalho.clone();
+            self.na_fila = velha.na_fila;
             self.erro = velha.erro.clone();
             self.prompt = velha.prompt.clone();
             if velha.selecionada < velha.mensagens.len() {
@@ -145,7 +149,7 @@ fn nome_curto(path: &str) -> String {
 
 /// Uma tecla na tela de conversa. Devolve se foi usada.
 pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
-    let rodando = e.conversa.as_ref().is_some_and(|c| c.trabalho.is_some());
+    let rodando = e.conversa.as_ref().is_some_and(|c| c.trabalho.is_some() || c.na_fila.is_some());
     let Some(c) = e.conversa.as_mut() else { return false };
     let total = c.mensagens.len();
     if c.escrevendo {
@@ -223,6 +227,10 @@ fn enviar(e: &mut Estado) {
     }
     if c.trabalho.is_some() {
         e.aviso = Some("já tem uma execução em andamento nesta conversa".into());
+        return;
+    }
+    if c.na_fila.is_some() {
+        e.aviso = Some("esta conversa já tem um envio esperando vaga".into());
         return;
     }
     if c.prompt.as_ref().is_some_and(|p| !p.pendentes().is_empty()) {
@@ -626,7 +634,7 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
             Style::default().fg(t.var("warning")),
         )));
     }
-    let rodando = c.trabalho.is_some();
+    let rodando = c.trabalho.is_some() || c.na_fila.is_some();
     let botao = if rodando {
         Span::styled(" Parar  Ctrl+X ", Style::default().bg(t.var("bg-elevated")).fg(t.var("text-primary")))
     } else {
@@ -704,6 +712,15 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
         if i == c.selecionada {
             fim_da_selecionada = msgs.len();
         }
+    }
+    if let Some(posicao) = c.na_fila.filter(|_| c.trabalho.is_none()) {
+        // Esperando vaga (ciclo 408): a pergunta ainda não foi pro
+        // arquivo, então a fila é o que a tela tem pra mostrar.
+        msgs.push(Line::from(vec![
+            Span::styled(" ⋯ ", Style::default().fg(t.var("accent-blue"))),
+            Span::styled(format!("{posicao}º na fila, esperando vaga"), apagado),
+            Span::styled("   Ctrl+X desistir", apagado),
+        ]));
     }
     if let Some((segundos, parcial)) = &c.trabalho {
         let quadros = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

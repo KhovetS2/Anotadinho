@@ -226,11 +226,49 @@ fn acrescentar_mensagem(vault: &str, conversa: &str, mensagem: &anotadinho_core:
     Ok(corpo.to_string())
 }
 
-/// Grava a pergunta e dispara o agente com o histórico e os anexos.
-fn enviar_na_conversa(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, path: &str, pergunta: &str, anexos: &[String]) {
+/// Grava a pergunta e dispara o agente com o histórico e os anexos —
+/// ou põe na fila, se o limite de paralelismo já está cheio (ciclo 408).
+///
+/// `vault` é o da conversa; `vault_atual` é o que a TUI mostra. Eles
+/// diferem quando a vez de um envio enfileirado chega depois de trocar
+/// de vault (ciclo 396) — aí a resposta vai pro arquivo certo, mas a
+/// tela não se mexe.
+fn enviar_na_conversa(
+    estado: &mut Estado,
+    vault: &str,
+    vault_atual: &str,
+    trabalhos: &mut Trabalhos,
+    fila: &mut anotadinho_tui::fila::Fila,
+    path: &str,
+    pergunta: &str,
+    anexos: &[String],
+) {
     use anotadinho_core::conversa::{self, Autor, Mensagem};
     if trabalhos.contains_key(&chave_do_trabalho(vault, path)) {
         estado.aviso = Some("já tem uma execução em andamento nesta conversa".into());
+        return;
+    }
+    if fila.ja_espera(vault, path) {
+        estado.aviso = Some("esta conversa já tem um envio esperando vaga".into());
+        return;
+    }
+    // Sem vaga, o envio espera. A pergunta NÃO vai pro arquivo agora:
+    // ela entra junto com a execução, pra o histórico do prompt não
+    // ficar com duas perguntas e uma resposta.
+    if !fila.tem_vaga(trabalhos.len()) {
+        let posicao = fila.enfileirar(anotadinho_tui::fila::Espera {
+            vault: vault.to_string(),
+            conversa: path.to_string(),
+            pergunta: pergunta.to_string(),
+            anexos: anexos.to_vec(),
+        });
+        estado.aviso = Some(format!("{posicao}º na fila — {} rodando", trabalhos.len()));
+        if let Some(c) = estado.conversa.as_mut() {
+            if c.path == path {
+                c.na_fila = Some(posicao);
+                c.rascunho = Default::default();
+            }
+        }
         return;
     }
     let minha = Mensagem { autor: Autor::Voce, quando: agora_local(), texto: pergunta.to_string() };
@@ -278,14 +316,14 @@ fn enviar_na_conversa(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalho
             }
         }
     }
-    if estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path) {
+    if vault == vault_atual && estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path) {
         abrir(estado, vault, path);
     }
 }
 
 /// A cada volta: mostra o agente rodando na conversa aberta e, quando ele
 /// acaba, grava a resposta (ou o erro) e relê a conversa.
-fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
+fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &mut anotadinho_tui::fila::Fila) {
     use anotadinho_core::conversa::{Autor, Mensagem};
     let mut prontos = Vec::new();
     for (chave, a) in trabalhos.iter_mut() {
@@ -343,8 +381,20 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
             estado.aviso = Some(format!("{path}: {e}"));
         }
     }
+    // Vaga aberta chama a próxima da fila (ciclo 408).
+    fila.limite = estado.preferencias.limite_de_agentes;
+    while let Some(e) = fila.proxima(trabalhos.len()) {
+        let antes = trabalhos.len();
+        enviar_na_conversa(estado, &e.vault, vault, trabalhos, fila, &e.conversa, &e.pergunta, &e.anexos);
+        // Se não subiu (binário quebrado, arquivo sumiu), para de puxar
+        // pra não girar a fila inteira em erro na mesma volta.
+        if trabalhos.len() == antes {
+            break;
+        }
+    }
     if let Some(c) = estado.conversa.as_mut() {
         c.trabalho = trabalhos.get(&chave_do_trabalho(vault, &c.path)).map(|a| (a.trabalho.segundos(), a.trabalho.parcial()));
+        c.na_fila = fila.posicao(vault, &c.path);
     }
 }
 
@@ -532,7 +582,7 @@ fn buscar_na_paleta(estado: &mut Estado, vault: &str) {
 }
 
 /// Executa o que a TUI pediu e só quem tem o vault pode fazer (ciclo 339).
-fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
+fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &mut anotadinho_tui::fila::Fila) {
     let recarregar = |estado: &mut Estado| {
         if let Ok(p) = handle_list_pages(vault.to_string()) {
             estado.atualizar_paginas(p);
@@ -798,7 +848,7 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                     Err(e) => estado.aviso = Some(format!("não excluiu: {e}")),
                 },
                 Pedido::EnviarNaConversa { path, pergunta, anexos } => {
-                    enviar_na_conversa(estado, vault, trabalhos, &path, &pergunta, &anexos);
+                    enviar_na_conversa(estado, vault, vault, trabalhos, fila, &path, &pergunta, &anexos);
                 }
                 Pedido::CriarDeTemplate { template, titulo, pasta } => {
                     match anotadinho_ipc::handle_create_page_from_template(vault.to_string(), template, titulo, pasta) {
@@ -871,6 +921,35 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                     if let Some(a) = trabalhos.get(&chave_do_trabalho(vault, &path)) {
                         a.trabalho.interromper();
                     }
+                    // Esperando vaga, interromper é desistir (ciclo 408).
+                    if fila.desistir(vault, &path) {
+                        estado.aviso = Some("saiu da fila".into());
+                        if let Some(c) = estado.conversa.as_mut() {
+                            c.na_fila = None;
+                        }
+                    }
+                }
+                Pedido::VerAgentes => {
+                    let rodando: Vec<(String, String, u64)> = trabalhos
+                        .iter()
+                        .map(|(chave, a)| {
+                            let conversa = chave.split_once('\u{0}').map(|(_, p)| p.to_string()).unwrap_or_else(|| chave.clone());
+                            (conversa, a.agente.clone(), a.trabalho.segundos())
+                        })
+                        .collect();
+                    let esperando: Vec<String> = fila.esperando().iter().map(|e| e.conversa.clone()).collect();
+                    app::modais::mostrar_agentes(estado, &rodando, &esperando);
+                }
+                Pedido::InterromperTodos => {
+                    for a in trabalhos.values() {
+                        a.trabalho.interromper();
+                    }
+                    let quantos = trabalhos.len();
+                    let desistiram = fila.limpar();
+                    if let Some(c) = estado.conversa.as_mut() {
+                        c.na_fila = None;
+                    }
+                    estado.aviso = Some(format!("interrompi {quantos} e tirei {desistiram} da fila"));
                 }
                 Pedido::AnexosDaConversa { conversa, lista } => {
                     let feito = anotadinho_ipc::handle_read_page(vault.to_string(), conversa.clone()).and_then(|atual| {
@@ -904,7 +983,7 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         );
                     }
                     let pergunta = fluxo::pergunta_de_execucao_da_conversa(&titulo, &path);
-                    enviar_na_conversa(estado, vault, trabalhos, &conversa, &pergunta, &anexos);
+                    enviar_na_conversa(estado, vault, vault, trabalhos, fila, &conversa, &pergunta, &anexos);
                 }
                 Pedido::GravarPreferencias => {
                     if let Err(e) = gravar_preferencias(&estado.preferencias) {
@@ -1019,8 +1098,9 @@ fn main() -> Result<(), String> {
     // vault não mata o que está rodando, e a resposta cai na conversa
     // quando ele acaba.
     let mut trabalhos = Trabalhos::new();
+    let mut fila = anotadinho_tui::fila::Fila::nova(estado.preferencias.limite_de_agentes);
     let resultado = loop {
-        match laco(&mut term, &mut estado, &vault_da_sessao, &mut trabalhos) {
+        match laco(&mut term, &mut estado, &vault_da_sessao, &mut trabalhos, &mut fila) {
             Ok(Some((outro, criado))) => match montar_estado(&outro, criado, estado.preferencias.clone()) {
                 Ok(novo) => {
                     estado = novo;
@@ -1044,6 +1124,7 @@ fn laco<B: ratatui::backend::Backend>(
     estado: &mut Estado,
     vault: &str,
     trabalhos: &mut Trabalhos,
+    fila: &mut anotadinho_tui::fila::Fila,
 ) -> Result<Option<(String, bool)>, String> {
     let mut voltas_sem_tecla: u64 = 0;
     // Mudança de .md por fora chega pelo watcher (ciclo 398), como na
@@ -1071,8 +1152,8 @@ fn laco<B: ratatui::backend::Backend>(
             } else if voltas_sem_tecla % 8 == 0 {
                 vigiar_disco(estado, vault, voltas_sem_tecla % 16 == 0);
             }
-            acompanhar(estado, vault, trabalhos);
-            atender(estado, vault, trabalhos);
+            acompanhar(estado, vault, trabalhos, fila);
+            atender(estado, vault, trabalhos, fila);
             buscar_na_paleta(estado, vault);
             continue;
         }
@@ -1100,8 +1181,8 @@ fn laco<B: ratatui::backend::Backend>(
                 estado.abrir_texto(&texto, versao);
             }
         }
-        atender(estado, vault, trabalhos);
-        acompanhar(estado, vault, trabalhos);
+        atender(estado, vault, trabalhos, fila);
+        acompanhar(estado, vault, trabalhos, fila);
         // Uma edição deixou texto novo: grava com a trava de versão. Se
         // o arquivo mudou por fora, a gravação é recusada, a página volta
         // a ser a do disco e o rodapé diz por quê (ciclo 318).

@@ -10429,4 +10429,71 @@ mod testes {
             .count();
         assert_eq!(linhas, anotadinho_core::ferramentas::CONTRATO.len(), "{tela}");
     }
+
+    // --- Ciclo 408: fila e limite de agentes em paralelo -----------------------------
+
+    #[test]
+    fn o_limite_de_agentes_se_ajusta_pela_barra() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        assert_eq!(e.preferencias.limite_de_agentes, crate::fila::LIMITE_PADRAO);
+        modais::executar(&mut e, "limite_agentes");
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("Quantos agentes em paralelo"), "{tela}");
+        // O campo já vem com o valor de hoje.
+        assert!(tela.contains("2"), "{tela}");
+        tecla(&mut e, "Backspace");
+        digitar(&mut e, "4");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.preferencias.limite_de_agentes, 4);
+        assert_eq!(e.pedidos, [Pedido::GravarPreferencias]);
+        // Texto que não é número devolve o campo em vez de engolir.
+        e.pedidos.clear();
+        modais::executar(&mut e, "limite_agentes");
+        digitar(&mut e, "x");
+        tecla(&mut e, "Enter");
+        assert!(matches!(&e.modal, Some(Modal::Entrada { .. })));
+        assert!(e.aviso.as_deref().unwrap().contains("número"));
+        assert_eq!(e.preferencias.limite_de_agentes, 4);
+    }
+
+    #[test]
+    fn a_tela_dos_agentes_mostra_quem_roda_e_quem_espera() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::executar(&mut e, "agentes_rodando");
+        assert_eq!(e.pedidos, [Pedido::VerAgentes]);
+        e.pedidos.clear();
+        // Nada rodando: só avisa.
+        modais::mostrar_agentes(&mut e, &[], &[]);
+        assert!(e.modal.is_none() && e.aviso.as_deref().unwrap().contains("nenhum agente"));
+        modais::mostrar_agentes(
+            &mut e,
+            &[("pages/conversas/uma.md".into(), "falso".into(), 65)],
+            &["pages/conversas/outra.md".into(), "pages/conversas/mais.md".into()],
+        );
+        let tela = desenho(&mut e, 120, 24).join("\n");
+        assert!(tela.contains("Agentes em andamento (1 rodando, 2 na fila)"), "{tela}");
+        assert!(tela.contains("uma · 1 min") && tela.contains("outra · 1º na fila") && tela.contains("mais · 2º na fila"), "{tela}");
+        // `x` interrompe tudo; Enter abre a conversa escolhida.
+        tecla(&mut e, "x");
+        assert_eq!(e.pedidos, [Pedido::InterromperTodos]);
+        e.pedidos.clear();
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/conversas/uma.md".into())]);
+    }
+
+    #[test]
+    fn a_conversa_na_fila_diz_a_posicao_e_nao_deixa_enviar_de_novo() {
+        let mut e = conversa_aberta();
+        e.conversa.as_mut().unwrap().na_fila = Some(2);
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("2º na fila, esperando vaga") && tela.contains("Ctrl+X desistir"), "{tela}");
+        // Enquanto espera, o botão é de parar — como quando roda.
+        assert!(tela.contains("Parar") && !tela.contains("Enviar  ↵"), "{tela}");
+        // Esperando vaga, o campo nem abre — e `Ctrl+X` desiste.
+        tecla(&mut e, "i");
+        assert!(!e.conversa.as_ref().unwrap().escrevendo);
+        assert!(e.aviso.as_deref().unwrap().contains("interrompe"));
+        tecla(&mut e, "Ctrl+x");
+        assert_eq!(e.pedidos, [Pedido::InterromperAgente(e.conversa.as_ref().unwrap().path.clone())]);
+    }
 }

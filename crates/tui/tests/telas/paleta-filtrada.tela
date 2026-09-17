@@ -11,9 +11,9 @@
 │                                  │ ϟ Escolher tema…                                                   │                                  │
 │                                  │ ϟ Alternar salvamento automático                                   │                                  │
 │                                  │ ϟ Nova página a partir de template…                                │                                  │
+│                                  │ ϟ Agentes em andamento…                                            │                                  │
+│                                  │ ϟ Limite de agentes em paralelo…                                   │                                  │
 │                                  ╰ ↑↓ escolher · Enter · Ctrl+F buscar no conteúdo · Esc ─────────────╯                                  │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -48,9 +48,9 @@ addddddddddddddddddddddddddddddddddloooppppppppppppppppppppppppppppppppppppppppp
 addddddddddddddddddddddddddddddddddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddlqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqllllllllllllllddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
