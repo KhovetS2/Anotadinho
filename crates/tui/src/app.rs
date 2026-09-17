@@ -130,6 +130,9 @@ pub struct Estado {
     pub wikilink_dispensado: Option<usize>,
     /// As abas abertas, pelo caminho (ciclo 354), na ordem em que abriram.
     pub abas: Vec<String>,
+    /// A página de início deste vault (ciclo 362): abre primeiro, e a aba
+    /// dela fica fixa na frente.
+    pub inicio: Option<String>,
     /// A imagem nova da galeria esperando o arquivo escolhido em
     /// `assets/` (ciclo 356).
     pub imagem_pendente: Option<edicao::AcaoDaPergunta>,
@@ -215,6 +218,7 @@ impl Estado {
             wikilink_sel: 0,
             wikilink_dispensado: None,
             abas: Vec::new(),
+            inicio: None,
             imagem_pendente: None,
             pergunta_suspensa: None,
             propostas_pendentes: 0,
@@ -257,6 +261,7 @@ impl Estado {
         if !path.is_empty() && !self.abas.contains(&path) {
             self.abas.push(path.clone());
         }
+        self.organizar_abas();
         let velha = self.conversa.take();
         self.conversa = conversa::TelaDeConversa::do_arquivo(&path, &titulo, texto).map(|mut nova| {
             if let Some(v) = &velha {
@@ -290,6 +295,24 @@ impl Estado {
         self.refazer.clear();
         self.texto_da_pagina = (!calendario).then(|| texto.to_string());
         self.versao = versao;
+    }
+
+    /// A aba do início vai pra frente, sem mexer na ordem das outras —
+    /// o `organize_tabs` da janela.
+    pub fn organizar_abas(&mut self) {
+        if let Some(i) = self.inicio.as_ref().and_then(|c| self.abas.iter().position(|a| a == c)) {
+            let a = self.abas.remove(i);
+            self.abas.insert(0, a);
+        }
+    }
+
+    /// Diz qual é a página de início e a seleciona (ciclo 362).
+    pub fn com_inicio(mut self, inicio: Option<String>) -> Self {
+        if let Some(i) = inicio.as_ref().and_then(|c| self.paginas.iter().position(|p| p.path == *c)) {
+            self.pagina = i;
+        }
+        self.inicio = inicio;
+        self
     }
 
     /// Aplica um texto novo da MESMA página depois de uma edição, sem
@@ -888,6 +911,10 @@ fn fechar_aba(e: &mut Estado) -> Option<String> {
         e.aviso = Some("é a única aba".into());
         return None;
     }
+    if e.inicio.as_deref() == Some(atual.as_str()) {
+        e.aviso = Some("a aba de início fica fixa".into());
+        return None;
+    }
     e.abas.remove(pos);
     ir_pra_aba(e, pos.min(e.abas.len() - 1))
 }
@@ -909,7 +936,9 @@ fn desenhar_abas(f: &mut Frame, e: &Estado, area: ratatui::layout::Rect) {
         } else {
             (Style::default().fg(e.tema.var("text-muted")).bg(e.tema.var("bg-surface")), Style::default().fg(e.tema.var("text-primary")).bg(e.tema.var("bg-surface")))
         };
-        if i < 9 {
+        if e.inicio.as_deref() == Some(path.as_str()) {
+            spans.push(Span::styled(" ⌂", num));
+        } else if i < 9 {
             spans.push(Span::styled(format!(" {}", i + 1), num));
         }
         spans.push(Span::styled(format!(" {curto} "), nome));
@@ -9091,5 +9120,35 @@ mod testes {
         tecla(&mut e, "l");
         tecla(&mut e, "Enter");
         assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/c.md".into())]);
+    }
+
+    // --- Ciclo 362: início e exportar HTML -----------------------------------
+
+    #[test]
+    fn pagina_de_inicio_abre_primeiro_fica_na_frente_e_nao_fecha() {
+        let mut e = Estado::novo(paginas(), analisar("# g\n")).com_inicio(Some("pages/gama.md".into())).com_texto("# g\n", None);
+        assert_eq!(e.pagina, 2);
+        e.pagina = 0;
+        e.abrir_texto("# a\n", None);
+        e.pagina = 1;
+        e.abrir_texto("# b\n", None);
+        assert_eq!(e.abas, ["pages/gama.md", "pages/alfa.md", "pages/beta.md"]);
+        let tela = desenho(&mut e, 120, 10).join("\n");
+        assert!(tela.contains("⌂ gama") && tela.contains("2 alfa"), "{tela}");
+        tecla(&mut e, "Alt+1");
+        assert_eq!(tecla(&mut e, "Alt+q"), None);
+        assert!(e.aviso.as_deref().unwrap().contains("início"));
+        // Definir outra como início a leva pra frente.
+        e.inicio = Some("pages/beta.md".into());
+        e.organizar_abas();
+        assert_eq!(e.abas, ["pages/beta.md", "pages/gama.md", "pages/alfa.md"]);
+        tecla(&mut e, ":");
+        digitar(&mut e, "exportar html");
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.pedidos.last(), Some(Pedido::ExportarHtml(_))));
+        tecla(&mut e, ":");
+        digitar(&mut e, "como inicio");
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.pedidos.last(), Some(Pedido::AlternarInicio(_))));
     }
 }

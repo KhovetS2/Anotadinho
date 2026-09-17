@@ -439,6 +439,37 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         .map(|t| (t.path, t.title))
                         .collect(),
                 ),
+                Pedido::AlternarInicio(path) => {
+                    let atual = estado.preferencias.inicio.get(vault).cloned();
+                    if atual.as_deref() == Some(path.as_str()) {
+                        estado.preferencias.inicio.remove(vault);
+                        estado.inicio = None;
+                        estado.aviso = Some("não é mais a página de início".into());
+                    } else {
+                        estado.preferencias.inicio.insert(vault.to_string(), path.clone());
+                        estado.inicio = Some(path);
+                        estado.organizar_abas();
+                        estado.aviso = Some("definida como página de início".into());
+                    }
+                    if let Err(e) = gravar_preferencias(&estado.preferencias) {
+                        estado.aviso = Some(format!("não gravou as preferências: {e}"));
+                    }
+                }
+                Pedido::ExportarHtml(path) => {
+                    let feito = anotadinho_ipc::handle_read_page(vault.to_string(), path.clone()).and_then(|conteudo| {
+                        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+                        let titulo = estado.paginas.iter().find(|p| p.path == path).map(|p| p.title.clone()).unwrap_or_default();
+                        let nome = std::path::Path::new(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                        let destino = std::env::current_dir().unwrap_or_default().join(format!("{nome}.html"));
+                        std::fs::write(&destino, anotadinho_core::exportar::pagina_em_html(&titulo, corpo))
+                            .map(|_| destino)
+                            .map_err(|e| e.to_string())
+                    });
+                    estado.aviso = Some(match feito {
+                        Ok(d) => format!("exportado em {}", d.display()),
+                        Err(e) => format!("não exportou: {e}"),
+                    });
+                }
                 Pedido::StatusDoGit => app::modais::mostrar_git(
                     estado,
                     anotadinho_ipc::handle_git_status(vault.to_string())
@@ -649,7 +680,10 @@ fn main() -> Result<(), String> {
     if paginas.is_empty() {
         return Err(format!("o vault {} não tem páginas", cli.vault));
     }
-    let (texto, versao) = ler(&cli.vault, &paginas[0].path)?;
+    let mut preferencias = ler_preferencias();
+    // Com página de início, ela abre primeiro (ciclo 362).
+    let inicio = preferencias.inicio.get(&cli.vault).filter(|c| paginas.iter().any(|p| p.path == **c)).cloned();
+    let (texto, versao) = ler(&cli.vault, inicio.as_deref().unwrap_or(&paginas[0].path))?;
     // O índice do vault, varrido uma vez: calendários em modo vault e
     // consultas. Varrer falhando não impede a TUI — eles só ficam vazios.
     let indice = handle_scan_vault(cli.vault.clone()).unwrap_or_default();
@@ -657,7 +691,6 @@ fn main() -> Result<(), String> {
         let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
         anotadinho_core::analise::analisar(corpo)
     };
-    let mut preferencias = ler_preferencias();
     if let Some(tema) = &cli.tema {
         if !anotadinho_tui::tema::TEMAS.contains(&tema.as_str()) {
             return Err(format!(
@@ -672,7 +705,8 @@ fn main() -> Result<(), String> {
         preferencias.tema = "escuro".into();
     }
     let mut estado = Estado::novo(paginas, primeira)
-        .com_texto(&texto, versao)
+        .com_inicio(inicio)
+        .com_texto(&texto, versao.clone())
         .com_preferencias(preferencias)
         .com_pastas(anotadinho_ipc::handle_list_folders(cli.vault.clone()).unwrap_or_default())
         .com_hoje(&hoje_local())
@@ -681,6 +715,9 @@ fn main() -> Result<(), String> {
         .com_eventos_do_vault(anotadinho_core::calendario::entradas_do_vault(&indice))
         // As consultas rodam sobre o mesmo índice (ciclo 331).
         .com_indice_do_vault(indice);
+    // Abre de novo pelo caminho de sempre: a primeira página pode ser uma
+    // conversa, tags ou propostas, que têm tela própria.
+    estado.abrir_texto(&texto, versao);
 
     // Sem terminal de verdade, `enable_raw_mode` falha com
     // "No such device or address (os error 6)" — que não diz nada a

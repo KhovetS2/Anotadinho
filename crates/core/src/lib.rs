@@ -24,6 +24,7 @@ pub mod markdown;
 // precisa deles pra operar embeds sem passar por WASM.
 pub mod date_util;
 pub mod embed;
+pub mod exportar;
 // A grade mensal do calendário saiu da UI no ciclo 306: o terminal
 // desenha a mesma grade, e o algoritmo de faixas precisa ser um só.
 pub mod calendario;

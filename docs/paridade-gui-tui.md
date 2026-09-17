@@ -50,6 +50,8 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Imagem colada/arrastada, Mermaid, PDF | — | terminal |
 | Desfazer/refazer | ✅ | 322 |
 | Salvar (Ctrl+S) | ✅ | grava a cada edição |
+| Definir como início (abre primeiro, aba fixa) | ✅ | 362 |
+| Exportar HTML da página | ✅ | 362 — grava `<página>.html` na pasta atual |
 
 ## Embeds
 

@@ -39,6 +39,10 @@ pub enum Pedido {
     },
     /// Listar os templates pra "Nova página" (ciclo 350).
     ListarTemplates,
+    /// Pôr ou tirar a página como início do vault (ciclo 362).
+    AlternarInicio(String),
+    /// Gravar a página como HTML.
+    ExportarHtml(String),
     /// Ver o status do git e as ações (ciclo 349).
     StatusDoGit,
     /// `git pull`.
@@ -170,6 +174,9 @@ pub struct Preferencias {
     /// As teclas dos comandos globais: comando → tecla.
     #[serde(default)]
     pub teclas_globais: std::collections::BTreeMap<String, String>,
+    /// A página de início de cada vault (ciclo 362): vault → página.
+    #[serde(default)]
+    pub inicio: std::collections::BTreeMap<String, String>,
 }
 
 fn botoes_padrao() -> String {
@@ -185,7 +192,7 @@ fn verdadeiro() -> bool {
 
 impl Default for Preferencias {
     fn default() -> Self {
-        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default() }
+        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default() }
     }
 }
 
@@ -409,6 +416,8 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Ver tags", "ver-tags"),
     ("Ver assets", "ver-assets"),
     ("Propostas do agente", "propostas"),
+    ("Definir/remover como início", "inicio"),
+    ("Exportar HTML da página", "exportar-html"),
     ("Excluir a página aberta", "excluir-pagina"),
 ];
 
@@ -548,6 +557,11 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "aba-anterior" => super::comando_de_aba(e, "Alt+h"),
         "aba-fechar" => super::comando_de_aba(e, "Alt+q"),
         "git" => e.pedidos.push(Pedido::StatusDoGit),
+        "inicio" | "exportar-html" => {
+            if let Some(p) = e.paginas.get(e.pagina).map(|p| p.path.clone()) {
+                e.pedidos.push(if chave == "inicio" { Pedido::AlternarInicio(p) } else { Pedido::ExportarHtml(p) });
+            }
+        }
         "git-pull" => e.pedidos.push(Pedido::GitPull),
         "git-commit" => pedir_mensagem_do_commit(e),
         "git-historico" => {
