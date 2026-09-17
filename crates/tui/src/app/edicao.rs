@@ -2532,11 +2532,10 @@ pub(super) fn abrir_link_externo(e: &mut Estado) -> bool {
     }
     let Some(u) = e.arvore.em(&e.cursor) else { return false };
     // Miniatura da galeria: o caminho escondido.
+    // Miniatura da galeria ou imagem inserida (ciclo 388): o caminho escondido.
     if let Some(caminho) = u.filhos.iter().find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "caminho")) {
-        if embed_do_cursor(e, "gallery").is_some() {
-            e.pedidos.push(Pedido::AbrirExterno(caminho.texto.clone()));
-            return true;
-        }
+        e.pedidos.push(Pedido::AbrirExterno(caminho.texto.clone()));
+        return true;
     }
     if matches!(u.tipo, Tipo::Embed(_) | Tipo::Parte { .. }) {
         return false;
@@ -2690,7 +2689,7 @@ pub(super) fn aplicar_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDetalh
             aplicar_configuracao(e, alvo, form);
         }
         // O agente e as teclas gravam só no botão.
-        AlvoDoDetalhe::Agente | AlvoDoDetalhe::Teclas => {}
+        AlvoDoDetalhe::Agente | AlvoDoDetalhe::Teclas | AlvoDoDetalhe::Imagem => {}
         AlvoDoDetalhe::Barra { embed, indice } => {
             let (inicio, fim) = (form.texto("inicio"), form.texto("fim"));
             for (nome, v) in [("início", &inicio), ("fim", &fim)] {
@@ -2790,7 +2789,7 @@ pub(super) fn excluir_do_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDet
                 e.seguir_cursor();
             }
         }
-        AlvoDoDetalhe::Propriedades | AlvoDoDetalhe::Consulta { .. } | AlvoDoDetalhe::Agente | AlvoDoDetalhe::Teclas => {}
+        AlvoDoDetalhe::Propriedades | AlvoDoDetalhe::Consulta { .. } | AlvoDoDetalhe::Agente | AlvoDoDetalhe::Teclas | AlvoDoDetalhe::Imagem => {}
         AlvoDoDetalhe::Barra { embed, indice } => {
             let i = *indice;
             if editar_cronograma(e, embed, |d| {

@@ -638,13 +638,16 @@ pub(super) fn escolher(e: &mut Estado, chave: &str) {
         "codigo" => "```\ncódigo\n```".to_string(),
         "tabela" => "| A | B | C |\n| --- | --- | --- |\n|  |  |  |".to_string(),
         "linha" => "---".to_string(),
-        "imagem" | "diagrama" => {
-            let (titulo, acao) = if chave == "imagem" {
-                ("Imagem: URL ou caminho", AcaoDaEntrada::Imagem)
-            } else {
-                ("Código Mermaid (ex: graph TD; A-->B)", AcaoDaEntrada::Mermaid)
-            };
-            e.modal = Some(Modal::Entrada { titulo: titulo.into(), campo: crate::componentes::Campo::default(), acao });
+        "imagem" => {
+            abrir_formulario_de_imagem(e, String::new());
+            return;
+        }
+        "diagrama" => {
+            e.modal = Some(Modal::Entrada {
+                titulo: "Código Mermaid (ex: graph TD; A-->B)".into(),
+                campo: crate::componentes::Campo::default(),
+                acao: AcaoDaEntrada::Mermaid,
+            });
             return;
         }
         "assets" => {
@@ -670,6 +673,80 @@ pub(super) fn inserir_trecho(e: &mut Estado, trecho: &str) {
     b.prefixo = String::new();
     b.de_lista = false;
     responder(e, &b, trecho);
+}
+
+/// O "Inserir imagens" da janela (ciclo 388): o arquivo, texto
+/// alternativo, legenda, título, tamanho, alinhamento e proporção. Grava o
+/// mesmo `<figure>` da janela; URL de fora vira `![alt](url)`.
+pub(super) fn abrir_formulario_de_imagem(e: &mut Estado, src: String) {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    let alinhamentos = vec![
+        ("inline".to_string(), "No fluxo".to_string()),
+        ("left".to_string(), "Esquerda".to_string()),
+        ("center".to_string(), "Centro".to_string()),
+        ("right".to_string(), "Direita".to_string()),
+    ];
+    let mut form = Formulario::novo(vec![
+        C::novo("src", "Arquivo", Valor::Texto(src)).com_dica("assets/… ou https://…"),
+        C::novo("alt", "Texto alternativo", Valor::Texto(String::new())),
+        C::novo("caption", "Legenda", Valor::Texto(String::new())),
+        C::novo("title", "Título", Valor::Texto(String::new())),
+        C::novo("width", "Largura", Valor::Texto(String::new())).com_dica("px"),
+        C::novo("height", "Altura", Valor::Texto(String::new())).com_dica("px"),
+        C::novo("alignment", "Alinhamento", Valor::Opcoes(alinhamentos, 0)),
+        C::novo("keep", "Preservar proporção", Valor::Booleano(true)),
+    ]);
+    form.botoes.push(("inserir", "Inserir".into()));
+    e.modal = Some(super::modais::Modal::Detalhe { titulo: "Inserir imagem".into(), form, alvo: super::modais::AlvoDoDetalhe::Imagem });
+}
+
+/// "Inserir": monta a imagem e põe no lugar do menu. `false` deixa o
+/// formulário aberto, com o problema no aviso.
+pub(super) fn inserir_imagem_do_formulario(e: &mut Estado, form: &crate::componentes::Formulario) -> bool {
+    let src = form.texto("src");
+    if src.trim().is_empty() {
+        e.aviso = Some("falta o arquivo da imagem".into());
+        return false;
+    }
+    let alt = form.texto("alt");
+    if src.starts_with("http://") || src.starts_with("https://") {
+        inserir_trecho(e, &format!("![{}]({src})", if alt.is_empty() { "imagem" } else { alt.as_str() }));
+        return true;
+    }
+    let numero = |chave: &str| -> Result<Option<u32>, String> {
+        let t = form.texto(chave);
+        if t.trim().is_empty() {
+            return Ok(None);
+        }
+        t.trim().parse::<u32>().map(Some).map_err(|_| format!("{chave}: um número de pixels"))
+    };
+    let (width, height) = match (numero("width"), numero("height")) {
+        (Ok(w), Ok(h)) => (w, h),
+        (Err(m), _) | (_, Err(m)) => {
+            e.aviso = Some(m.replace("width", "largura").replace("height", "altura"));
+            return false;
+        }
+    };
+    let imagem = anotadinho_core::InsertedImage {
+        src: src.trim().trim_start_matches("./").to_string(),
+        alt,
+        title: form.texto("title"),
+        caption: form.texto("caption"),
+        width,
+        height,
+        alignment: anotadinho_core::inserted_image::ImageAlignment::parse(&form.escolha("alignment")).unwrap_or_default(),
+        keep_aspect: form.booleano("keep"),
+    };
+    match imagem.to_html() {
+        Ok(html) => {
+            inserir_trecho(e, &html);
+            true
+        }
+        Err(m) => {
+            e.aviso = Some(m);
+            false
+        }
+    }
 }
 
 /// Os assets chegaram: a escolha de qual inserir.

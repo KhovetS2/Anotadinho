@@ -108,6 +108,48 @@ impl InsertedImage {
     }
 }
 
+/// Lê de volta o HTML de [`InsertedImage::to_html`] (ciclo 388) — e um
+/// `<img>` solto também. `None` se o bloco não é uma imagem inserida.
+pub fn from_html(html: &str) -> Option<InsertedImage> {
+    let html = html.trim();
+    let e_figura = html.starts_with("<figure") && html.ends_with("</figure>");
+    if !e_figura && !(html.starts_with("<img") && html.ends_with('>') && html.matches('<').count() == 1) {
+        return None;
+    }
+    let img = &html[html.find("<img")?..];
+    let img = &img[..img.find('>')? + 1];
+    let atributo = |nome: &str| -> Option<String> {
+        let marca = format!(" {nome}=\"");
+        let i = img.find(&marca)? + marca.len();
+        let f = img[i..].find('"')?;
+        Some(desesc(&img[i..i + f]))
+    };
+    let classe_da_figura = html.split('>').next().unwrap_or("");
+    let alinhamento = ["left", "center", "right"]
+        .into_iter()
+        .find(|a| classe_da_figura.contains(&format!("inserted-image--{a}")))
+        .and_then(ImageAlignment::parse)
+        .unwrap_or_default();
+    let legenda = html
+        .find("<figcaption>")
+        .and_then(|i| html[i + 12..].find("</figcaption>").map(|f| desesc(&html[i + 12..i + 12 + f])))
+        .unwrap_or_default();
+    Some(InsertedImage {
+        src: atributo("src")?,
+        alt: atributo("alt").unwrap_or_default(),
+        title: atributo("title").unwrap_or_default(),
+        caption: legenda,
+        width: atributo("width").and_then(|v| v.parse().ok()),
+        height: atributo("height").and_then(|v| v.parse().ok()),
+        alignment: alinhamento,
+        keep_aspect: img.contains("inserted-image__media--keep-aspect"),
+    })
+}
+
+fn desesc(value: &str) -> String {
+    value.replace("&quot;", "\"").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+}
+
 fn esc(value: &str) -> String {
     value
         .replace('&', "&amp;")
@@ -145,5 +187,22 @@ mod tests {
         image.src = "assets/x.png".into();
         image.width = Some(0);
         assert!(image.validate().is_err());
+    }
+
+    #[test]
+    fn le_de_volta_o_html_que_escreve() {
+        let image = InsertedImage {
+            src: "assets/foto-1.png".into(),
+            alt: "A & B".into(),
+            title: "Título".into(),
+            caption: "Legenda <ok>".into(),
+            width: Some(640),
+            height: None,
+            alignment: ImageAlignment::Right,
+            keep_aspect: true,
+        };
+        assert_eq!(from_html(&image.to_html().unwrap()), Some(image));
+        assert_eq!(from_html("<img src=\"assets/x.png\" alt=\"x\">").map(|i| i.src), Some("assets/x.png".into()));
+        assert_eq!(from_html("<b>não</b>"), None);
     }
 }

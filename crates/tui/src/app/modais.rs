@@ -321,6 +321,8 @@ pub enum AlvoDoDetalhe {
     Agente,
     /// O remapeamento de teclas (ciclo 359).
     Teclas,
+    /// A imagem do menu `/` (ciclo 388).
+    Imagem,
     /// Uma etapa do cronograma (ciclo 385).
     Barra {
         /// O cronograma.
@@ -933,6 +935,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
         Modal::Detalhe { titulo, mut form, alvo } => {
             use crate::componentes::RespostaDoFormulario as R;
             match form.tecla(tecla) {
+                R::Fechar if alvo == AlvoDoDetalhe::Imagem => {
+                    e.bloco_a_inserir = None;
+                    return;
+                }
                 R::Fechar => return,
                 R::Botao("salvar") if alvo == AlvoDoDetalhe::Agente => {
                     if salvar_agente(e, &form) {
@@ -950,6 +956,12 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     return;
                 }
                 R::Mudou if alvo == AlvoDoDetalhe::Teclas => {}
+                R::Botao("inserir") if alvo == AlvoDoDetalhe::Imagem => {
+                    if super::markdown::inserir_imagem_do_formulario(e, &form) {
+                        return;
+                    }
+                }
+                R::Mudou if alvo == AlvoDoDetalhe::Imagem => {}
                 R::Botao("excluir") => {
                     super::edicao::excluir_do_detalhe(e, &alvo);
                     return;

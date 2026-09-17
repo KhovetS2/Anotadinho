@@ -106,11 +106,22 @@ fn unidades_de_texto(texto: &str) -> Vec<Unidade> {
         () => {
             if let Some(a) = paragrafo.take() {
                 let cru = a.linhas.join("\n");
-                fora.push(
-                    Unidade::com_texto(Tipo::Paragrafo, cru.clone())
-                        .da_fonte(cru)
-                        .no_intervalo(a.inicio..a.fim),
-                );
+                // A imagem inserida pela janela é HTML (`<figure>`): na
+                // árvore ela é a legenda (ou o texto alternativo) com o
+                // caminho escondido (ciclo 388), não a marcação crua.
+                let unidade = match crate::inserted_image::from_html(&cru) {
+                    Some(img) => {
+                        let nome = std::path::Path::new(&img.src).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                        let rotulo = [img.caption.as_str(), img.alt.as_str(), nome.as_str()].into_iter().find(|t| !t.trim().is_empty()).unwrap_or("imagem").to_string();
+                        {
+                            let mut u = Unidade::com_texto(Tipo::Paragrafo, format!("▨ {rotulo}"));
+                            u.filhos.push(item("caminho", img.src.clone()));
+                            u
+                        }
+                    }
+                    None => Unidade::com_texto(Tipo::Paragrafo, cru.clone()),
+                };
+                fora.push(unidade.da_fonte(cru).no_intervalo(a.inicio..a.fim));
             }
         };
     }

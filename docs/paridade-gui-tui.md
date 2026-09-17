@@ -55,6 +55,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Menu `/` (inserir bloco e embed) | ✅ | 347 — `/` num bloco novo vazio, ou "Inserir bloco ou embed…" |
 | Barra de seleção (negrito, itálico, link, cor) | ✅ | 357 — na inserção: `Ctrl+B` negrito, `Ctrl+T` menu Formatar (itálico, riscado, código, link, cor, fundo) |
 | Painel de propriedades (frontmatter) | ✅ | 344 — "Propriedades da página…" |
+| Inserir imagem (texto alternativo, legenda, tamanho, alinhamento) | ✅ | 388 — menu `/` → Imagem; a figura aparece como ▨ legenda e Enter abre o arquivo |
 | Imagem colada/arrastada, Mermaid, PDF | — | terminal |
 | Desfazer/refazer | ✅ | 322 |
 | Salvar (Ctrl+S) e salvamento automático liga/desliga | ✅ | 375 — desligado, a página ganha ● e grava no Ctrl+S (ou ao sair dela) |

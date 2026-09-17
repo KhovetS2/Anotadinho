@@ -9828,4 +9828,36 @@ mod testes {
         e.nome_do_vault = Some("MeuVault".into());
         assert!(desenho(&mut e, 100, 8)[0].contains("páginas · MeuVault"));
     }
+
+    // --- Ciclo 388: inserir imagem com legenda e tamanho ---------------------------
+
+    #[test]
+    fn inserir_imagem_grava_a_figura_da_janela_e_mostra_a_legenda() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        tecla(&mut e, "/");
+        digitar(&mut e, "imagem");
+        tecla(&mut e, "Enter");
+        let tela = desenho(&mut e, 100, 30).join("\n");
+        assert!(tela.contains("Inserir imagem") && tela.contains("Texto alternativo") && tela.contains("Preservar proporção"), "{tela}");
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[0].valor = crate::componentes::Valor::Texto("assets/gato.png".into());
+        form.campos[2].valor = crate::componentes::Valor::Texto("Meu gato".into());
+        form.campos[4].valor = crate::componentes::Valor::Texto("320".into());
+        for _ in 0..20 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        assert!(e.modal.is_none(), "{:?}", e.aviso);
+        let corpo = corpo_gravado(&e);
+        assert!(corpo.contains("<figure class=\"inserted-image inserted-image--inline\"><img src=\"assets/gato.png\" alt=\"\" width=\"320\""), "{corpo}");
+        let tela = desenho(&mut e, 100, 30).join("\n");
+        assert!(tela.contains("▨ Meu gato") && !tela.contains("<figure"), "{tela}");
+        let img = e.arvore.percorrer().into_iter().find(|(_, u)| u.texto == "▨ Meu gato").map(|(c, _)| c).unwrap();
+        e.cursor = img;
+        e.pedidos.clear();
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirExterno("assets/gato.png".into())]);
+    }
 }
