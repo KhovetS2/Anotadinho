@@ -600,26 +600,5 @@ pub fn inline_query(props: &InlineQueryProps) -> Html {
 /// Resumo legível da consulta, pra dar pra ver o recorte sem abrir a
 /// configuração (e pra o `.md` fazer sentido lido de fora).
 fn describe_query(q: &Query) -> String {
-    let mut parts = Vec::new();
-    parts.push(match &q.from {
-        Some(from) => format!("em {from}"),
-        None => "no vault inteiro".to_string(),
-    });
-    if !q.tags.is_empty() {
-        parts.push(format!("com tag {}", q.tags.join(" + ")));
-    }
-    for c in &q.conditions {
-        if c.field.trim().is_empty() {
-            continue;
-        }
-        parts.push(format!("{} {} {}", c.field, c.op.label(), c.value).trim().to_string());
-    }
-    if let Some(sort) = &q.sort {
-        parts.push(format!(
-            "ordenado por {}{}",
-            sort.field,
-            if sort.desc { " (desc)" } else { "" }
-        ));
-    }
-    parts.join(" · ")
+    q.descrever()
 }

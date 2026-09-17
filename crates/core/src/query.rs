@@ -470,6 +470,31 @@ impl Query {
             .collect()
     }
 
+    /// O recorte em uma linha legível — "em pages · type existe ·
+    /// ordenado por date (desc)". É a barra da consulta na janela e na
+    /// TUI (ciclo 331): dá pra ver o que ela filtra sem abrir a
+    /// configuração.
+    pub fn descrever(&self) -> String {
+        let mut parts = Vec::new();
+        parts.push(match &self.from {
+            Some(from) => format!("em {from}"),
+            None => "no vault inteiro".to_string(),
+        });
+        if !self.tags.is_empty() {
+            parts.push(format!("com tag {}", self.tags.join(" + ")));
+        }
+        for c in &self.conditions {
+            if c.field.trim().is_empty() {
+                continue;
+            }
+            parts.push(format!("{} {} {}", c.field, c.op.label(), c.value).trim().to_string());
+        }
+        if let Some(sort) = &self.sort {
+            parts.push(format!("ordenado por {}{}", sort.field, if sort.desc { " (desc)" } else { "" }));
+        }
+        parts.join(" · ")
+    }
+
     /// Se o grupo está recolhido.
     pub fn recolhido(&self, valor: &str) -> bool {
         self.collapsed.iter().any(|c| c == valor)

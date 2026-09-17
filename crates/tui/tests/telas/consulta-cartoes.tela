@@ -1,22 +1,22 @@
-# cena repouso-query · 140x40 · teclas: 
+# cena consulta-cartoes · 140x40 · teclas: 
 ┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
 │cena                                    ││Antes.                                                                                          │
 │                                        ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
-│                                        ││▌   ⌕ em pages · type existe                                                      5 páginas  ✲ ▌│
+│                                        ││▌   ⌕ em pages                                                                    5 páginas  ✲ ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   PÁGINA                                                                         TYPE        ▌│
-│                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Ciclo 001 — Bootstrap do projeto                                                ciclo      ▌│
-│                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Ciclo 002 — Vault picker                                                        ciclo      ▌│
-│                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Spec do editor                                                                  spec       ▌│
-│                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Decisão: Yew no front                                                           decisao    ▌│
-│                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Spec de sincronização                                                           spec       ▌│
+│                                        ││▌  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖ ▌│
+│                                        ││▌  ▐ Ciclo 001 — Bootstrap do… ▌  ▐ Ciclo 002 — Vault picker  ▌  ▐ Spec do editor            ▌ ▌│
+│                                        ││▌  ▐ pages/ciclos/001-bootstr… ▌  ▐ pages/ciclos/002-vault-p… ▌  ▐ pages/specs/editor.md     ▌ ▌│
+│                                        ││▌  ▐  done                     ▌  ▐  done                     ▌  ▐  em-revisao               ▌ ▌│
+│                                        ││▌  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘ ▌│
+│                                        ││▌  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖  ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖                                ▌│
+│                                        ││▌  ▐ Decisão: Yew no front     ▌  ▐ Spec de sincronização     ▌                                ▌│
+│                                        ││▌  ▐ pages/decisoes/yew.md     ▌  ▐ pages/specs/sync.md       ▌                                ▌│
+│                                        ││▌  ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘  ▐  rascunho                 ▌                                ▌│
+│                                        ││▌                                 ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘                                ▌│
 │                                        ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
 │                                        ││Depois.                                                                                         │
+│                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -43,21 +43,21 @@
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiihfb
+addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiihfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkfb
-addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllnnnnnnhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllooooooooohhhfb
-addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllnnnnnnhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhfb
+addddddddddddddddddddddddddddddddddddddddabghhjdkkkkkkkkkkkkkkkkkkkkkkkkkdjhhjdkkkkkkkkkkkkkkkkkkkkkkkkddjhhjdkkkkkkkkkkkkkkddddddddddddjhfb
+addddddddddddddddddddddddddddddddddddddddabghhjdllllllllllllllllllllllllldjhhjdllllllllllllllllllllllllldjhhjdllllllllllllllllllllldddddjhfb
+addddddddddddddddddddddddddddddddddddddddabghhjdmmmmmmddddddddddddddddddddjhhjdmmmmmmddddddddddddddddddddjhhjdmmmmmmmmmmmmddddddddddddddjhfb
+addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhfb
+addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhjdkkkkkkkkkkkkkkkkkkkkkdddddjhhjdkkkkkkkkkkkkkkkkkkkkkdddddjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhjdllllllllllllllllllllldddddjhhjdllllllllllllllllllldddddddjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhjdnnnnnnnnnnddddddddddddddddjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -90,8 +90,7 @@ g = fg #e71d32 bg #40323e
 h = fg - bg #40323e
 i = fg #989eb7 bg #40323e
 j = fg #3d404f bg #40323e
-k = fg #989eb7 bg #40323e negrito
-l = fg #e4e8f5 bg #40323e
-m = fg #e4e8f5 bg #533a7b
+k = fg #e4e8f5 bg #272930 negrito
+l = fg #989eb7 bg #272930
+m = fg #e4e8f5 bg #705440
 n = fg #e4e8f5 bg #355557
-o = fg #e4e8f5 bg #705440

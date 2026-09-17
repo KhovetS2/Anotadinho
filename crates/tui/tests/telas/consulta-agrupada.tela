@@ -1,26 +1,26 @@
-# cena repouso-query · 140x40 · teclas: 
+# cena consulta-agrupada · 140x40 · teclas: 
 ┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
 │cena                                    ││Antes.                                                                                          │
 │                                        ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
-│                                        ││▌   ⌕ em pages · type existe                                                      5 páginas  ✲ ▌│
+│                                        ││▌   ⌕ em pages                                                                    5 páginas  ✲ ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   PÁGINA                                                                         TYPE        ▌│
+│                                        ││▌   ▾ ciclo  2  total: 2                                                                       ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Ciclo 001 — Bootstrap do projeto                                                ciclo      ▌│
+│                                        ││▌   Ciclo 001 — Bootstrap do projeto                                                           ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Ciclo 002 — Vault picker                                                        ciclo      ▌│
+│                                        ││▌   Ciclo 002 — Vault picker                                                                   ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Spec do editor                                                                  spec       ▌│
+│                                        ││▌   ▾ decisao  1  total: 1                                                                     ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Decisão: Yew no front                                                           decisao    ▌│
+│                                        ││▌   Decisão: Yew no front                                                                      ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Spec de sincronização                                                           spec       ▌│
+│                                        ││▌   ▾ spec  2  total: 2                                                                        ▌│
+│                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
+│                                        ││▌   Spec do editor                                                                             ▌│
+│                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
+│                                        ││▌   Spec de sincronização                                                                      ▌│
 │                                        ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
 │                                        ││Depois.                                                                                         │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -43,25 +43,25 @@
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiihfb
+addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiihfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkfb
+addddddddddddddddddddddddddddddddddddddddabghhiiikkkkkiiihllllllllllhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllnnnnnnhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhiiikkkkkkkiiihllllllllllhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllooooooooohhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllnnnnnnhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhiiikkkkiiihllllllllllhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
+addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
+addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -90,8 +90,5 @@ g = fg #e71d32 bg #40323e
 h = fg - bg #40323e
 i = fg #989eb7 bg #40323e
 j = fg #3d404f bg #40323e
-k = fg #989eb7 bg #40323e negrito
-l = fg #e4e8f5 bg #40323e
-m = fg #e4e8f5 bg #533a7b
-n = fg #e4e8f5 bg #355557
-o = fg #e4e8f5 bg #705440
+k = fg #e4e8f5 bg #40323e negrito
+l = fg #989eb7 bg #3d404f

@@ -106,6 +106,9 @@ fn main() -> Result<(), String> {
         return Err(format!("o vault {} não tem páginas", cli.vault));
     }
     let (texto, versao) = ler(&cli.vault, &paginas[0].path)?;
+    // O índice do vault, varrido uma vez: calendários em modo vault e
+    // consultas. Varrer falhando não impede a TUI — eles só ficam vazios.
+    let indice = handle_scan_vault(cli.vault.clone()).unwrap_or_default();
     let primeira = {
         let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
         anotadinho_core::analise::analisar(corpo)
@@ -123,11 +126,9 @@ fn main() -> Result<(), String> {
         .com_hoje(&hoje_local())
         // Os calendários em modo vault leem as páginas com data. Varrer
         // falhando não impede a TUI: o calendário só fica vazio.
-        .com_eventos_do_vault(
-            handle_scan_vault(cli.vault.clone())
-                .map(|p| anotadinho_core::calendario::entradas_do_vault(&p))
-                .unwrap_or_default(),
-        );
+        .com_eventos_do_vault(anotadinho_core::calendario::entradas_do_vault(&indice))
+        // As consultas rodam sobre o mesmo índice (ciclo 331).
+        .com_indice_do_vault(indice);
 
     // Sem terminal de verdade, `enable_raw_mode` falha com
     // "No such device or address (os error 6)" — que não diz nada a

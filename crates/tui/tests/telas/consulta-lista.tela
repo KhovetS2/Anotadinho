@@ -1,22 +1,22 @@
-# cena repouso-query · 140x40 · teclas: 
+# cena consulta-lista · 140x40 · teclas: 
 ┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
 │cena                                    ││Antes.                                                                                          │
 │                                        ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
 │                                        ││▌   ⌕ em pages · type existe                                                      5 páginas  ✲ ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   PÁGINA                                                                         TYPE        ▌│
+│                                        ││▌   Ciclo 001 — Bootstrap do projeto                                             ciclo   done  ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Ciclo 001 — Bootstrap do projeto                                                ciclo      ▌│
+│                                        ││▌   Ciclo 002 — Vault picker                                                     ciclo   done  ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Ciclo 002 — Vault picker                                                        ciclo      ▌│
+│                                        ││▌   Spec do editor                                                          spec   em-revisao  ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Spec do editor                                                                  spec       ▌│
+│                                        ││▌   Decisão: Yew no front                                                             decisao  ▌│
 │                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Decisão: Yew no front                                                           decisao    ▌│
-│                                        ││▌  ────────────────────────────────────────────────────────────────────────────────────────────▌│
-│                                        ││▌   Spec de sincronização                                                           spec       ▌│
+│                                        ││▌   Spec de sincronização                                                     spec   rascunho  ▌│
 │                                        ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
 │                                        ││Depois.                                                                                         │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -45,19 +45,19 @@ accccddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiihfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkfb
+addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhlllllllhmmmmmmhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhlllllllhmmmmmmhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhnnnnnnhmmmmmmmmmmmmhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllnnnnnnhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhmmmmmmmmmhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllooooooooohhhfb
-addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllnnnnnnhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhnnnnnnhnnnnnnnnnnhfb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -90,8 +90,7 @@ g = fg #e71d32 bg #40323e
 h = fg - bg #40323e
 i = fg #989eb7 bg #40323e
 j = fg #3d404f bg #40323e
-k = fg #989eb7 bg #40323e negrito
-l = fg #e4e8f5 bg #40323e
-m = fg #e4e8f5 bg #533a7b
+k = fg #e4e8f5 bg #40323e negrito
+l = fg #e4e8f5 bg #533a7b
+m = fg #e4e8f5 bg #705440
 n = fg #e4e8f5 bg #355557
-o = fg #e4e8f5 bg #705440

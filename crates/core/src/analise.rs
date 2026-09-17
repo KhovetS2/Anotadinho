@@ -345,6 +345,55 @@ fn e_linha_horizontal(linha: &str) -> bool {
 ///
 /// Reusa o `render::Markdown` do ciclo 266 — que existia sem consumidor
 /// e agora tem um.
+/// As partes de uma consulta JÁ RODADA sobre o índice do vault (ciclo
+/// 331).
+///
+/// A consulta é o único embed cujo conteúdo não está no arquivo, então
+/// `partes_do_embed` não tem como montá-la — quem tem o índice (a TUI,
+/// que varre o vault) chama isto e troca os filhos do embed:
+///
+/// - `cabecalho`: o recorte legível, com a `contagem` escondida;
+/// - `nada`, quando nenhuma página bate;
+/// - um `resultado` por página (folha, com a `pagina` e cada `campo`
+///   escondidos — `campo` é `nome=valor`), ou, com `group_by` ou
+///   agregados, um `grupo` por valor com o `total` e os `agregado`s
+///   escondidos e os resultados dentro.
+///
+/// Como desenhar (lista, tabela, cartões) é da visão, que quem desenha
+/// lê da fonte.
+pub fn partes_da_consulta(q: &crate::query::Query, entries: &[crate::index::PageIndexEntry]) -> Vec<Unidade> {
+    let resultados = q.run(entries);
+    let n = resultados.len();
+    let mut partes = vec![arranjado(
+        "cabecalho",
+        q.descrever(),
+        vec![item("contagem", format!("{n} {}", if n == 1 { "página" } else { "páginas" }))],
+        Arranjo::Folha,
+    )];
+    if resultados.is_empty() {
+        partes.push(item("nada", "Nenhuma página bate com esta consulta."));
+        return partes;
+    }
+    let resultado = |e: &crate::index::PageIndexEntry| -> Unidade {
+        let mut filhos = vec![item("pagina", e.path.clone())];
+        filhos.extend(q.columns.iter().map(|c| item("campo", format!("{c}={}", e.field(c).unwrap_or_default()))));
+        arranjado("resultado", e.title.clone(), filhos, Arranjo::Folha)
+    };
+    if q.group_by.is_some() || !q.aggregate.is_empty() {
+        for g in q.run_grouped(entries) {
+            let mut filhos = vec![item("total", g.itens.len().to_string())];
+            filhos.extend(g.agregados.iter().map(|(r, v)| item("agregado", format!("{r}: {v}"))));
+            if !q.recolhido(&g.valor) {
+                filhos.extend(g.itens.iter().map(|e| resultado(e)));
+            }
+            partes.push(grupo("grupo", g.rotulo.clone(), filhos));
+        }
+    } else {
+        partes.extend(resultados.into_iter().map(resultado));
+    }
+    partes
+}
+
 /// A ação principal de um fluxo, se o estado dele tem uma.
 ///
 /// São os dois momentos em que o fluxo oferece mais do que mudar de
@@ -2270,6 +2319,34 @@ mod partes_de_embed {
             "{{ type: \"callout\" }}\nvariant: roxo\nbody: |\n  Texto.\n{{ /callout }}\n",
         );
         assert_eq!(d.filhos[0].texto, "info");
+    }
+
+    #[test]
+    fn a_consulta_rodada_vira_cabecalho_e_resultados() {
+        let entrada = |path: &str, title: &str, tipo: &str| crate::index::PageIndexEntry {
+            path: path.into(),
+            title: title.into(),
+            page_type: tipo.into(),
+            ..Default::default()
+        };
+        let indice = vec![entrada("pages/a.md", "A", "spec"), entrada("pages/b.md", "B", ""), entrada("journals/c.md", "C", "spec")];
+        let q = crate::query::Query {
+            from: Some("pages".into()),
+            columns: vec!["type".into()],
+            ..Default::default()
+        };
+        let p = partes_da_consulta(&q, &indice);
+        assert_eq!(partes(&Unidade::com_filhos(Tipo::Paragrafo, p.clone())), ["parte:cabecalho", "parte:resultado", "parte:resultado"]);
+        assert_eq!(p[0].texto, "em pages");
+        assert_eq!(p[0].filhos[0].texto, "2 páginas");
+        assert_eq!(p[1].texto, "A");
+        assert_eq!(p[1].filhos.iter().map(|f| f.texto.as_str()).collect::<Vec<_>>(), ["pages/a.md", "type=spec"]);
+        // Agrupada: um grupo por valor, o sem valor no fim.
+        let q = crate::query::Query { group_by: Some("type".into()), ..q };
+        let p = partes_da_consulta(&q, &indice);
+        assert_eq!(p.iter().skip(1).map(|g| g.texto.as_str()).collect::<Vec<_>>(), ["spec", "sem type"]);
+        let vazia = crate::query::Query { from: Some("nada".into()), ..Default::default() };
+        assert_eq!(partes_da_consulta(&vazia, &indice)[1].texto, "Nenhuma página bate com esta consulta.");
     }
 
     #[test]

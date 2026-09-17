@@ -388,6 +388,8 @@ pub fn fica_fora_da_tela(nome: &str) -> bool {
             // O tamanho e as colunas da galeria, o caminho da imagem e a
             // largura do painel (ciclos 325 e 326): dado de desenho.
             | "tamanho" | "colunas" | "caminho" | "largura"
+            // A contagem, os campos e os agregados da consulta (ciclo 331).
+            | "contagem" | "campo" | "total" | "agregado"
     )
         || nome == "evento"
         || nome.starts_with("evento--")

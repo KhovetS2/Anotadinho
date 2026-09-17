@@ -48,6 +48,36 @@ struct Cena {
     teclas: Vec<&'static str>,
     largura: u16,
     altura: u16,
+    /// Com o índice falso do vault (as consultas precisam dele).
+    com_indice: bool,
+}
+
+/// Um vault pequeno e fixo pras consultas: não pode ser o vault de
+/// verdade, que muda e mudaria a foto.
+fn indice_falso() -> Vec<anotadinho_core::index::PageIndexEntry> {
+    let pagina = |path: &str, title: &str, tipo: &str, status: &str| {
+        let mut properties = std::collections::BTreeMap::new();
+        properties.insert("type".to_string(), tipo.to_string());
+        if !status.is_empty() {
+            properties.insert("status".to_string(), status.to_string());
+        }
+        anotadinho_core::index::PageIndexEntry {
+            path: path.into(),
+            title: title.into(),
+            section: "pages".into(),
+            page_type: tipo.into(),
+            properties,
+            ..Default::default()
+        }
+    };
+    vec![
+        pagina("pages/ciclos/001-bootstrap.md", "Ciclo 001 — Bootstrap do projeto", "ciclo", "done"),
+        pagina("pages/ciclos/002-vault-picker.md", "Ciclo 002 — Vault picker", "ciclo", "done"),
+        pagina("pages/specs/editor.md", "Spec do editor", "spec", "em-revisao"),
+        pagina("pages/decisoes/yew.md", "Decisão: Yew no front", "decisao", ""),
+        pagina("pages/specs/sync.md", "Spec de sincronização", "spec", "rascunho"),
+        pagina("journals/2026-08-12.md", "12 de agosto", "", ""),
+    ]
 }
 
 /// Só o `n`-ésimo embed do tipo `tipo` dos exemplos, entre dois
@@ -61,7 +91,7 @@ fn so_o_embed(tipo: &str) -> String {
 }
 
 fn cena(nome: &'static str, pagina: String, teclas: &[&'static str], largura: u16, altura: u16) -> Cena {
-    Cena { nome, pagina, teclas: teclas.to_vec(), largura, altura }
+    Cena { nome, pagina, teclas: teclas.to_vec(), largura, altura, com_indice: true }
 }
 
 fn cenas() -> Vec<Cena> {
@@ -72,6 +102,13 @@ fn cenas() -> Vec<Cena> {
         let nome: &'static str = Box::leak(format!("repouso-{tipo}").into_boxed_str());
         v.push(cena(nome, so_o_embed(tipo), &[], 140, 40));
     }
+    // A consulta nas três visões, e agrupada.
+    let consulta = |yaml: &str| format!("Antes.\n\n{{{{ type: \"query\" }}}}\n{yaml}{{{{ /query }}}}\n\nDepois.\n");
+    v.push(cena("consulta-lista", consulta("from: pages\nwhere:\n- field: type\n  op: exists\ncolumns:\n- type\n- status\n"), &[], 140, 40));
+    v.push(cena("consulta-cartoes", consulta("from: pages\nview: cards\ncolumns:\n- status\n"), &[], 140, 40));
+    v.push(cena("consulta-agrupada", consulta("from: pages\ngroup_by: type\naggregate:\n- op: count\n"), &[], 140, 40));
+    v.push(cena("consulta-vazia", consulta("from: nada\n"), &[], 140, 20));
+    v.push(cena("consulta-linha-acesa", so_o_embed("query"), &["Tab", "j", "Enter", "j"], 140, 40));
     // O cursor dentro dos embeds: o que acende, e a navegação lado a lado.
     v.push(cena("kanban-cartao-aceso", so_o_embed("kanban"), &["Tab", "j", "Enter", "Enter"], 140, 40));
     v.push(cena("kanban-l-vai-pra-coluna-vizinha", so_o_embed("kanban"), &["Tab", "j", "Enter", "l", "l", "Enter"], 140, 40));
@@ -86,6 +123,9 @@ fn rodar(c: &Cena) -> (ratatui::buffer::Buffer, Option<String>) {
     let mut e = Estado::novo(paginas, analisar(""));
     e.abrir_texto(&c.pagina, Some("v1".into()));
     let mut e = e.com_hoje("2026-08-12");
+    if c.com_indice {
+        e = e.com_indice_do_vault(indice_falso());
+    }
     let mut arquivo: Option<String> = None;
     for t in &c.teclas {
         app::tecla(&mut e, t);

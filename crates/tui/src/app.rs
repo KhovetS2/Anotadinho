@@ -87,6 +87,9 @@ pub struct Estado {
     /// calendários em modo vault (ciclo 317). Quem varre o vault é o
     /// `main`; vazio é "ninguém varreu".
     pub eventos_do_vault: Vec<anotadinho_core::embed::CalendarEntry>,
+    /// O índice do vault, pras consultas (ciclo 331). Quem varre é o
+    /// `main`; vazio é "ninguém varreu".
+    pub indice_do_vault: Vec<anotadinho_core::index::PageIndexEntry>,
     /// O texto inteiro do arquivo da página aberta (ciclo 318).
     ///
     /// Sem ele a TUI é só leitura: editar um embed é trocar o trecho dele
@@ -150,6 +153,7 @@ impl Estado {
             ancoras: std::collections::HashMap::new(),
             visoes: std::collections::HashMap::new(),
             eventos_do_vault: Vec::new(),
+            indice_do_vault: Vec::new(),
             texto_da_pagina: None,
             versao: None,
             gravacao: None,
@@ -217,6 +221,36 @@ impl Estado {
         self.gravacao = Some(texto);
     }
 
+    /// Entrega o índice do vault e roda as consultas da página.
+    pub fn com_indice_do_vault(mut self, indice: Vec<anotadinho_core::index::PageIndexEntry>) -> Self {
+        self.indice_do_vault = indice;
+        self.ancorar_calendarios();
+        self
+    }
+
+    /// Troca os filhos de cada consulta da página pelo resultado dela
+    /// sobre o índice (ciclo 331). Sem índice, fica o que a análise pôs.
+    fn montar_consultas(&mut self) {
+        if self.indice_do_vault.is_empty() {
+            return;
+        }
+        for i in 0..self.arvore.filhos.len() {
+            let u = &self.arvore.filhos[i];
+            if !matches!(&u.tipo, Tipo::Embed(n) if n == "query") {
+                continue;
+            }
+            let Some(anotadinho_core::embed::EmbedData::Query(q)) = u.fonte.as_deref().and_then(|f| {
+                anotadinho_core::embed::segment(f).into_iter().find_map(|s| match s {
+                    anotadinho_core::embed::DocSegment::Embed(d) => Some(d),
+                    _ => None,
+                })
+            }) else {
+                continue;
+            };
+            self.arvore.filhos[i].filhos = anotadinho_core::analise::partes_da_consulta(&q, &self.indice_do_vault);
+        }
+    }
+
     /// Entrega os eventos do vault e remonta os calendários em modo vault.
     pub fn com_eventos_do_vault(mut self, eventos: Vec<anotadinho_core::embed::CalendarEntry>) -> Self {
         self.eventos_do_vault = eventos;
@@ -231,7 +265,11 @@ impl Estado {
     /// monta a árvore sem âncora — então a grade ancorada e a do CLI são o
     /// mesmo código, com um mês a menos.
     fn ancorar_calendarios(&mut self) {
-        let Some(hoje) = self.hoje.clone() else { return };
+        self.montar_consultas();
+        let Some(hoje) = self.hoje.clone() else {
+            self.linhas = tela::linhas(&self.arvore);
+            return;
+        };
         for i in 0..self.arvore.filhos.len() {
             let u = &self.arvore.filhos[i];
             if !matches!(&u.tipo, Tipo::Embed(n) if n == "calendar") {
@@ -832,7 +870,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             // Embeds desenhados INTEIROS, de uma vez, na primeira linha
             // deles: o que a janela põe lado a lado (colunas, 326; kanban,
             // 328) não cabe no desenho de uma linha por unidade.
-            let nas_colunas = matches!(l.embed_dono.as_deref(), Some("columns" | "kanban"))
+            let nas_colunas = matches!(l.embed_dono.as_deref(), Some("columns" | "kanban" | "query"))
                 && !matches!(l.tipo, Tipo::Embed(_));
             if nas_colunas && l.dono_embed.as_ref().is_some_and(|d| colunas_feitas.contains(d)) {
                 if l.mostra(&e.cursor) {
@@ -889,6 +927,8 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 }
                 let bloco = if l.embed_dono.as_deref() == Some("kanban") {
                     linhas_do_kanban(e, &dono, largura_conteudo)
+                } else if l.embed_dono.as_deref() == Some("query") {
+                    linhas_da_consulta(e, &dono, largura_conteudo)
                 } else {
                     linhas_das_colunas(e, &dono, &linhas_visiveis, largura_conteudo)
                 };
@@ -1574,6 +1614,251 @@ fn linhas_do_kanban(e: &Estado, dono: &[usize], largura: usize) -> Vec<Line<'sta
         }
     }
     fora
+}
+
+/// A pílula de um valor de consulta: a cor sai do VALOR
+/// (`indice_cor_consulta`), como `.query-embed__chip--cor-N`.
+fn chip_da_consulta(valor: &str, tema: &Tema) -> Style {
+    let elevado = tema.var("bg-elevated");
+    let (cor, pct) = match anotadinho_core::query::indice_cor_consulta(valor) {
+        0 => (tema.var("accent-blue"), 0.24),
+        1 => (tema.var("accent-purple"), 0.25),
+        2 => (tema.var("success"), 0.30),
+        3 => (tema.var("warning"), 0.32),
+        4 => (tema.var("error"), 0.24),
+        _ => (tema.var("text-muted"), 0.28),
+    };
+    Style::default().fg(tema.var("text-primary")).bg(crate::tema::misturar(cor, elevado, pct))
+}
+
+/// A consulta inteira (ciclo 331), como `.query-embed`: a barra com a
+/// lupa, o recorte e a contagem; embaixo os resultados na visão do
+/// arquivo — lista (título e pílulas à direita), tabela (cabeçalho em
+/// caixa alta, uma coluna por campo) ou cartões (grade de quadros com
+/// título, caminho e pílulas) —, cada linha com o traço de baixo da
+/// janela. Com grupos, um cabeçalho por grupo com a seta, o total e os
+/// agregados. Sob o cursor, a linha acende inteira.
+fn linhas_da_consulta(e: &Estado, dono: &[usize], largura: usize) -> Vec<Line<'static>> {
+    use anotadinho_core::query::QueryView;
+    let Some(embed) = e.arvore.em(dono) else { return Vec::new() };
+    let t = &e.tema;
+    let consulta = embed.fonte.as_deref().and_then(|f| {
+        anotadinho_core::embed::segment(f).into_iter().find_map(|s| match s {
+            anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Query(q)) => Some(q),
+            _ => None,
+        })
+    });
+    let visao = consulta.as_ref().map(|q| q.view).unwrap_or_default();
+    let colunas: Vec<String> = consulta.as_ref().map(|q| q.columns.clone()).unwrap_or_default();
+    let recuo = " ".repeat(2 * dono.len());
+    let w = largura.saturating_sub(recuo.len()).max(20);
+    let apagado = Style::default().fg(t.var("text-muted"));
+    let traco = Style::default().fg(t.var("border"));
+    let no_foco = e.foco == Foco::Conteudo;
+    let aceso = |c: &[usize]| no_foco && e.cursor == c;
+    let fundo_aceso = Style::default().bg(crate::tema::misturar(t.var("accent-blue"), t.var("bg-surface"), 0.25));
+    let mut fora: Vec<Faixa> = Vec::new();
+    let regua = || Faixa::default().mais("─".repeat(w), traco);
+
+    // A barra: ⌕ recorte ····· N páginas ✲
+    let cab = embed.filhos.iter().find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "cabecalho"));
+    let descricao = cab.map(|c| c.texto.clone()).unwrap_or_else(|| {
+        consulta.as_ref().map(|q| q.descrever()).unwrap_or_default()
+    });
+    let contagem = cab.and_then(|c| valor_escondido(c, "contagem")).unwrap_or("").to_string();
+    let direita = format!("{contagem}  ✲");
+    let cabe = w.saturating_sub(direita.chars().count() + 5);
+    fora.push(
+        Faixa::default()
+            .mais(" ⌕ ", apagado)
+            .mais(cortado(&descricao, cabe), apagado)
+            .ate(w - direita.chars().count() - 1, Style::default())
+            .mais(direita, apagado),
+    );
+    fora.push(regua());
+
+    // Os campos de um resultado, na ordem das colunas.
+    let campos = |u: &Unidade| -> Vec<String> {
+        u.filhos
+            .iter()
+            .filter(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "campo"))
+            .map(|f| f.texto.split_once('=').map(|(_, v)| v.to_string()).unwrap_or_default())
+            .collect()
+    };
+    let e_parte = |u: &Unidade, n: &str| matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == n);
+
+    if let Some(nada) = embed.filhos.iter().find(|f| e_parte(f, "nada")) {
+        fora.push(Faixa::default().mais(format!(" {}", nada.texto), apagado));
+    }
+
+    // Todos os resultados (com o caminho), pra medir colunas.
+    let mut todos: Vec<(Vec<usize>, &Unidade)> = Vec::new();
+    for (i, f) in embed.filhos.iter().enumerate() {
+        if e_parte(f, "resultado") {
+            todos.push(([dono, &[i]].concat(), f));
+        } else if e_parte(f, "grupo") {
+            for (k, r) in f.filhos.iter().enumerate() {
+                if e_parte(r, "resultado") {
+                    todos.push(([dono, &[i, k]].concat(), r));
+                }
+            }
+        }
+    }
+
+    let linha_de_lista = |caminho: &[usize], r: &Unidade| -> Faixa {
+        let fundo = if aceso(caminho) { fundo_aceso } else { Style::default() };
+        let chips: Vec<String> = campos(r).into_iter().filter(|v| !v.is_empty()).collect();
+        let largura_chips: usize = chips.iter().map(|c| c.chars().count() + 3).sum();
+        let titulo = cortado(&r.texto, w.saturating_sub(largura_chips + 3));
+        let mut f = Faixa::default()
+            .mais(" ", fundo)
+            .mais(titulo, fundo.fg(t.var("text-primary")).add_modifier(Modifier::BOLD))
+            .ate(w.saturating_sub(largura_chips + 1), fundo);
+        for c in chips {
+            f = f.mais(" ", fundo).mais(format!(" {c} "), chip_da_consulta(&c, t));
+        }
+        f.ate(w, fundo)
+    };
+
+    match visao {
+        QueryView::Table if !todos.is_empty() => {
+            // Largura de cada coluna pelo maior conteúdo, com o título
+            // levando o que sobrar.
+            let mut larguras: Vec<usize> = colunas
+                .iter()
+                .enumerate()
+                .map(|(i, c)| {
+                    todos
+                        .iter()
+                        .map(|(_, r)| campos(r).get(i).map_or(0, |v| v.chars().count() + 2))
+                        .max()
+                        .unwrap_or(0)
+                        .max(c.chars().count())
+                        + 3
+                })
+                .collect();
+            let resto: usize = larguras.iter().sum();
+            let titulo_w = w.saturating_sub(resto + 1).max(12);
+            if titulo_w + resto + 1 > w {
+                for l in &mut larguras {
+                    *l = (*l).min(14);
+                }
+            }
+            let mut cabecalho = Faixa::default().mais(" ", Style::default()).mais(
+                na_largura("PÁGINA", titulo_w),
+                apagado.add_modifier(Modifier::BOLD),
+            );
+            for (c, lw) in colunas.iter().zip(&larguras) {
+                cabecalho = cabecalho.mais(na_largura(&c.to_uppercase(), *lw), apagado.add_modifier(Modifier::BOLD));
+            }
+            fora.push(cabecalho.ate(w, Style::default()));
+            fora.push(regua());
+            for (caminho, r) in &todos {
+                let fundo = if aceso(caminho) { fundo_aceso } else { Style::default() };
+                let mut f = Faixa::default()
+                    .mais(" ", fundo)
+                    .mais(na_largura(&cortado(&r.texto, titulo_w - 1), titulo_w), fundo.fg(t.var("text-primary")));
+                for (v, lw) in campos(r).iter().zip(&larguras) {
+                    if v.is_empty() {
+                        f = f.mais(" ".repeat(*lw), fundo);
+                    } else {
+                        let chip = cortado(v, lw.saturating_sub(3));
+                        let n = chip.chars().count() + 2;
+                        f = f.mais(format!(" {chip} "), chip_da_consulta(v, t)).mais(" ".repeat(lw.saturating_sub(n)), fundo);
+                    }
+                }
+                fora.push(f.ate(w, fundo));
+                fora.push(regua());
+            }
+            fora.pop();
+        }
+        QueryView::Cards if !todos.is_empty() => {
+            const MIN: usize = 26;
+            let por_linha = ((w + 2) / (MIN + 2)).max(1);
+            let cw = (w + 2) / por_linha - 2;
+            let base = t.var("bg-base");
+            for fileira in todos.chunks(por_linha) {
+                let quadros: Vec<Vec<Faixa>> = fileira
+                    .iter()
+                    .map(|(caminho, r)| {
+                        let borda = if aceso(caminho) { t.var("accent-blue") } else { t.var("border") };
+                        let no_cartao = Style::default().bg(base);
+                        let lado = |miolo: Faixa| {
+                            Faixa::default()
+                                .mais("▐", Style::default().fg(borda))
+                                .mais(" ", no_cartao)
+                                .juntar(miolo.ate(cw - 4, no_cartao))
+                                .mais(" ", no_cartao)
+                                .mais("▌", Style::default().fg(borda))
+                        };
+                        let mut q = vec![Faixa::default().mais(format!("▗{}▖", "▄".repeat(cw - 2)), Style::default().fg(borda))];
+                        q.push(lado(Faixa::default().mais(cortado(&r.texto, cw - 4), no_cartao.fg(t.var("text-primary")).add_modifier(Modifier::BOLD))));
+                        let pagina = valor_escondido(r, "pagina").unwrap_or("");
+                        q.push(lado(Faixa::default().mais(cortado(pagina, cw - 4), no_cartao.fg(t.var("text-muted")))));
+                        let chips: Vec<(String, Style)> = campos(r)
+                            .into_iter()
+                            .filter(|v| !v.is_empty())
+                            .map(|v| (format!(" {v} "), chip_da_consulta(&v, t)))
+                            .collect();
+                        for f in pilulas_quebrando(&chips, cw - 4, no_cartao) {
+                            if !chips.is_empty() {
+                                q.push(lado(f));
+                            }
+                        }
+                        q.push(Faixa::default().mais(format!("▝{}▘", "▀".repeat(cw - 2)), Style::default().fg(borda)));
+                        q
+                    })
+                    .collect();
+                let altura = quadros.iter().map(Vec::len).max().unwrap_or(0);
+                for y in 0..altura {
+                    let mut f = Faixa::default();
+                    for (i, q) in quadros.iter().enumerate() {
+                        if i > 0 {
+                            f = f.mais("  ", Style::default());
+                        }
+                        f = match q.get(y) {
+                            Some(p) => f.juntar(p.clone()),
+                            None => f.mais(" ".repeat(cw), Style::default()),
+                        };
+                    }
+                    fora.push(f);
+                }
+            }
+        }
+        _ => {
+            for (i, f) in embed.filhos.iter().enumerate() {
+                let caminho: Vec<usize> = [dono, &[i]].concat();
+                if e_parte(f, "resultado") {
+                    fora.push(linha_de_lista(&caminho, f));
+                    fora.push(regua());
+                } else if e_parte(f, "grupo") {
+                    let fundo = if aceso(&caminho) { fundo_aceso } else { Style::default() };
+                    let aberto = f.filhos.iter().any(|r| e_parte(r, "resultado"));
+                    let mut cab = Faixa::default()
+                        .mais(if aberto { " ▾ " } else { " ▸ " }, fundo.fg(t.var("text-muted")))
+                        .mais(f.texto.clone(), fundo.fg(t.var("text-primary")).add_modifier(Modifier::BOLD))
+                        .mais(format!("  {}", valor_escondido(f, "total").unwrap_or("0")), fundo.fg(t.var("text-muted")));
+                    for a in f.filhos.iter().filter(|a| e_parte(a, "agregado")) {
+                        cab = cab.mais(" ", fundo).mais(format!(" {} ", a.texto), Style::default().bg(t.var("bg-elevated")).fg(t.var("text-muted")));
+                    }
+                    fora.push(cab.ate(w, fundo));
+                    fora.push(regua());
+                    for (k, r) in f.filhos.iter().enumerate() {
+                        if e_parte(r, "resultado") {
+                            fora.push(linha_de_lista(&[caminho.as_slice(), &[k]].concat(), r));
+                            fora.push(regua());
+                        }
+                    }
+                }
+            }
+            if fora.last().is_some_and(|f| f.spans.first().is_some_and(|s| s.content.starts_with('─'))) && fora.len() > 2 {
+                fora.pop();
+            }
+        }
+    }
+    fora.into_iter()
+        .map(|f| Line::from([vec![Span::raw(recuo.clone())], f.spans].concat()))
+        .collect()
 }
 
 /// O embed de colunas inteiro, com os painéis LADO A LADO (ciclo 326).

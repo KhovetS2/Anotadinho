@@ -1,4 +1,4 @@
-# cena repouso-query · 140x40 · teclas: 
+# cena consulta-linha-acesa · 140x40 · teclas: Tab j Enter j
 ┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
 │cena                                    ││Antes.                                                                                          │
 │                                        ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
@@ -49,13 +49,13 @@ addddddddddddddddddddddddddddddddddddddddabghhhkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
 addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhnooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooommmmmmmnnnnnfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllnnnnnnhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllpppppphhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllooooooooohhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllqqqqqqqqqhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfb
-addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllnnnnnnhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllpppppphhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -80,9 +80,9 @@ addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-a = fg #00b5ff bg #272930
-b = fg #3d404f bg #272930
-c = fg #272930 bg #00b5ff
+a = fg #3d404f bg #272930
+b = fg #00b5ff bg #272930
+c = fg - bg #272930 apagado
 d = fg - bg #272930
 e = fg #e4e8f5 bg #272930
 f = fg #40323e bg #272930
@@ -93,5 +93,7 @@ j = fg #3d404f bg #40323e
 k = fg #989eb7 bg #40323e negrito
 l = fg #e4e8f5 bg #40323e
 m = fg #e4e8f5 bg #533a7b
-n = fg #e4e8f5 bg #355557
-o = fg #e4e8f5 bg #705440
+n = fg - bg #26546f
+o = fg #e4e8f5 bg #26546f
+p = fg #e4e8f5 bg #355557
+q = fg #e4e8f5 bg #705440
