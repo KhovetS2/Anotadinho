@@ -634,6 +634,7 @@ const BLOCOS_DO_MENU: &[(&str, &str, &str, &str)] = &[
     ("Imagem", "URL ou arquivo de imagem", "▨", "imagem"),
     ("Diagrama", "Mermaid (fluxograma)", "⋈", "diagrama"),
     ("Assets", "Inserir arquivo do vault", "⌁", "assets"),
+    ("Transclusão", "Trazer o conteúdo de outra página", "▤", "transclusao"),
 ];
 
 /// Os itens do menu: os blocos e, na página, um por tipo de embed.
@@ -715,6 +716,25 @@ pub(super) fn escolher(e: &mut Estado, chave: &str) {
         }
         "assets" => {
             e.pedidos.push(Pedido::AssetsParaInserir);
+            return;
+        }
+        // Transclusão (ciclo 416): escolhe a página e insere o marcador
+        // — o conteúdo aparece sozinho, resolvido (ciclo 415).
+        "transclusao" => {
+            let itens: Vec<crate::componentes::Item> = e
+                .paginas
+                .iter()
+                .map(|p| crate::componentes::Item::novo("▤", p.title.clone(), p.title.clone()).com_detalhe(p.path.clone()))
+                .collect();
+            if itens.is_empty() {
+                e.aviso = Some("nenhuma página pra transcluir".into());
+                return;
+            }
+            e.modal = Some(Modal::Escolha {
+                titulo: "Transcluir qual página".into(),
+                lista: crate::componentes::Lista::filtravel(itens),
+                acao: super::modais::AcaoDaEscolha::Transcluir,
+            });
             return;
         }
         _ => match chave.strip_prefix("embed:").and_then(anotadinho_core::embed::EmbedKind::from_type_name) {

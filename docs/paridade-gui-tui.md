@@ -113,6 +113,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Suíte de avaliação do agente (tarefas com resultado esperado) | — | 413 — `anotadinho-cli avaliar`; vale pros dois, não é tela |
 | Transclusão `![[Página#Seção]]` resolvida no contexto do prompt | ✅ | 414 — anexo chega ao agente com o conteúdo; `read --contexto` no CLI |
 | Transclusão DESENHADA na página (conteúdo de outra página à vista) | ✅ | 415 — conteúdo entra como enfeite sob o marcador, com teto de 12 linhas |
+| Compor contexto: inserir transclusão pelo menu `/`, anexos viram página de contexto | ✅ | 416 — só na TUI; a página-recorte vira O anexo, reutilizável |
 | Git: status, pull, commit & push | ✅ | 349 — "Git: status e sincronizar…" na barra; histórico da página |
 | Nova página a partir de template | ✅ | 350 — "Nova página" pergunta o template quando há |
 

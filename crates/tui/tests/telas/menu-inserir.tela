@@ -17,12 +17,12 @@
 │                                        ││ ▨ Imagem                    URL ou arquivo de imagem │                                         │
 │                                        ││ ⋈ Diagrama                      Mermaid (fluxograma) │                                         │
 │                                        ││ ⌁ Assets                    Inserir arquivo do vault │                                         │
+│                                        ││ ▤ Transclusão      Trazer o conteúdo de outra página │                                         │
 │                                        ││ ▥ Kanban                   Board com colunas e cards │                                         │
 │                                        ││ ▦ Calendário        Eventos por data, mês/semana/dia │                                         │
 │                                        ││ ▦ Tabela de Tarefas       Tabela com colunas tipadas │                                         │
 │                                        ││ ℹ Destaque         Caixa colorida com título e corpo │                                         │
 │                                        ││ ▤ Colunas                Blocos de texto lado a lado │                                         │
-│                                        ││ ▨ Galeria                  Grade de imagens do vault │                                         │
 │                                        │╰ j k · Enter · Esc ───────────────────────────────────╯                                         │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -58,12 +58,12 @@ addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinn
 addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddagnnnnnnnnnnnnnnnnnnnggggggggggggggggggggggggggggggggggggdddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb

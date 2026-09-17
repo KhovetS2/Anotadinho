@@ -8938,7 +8938,8 @@ mod testes {
         let mut e = markdown_editavel();
         e.cursor = vec![1];
         tecla(&mut e, "o");
-        tecla(&mut e, "/");
+        eprintln!("DBG pergunta={:?} modo={:?}", e.pergunta.as_ref().map(|p| (p.texto.clone(), format!("{:?}", p.acao))), e.foco);
+        digitar(&mut e, "/");
         assert!(e.pergunta.is_none());
         let tela = desenho(&mut e, 100, 40).join("\n");
         for esperado in ["Inserir", "Título 1", "Checklist", "Tabela 3×2", "Kanban"] {
@@ -10822,5 +10823,67 @@ mod testes {
                 ultimo: String::new(),
             })]
         );
+    }
+
+    // --- Ciclo 416: compor contexto por transclusão ----------------------------------
+
+    #[test]
+    fn o_menu_de_inserir_transclui_a_pagina_escolhida() {
+        let mut e = pagina_com("# a\n\num parágrafo\n");
+        e.foco = Foco::Conteudo;
+        // O menu `/` oferece a transclusão.
+        let itens = markdown::itens_do_menu(&markdown::Hospedeiro::Pagina);
+        assert!(
+            itens.iter().any(|i| i.chave == "transclusao" && i.rotulo == "Transclusão"),
+            "{:?}",
+            itens.iter().map(|i| i.chave.clone()).collect::<Vec<_>>()
+        );
+        // Com a inserção aberta (o que o `/` faz num bloco novo), a
+        // escolha "Transclusão" oferece as páginas.
+        let corpo = e.texto_da_pagina.clone().unwrap_or_default();
+        markdown::abrir_menu(
+            &mut e,
+            markdown::EdicaoDeBloco {
+                hospedeiro: markdown::Hospedeiro::Pagina,
+                faixa: corpo.len()..corpo.len(),
+                prefixo: String::new(),
+                de_lista: false,
+                alvo: vec![1],
+                novo: true,
+                antes: false,
+            },
+        );
+        markdown::escolher(&mut e, "transclusao");
+        assert!(matches!(&e.modal, Some(Modal::Escolha { titulo, .. }) if titulo == "Transcluir qual página"), "{:?}", e.modal);
+        let alvo = e.paginas[0].title.clone();
+        modais::tecla(&mut e, "Enter");
+        let texto = e.texto_da_pagina.clone().unwrap_or_default();
+        assert!(texto.contains(&format!("![[{alvo}]]")), "esperava o marcador de {alvo}:\n{texto}");
+    }
+
+    #[test]
+    fn os_anexos_viram_pagina_de_contexto() {
+        let mut e = conversa_aberta();
+        let c = e.conversa.as_mut().unwrap();
+        c.anexos = vec!["pages/specs/imagens.md".into(), "pages/beta.md".into()];
+        // O comando só aparece com anexo.
+        let chaves: Vec<String> = conversa::comandos(&e).into_iter().map(|i| i.chave).collect();
+        assert!(chaves.iter().any(|k| k == "guardar-contexto"), "{chaves:?}");
+        conversa::executar(&mut e, "guardar-contexto");
+        assert!(matches!(&e.modal, Some(Modal::Entrada { titulo, .. }) if titulo.contains("2 anexo(s)")));
+        digitar(&mut e, "Contexto das imagens");
+        tecla(&mut e, "Enter");
+        assert_eq!(
+            e.pedidos,
+            [Pedido::GuardarContexto {
+                titulo: "Contexto das imagens".into(),
+                anexos: vec!["pages/specs/imagens.md".into(), "pages/beta.md".into()]
+            }]
+        );
+        // Sem nome não cria nada.
+        e.pedidos.clear();
+        conversa::executar(&mut e, "guardar-contexto");
+        tecla(&mut e, "Enter");
+        assert!(e.pedidos.is_empty() && e.aviso.as_deref().unwrap().contains("nome"));
     }
 }

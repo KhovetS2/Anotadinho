@@ -295,6 +295,10 @@ pub fn comandos(e: &Estado) -> Vec<Item> {
     let mut v = vec![Item::novo("▤", "Usar prompt padrão…", "prompt"), Item::novo("⌁", "Anexar página…", "anexar")];
     if !c.anexos.is_empty() {
         v.push(Item::novo("⌁", "Tirar anexo…", "desanexar"));
+        v.push(
+            Item::novo("▤", "Guardar anexos como página de contexto…", "guardar-contexto")
+                .com_detalhe("vira um recorte reutilizável, por transclusão"),
+        );
     }
     if c.trabalho.is_some() {
         v.push(Item::novo("■", "Interromper o agente", "interromper"));
@@ -331,6 +335,16 @@ pub fn executar(e: &mut Estado, chave: &str) -> bool {
         "desanexar" => {
             let itens = c.anexos.iter().map(|a| Item::novo("⌁", nome_curto(a), a.clone()).com_detalhe(a.clone())).collect();
             e.modal = Some(Modal::Escolha { titulo: "Tirar anexo".into(), lista: Lista::menu(itens), acao: AcaoDaEscolha::Desanexar });
+        }
+        // Os anexos viram um recorte do vault (ciclo 416): uma página de
+        // transclusões, que passa a ser O anexo. Reutilizável em outra
+        // conversa, versionada, e editável como qualquer página.
+        "guardar-contexto" => {
+            e.modal = Some(Modal::Entrada {
+                titulo: format!("Nome da página de contexto ({} anexo(s))", c.anexos.len()),
+                campo: crate::componentes::Campo::default(),
+                acao: super::modais::AcaoDaEntrada::PaginaDeContexto,
+            });
         }
         "interromper" => e.pedidos.push(Pedido::InterromperAgente(c.path.clone())),
         "prompt" => abrir_seletor_de_prompt(e),

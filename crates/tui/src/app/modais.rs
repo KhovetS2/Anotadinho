@@ -85,6 +85,12 @@ pub enum Pedido {
     ListarExecucoes,
     /// Ver o que está rodando e o que espera na fila (ciclo 408).
     VerAgentes,
+    /// Criar a página de contexto com os anexos (ciclo 416) e pôr ela no
+    /// lugar deles.
+    GuardarContexto {
+        titulo: String,
+        anexos: Vec<String>,
+    },
     /// Buscar o conteúdo das transclusões da página aberta (ciclo 415).
     ResolverTransclusoes(Vec<String>),
     /// Ver os gatilhos do vault (ciclo 412).
@@ -517,6 +523,8 @@ pub enum AcaoDaEntrada {
     MotivoDaRecusa(String),
     /// Quantos agentes rodam em paralelo (ciclo 408).
     LimiteDeAgentes,
+    /// O nome da página de contexto feita dos anexos (ciclo 416).
+    PaginaDeContexto,
     /// O motivo de recusar várias propostas de uma vez (ciclo 409).
     MotivoDaRecusaVarias(Vec<String>),
 }
@@ -554,6 +562,8 @@ pub enum AcaoDaEscolha {
     /// A tela dos agentes em andamento (ciclo 408): Enter abre a
     /// conversa, `x` interrompe tudo.
     Agentes,
+    /// A página escolhida pra transcluir (ciclo 416).
+    Transcluir,
     /// A tela dos gatilhos (ciclo 412): Enter liga/desliga, `o` cria,
     /// `dd` apaga.
     Gatilhos,
@@ -978,6 +988,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 },
                 AcaoDaEscolha::Mostrar => {}
                 AcaoDaEscolha::Agentes => e.pedidos.push(Pedido::AbrirPagina(chave)),
+                AcaoDaEscolha::Transcluir => super::markdown::inserir_trecho(e, &format!("![[{chave}]]")),
                 // Enter liga/desliga o gatilho; a linha de "nenhum" cria.
                 AcaoDaEscolha::Gatilhos if chave.starts_with('\u{0}') => {
                     editar_gatilho(e, &gatilho_vazio());
@@ -1075,6 +1086,15 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     super::formatar::retomar(e);
                 }
             }
+            "Enter" if acao == AcaoDaEntrada::PaginaDeContexto => {
+                let nome = campo.texto.trim().to_string();
+                let anexos = e.conversa.as_ref().map(|c| c.anexos.clone()).unwrap_or_default();
+                if nome.is_empty() || anexos.is_empty() {
+                    e.aviso = Some("preciso de um nome e de pelo menos um anexo".into());
+                } else {
+                    e.pedidos.push(Pedido::GuardarContexto { titulo: nome, anexos });
+                }
+            }
             "Enter" if acao == AcaoDaEntrada::LimiteDeAgentes => {
                 match campo.texto.trim().parse::<usize>() {
                     Ok(n) => {
@@ -1150,6 +1170,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         | AcaoDaEntrada::Vault(_)
                         | AcaoDaEntrada::MotivoDaRecusa(_)
                         | AcaoDaEntrada::MotivoDaRecusaVarias(_)
+                        | AcaoDaEntrada::PaginaDeContexto
                         | AcaoDaEntrada::LimiteDeAgentes => return,
                     });
                 }

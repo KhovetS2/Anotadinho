@@ -1150,6 +1150,45 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                 // busca do título é a mesma do wikilink, e a leitura
                 // passa pelo `handle_ler_para_contexto`, então uma
                 // página transcluída que transclui outra já vem inteira.
+                // A página de contexto (ciclo 416): os anexos viram
+                // transclusões numa página só, e ela vira O anexo.
+                Pedido::GuardarContexto { titulo, anexos } => {
+                    // O título do frontmatter primeiro: é ele que a
+                    // pessoa lê e edita no marcador. O nome do arquivo
+                    // resolve igual, mas `![[padroes]]` diz menos que
+                    // `![[Padrões de nomenclatura]]`.
+                    let titulos: Vec<String> = anexos
+                        .iter()
+                        .map(|a| {
+                            estado
+                                .indice_do_vault
+                                .iter()
+                                .find(|p| &p.path == a)
+                                .map(|p| p.title.clone())
+                                .filter(|t| !t.trim().is_empty())
+                                .or_else(|| estado.paginas.iter().find(|p| &p.path == a).map(|p| p.title.clone()))
+                                .unwrap_or_else(|| a.clone())
+                        })
+                        .collect();
+                    let corpo: String = titulos.iter().map(|t| format!("![[{t}]]\n\n")).collect();
+                    let md = format!(
+                        "---\ntitle: {titulo}\ntype: contexto\n---\n\nO que o agente precisa saber:\n\n{corpo}"
+                    );
+                    let path = format!("pages/contextos/{}.md", anotadinho_core::fluxo::slug_de_titulo(&titulo));
+                    match handle_write_page(vault.to_string(), path.clone(), md) {
+                        Ok(()) => {
+                            recarregar(estado);
+                            // A conversa passa a ter UM anexo: o recorte.
+                            if let Some(c) = estado.conversa.as_mut() {
+                                c.anexos = vec![path.clone()];
+                                let conversa = c.path.clone();
+                                estado.pedidos.push(Pedido::AnexosDaConversa { conversa, lista: vec![path.clone()] });
+                            }
+                            estado.aviso = Some(format!("contexto guardado em {path}"));
+                        }
+                        Err(e) => estado.aviso = Some(format!("não guardou o contexto: {e}")),
+                    }
+                }
                 Pedido::ResolverTransclusoes(alvos) => {
                     use anotadinho_core::transclusao::{analisar_alvo, recortar};
                     let paginas = estado.paginas.clone();
