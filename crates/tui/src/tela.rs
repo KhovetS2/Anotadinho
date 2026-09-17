@@ -385,6 +385,9 @@ pub fn fica_fora_da_tela(nome: &str) -> bool {
     matches!(
         nome,
         "inicio" | "duracao" | "evento-continua" | "vazio" | "mais" | "variante" | "detalhe" | "data" | "hora" | "pagina" | "indice"
+            // O tamanho e as colunas da galeria, o caminho da imagem e a
+            // largura do painel (ciclos 325 e 326): dado de desenho.
+            | "tamanho" | "colunas" | "caminho" | "largura"
     )
         || nome == "evento"
         || nome.starts_with("evento--")

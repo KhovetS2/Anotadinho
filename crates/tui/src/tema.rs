@@ -319,6 +319,13 @@ impl Tema {
         e.bg.or(e.fg).unwrap_or(Color::Gray)
     }
 
+    /// O fundo da PÁGINA (`--bg-base`): o miolo de uma miniatura sem
+    /// imagem e o de um painel de colunas, que na janela são o fundo da
+    /// página aparecendo por dentro do embed (ciclos 325 e 326).
+    pub fn fundo_da_pagina(&self) -> Color {
+        self.cor("bg-base", Color::Black)
+    }
+
     /// O CONTORNO de um botão daquele papel (ciclo 302).
     ///
     /// Fundo nenhum: quem carrega a cor é o GLIFO. O contorno é

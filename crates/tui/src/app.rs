@@ -10,7 +10,7 @@ use anotadinho_core::unidade::{Arranjo, Tipo};
 use anotadinho_core::unidade::{Caminho, Unidade};
 use anotadinho_ipc::PageMeta;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
@@ -795,6 +795,9 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         let mut fora: Vec<Line> = Vec::with_capacity(e.altura + 2);
         let mut atual: Option<(Vec<usize>, Realce)> = None;
         let mut achou = false;
+        // Os embeds de colunas já desenhados: o bloco inteiro sai na
+        // primeira linha dele, lado a lado (ciclo 326).
+        let mut colunas_feitas: Vec<Vec<usize>> = Vec::new();
         'linhas: for l in linhas_visiveis.iter().skip(topo) {
             if fora.len() >= e.altura {
                 break;
@@ -821,6 +824,13 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             {
                 // O cursor NO embed continua visível: a caixa inteira é
                 // quem o mostra (a lateral acende, logo abaixo).
+                if l.mostra(&e.cursor) {
+                    achou = true;
+                }
+                continue;
+            }
+            let nas_colunas = l.embed_dono.as_deref() == Some("columns") && !matches!(l.tipo, Tipo::Embed(_));
+            if nas_colunas && l.dono_embed.as_ref().is_some_and(|d| colunas_feitas.contains(d)) {
                 if l.mostra(&e.cursor) {
                     achou = true;
                 }
@@ -867,7 +877,20 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             };
             let no_calendario = l.embed_dono.as_deref() == Some("calendar");
             let no_callout = l.embed_dono.as_deref() == Some("callout");
-            let desenhadas = if l.embed_dono.as_deref() == Some("timeline") && nome_da_parte == "eixo" {
+            let na_galeria = l.embed_dono.as_deref() == Some("gallery");
+            let desenhadas = if nas_colunas {
+                let dono = l.dono_embed.clone().unwrap_or_default();
+                if linhas_visiveis.iter().any(|f| f.dono_embed.as_ref() == Some(&dono) && f.mostra(&e.cursor)) {
+                    achou = true;
+                }
+                let bloco = linhas_das_colunas(e, &dono, &linhas_visiveis, largura_conteudo);
+                colunas_feitas.push(dono);
+                bloco.into_iter().map(|linha| vec![linha]).collect()
+            } else if na_galeria && nome_da_parte == "cabecalho" {
+                vec![vec![linha_do_cabecalho_da_galeria(l, &e.arvore, &e.tema, largura_conteudo)]]
+            } else if na_galeria && !l.segmentos.is_empty() {
+                vec![linhas_da_galeria(l, &e.arvore, &e.tema, largura_conteudo, no_foco.then_some(e.cursor.as_slice()))]
+            } else if l.embed_dono.as_deref() == Some("timeline") && nome_da_parte == "eixo" {
                 vec![linhas_do_eixo(l, &e.tema, largura_conteudo)]
             } else if matches!(&l.tipo, Tipo::Embed(n) if n == "callout") {
                 // O rótulo `[callout]` (callout sem título, ou dobrado)
@@ -917,7 +940,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 ])]]
             } else if no_calendario && nome_da_parte.starts_with("compromisso") {
                 vec![vec![linha_do_compromisso(l, &e.arvore, &e.tema, largura_conteudo, Some(&e.cursor))]]
-            } else if no_calendario && nome_da_parte == "nada" {
+            } else if l.embed_dono.is_some() && nome_da_parte == "nada" {
                 vec![vec![Line::from(vec![
                     Span::styled("  ".repeat(l.nivel), Style::default()),
                     Span::styled(l.texto.clone(), e.tema.estilo(Realce::Dica)),
@@ -1102,6 +1125,297 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     if let Some(i) = novo_topo {
         e.topo = i;
     }
+}
+
+/// O valor da parte escondida `campo` entre os filhos de `u`.
+fn valor_escondido<'a>(u: &'a Unidade, campo: &str) -> Option<&'a str> {
+    u.filhos
+        .iter()
+        .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == campo))
+        .map(|f| f.texto.as_str())
+}
+
+/// `texto` cortado ou completado com espaço até `largura` colunas.
+fn na_largura(texto: &str, largura: usize) -> String {
+    let mut s: String = texto.chars().take(largura).collect();
+    let n = s.chars().count();
+    s.push_str(&" ".repeat(largura - n));
+    s
+}
+
+/// `texto` centralizado em `largura` colunas.
+fn centralizado(texto: &str, largura: usize) -> String {
+    let texto: String = texto.chars().take(largura).collect();
+    let sobra = largura - texto.chars().count();
+    format!("{}{}{}", " ".repeat(sobra / 2), texto, " ".repeat(sobra - sobra / 2))
+}
+
+/// O cabeçalho da galeria (ciclo 325), como a barra da janela: a
+/// contagem à esquerda; à direita o seletor de tamanho `P M G`, com o
+/// ativo cheio na cor de destaque, e quantas colunas.
+fn linha_do_cabecalho_da_galeria(l: &crate::tela::Linha, arvore: &Unidade, tema: &Tema, largura: usize) -> Line<'static> {
+    let recuo = "  ".repeat(l.nivel);
+    let cab = arvore.em(&l.caminho);
+    let tamanho = cab.and_then(|u| valor_escondido(u, "tamanho")).unwrap_or("md").to_string();
+    let colunas = cab.and_then(|u| valor_escondido(u, "colunas")).unwrap_or("3").to_string();
+    let mut direita: Vec<Span<'static>> = Vec::new();
+    for (slug, rotulo) in [("sm", "P"), ("md", "M"), ("lg", "G")] {
+        let estilo = if slug == tamanho {
+            tema.miolo_do_botao(Realce::Cartao)
+        } else {
+            tema.pilula(Realce::Marca)
+        };
+        direita.push(Span::styled(format!(" {rotulo} "), estilo));
+    }
+    direita.push(Span::styled(format!("  {colunas} col"), tema.estilo(Realce::Marca)));
+    let usado = recuo.chars().count()
+        + l.texto.chars().count()
+        + direita.iter().map(|s| s.content.chars().count()).sum::<usize>();
+    let mut spans = vec![
+        Span::styled(recuo, Style::default()),
+        Span::styled(l.texto.clone(), tema.estilo(Realce::Marca)),
+        Span::styled(" ".repeat(largura.saturating_sub(usado + 1).max(2)), Style::default()),
+    ];
+    spans.extend(direita);
+    Line::from(spans)
+}
+
+/// Uma linha da grade da galeria (ciclo 325): as miniaturas lado a lado,
+/// cada uma do tamanho de uma coluna da grade.
+///
+/// A janela mostra a imagem; o terminal não tem como. O que ele mostra é
+/// o QUADRO dela — o `.gallery__thumb` com o fundo da página e a borda —,
+/// da altura do tamanho escolhido, com o nome do arquivo no meio (é o que
+/// a janela faz quando a imagem falta) e a legenda embaixo. Sob o cursor,
+/// a borda e a legenda acendem.
+fn linhas_da_galeria(
+    l: &crate::tela::Linha,
+    arvore: &Unidade,
+    tema: &Tema,
+    largura: usize,
+    cursor: Option<&[usize]>,
+) -> Vec<Line<'static>> {
+    let dono = l.dono_embed.as_deref().unwrap_or(&[]);
+    let cab = arvore
+        .em(dono)
+        .and_then(|u| u.filhos.iter().find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "cabecalho")));
+    let colunas: usize = cab.and_then(|u| valor_escondido(u, "colunas")).and_then(|c| c.parse().ok()).unwrap_or(3).max(1);
+    let miolo = match cab.and_then(|u| valor_escondido(u, "tamanho")) {
+        Some("sm") => 2,
+        Some("lg") => 7,
+        _ => 4,
+    };
+    let recuo = "  ".repeat(l.nivel);
+    let vao = 2;
+    let disponivel = largura.saturating_sub(recuo.len());
+    let w = (disponivel.saturating_sub(vao * (colunas - 1)) / colunas).max(6);
+    let nome_estilo = Style::default().bg(tema.fundo_da_pagina()).fg(tema.estilo(Realce::Marca).fg.unwrap_or(Color::Gray));
+    let borda_comum = Style::default().fg(tema.estilo(Realce::Grade).fg.unwrap_or(Color::DarkGray));
+
+    let mut linhas: Vec<Vec<Span<'static>>> = (0..miolo + 3).map(|_| vec![Span::raw(recuo.clone())]).collect();
+    for (k, seg) in l.segmentos.iter().enumerate() {
+        if k > 0 {
+            for linha in &mut linhas {
+                linha.push(Span::raw(" ".repeat(vao)));
+            }
+        }
+        let aceso = cursor.is_some_and(|c| c == seg.caminho.as_slice());
+        let borda = if aceso { tema.contorno_do_botao(Realce::Cursor) } else { borda_comum };
+        let caminho = arvore.em(&seg.caminho).and_then(|u| valor_escondido(u, "caminho")).unwrap_or("").to_string();
+        let arquivo = caminho.rsplit('/').next().unwrap_or("").to_string();
+        let dentro = w - 2;
+        linhas[0].push(Span::styled(format!("▗{}▖", "▄".repeat(dentro)), borda));
+        for r in 0..miolo {
+            let meio = if r == miolo / 2 { centralizado(&arquivo, dentro) } else { " ".repeat(dentro) };
+            linhas[r + 1].push(Span::styled("▐", borda));
+            linhas[r + 1].push(Span::styled(meio, nome_estilo));
+            linhas[r + 1].push(Span::styled("▌", borda));
+        }
+        linhas[miolo + 1].push(Span::styled(format!("▝{}▘", "▀".repeat(dentro)), borda));
+        let (legenda, estilo) = if seg.texto != caminho && !seg.texto.is_empty() {
+            (seg.texto.clone(), tema.estilo(Realce::Texto))
+        } else {
+            ("Legenda".to_string(), tema.estilo(Realce::Dica))
+        };
+        let estilo = if aceso { tema.estilo(Realce::Cursor) } else { estilo };
+        linhas[miolo + 2].push(Span::styled(na_largura(&format!(" {legenda}"), w), estilo));
+    }
+    linhas.into_iter().map(Line::from).collect()
+}
+
+/// Quebra uma linha já estilizada em pedaços de `largura` colunas, na
+/// última palavra que cabe; a continuação herda o recuo. Cada pedaço sai
+/// completo até a largura, com o fundo `fundo` onde o trecho não tem um.
+fn quebrar_linha(linha: Line<'static>, largura: usize, fundo: Color) -> Vec<Line<'static>> {
+    let celulas: Vec<(char, Style)> =
+        linha.spans.iter().flat_map(|s| s.content.chars().map(move |c| (c, s.style))).collect();
+    let recuo = celulas.iter().take_while(|(c, _)| *c == ' ').count().min(largura / 2);
+    let largura = largura.max(1);
+    let mut pedacos: Vec<Vec<(char, Style)>> = Vec::new();
+    let mut resto: &[(char, Style)] = &celulas;
+    let mut primeiro = true;
+    loop {
+        let prefixo = if primeiro { 0 } else { recuo };
+        let cabe = largura.saturating_sub(prefixo).max(1);
+        if resto.len() <= cabe {
+            let mut p: Vec<(char, Style)> = vec![(' ', Style::default()); prefixo];
+            p.extend_from_slice(resto);
+            pedacos.push(p);
+            break;
+        }
+        let corte = resto[..=cabe.min(resto.len() - 1)]
+            .iter()
+            .rposition(|(c, _)| *c == ' ')
+            .filter(|i| *i > 0)
+            .unwrap_or(cabe);
+        let mut p: Vec<(char, Style)> = vec![(' ', Style::default()); prefixo];
+        p.extend_from_slice(&resto[..corte]);
+        pedacos.push(p);
+        resto = &resto[corte..];
+        while resto.first().is_some_and(|(c, _)| *c == ' ') {
+            resto = &resto[1..];
+        }
+        primeiro = false;
+        if resto.is_empty() {
+            break;
+        }
+    }
+    pedacos
+        .into_iter()
+        .map(|p| {
+            // Sob o cursor a faixa vai até a borda, na cor dele.
+            let estilo_final = p.last().map(|(_, s)| *s).filter(|s| s.bg.is_some());
+            let mut spans: Vec<Span<'static>> = p
+                .iter()
+                .map(|(c, s)| Span::styled(c.to_string(), if s.bg.is_some() { *s } else { s.bg(fundo) }))
+                .collect();
+            let n = p.len();
+            if n < largura {
+                spans.push(Span::styled(
+                    " ".repeat(largura - n),
+                    estilo_final.unwrap_or_else(|| Style::default().bg(fundo)),
+                ));
+            }
+            Line::from(spans)
+        })
+        .collect()
+}
+
+/// O embed de colunas inteiro, com os painéis LADO A LADO (ciclo 326).
+///
+/// Na janela é uma grade de painéis de markdown, cada um com a sua
+/// fração da largura (`2fr 1fr`). Aqui cada painel é um quadro com o
+/// fundo da página por dentro — é o que a janela mostra, o embed não tem
+/// caixa própria —, a largura `Nfr` em cima (a barra que a janela mostra
+/// no foco) e o markdown dele com o mesmo desenho do resto da página,
+/// quebrado na largura do painel. O painel com o cursor acende a borda.
+fn linhas_das_colunas(
+    e: &Estado,
+    dono: &[usize],
+    linhas_visiveis: &[&crate::tela::Linha],
+    largura: usize,
+) -> Vec<Line<'static>> {
+    let Some(embed) = e.arvore.em(dono) else { return Vec::new() };
+    let paineis = &embed.filhos;
+    if paineis.is_empty() {
+        return Vec::new();
+    }
+    let nivel = linhas_visiveis
+        .iter()
+        .find(|f| f.caminho.len() == dono.len() + 1 && f.caminho.starts_with(dono))
+        .map_or(1, |f| f.nivel);
+    let recuo = "  ".repeat(nivel);
+    let vao = 2;
+    let fracoes: Vec<usize> =
+        paineis.iter().map(|p| valor_escondido(p, "largura").and_then(|w| w.parse().ok()).unwrap_or(1).max(1)).collect();
+    let total: usize = fracoes.iter().sum();
+    let disponivel = largura.saturating_sub(recuo.len() + vao * (paineis.len() - 1));
+    let mut larguras: Vec<usize> = fracoes.iter().map(|f| (disponivel * f / total).max(8)).collect();
+    let usado: usize = larguras.iter().sum();
+    if let Some(ultima) = larguras.last_mut() {
+        *ultima = (*ultima + disponivel.saturating_sub(usado)).max(8);
+    }
+    let fundo = e.tema.fundo_da_pagina();
+    let no_foco = e.foco == Foco::Conteudo;
+    let borda_comum = Style::default().fg(e.tema.estilo(Realce::Grade).fg.unwrap_or(Color::DarkGray));
+
+    let colunas: Vec<Vec<Line<'static>>> = paineis
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            let caminho: Vec<usize> = [dono, &[i]].concat();
+            let w = larguras[i];
+            let dentro = w.saturating_sub(4).max(1);
+            let aceso = no_foco && e.cursor.starts_with(&caminho);
+            let borda = if aceso { e.tema.contorno_do_botao(Realce::Cursor) } else { borda_comum };
+            let mut miolo: Vec<Line<'static>> = vec![Line::from(Span::styled(
+                format!("{:>dentro$}", format!("{}fr", fracoes[i])),
+                Style::default().bg(fundo).fg(e.tema.estilo(Realce::Marca).fg.unwrap_or(Color::Gray)),
+            ))];
+            let conteudo: Vec<&crate::tela::Linha> = linhas_visiveis
+                .iter()
+                .copied()
+                .filter(|f| f.caminho.len() > caminho.len() && f.caminho.starts_with(&caminho))
+                .filter(|f| !matches!(f.tipo, Tipo::Lista | Tipo::ListaOrdenada) || e.dobrados.contains(&f.caminho))
+                .collect();
+            let base = conteudo.iter().map(|f| f.nivel).min().unwrap_or(0);
+            if conteudo.is_empty() {
+                miolo.push(Line::from(Span::styled(
+                    na_largura("Painel vazio", dentro),
+                    e.tema.estilo(Realce::Dica).bg(fundo),
+                )));
+            }
+            for f in conteudo {
+                let mut f = f.clone();
+                f.nivel -= base;
+                let sob_cursor = no_foco && f.mostra(&e.cursor);
+                let linha = linha_estilizada(&f, sob_cursor, e.dobrados.contains(&f.caminho), &e.tema, dentro);
+                let linha = Line::from(
+                    linha.spans.into_iter().map(|s| Span::styled(s.content.into_owned(), s.style)).collect::<Vec<_>>(),
+                );
+                miolo.extend(quebrar_linha(linha, dentro, fundo));
+            }
+            let mut quadro = vec![Line::from(Span::styled(format!("▗{}▖", "▄".repeat(w - 2)), borda))];
+            for m in miolo {
+                let mut spans = vec![Span::styled("▐", borda), Span::styled(" ", Style::default().bg(fundo))];
+                spans.extend(m.spans);
+                spans.push(Span::styled(" ", Style::default().bg(fundo)));
+                spans.push(Span::styled("▌", borda));
+                quadro.push(Line::from(spans));
+            }
+            quadro.push(Line::from(Span::styled(format!("▝{}▘", "▀".repeat(w - 2)), borda)));
+            quadro
+        })
+        .collect();
+
+    // Os painéis têm a altura do mais alto: o fundo de dentro continua
+    // até a borda de baixo, como a grade da janela alinha pelo topo mas
+    // a caixa aqui fecha junta.
+    let altura = colunas.iter().map(|c| c.len()).max().unwrap_or(0);
+    (0..altura)
+        .map(|r| {
+            let mut spans = vec![Span::raw(recuo.clone())];
+            for (i, quadro) in colunas.iter().enumerate() {
+                if i > 0 {
+                    spans.push(Span::raw(" ".repeat(vao)));
+                }
+                let w = larguras[i];
+                let aceso = no_foco && e.cursor.starts_with(&[dono, &[i]].concat());
+                let borda = if aceso { e.tema.contorno_do_botao(Realce::Cursor) } else { borda_comum };
+                let n = quadro.len();
+                if r < n - 1 {
+                    spans.extend(quadro[r].spans.iter().cloned());
+                } else if r == altura - 1 {
+                    spans.extend(quadro[n - 1].spans.iter().cloned());
+                } else {
+                    spans.push(Span::styled("▐", borda));
+                    spans.push(Span::styled(" ".repeat(w - 2), Style::default().bg(fundo)));
+                    spans.push(Span::styled("▌", borda));
+                }
+            }
+            Line::from(spans)
+        })
+        .collect()
 }
 
 /// O respiro entre dois botões vizinhos.
@@ -2137,8 +2451,61 @@ fn pular_pro_mes_com_evento(e: &mut Estado, adiante: bool) -> bool {
 /// ciclo 285 e ainda não tem caminho até aqui. O comando é consumido e
 /// não faz nada, em vez de vazar pro tratamento de tecla e disparar
 /// outra coisa por engano.
+/// As grades que o desenho põe lado a lado e o modelo guarda de outro
+/// jeito (ciclos 325 e 326):
+///
+/// - Num painel de colunas, `h`/`l` vão pro painel vizinho — no modelo
+///   os painéis são irmãos em coluna, mas na tela estão lado a lado.
+/// - Numa miniatura da galeria, `j`/`k` vão pra miniatura de baixo/cima
+///   na MESMA coluna da grade, em vez de sair da fileira.
+fn andar_na_grade(e: &mut Estado, mov: Movimento, vezes: u32) -> bool {
+    let Some((&ultimo, pai)) = e.cursor.split_last() else { return false };
+    let Some(pai_u) = e.arvore.em(pai) else { return false };
+    let lateral = matches!(mov, Movimento::Esquerda | Movimento::Direita);
+    let vertical = matches!(mov, Movimento::Cima | Movimento::Baixo);
+    let adiante = matches!(mov, Movimento::Direita | Movimento::Baixo);
+    let passo = |i: usize, total: usize| -> usize {
+        if adiante {
+            (i + vezes.max(1) as usize).min(total.saturating_sub(1))
+        } else {
+            i.saturating_sub(vezes.max(1) as usize)
+        }
+    };
+    if lateral && matches!(&pai_u.tipo, Tipo::Embed(n) if n == "columns") {
+        let destino = passo(ultimo, pai_u.filhos.len());
+        e.cursor = [pai, &[destino]].concat();
+        return true;
+    }
+    let e_foto = matches!(&pai_u.tipo, Tipo::Parte { nome, .. } if nome == "fotos");
+    if vertical && e_foto {
+        let Some((&fileira, galeria)) = pai.split_last() else { return false };
+        let Some(g) = e.arvore.em(galeria) else { return false };
+        let fotos: Vec<usize> = g
+            .filhos
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "fotos"))
+            .map(|(i, _)| i)
+            .collect();
+        let Some(k) = fotos.iter().position(|i| *i == fileira) else { return false };
+        let alvo = fotos[passo(k, fotos.len())];
+        // Na primeira ou na última linha da grade, sai dela como sempre.
+        if alvo == fileira {
+            return false;
+        }
+        let na_linha = g.filhos[alvo].filhos.len();
+        e.cursor = [galeria, &[alvo, ultimo.min(na_linha.saturating_sub(1))]].concat();
+        return true;
+    }
+    false
+}
+
 fn comando_de_vim(e: &mut Estado, c: Comando) {
     let Comando::Mover(mov, vezes) = c else { return };
+    if andar_na_grade(e, mov, vezes) {
+        e.seguir_cursor();
+        return;
+    }
     // Onde o cursor está, o PAI arruma os filhos como? (ciclo 297)
     //
     // Num galho em linha os irmãos estão lado a lado, e aí quem anda
@@ -3384,20 +3751,61 @@ mod testes {
     }
 
     #[test]
-    fn a_miniatura_da_galeria_vira_selo_preenchido() {
-        // O terminal não desenha a imagem — o selo colorido é o que
-        // sobra pra dizer "aqui tinha uma" (ciclo 304).
+    fn a_galeria_e_uma_grade_de_quadros_com_legenda() {
+        // A barra e a grade da janela (ciclo 325): contagem, tamanho e
+        // colunas em cima; as miniaturas LADO A LADO, cada uma um quadro
+        // com o nome do arquivo no meio e a legenda embaixo.
         let mut e = Estado::novo(paginas(), com_galeria());
         e.foco = Foco::Paginas;
-        let tudo = desenho(&mut e, 60, 14).join("\n");
-        assert!(
-            tudo.contains("▐ Primeira ▌"),
-            "a miniatura não virou selo preenchido:\n{tudo}"
+        let tela = desenho(&mut e, 90, 16);
+        let tudo = tela.join("\n");
+        assert!(tela.iter().any(|l| l.contains("2 imagens") && l.contains(" P  M  G ") && l.contains("3 col")), "{tudo}");
+        assert!(tela.iter().any(|l| l.contains("▖  ▗")), "os quadros não ficaram lado a lado:\n{tudo}");
+        assert!(tela.iter().any(|l| l.contains("a.png") && l.contains("b.png")), "{tudo}");
+        assert!(tela.iter().any(|l| l.contains("Primeira") && l.contains("Segunda")), "{tudo}");
+    }
+
+    #[test]
+    fn na_galeria_j_e_k_andam_na_mesma_coluna_da_grade() {
+        let mut e = Estado::novo(
+            paginas(),
+            analisar("{{ type: \"gallery\" }}\ncolumns: 2\nitems:\n- path: a.png\n- path: b.png\n- path: c.png\n{{ /gallery }}\n\nfim\n"),
         );
-        assert!(
-            tudo.contains("▐ Segunda ▌"),
-            "a segunda miniatura sumiu:\n{tudo}"
+        e.foco = Foco::Conteudo;
+        // embed → cabeçalho, fileira [a, b], fileira [c].
+        e.cursor = vec![0, 1, 1];
+        tecla(&mut e, "j");
+        assert_eq!(e.cursor, vec![0, 2, 0], "a linha de baixo só tem uma");
+        tecla(&mut e, "k");
+        assert_eq!(e.cursor, vec![0, 1, 0]);
+        tecla(&mut e, "l");
+        assert_eq!(e.cursor, vec![0, 1, 1]);
+    }
+
+    #[test]
+    fn as_colunas_ficam_lado_a_lado_na_proporcao_e_h_l_trocam_de_painel() {
+        let mut e = Estado::novo(
+            paginas(),
+            analisar("{{ type: \"columns\" }}\ncolumns:\n- width: 2\n  body: |\n    Esquerda larga com um texto comprido que precisa quebrar.\n- width: 1\n  body: Direita.\n{{ /columns }}\n"),
         );
+        e.foco = Foco::Paginas;
+        let tela = desenho(&mut e, 100, 16);
+        let tudo = tela.join("\n");
+        let lado_a_lado = tela.iter().find(|l| l.contains("Esquerda") && l.contains("Direita.")).expect(&tudo);
+        let esq = lado_a_lado.find("2fr").or_else(|| lado_a_lado.find("Esquerda")).unwrap();
+        assert!(esq > 0);
+        let proporcao = tela.iter().find(|l| l.contains("2fr") && l.contains("1fr")).expect(&tudo);
+        let (a, b) = (proporcao.chars().position(|c| c == '2').unwrap(), proporcao.chars().position(|c| c == '1').unwrap());
+        assert!(b > a, "{tudo}");
+        assert!(!tudo.contains("pane"), "o nome da parte vazou:\n{tudo}");
+        // O texto longo quebra dentro do painel em vez de invadir o outro.
+        assert!(tela.iter().any(|l| l.contains("quebrar")), "{tudo}");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0, 0];
+        tecla(&mut e, "l");
+        assert_eq!(e.cursor, vec![0, 1]);
+        tecla(&mut e, "h");
+        assert_eq!(e.cursor, vec![0, 0]);
     }
 
     /// O quadro inteiro, com o estilo de cada célula.

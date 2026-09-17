@@ -908,30 +908,60 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
         }
 
         // Cada painel é um grupo cujo conteúdo também é markdown.
+        // Cada painel é um grupo cujo conteúdo também é markdown. A
+        // LARGURA (as frações do `grid-template-columns` da janela) vai
+        // numa parte escondida: é dado de desenho, pro terminal pôr os
+        // painéis lado a lado na mesma proporção (ciclo 326).
         EmbedData::Columns(d) => d
             .columns
             .iter()
-            .map(|painel| grupo("pane", String::new(), unidades_de_texto(&painel.body)))
+            .map(|painel| {
+                let mut filhos = vec![item("largura", painel.width.to_string())];
+                filhos.extend(unidades_de_texto(&painel.body));
+                grupo("pane", String::new(), filhos)
+            })
             .collect(),
 
         // "miniatura", não "item" (ciclo 304): o terminal não desenha a
         // imagem, então o nome da parte é quem diz que ali era pra ser
-        // uma — e é o gancho que o desenho usa pra pintar o selo que
+        // uma — e é o gancho que o desenho usa pra pintar o quadro que
         // faz as vezes dela.
-        EmbedData::Gallery(d) => d
-            .items
-            .iter()
-            .map(|i| {
-                item(
-                    "miniatura",
-                    if i.caption.is_empty() {
-                        i.path.clone()
-                    } else {
-                        i.caption.clone()
-                    },
+        //
+        // A GRADE da janela (ciclo 325): um cabeçalho com a contagem, o
+        // tamanho e as colunas (escondidos, dado de desenho), e uma
+        // fileira por linha da grade — `columns` miniaturas lado a lado.
+        // Cada miniatura carrega o item do arquivo e o caminho da imagem.
+        EmbedData::Gallery(d) => {
+            let n = d.items.len();
+            let colunas = (d.columns as usize).max(1);
+            let cabecalho = arranjado(
+                "cabecalho",
+                format!("{n} {}", if n == 1 { "imagem" } else { "imagens" }),
+                vec![item("tamanho", d.size.slug()), item("colunas", colunas.to_string())],
+                Arranjo::Folha,
+            );
+            let mut partes = vec![cabecalho];
+            if d.items.is_empty() {
+                partes.push(item("nada", "Nenhuma imagem ainda — use \"+ imagem\" na janela pra escolher um arquivo de assets/."));
+            }
+            partes.extend(d.items.chunks(colunas).enumerate().map(|(k, fila)| {
+                fileira(
+                    "fotos",
+                    fila.iter()
+                        .enumerate()
+                        .map(|(j, i)| {
+                            arranjado(
+                                "miniatura",
+                                if i.caption.is_empty() { i.path.clone() } else { i.caption.clone() },
+                                vec![item("indice", (k * colunas + j).to_string()), item("caminho", i.path.clone())],
+                                Arranjo::Folha,
+                            )
+                        })
+                        .collect(),
                 )
-            })
-            .collect(),
+            }));
+            partes
+        }
 
         // Cada item vira uma BARRA proporcional — a mesma aritmética
         // que a janela usa pra desenhar (`embed::bar_span`, ciclo 167),
@@ -1926,7 +1956,8 @@ mod partes_de_embed {
             "{{ type: \"gallery\" }}\nitems:\n- path: a.png\n  caption: A\n{{ /gallery }}\n",
         );
         assert!(e.politica().atomica);
-        assert_eq!(e.filhos.len(), 1);
+        // O cabeçalho e a fileira da grade (ciclo 325).
+        assert_eq!(e.filhos.len(), 2);
 
         let d = analisar(
             "{{ type: \"gallery\" }}\nitems:\n- path: a.png\n  caption: A\n{{ /gallery }}\n",
@@ -1934,7 +1965,9 @@ mod partes_de_embed {
         // Um destino só: o embed. A imagem está na árvore e não na
         // navegação.
         assert_eq!(d.navegaveis().len(), 1);
-        assert_eq!(d.percorrer().len(), 2);
+        // O embed, o cabeçalho (com tamanho e colunas), a fileira e a
+        // miniatura (com índice e caminho).
+        assert_eq!(d.percorrer().len(), 8);
     }
 
     #[test]
@@ -2245,8 +2278,10 @@ mod partes_de_embed {
             "{{ type: \"columns\" }}\ncolumns:\n- width: 1\n  body: |\n    Esquerda.\n- width: 2\n  body: |\n    Direita.\n{{ /columns }}\n",
         );
         assert_eq!(partes(&e), ["parte:pane", "parte:pane"]);
-        assert_eq!(partes(&e.filhos[0]), ["paragrafo"]);
-        assert_eq!(e.filhos[0].filhos[0].texto, "Esquerda.");
+        // A largura vem na frente, escondida (ciclo 326).
+        assert_eq!(partes(&e.filhos[0]), ["parte:largura", "paragrafo"]);
+        assert_eq!(e.filhos[1].filhos[0].texto, "2");
+        assert_eq!(e.filhos[0].filhos[1].texto, "Esquerda.");
     }
 
     #[test]
@@ -2263,15 +2298,20 @@ mod partes_de_embed {
         let g = embed_de(
             "{{ type: \"gallery\" }}\nitems:\n- path: a.png\n  caption: Legenda\n- path: b.png\n{{ /gallery }}\n",
         );
+        // O cabeçalho da grade e uma fileira por linha dela (ciclo 325):
+        // três colunas por padrão, então as duas ficam na mesma.
+        assert_eq!(partes(&g), ["parte:cabecalho", "parte:fotos"]);
+        assert_eq!(g.filhos[0].texto, "2 imagens");
+        assert_eq!(g.filhos[1].tipo.arranjo(), Arranjo::Linha);
         // Sem legenda, o caminho identifica.
         assert_eq!(
-            g.filhos.iter().map(|i| i.texto.clone()).collect::<Vec<_>>(),
+            g.filhos[1].filhos.iter().map(|i| i.texto.clone()).collect::<Vec<_>>(),
             ["Legenda", "b.png"]
         );
         // "miniatura", não "item" (ciclo 304): o nome é o gancho que o
-        // desenho do terminal usa pra pintar o selo que faz as vezes da
+        // desenho do terminal usa pra pintar o quadro que faz as vezes da
         // imagem que ele não consegue mostrar.
-        assert_eq!(partes(&g), ["parte:miniatura", "parte:miniatura"]);
+        assert_eq!(partes(&g.filhos[1]), ["parte:miniatura", "parte:miniatura"]);
 
         let a = embed_de(
             "{{ type: \"actions\" }}\nbuttons:\n- label: Abrir\n  action: open-page\n{{ /actions }}\n",
