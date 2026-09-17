@@ -27,9 +27,9 @@
 │                                 │  J K             descer / subir na ordem                             │                                 │
 │                                 │  Ctrl+A Ctrl+X   aumentar / diminuir (duração, nível, opção)         │                                 │
 │                                 │  ~               alternar (caixa, destaque, tipo)                    │                                 │
+│                                 │  =               configurar (botão, consulta)                        │                                 │
 │                                 │  u Ctrl+R        desfazer / refazer                                  │                                 │
 │                                 │  Esc             confirmar a inserção                                │                                 │
-│                                 │                                                                      │                                 │
 │                                 ╰ j k rolar · Esc ─────────────────────────────────────────────────────╯                                 │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -68,9 +68,9 @@ adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmjjjjjjjjjjjjj
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
+adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfggggggggggggggggggmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
-adddddddddddddddddddddddddddddddddfjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjfdddddddddddddddddddddddddddddddddb
 adddddddddddddddddddddddddddddddddfmmmmmmmmmmmmmmmmmffffffffffffffffffffffffffffffffffffffffffffffffffffffdddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
