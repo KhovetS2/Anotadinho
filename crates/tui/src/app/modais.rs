@@ -39,6 +39,14 @@ pub enum Pedido {
     },
     /// Listar os templates pra "Nova página" (ciclo 350).
     ListarTemplates,
+    /// Trocar a pasta de trabalho do agente, ou dar alcance a outra
+    /// (ciclo 369). Vazia, na de trabalho, é a raiz do projeto.
+    PastaDoAgente {
+        /// A pasta.
+        pasta: String,
+        /// Pasta extra.
+        extra: bool,
+    },
     /// Gravar por cima do disco, sem a trava de versão (ciclo 363).
     GravarPorCima {
         /// A página.
@@ -364,6 +372,8 @@ pub enum AcaoDaEntrada {
     Commit,
     /// A URL do link do menu Formatar (ciclo 357).
     Link,
+    /// A pasta do agente (ciclo 369): `true` é uma pasta extra.
+    PastaDoAgente(bool),
 }
 
 /// O que uma [`Modal::Escolha`] faz com o item escolhido.
@@ -406,6 +416,8 @@ pub enum AcaoDaEscolha {
     Botoes,
     /// A página de uma célula de tabela (ciclo 367).
     PaginaDaCelula,
+    /// A pasta extra que sai do alcance do agente (ciclo 369).
+    TirarPasta,
 }
 
 /// Os comandos da barra, como na janela.
@@ -697,6 +709,12 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 AcaoDaEscolha::Mostrar => {}
                 AcaoDaEscolha::Formatar => super::formatar::escolher(e, &chave),
                 AcaoDaEscolha::PaginaDaCelula => super::edicao::pagina_escolhida(e, &chave),
+                AcaoDaEscolha::TirarPasta => {
+                    let mut a = e.preferencias.agente.clone().unwrap_or_default();
+                    a.pastas_extras.retain(|p| *p != chave);
+                    e.preferencias.agente = Some(a);
+                    e.pedidos.push(Pedido::GravarPreferencias);
+                }
                 AcaoDaEscolha::Destaque => {
                     e.preferencias.destaque = chave;
                     let tema = e.preferencias.tema.clone();
@@ -760,6 +778,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     super::formatar::retomar(e);
                 }
             }
+            "Enter" if matches!(acao, AcaoDaEntrada::PastaDoAgente(_)) => {
+                let AcaoDaEntrada::PastaDoAgente(extra) = acao else { unreachable!() };
+                e.pedidos.push(Pedido::PastaDoAgente { pasta: campo.texto.trim().to_string(), extra });
+            }
             "Enter" if acao == AcaoDaEntrada::Link => {
                 let url = campo.texto.trim().to_string();
                 if url.is_empty() {
@@ -788,7 +810,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         AcaoDaEntrada::NovaPasta(dentro) => Pedido::CriarPasta(format!("{dentro}/{t}")),
                         AcaoDaEntrada::PaginaDeTemplate { template, pasta } => Pedido::CriarDeTemplate { template, titulo: t, pasta },
                         AcaoDaEntrada::Commit => Pedido::GitCommit(t),
-                        AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid | AcaoDaEntrada::Link => return,
+                        AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid | AcaoDaEntrada::Link | AcaoDaEntrada::PastaDoAgente(_) => return,
                     });
                 }
             }

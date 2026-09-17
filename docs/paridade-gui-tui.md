@@ -80,6 +80,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Janela | TUI | Ciclo / nota |
 |---|---|---|
 | Conversa, anexos, prompt padrão, virar spec/proposta/execução | ✅ | 340, 341 |
+| Conversa: pasta de trabalho e pastas extras do agente | ✅ | 369 — no topo; trocar/dar alcance/tirar pela barra |
 | Configurar agente (binário, args, pasta, pastas extras) | ✅ | 350 — "Configurar agente…" (formulário, valida `{prompt}`) |
 | Propostas do agente (diff, aplicar, recusar) | ✅ | 346 — "Propostas do agente" na barra |
 | Git: status, pull, commit & push | ✅ | 349 — "Git: status e sincronizar…" na barra; histórico da página |

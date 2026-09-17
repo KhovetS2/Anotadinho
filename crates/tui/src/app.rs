@@ -9266,4 +9266,28 @@ mod testes {
         tecla(&mut e, "Enter");
         assert!(matches!(e.modal, Some(Modal::Detalhe { alvo: modais::AlvoDoDetalhe::Evento { indice: 1, .. }, .. })));
     }
+
+    // --- Ciclo 369: pastas do agente na conversa -------------------------------
+
+    #[test]
+    fn a_conversa_mostra_e_troca_as_pastas_do_agente() {
+        let mut e = conversa_aberta();
+        let mut a = anotadinho_core::agente::Adaptador::default();
+        a.arg_pasta_extra = "--add-dir".into();
+        a.pastas_extras = vec!["/home/x/outro-repo".into()];
+        e.preferencias.agente = Some(a);
+        let tela = desenho(&mut e, 160, 40).join("\n");
+        assert!(tela.contains("▭ trabalha na raiz do projeto") && tela.contains("outro-repo ×") && tela.contains("+ pasta"), "{tela}");
+        tecla(&mut e, ":");
+        digitar(&mut e, "pasta de trabalho");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "/tmp");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos.last(), Some(&Pedido::PastaDoAgente { pasta: "/tmp".into(), extra: false }));
+        tecla(&mut e, ":");
+        digitar(&mut e, "tirar pasta");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "Enter");
+        assert!(e.preferencias.agente.as_ref().unwrap().pastas_extras.is_empty());
+    }
 }

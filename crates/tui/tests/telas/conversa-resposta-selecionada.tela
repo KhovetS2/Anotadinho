@@ -2,6 +2,7 @@
 ┌páginas───────────────────────────────────────┐┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │cena                                          ││ Planejar: Imagens arrastadas: persistir como as coladas   ϟ Claude Code                         ⌁ 2 anexo(s) │
 │                                              ││  imagens-coladas-e-arrastadas ×   escrita-no-vault ×                                                         │
+│                                              ││  ▭ trabalha na raiz do projeto   + pasta                                                                     │
 │                                              ││──────────────────────────────────────────────────────────────────────────────────────────────────────────────│
 │                                              ││ ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖                           │
 │                                              ││ ▐ AGENTE  2026-08-24 19:46                                                       ▌                           │
@@ -41,7 +42,6 @@
 │                                              ││ ▐     Isso é compatível com a proposta aprovada.                                 ▌                           │
 │                                              ││ ▐   - Abrir literalmente o diálogo de /imagem: isso muda o drop para uma         ▌                           │
 │                                              ││ ▐     operação em duas etapas e não aproveita diretamente o arquivo arrastado.   ▌                           │
-│                                              ││ ▐     Também entra em tensão com o RF1, que descreve salvar e inserir ao         ▌                           │
 │                                              ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
 │                                              ││▐ Escreva e mande. i escreve · p prompt padrão · Ctrl+J quebra linha.                                        ▌│
 │                                              ││▐                                                                                                            ▌│
@@ -53,6 +53,7 @@
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddddddddabeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddfffffffffffffffddddddddddddddddddddddddgggggggggggggb
 addddddddddddddddddddddddddddddddddddddddddddddabdhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhdhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddddddddabdfffffffffffffffffffffffffffffffgggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
 addddddddddddddddddddddddddddddddddddddddddddddabdbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbdddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijkkkkkklllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
@@ -92,7 +93,6 @@ addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmmmmmmmmmmmmmmmm
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjlloooooooooooooooooooooooooooooooopppppppommmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
 addddddddddddddddddddddddddddddddddddddddddddddabqlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjqb
 addddddddddddddddddddddddddddddddddddddddddddddabqjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjqb

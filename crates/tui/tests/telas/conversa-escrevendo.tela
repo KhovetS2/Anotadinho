@@ -2,8 +2,8 @@
 ┌páginas───────────────────────────────────────┐┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │cena                                          ││ Planejar: Imagens arrastadas: persistir como as coladas   ϟ Claude Code                         ⌁ 2 anexo(s) │
 │                                              ││  imagens-coladas-e-arrastadas ×   escrita-no-vault ×                                                         │
+│                                              ││  ▭ trabalha na raiz do projeto   + pasta                                                                     │
 │                                              ││──────────────────────────────────────────────────────────────────────────────────────────────────────────────│
-│                                              ││ ▐   - Abre-se um campo pedindo “Caminho da imagem ou URL”.                       ▌                           │
 │                                              ││ ▐   - Se for uma URL iniciada por http, o editor insere diretamente um <img>     ▌                           │
 │                                              ││ ▐     apontando para ela. A imagem não é copiada para o vault.                   ▌                           │
 │                                              ││ ▐   - Se for um caminho local, o backend copia o arquivo para assets/            ▌                           │
@@ -53,38 +53,38 @@
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddddddddabeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddfffffffffffffffddddddddddddddddddddddddgggggggggggggb
 addddddddddddddddddddddddddddddddddddddddddddddabdhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhdhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddddddddabdfffffffffffffffffffffffffffffffgggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmljjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllnnnnlllllllllllllllllllllllllllllllllnnnnnjjjjjidddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllmmmmlllllllllllllllllllllllllllllllllmmmmmjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllnnnnnnnjjjjjjjjjjjjidddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjnnnnnnnnnnnnnnnnnnnnnnnnljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmmmmmmmmmmmmmmmmljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijllllllllllnnnnnnnllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjidddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddddddddabdijllllllllllmmmmmmmllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllnnnnnnnlllllnnnnnnnnnnnnnnllllllllllllllllllllljjjjjjjjjidddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllmmmmmmmlllllmmmmmmmmmmmmmmllllllllllllllllllllljjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllllnnnnnnnlllllllllllllllllllllllllllllllljjjjjjidddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllllmmmmmmmlllllllllllllllllllllllllllllllljjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllllllllllllllllllllllllllllllnnnnnnnlllllllllllllllllllllllllllljjjjjjjidddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllllllllllllllllllllllllllllllmmmmmmmlllllllllllllllllllllllllllljjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlllllllllllnnnnnnnlllllllllllllljjjjjjjidddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddddddddabdijjjkknnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnlllllllllllmmmmmmmlllllllllllllljjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmooooooomlllllllllllllllllllllllllljjjjjjjjjidddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddddddddabdijjjkknnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnooooooonlllllllllllllllllllllllllljjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
@@ -112,8 +112,8 @@ i = fg #32343f bg #32343f
 j = fg - bg #32343f
 k = fg #989eb7 bg #32343f
 l = fg #e4e8f5 bg #32343f
-m = fg #e4e8f5 bg #32343f negrito
-n = fg #5fd3b2 bg #32343f
+m = fg #5fd3b2 bg #32343f
+n = fg #e4e8f5 bg #32343f negrito
 o = fg #5fd3b2 bg #32343f negrito
 p = fg #32343f bg #272930
 q = fg #00b5ff bg #3d404f

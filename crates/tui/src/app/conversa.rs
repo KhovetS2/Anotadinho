@@ -26,7 +26,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
-use super::modais::{AcaoDaEscolha, Modal, Pedido};
+use super::modais::{AcaoDaEntrada, AcaoDaEscolha, Modal, Pedido};
 use super::{Estado, Foco};
 use crate::componentes::{Campo, Item, Lista};
 use crate::tema::Tema;
@@ -132,6 +132,11 @@ impl TelaDeConversa {
             }
         }
     }
+}
+
+/// O último pedaço de uma pasta (`/home/x/projeto` → `projeto`).
+fn nome_de_pasta(p: &str) -> String {
+    std::path::Path::new(p.trim_end_matches('/')).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| p.to_string())
 }
 
 fn nome_curto(path: &str) -> String {
@@ -286,6 +291,15 @@ pub fn comandos(e: &Estado) -> Vec<Item> {
     if c.trabalho.is_some() {
         v.push(Item::novo("■", "Interromper o agente", "interromper"));
     }
+    // As pastas do agente (ciclo 369), os botões de pasta do topo da janela.
+    let agente = e.preferencias.agente.clone().unwrap_or_default();
+    v.push(Item::novo("▭", "Pasta de trabalho do agente…", "pasta-trabalho").com_detalhe(if agente.cwd.is_empty() { "raiz do projeto".to_string() } else { agente.cwd.clone() }));
+    if !agente.arg_pasta_extra.trim().is_empty() {
+        v.push(Item::novo("▭", "Dar alcance a outra pasta…", "pasta-extra"));
+    }
+    if !agente.pastas_extras.is_empty() {
+        v.push(Item::novo("▭", "Tirar pasta do alcance…", "tirar-pasta"));
+    }
     v
 }
 
@@ -312,6 +326,24 @@ pub fn executar(e: &mut Estado, chave: &str) -> bool {
         }
         "interromper" => e.pedidos.push(Pedido::InterromperAgente(c.path.clone())),
         "prompt" => abrir_seletor_de_prompt(e),
+        "pasta-trabalho" | "pasta-extra" => {
+            let extra = chave == "pasta-extra";
+            let atual = e.preferencias.agente.as_ref().map(|a| a.cwd.clone()).unwrap_or_default();
+            e.modal = Some(Modal::Entrada {
+                titulo: if extra { "Outra pasta que o agente alcança".into() } else { "Onde o agente trabalha (vazio: raiz do projeto)".into() },
+                campo: Campo::com(if extra { String::new() } else { atual }),
+                acao: AcaoDaEntrada::PastaDoAgente(extra),
+            });
+        }
+        "tirar-pasta" => {
+            let itens = e
+                .preferencias
+                .agente
+                .as_ref()
+                .map(|a| a.pastas_extras.iter().map(|p| Item::novo("▭", nome_de_pasta(p), p.clone()).com_detalhe(p.clone())).collect())
+                .unwrap_or_default();
+            e.modal = Some(Modal::Escolha { titulo: "Tirar do alcance do agente".into(), lista: Lista::menu(itens), acao: AcaoDaEscolha::TirarPasta });
+        }
         _ => return false,
     }
     true
@@ -527,6 +559,25 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
         for a in &c.anexos {
             spans.push(Span::styled(format!(" {} × ", nome_curto(a)), pilula));
             spans.push(Span::raw(" "));
+        }
+        topo.push(Line::from(spans));
+    }
+    // As pastas do agente, como na janela: onde trabalha e as extras.
+    {
+        let pasta = Style::default().fg(t.var("text-muted")).bg(t.var("bg-elevated"));
+        let mut spans = vec![
+            Span::raw(" "),
+            Span::styled(
+                format!(" ▭ {} ", if agente.cwd.trim().is_empty() { "trabalha na raiz do projeto".to_string() } else { nome_de_pasta(&agente.cwd) }),
+                pasta,
+            ),
+        ];
+        for p in &agente.pastas_extras {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(format!(" {} × ", nome_de_pasta(p)), pasta));
+        }
+        if !agente.arg_pasta_extra.trim().is_empty() {
+            spans.push(Span::styled("  + pasta", Style::default().fg(t.var("text-muted"))));
         }
         topo.push(Line::from(spans));
     }

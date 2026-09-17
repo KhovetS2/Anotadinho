@@ -439,6 +439,29 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         .map(|t| (t.path, t.title))
                         .collect(),
                 ),
+                Pedido::PastaDoAgente { pasta, extra } => {
+                    // `~` vale como a pasta da pessoa.
+                    let pasta = match (pasta.strip_prefix('~'), std::env::var("HOME")) {
+                        (Some(resto), Ok(casa)) => format!("{casa}{resto}"),
+                        _ => pasta,
+                    };
+                    if !(pasta.is_empty() && !extra) && !std::path::Path::new(&pasta).is_dir() {
+                        estado.aviso = Some(format!("\"{pasta}\" não é uma pasta"));
+                    } else {
+                        let mut a = estado.preferencias.agente.clone().unwrap_or_default();
+                        if extra {
+                            if !a.pastas_extras.contains(&pasta) {
+                                a.pastas_extras.push(pasta);
+                            }
+                        } else {
+                            a.cwd = pasta;
+                        }
+                        estado.preferencias.agente = Some(a);
+                        if let Err(e) = gravar_preferencias(&estado.preferencias) {
+                            estado.aviso = Some(format!("não gravou as preferências: {e}"));
+                        }
+                    }
+                }
                 Pedido::GravarPorCima { path, conteudo } => match handle_write_page(vault.to_string(), path.clone(), conteudo) {
                     Ok(_) => {
                         if let Ok((_, v)) = ler(vault, &path) {
