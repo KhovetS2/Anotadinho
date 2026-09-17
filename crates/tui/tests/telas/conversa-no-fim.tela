@@ -3,7 +3,6 @@
 │cena                                          ││ Planejar: Imagens arrastadas: persistir como as coladas   ϟ Claude Code                         ⌁ 2 anexo(s) │
 │                                              ││  imagens-coladas-e-arrastadas ×   escrita-no-vault ×                                                         │
 │                                              ││──────────────────────────────────────────────────────────────────────────────────────────────────────────────│
-│                                              ││ ▐   - O texto do comando é removido.                                             ▌                           │
 │                                              ││ ▐   - Abre-se um campo pedindo “Caminho da imagem ou URL”.                       ▌                           │
 │                                              ││ ▐   - Se for uma URL iniciada por http, o editor insere diretamente um <img>     ▌                           │
 │                                              ││ ▐     apontando para ela. A imagem não é copiada para o vault.                   ▌                           │
@@ -43,18 +42,18 @@
 │                                              ││ ▐ experiência explicitamente em aberto, essa escolha ainda precisa ser feita     ▌                           │
 │                                              ││ ▐ pela pessoa antes da execução. Nenhum arquivo foi alterado.                    ▌                           │
 │                                              ││ ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘                           │
-│                                              ││──────────────────────────────────────────────────────────────────────────────────────────────────────────────│
-│                                              ││▐ Escreva e mande. i escreve · Ctrl+J quebra linha.                                                          ▌│
+│                                              ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
+│                                              ││▐ Escreva e mande. i escreve · p prompt padrão · Ctrl+J quebra linha.                                        ▌│
 │                                              ││▐                                                                                                            ▌│
 │                                              ││▐                                                                                                            ▌│
-│                                              ││ : anexar, trocar agente · Esc sai do campo                                                        Enviar  ↵  │
+│                                              ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
+│                                              ││ p ▤ Prompt padrão ⌃   : anexar, trocar agente                                                     Enviar  ↵  │
 └──────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 == estilos ==
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddddddddabeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddfffffffffffffffddddddddddddddddddddddddgggggggggggggb
 addddddddddddddddddddddddddddddddddddddddddddddabdhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhdhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmljjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllnnnnlllllllllllllllllllllllllllllllllnnnnnjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
@@ -94,11 +93,12 @@ addddddddddddddddddddddddddddddddddddddddddddddabdijllllllllllllllllllllllllllll
 addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppdddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
-addddddddddddddddddddddddddddddddddddddddddddddabakkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjab
-addddddddddddddddddddddddddddddddddddddddddddddabajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjab
-addddddddddddddddddddddddddddddddddddddddddddddabajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjab
-addddddddddddddddddddddddddddddddddddddddddddddabgggggggggggggggggggggggggggggggggggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddqqqqqqqqqqqdb
+addddddddddddddddddddddddddddddddddddddddddddddabqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqb
+addddddddddddddddddddddddddddddddddddddddddddddabrkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjrb
+addddddddddddddddddddddddddddddddddddddddddddddabrjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjrb
+addddddddddddddddddddddddddddddddddddddddddddddabrjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjrb
+addddddddddddddddddddddddddddddddddddddddddddddabqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqb
+addddddddddddddddddddddddddddddddddddddddddddddabggggggggggggggggggggggggggggggggggggggggggggggddddddddddddddddddddddddddddddddddddddddddddddddddddsssssssssssdb
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 a = fg #3d404f bg #272930
 b = fg #00b5ff bg #272930
@@ -116,4 +116,6 @@ m = fg #e4e8f5 bg #32343f negrito
 n = fg #5fd3b2 bg #32343f
 o = fg #5fd3b2 bg #32343f negrito
 p = fg #32343f bg #272930
-q = fg #ffffff bg #4a6eff negrito
+q = fg #15688d bg #272930
+r = fg #15688d bg #32343f
+s = fg #ffffff bg #4a6eff negrito

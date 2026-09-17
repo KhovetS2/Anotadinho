@@ -42,12 +42,12 @@
 │                                              ││ ▐   - Abrir literalmente o diálogo de /imagem: isso muda o drop para uma         ▌                           │
 │                                              ││ ▐     operação em duas etapas e não aproveita diretamente o arquivo arrastado.   ▌                           │
 │                                              ││ ▐     Também entra em tensão com o RF1, que descreve salvar e inserir ao         ▌                           │
-│                                              ││ ▐     arrastar.                                                                  ▌                           │
-│                                              ││──────────────────────────────────────────────────────────────────────────────────────────────────────────────│
-│                                              ││▐ Escreva e mande. i escreve · Ctrl+J quebra linha.                                                          ▌│
+│                                              ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
+│                                              ││▐ Escreva e mande. i escreve · p prompt padrão · Ctrl+J quebra linha.                                        ▌│
 │                                              ││▐                                                                                                            ▌│
 │                                              ││▐                                                                                                            ▌│
-│                                              ││ : anexar, trocar agente · Esc sai do campo                                                        Enviar  ↵  │
+│                                              ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
+│                                              ││ p ▤ Prompt padrão ⌃   : anexar, trocar agente                                                     Enviar  ↵  │
 └──────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 == estilos ==
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -93,12 +93,12 @@ addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmmmmmmmmmmmmmmmm
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjlloooooooooooooooooooooooooooooooopppppppommmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
-addddddddddddddddddddddddddddddddddddddddddddddaballlllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjab
-addddddddddddddddddddddddddddddddddddddddddddddabajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjab
-addddddddddddddddddddddddddddddddddddddddddddddabajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjab
-addddddddddddddddddddddddddddddddddddddddddddddabgggggggggggggggggggggggggggggggggggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddqqqqqqqqqqqdb
+addddddddddddddddddddddddddddddddddddddddddddddabqlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjqb
+addddddddddddddddddddddddddddddddddddddddddddddabqjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjqb
+addddddddddddddddddddddddddddddddddddddddddddddabqjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjqb
+addddddddddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+addddddddddddddddddddddddddddddddddddddddddddddabggggggggggggggggggggggggggggggggggggggggggggggddddddddddddddddddddddddddddddddddddddddddddddddddddrrrrrrrrrrrdb
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 a = fg #3d404f bg #272930
 b = fg #00b5ff bg #272930
@@ -116,4 +116,5 @@ m = fg #e4e8f5 bg #32343f
 n = fg #5fd3b2 bg #32343f
 o = fg #e4e8f5 bg #32343f negrito
 p = fg #5fd3b2 bg #32343f negrito
-q = fg #ffffff bg #4a6eff negrito
+q = fg #3d404f bg #32343f
+r = fg #ffffff bg #4a6eff negrito

@@ -6622,6 +6622,81 @@ mod testes {
         );
     }
 
+    #[test]
+    fn prompt_padrao_escolhe_preenche_bloqueia_e_devolve_o_rascunho() {
+        let mut e = conversa_aberta().com_indice_do_vault(vec![anotadinho_core::index::PageIndexEntry {
+            path: "pages/prompts-default/entender.md".into(),
+            title: "Entender um trecho".into(),
+            page_type: "prompt".into(),
+            ..Default::default()
+        }]);
+        // Rascunho antes do prompt.
+        tecla(&mut e, "i");
+        digitar(&mut e, "o parser");
+        tecla(&mut e, "Escape");
+        tecla(&mut e, "p");
+        let Some(Modal::Prompt(sel)) = &e.modal else { panic!("{:?}", e.modal) };
+        assert_eq!(sel.lista.itens.len(), 2);
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("Prompt padrão") && tela.contains("Nenhum — escrever do zero") && tela.contains("Entender um trecho"), "{tela}");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, vec![Pedido::CarregarPrompt("pages/prompts-default/entender.md".into())]);
+        e.pedidos.clear();
+        // O `main` lê a página e aplica.
+        conversa::aplicar_prompt(&mut e, "pages/prompts-default/entender.md", "---\ntype: prompt\n---\nExplique {{alvo}} e {{nivel}}.\n");
+        let c = e.conversa.as_ref().unwrap();
+        // O rascunho vira o valor da primeira variável — blindado como
+        // dado, como na janela.
+        assert!(c.rascunho.texto.starts_with("Explique ") && c.rascunho.texto.contains("o parser"), "{}", c.rascunho.texto);
+        assert!(c.rascunho.texto.ends_with(" e {{nivel}}."), "{}", c.rascunho.texto);
+        let Some(Modal::Prompt(sel)) = &e.modal else { panic!("os campos deviam ficar abertos") };
+        assert_eq!(sel.campos.len(), 2);
+        assert_eq!(sel.foco, Some(1), "o foco vai pro que falta");
+        // Enviar com marcador pendente é recusado.
+        tecla(&mut e, "Escape");
+        tecla(&mut e, "i");
+        tecla(&mut e, "Enter");
+        assert!(e.pedidos.is_empty());
+        assert!(e.aviso.as_deref().unwrap_or("").contains("marcadores"));
+        digitar(&mut e, "básico");
+        tecla(&mut e, "Enter");
+        let texto = e.conversa.as_ref().unwrap().rascunho.texto.clone();
+        assert!(texto.contains("básico") && !texto.contains("{{nivel}}"), "{texto}");
+        // Continua em inserção depois do seletor; sai pra usar `p`.
+        assert!(e.conversa.as_ref().unwrap().escrevendo);
+        tecla(&mut e, "Escape");
+        // "Nenhum" devolve o rascunho de antes.
+        tecla(&mut e, "p");
+        tecla(&mut e, "Escape");
+        tecla(&mut e, "p");
+        tecla(&mut e, "Tab");
+        tecla(&mut e, "Tab");
+        tecla(&mut e, "Tab");
+        tecla(&mut e, "k");
+        tecla(&mut e, "Enter");
+        let c = e.conversa.as_ref().unwrap();
+        assert!(c.prompt.is_none());
+        assert_eq!(c.rascunho.texto, "o parser");
+    }
+
+    #[test]
+    fn escrevendo_o_campo_acende_e_o_rodape_diz_insercao() {
+        let mut e = conversa_aberta();
+        let destaque = e.tema.var("accent-blue");
+        let conta_destaque = |e: &mut Estado| {
+            let buf = quadro(e, 120, 40);
+            (0..buf.area.height).rev().take(8).map(|y| (0..buf.area.width).filter(|x| buf[(*x, y)].style().fg == Some(destaque)).count()).sum::<usize>()
+        };
+        let antes = conta_destaque(&mut e);
+        tecla(&mut e, "i");
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("-- INSERÇÃO --"), "{tela}");
+        assert!(conta_destaque(&mut e) > antes + 100, "o contorno do campo não acendeu");
+        tecla(&mut e, "Escape");
+        assert!(!desenho(&mut e, 120, 40).join("\n").contains("-- INSERÇÃO --"));
+    }
+
     const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";
 
     fn acoes_gravadas(e: &Estado) -> anotadinho_core::embed::ActionsEmbedData {

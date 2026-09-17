@@ -64,6 +64,8 @@ pub enum Pedido {
         /// A resposta do agente.
         texto: String,
     },
+    /// Ler a página de um prompt padrão e aplicar ao campo da conversa.
+    CarregarPrompt(String),
     /// Regravar a lista de anexos da conversa.
     AnexosDaConversa {
         /// A conversa.
@@ -136,6 +138,21 @@ pub enum Modal {
     Atalhos(usize),
     /// As opções de uma coluna de seleção da tabela.
     Opcoes(EditorDeOpcoes),
+    /// O seletor de prompt padrão da conversa (ciclo 341).
+    Prompt(SeletorDePrompt),
+    /// Um texto longo pra ler, com a rolagem (o "Visualizar").
+    Visualizar(String, usize),
+}
+
+/// O seletor de prompt padrão: a lista e os campos das variáveis.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SeletorDePrompt {
+    /// "Nenhum" e os prompts do vault; a chave é o caminho.
+    pub lista: Lista,
+    /// As variáveis do prompt em uso, com o que já foi escrito.
+    pub campos: Vec<(String, Campo)>,
+    /// O campo com o teclado; `None` é a lista.
+    pub foco: Option<usize>,
 }
 
 /// O editor das opções de uma coluna de seleção (ciclo 339).
@@ -385,6 +402,70 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             _ => e.modal = Some(Modal::Atalhos(rolagem)),
         },
         Modal::Opcoes(editor) => super::edicao::tecla_nas_opcoes(e, editor, tecla),
+        Modal::Visualizar(texto, rolagem) => match tecla {
+            "Escape" | "q" | "Enter" => {}
+            "j" | "ArrowDown" => e.modal = Some(Modal::Visualizar(texto, rolagem + 1)),
+            "k" | "ArrowUp" => e.modal = Some(Modal::Visualizar(texto, rolagem.saturating_sub(1))),
+            _ => e.modal = Some(Modal::Visualizar(texto, rolagem)),
+        },
+        Modal::Prompt(mut sel) => {
+            match (tecla, sel.foco) {
+                ("Escape", _) => return,
+                // Visualizar: o texto final, se não falta marcador.
+                ("Ctrl+v", _) => {
+                    let pronto = e.conversa.as_ref().and_then(|c| {
+                        let texto = c.rascunho.texto.clone();
+                        let falta = c.prompt.as_ref().is_some_and(|p| !p.pendentes().is_empty());
+                        (!falta && !texto.trim().is_empty()).then_some(texto)
+                    });
+                    match pronto {
+                        Some(texto) => {
+                            e.modal = Some(Modal::Visualizar(texto, 0));
+                            return;
+                        }
+                        None => e.aviso = Some("Preencha todos os marcadores antes de visualizar.".into()),
+                    }
+                }
+                ("Tab" | "ArrowDown", _) if !sel.campos.is_empty() => {
+                    sel.foco = match sel.foco {
+                        None => Some(0),
+                        Some(i) if i + 1 < sel.campos.len() => Some(i + 1),
+                        Some(_) => None,
+                    };
+                }
+                ("ArrowUp", Some(i)) => sel.foco = i.checked_sub(1),
+                ("Enter", Some(i)) => {
+                    sel.foco = if i + 1 < sel.campos.len() { Some(i + 1) } else { None };
+                    // No último campo, Enter fecha: o campo da conversa está
+                    // pronto pra enviar.
+                    if sel.foco.is_none() {
+                        return;
+                    }
+                }
+                (outra, Some(i)) => {
+                    let (nome, campo) = &mut sel.campos[i];
+                    if campo.tecla(outra) {
+                        let (nome, valor) = (nome.clone(), campo.texto.clone());
+                        super::conversa::preencher_variavel(e, &nome, &valor);
+                    }
+                }
+                (outra, None) => match sel.lista.tecla(outra) {
+                    Resposta::Escolhido(chave) if chave.is_empty() => {
+                        super::conversa::tirar_prompt(e);
+                        return;
+                    }
+                    Resposta::Escolhido(chave) => {
+                        // O `main` lê a página e chama `aplicar_prompt`,
+                        // que reabre o seletor com os campos.
+                        e.pedidos.push(Pedido::CarregarPrompt(chave));
+                        return;
+                    }
+                    Resposta::Fechar => return,
+                    Resposta::Nada => {}
+                },
+            }
+            e.modal = Some(Modal::Prompt(sel));
+        }
     }
 }
 
@@ -438,6 +519,7 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("Enter", "virar spec/proposta/execução (na resposta)"),
             ("y", "copiar a mensagem"),
             ("Ctrl+X", "interromper o agente"),
+            ("p / Ctrl+P", "prompt padrão (Tab campos, Ctrl+V visualizar)"),
             (":", "anexar, tirar anexo, trocar agente"),
         ],
     ),
@@ -503,6 +585,58 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
             }
             let max = linhas.len().saturating_sub(dentro.height as usize);
             f.render_widget(Paragraph::new(linhas).scroll(((*rolagem).min(max) as u16, 0)), dentro);
+        }
+        Modal::Visualizar(texto, rolagem) => {
+            let area = componentes::area_do_modal(tela, 90, tela.height.saturating_sub(6));
+            let dentro = componentes::desenhar_modal(f, area, "Visualizar", "j k rolar · Esc", t);
+            let p = Paragraph::new(texto.clone())
+                .style(Style::default().fg(t.var("text-primary")))
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .scroll((*rolagem as u16, 0));
+            f.render_widget(p, dentro);
+        }
+        Modal::Prompt(sel) => {
+            // Como o popover da janela: embaixo, à esquerda, em cima do
+            // botão do prompt.
+            let altura_lista = sel.lista.itens.len().min(10) as u16;
+            let altura = altura_lista + if sel.campos.is_empty() { 0 } else { sel.campos.len() as u16 * 2 + 1 } + 2;
+            let largura = 56.min(tela.width.saturating_sub(4));
+            let x = if e.preferencias.sidebar { tela.width * 30 / 100 + 2 } else { 2 };
+            let y = tela.height.saturating_sub(altura + 3);
+            let area = Rect::new(x.min(tela.width.saturating_sub(largura)), y, largura, altura.min(tela.height));
+            let rodape = if sel.campos.is_empty() { "j k · Enter usar · Esc fechar" } else { "Tab campos · Ctrl+V visualizar · Esc fechar" };
+            let dentro = componentes::desenhar_modal(f, area, "Prompt padrão", rodape, t);
+            let lista_area = Rect { height: altura_lista.min(dentro.height), ..dentro };
+            let mut lista = sel.lista.clone();
+            if sel.foco.is_some() {
+                // A lista sem destaque enquanto o teclado está num campo.
+                lista.selecionado = usize::MAX;
+            }
+            componentes::desenhar_lista(f, lista_area, &lista, "", t);
+            let mut linhas: Vec<Line<'static>> = Vec::new();
+            if !sel.campos.is_empty() {
+                linhas.push(Line::from(Span::styled("─".repeat(dentro.width as usize), Style::default().fg(t.var("border")))));
+            }
+            for (i, (nome, campo)) in sel.campos.iter().enumerate() {
+                let aceso = sel.foco == Some(i);
+                linhas.push(Line::from(Span::styled(
+                    format!(" {{{{{nome}}}}}"),
+                    Style::default().fg(if aceso { t.var("accent-blue") } else { t.var("text-muted") }),
+                )));
+                let mut spans = vec![Span::styled(" ", Style::default().bg(t.var("bg-base")))];
+                if aceso {
+                    spans.extend(campo.spans(Style::default().fg(t.var("text-primary")).bg(t.var("bg-base")), "Preencha antes de enviar", t));
+                } else if campo.texto.is_empty() {
+                    spans.push(Span::styled("Preencha antes de enviar", Style::default().fg(t.var("text-muted")).bg(t.var("bg-base"))));
+                } else {
+                    spans.push(Span::styled(campo.texto.clone(), Style::default().fg(t.var("text-primary")).bg(t.var("bg-base"))));
+                }
+                let usado: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+                spans.push(Span::styled(" ".repeat((dentro.width as usize).saturating_sub(usado + 1)), Style::default().bg(t.var("bg-base"))));
+                linhas.push(Line::from(spans));
+            }
+            let campos_area = Rect { y: dentro.y + lista_area.height, height: dentro.height.saturating_sub(lista_area.height), ..dentro };
+            f.render_widget(Paragraph::new(linhas), campos_area);
         }
         Modal::Opcoes(ed) => {
             let altura = (ed.lista.itens.len() as u16 + 4).clamp(6, 20);

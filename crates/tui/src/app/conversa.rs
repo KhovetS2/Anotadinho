@@ -55,6 +55,37 @@ pub struct TelaDeConversa {
     pub trabalho: Option<(u64, String)>,
     /// O erro da última execução.
     pub erro: Option<String>,
+    /// O prompt padrão em uso (ciclo 341).
+    pub prompt: Option<PromptAtivo>,
+}
+
+/// Um prompt padrão aplicado ao campo (ciclo 341), como na janela: o
+/// molde, os valores das variáveis e o rascunho de antes — escolher
+/// "Nenhum" devolve ele.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PromptAtivo {
+    /// A página do prompt.
+    pub path: String,
+    /// O título dela, que o botão mostra.
+    pub titulo: String,
+    /// O molde.
+    pub molde: anotadinho_core::prompt_padrao::PromptPadrao,
+    /// Os valores já preenchidos.
+    pub valores: std::collections::BTreeMap<String, String>,
+    /// O rascunho de antes do prompt.
+    pub rascunho_antes: String,
+}
+
+impl PromptAtivo {
+    /// As variáveis ainda sem valor.
+    pub fn pendentes(&self) -> Vec<String> {
+        self.molde
+            .variaveis
+            .iter()
+            .filter(|v| self.valores.get(*v).is_none_or(|x| x.trim().is_empty()))
+            .cloned()
+            .collect()
+    }
 }
 
 impl TelaDeConversa {
@@ -84,6 +115,7 @@ impl TelaDeConversa {
             escrevendo: false,
             trabalho: None,
             erro: None,
+            prompt: None,
         })
     }
 
@@ -94,6 +126,7 @@ impl TelaDeConversa {
             self.escrevendo = velha.escrevendo;
             self.trabalho = velha.trabalho.clone();
             self.erro = velha.erro.clone();
+            self.prompt = velha.prompt.clone();
             if velha.selecionada < velha.mensagens.len() {
                 self.selecionada = velha.selecionada.min(self.mensagens.len());
             }
@@ -117,8 +150,15 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
                 c.rascunho.tecla("\n");
             }
             "Enter" => enviar(e),
+            "Ctrl+p" => abrir_seletor_de_prompt(e),
             outra => {
+                let antes = c.rascunho.texto.clone();
                 c.rascunho.tecla(outra);
+                // Mexer no texto montado vira mensagem livre, como na
+                // janela.
+                if c.rascunho.texto != antes {
+                    c.prompt = None;
+                }
             }
         }
         return true;
@@ -163,6 +203,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
             let path = c.path.clone();
             e.pedidos.push(Pedido::InterromperAgente(path));
         }
+        "p" => abrir_seletor_de_prompt(e),
         "Escape" => c.erro = None,
         _ => return false,
     }
@@ -179,6 +220,12 @@ fn enviar(e: &mut Estado) {
         e.aviso = Some("já tem uma execução em andamento nesta conversa".into());
         return;
     }
+    if c.prompt.as_ref().is_some_and(|p| !p.pendentes().is_empty()) {
+        e.aviso = Some("Preencha todos os marcadores antes de enviar.".into());
+        abrir_seletor_de_prompt(e);
+        return;
+    }
+    c.prompt = None;
     c.rascunho = Campo::default();
     c.escrevendo = false;
     c.erro = None;
@@ -221,7 +268,7 @@ pub fn acao_na_resposta(e: &mut Estado, indice: usize, chave: &str) {
 /// Os comandos da barra que só existem numa conversa.
 pub fn comandos(e: &Estado) -> Vec<Item> {
     let Some(c) = &e.conversa else { return Vec::new() };
-    let mut v = vec![Item::novo("⌁", "Anexar página…", "anexar")];
+    let mut v = vec![Item::novo("▤", "Usar prompt padrão…", "prompt"), Item::novo("⌁", "Anexar página…", "anexar")];
     if !c.anexos.is_empty() {
         v.push(Item::novo("⌁", "Tirar anexo…", "desanexar"));
     }
@@ -253,6 +300,7 @@ pub fn executar(e: &mut Estado, chave: &str) -> bool {
             e.modal = Some(Modal::Escolha { titulo: "Tirar anexo".into(), lista: Lista::menu(itens), acao: AcaoDaEscolha::Desanexar });
         }
         "interromper" => e.pedidos.push(Pedido::InterromperAgente(c.path.clone())),
+        "prompt" => abrir_seletor_de_prompt(e),
         _ => return false,
     }
     true
@@ -270,6 +318,111 @@ pub fn mudar_anexo(e: &mut Estado, path: &str, anexar: bool) {
     }
     let (conversa, lista) = (c.path.clone(), c.anexos.clone());
     e.pedidos.push(Pedido::AnexosDaConversa { conversa, lista });
+}
+
+// ---------------------------------------------------------------------
+// Prompt padrão (ciclo 341)
+// ---------------------------------------------------------------------
+
+/// O seletor de prompt: "Nenhum" e os prompts do vault
+/// (`pages/prompts-default/`, `type: prompt`), com os campos das variáveis
+/// do prompt em uso — o popover da janela.
+pub fn abrir_seletor_de_prompt(e: &mut Estado) {
+    let Some(c) = &e.conversa else { return };
+    if c.trabalho.is_some() {
+        e.aviso = Some("o agente está trabalhando — Ctrl+X interrompe".into());
+        return;
+    }
+    let prompts = anotadinho_core::prompt_padrao::descobrir(e.indice_do_vault.clone());
+    let mut itens = vec![Item::novo("○", "Nenhum — escrever do zero", "")];
+    itens.extend(prompts.iter().map(|p| {
+        let atual = c.prompt.as_ref().is_some_and(|a| a.path == p.path);
+        Item::novo(if atual { "●" } else { "▤" }, p.title.clone(), p.path.clone())
+    }));
+    let mut lista = Lista::menu(itens);
+    let campos: Vec<(String, Campo)> = c
+        .prompt
+        .as_ref()
+        .map(|a| a.molde.variaveis.iter().map(|v| (v.clone(), Campo::com(a.valores.get(v).cloned().unwrap_or_default()))).collect())
+        .unwrap_or_default();
+    if let Some(a) = &c.prompt {
+        lista.selecionado = prompts.iter().position(|p| p.path == a.path).map_or(0, |i| i + 1);
+    }
+    let foco = c.prompt.as_ref().and_then(|a| {
+        let pend = a.pendentes();
+        a.molde.variaveis.iter().position(|v| pend.contains(v))
+    });
+    e.modal = Some(Modal::Prompt(super::modais::SeletorDePrompt { lista, campos, foco }));
+}
+
+/// Aplica o prompt lido do vault ao campo (depois do `main` ler a página).
+pub fn aplicar_prompt(e: &mut Estado, path: &str, conteudo: &str) {
+    use anotadinho_core::prompt_padrao::PromptPadrao;
+    let titulo = e
+        .indice_do_vault
+        .iter()
+        .find(|p| p.path == path)
+        .map(|p| p.title.clone())
+        .unwrap_or_else(|| nome_curto(path));
+    let molde = PromptPadrao::parse(conteudo);
+    let ausentes: Vec<String> = molde.contexto.iter().filter(|p| !e.paginas.iter().any(|x| &x.path == *p)).cloned().collect();
+    let Some(c) = e.conversa.as_mut() else { return };
+    if !ausentes.is_empty() {
+        c.erro = Some(format!("contexto do prompt não encontrado: {}", ausentes.join(", ")));
+        e.modal = None;
+        return;
+    }
+    let base = match &c.prompt {
+        Some(a) => a.rascunho_antes.clone(),
+        None => c.rascunho.texto.clone(),
+    };
+    let mut valores = std::collections::BTreeMap::new();
+    if let Some(primeira) = molde.variaveis.first() {
+        if !base.trim().is_empty() {
+            valores.insert(primeira.clone(), base.clone());
+        }
+    }
+    let exibido = if molde.variaveis.is_empty() { molde.com_rascunho_ao_final(&base) } else { molde.visualizar_parcial(&valores) };
+    let mut anexos = c.anexos.clone();
+    for ctx in &molde.contexto {
+        if !anexos.contains(ctx) {
+            anexos.push(ctx.clone());
+        }
+    }
+    let mudou_anexos = anexos != c.anexos;
+    c.anexos = anexos.clone();
+    c.rascunho = Campo::com(exibido);
+    c.erro = None;
+    c.selecionada = c.mensagens.len();
+    let sem_variaveis = molde.variaveis.is_empty();
+    c.prompt = Some(PromptAtivo { path: path.to_string(), titulo, molde, valores, rascunho_antes: base });
+    let conversa = c.path.clone();
+    if mudou_anexos {
+        e.pedidos.push(Pedido::AnexosDaConversa { conversa, lista: anexos });
+    }
+    // Um molde sem variáveis já está pronto: o seletor sai da frente. Com
+    // variáveis, os campos ficam — é o que falta preencher.
+    if sem_variaveis {
+        e.modal = None;
+    } else {
+        abrir_seletor_de_prompt(e);
+    }
+}
+
+/// "Nenhum": o campo volta ao rascunho de antes.
+pub fn tirar_prompt(e: &mut Estado) {
+    let Some(c) = e.conversa.as_mut() else { return };
+    if let Some(a) = c.prompt.take() {
+        c.rascunho = Campo::com(a.rascunho_antes);
+    }
+}
+
+/// Um valor de variável mudou: o campo mostra o molde com o que já há.
+pub fn preencher_variavel(e: &mut Estado, nome: &str, valor: &str) {
+    let Some(c) = e.conversa.as_mut() else { return };
+    let Some(a) = c.prompt.as_mut() else { return };
+    a.valores.insert(nome.to_string(), valor.to_string());
+    c.rascunho = Campo::com(a.molde.visualizar_parcial(&a.valores));
 }
 
 // ---------------------------------------------------------------------
@@ -360,30 +513,48 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
     }
     topo.push(Line::from(Span::styled("─".repeat(w), Style::default().fg(t.var("border")))));
 
-    // O campo, embaixo.
+    // O campo, embaixo. Escrevendo, ele ACENDE (ciclo 341): a caixa ganha
+    // contorno inteiro na cor de destaque e fundo elevado, o rodapé vira
+    // "-- INSERÇÃO --" e as mensagens ficam sem seleção — não pode haver
+    // dúvida de onde as teclas estão indo.
     let caixa_w = w.saturating_sub(2);
-    let fundo_campo = t.var("bg-surface");
+    let no_campo = no_foco && c.selecionada >= c.mensagens.len();
+    let fundo_campo = if c.escrevendo { t.var("bg-elevated") } else { t.var("bg-surface") };
+    let cor_da_borda = if c.escrevendo {
+        t.var("accent-blue")
+    } else if no_campo {
+        crate::tema::misturar(t.var("accent-blue"), t.var("bg-base"), 0.45)
+    } else {
+        t.var("border")
+    };
+    let borda_campo = Style::default().fg(cor_da_borda);
     let mut campo_linhas: Vec<Line<'static>> = Vec::new();
     let rascunho: Vec<Line<'static>> = if c.rascunho.texto.is_empty() && !c.escrevendo {
-        vec![Line::from(Span::styled(" Escreva e mande. i escreve · Ctrl+J quebra linha.", apagado))]
+        vec![Line::from(Span::styled(" Escreva e mande. i escreve · p prompt padrão · Ctrl+J quebra linha.", apagado))]
     } else {
         let spans = if c.escrevendo {
             c.rascunho.spans(texto, "", t)
         } else {
             vec![Span::styled(c.rascunho.texto.clone(), texto)]
         };
-        super::quebrar_texto(Line::from([vec![Span::raw(" ")], spans].concat()), caixa_w, 1)
+        super::quebrar_texto(Line::from([vec![Span::raw(" ")], spans].concat()), caixa_w.saturating_sub(1), 1)
     };
     let altura_do_rascunho = rascunho.len().clamp(3, 8);
-    campo_linhas.push(Line::from(Span::styled("─".repeat(w), Style::default().fg(t.var("border")))));
     let visiveis_do_rascunho = rascunho.len().saturating_sub(altura_do_rascunho);
+    campo_linhas.push(Line::from(Span::styled(format!("▗{}▖", "▄".repeat(w.saturating_sub(2))), borda_campo)));
     for k in 0..altura_do_rascunho {
         let l = rascunho.get(visiveis_do_rascunho + k).cloned().unwrap_or_default();
-        let borda_campo = Style::default().fg(if c.escrevendo { t.var("accent-blue") } else { t.var("border") });
-        let mut spans = vec![Span::styled("▐", borda_campo)];
+        let mut spans = vec![Span::styled("▐", borda_campo.bg(fundo_campo))];
         spans.extend(com_fundo(l, caixa_w, fundo_campo));
-        spans.push(Span::styled("▌", borda_campo));
+        spans.push(Span::styled("▌", borda_campo.bg(fundo_campo)));
         campo_linhas.push(Line::from(spans));
+    }
+    campo_linhas.push(Line::from(Span::styled(format!("▝{}▘", "▀".repeat(w.saturating_sub(2))), borda_campo)));
+    if c.prompt.as_ref().is_some_and(|p| !p.pendentes().is_empty()) {
+        campo_linhas.push(Line::from(Span::styled(
+            " Preencha todos os marcadores antes de visualizar ou enviar.  p preencher",
+            Style::default().fg(t.var("warning")),
+        )));
     }
     let rodando = c.trabalho.is_some();
     let botao = if rodando {
@@ -392,13 +563,27 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
         let cor = crate::tema::misturar(t.var("accent-blue"), t.var("accent-purple"), 0.5);
         Span::styled(" Enviar  ↵ ", Style::default().bg(cor).fg(Color::Rgb(255, 255, 255)).add_modifier(Modifier::BOLD))
     };
-    let dica = " : anexar, trocar agente · Esc sai do campo";
-    let usado = dica.chars().count() + botao.content.chars().count();
-    campo_linhas.push(Line::from(vec![
-        Span::styled(dica, apagado),
-        Span::raw(" ".repeat(w.saturating_sub(usado + 1))),
-        botao,
-    ]));
+    // O botão do prompt, com o nome do que está em uso.
+    let nome_do_prompt = c.prompt.as_ref().map(|p| p.titulo.clone()).unwrap_or_else(|| "Prompt padrão".into());
+    let mut esquerda: Vec<Span<'static>> = Vec::new();
+    if c.escrevendo {
+        esquerda.push(Span::styled(
+            " -- INSERÇÃO -- ",
+            Style::default().bg(t.var("accent-blue")).fg(t.var("bg-base")).add_modifier(Modifier::BOLD),
+        ));
+        esquerda.push(Span::styled(" Enter envia · Ctrl+J quebra linha · Ctrl+P prompt · Esc sai", apagado));
+    } else {
+        esquerda.push(Span::styled(" p ", t.estilo(crate::tema::Realce::Marca)));
+        esquerda.push(Span::styled(
+            format!("▤ {nome_do_prompt} ⌃"),
+            if c.prompt.is_some() { texto } else { apagado },
+        ));
+        esquerda.push(Span::styled("   : anexar, trocar agente", apagado));
+    }
+    let usado: usize = esquerda.iter().map(|s| s.content.chars().count()).sum::<usize>() + botao.content.chars().count();
+    esquerda.push(Span::raw(" ".repeat(w.saturating_sub(usado + 1))));
+    esquerda.push(botao);
+    campo_linhas.push(Line::from(esquerda));
 
     // As mensagens, com a selecionada à vista.
     let altura_msgs = (dentro.height as usize).saturating_sub(topo.len() + campo_linhas.len());

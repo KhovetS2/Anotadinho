@@ -308,7 +308,8 @@ pub fn desenhar_lista(f: &mut Frame, area: Rect, lista: &Lista, placeholder: &st
     }
     let visiveis = lista.visiveis();
     let cabe = (area.height as usize).saturating_sub(linhas.len()).max(1);
-    let inicio = lista.selecionado.saturating_sub(cabe.saturating_sub(1));
+    // Seleção fora da lista (`usize::MAX`) é "nenhum aceso": começa do topo.
+    let inicio = if lista.selecionado < visiveis.len() { lista.selecionado.saturating_sub(cabe.saturating_sub(1)) } else { 0 };
     if visiveis.is_empty() {
         linhas.push(Line::from(Span::styled(" nada encontrado", Style::default().fg(tema.var("text-muted")))));
     }

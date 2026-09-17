@@ -298,6 +298,10 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
             Pedido::EnviarNaConversa { path, pergunta, anexos } => {
                 enviar_na_conversa(estado, vault, trabalhos, &path, &pergunta, &anexos);
             }
+            Pedido::CarregarPrompt(path) => match anotadinho_ipc::handle_read_page(vault.to_string(), path.clone()) {
+                Ok(conteudo) => app::conversa::aplicar_prompt(estado, &path, &conteudo),
+                Err(e) => estado.aviso = Some(format!("não consegui ler o prompt: {e}")),
+            },
             Pedido::InterromperAgente(path) => {
                 if let Some(t) = trabalhos.get(&path) {
                     t.interromper();
