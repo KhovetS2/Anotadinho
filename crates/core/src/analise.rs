@@ -592,7 +592,10 @@ fn grade_do_mes(
         // A sexta semana costuma ser toda do mês seguinte: a janela
         // reserva a altura, o terminal não tem linha pra gastar com ela.
         .filter(|semana| semana.iter().any(|c| c.3))
-        .map(|semana| semana_da_grade(&d.entries, tags, hoje, semana, crate::calendario::MAX_LANES, false))
+        .map(|semana| {
+            let indices: Vec<usize> = (0..d.entries.len()).collect();
+            semana_da_grade(&d.entries, &indices, tags, hoje, semana, crate::calendario::MAX_LANES, false)
+        })
         .collect();
     grupo("mes", format!("{} {}", crate::date_util::month_name(mes), ano), semanas)
 }
@@ -637,15 +640,21 @@ fn grade_da_semana(
     };
     // Na semana, dentro do dia, o que tem hora vem pela hora — os de dia
     // inteiro (e os de vários dias) primeiro, como na agenda.
-    let mut entries = d.entries.clone();
-    entries.sort_by_key(|e| e.start_time.clone().map(|h| (1, h)).unwrap_or((0, String::new())));
-    grupo("mes", rotulo, vec![semana_da_grade(&entries, tags, hoje, &celulas, usize::MAX, true)])
+    let mut ordem: Vec<(usize, embed::CalendarEntry)> = d.entries.iter().cloned().enumerate().collect();
+    ordem.sort_by_key(|(_, e)| e.start_time.clone().map(|h| (1, h)).unwrap_or((0, String::new())));
+    let (indices, entries): (Vec<usize>, Vec<embed::CalendarEntry>) = ordem.into_iter().unzip();
+    grupo(
+        "mes",
+        rotulo,
+        vec![semana_da_grade(&entries, &indices, tags, hoje, &celulas, usize::MAX, true)],
+    )
 }
 
 /// Uma semana da grade: 7 dias, cada um com uma parte por faixa, o
 /// "+N mais", o detalhe e a data (ciclos 306, 314, 316).
 fn semana_da_grade(
     entries: &[embed::CalendarEntry],
+    indices: &[usize],
     tags: &[String],
     hoje: Option<&str>,
     semana: &[(i32, u32, u32, bool)],
@@ -675,6 +684,10 @@ fn semana_da_grade(
                 // pra onde o Enter leva, como o clique na janela.
                 if let Some(p) = &entrada.page_path {
                     filhos.push(item("pagina", p.clone()));
+                } else {
+                    // Evento escrito no embed diz QUAL entrada ele é (ciclo
+                    // 318): é por ela que a edição acha o que mudar.
+                    filhos.push(item("indice", indices[b.entry_idx].to_string()));
                 }
                 grupo(nome, titulo, filhos)
             };
@@ -728,19 +741,20 @@ fn semana_da_grade(
 /// eventos", que não é destino.
 fn agenda_do_dia(d: &embed::CalendarEmbedData, tags: &[String], ancora: &str) -> Unidade {
     use crate::date_util::{parse_date, weekday_of};
-    let mut do_dia: Vec<&embed::CalendarEntry> = d
+    let mut do_dia: Vec<(usize, &embed::CalendarEntry)> = d
         .entries
         .iter()
-        .filter(|e| {
+        .enumerate()
+        .filter(|(_, e)| {
             let Some(inicio) = e.date.as_deref() else { return false };
             let fim = e.end_date.as_deref().filter(|f| *f > inicio).unwrap_or(inicio);
             inicio <= ancora && ancora <= fim
         })
         .collect();
-    do_dia.sort_by_key(|e| e.start_time.clone().map(|h| (1, h)).unwrap_or((0, String::new())));
+    do_dia.sort_by_key(|(_, e)| e.start_time.clone().map(|h| (1, h)).unwrap_or((0, String::new())));
     let mut filhos: Vec<Unidade> = do_dia
         .into_iter()
-        .map(|e| {
+        .map(|(i, e)| {
             let hora = match (e.start_time.as_deref(), e.end_time.as_deref()) {
                 (Some(a), Some(b)) => format!("{a}–{b}"),
                 (Some(a), None) => a.to_string(),
@@ -751,8 +765,9 @@ fn agenda_do_dia(d: &embed::CalendarEmbedData, tags: &[String], ancora: &str) ->
                 e.title.clone(),
                 {
                     let mut filhos = vec![item("hora", hora), item("detalhe", detalhe_do_evento(e))];
-                    if let Some(p) = &e.page_path {
-                        filhos.push(item("pagina", p.clone()));
+                    match &e.page_path {
+                        Some(p) => filhos.push(item("pagina", p.clone())),
+                        None => filhos.push(item("indice", i.to_string())),
                     }
                     filhos
                 },

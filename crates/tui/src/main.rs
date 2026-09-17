@@ -3,7 +3,7 @@
 //! Tudo que dá pra testar mora em `app` e `tela`. Aqui fica só o que
 //! precisa de um terminal de verdade — e é curto de propósito.
 
-use anotadinho_ipc::{handle_list_pages, handle_read_page, handle_scan_vault};
+use anotadinho_ipc::{handle_list_pages, handle_read_page_versioned, handle_scan_vault, handle_write_page_checked};
 use anotadinho_tui::app::{self, Estado};
 use clap::Parser;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -61,10 +61,11 @@ fn nome_da_tecla(k: &KeyEvent) -> Option<String> {
     })
 }
 
-fn arvore_de(vault: &str, caminho: &str) -> Result<anotadinho_core::unidade::Unidade, String> {
-    let conteudo = handle_read_page(vault.to_string(), caminho.to_string())?;
-    let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
-    Ok(anotadinho_core::analise::analisar(corpo))
+/// O arquivo de uma página e a versão dele (ciclo 318): a edição grava
+/// por cima só se o arquivo ainda estiver nessa versão.
+fn ler(vault: &str, caminho: &str) -> Result<(String, Option<String>), String> {
+    let p = handle_read_page_versioned(vault.to_string(), caminho.to_string())?;
+    Ok((p.content, p.version))
 }
 
 /// O dia de hoje no fuso da pessoa, `AAAA-MM-DD` (ciclo 315).
@@ -97,7 +98,11 @@ fn main() -> Result<(), String> {
     if paginas.is_empty() {
         return Err(format!("o vault {} não tem páginas", cli.vault));
     }
-    let primeira = arvore_de(&cli.vault, &paginas[0].path)?;
+    let (texto, versao) = ler(&cli.vault, &paginas[0].path)?;
+    let primeira = {
+        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
+        anotadinho_core::analise::analisar(corpo)
+    };
     if !anotadinho_tui::tema::TEMAS.contains(&cli.tema.as_str()) {
         return Err(format!(
             "tema \"{}\" não existe — os que existem são: {}",
@@ -106,6 +111,7 @@ fn main() -> Result<(), String> {
         ));
     }
     let mut estado = Estado::novo(paginas, primeira)
+        .com_texto(&texto, versao)
         .com_tema(&cli.tema)
         .com_hoje(&hoje_local())
         // Os calendários em modo vault leem as páginas com data. Varrer
@@ -169,8 +175,25 @@ fn laco<B: ratatui::backend::Backend>(
         if let Some(caminho) = app::tecla(estado, &nome) {
             // Página que não abre não derruba a sessão: a pessoa
             // continua no que estava.
-            if let Ok(arvore) = arvore_de(vault, &caminho) {
-                estado.abrir(arvore);
+            if let Ok((texto, versao)) = ler(vault, &caminho) {
+                estado.abrir_texto(&texto, versao);
+            }
+        }
+        // Uma edição deixou texto novo: grava com a trava de versão. Se
+        // o arquivo mudou por fora, a gravação é recusada, a página volta
+        // a ser a do disco e o rodapé diz por quê (ciclo 318).
+        if let Some(conteudo) = estado.gravacao.take() {
+            let caminho = estado.paginas.get(estado.pagina).map(|p| p.path.clone());
+            if let Some(caminho) = caminho {
+                match handle_write_page_checked(vault.to_string(), caminho.clone(), conteudo, estado.versao.clone()) {
+                    Ok(v) => estado.versao = Some(v),
+                    Err(motivo) => {
+                        if let Ok((texto, versao)) = ler(vault, &caminho) {
+                            estado.abrir_texto(&texto, versao);
+                        }
+                        estado.aviso = Some(format!("não gravou: {motivo}"));
+                    }
+                }
             }
         }
     }

@@ -83,6 +83,21 @@ pub struct Estado {
     /// calendários em modo vault (ciclo 317). Quem varre o vault é o
     /// `main`; vazio é "ninguém varreu".
     pub eventos_do_vault: Vec<anotadinho_core::embed::CalendarEntry>,
+    /// O texto inteiro do arquivo da página aberta (ciclo 318).
+    ///
+    /// Sem ele a TUI é só leitura: editar um embed é trocar o trecho dele
+    /// NESTE texto e gravar o resultado. `None` em teste que não liga a
+    /// edição.
+    pub texto_da_pagina: Option<String>,
+    /// A versão do arquivo quando foi lido — a gravação só acontece se o
+    /// arquivo ainda estiver nela (a mesma trava da janela).
+    pub versao: Option<String>,
+    /// O texto novo que o `main` deve gravar, depois de uma edição.
+    pub gravacao: Option<String>,
+    /// Um aviso pro rodapé: gravação recusada, embed só leitura.
+    pub aviso: Option<String>,
+    /// A pergunta aberta no rodapé, quando uma edição precisa de texto.
+    pub pergunta: Option<Pergunta>,
     /// A visão de cada calendário (ciclo 316). Ausente é Mês.
     pub visoes: std::collections::HashMap<Caminho, anotadinho_core::analise::Visao>,
     /// A barra está capturando tecla?
@@ -125,6 +140,11 @@ impl Estado {
             ancoras: std::collections::HashMap::new(),
             visoes: std::collections::HashMap::new(),
             eventos_do_vault: Vec::new(),
+            texto_da_pagina: None,
+            versao: None,
+            gravacao: None,
+            aviso: None,
+            pergunta: None,
         }
     }
 
@@ -134,6 +154,40 @@ impl Estado {
         self.ancorar_calendarios();
         self.cursor = tela::primeiro(&self.arvore).unwrap_or_default();
         self
+    }
+
+    /// Liga a edição: o texto do arquivo aberto e a versão dele.
+    pub fn com_texto(mut self, texto: &str, versao: Option<String>) -> Self {
+        self.texto_da_pagina = Some(texto.to_string());
+        self.versao = versao;
+        self
+    }
+
+    /// Troca a página aberta pelo arquivo `texto` (ciclo 318) — o caminho
+    /// que o `main` usa, pra a edição saber o que gravar.
+    pub fn abrir_texto(&mut self, texto: &str, versao: Option<String>) {
+        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(texto);
+        self.abrir(anotadinho_core::analise::analisar(corpo));
+        self.texto_da_pagina = Some(texto.to_string());
+        self.versao = versao;
+    }
+
+    /// Aplica um texto novo da MESMA página depois de uma edição, sem
+    /// perder o lugar: cursor, âncoras, visões, dobras e rolagem ficam. A
+    /// gravação fica pendente pro `main`.
+    fn aplicar_edicao(&mut self, texto: String) {
+        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
+        self.arvore = anotadinho_core::analise::analisar(corpo);
+        self.ancorar_calendarios();
+        self.linhas = tela::linhas(&self.arvore);
+        while !self.cursor.is_empty() && self.arvore.em(&self.cursor).is_none() {
+            self.cursor.pop();
+        }
+        if self.cursor.is_empty() {
+            self.cursor = tela::primeiro(&self.arvore).unwrap_or_default();
+        }
+        self.texto_da_pagina = Some(texto.clone());
+        self.gravacao = Some(texto);
     }
 
     /// Entrega os eventos do vault e remonta os calendários em modo vault.
@@ -366,7 +420,295 @@ impl Estado {
 /// Devolve `Some(caminho)` quando a página selecionada mudou e o laço
 /// precisa carregar outra árvore — carregar arquivo é I/O, e I/O não
 /// entra aqui.
+/// Uma pergunta no rodapé: o texto que a edição precisa (ciclo 318).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Pergunta {
+    /// O que se pergunta ("Novo evento em 12/08/2026").
+    pub rotulo: String,
+    /// O que já foi digitado.
+    pub texto: String,
+    /// O que fazer com a resposta.
+    pub acao: AcaoDaPergunta,
+}
+
+/// O que a resposta de uma pergunta faz.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AcaoDaPergunta {
+    /// Cria um evento de dia inteiro nessa data.
+    NovoEvento {
+        /// O calendário.
+        embed: Caminho,
+        /// `AAAA-MM-DD`.
+        data: String,
+    },
+    /// Troca o título do evento.
+    RenomearEvento {
+        /// O calendário.
+        embed: Caminho,
+        /// A entrada, no arquivo.
+        indice: usize,
+    },
+}
+
+/// Troca o trecho de um embed no texto da página pelo resultado de
+/// `mudar` sobre os dados dele (ciclo 318).
+///
+/// É a edição de embed inteira, e é pura: pega a FONTE do embed (o
+/// markdown original, com o intervalo de bytes que `analisar` guarda),
+/// muda os dados, serializa com `to_fence_text` — o mesmo que a janela
+/// grava — e costura de volta no texto do arquivo. O resto do arquivo
+/// volta byte a byte.
+fn editar_embed(
+    e: &mut Estado,
+    embed: &[usize],
+    mudar: impl FnOnce(&mut anotadinho_core::embed::EmbedData) -> Result<(), String>,
+) -> bool {
+    let Some(texto) = e.texto_da_pagina.clone() else {
+        e.aviso = Some("esta página não pode ser editada daqui".into());
+        return false;
+    };
+    let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
+    let base = texto.len() - corpo.len();
+    let Some(u) = e.arvore.em(embed) else { return false };
+    let (Some(faixa), Some(fonte)) = (u.intervalo.clone(), u.fonte.clone()) else { return false };
+    let Some(mut dados) = anotadinho_core::embed::segment(&fonte).into_iter().find_map(|s| match s {
+        anotadinho_core::embed::DocSegment::Embed(d) => Some(d),
+        _ => None,
+    }) else {
+        return false;
+    };
+    if let Err(motivo) = mudar(&mut dados) {
+        e.aviso = Some(motivo);
+        return false;
+    }
+    let mut novo = dados.to_fence_text();
+    if fonte.ends_with('\n') && !novo.ends_with('\n') {
+        novo.push('\n');
+    }
+    let novo_texto = format!("{}{}{}", &texto[..base + faixa.start], novo, &texto[base + faixa.end..]);
+    e.aplicar_edicao(novo_texto);
+    true
+}
+
+/// `editar_embed` pra um calendário, recusando o modo vault — o
+/// calendário do vault é só leitura, como na janela.
+fn editar_calendario(
+    e: &mut Estado,
+    embed: &[usize],
+    mudar: impl FnOnce(&mut anotadinho_core::embed::CalendarEmbedData) -> Result<(), String>,
+) -> bool {
+    editar_embed(e, embed, |dados| match dados {
+        anotadinho_core::embed::EmbedData::Calendar(d) if d.mode == anotadinho_core::embed::CalendarSource::Vault => {
+            Err("calendário do vault é só leitura: edite a página do evento".into())
+        }
+        anotadinho_core::embed::EmbedData::Calendar(d) => mudar(d),
+        _ => Err("isto não é um calendário".into()),
+    })
+}
+
+/// A entrada do calendário sob o cursor: o índice dela no arquivo.
+fn indice_do_cursor(e: &Estado) -> Option<usize> {
+    e.arvore
+        .em(&e.cursor)?
+        .filhos
+        .iter()
+        .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "indice"))
+        .and_then(|f| f.texto.parse().ok())
+}
+
+/// Onde está, na árvore de um calendário, o evento da entrada `indice`
+/// — de preferência o COMEÇO da barra, e na data `data` quando dada.
+fn achar_evento(arvore: &Unidade, embed: &[usize], indice: usize, data: Option<&str>) -> Option<Caminho> {
+    let mut achados: Vec<(Caminho, bool)> = Vec::new();
+    for (c, u) in arvore.em(embed)?.percorrer() {
+        let Tipo::Parte { nome, .. } = &u.tipo else { continue };
+        let e_evento = tela::e_evento(nome) || nome.starts_with("compromisso");
+        let mesmo = u.filhos.iter().any(|f| {
+            matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "indice") && f.texto == indice.to_string()
+        });
+        if e_evento && mesmo {
+            let mut caminho = embed.to_vec();
+            caminho.extend(c);
+            achados.push((caminho, nome != "evento-continua"));
+        }
+    }
+    if let Some(data) = data {
+        if let Some((c, _)) = achados.iter().find(|(c, _)| {
+            let mut dia = c.clone();
+            dia.pop();
+            tela::data_do_cursor(arvore, &dia).as_deref() == Some(data)
+        }) {
+            return Some(c.clone());
+        }
+    }
+    achados.iter().find(|(_, comeco)| *comeco).or(achados.first()).map(|(c, _)| c.clone())
+}
+
+/// Responde a pergunta aberta (ciclo 318).
+fn tecla_na_pergunta(e: &mut Estado, tecla: &str) {
+    let Some(p) = e.pergunta.as_mut() else { return };
+    match tecla {
+        "Escape" => e.pergunta = None,
+        "Backspace" => {
+            p.texto.pop();
+        }
+        "Enter" => {
+            let Some(p) = e.pergunta.take() else { return };
+            let titulo = p.texto.trim().to_string();
+            if titulo.is_empty() {
+                return;
+            }
+            match p.acao {
+                AcaoDaPergunta::NovoEvento { embed, data } => {
+                    let mut novo = None;
+                    if editar_calendario(e, &embed, |d| {
+                        d.add_entry(data.clone(), titulo.clone());
+                        novo = Some(d.entries.len() - 1);
+                        Ok(())
+                    }) {
+                        if let Some(c) = novo.and_then(|i| achar_evento(&e.arvore, &embed, i, Some(&data))) {
+                            e.cursor = c;
+                        }
+                    }
+                }
+                AcaoDaPergunta::RenomearEvento { embed, indice } => {
+                    let data_antes = tela::data_do_cursor(&e.arvore, &e.cursor);
+                    if editar_calendario(e, &embed, |d| {
+                        let mut entrada = d.entries.get(indice).cloned().ok_or("o evento sumiu do arquivo")?;
+                        entrada.title = titulo.clone();
+                        d.update_entry(indice, entrada);
+                        Ok(())
+                    }) {
+                        if let Some(c) = achar_evento(&e.arvore, &embed, indice, data_antes.as_deref()) {
+                            e.cursor = c;
+                        }
+                    }
+                }
+            }
+            e.seguir_cursor();
+        }
+        t if t.chars().count() == 1 => p.texto.push_str(t),
+        _ => {}
+    }
+}
+
+/// As teclas de EDIÇÃO do calendário (ciclo 318).
+///
+/// - `o` cria um evento no dia do cursor (num dia, num evento ou na
+///   agenda) — pergunta o título no rodapé.
+/// - `c` renomeia o evento sob o cursor.
+/// - `x` apaga o evento sob o cursor (`dd` também, pela gramática).
+/// - `<` e `>` movem o evento um dia, preservando a duração — o arrastar
+///   da janela.
+fn edicao_do_calendario(e: &mut Estado, tecla: &str) -> bool {
+    if !matches!(tecla, "o" | "c" | "x" | "<" | ">") {
+        return false;
+    }
+    let Some(embed) = tela::calendario_do_cursor(&e.arvore, &e.cursor) else { return false };
+    let data = tela::data_do_cursor(&e.arvore, &e.cursor);
+    let indice = indice_do_cursor(e);
+    match tecla {
+        "o" => {
+            let Some(data) = data else {
+                e.aviso = Some("escolha um dia pra criar o evento".into());
+                return true;
+            };
+            e.pergunta = Some(Pergunta {
+                rotulo: format!("Novo evento em {}", data_legivel(&data)),
+                texto: String::new(),
+                acao: AcaoDaPergunta::NovoEvento { embed, data },
+            });
+        }
+        "c" => {
+            let Some(indice) = indice else { return false };
+            let atual = e.arvore.em(&e.cursor).map(|u| u.texto.clone()).unwrap_or_default();
+            // Na semana o título vem com a hora na frente; o arquivo não.
+            let atual = e
+                .arvore
+                .em(&embed)
+                .and_then(|u| u.fonte.as_deref())
+                .and_then(dados_do_calendario)
+                .and_then(|d| d.entries.get(indice).map(|x| x.title.clone()))
+                .unwrap_or(atual);
+            e.pergunta = Some(Pergunta {
+                rotulo: "Renomear evento".into(),
+                texto: atual,
+                acao: AcaoDaPergunta::RenomearEvento { embed, indice },
+            });
+        }
+        "x" => apagar_evento(e),
+        _ => {
+            let Some(indice) = indice else { return false };
+            let delta = if tecla == ">" { 1 } else { -1 };
+            let mut destino = None;
+            let mudou = editar_calendario(e, &embed, |d| {
+                let entrada = d.entries.get(indice).ok_or("o evento sumiu do arquivo")?;
+                let inicio = entrada.date.clone().ok_or("evento sem data não se move por dia")?;
+                let novo = anotadinho_core::date_util::add_days(&inicio, delta).ok_or("data inválida")?;
+                d.move_entry(indice, novo.clone());
+                destino = Some(novo);
+                Ok(())
+            });
+            if mudou {
+                // O cursor acompanha o evento; se ele saiu do que está na
+                // tela, a âncora vai atrás.
+                let alvo = data.and_then(|d| anotadinho_core::date_util::add_days(&d, delta)).or(destino);
+                let mut achou = achar_evento(&e.arvore, &embed, indice, alvo.as_deref());
+                if achou.is_none() {
+                    if let Some(a) = alvo.clone() {
+                        e.ancorar(&embed, a);
+                        achou = achar_evento(&e.arvore, &embed, indice, alvo.as_deref());
+                    }
+                }
+                if let Some(c) = achou {
+                    e.cursor = c;
+                }
+                e.seguir_cursor();
+            }
+        }
+    }
+    true
+}
+
+/// Apaga o evento sob o cursor; o cursor fica no dia dele.
+fn apagar_evento(e: &mut Estado) {
+    let (Some(embed), Some(indice)) = (tela::calendario_do_cursor(&e.arvore, &e.cursor), indice_do_cursor(e)) else {
+        return;
+    };
+    let mut dia = e.cursor.clone();
+    dia.pop();
+    if editar_calendario(e, &embed, |d| {
+        if indice >= d.entries.len() {
+            return Err("o evento sumiu do arquivo".into());
+        }
+        d.remove_entry(indice);
+        Ok(())
+    }) {
+        if e.arvore.em(&dia).is_some() {
+            e.cursor = dia;
+        }
+        e.aviso = Some("evento apagado".into());
+        e.seguir_cursor();
+    }
+}
+
+/// `AAAA-MM-DD` como `DD/MM/AAAA`.
+fn data_legivel(iso: &str) -> String {
+    match anotadinho_core::date_util::parse_date(iso) {
+        Some((y, m, d)) => format!("{d:02}/{m:02}/{y}"),
+        None => iso.to_string(),
+    }
+}
+
 pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
+    // O aviso vale até a próxima tecla.
+    e.aviso = None;
+    // A pergunta de uma edição, como a busca, recebe tudo enquanto está
+    // aberta (ciclo 318).
+    if e.pergunta.is_some() {
+        tecla_na_pergunta(e, tecla);
+        return None;
+    }
     // A busca vem ANTES de tudo (ciclo 292): enquanto a barra está
     // aberta, cada tecla é texto. Sem isto, digitar "java" numa busca
     // executaria o `a` de inserção e o `j` de descer.
@@ -498,7 +840,7 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
 }
 
 fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
-    if tecla_do_calendario(e, tecla) {
+    if tecla_do_calendario(e, tecla) || (!e.vim.em_curso() && edicao_do_calendario(e, tecla)) {
         return;
     }
     // A gramática do vim primeiro (ciclo 291).
@@ -976,6 +1318,17 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     let mut bloco = borda(&titulo, e.foco == Foco::Conteudo, &e.tema);
     if let Some(rodape) = rodape_de_busca(e, Foco::Conteudo) {
         bloco = bloco.title_bottom(rodape);
+    }
+    if let Some(p) = &e.pergunta {
+        bloco = bloco.title_bottom(Line::from(Span::styled(
+            format!(" {}: {}▏ ", p.rotulo, p.texto),
+            e.tema.estilo(Realce::Cursor),
+        )));
+    } else if let Some(aviso) = &e.aviso {
+        bloco = bloco.title_bottom(Line::from(Span::styled(
+            format!(" {aviso} "),
+            e.tema.estilo(Realce::BadgeAtencao),
+        )));
     }
     if e.vim.em_curso() {
         bloco = bloco.title_bottom(
@@ -2029,6 +2382,11 @@ fn pular_pro_mes_com_evento(e: &mut Estado, adiante: bool) -> bool {
 /// não faz nada, em vez de vazar pro tratamento de tecla e disparar
 /// outra coisa por engano.
 fn comando_de_vim(e: &mut Estado, c: Comando) {
+    // `dd` num evento do calendário apaga o evento (ciclo 318).
+    if matches!(c, Comando::Apagar(Movimento::LinhaInteira, _)) && indice_do_cursor(e).is_some() {
+        apagar_evento(e);
+        return;
+    }
     let Comando::Mover(mov, vezes) = c else { return };
     // Onde o cursor está, o PAI arruma os filhos como? (ciclo 297)
     //
@@ -3795,6 +4153,153 @@ mod testes {
         m.cursor = vec![0, 1, 1, 4, 0];
         assert_eq!(m.arvore.em(&m.cursor).unwrap().texto, "Revisão de código");
         assert_eq!(tecla(&mut m, "Enter"), None);
+    }
+
+    /// Uma página editável com texto antes e depois do calendário.
+    const PAGINA_COM_CALENDARIO: &str = "---\ntitle: Agenda\n---\n\nAntes do calendário.\n\n{{ type: \"calendar\" }}\nentries:\n- date: 2026-08-10\n  title: Sprint\n  end_date: 2026-08-14\n- date: 2026-08-12\n  title: Reunião\n{{ /calendar }}\n\nDepois do calendário.\n";
+
+    fn editavel() -> Estado {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(PAGINA_COM_CALENDARIO, Some("v1".into()));
+        let mut e = e.com_hoje("2026-08-12");
+        e.foco = Foco::Conteudo;
+        e
+    }
+
+    fn digitar(e: &mut Estado, texto: &str) {
+        for c in texto.chars() {
+            tecla(e, &c.to_string());
+        }
+    }
+
+    /// Os dados do calendário no texto que ficou pra gravar.
+    fn gravado(e: &Estado) -> anotadinho_core::embed::CalendarEmbedData {
+        let texto = e.gravacao.clone().expect("nada pra gravar");
+        assert!(texto.starts_with("---\ntitle: Agenda\n---\n\nAntes do calendário.\n\n"), "o começo mudou:\n{texto}");
+        assert!(texto.ends_with("\n\nDepois do calendário.\n"), "o fim mudou:\n{texto}");
+        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
+        dados_do_calendario(corpo).expect("o calendário sumiu do texto")
+    }
+
+    #[test]
+    fn o_cria_um_evento_no_dia_do_cursor() {
+        let mut e = editavel();
+        // O dia 20: semana de 16 a 22, quinta.
+        e.cursor = vec![1, 1, 3, 4];
+        assert_eq!(tela::data_do_cursor(&e.arvore, &e.cursor).as_deref(), Some("2026-08-20"));
+        tecla(&mut e, "o");
+        assert!(desenho(&mut e, 120, 40).join("\n").contains("Novo evento em 20/08/2026"));
+        digitar(&mut e, "Deploy");
+        tecla(&mut e, "Enter");
+        let d = gravado(&e);
+        assert_eq!(d.entries.len(), 3);
+        assert_eq!(d.entries[2].title, "Deploy");
+        assert_eq!(d.entries[2].date.as_deref(), Some("2026-08-20"));
+        // O cursor pousa no evento novo, e a tela já o mostra.
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Deploy");
+        assert!(desenho(&mut e, 120, 40).join("\n").contains("Deploy"));
+    }
+
+    #[test]
+    fn escape_cancela_a_pergunta_sem_gravar() {
+        let mut e = editavel();
+        e.cursor = vec![1, 1, 3, 4];
+        tecla(&mut e, "o");
+        digitar(&mut e, "Nada");
+        tecla(&mut e, "Escape");
+        assert!(e.pergunta.is_none() && e.gravacao.is_none());
+        // E o `j` volta a ser movimento, não texto.
+        tecla(&mut e, "j");
+        assert!(e.pergunta.is_none());
+    }
+
+    #[test]
+    fn c_renomeia_e_x_apaga_o_evento() {
+        let mut e = editavel();
+        // A Reunião: semana 9–15, quarta 12, faixa 1.
+        e.cursor = vec![1, 1, 2, 3, 1];
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Reunião");
+        tecla(&mut e, "c");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "Reunião", "o título atual vem preenchido");
+        for _ in 0.."Reunião".chars().count() {
+            tecla(&mut e, "Backspace");
+        }
+        digitar(&mut e, "Daily");
+        tecla(&mut e, "Enter");
+        assert_eq!(gravado(&e).entries[1].title, "Daily");
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Daily");
+        e.gravacao = None;
+        tecla(&mut e, "x");
+        let d = gravado(&e);
+        assert_eq!(d.entries.len(), 1);
+        assert_eq!(d.entries[0].title, "Sprint");
+        assert!(desenho(&mut e, 120, 40).join("\n").contains("evento apagado"));
+    }
+
+    #[test]
+    fn dd_tambem_apaga_o_evento() {
+        let mut e = editavel();
+        e.cursor = vec![1, 1, 2, 1, 0];
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Sprint");
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert_eq!(gravado(&e).entries.len(), 1);
+        assert_eq!(gravado(&e).entries[0].title, "Reunião");
+    }
+
+    #[test]
+    fn maior_e_menor_movem_o_evento_preservando_a_duracao() {
+        let mut e = editavel();
+        // A Sprint vista do dia 12 (no meio da barra).
+        e.cursor = vec![1, 1, 2, 3, 0];
+        tecla(&mut e, ">");
+        let d = gravado(&e);
+        assert_eq!(d.entries[0].date.as_deref(), Some("2026-08-11"));
+        assert_eq!(d.entries[0].end_date.as_deref(), Some("2026-08-15"));
+        // O cursor segue o evento, no dia seguinte.
+        assert_eq!(tela::data_do_cursor(&e.arvore, &e.cursor).as_deref(), Some("2026-08-13"));
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Sprint");
+        tecla(&mut e, "<");
+        tecla(&mut e, "<");
+        assert_eq!(gravado(&e).entries[0].date.as_deref(), Some("2026-08-09"));
+    }
+
+    #[test]
+    fn mover_pra_fora_do_mes_leva_a_ancora_junto() {
+        let mut e = editavel();
+        e.ancorar(&[1], "2026-08-01".into());
+        // Reunião do dia 12 → move 20 vezes pra frente: 1º de setembro.
+        e.cursor = vec![1, 1, 2, 3, 1];
+        for _ in 0..20 {
+            tecla(&mut e, ">");
+        }
+        assert_eq!(gravado(&e).entries[1].date.as_deref(), Some("2026-09-01"));
+        // 1º de setembro ainda está na grade de agosto (as células do fim):
+        // o cursor fica ali, como o arrastar da janela.
+        assert_eq!(tela::data_do_cursor(&e.arvore, &e.cursor).as_deref(), Some("2026-09-01"));
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Reunião");
+        // Mais cinco: dia 6, fora da grade de agosto — a âncora vai junto.
+        for _ in 0..5 {
+            tecla(&mut e, ">");
+        }
+        assert_eq!(gravado(&e).entries[1].date.as_deref(), Some("2026-09-06"));
+        assert!(desenho(&mut e, 120, 40).join("\n").contains("Setembro 2026"));
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Reunião");
+    }
+
+    #[test]
+    fn calendario_do_vault_nao_se_edita() {
+        let texto = "{{ type: \"calendar\" }}\nmode: vault\n{{ /calendar }}\n";
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(texto, None);
+        let mut e = e.com_hoje("2026-08-12");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0, 1, 2, 3];
+        tecla(&mut e, "o");
+        digitar(&mut e, "X");
+        tecla(&mut e, "Enter");
+        assert!(e.gravacao.is_none());
+        assert!(desenho(&mut e, 120, 40).join("\n").contains("só leitura"));
     }
 
     #[test]
