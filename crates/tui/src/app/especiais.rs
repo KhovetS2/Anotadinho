@@ -32,6 +32,12 @@ pub enum TipoEspecial {
     Tags,
     Assets,
     Propostas,
+    /// `type: kanban` de página inteira (ciclo 353): os itens `- ` da
+    /// própria página com `column::`.
+    Kanban,
+    /// `type: table` de página inteira: as páginas com `status::` ou
+    /// `priority::`.
+    Tarefas,
 }
 
 impl TipoEspecial {
@@ -45,6 +51,8 @@ impl TipoEspecial {
             "tags" => Some(Self::Tags),
             "assets" => Some(Self::Assets),
             "propostas" => Some(Self::Propostas),
+            "kanban" => Some(Self::Kanban),
+            "table" => Some(Self::Tarefas),
             _ => None,
         }
     }
@@ -55,6 +63,8 @@ impl TipoEspecial {
             Self::Tags => ("pages/tags.md", "Tags"),
             Self::Assets => ("pages/assets.md", "Assets"),
             Self::Propostas => ("pages/propostas.md", "Propostas"),
+            Self::Kanban => ("pages/kanban.md", "Kanban"),
+            Self::Tarefas => ("pages/tarefas.md", "Tarefas"),
         }
     }
 }
@@ -82,6 +92,77 @@ pub enum Dados {
     Tags(Vec<(String, Vec<(String, String)>)>),
     Assets(Vec<Asset>),
     Propostas(Vec<PropostaNaTela>),
+    /// As colunas (chave, rótulo) e os títulos dos cartões de cada uma.
+    Kanban(Vec<(String, String, Vec<String>)>),
+    Tarefas(Vec<Tarefa>),
+}
+
+/// Uma linha da tabela de tarefas.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tarefa {
+    pub path: String,
+    pub titulo: String,
+    pub status: String,
+    pub prioridade: String,
+}
+
+/// O quadro da página `type: kanban`, como o `Kanban` da janela: cada
+/// `- ` é um cartão, `column:: x` diz a coluna (backlog se não diz) e
+/// `title:: y` o título; as partes se separam por dois espaços.
+pub fn kanban_da_pagina(texto: &str) -> Dados {
+    let mut colunas: Vec<(String, String, Vec<String>)> = [
+        ("backlog", "Backlog"),
+        ("todo", "A Fazer"),
+        ("doing", "Fazendo"),
+        ("done", "Concluído"),
+    ]
+    .iter()
+    .map(|(c, r)| (c.to_string(), r.to_string(), Vec::new()))
+    .collect();
+    for linha in texto.lines() {
+        let Some(corpo) = linha.trim().strip_prefix("- ") else { continue };
+        let (mut coluna, mut titulo) = ("backlog".to_string(), String::new());
+        for parte in corpo.split("  ") {
+            if let Some(v) = parte.strip_prefix("column:: ") {
+                coluna = v.trim().to_string();
+            } else if let Some(v) = parte.strip_prefix("title:: ") {
+                titulo = v.trim().to_string();
+            } else if parte.starts_with("id:: ") {
+            } else if titulo.is_empty() {
+                titulo = parte.to_string();
+            }
+        }
+        if titulo.is_empty() {
+            titulo = corpo.to_string();
+        }
+        // Coluna fora das quatro não aparece, como na janela.
+        if let Some(c) = colunas.iter_mut().find(|c| c.0 == coluna) {
+            c.2.push(titulo);
+        }
+    }
+    Dados::Kanban(colunas)
+}
+
+/// A tabela de tarefas a partir de `(caminho, título, conteúdo)` das
+/// páginas, como o `TaskTable` da janela.
+pub fn tarefas_das_paginas(paginas: Vec<(String, String, String)>) -> Dados {
+    Dados::Tarefas(
+        paginas
+            .into_iter()
+            .filter_map(|(path, titulo, conteudo)| {
+                let (mut status, mut prioridade) = ("-".to_string(), "-".to_string());
+                for l in conteudo.lines() {
+                    if let Some(v) = l.trim().strip_prefix("status:: ") {
+                        status = v.trim().to_string();
+                    }
+                    if let Some(v) = l.trim().strip_prefix("priority:: ") {
+                        prioridade = v.trim().to_string();
+                    }
+                }
+                (status != "-" || prioridade != "-").then_some(Tarefa { path, titulo, status, prioridade })
+            })
+            .collect(),
+    )
 }
 
 /// O estado da tela.
@@ -122,6 +203,8 @@ impl TelaEspecial {
             Some(Dados::Tags(t)) => t.len(),
             Some(Dados::Assets(a)) => a.len(),
             Some(Dados::Propostas(p)) => p.len(),
+            Some(Dados::Kanban(c)) => c.get(self.chip).map_or(0, |c| c.2.len()),
+            Some(Dados::Tarefas(t)) => t.len(),
             None => 0,
         }
     }
@@ -159,7 +242,9 @@ pub fn carregar(e: &mut Estado, dados: Dados) {
     t.dados = Some(dados);
     let total = t.total();
     t.selecionado = t.selecionado.min(total.saturating_sub(1));
-    t.chip = 0;
+    if t.tipo != TipoEspecial::Kanban {
+        t.chip = 0;
+    }
     t.deslocamento = 0;
 }
 
@@ -186,12 +271,16 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
     match tecla {
         "j" | "ArrowDown" => {
             t.selecionado = (t.selecionado + 1).min(total.saturating_sub(1));
-            t.chip = 0;
+            if t.tipo != TipoEspecial::Kanban {
+                t.chip = 0;
+            }
             t.deslocamento = 0;
         }
         "k" | "ArrowUp" => {
             t.selecionado = t.selecionado.saturating_sub(1);
-            t.chip = 0;
+            if t.tipo != TipoEspecial::Kanban {
+                t.chip = 0;
+            }
             t.deslocamento = 0;
         }
         "g" | "Home" => {
@@ -214,6 +303,8 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
                 TipoEspecial::Tags => tecla_nas_tags(e, tecla),
                 TipoEspecial::Assets => tecla_nos_assets(e, tecla, d_antes),
                 TipoEspecial::Propostas => tecla_nas_propostas(e, tecla),
+                TipoEspecial::Kanban => tecla_no_kanban(e, tecla),
+                TipoEspecial::Tarefas => tecla_nas_tarefas(e, tecla),
             };
         }
     }
@@ -235,6 +326,50 @@ fn tecla_nas_tags(e: &mut Estado, tecla: &str) -> bool {
         _ => return false,
     }
     true
+}
+
+fn tecla_no_kanban(e: &mut Estado, tecla: &str) -> bool {
+    let Some(t) = e.especial.as_mut() else { return false };
+    let Some(Dados::Kanban(colunas)) = &t.dados else { return false };
+    let n = colunas.len();
+    match tecla {
+        "l" | "ArrowRight" => t.chip = (t.chip + 1).min(n.saturating_sub(1)),
+        "h" | "ArrowLeft" => t.chip = t.chip.saturating_sub(1),
+        _ => return false,
+    }
+    let cartoes = colunas.get(t.chip).map_or(0, |c| c.2.len());
+    t.selecionado = t.selecionado.min(cartoes.saturating_sub(1));
+    true
+}
+
+fn tecla_nas_tarefas(e: &mut Estado, tecla: &str) -> bool {
+    let Some(t) = e.especial.as_mut() else { return false };
+    let Some(Dados::Tarefas(lista)) = &t.dados else { return false };
+    match tecla {
+        // `s` gira a ordem, como clicar no cabeçalho da coluna.
+        "s" => {
+            t.chip = (t.chip + 1) % 3;
+            t.selecionado = 0;
+        }
+        "Enter" => {
+            if let Some(path) = tarefas_ordenadas(lista, t.chip).get(t.selecionado).map(|x| x.path.clone()) {
+                e.pedidos.push(Pedido::AbrirPagina(path));
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// As tarefas na ordem escolhida: título, status ou prioridade.
+fn tarefas_ordenadas(lista: &[Tarefa], ordem: usize) -> Vec<&Tarefa> {
+    let mut v: Vec<&Tarefa> = lista.iter().collect();
+    match ordem {
+        1 => v.sort_by(|a, b| a.status.cmp(&b.status)),
+        2 => v.sort_by(|a, b| a.prioridade.cmp(&b.prioridade)),
+        _ => v.sort_by(|a, b| a.titulo.cmp(&b.titulo)),
+    }
+    v
 }
 
 fn tecla_nos_assets(e: &mut Estado, tecla: &str, d_antes: bool) -> bool {
@@ -303,6 +438,8 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
         TipoEspecial::Tags => " j k tag · h l página · Enter abre · R recarrega ",
         TipoEspecial::Assets => " j k · x exclui · R recarrega ",
         TipoEspecial::Propostas => " j k · a aplica · r recusa · v diff/visualização · Ctrl+D rola ",
+        TipoEspecial::Kanban => " h l coluna · j k cartão ",
+        TipoEspecial::Tarefas => " j k · Enter abre · s ordena ",
     };
     let mut borda = Block::default()
         .borders(Borders::ALL)
@@ -342,6 +479,9 @@ pub fn linhas_da_tela(t: &TelaEspecial, tema: &Tema, w: usize, no_foco: bool) ->
         (TipoEspecial::Assets, _) => ("Assets", String::new()),
         (TipoEspecial::Propostas, Some(Dados::Propostas(p))) => ("Propostas do agente", format!("{} pendente(s) ", p.len())),
         (TipoEspecial::Propostas, _) => ("Propostas do agente", String::new()),
+        (TipoEspecial::Kanban, _) => ("Kanban", String::new()),
+        (TipoEspecial::Tarefas, Some(Dados::Tarefas(l))) => ("Tarefas", format!("{} ", l.len())),
+        (TipoEspecial::Tarefas, _) => ("Tarefas", String::new()),
     };
     let esquerda = format!(" {titulo}");
     fora.push(Line::from(vec![
@@ -384,6 +524,18 @@ pub fn linhas_da_tela(t: &TelaEspecial, tema: &Tema, w: usize, no_foco: bool) ->
                 fora.push(Line::from(Span::styled(" Nenhum arquivo em assets/ ainda.", apagado)));
             } else {
                 fora.extend(tabela_de_assets(t, tema, assets, w, no_foco, &mut faixas));
+            }
+        }
+        Dados::Kanban(colunas) => {
+            fora.push(Line::default());
+            fora.extend(quadro_kanban(t, tema, colunas, w, no_foco));
+        }
+        Dados::Tarefas(lista) => {
+            fora.push(Line::default());
+            if lista.is_empty() {
+                fora.extend(paragrafo("Nenhuma tarefa encontrada. Use 'status::' e 'priority::' nas páginas.", apagado, w));
+            } else {
+                fora.extend(tabela_de_tarefas(t, tema, lista, w, no_foco, &mut faixas));
             }
         }
         Dados::Propostas(lista) => {
@@ -631,5 +783,91 @@ fn cartao_da_proposta(
     ]));
     let mut fora = caixa(tema, miolo, w, cor_da_borda(tema, selecionado, no_foco));
     fora.push(Line::default());
+    fora
+}
+
+/// As quatro colunas lado a lado, como `.kanban__board`.
+fn quadro_kanban(t: &TelaEspecial, tema: &Tema, colunas: &[(String, String, Vec<String>)], w: usize, no_foco: bool) -> Vec<Line<'static>> {
+    let n = colunas.len().max(1);
+    let largura = (w.saturating_sub(n + 1) / n).max(8);
+    let altura = colunas.iter().map(|c| c.2.len()).max().unwrap_or(0).max(1);
+    let superficie = tema.var("bg-surface");
+    let elevado = tema.var("bg-elevated");
+    let texto = Style::default().fg(tema.var("text-primary"));
+    let apagado = Style::default().fg(tema.var("text-muted"));
+    let celula = |s: &str, n: usize| -> String {
+        let mut c: String = s.chars().take(n).collect();
+        c.push_str(&" ".repeat(n.saturating_sub(c.chars().count())));
+        c
+    };
+    let mut linhas: Vec<Vec<Span<'static>>> = vec![vec![Span::raw(" ")]; altura * 2 + 1];
+    for (ci, (_, rotulo, cartoes)) in colunas.iter().enumerate() {
+        let cab = format!(" {rotulo} ");
+        let conta = format!("{} ", cartoes.len());
+        linhas[0].push(Span::styled(cab.clone(), texto.bg(superficie).add_modifier(Modifier::BOLD)));
+        linhas[0].push(Span::styled(
+            format!("{}{conta}", " ".repeat(largura.saturating_sub(cab.chars().count() + conta.chars().count()))),
+            apagado.bg(superficie),
+        ));
+        for k in 0..altura {
+            let (l1, l2) = (1 + 2 * k, 2 + 2 * k);
+            match cartoes.get(k) {
+                Some(titulo) => {
+                    let aceso = no_foco && ci == t.chip && k == t.selecionado;
+                    let estilo = if aceso { tema.estilo(Realce::Cursor) } else { texto.bg(elevado) };
+                    linhas[l1].push(Span::styled(" ", Style::default().bg(superficie)));
+                    linhas[l1].push(Span::styled(celula(&format!(" {titulo}"), largura.saturating_sub(2)), estilo));
+                    linhas[l1].push(Span::styled(" ", Style::default().bg(superficie)));
+                }
+                None => linhas[l1].push(Span::styled(" ".repeat(largura), Style::default().bg(superficie))),
+            }
+            linhas[l2].push(Span::styled(" ".repeat(largura), Style::default().bg(superficie)));
+        }
+        for l in linhas.iter_mut() {
+            l.push(Span::raw(" "));
+        }
+    }
+    linhas.into_iter().map(Line::from).collect()
+}
+
+/// A tabela de tarefas, com o status em badge como `.task-table`.
+fn tabela_de_tarefas(t: &TelaEspecial, tema: &Tema, lista: &[Tarefa], w: usize, no_foco: bool, faixas: &mut Vec<(usize, usize)>) -> Vec<Line<'static>> {
+    let apagado = Style::default().fg(tema.var("text-muted"));
+    let texto = Style::default().fg(tema.var("text-primary"));
+    let (col_status, col_prio) = (16, 12);
+    let col_titulo = w.saturating_sub(col_status + col_prio + 2).max(8);
+    let celula = |s: &str, n: usize| -> String {
+        let mut c: String = s.chars().take(n.saturating_sub(1)).collect();
+        c.push_str(&" ".repeat(n.saturating_sub(c.chars().count())));
+        c
+    };
+    let seta = |i: usize| if t.chip == i { " ↓" } else { "" };
+    let cab = apagado.add_modifier(Modifier::BOLD);
+    let mut fora = vec![
+        Line::from(vec![
+            Span::styled(format!(" {}", celula(&format!("Título{}", seta(0)), col_titulo)), cab),
+            Span::styled(celula(&format!("Status{}", seta(1)), col_status), cab),
+            Span::styled(celula(&format!("Prioridade{}", seta(2)), col_prio), cab),
+        ]),
+        Line::from(Span::styled("─".repeat(w), Style::default().fg(tema.var("border")))),
+    ];
+    let base = 2 + fora.len();
+    for (i, x) in tarefas_ordenadas(lista, t.chip).into_iter().enumerate() {
+        let sel = no_foco && i == t.selecionado;
+        let fundo = |s: Style| if sel { s.bg(tema.var("bg-elevated")) } else { s };
+        let papel = match x.status.as_str() {
+            "done" | "concluido" => Realce::BadgeSucesso,
+            "doing" | "em-andamento" => Realce::BadgeInfo,
+            _ => Realce::BadgeAtencao,
+        };
+        fora.push(Line::from(vec![
+            Span::styled(if sel { "▌" } else { " " }, fundo(Style::default().fg(tema.var("accent-blue")))),
+            Span::styled(celula(&x.titulo, col_titulo), fundo(texto)),
+            Span::styled(format!(" {} ", x.status), tema.pilula(papel)),
+            Span::styled(" ".repeat(col_status.saturating_sub(x.status.chars().count() + 2)), fundo(Style::default())),
+            Span::styled(celula(&x.prioridade, col_prio), fundo(texto)),
+        ]));
+        faixas.push((base + i, base + i + 1));
+    }
     fora
 }

@@ -345,6 +345,18 @@ fn carregar_especial(estado: &mut Estado, vault: &str, tipo: TipoEspecial) {
             }
             especiais::assets_com_uso(lista.into_iter().map(|a| (a.path, a.size)).collect(), &paginas)
         }),
+        TipoEspecial::Kanban => Ok(especiais::kanban_da_pagina(estado.texto_da_pagina.as_deref().unwrap_or(""))),
+        TipoEspecial::Tarefas => handle_list_pages(vault.to_string()).map(|lista| {
+            especiais::tarefas_das_paginas(
+                lista
+                    .into_iter()
+                    .filter_map(|p| {
+                        let c = anotadinho_ipc::handle_read_page(vault.to_string(), p.path.clone()).ok()?;
+                        Some((p.path, p.title, c))
+                    })
+                    .collect(),
+            )
+        }),
         TipoEspecial::Propostas => anotadinho_ipc::handle_listar_propostas(vault.to_string()).map(|lista| {
             especiais::Dados::Propostas(
                 lista
@@ -388,6 +400,8 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                             TipoEspecial::Tags => "tags",
                             TipoEspecial::Assets => "assets",
                             TipoEspecial::Propostas => "propostas",
+                        TipoEspecial::Kanban => "kanban",
+                        TipoEspecial::Tarefas => "table",
                         };
                         let md = format!("---\ntitle: {titulo}\ntype: {tipo_no_frontmatter}\n---\n");
                         match handle_write_page(vault.to_string(), path.to_string(), md) {

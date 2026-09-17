@@ -172,6 +172,9 @@ fn cenas() -> Vec<Cena> {
     let especial = |tipo: &str| format!("---\ntitle: X\ntype: {tipo}\n---\n");
     v.push(cena("tags", especial("tags"), &["Tab", "j", "l"], 140, 36));
     v.push(cena("assets", especial("assets"), &["Tab", "j"], 140, 20));
+    v.push(cena("pagina-kanban", "---\ntitle: Quadro\ntype: kanban\n---\n\n- Escrever o texto  column:: todo\n- title:: Revisar  column:: doing\n- Publicar  column:: done\n- Ideia solta\n".to_string(), &["Tab", "l", "l"], 140, 20));
+    v.push(cena("pagina-tarefas", especial("table"), &["Tab", "j"], 140, 16));
+    v.push(cena("pagina-calendario", especial("calendar"), &[], 140, 36));
     v.push(cena("propostas-diff", especial("propostas"), &["Tab"], 140, 40));
     v.push(cena("propostas-visualizacao", especial("propostas"), &["Tab", "v"], 140, 40));
     // O menu `/` (ciclo 347).
@@ -232,6 +235,13 @@ fn dados_falsos(tipo: especiais::TipoEspecial) -> especiais::Dados {
             ],
             "![](../assets/diagrama-arquitetura.png) capa.jpg",
         ),
+        especiais::TipoEspecial::Kanban => unreachable!("o kanban lê a própria página"),
+        especiais::TipoEspecial::Tarefas => especiais::tarefas_das_paginas(vec![
+            ("pages/deploy.md".into(), "Deploy".into(), "status:: doing\npriority:: alta".into()),
+            ("pages/docs.md".into(), "Documentação".into(), "status:: todo".into()),
+            ("pages/login.md".into(), "Login".into(), "status:: done\npriority:: media".into()),
+            ("pages/nota.md".into(), "Nota solta".into(), "sem nada".into()),
+        ]),
         especiais::TipoEspecial::Propostas => especiais::Dados::Propostas(vec![
             especiais::PropostaNaTela {
                 proposta: Proposta {
@@ -266,7 +276,7 @@ fn rodar(c: &Cena) -> (ratatui::buffer::Buffer, Option<String>) {
     let paginas = vec![PageMeta { path: "pages/cena.md".into(), title: "cena".into(), section: "pages".into() }];
     let mut e = Estado::novo(paginas, analisar(""));
     e.abrir_texto(&c.pagina, Some("v1".into()));
-    if let Some(tipo) = e.especial.as_ref().map(|t| t.tipo) {
+    if let Some(tipo) = e.especial.as_ref().filter(|t| t.dados.is_none()).map(|t| t.tipo) {
         especiais::carregar(&mut e, dados_falsos(tipo));
     }
     let mut e = e.com_hoje("2026-08-12");

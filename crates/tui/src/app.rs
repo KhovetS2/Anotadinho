@@ -241,16 +241,26 @@ impl Estado {
         // abre carregando e pede os dados. Reabrir a mesma mantém o lugar.
         let velha = self.especial.take();
         self.especial = especiais::TipoEspecial::do_frontmatter(frontmatter).map(|tipo| {
-            self.pedidos.push(Pedido::CarregarEspecial(tipo));
-            match velha {
+            let mut tela = match velha {
                 Some(v) if v.tipo == tipo => v,
                 _ => especiais::TelaEspecial::nova(tipo),
+            };
+            // O kanban de página lê a própria página: não precisa do `main`.
+            if tipo == especiais::TipoEspecial::Kanban {
+                tela.dados = Some(especiais::kanban_da_pagina(texto));
+            } else {
+                self.pedidos.push(Pedido::CarregarEspecial(tipo));
             }
+            tela
         });
+        // `type: calendar` de página inteira é o calendário do vault
+        // (ciclo 353), como o `Calendar` da janela: somente leitura.
+        let calendario = pagina_de_calendario(frontmatter);
+        let corpo = if calendario { CALENDARIO_DA_PAGINA } else { corpo };
         self.abrir(anotadinho_core::analise::analisar(corpo));
         self.desfazer.clear();
         self.refazer.clear();
-        self.texto_da_pagina = Some(texto.to_string());
+        self.texto_da_pagina = (!calendario).then(|| texto.to_string());
         self.versao = versao;
     }
 
@@ -462,7 +472,8 @@ impl Estado {
         if self.pergunta.is_some() || matches!(self.modal, Some(Modal::Detalhe { .. } | Modal::Opcoes(_))) {
             return false;
         }
-        if self.conversa.is_some() || self.especial.is_some() {
+        let (frontmatter, _) = anotadinho_core::MarkdownCodec::split_frontmatter_text(texto);
+        if self.conversa.is_some() || self.especial.is_some() || pagina_de_calendario(frontmatter) {
             self.abrir_texto(texto, versao);
             return true;
         }
@@ -654,6 +665,15 @@ impl Estado {
             self.topo = tela::rolar(self.topo, self.altura, l);
         }
     }
+}
+
+/// O corpo que a página `type: calendar` mostra: o calendário do vault.
+const CALENDARIO_DA_PAGINA: &str = "{{ type: \"calendar\" }}\nmode: vault\n{{ /calendar }}\n";
+
+fn pagina_de_calendario(frontmatter: &str) -> bool {
+    frontmatter
+        .lines()
+        .any(|l| l.strip_prefix("type:").map(|v| v.trim().trim_matches('"').trim_matches('\'')) == Some("calendar"))
 }
 
 /// O tempo passou sem tecla: quem acompanha coisa que roda por fora
@@ -8614,5 +8634,52 @@ mod testes {
         assert!(!desenho(&mut e, 100, 30).join("\n").contains("Wikilink"));
         tecla(&mut e, "Escape");
         assert!(e.pergunta.is_none());
+    }
+
+    // --- Ciclo 353: kanban, tabela e calendário de página inteira ------------
+
+    #[test]
+    fn pagina_kanban_le_os_itens_com_column_e_anda_pelas_colunas() {
+        let mut e = pagina_com("---\ntitle: Q\ntype: kanban\n---\n\n- A  column:: todo\n- title:: B  column:: todo\n- C\n- D  column:: outra\n");
+        assert!(e.pedidos.is_empty(), "o kanban de página não pede nada ao main");
+        let Some(especiais::Dados::Kanban(c)) = e.especial.as_ref().and_then(|t| t.dados.clone()) else { panic!() };
+        assert_eq!(c[0].2, ["C"]);
+        assert_eq!(c[1].2, ["A", "B"]);
+        tecla(&mut e, "l");
+        tecla(&mut e, "j");
+        let t = e.especial.as_ref().unwrap();
+        assert_eq!((t.chip, t.selecionado), (1, 1));
+        let tela = desenho(&mut e, 120, 20).join("\n");
+        assert!(tela.contains("A Fazer") && tela.contains("Concluído") && !tela.contains(" D "), "{tela}");
+    }
+
+    #[test]
+    fn pagina_de_tarefas_ordena_e_abre() {
+        let mut e = pagina_com("---\ntitle: T\ntype: table\n---\n");
+        assert_eq!(e.pedidos, [Pedido::CarregarEspecial(especiais::TipoEspecial::Tarefas)]);
+        e.pedidos.clear();
+        especiais::carregar(
+            &mut e,
+            especiais::tarefas_das_paginas(vec![
+                ("pages/b.md".into(), "B".into(), "status:: todo".into()),
+                ("pages/a.md".into(), "A".into(), "status:: done".into()),
+                ("pages/c.md".into(), "C".into(), "nada".into()),
+            ]),
+        );
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/a.md".into())]);
+        e.pedidos.clear();
+        tecla(&mut e, "s"); // por status: done < todo
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/b.md".into())]);
+        assert!(!desenho(&mut e, 100, 20).join("\n").contains("C "), "página sem status:: fica de fora");
+    }
+
+    #[test]
+    fn pagina_de_calendario_e_o_calendario_do_vault_so_leitura() {
+        let mut e = pagina_com("---\ntitle: Agenda\ntype: calendar\n---\n\n- \n");
+        assert!(e.texto_da_pagina.is_none());
+        assert!(matches!(e.arvore.filhos.first().map(|u| &u.tipo), Some(Tipo::Embed(n)) if n == "calendar"));
     }
 }
