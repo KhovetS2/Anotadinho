@@ -328,6 +328,10 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         abrir(estado, vault, path);
                     }
                 }
+                Pedido::AssetsParaInserir => match anotadinho_ipc::handle_list_assets_info(vault.to_string()) {
+                    Ok(lista) => app::markdown::escolher_asset(estado, lista.into_iter().map(|a| a.path).collect()),
+                    Err(e) => estado.aviso = Some(format!("não listou os assets: {e}")),
+                },
                 Pedido::ExcluirAsset(path) => {
                     if let Err(e) = anotadinho_ipc::handle_delete_asset(vault.to_string(), path.clone()) {
                         estado.aviso = Some(format!("Erro ao excluir: {e}"));

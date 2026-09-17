@@ -29,6 +29,8 @@ pub enum Pedido {
     CarregarEspecial(super::especiais::TipoEspecial),
     /// Abrir a página de tags, assets ou propostas, criando se falta.
     AbrirEspecial(super::especiais::TipoEspecial),
+    /// Listar `assets/` pro menu `/` (ciclo 347).
+    AssetsParaInserir,
     /// Excluir um arquivo de `assets/`.
     ExcluirAsset(String),
     /// Aplicar (ou recusar) uma proposta do agente.
@@ -282,6 +284,10 @@ pub enum AcaoDaEntrada {
         /// A pasta onde ela nasce.
         pasta: Option<String>,
     },
+    /// URL ou caminho de uma imagem pro bloco novo (ciclo 347).
+    Imagem,
+    /// Código Mermaid pro bloco novo.
+    Mermaid,
 }
 
 /// O que uma [`Modal::Escolha`] faz com o item escolhido.
@@ -306,6 +312,10 @@ pub enum AcaoDaEscolha {
     /// Abrir a página escolhida (chave = caminho) — resultados de busca,
     /// wikilinks (ciclo 342).
     AbrirPagina,
+    /// O item do menu `/` (ciclo 347).
+    Inserir,
+    /// O arquivo de `assets/` a inserir.
+    Asset,
 }
 
 /// Os comandos da barra, como na janela.
@@ -328,6 +338,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Mover página pra pasta…", "mover-pagina"),
     ("Exportar pasta…", "exportar-pasta"),
     ("Exportar vault inteiro", "exportar-vault"),
+    ("Inserir bloco ou embed…", "inserir"),
     ("Ver tags", "ver-tags"),
     ("Ver assets", "ver-assets"),
     ("Propostas do agente", "propostas"),
@@ -440,6 +451,7 @@ fn executar(e: &mut Estado, chave: &str) {
             e.pedidos.push(Pedido::GravarPreferencias);
         }
         "hoje" => e.pedidos.push(Pedido::AbrirHoje),
+        "inserir" => super::markdown::inserir_pela_barra(e),
         "ver-tags" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Tags)),
         "ver-assets" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Assets)),
         "propostas" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Propostas)),
@@ -522,6 +534,8 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 AcaoDaEscolha::Anexar => super::conversa::mudar_anexo(e, &chave, true),
                 AcaoDaEscolha::Desanexar => super::conversa::mudar_anexo(e, &chave, false),
                 AcaoDaEscolha::AbrirPagina => e.pedidos.push(Pedido::AbrirPagina(chave)),
+                AcaoDaEscolha::Inserir => super::markdown::escolher(e, &chave),
+                AcaoDaEscolha::Asset => super::markdown::inserir_trecho(e, &super::markdown::markdown_do_asset(&chave)),
                 AcaoDaEscolha::Exportar => e.pedidos.push(Pedido::ExportarPasta(chave)),
                 AcaoDaEscolha::MoverPara => {
                     if let Some(p) = e.paginas.get(e.pagina) {
@@ -540,7 +554,11 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                 }
             },
-            Resposta::Fechar => {}
+            Resposta::Fechar => {
+                if matches!(acao, AcaoDaEscolha::Inserir | AcaoDaEscolha::Asset) {
+                    e.bloco_a_inserir = None;
+                }
+            }
             Resposta::Nada => e.modal = Some(Modal::Escolha { titulo, lista, acao }),
         },
         Modal::Confirmar { titulo, mensagem, acao } => match tecla {
@@ -549,7 +567,21 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             _ => e.modal = Some(Modal::Confirmar { titulo, mensagem, acao }),
         },
         Modal::Entrada { titulo, mut campo, acao } => match tecla {
-            "Escape" => {}
+            "Escape" => {
+                if matches!(acao, AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid) {
+                    e.bloco_a_inserir = None;
+                }
+            }
+            "Enter" if matches!(acao, AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid) => {
+                let t = campo.texto.trim().to_string();
+                if t.is_empty() {
+                    e.bloco_a_inserir = None;
+                } else if acao == AcaoDaEntrada::Imagem {
+                    super::markdown::inserir_trecho(e, &format!("![imagem]({t})"));
+                } else {
+                    super::markdown::inserir_trecho(e, &format!("```mermaid\n{t}\n```"));
+                }
+            }
             "Enter" => {
                 let t = campo.texto.trim().to_string();
                 if !t.is_empty() {
@@ -559,6 +591,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         AcaoDaEntrada::PaginaNaPasta(pasta) => Pedido::CriarPaginaNaPasta { pasta, titulo: t },
                         AcaoDaEntrada::NovaPasta(dentro) => Pedido::CriarPasta(format!("{dentro}/{t}")),
                         AcaoDaEntrada::PaginaDeTemplate { template, pasta } => Pedido::CriarDeTemplate { template, titulo: t, pasta },
+                        AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid => return,
                     });
                 }
             }

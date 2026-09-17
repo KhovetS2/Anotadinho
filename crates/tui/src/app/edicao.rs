@@ -448,6 +448,18 @@ pub(super) fn tecla_na_pergunta(e: &mut Estado, tecla: &str) {
     let n = p.texto.chars().count();
     p.cursor = p.cursor.min(n);
     let byte = |t: &str, c: usize| t.char_indices().nth(c).map_or(t.len(), |(i, _)| i);
+    // `/` num bloco novo ainda vazio abre o menu de inserir (ciclo 347),
+    // como digitar `/` numa linha vazia da janela.
+    if tecla == "/" && p.texto.is_empty() {
+        if let AcaoDaPergunta::Bloco(b) = &p.acao {
+            if b.novo {
+                let b = b.clone();
+                e.pergunta = None;
+                super::markdown::abrir_menu(e, b);
+                return;
+            }
+        }
+    }
     match tecla {
         // O modo de inserção do vim (ciclo 333): `Esc` CONFIRMA — sai da
         // inserção com o que foi digitado. Desistir é `u` depois.

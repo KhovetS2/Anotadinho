@@ -174,6 +174,10 @@ fn cenas() -> Vec<Cena> {
     v.push(cena("assets", especial("assets"), &["Tab", "j"], 140, 20));
     v.push(cena("propostas-diff", especial("propostas"), &["Tab"], 140, 40));
     v.push(cena("propostas-visualizacao", especial("propostas"), &["Tab", "v"], 140, 40));
+    // O menu `/` (ciclo 347).
+    let notas = "# Notas\n\nUm parágrafo.\n\n- item\n".to_string();
+    v.push(cena("menu-inserir", notas.clone(), &["Tab", "o", "/"], 140, 40));
+    v.push(cena("menu-inserir-filtrado", notas, &com(&[&["Tab", "o", "/"], &digitado("tab")]), 140, 40));
     v.push(cena("conversa-no-fim", CONVERSA.to_string(), &["Tab"], 160, 50));
     v.push(cena("conversa-resposta-selecionada", CONVERSA.to_string(), &["Tab", "k"], 160, 50));
     v.push(cena("conversa-escrevendo", CONVERSA.to_string(), &com(&[&["Tab", "i"], &digitado("Detalha a etapa 2")]), 160, 50));

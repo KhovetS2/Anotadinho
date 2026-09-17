@@ -18,7 +18,7 @@ use ratatui::Frame;
 pub mod conversa;
 pub mod especiais;
 mod edicao;
-mod markdown;
+pub mod markdown;
 pub mod modais;
 pub use edicao::{AcaoDaPergunta, Pergunta, Registro};
 pub use modais::{Modal, Pedido, Preferencias};
@@ -119,6 +119,8 @@ pub struct Estado {
     pub conversa: Option<conversa::TelaDeConversa>,
     /// A tela de tags, assets ou propostas (ciclo 346).
     pub especial: Option<especiais::TelaEspecial>,
+    /// O bloco novo à espera do que o menu `/` vai pôr nele (ciclo 347).
+    pub bloco_a_inserir: Option<markdown::EdicaoDeBloco>,
     /// O modal aberto — barra de comandos, escolha, confirmação (ciclo 339).
     pub modal: Option<Modal>,
     /// O que só o `main` pode fazer (abrir, criar, apagar, gravar
@@ -190,6 +192,7 @@ impl Estado {
             modal: None,
             conversa: None,
             especial: None,
+            bloco_a_inserir: None,
             pedidos: Vec::new(),
             preferencias: Preferencias::default(),
             agora: None,
@@ -2648,7 +2651,7 @@ fn aparencia_do_botao(nome: &str, tema: &Tema) -> (Option<Color>, Style) {
 /// Um glifo de uma célula pro ícone de um botão de ações (os nomes de
 /// `components/icon.rs`). Nada de emoji: ele ocupa duas células em
 /// metade dos terminais e desalinha a caixa.
-fn glifo_do_icone(nome: &str) -> &'static str {
+pub(super) fn glifo_do_icone(nome: &str) -> &'static str {
     match nome {
         "search" => "⌕",
         "home" => "⌂",
@@ -8272,5 +8275,83 @@ mod testes {
         tecla(&mut e, "Enter");
         assert_eq!(e.pedidos, [Pedido::AbrirEspecial(especiais::TipoEspecial::Propostas)]);
         assert_eq!(especiais::TipoEspecial::Propostas.pagina().0, "pages/propostas.md");
+    }
+
+    // --- Ciclo 347: o menu `/` ------------------------------------------
+
+    #[test]
+    fn barra_num_bloco_novo_vazio_abre_o_menu_de_inserir() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        tecla(&mut e, "/");
+        assert!(e.pergunta.is_none());
+        let tela = desenho(&mut e, 100, 40).join("\n");
+        for esperado in ["Inserir", "Título 1", "Checklist", "Tabela 3×2", "Kanban"] {
+            assert!(tela.contains(esperado), "faltou {esperado}:\n{tela}");
+        }
+        // Filtra e escolhe um título: a inserção continua com a marca.
+        digitar(&mut e, "titulo 2");
+        tecla(&mut e, "Enter");
+        let p = e.pergunta.as_ref().expect("não voltou pra inserção");
+        assert!(matches!(&p.acao, edicao::AcaoDaPergunta::Bloco(b) if b.prefixo == "## "));
+        digitar(&mut e, "Seção");
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).contains("Um parágrafo com **negrito**.\n\n## Seção\n\n"), "{}", corpo_gravado(&e));
+        // `/` com texto já digitado é só texto.
+        tecla(&mut e, "o");
+        digitar(&mut e, "a/b");
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).contains("## Seção\n\na/b\n"), "{}", corpo_gravado(&e));
+    }
+
+    #[test]
+    fn o_menu_insere_embed_tabela_e_linha_inteiros() {
+        let mut e = markdown_editavel().com_hoje("2026-08-12");
+        e.cursor = vec![0];
+        tecla(&mut e, "o");
+        tecla(&mut e, "/");
+        digitar(&mut e, "kanban");
+        tecla(&mut e, "Enter");
+        let corpo = corpo_gravado(&e);
+        assert!(corpo.starts_with("# Título\n\n{{ type: \"kanban\" }}\ncolumns:\n- Backlog"), "{corpo}");
+        assert!(corpo.contains("column: Backlog\n{{ /kanban }}\n\nUm parágrafo"), "{corpo}");
+        // O cursor vai pro embed novo.
+        assert!(matches!(e.arvore.em(&e.cursor).map(|u| &u.tipo), Some(Tipo::Embed(n)) if n == "kanban"));
+        // Pela barra de comandos: um bloco depois do cursor.
+        e.cursor = vec![0];
+        tecla(&mut e, ":");
+        digitar(&mut e, "inserir bloco");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "linha");
+        tecla(&mut e, "Enter");
+        assert!(corpo_gravado(&e).starts_with("# Título\n\n---\n\n{{ type"), "{}", corpo_gravado(&e));
+        // Diagrama pede o código; Esc desiste sem gravar.
+        e.gravacao = None;
+        tecla(&mut e, "o");
+        tecla(&mut e, "/");
+        digitar(&mut e, "diagrama");
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Entrada { .. })));
+        digitar(&mut e, "graph TD; A-->B");
+        tecla(&mut e, "Enter");
+        assert!(corpo_gravado(&e).contains("```mermaid\ngraph TD; A-->B\n```"), "{}", corpo_gravado(&e));
+        assert!(e.bloco_a_inserir.is_none());
+    }
+
+    #[test]
+    fn assets_do_menu_viram_imagem_ou_link() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        tecla(&mut e, "/");
+        digitar(&mut e, "assets");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AssetsParaInserir]);
+        markdown::escolher_asset(&mut e, vec!["assets/foto.png".into(), "assets/doc.pdf".into()]);
+        digitar(&mut e, "foto");
+        tecla(&mut e, "Enter");
+        assert!(corpo_gravado(&e).contains("**negrito**.\n\n![imagem](assets/foto.png)\n"), "{}", corpo_gravado(&e));
+        assert_eq!(markdown::markdown_do_asset("assets/doc.pdf"), "[assets/doc.pdf](assets/doc.pdf)");
     }
 }

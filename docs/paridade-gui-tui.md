@@ -43,7 +43,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Janela | TUI | Ciclo / nota |
 |---|---|---|
 | Editar texto dos blocos | ✅ | 334 (modo vim) |
-| Menu `/` (inserir bloco e embed) | ❌ | |
+| Menu `/` (inserir bloco e embed) | ✅ | 347 — `/` num bloco novo vazio, ou "Inserir bloco ou embed…" |
 | Barra de seleção (negrito, itálico, link, cor) | 🟡 | marcas digitadas à mão |
 | Painel de propriedades (frontmatter) | ✅ | 344 — "Propriedades da página…" |
 | Imagem colada/arrastada, Mermaid, PDF | — | terminal |
@@ -62,7 +62,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Consulta: configuração completa | ✅ | 335, 338, 344 — `=` na consulta |
 | Ações: EXECUTAR o botão | ✅ | 342 — abrir, template, propriedade, busca |
 | Ações: configurar o botão (ação, destino, ícone) | ✅ | 344 — `=` no botão |
-| Galeria: escolher arquivo de assets | 🟡 | caminho digitado |
+| Galeria: escolher arquivo de assets | 🟡 | caminho digitado; o menu `/` já escolhe de assets/ (347) |
 | Fluxo: transições, nota | ✅ | 335 |
 | Fluxo: planejar/executar/pedir alteração (abre conversa) | ❌ | |
 

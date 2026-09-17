@@ -1,0 +1,96 @@
+# cena menu-inserir · 140x40 · teclas: Tab o /
+┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
+│cena                                    ││┌──────────────────────────────────────────────────────────────────────────────────────────────┐│
+│                                        │││# Notas                                                                                       ││
+│                                        │╭ Inserir ─────────────────────────────────────────────╮────────────────────────────────────────┘│
+│                                        ││                                                      │                                         │
+│                                        ││──────────────────────────────────────────────────────│                                         │
+│                                        ││ # Título 1                             Título grande │                                         │
+│                                        ││ # Título 2                              Título médio │                                         │
+│                                        ││ # Título 3                            Título pequeno │                                         │
+│                                        ││ • Lista                         Lista com marcadores │                                         │
+│                                        ││ ☐ Checklist                         Lista de tarefas │                                         │
+│                                        ││ ” Citação                           Bloco de citação │                                         │
+│                                        ││ ‹› Código                            Bloco de código │                                         │
+│                                        ││ ▦ Tabela                                  Tabela 3×2 │                                         │
+│                                        ││ ─ Linha                           Divisor horizontal │                                         │
+│                                        ││ ▨ Imagem                    URL ou arquivo de imagem │                                         │
+│                                        ││ ⋈ Diagrama                      Mermaid (fluxograma) │                                         │
+│                                        ││ ⌁ Assets                    Inserir arquivo do vault │                                         │
+│                                        ││ ▥ Kanban                   Board com colunas e cards │                                         │
+│                                        ││ ▦ Calendário        Eventos por data, mês/semana/dia │                                         │
+│                                        ││ ▦ Tabela de Tarefas       Tabela com colunas tipadas │                                         │
+│                                        ││ ℹ Destaque         Caixa colorida com título e corpo │                                         │
+│                                        ││ ▤ Colunas                Blocos de texto lado a lado │                                         │
+│                                        ││ ▨ Galeria                  Grade de imagens do vault │                                         │
+│                                        │╰ j k · Enter · Esc ───────────────────────────────────╯                                         │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+└────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────────────────────────────────┘
+== estilos ==
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+accccddddddddddddddddddddddddddddddddddddabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+addddddddddddddddddddddddddddddddddddddddabbeeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbb
+addddddddddddddddddddddddddddddddddddddddaghhhhhhhhhggggggggggggggggggggggggggggggggggggggggggggggbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+addddddddddddddddddddddddddddddddddddddddagijiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddaggggggggggggggggggggggggggggggggggggggggggggggggggggggggdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagkkklllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmlgdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnnniiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnniiiiiiiiiiiiiiiiiiiiiiiiinnnnnnnnnnnnnnnnnnnnnnnnnigdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddagnnnnnnnnnnnnnnnnnnnggggggggggggggggggggggggggggggggggggdddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+a = fg #3d404f bg #272930
+b = fg #00b5ff bg #272930
+c = fg - bg #272930 apagado
+d = fg - bg #272930
+e = fg #989eb7 bg #272930
+f = fg #00b5ff bg #3d404f negrito
+g = fg #3d404f bg #32343f
+h = fg #e4e8f5 bg #32343f negrito
+i = fg #e4e8f5 bg #32343f
+j = fg #272930 bg #e4e8f5
+k = fg #00b5ff bg #3d404f
+l = fg #e4e8f5 bg #3d404f
+m = fg #989eb7 bg #3d404f
+n = fg #989eb7 bg #32343f

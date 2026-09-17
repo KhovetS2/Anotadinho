@@ -551,3 +551,149 @@ pub(super) fn continuar(e: &mut Estado, b: &EdicaoDeBloco, gravado: Caminho) {
     );
 }
 
+
+// ---------------------------------------------------------------------
+// O menu `/` (ciclo 347)
+// ---------------------------------------------------------------------
+
+/// Os blocos do menu `/`, como o `SLASH_BLOCKS` da janela: rótulo,
+/// descrição, glifo e chave.
+const BLOCOS_DO_MENU: &[(&str, &str, &str, &str)] = &[
+    ("Título 1", "Título grande", "#", "h1"),
+    ("Título 2", "Título médio", "#", "h2"),
+    ("Título 3", "Título pequeno", "#", "h3"),
+    ("Lista", "Lista com marcadores", "•", "lista"),
+    ("Checklist", "Lista de tarefas", "☐", "checklist"),
+    ("Citação", "Bloco de citação", "”", "citacao"),
+    ("Código", "Bloco de código", "‹›", "codigo"),
+    ("Tabela", "Tabela 3×2", "▦", "tabela"),
+    ("Linha", "Divisor horizontal", "─", "linha"),
+    ("Imagem", "URL ou arquivo de imagem", "▨", "imagem"),
+    ("Diagrama", "Mermaid (fluxograma)", "⋈", "diagrama"),
+    ("Assets", "Inserir arquivo do vault", "⌁", "assets"),
+];
+
+/// Os itens do menu: os blocos e, na página, um por tipo de embed.
+pub(super) fn itens_do_menu(h: &Hospedeiro) -> Vec<crate::componentes::Item> {
+    use crate::componentes::Item;
+    let mut itens: Vec<Item> =
+        BLOCOS_DO_MENU.iter().map(|(r, d, g, c)| Item::novo(g, *r, *c).com_detalhe(*d)).collect();
+    // Embed dentro do corpo de um callout ou de um painel não existe.
+    if *h == Hospedeiro::Pagina {
+        itens.extend(anotadinho_core::embed::EmbedKind::all().iter().map(|k| {
+            Item::novo(super::glifo_do_icone(k.icon()), k.label(), format!("embed:{}", k.type_name())).com_detalhe(k.desc())
+        }));
+    }
+    itens
+}
+
+/// Troca a inserção aberta pelo menu `/`.
+pub(super) fn abrir_menu(e: &mut Estado, b: EdicaoDeBloco) {
+    use super::modais::{AcaoDaEscolha, Modal};
+    let lista = crate::componentes::Lista::filtravel(itens_do_menu(&b.hospedeiro));
+    e.bloco_a_inserir = Some(b);
+    e.modal = Some(Modal::Escolha { titulo: "Inserir".into(), lista, acao: AcaoDaEscolha::Inserir });
+}
+
+/// A barra de comandos: "Inserir bloco ou embed…" abre um bloco novo
+/// depois do cursor e o menu nele.
+pub(super) fn inserir_pela_barra(e: &mut Estado) {
+    let Some(h) = hospedeiro_do_cursor(e) else {
+        e.aviso = Some("aqui não entra bloco".into());
+        return;
+    };
+    if !no_markdown(e, Edicao::Criar { antes: false }, h) {
+        e.aviso = Some("aqui não entra bloco".into());
+        return;
+    }
+    match e.pergunta.take() {
+        Some(super::edicao::Pergunta { acao: AcaoDaPergunta::Bloco(b), .. }) => abrir_menu(e, b),
+        outra => e.pergunta = outra,
+    }
+}
+
+/// O item escolhido no menu.
+pub(super) fn escolher(e: &mut Estado, chave: &str) {
+    use super::modais::{AcaoDaEntrada, Modal, Pedido};
+    let Some(mut b) = e.bloco_a_inserir.clone() else { return };
+    // Um bloco de texto continua em inserção, com a marca dele.
+    let marca = match chave {
+        "h1" => Some("# "),
+        "h2" => Some("## "),
+        "h3" => Some("### "),
+        "lista" => Some("- "),
+        "checklist" => Some("- [ ] "),
+        "citacao" => Some("> "),
+        _ => None,
+    };
+    if let Some(marca) = marca {
+        let recuo: String = b.prefixo.chars().take_while(|c| c.is_whitespace()).collect();
+        b.de_lista = b.de_lista && marca.starts_with('-');
+        b.prefixo = if b.de_lista { format!("{recuo}{marca}") } else { marca.to_string() };
+        e.bloco_a_inserir = None;
+        perguntar(e, "-- INSERÇÃO --", String::new(), AcaoDaPergunta::Bloco(b));
+        return;
+    }
+    let trecho = match chave {
+        "codigo" => "```\ncódigo\n```".to_string(),
+        "tabela" => "| A | B | C |\n| --- | --- | --- |\n|  |  |  |".to_string(),
+        "linha" => "---".to_string(),
+        "imagem" | "diagrama" => {
+            let (titulo, acao) = if chave == "imagem" {
+                ("Imagem: URL ou caminho", AcaoDaEntrada::Imagem)
+            } else {
+                ("Código Mermaid (ex: graph TD; A-->B)", AcaoDaEntrada::Mermaid)
+            };
+            e.modal = Some(Modal::Entrada { titulo: titulo.into(), campo: crate::componentes::Campo::default(), acao });
+            return;
+        }
+        "assets" => {
+            e.pedidos.push(Pedido::AssetsParaInserir);
+            return;
+        }
+        _ => match chave.strip_prefix("embed:").and_then(anotadinho_core::embed::EmbedKind::from_type_name) {
+            Some(k) => {
+                let hoje = e.hoje.clone().unwrap_or_else(|| "2026-01-01".into());
+                let nome = k.type_name();
+                format!("{{{{ type: \"{nome}\" }}}}\n{}\n{{{{ /{nome} }}}}", k.default_body(&hoje).trim_end())
+            }
+            None => return,
+        },
+    };
+    inserir_trecho(e, &trecho);
+}
+
+/// Grava `trecho` como bloco no lugar da inserção guardada.
+pub(super) fn inserir_trecho(e: &mut Estado, trecho: &str) {
+    let Some(mut b) = e.bloco_a_inserir.take() else { return };
+    // O trecho é um bloco inteiro: não herda a marca nem gruda na lista.
+    b.prefixo = String::new();
+    b.de_lista = false;
+    responder(e, &b, trecho);
+}
+
+/// Os assets chegaram: a escolha de qual inserir.
+pub fn escolher_asset(e: &mut Estado, assets: Vec<String>) {
+    use super::modais::{AcaoDaEscolha, Modal};
+    if assets.is_empty() {
+        e.bloco_a_inserir = None;
+        e.aviso = Some("Nenhum arquivo em assets/ ainda.".into());
+        return;
+    }
+    let itens = assets.into_iter().map(|a| crate::componentes::Item::novo("⌁", a.clone(), a)).collect();
+    e.modal = Some(Modal::Escolha { titulo: "Inserir arquivo do vault".into(), lista: crate::componentes::Lista::filtravel(itens), acao: AcaoDaEscolha::Asset });
+}
+
+/// O markdown de um asset: imagem vira `![](…)`, o resto, link.
+pub(super) fn markdown_do_asset(path: &str) -> String {
+    let nome = std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let imagem = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif"]
+        .iter()
+        .any(|x| nome.to_lowercase().ends_with(&format!(".{x}")));
+    // Como a janela: `<img alt="imagem">` e `<a>` com o caminho.
+    if imagem {
+        format!("![imagem]({path})")
+    } else {
+        format!("[{path}]({path})")
+    }
+}
