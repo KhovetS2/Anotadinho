@@ -4,12 +4,12 @@
 │                                        ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
 │                                        ││▌  ⚠ Cuidado com a gravação                                                                z ⌄ ▌│
 │                                        ││▌  Editar uma página aberta em duas janelas sobrescreve a mais antiga.                         ▌│
-│                                        ││▌    - a checagem de versão avisa antes                                                        ▌│
 │                                  ╭────────────────────────────────────────────────────────────────────╮                                 ▌│
-│                                  │ tema                                                               │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
-│                                  │────────────────────────────────────────────────────────────────────│                                  │
+│                                  │ tema                                                               │                                 ▌│
+│                                  │────────────────────────────────────────────────────────────────────│▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
 │                                  │ ϟ Alternar tema                                                    │                                  │
 │                                  │ ϟ Escolher tema…                                                   │                                  │
+│                                  │ ϟ Nova página a partir de template…                                │                                  │
 │                                  ╰ ↑↓ escolher · Enter · Ctrl+F buscar no conteúdo · Esc ─────────────╯                                  │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -41,11 +41,11 @@ accccddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabghhghiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhjjjhfb
 addddddddddddddddddddddddddddddddddddddddabghhkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhhhjjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddlmmmmmnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddlmmmmmnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddloooppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppplddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddlqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqllllllllllllllddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb

@@ -2451,6 +2451,8 @@ pub(super) fn aplicar_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDetalh
         AlvoDoDetalhe::Propriedades | AlvoDoDetalhe::Botao { .. } | AlvoDoDetalhe::Consulta { .. } => {
             aplicar_configuracao(e, alvo, form);
         }
+        // O agente grava só no "Salvar e usar".
+        AlvoDoDetalhe::Agente => {}
         AlvoDoDetalhe::Evento { embed, indice } => {
             form.esconder("fim", !form.booleano("varios"));
             let horario = form.booleano("horario");
@@ -2524,7 +2526,7 @@ pub(super) fn excluir_do_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDet
                 e.seguir_cursor();
             }
         }
-        AlvoDoDetalhe::Propriedades | AlvoDoDetalhe::Consulta { .. } => {}
+        AlvoDoDetalhe::Propriedades | AlvoDoDetalhe::Consulta { .. } | AlvoDoDetalhe::Agente => {}
         AlvoDoDetalhe::Evento { embed, indice } => {
             let i = *indice;
             if editar_calendario(e, embed, |d| {

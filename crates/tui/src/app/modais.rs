@@ -37,6 +37,8 @@ pub enum Pedido {
         /// "Pedir alteração"; senão, avançar.
         alterar: bool,
     },
+    /// Listar os templates pra "Nova página" (ciclo 350).
+    ListarTemplates,
     /// Ver o status do git e as ações (ciclo 349).
     StatusDoGit,
     /// `git pull`.
@@ -254,6 +256,8 @@ pub enum AlvoDoDetalhe {
         /// A consulta.
         embed: Caminho,
     },
+    /// O agente das conversas (ciclo 350).
+    Agente,
 }
 
 /// O seletor de prompt padrão: a lista e os campos das variáveis.
@@ -338,6 +342,8 @@ pub enum AcaoDaEscolha {
     Git,
     /// Só mostra (o histórico da página).
     Mostrar,
+    /// O template da página nova (ciclo 350); chave vazia é em branco.
+    Template,
 }
 
 /// Os comandos da barra, como na janela.
@@ -354,6 +360,8 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Ir pra Hoje (journal)", "hoje"),
     ("Personalizar…", "personalizar"),
     ("Trocar agente…", "trocar-agente"),
+    ("Configurar agente…", "configurar-agente"),
+    ("Nova página a partir de template…", "nova-pagina"),
     ("Propriedades da página…", "propriedades"),
     ("Ver atalhos", "atalhos"),
     ("Nova pasta…", "nova-pasta"),
@@ -416,6 +424,7 @@ fn escolha_de_agente(e: &Estado) -> Modal {
                 Item::novo(if Some(&a.nome) == atual.as_ref() { "●" } else { "○" }, a.nome.clone(), i.to_string())
                     .com_detalhe(a.binario.clone())
             })
+            .chain(std::iter::once(Item::novo("✎", "Configurar…", "configurar").com_detalhe("executável, argumentos, pastas")))
             .collect(),
     );
     Modal::Escolha { titulo: "Agente das conversas".into(), lista, acao: AcaoDaEscolha::Agente }
@@ -429,7 +438,7 @@ pub fn trocar_tema(e: &mut Estado, tema: &str) {
     e.aviso = Some(format!("tema: {tema}"));
 }
 
-fn executar(e: &mut Estado, chave: &str) {
+pub(super) fn executar(e: &mut Estado, chave: &str) {
     e.modal = None;
     if super::conversa::executar(e, chave) {
         return;
@@ -447,9 +456,9 @@ fn executar(e: &mut Estado, chave: &str) {
         return;
     }
     match chave {
-        "nova-pagina" => {
-            e.modal = Some(Modal::Entrada { titulo: "Nova página".into(), campo: Campo::default(), acao: AcaoDaEntrada::NovaPagina(None) })
-        }
+        // Com templates no vault, primeiro qual (ciclo 350), como a janela.
+        "nova-pagina" => e.pedidos.push(Pedido::ListarTemplates),
+        "configurar-agente" => abrir_configuracao_do_agente(e),
         "nova-conversa" => {
             let Some(carimbo) = e.agora.clone() else {
                 e.aviso = Some("sem relógio pra datar a conversa".into());
@@ -581,6 +590,14 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                 },
                 AcaoDaEscolha::Mostrar => {}
+                AcaoDaEscolha::Template if chave.is_empty() => pedir_titulo_da_pagina(e),
+                AcaoDaEscolha::Template => {
+                    e.modal = Some(Modal::Entrada {
+                        titulo: "Nova página".into(),
+                        campo: Campo::default(),
+                        acao: AcaoDaEntrada::PaginaDeTemplate { template: chave, pasta: None },
+                    })
+                }
                 AcaoDaEscolha::Asset => super::markdown::inserir_trecho(e, &super::markdown::markdown_do_asset(&chave)),
                 AcaoDaEscolha::Exportar => e.pedidos.push(Pedido::ExportarPasta(chave)),
                 AcaoDaEscolha::MoverPara => {
@@ -592,6 +609,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         }
                     }
                 }
+                AcaoDaEscolha::Agente if chave == "configurar" => abrir_configuracao_do_agente(e),
                 AcaoDaEscolha::Agente => {
                     if let Some(a) = chave.parse::<usize>().ok().and_then(|i| anotadinho_core::agente::Adaptador::presets().get(i).cloned()) {
                         e.aviso = Some(format!("agente: {}", a.nome));
@@ -658,6 +676,12 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             use crate::componentes::RespostaDoFormulario as R;
             match form.tecla(tecla) {
                 R::Fechar => return,
+                R::Botao("salvar") if alvo == AlvoDoDetalhe::Agente => {
+                    if salvar_agente(e, &form) {
+                        return;
+                    }
+                }
+                R::Mudou if alvo == AlvoDoDetalhe::Agente => {}
                 R::Botao("excluir") => {
                     super::edicao::excluir_do_detalhe(e, &alvo);
                     return;
@@ -1047,4 +1071,70 @@ pub fn mostrar_historico(e: &mut Estado, commits: Option<Vec<(String, String, St
         .map(|(hash, data, mensagem)| Item::novo("◷", mensagem, hash.clone()).com_detalhe(format!("{hash} · {data}")))
         .collect();
     e.modal = Some(Modal::Escolha { titulo: "Histórico".into(), lista: Lista::menu(itens), acao: AcaoDaEscolha::Mostrar });
+}
+
+fn pedir_titulo_da_pagina(e: &mut Estado) {
+    e.modal = Some(Modal::Entrada { titulo: "Nova página".into(), campo: Campo::default(), acao: AcaoDaEntrada::NovaPagina(None) });
+}
+
+/// Os templates chegaram (ciclo 350): sem nenhum, direto o título; com
+/// algum, "Página em branco" e eles, como o "Escolher template" da janela.
+pub fn escolher_template(e: &mut Estado, templates: Vec<(String, String)>) {
+    if templates.is_empty() {
+        pedir_titulo_da_pagina(e);
+        return;
+    }
+    let mut itens = vec![Item::novo("≡", "Página em branco", "")];
+    itens.extend(templates.into_iter().map(|(path, titulo)| Item::novo("▤", titulo, path.clone()).com_detalhe(path)));
+    e.modal = Some(Modal::Escolha { titulo: "Escolher template".into(), lista: Lista::filtravel(itens), acao: AcaoDaEscolha::Template });
+}
+
+/// O formulário do agente (ciclo 350), como o `AgenteConfig` da janela:
+/// executável, argumentos (um tem `{prompt}`), formato, tempo limite e
+/// pastas.
+pub fn abrir_configuracao_do_agente(e: &mut Estado) {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    use anotadinho_core::agente::FormatoSaida;
+    let a = e.preferencias.agente.clone().unwrap_or_default();
+    let formatos = vec![
+        ("texto".to_string(), "Texto — a saída inteira é a resposta".to_string()),
+        ("stream".to_string(), "JSON por linha — mostra o progresso".to_string()),
+    ];
+    let mut form = Formulario::novo(vec![
+        C::novo("nome", "Nome", Valor::Texto(a.nome.clone())),
+        C::novo("binario", "Executável", Valor::Texto(a.binario.clone())).com_dica("claude, codex, ou o caminho completo"),
+        C::novo("args", "Argumentos, um por item ({prompt} em um)", Valor::Lista(a.args.clone())),
+        C::novo("formato", "Formato da saída", Valor::Opcoes(formatos, usize::from(a.formato == FormatoSaida::StreamJson))),
+        C::novo("timeout", "Tempo limite (minutos)", Valor::Texto((a.timeout_s / 60).to_string())),
+        C::novo("cwd", "Pasta de trabalho", Valor::Texto(a.cwd.clone())).com_dica("vazia: a raiz do projeto"),
+        C::novo("arg_pasta_extra", "Argumento de pasta extra", Valor::Texto(a.arg_pasta_extra.clone())).com_dica("--add-dir"),
+        C::novo("pastas_extras", "Pastas extras", Valor::Lista(a.pastas_extras.clone())),
+    ]);
+    form.botoes.push(("salvar", "Salvar e usar".into()));
+    e.modal = Some(Modal::Detalhe { titulo: "Agente das conversas".into(), form, alvo: AlvoDoDetalhe::Agente });
+}
+
+/// "Salvar e usar": valida como a janela e grava. `false` deixa o
+/// formulário aberto, com o problema no aviso.
+fn salvar_agente(e: &mut Estado, form: &crate::componentes::Formulario) -> bool {
+    use anotadinho_core::agente::{Adaptador, FormatoSaida, TIMEOUT_MINIMO_S};
+    let minutos: u64 = form.texto("timeout").trim().parse().unwrap_or(0);
+    let a = Adaptador {
+        nome: Some(form.texto("nome").trim().to_string()).filter(|n| !n.is_empty()).unwrap_or_else(|| "personalizado".into()),
+        binario: form.texto("binario").trim().to_string(),
+        args: form.lista("args").into_iter().filter(|x| !x.trim().is_empty()).collect(),
+        cwd: form.texto("cwd").trim().to_string(),
+        pastas_extras: form.lista("pastas_extras").into_iter().filter(|x| !x.trim().is_empty()).collect(),
+        arg_pasta_extra: form.texto("arg_pasta_extra").trim().to_string(),
+        timeout_s: (minutos * 60).max(TIMEOUT_MINIMO_S),
+        formato: if form.escolha("formato") == "stream" { FormatoSaida::StreamJson } else { FormatoSaida::Texto },
+    };
+    if let Some(p) = a.validar() {
+        e.aviso = Some(p.mensagem().to_string());
+        return false;
+    }
+    e.aviso = Some(format!("agente: {}", a.nome));
+    e.preferencias.agente = Some(a);
+    e.pedidos.push(Pedido::GravarPreferencias);
+    true
 }

@@ -8442,4 +8442,55 @@ mod testes {
         modais::mostrar_historico(&mut e, Some(vec![]));
         assert!(e.aviso.as_deref().unwrap().contains("Nenhum commit"));
     }
+
+    // --- Ciclo 350: templates e configuração do agente ---------------------
+
+    #[test]
+    fn nova_pagina_pergunta_o_template_quando_o_vault_tem() {
+        let mut e = Estado::novo(paginas(), analisar("# x\n"));
+        modais::executar(&mut e, "nova-pagina");
+        assert_eq!(e.pedidos, [Pedido::ListarTemplates]);
+        e.pedidos.clear();
+        // Sem templates, direto o título.
+        modais::escolher_template(&mut e, vec![]);
+        assert!(matches!(&e.modal, Some(Modal::Entrada { acao: modais::AcaoDaEntrada::NovaPagina(None), .. })));
+        e.modal = None;
+        modais::escolher_template(&mut e, vec![("templates/reuniao.md".into(), "Reunião".into())]);
+        let tela = desenho(&mut e, 100, 30).join("\n");
+        assert!(tela.contains("Escolher template") && tela.contains("Página em branco") && tela.contains("Reunião"), "{tela}");
+        tecla(&mut e, "ArrowDown");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "Daily");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::CriarDeTemplate { template: "templates/reuniao.md".into(), titulo: "Daily".into(), pasta: None }]);
+    }
+
+    #[test]
+    fn configurar_agente_valida_e_grava_o_personalizado() {
+        let mut e = Estado::novo(paginas(), analisar("# x\n"));
+        modais::executar(&mut e, "configurar-agente");
+        let tela = desenho(&mut e, 100, 40).join("\n");
+        for esperado in ["Agente das conversas", "Executável", "Argumentos", "Formato da saída", "Tempo limite (minutos)", "Pastas extras", "Salvar e usar"] {
+            assert!(tela.contains(esperado), "faltou {esperado}:\n{tela}");
+        }
+        // Executável vazio: o problema aparece e o formulário fica.
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[1].valor = crate::componentes::Valor::Texto(String::new());
+        for _ in 0..40 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        assert!(e.modal.is_some(), "salvou sem executável");
+        assert!(e.aviso.is_some());
+        // Com executável e `{prompt}`, grava e usa.
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[0].valor = crate::componentes::Valor::Texto("meu".into());
+        form.campos[1].valor = crate::componentes::Valor::Texto("/opt/agente".into());
+        form.campos[2].valor = crate::componentes::Valor::Lista(vec!["-p".into(), "{prompt}".into()]);
+        tecla(&mut e, "Enter");
+        assert!(e.modal.is_none());
+        let a = e.preferencias.agente.as_ref().unwrap();
+        assert_eq!((a.nome.as_str(), a.binario.as_str(), a.args.len()), ("meu", "/opt/agente", 2));
+        assert!(e.pedidos.contains(&Pedido::GravarPreferencias));
+    }
 }

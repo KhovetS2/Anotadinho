@@ -379,6 +379,14 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                     }
                 }
                 Pedido::ConversaDoFluxo { pagina, alterar } => conversa_do_fluxo(estado, vault, &pagina, alterar),
+                Pedido::ListarTemplates => app::modais::escolher_template(
+                    estado,
+                    anotadinho_ipc::handle_list_templates(vault.to_string())
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|t| (t.path, t.title))
+                        .collect(),
+                ),
                 Pedido::StatusDoGit => app::modais::mostrar_git(
                     estado,
                     anotadinho_ipc::handle_git_status(vault.to_string())
