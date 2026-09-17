@@ -159,6 +159,14 @@ impl Renderizador for Linhas {
 /// também a representação que o colapso vai usar: a linha do grupo já é
 /// a forma dobrada dele.
 fn contagem(u: &Unidade) -> String {
+    // Dado de desenho não conta: a variante de um callout não é um item
+    // dele (ciclo 307), e "2 items" num callout de um parágrafo mentiria.
+    let esconde = |f: &Unidade| matches!(&f.tipo, Tipo::Parte { nome, .. } if fica_fora_da_tela(nome));
+    if u.filhos.iter().any(esconde) {
+        let mut so_visiveis = u.clone();
+        so_visiveis.filhos.retain(|f| !esconde(f));
+        return contagem(&so_visiveis);
+    }
     let n = u.filhos.len();
     if n == 0 {
         return String::new();
@@ -367,7 +375,7 @@ fn achatar_fileiras(linhas: Vec<Linha>, raiz: &Unidade) -> Vec<Linha> {
 /// coluna. Nos dois casos "12" ou "Reunião" soltos numa linha seriam
 /// cano, não conteúdo — e nem um lugar onde o `j` devesse parar.
 pub fn fica_fora_da_tela(nome: &str) -> bool {
-    matches!(nome, "inicio" | "duracao" | "evento-continua" | "vazio" | "mais")
+    matches!(nome, "inicio" | "duracao" | "evento-continua" | "vazio" | "mais" | "variante")
         || nome == "evento"
         || nome.starts_with("evento--")
 }
@@ -460,12 +468,15 @@ pub fn rolar(topo: usize, altura: usize, linha: usize) -> usize {
 /// janela usa desde o ciclo 281. Aqui não há régua nova: se a árvore
 /// diz que não dá, o cursor fica.
 pub fn andar(raiz: &Unidade, cursor: &Caminho, passo: Passo) -> Caminho {
-    // Entrar numa barra desceria pra "início"/"duração" — que não têm
-    // linha na tela (`fica_fora_da_tela`, acima). Sem esta guarda o cursor
-    // "entra" de verdade na árvore, mas a tela não acende nada: parece
-    // que o Enter não fez nada, e só o Backspace devolve (ciclo 305).
-    // Tratar como se não houvesse filhos é o mesmo efeito que um
-    // cartão de kanban já tem — ele não tem filho nenhum.
+    let escondida = |c: &Caminho| {
+        raiz.em(c)
+            .is_some_and(|u| matches!(&u.tipo, Tipo::Parte { nome, .. } if fica_fora_da_tela(nome)))
+    };
+    // Entrar numa unidade cujos filhos são TODOS dado de desenho (a barra
+    // do cronograma, o dia do calendário) desceria pra um lugar sem linha
+    // na tela: parece que o Enter não fez nada, e só o Backspace devolve
+    // (ciclo 305). Tratar como se não houvesse filhos é o mesmo efeito
+    // que um cartão de kanban já tem.
     if passo == Passo::Entrar {
         if let Some(atual) = raiz.em(cursor) {
             let so_geometria = !atual.filhos.is_empty()
@@ -477,9 +488,25 @@ pub fn andar(raiz: &Unidade, cursor: &Caminho, passo: Passo) -> Caminho {
             }
         }
     }
-    mover(raiz, &Cursor::em(cursor), passo)
-        .map(|c| c.caminho)
-        .unwrap_or_else(|| cursor.clone())
+    let Some(mut destino) = mover(raiz, &Cursor::em(cursor), passo).map(|c| c.caminho) else {
+        return cursor.clone();
+    };
+    // Quando o dado de desenho é IRMÃO de conteúdo — a variante do
+    // callout vem antes do título e do corpo (ciclo 307) —, o cursor
+    // passa por cima dela na mesma direção. Entrar pousa no primeiro
+    // irmão visível; se não houver nenhum adiante, fica onde estava.
+    let adiante = match passo {
+        Passo::Anterior => Passo::Anterior,
+        Passo::Proximo | Passo::Entrar => Passo::Proximo,
+        Passo::Sair => return destino,
+    };
+    while escondida(&destino) {
+        match mover(raiz, &Cursor::em(&destino), adiante) {
+            Some(c) => destino = c.caminho,
+            None => return cursor.clone(),
+        }
+    }
+    destino
 }
 
 /// Acima disto, um nível nasce DOBRADO.

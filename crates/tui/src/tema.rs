@@ -132,6 +132,14 @@ pub enum Realce {
     /// (`.calendar-grid__bar`: fundo `--bg-elevated`, texto comum),
     /// ciclo 306.
     Evento,
+    /// A caixa de um callout, pela VARIANTE (ciclo 307): a mesma
+    /// `--callout-accent` da janela — `info` no destaque, `success`,
+    /// `warning`, `error`, e `tip` no roxo.
+    CalloutInfo,
+    CalloutSucesso,
+    CalloutAtencao,
+    CalloutErro,
+    CalloutDica,
 }
 
 /// Uma paleta resolvida.
@@ -278,6 +286,11 @@ impl Tema {
             Realce::BadgeSucesso => Style::default().fg(self.cor("success", Color::Green)),
             Realce::BadgeAtencao => Style::default().fg(self.cor("warning", Color::Yellow)),
             Realce::BadgeErro => Style::default().fg(self.cor("error", Color::Red)),
+            Realce::CalloutInfo => Style::default().fg(destaque),
+            Realce::CalloutSucesso => Style::default().fg(self.cor("success", Color::Green)),
+            Realce::CalloutAtencao => Style::default().fg(self.cor("warning", Color::Yellow)),
+            Realce::CalloutErro => Style::default().fg(self.cor("error", Color::Red)),
+            Realce::CalloutDica => Style::default().fg(self.cor("accent-purple", Color::Magenta)),
             Realce::Evento => Style::default()
                 .fg(texto)
                 .bg(self.cor("bg-elevated", Color::DarkGray)),
@@ -339,6 +352,29 @@ impl Tema {
         }
         let cor = e.fg.unwrap_or(Color::Gray);
         e.bg(misturar(cor, self.cor("bg-base", Color::Black), 0.15))
+    }
+}
+
+impl Tema {
+    /// O FUNDO de uma caixa preenchida, quando a região pede um
+    /// (ciclo 307).
+    ///
+    /// Só o callout pede: é a caixa da janela com
+    /// `background: color-mix(in srgb, var(--callout-accent) 8%,
+    /// var(--bg-surface))` — o tom da variante bem de leve sobre a
+    /// superfície. Toda outra moldura é só borda, e devolve `None`.
+    pub fn fundo_da_regiao(&self, r: Realce) -> Option<Color> {
+        match r {
+            Realce::CalloutInfo
+            | Realce::CalloutSucesso
+            | Realce::CalloutAtencao
+            | Realce::CalloutErro
+            | Realce::CalloutDica => {
+                let acento = self.estilo(r).fg.unwrap_or(Color::Gray);
+                Some(misturar(acento, self.cor("bg-surface", Color::DarkGray), 0.08))
+            }
+            _ => None,
+        }
     }
 }
 
@@ -545,6 +581,11 @@ mod testes {
             Realce::BadgeAtencao,
             Realce::BadgeErro,
             Realce::Evento,
+            Realce::CalloutInfo,
+            Realce::CalloutSucesso,
+            Realce::CalloutAtencao,
+            Realce::CalloutErro,
+            Realce::CalloutDica,
         ] {
             let e = t.estilo(r);
             let cor = e.fg.or(e.bg).unwrap_or(Color::Reset);
@@ -599,5 +640,31 @@ mod testes {
         assert_ne!(p.bg, p.fg, "o fundo tingido não pode ser a própria cor do texto");
         // O neutro já tem fundo: sai como está.
         assert_eq!(t.pilula(Realce::Evento), t.estilo(Realce::Evento));
+    }
+
+    #[test]
+    fn so_o_callout_tem_fundo_e_cada_variante_o_seu() {
+        let t = Tema::novo("escuro");
+        assert_eq!(t.fundo_da_regiao(Realce::EmbedKanban), None);
+        assert_eq!(t.fundo_da_regiao(Realce::BordaUnidade), None);
+        let fundos: Vec<Color> = [
+            Realce::CalloutInfo,
+            Realce::CalloutSucesso,
+            Realce::CalloutAtencao,
+            Realce::CalloutErro,
+            Realce::CalloutDica,
+        ]
+        .iter()
+        .map(|r| t.fundo_da_regiao(*r).expect("callout sem fundo"))
+        .collect();
+        for (i, a) in fundos.iter().enumerate() {
+            for b in fundos.iter().skip(i + 1) {
+                assert_ne!(a, b, "duas variantes com o mesmo fundo: {fundos:?}");
+            }
+        }
+        // O fundo não é a superfície pura nem o fundo da tela: é tingido.
+        let base = t.cor("bg-base", Color::Reset);
+        let superficie = t.cor("bg-surface", Color::Reset);
+        assert!(fundos.iter().all(|f| *f != base && *f != superficie));
     }
 }

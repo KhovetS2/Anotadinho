@@ -563,7 +563,13 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             // Ciclo 304: a moldura pinta pelo TIPO do embed, não mais
             // uma cor só pra todos — `embed_dono` é o nome (`"kanban"`,
             // `"callout"`…) que `encaixotar_embeds` gravou junto.
-            let papel = papel_do_embed(l.embed_dono.as_deref().unwrap_or(""));
+            let papel = match l.embed_dono.as_deref() {
+                // O callout pinta pela VARIANTE, não pelo tipo (ciclo
+                // 307): a caixa de um `warning` e a de um `info` são
+                // cores diferentes, como na janela.
+                Some("callout") => papel_do_callout(&e.arvore, &d),
+                outro => papel_do_embed(outro.unwrap_or("")),
+            };
             return Some((d, papel));
         }
         if no_foco
@@ -646,7 +652,42 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 _ => "",
             };
             let no_calendario = l.embed_dono.as_deref() == Some("calendar");
-            let desenhadas = if no_calendario
+            let no_callout = l.embed_dono.as_deref() == Some("callout");
+            let desenhadas = if matches!(&l.tipo, Tipo::Embed(n) if n == "callout") {
+                // O rótulo `[callout]` (callout sem título, ou dobrado)
+                // veste a cor da VARIANTE, não a genérica do tipo — senão
+                // um `error` fechado se anunciaria em âmbar (ciclo 307).
+                let generica = e.tema.estilo(Realce::EmbedCallout).fg;
+                let da_variante = e.tema.estilo(papel_do_callout(&e.arvore, &l.caminho)).fg;
+                let linha = linha_estilizada(
+                    l,
+                    false,
+                    e.dobrados.contains(&l.caminho),
+                    &e.tema,
+                    largura_conteudo,
+                );
+                let spans = linha
+                    .spans
+                    .into_iter()
+                    .map(|sp| {
+                        let estilo = if sp.style.fg == generica && generica.is_some() {
+                            Style { fg: da_variante, ..sp.style }
+                        } else {
+                            sp.style
+                        };
+                        Span::styled(sp.content, estilo)
+                    })
+                    .collect::<Vec<_>>();
+                vec![vec![Line::from(spans)]]
+            } else if no_callout && nome_da_parte == "titulo" {
+                let dono = l.dono_embed.as_deref().unwrap_or(&[]);
+                vec![vec![linha_do_titulo_do_callout(
+                    l,
+                    &variante_do_callout(&e.arvore, dono),
+                    papel_do_callout(&e.arvore, dono),
+                    &e.tema,
+                )]]
+            } else if no_calendario
                 && nome_da_parte == "mes"
                 && !e.dobrados.contains(&l.caminho)
             {
@@ -721,7 +762,13 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 }
                 for linha in grupo {
                     fora.push(match cor_lateral {
-                        Some(r) => emoldurar(linha, largura_util, r, &e.tema),
+                        Some(r) => emoldurar(
+                            linha,
+                            largura_util,
+                            r,
+                            atual.as_ref().map(|(_, regiao)| *regiao).unwrap_or(r),
+                            &e.tema,
+                        ),
                         None => linha,
                     });
                 }
@@ -1498,16 +1545,43 @@ fn ir_para_linha(e: &mut Estado, indice: usize) {
 /// O conteúdo é cortado no que cabe, com `…`. Deixar transbordar seria
 /// pior do que cortar: o `│` da direita sumiria e a moldura quebraria
 /// justo na linha mais longa.
-fn emoldurar<'a>(linha: Line<'a>, largura: usize, cor: Realce, tema: &Tema) -> Line<'a> {
-    let estilo = tema.estilo(cor);
+fn emoldurar<'a>(
+    linha: Line<'a>,
+    largura: usize,
+    cor: Realce,
+    regiao: Realce,
+    tema: &Tema,
+) -> Line<'a> {
     let util = largura.saturating_sub(2);
-    let mut spans: Vec<Span<'a>> = vec![Span::styled("│", estilo)];
+    // Caixa PREENCHIDA (ciclo 307): todo trecho sem fundo próprio ganha o
+    // fundo da região, e o que sobra até a borda também — senão o fundo
+    // pararia onde o texto acaba, e a caixa leria como faixas soltas.
+    let fundo = tema.fundo_da_regiao(regiao);
+    let com_fundo = |estilo: Style| match fundo {
+        Some(f) if estilo.bg.is_none() => estilo.bg(f),
+        _ => estilo,
+    };
+    let (esquerda, direita) = match fundo {
+        // A lateral esquerda é o `border-left: 3px` da janela: meia
+        // célula na cor da variante (ou do foco, quando o cursor está na
+        // linha) sobre o fundo. A direita é só meia célula do fundo,
+        // como a borda de um botão.
+        Some(f) => (
+            Span::styled("▌", Style::default().fg(tema.estilo(cor).fg.unwrap_or(f)).bg(f)),
+            Span::styled("▌", Style::default().fg(f)),
+        ),
+        None => (
+            Span::styled("│", tema.estilo(cor)),
+            Span::styled("│", tema.estilo(cor)),
+        ),
+    };
+    let mut spans: Vec<Span<'a>> = vec![esquerda];
     let mut usado = 0usize;
     for s in linha.spans {
         let n = s.content.chars().count();
         if usado + n <= util {
             usado += n;
-            spans.push(s);
+            spans.push(Span::styled(s.content, com_fundo(s.style)));
             continue;
         }
         // Este trecho não cabe inteiro: entra o que couber, menos um
@@ -1515,30 +1589,97 @@ fn emoldurar<'a>(linha: Line<'a>, largura: usize, cor: Realce, tema: &Tema) -> L
         let cabe = util.saturating_sub(usado + 1);
         if cabe > 0 {
             let corte: String = s.content.chars().take(cabe).collect();
-            spans.push(Span::styled(corte, s.style));
+            spans.push(Span::styled(corte, com_fundo(s.style)));
             usado += cabe;
         }
         if usado < util {
-            spans.push(Span::styled("…", s.style));
+            spans.push(Span::styled("…", com_fundo(s.style)));
             usado += 1;
         }
         break;
     }
     if usado < util {
-        spans.push(Span::styled(" ".repeat(util - usado), Style::default()));
+        spans.push(Span::styled(" ".repeat(util - usado), com_fundo(Style::default())));
     }
-    spans.push(Span::styled("│", estilo));
+    spans.push(direita);
     Line::from(spans)
 }
 
 /// O topo ou o fundo da moldura da unidade em foco.
+///
+/// Numa região com fundo (o callout, ciclo 307) a moldura é de
+/// MEIO-BLOCO, como o botão do ciclo 302: `▗▄▄▖` em cima, `▝▀▀▘` embaixo,
+/// na cor do fundo — a caixa inteira vira um retângulo preenchido, sem
+/// traço em volta.
 fn moldura<'a>(topo: bool, largura: usize, cor: Realce, tema: &Tema) -> Line<'a> {
+    let meio = largura.saturating_sub(2);
+    if let Some(f) = tema.fundo_da_regiao(cor) {
+        let (canto, traco, fim) = if topo { ("▗", "▄", "▖") } else { ("▝", "▀", "▘") };
+        return Line::from(Span::styled(
+            format!("{canto}{}{fim}", traco.repeat(meio)),
+            Style::default().fg(f),
+        ));
+    }
     let (canto, fim) = if topo { ("┌", "┐") } else { ("└", "┘") };
-    let meio = "─".repeat(largura.saturating_sub(2));
     Line::from(Span::styled(
-        format!("{canto}{meio}{fim}"),
+        format!("{canto}{}{fim}", "─".repeat(meio)),
         tema.estilo(cor),
     ))
+}
+
+/// A variante de um callout, lida da parte "variante" que o núcleo põe
+/// na frente do corpo (ciclo 307).
+fn variante_do_callout(arvore: &Unidade, embed: &[usize]) -> String {
+    arvore
+        .em(embed)
+        .and_then(|u| {
+            u.filhos
+                .iter()
+                .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "variante"))
+        })
+        .map(|v| v.texto.clone())
+        .unwrap_or_default()
+}
+
+/// O papel da caixa de um callout, pela variante.
+fn papel_do_callout(arvore: &Unidade, embed: &[usize]) -> Realce {
+    match variante_do_callout(arvore, embed).as_str() {
+        "success" => Realce::CalloutSucesso,
+        "warning" => Realce::CalloutAtencao,
+        "error" => Realce::CalloutErro,
+        "tip" => Realce::CalloutDica,
+        _ => Realce::CalloutInfo,
+    }
+}
+
+/// O ícone da variante, no lugar do ícone SVG da janela (`info`,
+/// `check`, `alert-triangle`, `alert-circle`, `lightbulb`). Todos de
+/// uma célula — emoji ocupa duas em quase todo terminal e desalinharia a
+/// caixa.
+fn icone_do_callout(variante: &str) -> &'static str {
+    match variante {
+        "success" => "✔",
+        "warning" => "⚠",
+        "error" => "✖",
+        "tip" => "✦",
+        _ => "ℹ",
+    }
+}
+
+/// O cabeçalho do callout: ícone na cor da variante e o título em
+/// negrito — o `.callout__header` da janela.
+fn linha_do_titulo_do_callout<'a>(
+    l: &crate::tela::Linha,
+    variante: &str,
+    papel: Realce,
+    tema: &Tema,
+) -> Line<'a> {
+    Line::from(vec![
+        Span::styled("  ".repeat(l.nivel), Style::default()),
+        Span::styled(icone_do_callout(variante), tema.estilo(papel)),
+        Span::styled(" ", Style::default()),
+        Span::styled(l.texto.clone(), tema.estilo(Realce::TituloCartao)),
+    ])
 }
 
 /// A marca da linha, com a seta de dobra quando o nível pode dobrar.
@@ -2096,6 +2237,101 @@ mod testes {
         assert!(!aceso.contains("Abrir"), "acendeu o botão errado também: {aceso:?}");
     }
 
+    /// Um callout `warning` com título e um parágrafo.
+    fn com_callout(variante: &str) -> Unidade {
+        analisar(&format!(
+            "{{{{ type: \"callout\" }}}}\nvariant: {variante}\ntitle: Cuidado com a gravação\nbody: |\n  Editar em duas janelas sobrescreve.\n{{{{ /callout }}}}\n"
+        ))
+    }
+
+    #[test]
+    fn o_callout_e_uma_caixa_preenchida_na_cor_da_variante() {
+        // Até aqui só a BORDA do callout tinha cor (e sempre a mesma,
+        // `warning`). Na janela a caixa inteira é tingida pela variante
+        // (ciclo 307).
+        let mut e = Estado::novo(paginas(), com_callout("warning"));
+        e.foco = Foco::Paginas;
+        let fundo = e.tema.fundo_da_regiao(Realce::CalloutAtencao).unwrap();
+        let buf = quadro(&mut e, 80, 12);
+        let linha = (0..buf.area.height)
+            .find(|y| (0..buf.area.width).map(|x| buf[(x, *y)].symbol().to_string()).collect::<String>().contains("Editar"))
+            .expect("o corpo sumiu");
+        let simbolos: Vec<String> = (0..buf.area.width).map(|x| buf[(x, linha)].symbol().to_string()).collect();
+        let esquerda = simbolos.iter().position(|c| c == "▌").expect("sem lateral esquerda") as u16;
+        let direita = simbolos.iter().rposition(|c| c == "▌").expect("sem lateral direita") as u16;
+        assert!(direita > esquerda + 10);
+        // Da lateral esquerda até antes da direita, TODA célula tem o
+        // fundo — inclusive o espaço depois do texto.
+        for x in esquerda..direita {
+            assert_eq!(buf[(x, linha)].style().bg, Some(fundo), "vão sem fundo na coluna {x}");
+        }
+        // A lateral esquerda é a faixa de 3px da janela: cor da variante.
+        assert_eq!(
+            buf[(esquerda, linha)].style().fg,
+            e.tema.estilo(Realce::CalloutAtencao).fg
+        );
+        let tudo = desenho(&mut e, 80, 12).join("\n");
+        assert!(tudo.contains("▗▄▄"), "a caixa não fechou em meio-bloco:\n{tudo}");
+        assert!(tudo.contains("▝▀▀"), "{tudo}");
+    }
+
+    #[test]
+    fn cada_variante_do_callout_pinta_sua_caixa() {
+        let fundo_de = |variante: &str| {
+            let mut e = Estado::novo(paginas(), com_callout(variante));
+            e.foco = Foco::Paginas;
+            let buf = quadro(&mut e, 80, 12);
+            (0..buf.area.height)
+                .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+                .find(|p| buf[*p].symbol() == "E")
+                .and_then(|p| buf[p].style().bg)
+        };
+        let info = fundo_de("info");
+        let erro = fundo_de("error");
+        assert!(info.is_some() && erro.is_some());
+        assert_ne!(info, erro, "info e error saíram com o mesmo fundo");
+    }
+
+    #[test]
+    fn o_titulo_do_callout_vem_com_o_icone_da_variante() {
+        let mut e = Estado::novo(paginas(), com_callout("warning"));
+        e.foco = Foco::Paginas;
+        let tudo = desenho(&mut e, 80, 12).join("\n");
+        assert!(tudo.contains("⚠ Cuidado com a gravação"), "{tudo}");
+        // Com título, o rótulo `[callout]` sai — o título diz melhor.
+        assert!(!tudo.contains("[callout]"), "{tudo}");
+        // E a variante é dado, não texto na tela.
+        assert!(!tudo.contains("warning"), "{tudo}");
+    }
+
+    #[test]
+    fn callout_sem_titulo_anuncia_o_rotulo_na_cor_da_variante() {
+        let mut e = Estado::novo(
+            paginas(),
+            analisar("{{ type: \"callout\" }}\nvariant: error\nbody: |\n  Quebrou.\n{{ /callout }}\n"),
+        );
+        e.foco = Foco::Paginas;
+        let erro = e.tema.estilo(Realce::CalloutErro).fg;
+        let buf = quadro(&mut e, 80, 12);
+        let rotulo = (0..buf.area.height)
+            .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+            .find(|p| buf[*p].symbol() == "[")
+            .expect("sem rótulo [callout]");
+        assert_eq!(buf[rotulo].style().fg, erro);
+    }
+
+    #[test]
+    fn o_cursor_passa_por_cima_da_variante() {
+        // A variante é a primeira filha do callout e não tem linha: Enter
+        // no callout pousa no TÍTULO, e `k` no título não volta pra ela.
+        let arvore = com_callout("info");
+        let no_embed: Caminho = vec![0];
+        let dentro = tela::andar(&arvore, &no_embed, Passo::Entrar);
+        assert_eq!(dentro, vec![0, 1]);
+        assert_eq!(tela::andar(&arvore, &dentro, Passo::Anterior), dentro);
+        assert_eq!(tela::andar(&arvore, &dentro, Passo::Proximo), vec![0, 2]);
+    }
+
     #[test]
     fn dois_embeds_vizinhos_sao_duas_caixas() {
         // O defeito da captura: seis embeds seguidos viravam UMA caixa
@@ -2103,7 +2339,9 @@ mod testes {
         // pediam a mesma. O dono distingue.
         let mut e = Estado::novo(
             paginas(),
-            analisar("{{ type: \"callout\" }}\nvariant: info\nbody: |\n  um\n{{ /callout }}\n\n{{ type: \"callout\" }}\nvariant: info\nbody: |\n  dois\n{{ /callout }}\n"),
+            // Duas tabelas: a moldura delas é traço (`┌`). O callout
+            // virou caixa preenchida no ciclo 307, sem traço pra contar.
+            analisar("{{ type: \"table\" }}\n| A |\n| --- |\n| um |\n{{ /table }}\n\n{{ type: \"table\" }}\n| B |\n| --- |\n| dois |\n{{ /table }}\n"),
         );
         e.foco = Foco::Paginas;
         let tudo = desenho(&mut e, 60, 14).join("\n");

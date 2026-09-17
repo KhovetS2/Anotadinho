@@ -494,7 +494,19 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
         // O corpo de um callout É markdown, então ele vira unidades de
         // markdown de verdade — não partes. É o único embed em que o
         // conteúdo interno é do mesmo tecido da página.
-        EmbedData::Callout(d) => unidades_de_texto(&d.body),
+        //
+        // Na frente do corpo, o que a janela desenha no cabeçalho (ciclo
+        // 307): a VARIANTE, que dá a cor da caixa inteira, e o título.
+        // A variante é dado de desenho — o terminal a esconde da tela e
+        // o cursor passa por cima dela —, o título é conteúdo.
+        EmbedData::Callout(d) => {
+            let mut partes = vec![item("variante", d.variant.slug())];
+            if !d.title.trim().is_empty() {
+                partes.push(item("titulo", d.title.clone()));
+            }
+            partes.extend(unidades_de_texto(&d.body));
+            partes
+        }
 
         // Cada painel é um grupo cujo conteúdo também é markdown.
         EmbedData::Columns(d) => d
@@ -1710,7 +1722,23 @@ mod partes_de_embed {
         let e = embed_de(
             "{{ type: \"callout\" }}\nvariant: info\nbody: |\n  # Título\n\n  Um parágrafo.\n{{ /callout }}\n",
         );
-        assert_eq!(partes(&e), ["titulo1", "paragrafo"]);
+        assert_eq!(partes(&e), ["parte:variante", "titulo1", "paragrafo"]);
+        assert_eq!(e.filhos[0].texto, "info");
+    }
+
+    #[test]
+    fn o_callout_declara_a_variante_e_o_titulo() {
+        let e = embed_de(
+            "{{ type: \"callout\" }}\nvariant: warning\ntitle: Cuidado\nbody: |\n  Texto.\n{{ /callout }}\n",
+        );
+        assert_eq!(partes(&e), ["parte:variante", "parte:titulo", "paragrafo"]);
+        assert_eq!(e.filhos[0].texto, "warning");
+        assert_eq!(e.filhos[1].texto, "Cuidado");
+        // Variante desconhecida cai no padrão, como na janela.
+        let d = embed_de(
+            "{{ type: \"callout\" }}\nvariant: roxo\nbody: |\n  Texto.\n{{ /callout }}\n",
+        );
+        assert_eq!(d.filhos[0].texto, "info");
     }
 
     #[test]
