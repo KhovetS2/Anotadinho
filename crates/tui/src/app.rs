@@ -944,6 +944,20 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
             {
                 return None;
             }
+            // Ctrl+Z/Ctrl+Y desfazem e refazem em qualquer modo (ciclo 382).
+            if e.preferencias.modo_vim && e.conversa.is_none() && e.especial.is_none() {
+                match tecla {
+                    "Ctrl+z" => {
+                        tecla_no_conteudo(e, "u");
+                        return None;
+                    }
+                    "Ctrl+y" => {
+                        tecla_no_conteudo(e, "Ctrl+r");
+                        return None;
+                    }
+                    _ => {}
+                }
+            }
             // Sem o modo vim (ciclo 376), digitar edita direto.
             if !e.preferencias.modo_vim && e.conversa.is_none() && e.especial.is_none() && sem_vim(e, tecla) {
                 return None;
@@ -9745,5 +9759,18 @@ mod testes {
         e.pedidos.clear();
         tecla(&mut e, "Ctrl+d");
         assert!(e.pedidos.is_empty());
+    }
+
+    #[test]
+    fn ctrl_z_e_ctrl_y_valem_no_modo_vim() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert!(!corpo_gravado(&e).contains("Um parágrafo"));
+        tecla(&mut e, "Ctrl+z");
+        assert!(corpo_gravado(&e).contains("Um parágrafo"));
+        tecla(&mut e, "Ctrl+y");
+        assert!(!corpo_gravado(&e).contains("Um parágrafo"));
     }
 }
