@@ -319,6 +319,12 @@ impl Tema {
         e.bg.or(e.fg).unwrap_or(Color::Gray)
     }
 
+    /// Uma variável de cor do CSS da janela (`bg-surface`, `border`…),
+    /// pra desenho que copia um componente dela peça por peça.
+    pub fn var(&self, nome: &str) -> Color {
+        self.cor(nome, Color::Gray)
+    }
+
     /// O fundo da PÁGINA (`--bg-base`): o miolo de uma miniatura sem
     /// imagem e o de um painel de colunas, que na janela são o fundo da
     /// página aparecendo por dentro do embed (ciclos 325 e 326).

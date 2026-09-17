@@ -829,7 +829,11 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 }
                 continue;
             }
-            let nas_colunas = l.embed_dono.as_deref() == Some("columns") && !matches!(l.tipo, Tipo::Embed(_));
+            // Embeds desenhados INTEIROS, de uma vez, na primeira linha
+            // deles: o que a janela põe lado a lado (colunas, 326; kanban,
+            // 328) não cabe no desenho de uma linha por unidade.
+            let nas_colunas = matches!(l.embed_dono.as_deref(), Some("columns" | "kanban"))
+                && !matches!(l.tipo, Tipo::Embed(_));
             if nas_colunas && l.dono_embed.as_ref().is_some_and(|d| colunas_feitas.contains(d)) {
                 if l.mostra(&e.cursor) {
                     achou = true;
@@ -883,7 +887,11 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 if linhas_visiveis.iter().any(|f| f.dono_embed.as_ref() == Some(&dono) && f.mostra(&e.cursor)) {
                     achou = true;
                 }
-                let bloco = linhas_das_colunas(e, &dono, &linhas_visiveis, largura_conteudo);
+                let bloco = if l.embed_dono.as_deref() == Some("kanban") {
+                    linhas_do_kanban(e, &dono, largura_conteudo)
+                } else {
+                    linhas_das_colunas(e, &dono, &linhas_visiveis, largura_conteudo)
+                };
                 colunas_feitas.push(dono);
                 bloco.into_iter().map(|linha| vec![linha]).collect()
             } else if na_galeria && nome_da_parte == "cabecalho" {
@@ -1299,6 +1307,271 @@ fn quebrar_linha(linha: Line<'static>, largura: usize, fundo: Color) -> Vec<Line
             Line::from(spans)
         })
         .collect()
+}
+
+/// Um pedaço de linha de largura conhecida: os spans e quantas colunas
+/// eles ocupam. É a peça com que o kanban monta colunas lado a lado.
+#[derive(Clone, Default)]
+struct Faixa {
+    spans: Vec<Span<'static>>,
+    largura: usize,
+}
+
+impl Faixa {
+    fn mais(mut self, texto: impl Into<String>, estilo: Style) -> Self {
+        let texto = texto.into();
+        self.largura += texto.chars().count();
+        self.spans.push(Span::styled(texto, estilo));
+        self
+    }
+    /// Acrescenta outra faixa no fim.
+    fn juntar(mut self, outra: Faixa) -> Self {
+        self.largura += outra.largura;
+        self.spans.extend(outra.spans);
+        self
+    }
+    /// Completa com espaço até `largura`.
+    fn ate(self, largura: usize, estilo: Style) -> Self {
+        let falta = largura.saturating_sub(self.largura);
+        self.mais(" ".repeat(falta), estilo)
+    }
+}
+
+/// `texto` em até `largura` colunas, com reticências se não couber.
+fn cortado(texto: &str, largura: usize) -> String {
+    if texto.chars().count() <= largura {
+        return texto.to_string();
+    }
+    let mut s: String = texto.chars().take(largura.saturating_sub(1)).collect();
+    s.push('…');
+    s
+}
+
+/// Pílulas lado a lado que QUEBRAM de linha quando não cabem (o
+/// `flex-wrap` da janela). Cada linha sai com a largura `largura`.
+fn pilulas_quebrando(pilulas: &[(String, Style)], largura: usize, fundo: Style) -> Vec<Faixa> {
+    let mut linhas = vec![Faixa::default()];
+    for (texto, estilo) in pilulas {
+        let texto = cortado(texto, largura);
+        let n = texto.chars().count();
+        let atual = linhas.last_mut().expect("há sempre uma");
+        if atual.largura > 0 && atual.largura + 1 + n > largura {
+            linhas.push(Faixa::default());
+        }
+        let atual = linhas.last_mut().expect("há sempre uma");
+        if atual.largura > 0 {
+            *atual = std::mem::take(atual).mais(" ", fundo);
+        }
+        *atual = std::mem::take(atual).mais(texto, *estilo);
+    }
+    linhas.into_iter().map(|f| f.ate(largura, fundo)).collect()
+}
+
+/// O kanban inteiro, com as colunas LADO A LADO (ciclo 328) — o
+/// `.kanban__board` da janela.
+///
+/// Cada coluna é o quadro `--bg-surface` de 30 colunas (os 240px da
+/// janela): o nome em caixa alta apagado com a contagem numa pílula, os
+/// cartões `--bg-elevated` — título, as insígnias de checklist, prazo,
+/// comentários e anexos no fundo da página, as tags em pílula —, e o
+/// "+ card" no pé. Depois da última, o "+ coluna" tracejado. Coluna que
+/// não cabe na largura desce pra uma nova fileira, em vez de sumir pela
+/// borda como a rolagem lateral da janela esconderia.
+///
+/// Sob o cursor, o cartão fica cheio na cor de destaque; a coluna acende
+/// o nome.
+fn linhas_do_kanban(e: &Estado, dono: &[usize], largura: usize) -> Vec<Line<'static>> {
+    const VAO: usize = 2;
+    let Some(embed) = e.arvore.em(dono) else { return Vec::new() };
+    // 30 colunas é a largura da janela; encolhe até 24 pra caber mais
+    // colunas por fileira antes de descer.
+    let disponivel = largura.saturating_sub(2 * dono.len());
+    let quantas = embed.filhos.len().max(1);
+    let cabem = ((disponivel + VAO) / (24 + VAO)).clamp(1, quantas);
+    let w: usize = ((disponivel + VAO) / cabem).saturating_sub(VAO).clamp(24, 30);
+    let Some(dados) = embed.fonte.as_deref().and_then(|f| {
+        anotadinho_core::embed::segment(f).into_iter().find_map(|s| match s {
+            anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Kanban(d)) => Some(d),
+            _ => None,
+        })
+    }) else {
+        return Vec::new();
+    };
+    let t = &e.tema;
+    let no_foco = e.foco == Foco::Conteudo;
+    let superficie = t.var("bg-surface");
+    let elevado = t.var("bg-elevated");
+    let base = t.var("bg-base");
+    let apagado = t.var("text-muted");
+    let texto = t.var("text-primary");
+    let borda = t.var("border");
+    let nivel = 2 * dono.len();
+    let recuo = " ".repeat(nivel);
+
+    let em_superficie = Style::default().bg(superficie);
+    let borda_da_coluna = Style::default().fg(superficie);
+    let dentro = w - 2;
+    let quadros: Vec<Vec<Faixa>> = embed
+        .filhos
+        .iter()
+        .enumerate()
+        .map(|(c, coluna)| {
+            let caminho_coluna: Vec<usize> = [dono, &[c]].concat();
+            let na_coluna = no_foco && e.cursor == caminho_coluna;
+            let mut q: Vec<Faixa> = Vec::new();
+            q.push(Faixa::default().mais(format!("▗{}▖", "▄".repeat(dentro)), borda_da_coluna));
+            // Cabeçalho: NOME ········ ( n ) ×
+            let contagem = format!(" {} ", coluna.filhos.len());
+            let resto = dentro - 2 - contagem.chars().count() - 2;
+            let nome = cortado(&coluna.texto.to_uppercase(), resto);
+            let estilo_nome = if na_coluna {
+                t.estilo(Realce::Cursor).add_modifier(Modifier::BOLD)
+            } else {
+                em_superficie.fg(apagado).add_modifier(Modifier::BOLD)
+            };
+            q.push(
+                Faixa::default()
+                    .mais("▐", borda_da_coluna)
+                    .mais(" ", em_superficie)
+                    .mais(nome.clone(), estilo_nome)
+                    .mais(" ".repeat(resto - nome.chars().count()), em_superficie)
+                    .mais(contagem, Style::default().bg(elevado).fg(apagado))
+                    .mais(" ×", em_superficie.fg(apagado))
+                    .mais(" ", em_superficie)
+                    .mais("▌", borda_da_coluna),
+            );
+            let cartao_w = dentro - 2;
+            let miolo_w = cartao_w - 4;
+            for (k, cartao) in coluna.filhos.iter().enumerate() {
+                let caminho: Vec<usize> = [dono, &[c, k]].concat();
+                let aceso = no_foco && e.cursor == caminho;
+                let item = cartao
+                    .filhos
+                    .iter()
+                    .find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "indice"))
+                    .and_then(|f| f.texto.parse::<usize>().ok())
+                    .and_then(|i| dados.items.get(i));
+                let fundo_cartao = if aceso { t.estilo(Realce::Cursor).bg.unwrap_or(elevado) } else { elevado };
+                let no_cartao = Style::default().bg(fundo_cartao);
+                let contorno = Style::default().fg(fundo_cartao).bg(superficie);
+                let linha_do_cartao = |miolo: Faixa| -> Faixa {
+                    Faixa::default()
+                        .mais("▐", borda_da_coluna)
+                        .mais(" ", em_superficie)
+                        .mais("▐", contorno)
+                        .mais(" ", no_cartao)
+                        .juntar(miolo.ate(miolo_w, no_cartao))
+                        .mais(" ", no_cartao)
+                        .mais("▌", contorno)
+                        .mais(" ", em_superficie)
+                        .mais("▌", borda_da_coluna)
+                };
+                q.push(
+                    Faixa::default()
+                        .mais("▐", borda_da_coluna)
+                        .mais(" ", em_superficie)
+                        .mais(format!("▗{}▖", "▄".repeat(cartao_w - 2)), contorno)
+                        .mais(" ", em_superficie)
+                        .mais("▌", borda_da_coluna),
+                );
+                let cor_titulo = if aceso { t.estilo(Realce::Cursor).fg.unwrap_or(base) } else { texto };
+                q.push(linha_do_cartao(Faixa::default().mais(cortado(&cartao.texto, miolo_w), no_cartao.fg(cor_titulo))));
+                if let Some(item) = item {
+                    let mut insignias: Vec<(String, Style)> = Vec::new();
+                    let insignia = Style::default().bg(base).fg(apagado);
+                    if !item.checklist.is_empty() {
+                        let feitos = item.checklist.iter().filter(|c| c.done).count();
+                        insignias.push((format!(" ✓ {feitos}/{} ", item.checklist.len()), insignia));
+                    }
+                    if let Some(prazo) = &item.due {
+                        insignias.push((format!(" {prazo} "), insignia));
+                    }
+                    if !item.comments.is_empty() {
+                        insignias.push((format!(" ✎ {} ", item.comments.len()), insignia));
+                    }
+                    if !item.attachments.is_empty() {
+                        insignias.push((format!(" ⌁ {} ", item.attachments.len()), insignia));
+                    }
+                    for f in pilulas_quebrando(&insignias, miolo_w, no_cartao) {
+                        if !insignias.is_empty() {
+                            q.push(linha_do_cartao(f));
+                        }
+                    }
+                    let tags: Vec<(String, Style)> =
+                        item.tags.iter().map(|tag| (format!(" {tag} "), t.pilula(Realce::BadgeInfo))).collect();
+                    if !tags.is_empty() {
+                        for f in pilulas_quebrando(&tags, miolo_w, no_cartao) {
+                            q.push(linha_do_cartao(f));
+                        }
+                    }
+                }
+                q.push(
+                    Faixa::default()
+                        .mais("▐", borda_da_coluna)
+                        .mais(" ", em_superficie)
+                        .mais(format!("▝{}▘", "▀".repeat(cartao_w - 2)), contorno)
+                        .mais(" ", em_superficie)
+                        .mais("▌", borda_da_coluna),
+                );
+            }
+            q.push(
+                Faixa::default()
+                    .mais("▐", borda_da_coluna)
+                    .mais(" ", em_superficie)
+                    .mais(na_largura("+ card", dentro - 2), em_superficie.fg(apagado))
+                    .mais(" ", em_superficie)
+                    .mais("▌", borda_da_coluna),
+            );
+            q.push(Faixa::default().mais(format!("▝{}▘", "▀".repeat(dentro)), borda_da_coluna));
+            q
+        })
+        .collect();
+
+    // O "+ coluna" tracejado, com a largura dos 200px da janela.
+    const W_NOVA: usize = 25;
+    let tracejado = Style::default().fg(borda);
+    let nova_coluna = vec![
+        Faixa::default().mais(format!("┌{}┐", "╌".repeat(W_NOVA - 2)), tracejado),
+        Faixa::default()
+            .mais("╎", tracejado)
+            .mais(centralizado("+ coluna", W_NOVA - 2), Style::default().fg(apagado))
+            .mais("╎", tracejado),
+        Faixa::default().mais(format!("└{}┘", "╌".repeat(W_NOVA - 2)), tracejado),
+    ];
+
+    let por_fileira = ((disponivel + VAO) / (w + VAO)).max(1);
+    let mut fora: Vec<Line<'static>> = Vec::new();
+    let mut fileiras: Vec<Vec<(Vec<Faixa>, usize)>> =
+        quadros.chunks(por_fileira).map(|f| f.iter().map(|q| (q.clone(), w)).collect()).collect();
+    let cabe_na_ultima = fileiras
+        .last()
+        .map(|f| f.len() * (w + VAO) + W_NOVA <= disponivel)
+        .unwrap_or(true);
+    if cabe_na_ultima && !fileiras.is_empty() {
+        fileiras.last_mut().expect("não vazia").push((nova_coluna, W_NOVA));
+    } else {
+        fileiras.push(vec![(nova_coluna, W_NOVA)]);
+    }
+    for (n, fileira) in fileiras.iter().enumerate() {
+        if n > 0 {
+            fora.push(Line::from(""));
+        }
+        let altura = fileira.iter().map(|(q, _)| q.len()).max().unwrap_or(0);
+        for r in 0..altura {
+            let mut spans = vec![Span::raw(recuo.clone())];
+            for (i, (q, w)) in fileira.iter().enumerate() {
+                if i > 0 {
+                    spans.push(Span::raw(" ".repeat(VAO)));
+                }
+                match q.get(r) {
+                    Some(f) => spans.extend(f.spans.iter().cloned()),
+                    None => spans.push(Span::raw(" ".repeat(*w))),
+                }
+            }
+            fora.push(Line::from(spans));
+        }
+    }
+    fora
 }
 
 /// O embed de colunas inteiro, com os painéis LADO A LADO (ciclo 326).
@@ -2471,7 +2744,25 @@ fn andar_na_grade(e: &mut Estado, mov: Movimento, vezes: u32) -> bool {
             i.saturating_sub(vezes.max(1) as usize)
         }
     };
-    if lateral && matches!(&pai_u.tipo, Tipo::Embed(n) if n == "columns") {
+    // O kanban também põe as colunas lado a lado (ciclo 328): na coluna,
+    // `h`/`l` vão pra vizinha; num cartão, pro cartão da mesma altura da
+    // vizinha (ou pra ela mesma, se estiver vazia).
+    if lateral && matches!(&pai_u.tipo, Tipo::Parte { nome, .. } if nome == "column") {
+        let Some((&coluna, kanban)) = pai.split_last() else { return false };
+        let Some(k) = e.arvore.em(kanban) else { return false };
+        let destino = passo(coluna, k.filhos.len());
+        if destino == coluna {
+            return false;
+        }
+        let cartoes = k.filhos[destino].filhos.len();
+        e.cursor = if cartoes == 0 {
+            [kanban, &[destino]].concat()
+        } else {
+            [kanban, &[destino, ultimo.min(cartoes - 1)]].concat()
+        };
+        return true;
+    }
+    if lateral && matches!(&pai_u.tipo, Tipo::Embed(n) if n == "columns" || n == "kanban") {
         let destino = passo(ultimo, pai_u.filhos.len());
         e.cursor = [pai, &[destino]].concat();
         return true;
