@@ -265,6 +265,17 @@ pub fn acao_na_resposta(e: &mut Estado, indice: usize, chave: &str) {
     e.pedidos.push(Pedido::CriarPagina { path, conteudo });
 }
 
+/// Põe `texto` no campo da conversa aberta, pronto pra mandar (ciclo
+/// 348) — a "pergunta inicial" da janela.
+pub fn escrever_no_campo(e: &mut Estado, texto: &str) {
+    if let Some(c) = e.conversa.as_mut() {
+        c.rascunho = Campo::com(texto);
+        c.selecionada = c.mensagens.len();
+        c.prompt = None;
+        e.foco = Foco::Conteudo;
+    }
+}
+
 /// Os comandos da barra que só existem numa conversa.
 pub fn comandos(e: &Estado) -> Vec<Item> {
     let Some(c) = &e.conversa else { return Vec::new() };
@@ -491,12 +502,20 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
 
     // Topo: título · ⚡ agente ······ ⌁ N anexo(s)
     let mut topo: Vec<Line<'static>> = Vec::new();
+    // Título comprido encurta com reticências: o agente e os anexos
+    // ficam sempre à vista.
+    let direita = format!("⌁ {} anexo(s) ", c.anexos.len());
+    let cabe = w.saturating_sub(direita.chars().count() + agente.nome.chars().count() + 8).max(8);
+    let titulo = if c.titulo.chars().count() > cabe {
+        format!("{}…", c.titulo.chars().take(cabe - 1).collect::<String>())
+    } else {
+        c.titulo.clone()
+    };
     let esquerda = vec![
-        Span::styled(format!(" {}", c.titulo), texto.add_modifier(Modifier::BOLD)),
+        Span::styled(format!(" {titulo}"), texto.add_modifier(Modifier::BOLD)),
         Span::raw("  "),
         Span::styled(format!(" ϟ {} ", agente.nome), Style::default().bg(t.var("bg-elevated")).fg(t.var("text-muted"))),
     ];
-    let direita = format!("⌁ {} anexo(s) ", c.anexos.len());
     let usado: usize = esquerda.iter().map(|s| s.content.chars().count()).sum();
     let mut linha = esquerda;
     linha.push(Span::raw(" ".repeat(w.saturating_sub(usado + direita.chars().count()))));

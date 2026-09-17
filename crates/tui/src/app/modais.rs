@@ -29,6 +29,14 @@ pub enum Pedido {
     CarregarEspecial(super::especiais::TipoEspecial),
     /// Abrir a página de tags, assets ou propostas, criando se falta.
     AbrirEspecial(super::especiais::TipoEspecial),
+    /// Abrir a conversa de planejar, executar ou alterar a página
+    /// (ciclo 348), com a pergunta pronta no campo.
+    ConversaDoFluxo {
+        /// A spec ou proposta.
+        pagina: String,
+        /// "Pedir alteração"; senão, avançar.
+        alterar: bool,
+    },
     /// Listar `assets/` pro menu `/` (ciclo 347).
     AssetsParaInserir,
     /// Excluir um arquivo de `assets/`.

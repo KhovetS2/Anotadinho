@@ -1246,6 +1246,14 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
             //
             // Botão é FOLHA DE FILEIRA — a mesma forma das transições.
             // Quem desenha pergunta o arranjo, não o nome da parte.
+            // A página que originou esta, como o botão "origem" do topo
+            // da janela (ciclo 348): Enter abre.
+            if let Some(origem) = d.origem.as_ref().filter(|o| !o.trim().is_empty()) {
+                partes.insert(
+                    1,
+                    fileira("origem", vec![arranjado("origem", "↗ origem", vec![item("pagina", origem.clone())], Arranjo::Folha)]),
+                );
+            }
             if let Some((rotulo, dica)) = acao_do_fluxo(d) {
                 partes.push(fileira("acao", vec![item("acao", rotulo)]));
                 partes.push(item("dica", dica));

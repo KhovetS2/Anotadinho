@@ -253,6 +253,56 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
     }
 }
 
+/// A conversa que o botão do fluxo abre (ciclo 348), como o
+/// `planejar_implementacao` da janela: uma spec aprovada abre "Planejar",
+/// uma proposta aprovada "Executar" — na conversa que a gerou, se ela
+/// ainda existe —, e em revisão "Alterar". A pergunta vai pro campo, não é
+/// enviada: a pessoa anexa o que falta e manda.
+fn conversa_do_fluxo(estado: &mut Estado, vault: &str, pagina: &str, alterar: bool) {
+    use anotadinho_core::fluxo::{self, Artefato};
+    let paginas = handle_scan_vault(vault.to_string()).unwrap_or_default();
+    let entrada = paginas.iter().find(|p| p.path == pagina);
+    let titulo_da_pagina = entrada
+        .map(|p| p.title.clone())
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| pagina.to_string());
+    let e_proposta = pagina.contains("/propostas/") || entrada.is_some_and(|p| p.page_type == "proposta");
+    let artefato = if e_proposta { Artefato::Proposta } else { Artefato::Spec };
+    let (titulo, pergunta) = if alterar {
+        (format!("Alterar: {titulo_da_pagina}"), fluxo::pergunta_de_alteracao(&titulo_da_pagina, artefato))
+    } else if e_proposta {
+        (format!("Executar: {titulo_da_pagina}"), fluxo::pergunta_de_execucao(&titulo_da_pagina, pagina))
+    } else {
+        (format!("Planejar: {titulo_da_pagina}"), fluxo::pergunta_de_planejamento(&titulo_da_pagina))
+    };
+    let continuacao = (e_proposta && !alterar)
+        .then(|| anotadinho_ipc::handle_read_page(vault.to_string(), pagina.to_string()).ok())
+        .flatten()
+        .and_then(|conteudo| {
+            let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+            fluxo::origem_da_pagina(corpo)
+        })
+        .filter(|o| paginas.iter().any(|p| p.path == *o && p.page_type == "conversa"));
+    let conversa = match continuacao {
+        Some(c) => c,
+        None => {
+            let carimbo = agora_local();
+            let md = anotadinho_core::conversa::montar_pagina(&titulo, Some(pagina), &[pagina.to_string()]);
+            let path = format!("pages/conversas/{}.md", anotadinho_core::conversa::nome_de_arquivo(&carimbo));
+            if let Err(e) = handle_write_page(vault.to_string(), path.clone(), md) {
+                estado.aviso = Some(format!("não criou a conversa: {e}"));
+                return;
+            }
+            if let Ok(p) = handle_list_pages(vault.to_string()) {
+                estado.atualizar_paginas(p);
+            }
+            path
+        }
+    };
+    abrir(estado, vault, &conversa);
+    app::conversa::escrever_no_campo(estado, &pergunta);
+}
+
 /// Lê do vault o que a tela de tags, assets ou propostas mostra (ciclo 346).
 fn carregar_especial(estado: &mut Estado, vault: &str, tipo: TipoEspecial) {
     let dados = match tipo {
@@ -328,6 +378,7 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         abrir(estado, vault, path);
                     }
                 }
+                Pedido::ConversaDoFluxo { pagina, alterar } => conversa_do_fluxo(estado, vault, &pagina, alterar),
                 Pedido::AssetsParaInserir => match anotadinho_ipc::handle_list_assets_info(vault.to_string()) {
                     Ok(lista) => app::markdown::escolher_asset(estado, lista.into_iter().map(|a| a.path).collect()),
                     Err(e) => estado.aviso = Some(format!("não listou os assets: {e}")),

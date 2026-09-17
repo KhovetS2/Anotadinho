@@ -690,6 +690,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
             }
             if tecla == "Enter"
                 && (edicao::transicao_do_cursor(e)
+                    || edicao::acao_do_fluxo(e)
                     || edicao::cartao_na_coluna_vazia(e)
                     || edicao::busca_da_consulta(e)
                     || edicao::abrir_opcoes(e)
@@ -2639,7 +2640,7 @@ fn aparencia_do_botao(nome: &str, tema: &Tema) -> (Option<Color>, Style) {
             Some(crate::tema::misturar(tema.var("accent-blue"), tema.var("accent-purple"), 0.5)),
             Style::default().fg(Color::Rgb(255, 255, 255)).add_modifier(Modifier::BOLD),
         ),
-        "transicao" => (None, Style::default().fg(tema.var("text-muted"))),
+        "transicao" | "origem" => (None, Style::default().fg(tema.var("text-muted"))),
         "adicionar" => (Some(tema.var("bg-elevated")), Style::default().fg(tema.var("text-muted"))),
         outro => {
             let papel = papel_da_parte(outro);
@@ -8353,5 +8354,44 @@ mod testes {
         tecla(&mut e, "Enter");
         assert!(corpo_gravado(&e).contains("**negrito**.\n\n![imagem](assets/foto.png)\n"), "{}", corpo_gravado(&e));
         assert_eq!(markdown::markdown_do_asset("assets/doc.pdf"), "[assets/doc.pdf](assets/doc.pdf)");
+    }
+
+    // --- Ciclo 348: a ação do fluxo abre a conversa ---------------------
+
+    #[test]
+    fn a_acao_do_fluxo_pede_a_conversa_e_a_origem_abre_a_pagina() {
+        let parte = |e: &Estado, nome: &str| {
+            e.arvore
+                .percorrer()
+                .into_iter()
+                .find(|(_, u)| matches!(&u.tipo, Tipo::Parte { nome: n, .. } if n == nome) && !u.texto.is_empty())
+                .map(|(c, _)| c)
+                .unwrap_or_else(|| panic!("sem {nome}"))
+        };
+        let mut e = pagina_com("{{ type: \"fluxo\" }}\nartefato: spec\netapa: aprovada\norigem: pages/conversas/c1.md\n{{ /fluxo }}\n");
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("↗ origem") && tela.contains("Planejar implementação"), "{tela}");
+        assert!(!tela.contains("pages/conversas/c1.md"), "o caminho da origem é escondido:\n{tela}");
+        e.cursor = parte(&e, "acao");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::ConversaDoFluxo { pagina: "pages/alfa.md".into(), alterar: false }]);
+        e.pedidos.clear();
+        e.cursor = parte(&e, "origem");
+        assert_eq!(tecla(&mut e, "Enter"), Some("pages/conversas/c1.md".into()));
+        // Em revisão, "Pedir alteração".
+        let mut e = pagina_com("{{ type: \"fluxo\" }}\nartefato: proposta\netapa: em-revisao\n{{ /fluxo }}\n");
+        e.cursor = parte(&e, "acao");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::ConversaDoFluxo { pagina: "pages/alfa.md".into(), alterar: true }]);
+    }
+
+    #[test]
+    fn a_pergunta_do_fluxo_vai_pro_campo_da_conversa_sem_enviar() {
+        let mut e = conversa_aberta();
+        conversa::escrever_no_campo(&mut e, "Leia a spec e planeje.");
+        let c = e.conversa.as_ref().unwrap();
+        assert_eq!(c.rascunho.texto, "Leia a spec e planeje.");
+        assert!(!c.escrevendo && e.pedidos.is_empty());
+        assert!(desenho(&mut e, 120, 40).join("\n").contains("Leia a spec e planeje."));
     }
 }

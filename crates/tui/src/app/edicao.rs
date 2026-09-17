@@ -1733,6 +1733,23 @@ pub(super) fn transicao_do_cursor(e: &mut Estado) -> bool {
     true
 }
 
+/// Enter na ação do fluxo (ciclo 348): "Planejar implementação",
+/// "Executar" ou "Pedir alteração" abrem a conversa com a página anexada,
+/// como na janela.
+pub(super) fn acao_do_fluxo(e: &mut Estado) -> bool {
+    if embed_do_cursor(e, "fluxo").is_none() {
+        return false;
+    }
+    let Some(u) = e.arvore.em(&e.cursor) else { return false };
+    if !matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "acao") || u.texto.is_empty() {
+        return false;
+    }
+    let Some(pagina) = e.paginas.get(e.pagina).map(|p| p.path.clone()) else { return false };
+    let alterar = u.texto == "Pedir alteração";
+    e.pedidos.push(super::modais::Pedido::ConversaDoFluxo { pagina, alterar });
+    true
+}
+
 // ---------------------------------------------------------------------
 // Consulta (ciclo 335)
 // ---------------------------------------------------------------------
