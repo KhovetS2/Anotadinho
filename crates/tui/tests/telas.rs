@@ -106,6 +106,15 @@ fn cena(nome: &'static str, pagina: String, teclas: &[&'static str], largura: u1
     Cena { nome, pagina, teclas: teclas.to_vec(), largura, altura, com_indice: true }
 }
 
+/// As teclas de um texto digitado, uma por caractere.
+fn digitado(texto: &str) -> Vec<&'static str> {
+    texto.chars().map(|c| &*Box::leak(c.to_string().into_boxed_str())).collect()
+}
+
+fn com(teclas: &[&[&'static str]]) -> Vec<&'static str> {
+    teclas.concat()
+}
+
 fn cenas() -> Vec<Cena> {
     let mut v = Vec::new();
     // Um embed de cada tipo, parado, com o foco na lista de páginas (o
@@ -114,6 +123,33 @@ fn cenas() -> Vec<Cena> {
         let nome: &'static str = Box::leak(format!("repouso-{tipo}").into_boxed_str());
         v.push(cena(nome, so_o_embed(tipo), &[], 140, 40));
     }
+    // Markdown (ciclos 333 e 334): a inserção aparece no lugar do bloco,
+    // e o arquivo gravado vai junto na foto.
+    let notas = "---\ntitle: Notas\n---\n# Título\n\nUm parágrafo com **negrito**.\n\n- [ ] tarefa um\n- [ ] tarefa dois\n\n> citação\n".to_string();
+    v.push(Cena {
+        nome: "markdown-insercao-no-lugar",
+        pagina: notas.clone(),
+        teclas: com(&[&["Tab", "j", "A"], &digitado(" E mais")]),
+        largura: 120,
+        altura: 20,
+        com_indice: false,
+    });
+    v.push(Cena {
+        nome: "markdown-enter-abre-item-seguinte",
+        pagina: notas.clone(),
+        teclas: com(&[&["Tab", "j", "j", "Enter", "j", "o"], &digitado("tarefa três"), &["Enter"], &digitado("quatro")]),
+        largura: 120,
+        altura: 20,
+        com_indice: false,
+    });
+    v.push(Cena {
+        nome: "markdown-til-e-maior-maior",
+        pagina: notas,
+        teclas: vec!["Tab", "j", "j", "Enter", "~", ">", ">", "Escape", "k", "k", "Ctrl+x"],
+        largura: 120,
+        altura: 20,
+        com_indice: false,
+    });
     // O cronograma na janela da tela: manual, escala Mês, e as teclas.
     let manual = so_o_embed("timeline").replace("source: vault\n", "").replace("scale: quarter\n", "scale: month\n");
     v.push(cena("cronograma-manual-mes", manual.clone(), &[], 140, 30));

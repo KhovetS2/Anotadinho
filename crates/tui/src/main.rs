@@ -56,6 +56,7 @@ fn nome_da_tecla(k: &KeyEvent) -> Option<String> {
         KeyCode::Esc => "Escape".into(),
         KeyCode::Tab => "Tab".into(),
         KeyCode::Backspace => "Backspace".into(),
+        KeyCode::Delete => "Delete".into(),
         KeyCode::Up => "ArrowUp".into(),
         KeyCode::Down => "ArrowDown".into(),
         KeyCode::Left => "ArrowLeft".into(),

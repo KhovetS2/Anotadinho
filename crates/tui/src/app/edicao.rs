@@ -12,7 +12,6 @@
 //! saem da fonte dele, mudam, voltam pelo `to_fence_text` — o que a
 //! janela grava — e o resto do arquivo fica byte a byte.
 
-use std::ops::Range;
 
 use anotadinho_core::date_util::{add_days, days_between};
 use anotadinho_core::embed::{self as em, DocSegment, EmbedData};
@@ -29,6 +28,8 @@ pub struct Pergunta {
     pub rotulo: String,
     /// O que já foi digitado.
     pub texto: String,
+    /// Onde está o cursor de texto, em caracteres (ciclo 333).
+    pub cursor: usize,
     /// O que fazer com a resposta.
     pub acao: AcaoDaPergunta,
 }
@@ -112,17 +113,9 @@ pub enum AcaoDaPergunta {
         /// O callout.
         embed: Caminho,
     },
-    /// Reescreve um bloco do corpo do callout, ou cria um novo.
-    BlocoDoCallout {
-        /// O callout.
-        embed: Caminho,
-        /// O trecho do corpo que a resposta substitui — vazio é inserir
-        /// um bloco novo ali.
-        faixa: Range<usize>,
-        /// Item de lista: vizinho de item se separa por uma quebra, não
-        /// por linha em branco.
-        de_lista: bool,
-    },
+    /// Reescreve ou cria um bloco de markdown — da página, do corpo de um
+    /// callout ou de um painel (ciclo 334).
+    Bloco(super::markdown::EdicaoDeBloco),
     /// Cria um botão no embed de ações (ciclo 324).
     NovoBotao {
         /// As ações.
@@ -159,7 +152,7 @@ pub enum Registro {
 
 /// Troca o trecho de um embed no texto da página pelo resultado de
 /// `mudar` sobre os dados dele (ciclo 318).
-fn editar_embed(
+pub(super) fn editar_embed(
     e: &mut Estado,
     embed: &[usize],
     mudar: impl FnOnce(&mut EmbedData) -> Result<(), String>,
@@ -194,7 +187,7 @@ fn dados_da_fonte(fonte: &str) -> Option<EmbedData> {
 }
 
 /// Os dados do embed em `embed`, lidos da fonte dele.
-fn dados(e: &Estado, embed: &[usize]) -> Option<EmbedData> {
+pub(super) fn dados(e: &Estado, embed: &[usize]) -> Option<EmbedData> {
     dados_da_fonte(e.arvore.em(embed)?.fonte.as_deref()?)
 }
 
@@ -299,8 +292,9 @@ fn ir(e: &mut Estado, destino: Option<Caminho>) {
     e.seguir_cursor();
 }
 
-fn perguntar(e: &mut Estado, rotulo: impl Into<String>, texto: String, acao: AcaoDaPergunta) {
-    e.pergunta = Some(Pergunta { rotulo: rotulo.into(), texto, acao });
+pub(super) fn perguntar(e: &mut Estado, rotulo: impl Into<String>, texto: String, acao: AcaoDaPergunta) {
+    let cursor = texto.chars().count();
+    e.pergunta = Some(Pergunta { rotulo: rotulo.into(), texto, cursor, acao });
 }
 
 /// `AAAA-MM-DD` como `DD/MM/AAAA`.
@@ -329,7 +323,17 @@ pub(super) fn editar_item(e: &mut Estado, ed: Edicao) -> bool {
         }
         _ => {}
     }
-    let feito = if tela::calendario_do_cursor(&e.arvore, &e.cursor).is_some() {
+    // No PRÓPRIO embed (não dentro dele), criar, apagar, copiar, colar e
+    // mover são do embed como BLOCO da página (ciclo 334): `o` num kanban
+    // abre um parágrafo depois dele, `dd` apaga o kanban inteiro.
+    let no_embed = e.cursor.len() == 1 && matches!(e.arvore.em(&e.cursor).map(|u| &u.tipo), Some(Tipo::Embed(_)));
+    let de_bloco = matches!(
+        ed,
+        Edicao::Criar { .. } | Edicao::Apagar | Edicao::Copiar | Edicao::Colar { .. } | Edicao::Deslocar(_)
+    );
+    let feito = if no_embed && de_bloco {
+        super::markdown::no_markdown(e, ed, super::markdown::Hospedeiro::Pagina)
+    } else if tela::calendario_do_cursor(&e.arvore, &e.cursor).is_some() {
         no_calendario(e, ed)
     } else if embed_do_cursor(e, "kanban").is_some() {
         no_kanban(e, ed)
@@ -341,9 +345,19 @@ pub(super) fn editar_item(e: &mut Estado, ed: Edicao) -> bool {
         no_callout(e, ed)
     } else if embed_do_cursor(e, "actions").is_some() {
         nas_acoes(e, ed)
+    } else if let Some(h) = super::markdown::hospedeiro_do_cursor(e) {
+        // O markdown: a página, ou o corpo de um painel de colunas.
+        if !super::markdown::no_markdown(e, ed, h) {
+            return false;
+        }
+        true
     } else {
         return false;
     };
+    // `i`/`I` começam com o cursor de texto no começo.
+    if let (Edicao::Reescrever { no_fim: false, .. }, Some(p)) = (ed, e.pergunta.as_mut()) {
+        p.cursor = 0;
+    }
     if !feito && e.aviso.is_none() && e.pergunta.is_none() {
         e.aviso = Some("esse comando não vale aqui".into());
     }
@@ -373,21 +387,67 @@ fn desfazer(e: &mut Estado, desfazendo: bool) {
 /// Responde a pergunta aberta (ciclo 318).
 pub(super) fn tecla_na_pergunta(e: &mut Estado, tecla: &str) {
     let Some(p) = e.pergunta.as_mut() else { return };
+    let n = p.texto.chars().count();
+    p.cursor = p.cursor.min(n);
+    let byte = |t: &str, c: usize| t.char_indices().nth(c).map_or(t.len(), |(i, _)| i);
     match tecla {
-        "Escape" => e.pergunta = None,
-        "Backspace" => {
-            p.texto.pop();
-        }
-        "Enter" => {
+        // O modo de inserção do vim (ciclo 333): `Esc` CONFIRMA — sai da
+        // inserção com o que foi digitado. Desistir é `u` depois.
+        "Escape" | "Enter" => {
             let Some(p) = e.pergunta.take() else { return };
             let titulo = p.texto.trim().to_string();
             if titulo.is_empty() {
                 return;
             }
-            responder(e, p.acao, titulo);
+            let continua = tecla == "Enter";
+            if let AcaoDaPergunta::Bloco(b) = &p.acao {
+                if let Some(gravado) = super::markdown::responder(e, b, &titulo) {
+                    if continua {
+                        super::markdown::continuar(e, b, gravado);
+                    }
+                }
+            } else {
+                responder(e, p.acao, titulo);
+            }
             e.seguir_cursor();
         }
-        t if t.chars().count() == 1 => p.texto.push_str(t),
+        "Backspace" if p.cursor > 0 => {
+            let i = byte(&p.texto, p.cursor - 1);
+            p.texto.remove(i);
+            p.cursor -= 1;
+        }
+        "Delete" if p.cursor < n => {
+            let i = byte(&p.texto, p.cursor);
+            p.texto.remove(i);
+        }
+        "Backspace" | "Delete" => {}
+        "ArrowLeft" => p.cursor = p.cursor.saturating_sub(1),
+        "ArrowRight" => p.cursor = (p.cursor + 1).min(n),
+        "Home" | "Ctrl+a" => p.cursor = 0,
+        "End" | "Ctrl+e" => p.cursor = n,
+        // `Ctrl+W` apaga a palavra antes do cursor; `Ctrl+U`, tudo antes.
+        "Ctrl+w" => {
+            let antes: Vec<char> = p.texto.chars().take(p.cursor).collect();
+            let mut k = antes.len();
+            while k > 0 && antes[k - 1] == ' ' {
+                k -= 1;
+            }
+            while k > 0 && antes[k - 1] != ' ' {
+                k -= 1;
+            }
+            let resto: String = p.texto.chars().skip(p.cursor).collect();
+            p.texto = format!("{}{resto}", antes[..k].iter().collect::<String>());
+            p.cursor = k;
+        }
+        "Ctrl+u" => {
+            p.texto = p.texto.chars().skip(p.cursor).collect();
+            p.cursor = 0;
+        }
+        t if t.chars().count() == 1 => {
+            let i = byte(&p.texto, p.cursor);
+            p.texto.insert_str(i, t);
+            p.cursor += 1;
+        }
         _ => {}
     }
 }
@@ -524,27 +584,8 @@ fn responder(e: &mut Estado, acao: AcaoDaPergunta, titulo: String) {
                 ir(e, Some(c));
             }
         }
-        AcaoDaPergunta::BlocoDoCallout { embed, faixa, de_lista } => {
-            let mut inicio = 0;
-            if editar_callout(e, &embed, |d| {
-                if faixa.end > d.body.len() {
-                    return Err("o corpo mudou por fora".into());
-                }
-                let (corpo, onde) = if faixa.is_empty() {
-                    inserir_bloco(&d.body, faixa.start, &titulo, de_lista)
-                } else {
-                    let mut s = d.body.clone();
-                    s.replace_range(faixa.clone(), &titulo);
-                    (s, faixa.start)
-                };
-                d.body = corpo;
-                inicio = onde;
-                Ok(())
-            }) {
-                let destino = bloco_que_comeca_em(&e.arvore, &embed, inicio);
-                ir(e, destino);
-            }
-        }
+        // Respondido por `markdown::responder`, em `tecla_na_pergunta`.
+        AcaoDaPergunta::Bloco(_) => {}
         AcaoDaPergunta::NovoBotao { embed, posicao } => {
             let mut novo = 0;
             if editar_acoes(e, &embed, |d| {
@@ -590,7 +631,7 @@ fn no_calendario(e: &mut Estado, ed: Edicao) -> bool {
                 data,
             });
         }
-        (Edicao::Reescrever { limpar }, Some(indice), Some(entrada)) => {
+        (Edicao::Reescrever { limpar, .. }, Some(indice), Some(entrada)) => {
             // Na semana o título vem com a hora na frente; o arquivo não.
             let texto = if limpar { String::new() } else { entrada.title };
             perguntar(e, "Renomear evento", texto, AcaoDaPergunta::RenomearEvento { embed, indice });
@@ -716,11 +757,11 @@ fn no_kanban(e: &mut Estado, ed: Edicao) -> bool {
                 antes_de,
             });
         }
-        (Edicao::Reescrever { limpar }, Some(indice), Some(cartao)) => {
+        (Edicao::Reescrever { limpar, .. }, Some(indice), Some(cartao)) => {
             let texto = if limpar { String::new() } else { cartao.title };
             perguntar(e, "Renomear cartão", texto, AcaoDaPergunta::RenomearCartao { embed, indice });
         }
-        (Edicao::Reescrever { limpar }, None, _) => {
+        (Edicao::Reescrever { limpar, .. }, None, _) => {
             let texto = if limpar { String::new() } else { nome };
             perguntar(e, "Renomear coluna", texto, AcaoDaPergunta::RenomearColuna { embed, coluna });
         }
@@ -864,7 +905,7 @@ fn no_cronograma(e: &mut Estado, ed: Edicao) -> bool {
                 AcaoDaPergunta::NovaBarra { embed, inicio, fim, posicao: posicao(antes) },
             );
         }
-        (Edicao::Reescrever { limpar }, Some(indice), Some(barra)) => {
+        (Edicao::Reescrever { limpar, .. }, Some(indice), Some(barra)) => {
             let texto = if limpar { String::new() } else { barra.title };
             perguntar(e, "Renomear barra", texto, AcaoDaPergunta::RenomearBarra { embed, indice });
         }
@@ -982,11 +1023,11 @@ fn na_tabela(e: &mut Estado, ed: Edicao) -> bool {
                 }
             }
         }
-        (Edicao::Reescrever { limpar }, Some((0, coluna))) => {
+        (Edicao::Reescrever { limpar, .. }, Some((0, coluna))) => {
             let texto = if limpar { String::new() } else { dados.columns.get(coluna).map(|c| c.name.clone()).unwrap_or_default() };
             perguntar(e, "Renomear coluna", texto, AcaoDaPergunta::RenomearColunaDaTabela { embed, coluna });
         }
-        (Edicao::Reescrever { limpar }, Some((f, coluna))) => {
+        (Edicao::Reescrever { limpar, .. }, Some((f, coluna))) => {
             let texto = if limpar { String::new() } else { valor(f, coluna) };
             let rotulo = dados.columns.get(coluna).map(|c| c.name.clone()).unwrap_or_else(|| "Célula".into());
             perguntar(e, rotulo, texto, AcaoDaPergunta::EditarCelula { embed, linha: f - 1, coluna });
@@ -1055,96 +1096,34 @@ fn na_tabela(e: &mut Estado, ed: Edicao) -> bool {
 // Callout (ciclo 323)
 // ---------------------------------------------------------------------
 
-/// Insere `texto` como bloco novo em `pos` do corpo, separado dos
-/// vizinhos por linha em branco (ou por quebra simples, num item de
-/// lista). Devolve o corpo e onde o bloco começou.
-fn inserir_bloco(corpo: &str, pos: usize, texto: &str, de_lista: bool) -> (String, usize) {
-    let sep = if de_lista { "\n" } else { "\n\n" };
-    let antes = corpo[..pos].trim_end_matches('\n');
-    let depois = corpo[pos..].trim_start_matches('\n');
-    let mut s = String::from(antes);
-    if !antes.is_empty() {
-        s.push_str(sep);
-    }
-    let onde = s.len();
-    s.push_str(texto);
-    if !depois.is_empty() {
-        s.push_str(sep);
-        s.push_str(depois);
-    } else if corpo.ends_with('\n') {
-        s.push('\n');
-    }
-    (s, onde)
-}
-
-/// Tira o bloco `faixa` do corpo, colando os vizinhos.
-fn remover_bloco(corpo: &str, faixa: Range<usize>, de_lista: bool) -> String {
-    let antes = corpo[..faixa.start].trim_end_matches('\n');
-    let depois = corpo[faixa.end..].trim_start_matches('\n');
-    let mut s = String::from(antes);
-    if !antes.is_empty() && !depois.is_empty() {
-        s.push_str(if de_lista { "\n" } else { "\n\n" });
-    }
-    s.push_str(depois);
-    if corpo.ends_with('\n') && !s.ends_with('\n') && !s.is_empty() {
-        s.push('\n');
-    }
-    s
-}
-
-/// A marca de item de lista no começo de `linha` (`- `, `* `, `1. `,
-/// `- [ ] `), pra um item novo nascer igual ao vizinho.
-fn marca_de_lista(linha: &str) -> String {
-    let recuo: String = linha.chars().take_while(|c| *c == ' ').collect();
-    let resto = &linha[recuo.len()..];
-    for m in ["- [ ] ", "- [x] ", "- ", "* ", "+ "] {
-        if resto.starts_with(m) {
-            return format!("{recuo}{}", if m == "- [x] " { "- [ ] " } else { m });
-        }
-    }
-    let digitos: String = resto.chars().take_while(|c| c.is_ascii_digit()).collect();
-    if !digitos.is_empty() && resto[digitos.len()..].starts_with(". ") {
-        return format!("{recuo}1. ");
-    }
-    recuo
-}
-
-/// O bloco do corpo sob o cursor: a faixa dele no corpo e se é item de
-/// lista. Título e variante não são blocos.
-fn bloco_do_cursor(e: &Estado, embed: &[usize]) -> Option<(Range<usize>, bool)> {
-    if e.cursor.len() <= embed.len() {
-        return None;
-    }
-    let u = e.arvore.em(&e.cursor)?;
-    if matches!(u.tipo, Tipo::Parte { .. }) {
-        return None;
-    }
-    Some((u.intervalo.clone()?, matches!(u.tipo, Tipo::Item)))
-}
-
-/// O caminho do bloco do corpo que começa em `inicio` — o mais fundo:
-/// uma lista e o primeiro item dela começam no mesmo byte, e quem foi
-/// editado é o item.
-fn bloco_que_comeca_em(arvore: &Unidade, embed: &[usize], inicio: usize) -> Option<Caminho> {
-    arvore
-        .em(embed)?
-        .percorrer()
-        .into_iter()
-        .filter(|(c, u)| {
-            !c.is_empty() && !matches!(u.tipo, Tipo::Parte { .. }) && u.intervalo.as_ref().is_some_and(|r| r.start == inicio)
-        })
-        .max_by_key(|(c, _)| c.len())
-        .map(|(c, _)| [embed, c.as_slice()].concat())
-}
-
 fn no_callout(e: &mut Estado, ed: Edicao) -> bool {
+    use super::markdown::{EdicaoDeBloco, Hospedeiro};
     let Some(embed) = embed_do_cursor(e, "callout") else { return false };
     let Some(dados) = ler_callout(e, &embed) else { return false };
-    let bloco = bloco_do_cursor(e, &embed);
-    let fonte_do_bloco = bloco.as_ref().and_then(|(r, _)| dados.body.get(r.clone())).map(|s| s.trim_end().to_string());
-    match (ed, bloco) {
+    let tipo = e.arvore.em(&e.cursor).map(|u| u.tipo.clone());
+    let no_corpo = e.cursor.len() > embed.len() && !matches!(tipo, Some(Tipo::Parte { .. }));
+    // Um bloco do corpo é markdown como o da página (ciclo 334) — menos
+    // `Ctrl+A` fora de título e `~` fora de item, que continuam sendo do
+    // callout: a variante e o "nasce recolhido".
+    if no_corpo {
+        let do_bloco = match ed {
+            Edicao::Somar(_) => matches!(tipo, Some(Tipo::Titulo(_))),
+            Edicao::Alternar => matches!(tipo, Some(Tipo::Item)),
+            _ => true,
+        };
+        if do_bloco {
+            return super::markdown::no_markdown(e, ed, Hospedeiro::Callout(embed));
+        }
+    }
+    // O primeiro bloco do corpo, pra criar/colar no começo dele.
+    let primeiro = e
+        .arvore
+        .em(&embed)
+        .and_then(|u| u.filhos.iter().position(|f| !matches!(f.tipo, Tipo::Parte { .. })))
+        .map(|i| [embed.as_slice(), &[i]].concat());
+    match ed {
         // Ctrl+A/Ctrl+X giram a variante — é a "opção" do callout.
-        (Edicao::Somar(n), _) => {
+        Edicao::Somar(n) => {
             let todas = em::CalloutVariant::all();
             let agora = todas.iter().position(|v| *v == dados.variant).unwrap_or(0) as i64;
             let nova = todas[(agora + n).rem_euclid(todas.len() as i64) as usize];
@@ -1156,7 +1135,7 @@ fn no_callout(e: &mut Estado, ed: Edicao) -> bool {
                 e.seguir_cursor();
             }
         }
-        (Edicao::Alternar, _) => {
+        Edicao::Alternar => {
             let recolher = !dados.collapsed;
             if editar_callout(e, &embed, |d| {
                 d.collapsed = recolher;
@@ -1165,55 +1144,39 @@ fn no_callout(e: &mut Estado, ed: Edicao) -> bool {
                 e.aviso = Some(if recolher { "nasce recolhido na janela" } else { "nasce aberto na janela" }.into());
             }
         }
-        (Edicao::Reescrever { limpar }, None) => {
+        Edicao::Reescrever { limpar, .. } => {
             let texto = if limpar { String::new() } else { dados.title };
             perguntar(e, "Título do callout", texto, AcaoDaPergunta::TituloDoCallout { embed });
         }
-        (Edicao::Reescrever { limpar }, Some((faixa, de_lista))) => {
-            let fonte = fonte_do_bloco.unwrap_or_default();
-            if fonte.contains('\n') {
-                e.aviso = Some("bloco de várias linhas: edite por item ou no arquivo".into());
+        // No título: o bloco novo é o primeiro do corpo.
+        Edicao::Criar { .. } => {
+            let alvo = primeiro.clone().unwrap_or_else(|| e.cursor.clone());
+            perguntar(
+                e,
+                "-- INSERÇÃO --",
+                String::new(),
+                AcaoDaPergunta::Bloco(EdicaoDeBloco {
+                    hospedeiro: Hospedeiro::Callout(embed),
+                    faixa: 0..0,
+                    prefixo: String::new(),
+                    de_lista: false,
+                    alvo,
+                    novo: true,
+                    antes: primeiro.is_some(),
+                }),
+            );
+        }
+        Edicao::Colar { .. } => {
+            let Some(Registro::Bloco(texto)) = e.registro.clone() else {
+                e.aviso = Some("não há bloco copiado".into());
                 return true;
-            }
-            // O `cc` num item de lista mantém a marca: reescreve o texto,
-            // não o tipo do bloco.
-            let texto = if !limpar {
-                fonte
-            } else if de_lista {
-                marca_de_lista(&fonte)
-            } else {
-                String::new()
             };
-            let faixa = faixa.start..faixa.start + dados.body[faixa.clone()].trim_end().len();
-            perguntar(e, "Bloco", texto, AcaoDaPergunta::BlocoDoCallout { embed, faixa, de_lista });
+            editar_callout(e, &embed, |d| {
+                d.body = super::markdown::inserir_bloco(&d.body, 0, &texto, false, true).0;
+                Ok(())
+            });
         }
-        (Edicao::Criar { antes }, bloco) | (Edicao::Colar { antes }, bloco) => {
-            let colando = matches!(ed, Edicao::Colar { .. });
-            let (pos, de_lista) = match &bloco {
-                Some((r, l)) => (if antes { r.start } else { r.end }, *l),
-                None => (0, false),
-            };
-            if colando {
-                let Some(Registro::Bloco(texto)) = e.registro.clone() else {
-                    e.aviso = Some("não há bloco copiado".into());
-                    return true;
-                };
-                let mut inicio = 0;
-                if editar_callout(e, &embed, |d| {
-                    let (corpo, onde) = inserir_bloco(&d.body, pos.min(d.body.len()), &texto, de_lista);
-                    d.body = corpo;
-                    inicio = onde;
-                    Ok(())
-                }) {
-                    let destino = bloco_que_comeca_em(&e.arvore, &embed, inicio);
-                    ir(e, destino);
-                }
-            } else {
-                let texto = if de_lista { marca_de_lista(fonte_do_bloco.as_deref().unwrap_or("")) } else { String::new() };
-                perguntar(e, "Novo bloco", texto, AcaoDaPergunta::BlocoDoCallout { embed, faixa: pos..pos, de_lista });
-            }
-        }
-        (Edicao::Apagar | Edicao::ApagarConteudo, None) => {
+        Edicao::Apagar | Edicao::ApagarConteudo => {
             if dados.title.trim().is_empty() {
                 return false;
             }
@@ -1226,20 +1189,8 @@ fn no_callout(e: &mut Estado, ed: Edicao) -> bool {
                 e.seguir_cursor();
             }
         }
-        (Edicao::Apagar | Edicao::ApagarConteudo, Some((faixa, de_lista))) => {
-            let fonte = fonte_do_bloco.unwrap_or_default();
-            if editar_callout(e, &embed, |d| {
-                d.body = remover_bloco(&d.body, faixa.clone(), de_lista);
-                Ok(())
-            }) {
-                e.registro = Some(Registro::Bloco(fonte));
-                e.aviso = Some("bloco apagado".into());
-                e.seguir_cursor();
-            }
-        }
-        (Edicao::Copiar, bloco) => {
-            let texto = if bloco.is_some() { fonte_do_bloco.unwrap_or_default() } else { dados.title };
-            e.registro = Some(Registro::Bloco(texto));
+        Edicao::Copiar => {
+            e.registro = Some(Registro::Bloco(dados.title));
             e.aviso = Some("copiado".into());
         }
         _ => return false,
@@ -1264,7 +1215,7 @@ fn nas_acoes(e: &mut Estado, ed: Edicao) -> bool {
         (Edicao::Criar { antes }, _, _) => {
             perguntar(e, "Novo botão", String::new(), AcaoDaPergunta::NovoBotao { embed, posicao: posicao(antes) });
         }
-        (Edicao::Reescrever { limpar }, Some(indice), Some(botao)) => {
+        (Edicao::Reescrever { limpar, .. }, Some(indice), Some(botao)) => {
             let texto = if limpar { String::new() } else { botao.label };
             perguntar(e, "Rótulo do botão", texto, AcaoDaPergunta::RenomearBotao { embed, indice });
         }

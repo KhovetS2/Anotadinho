@@ -145,6 +145,9 @@ pub enum Edicao {
     Reescrever {
         /// Começa sem o texto atual.
         limpar: bool,
+        /// O cursor de texto começa no fim (`a`, `A`) ou no começo (`i`,
+        /// `I`).
+        no_fim: bool,
     },
     /// `dd`, `D`: apaga o item (e guarda no registro, como o vim).
     Apagar,
@@ -172,8 +175,11 @@ pub fn edicao_de(c: &Comando) -> Option<Edicao> {
     Some(match *c {
         Comando::Entrar(Insercao::LinhaAbaixo) => Edicao::Criar { antes: false },
         Comando::Entrar(Insercao::LinhaAcima) => Edicao::Criar { antes: true },
-        Comando::Entrar(_) => Edicao::Reescrever { limpar: false },
-        Comando::Mudar(Movimento::LinhaInteira | Movimento::FimDaLinha, _) => Edicao::Reescrever { limpar: true },
+        Comando::Entrar(Insercao::Antes | Insercao::InicioDaLinha) => Edicao::Reescrever { limpar: false, no_fim: false },
+        Comando::Entrar(_) => Edicao::Reescrever { limpar: false, no_fim: true },
+        Comando::Mudar(Movimento::LinhaInteira | Movimento::FimDaLinha, _) => {
+            Edicao::Reescrever { limpar: true, no_fim: true }
+        }
         Comando::Apagar(Movimento::LinhaInteira | Movimento::FimDaLinha, _) => Edicao::Apagar,
         Comando::ApagarCaractere { .. } => Edicao::ApagarConteudo,
         Comando::Copiar(Movimento::LinhaInteira, _) => Edicao::Copiar,
@@ -631,10 +637,10 @@ mod testes {
         let casos = [
             (vec!["o"], Some(Edicao::Criar { antes: false })),
             (vec!["O"], Some(Edicao::Criar { antes: true })),
-            (vec!["i"], Some(Edicao::Reescrever { limpar: false })),
-            (vec!["A"], Some(Edicao::Reescrever { limpar: false })),
-            (vec!["c", "c"], Some(Edicao::Reescrever { limpar: true })),
-            (vec!["S"], Some(Edicao::Reescrever { limpar: true })),
+            (vec!["i"], Some(Edicao::Reescrever { limpar: false, no_fim: false })),
+            (vec!["A"], Some(Edicao::Reescrever { limpar: false, no_fim: true })),
+            (vec!["c", "c"], Some(Edicao::Reescrever { limpar: true, no_fim: true })),
+            (vec!["S"], Some(Edicao::Reescrever { limpar: true, no_fim: true })),
             (vec!["d", "d"], Some(Edicao::Apagar)),
             (vec!["x"], Some(Edicao::ApagarConteudo)),
             (vec!["y", "y"], Some(Edicao::Copiar)),

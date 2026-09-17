@@ -16,7 +16,9 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 mod edicao;
+mod markdown;
 pub use edicao::{AcaoDaPergunta, Pergunta, Registro};
+pub use markdown::{EdicaoDeBloco, Hospedeiro};
 use edicao::tecla_na_pergunta;
 
 use crate::sidebar::{self, Item};
@@ -954,7 +956,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             let no_calendario = l.embed_dono.as_deref() == Some("calendar");
             let no_callout = l.embed_dono.as_deref() == Some("callout");
             let na_galeria = l.embed_dono.as_deref() == Some("gallery");
-            let desenhadas = if nas_colunas {
+            let mut desenhadas: Vec<Vec<Line>> = if nas_colunas {
                 let dono = l.dono_embed.clone().unwrap_or_default();
                 if linhas_visiveis.iter().any(|f| f.dono_embed.as_ref() == Some(&dono) && f.mostra(&e.cursor)) {
                     achou = true;
@@ -1093,6 +1095,21 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                     largura_conteudo,
                 )]]
             };
+            // O bloco em inserção aparece NO LUGAR (ciclo 334): o texto
+            // sendo digitado substitui a linha, ou entra antes/depois dela
+            // quando o bloco é novo.
+            if let Some((b, p)) = insercao_no_lugar(e) {
+                if l.caminho == b.alvo {
+                    let edicao = linhas_em_insercao(l.nivel, &b.prefixo, &p.texto, p.cursor, &e.tema, largura_conteudo);
+                    if !b.novo {
+                        desenhadas = vec![edicao];
+                    } else if b.antes {
+                        desenhadas.insert(0, edicao);
+                    } else {
+                        desenhadas.push(edicao);
+                    }
+                }
+            }
             // A lateral acende na linha do cursor: é como o foco se
             // marca dentro de um cartão que não é dele.
             let cor_lateral = match &atual {
@@ -1189,10 +1206,16 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         bloco = bloco.title_bottom(rodape);
     }
     if let Some(p) = &e.pergunta {
-        bloco = bloco.title_bottom(Line::from(Span::styled(
-            format!(" {}: {}▏ ", p.rotulo, p.texto),
-            e.tema.estilo(Realce::Cursor),
-        )));
+        // O texto só vai pro rodapé quando não está sendo editado no
+        // lugar (ciclo 334): o bloco de markdown mostra a inserção na
+        // própria linha, e o rodapé só diz o modo, como o vim.
+        let mut spans = vec![Span::styled(format!(" {}", p.rotulo), e.tema.estilo(Realce::Cursor))];
+        if insercao_no_lugar(e).is_none() {
+            spans.push(Span::styled(": ", e.tema.estilo(Realce::Cursor)));
+            spans.extend(texto_com_cursor(&p.texto, p.cursor, e.tema.estilo(Realce::Cursor), &e.tema));
+        }
+        spans.push(Span::styled(" ", e.tema.estilo(Realce::Cursor)));
+        bloco = bloco.title_bottom(Line::from(spans));
     } else if let Some(aviso) = &e.aviso {
         bloco = bloco.title_bottom(Line::from(Span::styled(
             format!(" {aviso} "),
@@ -2014,6 +2037,62 @@ fn linhas_das_colunas(
                 }
             }
             Line::from(spans)
+        })
+        .collect()
+}
+
+/// A edição de bloco aberta, quando ela aparece no lugar do bloco: um
+/// bloco da página ou do corpo de um callout que tem linha própria na
+/// tela. Num painel de colunas, ou ao lado de um embed, o texto vai pro
+/// rodapé.
+fn insercao_no_lugar(e: &Estado) -> Option<(&EdicaoDeBloco, &Pergunta)> {
+    let p = e.pergunta.as_ref()?;
+    let AcaoDaPergunta::Bloco(b) = &p.acao else { return None };
+    if matches!(b.hospedeiro, Hospedeiro::Painel(..)) {
+        return None;
+    }
+    let u = e.arvore.em(&b.alvo)?;
+    if matches!(u.tipo, Tipo::Embed(_) | Tipo::Parte { .. }) || b.alvo.is_empty() {
+        return None;
+    }
+    Some((b, p))
+}
+
+/// O texto com o cursor de inserção: a célula do cursor em vídeo inverso
+/// (um espaço, no fim).
+fn texto_com_cursor(texto: &str, cursor: usize, estilo: Style, tema: &Tema) -> Vec<Span<'static>> {
+    let chars: Vec<char> = texto.chars().collect();
+    let c = cursor.min(chars.len());
+    let antes: String = chars[..c].iter().collect();
+    let sob: String = chars.get(c).map(|x| x.to_string()).unwrap_or_else(|| " ".into());
+    let depois: String = chars.get(c + 1..).map(|r| r.iter().collect()).unwrap_or_default();
+    let invertido = Style::default().fg(tema.var("bg-base")).bg(tema.var("text-primary"));
+    vec![Span::styled(antes, estilo), Span::styled(sob, invertido), Span::styled(depois, estilo)]
+}
+
+/// As linhas de um bloco em inserção: o recuo dele, a marca apagada e o
+/// texto com o cursor, quebrado na largura.
+fn linhas_em_insercao(nivel: usize, prefixo: &str, texto: &str, cursor: usize, tema: &Tema, largura: usize) -> Vec<Line<'static>> {
+    let mut spans = vec![Span::raw("  ".repeat(nivel))];
+    if !prefixo.is_empty() {
+        spans.push(Span::styled(prefixo.to_string(), tema.estilo(Realce::Marca)));
+    }
+    spans.extend(texto_com_cursor(texto, cursor, tema.estilo(Realce::Texto), tema));
+    // A quebra pinta de fundo o que não tem; aqui o fundo é o da região
+    // (página ou caixa do callout), então esse fundo sai de volta.
+    let fundo = tema.var("bg-base");
+    quebrar_linha(Line::from(spans), largura.max(8), fundo)
+        .into_iter()
+        .map(|l| {
+            Line::from(
+                l.spans
+                    .into_iter()
+                    .map(|s| {
+                        let estilo = if s.style.bg == Some(fundo) { Style { bg: None, ..s.style } } else { s.style };
+                        Span::styled(s.content, estilo)
+                    })
+                    .collect::<Vec<_>>(),
+            )
         })
         .collect()
 }
@@ -5317,16 +5396,21 @@ mod testes {
     }
 
     #[test]
-    fn escape_cancela_a_pergunta_sem_gravar() {
+    fn escape_confirma_como_no_vim_e_u_desfaz() {
+        // No vim, `Esc` sai da inserção COM o que foi digitado (ciclo
+        // 333). Desistir é `u`.
         let mut e = editavel();
         e.cursor = vec![1, 1, 3, 4];
         tecla(&mut e, "o");
         digitar(&mut e, "Nada");
         tecla(&mut e, "Escape");
-        assert!(e.pergunta.is_none() && e.gravacao.is_none());
+        assert!(e.pergunta.is_none());
+        assert_eq!(gravado(&e).entries.len(), 3);
         // E o `j` volta a ser movimento, não texto.
         tecla(&mut e, "j");
         assert!(e.pergunta.is_none());
+        tecla(&mut e, "u");
+        assert_eq!(e.gravacao.as_deref(), Some(PAGINA_COM_CALENDARIO));
     }
 
     #[test]
@@ -5602,16 +5686,6 @@ mod testes {
         assert_eq!(e.aviso.as_deref(), Some("nada pra desfazer"));
     }
 
-    #[test]
-    fn fora_de_embed_os_comandos_de_edicao_nao_fazem_nada() {
-        let mut e = kanban_editavel();
-        e.cursor = vec![0];
-        for t in ["o", "d", "d", "x", ">", ">", "Ctrl+a"] {
-            tecla(&mut e, t);
-        }
-        assert!(e.gravacao.is_none() && e.pergunta.is_none());
-    }
-
     const PAGINA_COM_CALLOUT: &str = "Antes.\n\n{{ type: \"callout\" }}\nvariant: warning\ntitle: Cuidado\nbody: |\n  Primeiro parágrafo.\n\n  - um\n  - dois\n\n  Último.\n{{ /callout }}\n\nDepois.\n";
 
     fn callout_editavel() -> Estado {
@@ -5664,20 +5738,20 @@ mod testes {
         e.cursor = no_callout(&e, "Primeiro parágrafo.");
         tecla(&mut e, "o");
         digitar(&mut e, "Segundo.");
-        tecla(&mut e, "Enter");
+        tecla(&mut e, "Escape");
         assert_eq!(callout_gravado(&e).body, "Primeiro parágrafo.\n\nSegundo.\n\n- um\n- dois\n\nÚltimo.\n");
         assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "Segundo.");
-        // `cc` num item mantém a marca; `o` num item cria item vizinho.
+        // `cc` num item mantém a marca (ela fica fora do texto); `o` num
+        // item cria item vizinho.
         e.cursor = no_callout(&e, "um");
         tecla(&mut e, "c");
         tecla(&mut e, "c");
-        assert_eq!(e.pergunta.as_ref().unwrap().texto, "- ");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "");
         digitar(&mut e, "primeiro");
-        tecla(&mut e, "Enter");
+        tecla(&mut e, "Escape");
         tecla(&mut e, "o");
-        assert_eq!(e.pergunta.as_ref().unwrap().texto, "- ");
         digitar(&mut e, "meio");
-        tecla(&mut e, "Enter");
+        tecla(&mut e, "Escape");
         assert_eq!(callout_gravado(&e).body, "Primeiro parágrafo.\n\nSegundo.\n\n- primeiro\n- meio\n- dois\n\nÚltimo.\n");
         e.cursor = no_callout(&e, "dois");
         tecla(&mut e, "d");
@@ -5690,6 +5764,151 @@ mod testes {
         e.cursor = no_callout(&e, "Primeiro parágrafo.");
         tecla(&mut e, "P");
         assert_eq!(callout_gravado(&e).body, "Último.\n\nPrimeiro parágrafo.\n\nSegundo.\n\n- primeiro\n- meio\n");
+    }
+
+    const PAGINA_MARKDOWN: &str = "---\ntitle: Notas\n---\n# Título\n\nUm parágrafo com **negrito**.\n\n- [ ] tarefa um\n- [ ] tarefa dois\n\n> citação\n";
+
+    fn markdown_editavel() -> Estado {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(PAGINA_MARKDOWN, Some("v1".into()));
+        e.foco = Foco::Conteudo;
+        e
+    }
+
+    /// O corpo gravado, conferindo que o frontmatter ficou.
+    fn corpo_gravado(e: &Estado) -> String {
+        let texto = e.gravacao.clone().expect("nada pra gravar");
+        assert!(texto.starts_with("---\ntitle: Notas\n---\n"), "o frontmatter mudou:\n{texto}");
+        texto["---\ntitle: Notas\n---\n".len()..].to_string()
+    }
+
+    #[test]
+    fn a_e_i_editam_o_texto_do_paragrafo_com_as_marcas_a_vista() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "A");
+        let p = e.pergunta.as_ref().unwrap();
+        assert_eq!((p.texto.as_str(), p.cursor), ("Um parágrafo com **negrito**.", 29));
+        // O texto aparece NO LUGAR, e o rodapé só diz o modo.
+        let tela = desenho(&mut e, 90, 16).join("\n");
+        assert!(tela.contains("Um parágrafo com **negrito**."), "{tela}");
+        assert!(tela.contains("-- INSERÇÃO --") && !tela.contains("INSERÇÃO --: "), "{tela}");
+        digitar(&mut e, " Fim.");
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).contains("\n\nUm parágrafo com **negrito**. Fim.\n\n"));
+        tecla(&mut e, "I");
+        assert_eq!(e.pergunta.as_ref().unwrap().cursor, 0);
+        digitar(&mut e, "Ah. ");
+        tecla(&mut e, "ArrowRight");
+        tecla(&mut e, "Backspace");
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).contains("\n\nAh. m parágrafo"), "{}", corpo_gravado(&e));
+    }
+
+    #[test]
+    fn enter_confirma_e_abre_o_bloco_seguinte() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![2, 1];
+        tecla(&mut e, "o");
+        digitar(&mut e, "tarefa três");
+        tecla(&mut e, "Enter");
+        // Item depois de item, com a caixa vazia.
+        assert!(e.pergunta.is_some());
+        digitar(&mut e, "tarefa quatro");
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).contains("- [ ] tarefa dois\n- [ ] tarefa três\n- [ ] tarefa quatro\n\n> citação"), "{}", corpo_gravado(&e));
+        // Num parágrafo, o seguinte é parágrafo.
+        e.cursor = vec![1];
+        tecla(&mut e, "O");
+        digitar(&mut e, "Antes do parágrafo.");
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).starts_with("# Título\n\nAntes do parágrafo.\n\nUm parágrafo"), "{}", corpo_gravado(&e));
+    }
+
+    #[test]
+    fn til_marca_a_caixa_e_ctrl_a_muda_o_nivel_do_titulo() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![2, 0];
+        tecla(&mut e, "~");
+        assert!(corpo_gravado(&e).contains("- [x] tarefa um\n- [ ] tarefa dois"));
+        tecla(&mut e, "~");
+        assert!(corpo_gravado(&e).contains("- [ ] tarefa um\n"));
+        e.cursor = vec![0];
+        tecla(&mut e, "2");
+        tecla(&mut e, "Ctrl+x");
+        assert!(corpo_gravado(&e).starts_with("### Título\n"));
+        tecla(&mut e, "Ctrl+a");
+        assert!(corpo_gravado(&e).starts_with("## Título\n"));
+    }
+
+    #[test]
+    fn maior_maior_troca_o_bloco_de_lugar_e_dd_p_move() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![2, 0];
+        tecla(&mut e, ">");
+        tecla(&mut e, ">");
+        assert!(corpo_gravado(&e).contains("- [ ] tarefa dois\n- [ ] tarefa um\n\n> citação"));
+        assert!(e.arvore.em(&e.cursor).unwrap().texto.ends_with("tarefa um"));
+        // O parágrafo desce pra depois da lista.
+        e.cursor = vec![1];
+        tecla(&mut e, ">");
+        tecla(&mut e, ">");
+        assert!(corpo_gravado(&e).starts_with("# Título\n\n- [ ] tarefa dois\n- [ ] tarefa um\n\nUm parágrafo"), "{}", corpo_gravado(&e));
+        // `dd` e `P` no começo: o título vai pro fim do bloco de cima.
+        e.cursor = vec![3];
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        e.cursor = vec![0];
+        tecla(&mut e, "P");
+        assert!(corpo_gravado(&e).starts_with("> citação\n\n# Título"), "{}", corpo_gravado(&e));
+        assert!(e.aviso.is_none() || !e.aviso.as_deref().unwrap().contains("não"));
+    }
+
+    #[test]
+    fn x_no_markdown_avisa_em_vez_de_apagar() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "x");
+        assert!(e.gravacao.is_none());
+        assert!(e.aviso.as_deref().unwrap_or("").contains("dd"));
+    }
+
+    #[test]
+    fn no_proprio_embed_o_cria_texto_depois_e_dd_apaga_o_embed() {
+        let mut e = kanban_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        digitar(&mut e, "Depois do kanban.");
+        tecla(&mut e, "Escape");
+        let texto = e.gravacao.clone().unwrap();
+        assert!(texto.contains("{{ /kanban }}\n\nDepois do kanban.\n\nDepois."), "{texto}");
+        e.cursor = vec![1];
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert_eq!(e.gravacao.as_deref(), Some("Antes.\n\nDepois do kanban.\n\nDepois.\n"));
+        tecla(&mut e, "u");
+        assert!(e.gravacao.as_deref().unwrap().contains("{{ type: \"kanban\" }}"));
+    }
+
+    #[test]
+    fn no_painel_de_colunas_o_markdown_e_o_do_painel() {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(
+            "{{ type: \"columns\" }}\ncolumns:\n- width: 1\n  body: |\n    Esquerda.\n- width: 1\n  body: |\n    Direita.\n{{ /columns }}\n",
+            Some("v1".into()),
+        );
+        e.foco = Foco::Conteudo;
+        // embed → painel 1 → largura (escondida), parágrafo.
+        e.cursor = vec![0, 1, 1];
+        tecla(&mut e, "A");
+        // Painel é desenhado inteiro: o texto vai pro rodapé.
+        let tela = desenho(&mut e, 100, 16).join("\n");
+        assert!(tela.contains("-- INSERÇÃO --: Direita."), "{tela}");
+        digitar(&mut e, " Mais.");
+        tecla(&mut e, "Escape");
+        let texto = e.gravacao.clone().unwrap();
+        assert!(texto.contains("Direita. Mais."), "{texto}");
+        assert!(texto.contains("Esquerda."), "{texto}");
     }
 
     const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";
@@ -5837,10 +6056,9 @@ mod testes {
         e.foco = Foco::Conteudo;
         // No modo vault as barras vêm das páginas; a daqui não aparece,
         // então o cursor fica no próprio embed.
-        e.cursor = vec![1];
-        tecla(&mut e, "o");
-        digitar(&mut e, "Nova");
-        tecla(&mut e, "Enter");
+        e.cursor = achar_com_indice(&e.arvore, &[1], "barra", 0).expect("sem hoje, as barras do arquivo aparecem");
+        tecla(&mut e, ">");
+        tecla(&mut e, ">");
         assert!(e.gravacao.is_none());
         assert!(e.aviso.as_deref().unwrap_or("").contains("só leitura"));
     }
