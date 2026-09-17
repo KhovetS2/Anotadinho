@@ -4523,6 +4523,8 @@ fn estilo_do_trecho(marcas: &[Marca], base: Style, tema: &Tema) -> Style {
         Marca::Codigo => e.patch(tema.estilo(Realce::Codigo)),
         Marca::Link => e.patch(tema.estilo(Realce::Link)),
         Marca::Wikilink => e.patch(tema.estilo(Realce::Wikilink)),
+        Marca::Cor(nome) => e.fg(tema.var(&format!("cor-{nome}"))),
+        Marca::Fundo(nome) => e.bg(tema.var(&format!("fundo-{nome}"))),
     })
 }
 
@@ -8920,5 +8922,24 @@ mod testes {
         tecla(&mut e, "Enter");
         tecla(&mut e, "Escape");
         assert!(corpo_gravado(&e).contains("veja [docs](https://x.dev) <span class=\"cor--vermelho\">alerta</span>"), "{}", corpo_gravado(&e));
+    }
+
+    #[test]
+    fn texto_com_cor_da_paleta_sai_colorido_e_riscado_sai_riscado() {
+        let mut e = pagina_com("um <span class=\"cor--vermelho\">alerta</span> e ~~velho~~\n");
+        let vermelho = e.tema.var("cor-vermelho");
+        assert_ne!(vermelho, ratatui::style::Color::Gray, "o tema não tem --cor-vermelho");
+        let buf = quadro(&mut e, 80, 6);
+        let achar = |palavra: &str| {
+            (0..buf.area.height).find_map(|y| {
+                let linha: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect();
+                linha.find(palavra).map(|b| (linha[..b].chars().count() as u16, y))
+            })
+        };
+        let (x, y) = achar("alerta").expect("sem alerta");
+        assert_eq!(buf[(x, y)].style().fg, Some(vermelho));
+        let (x, y) = achar("velho").expect("sem velho");
+        assert!(buf[(x, y)].style().add_modifier.contains(Modifier::CROSSED_OUT));
+        assert!(!desenho(&mut e, 80, 6).join("\n").contains("span"));
     }
 }

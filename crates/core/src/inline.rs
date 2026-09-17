@@ -40,6 +40,30 @@ pub enum Marca {
     Link,
     /// `[[Página]]` — o link do vault, que o pulldown-cmark não conhece.
     Wikilink,
+    /// `<span class="cor--vermelho">` — a cor da paleta da janela (ciclo
+    /// 357), pelo nome (`vermelho`).
+    Cor(&'static str),
+    /// `<span class="fundo--vermelho">` — o realce.
+    Fundo(&'static str),
+}
+
+/// Os nomes da paleta que a barra de seleção da janela grava.
+pub const PALETA: &[&str] = &["vermelho", "ambar", "verde", "azul", "roxo", "rosa", "cinza"];
+
+/// As marcas de cor de um `<span class="…">`.
+fn cores_do_span(html: &str) -> Vec<Marca> {
+    let Some(classe) = html.split("class=\"").nth(1).and_then(|r| r.split('"').next()) else { return Vec::new() };
+    classe
+        .split_whitespace()
+        .filter_map(|c| {
+            let achar = |slug: &str| PALETA.iter().copied().find(|p| *p == slug);
+            if let Some(s) = c.strip_prefix("cor--") {
+                achar(s).map(Marca::Cor)
+            } else {
+                c.strip_prefix("fundo--").and_then(achar).map(Marca::Fundo)
+            }
+        })
+        .collect()
 }
 
 /// Um pedaço de texto visível, com o que ele é e de onde veio.
@@ -73,6 +97,8 @@ pub fn trechos(texto: &str) -> Vec<Trecho> {
     opcoes.insert(Options::ENABLE_STRIKETHROUGH);
     let mut fora = Vec::new();
     let mut pilha: Vec<Marca> = Vec::new();
+    // Quantas marcas cada `<span>` aberto empilhou.
+    let mut spans: Vec<usize> = Vec::new();
 
     for (evento, faixa) in Parser::new_ext(texto, opcoes).into_offset_iter() {
         match evento {
@@ -82,6 +108,15 @@ pub fn trechos(texto: &str) -> Vec<Trecho> {
             Event::Start(Tag::Link { .. }) => pilha.push(Marca::Link),
             Event::End(TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough | TagEnd::Link) => {
                 pilha.pop();
+            }
+            Event::InlineHtml(h) if h.trim_start().starts_with("<span") => {
+                let cores = cores_do_span(&h);
+                spans.push(cores.len());
+                pilha.extend(cores);
+            }
+            Event::InlineHtml(h) if h.trim() == "</span>" => {
+                let n = spans.pop().unwrap_or(0);
+                pilha.truncate(pilha.len().saturating_sub(n));
             }
             Event::Code(t) => {
                 let mut marcas = pilha.clone();
@@ -364,5 +399,14 @@ mod testes {
         assert_eq!(t.len(), 1);
         assert_eq!(t[0].texto, "**a**");
         assert!(t[0].tem(Marca::Codigo));
+    }
+
+    #[test]
+    fn span_com_classe_da_paleta_vira_cor() {
+        let t = trechos("um <span class=\"cor--vermelho fundo--ambar\">alerta</span> aqui");
+        assert_eq!(visivel(&t), "um alerta aqui");
+        let alerta = t.iter().find(|x| x.texto == "alerta").unwrap();
+        assert_eq!(alerta.marcas, [Marca::Cor("vermelho"), Marca::Fundo("ambar")]);
+        assert!(t.iter().find(|x| x.texto == " aqui").unwrap().marcas.is_empty());
     }
 }
