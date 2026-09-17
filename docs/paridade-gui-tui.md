@@ -83,6 +83,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Tabela: número ▲▼, data, coluna de página (escolher e abrir) | ✅ | 367 — Ctrl+A/X; Enter na página |
 | Consulta: configuração completa | ✅ | 335, 338, 344 — `=` na consulta |
 | Consulta: recolher grupo (guardado no arquivo) | ✅ | 377 — `z` no grupo |
+| Consulta: altura máxima | ✅ | 401 — no `=`; no terminal a página rola, o valor vale na janela |
 | Ações: EXECUTAR o botão | ✅ | 342 — abrir, template, propriedade, busca |
 | Ações: configurar o botão (ação, destino, ícone) | ✅ | 344 — `=` no botão |
 | Ações: layout em grade | ✅ | 380 — botões da mesma largura; `~` fora de um botão troca |

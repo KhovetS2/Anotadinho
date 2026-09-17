@@ -3016,6 +3016,9 @@ pub(super) fn configurar(e: &mut Estado) -> bool {
             C::novo("sort", "Ordenar por", Valor::Texto(q.sort.as_ref().map(|s| s.field.clone()).unwrap_or_default())).com_dica("campo"),
             C::novo("desc", "Decrescente", Valor::Booleano(q.sort.as_ref().is_some_and(|s| s.desc))),
             C::novo("limit", "Limite", Valor::Texto(q.limit.map(|l| l.to_string()).unwrap_or_default())).com_dica("sem limite"),
+            // A janela usa pra rolar dentro da consulta; no terminal a
+            // página inteira rola, e o valor é guardado pra ela (ciclo 401).
+            C::novo("altura", "Altura máxima", Valor::Texto(q.max_height.map(|h| h.to_string()).unwrap_or_default())).com_dica("384 px (padrão) — vale na janela"),
             C::novo("view", "Visão", Valor::Opcoes(visoes, visao)),
             C::novo("columns", "Colunas", Valor::Lista(q.columns.clone())).com_dica("campo"),
             C::novo("group", "Agrupar por", Valor::Texto(q.group_by.clone().unwrap_or_default())).com_dica("campo"),
@@ -3115,6 +3118,18 @@ pub(super) fn aplicar_configuracao(e: &mut Estado, alvo: &super::modais::AlvoDoD
                     }
                 }
             }
+            let altura = form.texto("altura");
+            let altura = if altura.trim().is_empty() {
+                None
+            } else {
+                match altura.trim().parse::<u16>() {
+                    Ok(v) if v > 0 => Some(v),
+                    _ => {
+                        e.aviso = Some("altura máxima: pixels, maior que zero".into());
+                        return;
+                    }
+                }
+            };
             let limite = form.texto("limit");
             let limite = if limite.is_empty() {
                 None
@@ -3135,6 +3150,7 @@ pub(super) fn aplicar_configuracao(e: &mut Estado, alvo: &super::modais::AlvoDoD
                 q.conditions = condicoes;
                 q.sort = ordenar;
                 q.limit = limite;
+                q.max_height = altura;
                 q.view = visao;
                 q.columns = form.lista("columns");
                 q.group_by = opcional(form.texto("group"));

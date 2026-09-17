@@ -10198,4 +10198,26 @@ mod testes {
         assert!(tela[1].starts_with(" ≡") && tela[2].starts_with(" ◷") && tela[3].starts_with(" ⌕"), "{tela:?}");
         assert!(!tela[0].contains("páginas"));
     }
+
+    // --- Ciclo 401: altura máxima da consulta ------------------------------------------
+
+    #[test]
+    fn a_consulta_guarda_a_altura_maxima() {
+        use anotadinho_core::embed::EmbedData;
+        let mut e = pagina_com("{{ type: \"query\" }}\nfrom: pages\nmax_height: 256\n{{ /query }}\n");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0];
+        tecla(&mut e, "=");
+        let tela = desenho(&mut e, 100, 40).join("\n");
+        assert!(tela.contains("Altura máxima") && tela.contains("256"), "{tela}");
+        let Some(Modal::Detalhe { mut form, alvo, .. }) = e.modal.clone() else { panic!() };
+        let i = form.campos.iter().position(|c| c.chave == "altura").unwrap();
+        form.campos[i].valor = crate::componentes::Valor::Texto("480".into());
+        edicao::aplicar_detalhe(&mut e, &alvo, &mut form);
+        let EmbedData::Query(q) = embed_gravado(&e) else { panic!() };
+        assert_eq!(q.max_height, Some(480));
+        form.campos[i].valor = crate::componentes::Valor::Texto("zero".into());
+        edicao::aplicar_detalhe(&mut e, &alvo, &mut form);
+        assert!(e.aviso.as_deref().unwrap().contains("altura máxima"));
+    }
 }
