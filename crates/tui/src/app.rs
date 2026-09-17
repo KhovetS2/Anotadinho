@@ -146,6 +146,8 @@ pub struct Estado {
     pub salvar_agora: bool,
     /// O termo que a barra de comandos quer buscar no conteúdo (ciclo 379).
     pub busca_na_paleta: Option<String>,
+    /// O termo que a busca da sidebar quer no conteúdo (ciclo 370).
+    pub busca_na_sidebar: Option<String>,
     /// A página de início deste vault (ciclo 362): abre primeiro, e a aba
     /// dela fica fixa na frente.
     pub inicio: Option<String>,
@@ -243,6 +245,7 @@ impl Estado {
             nao_salvo: None,
             salvar_agora: false,
             busca_na_paleta: None,
+            busca_na_sidebar: None,
             inicio: None,
             imagem_pendente: None,
             celula_pendente: None,
@@ -1118,9 +1121,11 @@ fn buscar_conteudo_na_sidebar(e: &mut Estado) {
     if e.busca_em != Foco::Paginas {
         return;
     }
+    // Só a última vale, e roda quando a digitação para.
     if e.busca.chars().count() >= 3 {
-        e.pedidos.push(Pedido::BuscarNaSidebar(e.busca.clone()));
+        e.busca_na_sidebar = Some(e.busca.clone());
     } else {
+        e.busca_na_sidebar = None;
         e.resultados_da_busca = None;
     }
 }
@@ -9433,9 +9438,9 @@ mod testes {
         let mut e = Estado::novo(paginas(), analisar("# a\n"));
         tecla(&mut e, "/");
         digitar(&mut e, "sp");
-        assert!(e.pedidos.is_empty(), "duas letras ainda não buscam no conteúdo");
+        assert!(e.busca_na_sidebar.is_none(), "duas letras ainda não buscam no conteúdo");
         digitar(&mut e, "r");
-        assert_eq!(e.pedidos.last(), Some(&Pedido::BuscarNaSidebar("spr".into())));
+        assert_eq!(e.busca_na_sidebar.as_deref(), Some("spr"));
         e.resultados_da_busca = Some((
             "spr".into(),
             vec![anotadinho_core::embed::SearchHit { path: "pages/gama.md".into(), snippet: "a **spr**int de agosto".into(), origem: None, ancora: None }],

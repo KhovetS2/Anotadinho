@@ -409,6 +409,13 @@ fn buscar_na_paleta(estado: &mut Estado, vault: &str) {
         let hits = anotadinho_ipc::handle_search_content(vault.to_string(), termo.clone()).unwrap_or_default();
         app::modais::resultados_na_paleta(estado, &termo, &hits);
     }
+    // E a da sidebar (ciclo 370), se a pessoa ainda está nesse termo.
+    if let Some(termo) = estado.busca_na_sidebar.take() {
+        if estado.busca == termo {
+            let hits = anotadinho_ipc::handle_search_content(vault.to_string(), termo.clone()).unwrap_or_default();
+            estado.resultados_da_busca = Some((termo, hits));
+        }
+    }
 }
 
 /// Executa o que a TUI pediu e só quem tem o vault pode fazer (ciclo 339).
@@ -529,13 +536,6 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         estado.trocar_de_vault = Some((pasta, false));
                     } else {
                         estado.aviso = Some(format!("{pasta} não é um vault com páginas — \"Criar vault novo…\" prepara um"));
-                    }
-                }
-                Pedido::BuscarNaSidebar(termo) => {
-                    // Só vale se a pessoa ainda está nesse termo.
-                    if estado.busca == termo {
-                        let hits = anotadinho_ipc::handle_search_content(vault.to_string(), termo.clone()).unwrap_or_default();
-                        estado.resultados_da_busca = Some((termo, hits));
                     }
                 }
                 Pedido::GravarPorCima { path, conteudo } => match handle_write_page(vault.to_string(), path.clone(), conteudo) {

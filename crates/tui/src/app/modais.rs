@@ -56,8 +56,6 @@ pub enum Pedido {
         /// Preparar com a semente.
         criar: bool,
     },
-    /// Buscar no conteúdo pra sidebar (ciclo 370).
-    BuscarNaSidebar(String),
     /// Gravar por cima do disco, sem a trava de versão (ciclo 363).
     GravarPorCima {
         /// A página.
