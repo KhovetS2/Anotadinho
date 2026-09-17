@@ -2451,6 +2451,51 @@ pub(super) fn seguir_wikilink(e: &mut Estado) -> bool {
     true
 }
 
+/// `Enter` num link de fora (ciclo 374): o `[texto](url)` de um bloco, a
+/// célula de URL da tabela ou a imagem da galeria abrem no programa do
+/// sistema — o navegador, o visualizador —, como o clique na janela.
+pub(super) fn abrir_link_externo(e: &mut Estado) -> bool {
+    use super::modais::{AcaoDaEscolha, Modal, Pedido};
+    // Célula de URL.
+    if let Some((embed, f, coluna)) = celula_do_cursor(e) {
+        if f > 0 {
+            if let Some(d) = ler_tabela(e, &embed) {
+                if matches!(d.columns.get(coluna).map(|c| &c.kind), Some(em::ColumnKind::Url)) {
+                    match d.rows.get(f - 1).and_then(|r| r.get(coluna)).filter(|v| !v.trim().is_empty()) {
+                        Some(url) => e.pedidos.push(Pedido::AbrirExterno(url.clone())),
+                        None => e.aviso = Some("célula vazia: i escreve a URL".into()),
+                    }
+                    return true;
+                }
+            }
+        }
+    }
+    let Some(u) = e.arvore.em(&e.cursor) else { return false };
+    // Miniatura da galeria: o caminho escondido.
+    if let Some(caminho) = u.filhos.iter().find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "caminho")) {
+        if embed_do_cursor(e, "gallery").is_some() {
+            e.pedidos.push(Pedido::AbrirExterno(caminho.texto.clone()));
+            return true;
+        }
+    }
+    if matches!(u.tipo, Tipo::Embed(_) | Tipo::Parte { .. }) {
+        return false;
+    }
+    let links = anotadinho_core::links::links_externos(&u.texto);
+    match links.len() {
+        0 => false,
+        1 => {
+            e.pedidos.push(Pedido::AbrirExterno(links[0].1.clone()));
+            true
+        }
+        _ => {
+            let itens = links.into_iter().map(|(r, url)| crate::componentes::Item::novo("↗", r, url.clone()).com_detalhe(url)).collect();
+            e.modal = Some(Modal::Escolha { titulo: "Abrir link".into(), lista: crate::componentes::Lista::menu(itens), acao: AcaoDaEscolha::AbrirExterno });
+            true
+        }
+    }
+}
+
 // ---------------------------------------------------------------------
 // Detalhes do cartão e do evento (ciclo 343)
 // ---------------------------------------------------------------------

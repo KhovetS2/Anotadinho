@@ -298,6 +298,32 @@ fn extract_line(line: &str, out: &mut Vec<String>) {
     }
 }
 
+/// Os links markdown de um texto (ciclo 374): `(rótulo, destino)` de
+/// `[x](url)` e `![x](imagem)`.
+pub fn links_externos(texto: &str) -> Vec<(String, String)> {
+    use pulldown_cmark::{Event, Parser, Tag, TagEnd};
+    let mut fora = Vec::new();
+    let mut aberto: Option<(String, String)> = None;
+    for ev in Parser::new(texto) {
+        match ev {
+            Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => aberto = Some((String::new(), dest_url.to_string())),
+            Event::Text(t) | Event::Code(t) => {
+                if let Some((r, _)) = aberto.as_mut() {
+                    r.push_str(&t);
+                }
+            }
+            Event::End(TagEnd::Link | TagEnd::Image) => {
+                if let Some((r, u)) = aberto.take() {
+                    fora.push((if r.is_empty() { u.clone() } else { r }, u));
+                }
+            }
+            _ => {}
+        }
+    }
+    fora
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

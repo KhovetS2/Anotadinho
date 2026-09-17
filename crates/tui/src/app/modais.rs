@@ -47,6 +47,8 @@ pub enum Pedido {
         /// Pasta extra.
         extra: bool,
     },
+    /// Abrir uma URL ou arquivo do vault no programa do sistema (ciclo 374).
+    AbrirExterno(String),
     /// Abrir outro vault, ou preparar um novo (ciclo 373).
     TrocarVault {
         /// A pasta.
@@ -432,6 +434,8 @@ pub enum AcaoDaEscolha {
     PaginaDaCelula,
     /// A pasta extra que sai do alcance do agente (ciclo 369).
     TirarPasta,
+    /// Um link de fora, no programa do sistema (ciclo 374).
+    AbrirExterno,
 }
 
 /// Os comandos da barra, como na janela.
@@ -733,6 +737,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 AcaoDaEscolha::Mostrar => {}
                 AcaoDaEscolha::Formatar => super::formatar::escolher(e, &chave),
                 AcaoDaEscolha::PaginaDaCelula => super::edicao::pagina_escolhida(e, &chave),
+                AcaoDaEscolha::AbrirExterno => e.pedidos.push(Pedido::AbrirExterno(chave)),
                 AcaoDaEscolha::TirarPasta => {
                     let mut a = e.preferencias.agente.clone().unwrap_or_default();
                     a.pastas_extras.retain(|p| *p != chave);

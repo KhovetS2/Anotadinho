@@ -479,6 +479,32 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         }
                     }
                 }
+                Pedido::AbrirExterno(alvo) => {
+                    // URL vai como está; caminho é do vault (`assets/x.png`,
+                    // `../assets/x.png` de uma página).
+                    let e_url = ["http://", "https://", "mailto:", "file://"].iter().any(|p| alvo.starts_with(p));
+                    let destino = if e_url {
+                        alvo.clone()
+                    } else {
+                        let limpo = alvo.trim_start_matches("./").trim_start_matches("../");
+                        std::path::Path::new(vault).join(limpo).to_string_lossy().to_string()
+                    };
+                    if !e_url && !std::path::Path::new(&destino).exists() {
+                        estado.aviso = Some(format!("não achei {alvo}"));
+                    } else {
+                        let programa = if cfg!(target_os = "macos") { "open" } else if cfg!(windows) { "explorer" } else { "xdg-open" };
+                        match std::process::Command::new(programa)
+                            .arg(&destino)
+                            .stdin(std::process::Stdio::null())
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .spawn()
+                        {
+                            Ok(_) => estado.aviso = Some(format!("abrindo {alvo}")),
+                            Err(e) => estado.aviso = Some(format!("não abriu {alvo}: {e}")),
+                        }
+                    }
+                }
                 Pedido::TrocarVault { pasta, criar } => {
                     let pasta = match (pasta.strip_prefix('~'), std::env::var("HOME")) {
                         (Some(resto), Ok(casa)) => format!("{casa}{resto}"),

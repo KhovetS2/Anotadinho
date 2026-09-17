@@ -902,7 +902,8 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
                     || edicao::acionar_botao(e)
                     || edicao::abrir_detalhe_do_cartao(e)
                     || edicao::abrir_detalhe_do_evento(e)
-                    || edicao::seguir_wikilink(e))
+                    || edicao::seguir_wikilink(e)
+                    || edicao::abrir_link_externo(e))
             {
                 return None;
             }
@@ -9432,5 +9433,26 @@ mod testes {
         digitar(&mut e, "/tmp/novo");
         tecla(&mut e, "Enter");
         assert_eq!(e.pedidos, [Pedido::TrocarVault { pasta: "/tmp/novo".into(), criar: true }]);
+    }
+
+    // --- Ciclo 374: links de fora ------------------------------------------------
+
+    #[test]
+    fn enter_em_link_de_fora_pede_pra_abrir_no_sistema() {
+        let mut e = pagina_com("Veja [o site](https://exemplo.dev) e ![foto](assets/a.png).\n\nSó [um](https://um.dev).\n");
+        e.cursor = vec![1];
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirExterno("https://um.dev".into())]);
+        e.pedidos.clear();
+        e.cursor = vec![0];
+        tecla(&mut e, "Enter");
+        assert!(desenho(&mut e, 100, 20).join("\n").contains("assets/a.png"));
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirExterno("assets/a.png".into())]);
+        assert_eq!(
+            anotadinho_core::links::links_externos("a [b](c) ![d](e)"),
+            [("b".to_string(), "c".to_string()), ("d".to_string(), "e".to_string())]
+        );
     }
 }

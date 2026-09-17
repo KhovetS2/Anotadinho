@@ -23,6 +23,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Busca no CONTEÚDO na paleta (FTS) | ✅ | 342 — `Ctrl+F` (ou Enter sem resultado) |
 | Atalhos (`?`) | ✅ | 339 |
 | Wikilink `[[Título]]` abre a página | ✅ | 342 — Enter; oferece criar a que não existe |
+| Links de fora (texto, célula de URL, imagem da galeria) abrem no sistema | ✅ | 374 — Enter; `xdg-open`/`open` |
 | Autocompletar wikilink ao digitar | ✅ | 352 — `[[` na inserção; ↑↓, Enter/Tab completa, Esc fecha a lista |
 | Recarregar quando o arquivo muda por fora | ✅ | 351 — relê a cada segundo parado, sem perder o lugar; lista de páginas também |
 | Conflito: mudou no disco durante a edição (ver diferença, manter o meu, recarregar) | ✅ | 363 |
