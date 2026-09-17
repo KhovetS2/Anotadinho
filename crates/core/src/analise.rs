@@ -462,7 +462,8 @@ pub fn partes_do_cronograma(
 /// `partes_do_embed` não tem como montá-la — quem tem o índice (a TUI,
 /// que varre o vault) chama isto e troca os filhos do embed:
 ///
-/// - `cabecalho`: o recorte legível, com a `contagem` escondida;
+/// - `busca`: o recorte legível, com a `contagem` escondida — é destino
+///   do cursor, e `Enter` nele edita o filtro;
 /// - `nada`, quando nenhuma página bate;
 /// - um `resultado` por página (folha, com a `pagina` e cada `campo`
 ///   escondidos — `campo` é `nome=valor`), ou, com `group_by` ou
@@ -474,8 +475,10 @@ pub fn partes_do_cronograma(
 pub fn partes_da_consulta(q: &crate::query::Query, entries: &[crate::index::PageIndexEntry]) -> Vec<Unidade> {
     let resultados = q.run(entries);
     let n = resultados.len();
+    // "busca", não "cabecalho" (ciclo 338): a barra da consulta é
+    // destino do cursor — é por ela que se edita o recorte.
     let mut partes = vec![arranjado(
-        "cabecalho",
+        "busca",
         q.descrever(),
         vec![item("contagem", format!("{n} {}", if n == 1 { "página" } else { "páginas" }))],
         Arranjo::Folha,
@@ -2373,7 +2376,7 @@ mod partes_de_embed {
             ..Default::default()
         };
         let p = partes_da_consulta(&q, &indice);
-        assert_eq!(partes(&Unidade::com_filhos(Tipo::Paragrafo, p.clone())), ["parte:cabecalho", "parte:resultado", "parte:resultado"]);
+        assert_eq!(partes(&Unidade::com_filhos(Tipo::Paragrafo, p.clone())), ["parte:busca", "parte:resultado", "parte:resultado"]);
         assert_eq!(p[0].texto, "em pages");
         assert_eq!(p[0].filhos[0].texto, "2 páginas");
         assert_eq!(p[1].texto, "A");

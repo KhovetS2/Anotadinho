@@ -124,6 +124,9 @@ pub enum Comando {
     /// `Ctrl+A`/`Ctrl+X` (ciclo 322): somar ao número sob o cursor — num
     /// item estruturado, à duração ou à opção escolhida.
     Somar(i64),
+    /// `K` (ciclo 338): num item estruturado, sobe ele na ordem — o par do
+    /// `J`, que nele desce.
+    Subir(u32),
 }
 
 /// O que um comando de vim faz sobre um ITEM de embed (ciclo 322).
@@ -163,6 +166,9 @@ pub enum Edicao {
     Somar(i64),
     /// `~`: alterna um estado do item (recolhido, destaque).
     Alternar,
+    /// `J`/`K` (ciclo 338): desce/sobe o item na ORDEM vertical — o
+    /// cartão na coluna, a linha na tabela, o bloco na página.
+    Reordenar(i64),
     /// `u`.
     Desfazer,
     /// `Ctrl+R`.
@@ -187,6 +193,8 @@ pub fn edicao_de(c: &Comando) -> Option<Edicao> {
         Comando::Deslocar { adiante, vezes } => Edicao::Deslocar(if adiante { vezes as i64 } else { -(vezes as i64) }),
         Comando::Somar(n) => Edicao::Somar(n),
         Comando::TrocarCaixa => Edicao::Alternar,
+        Comando::JuntarLinhas => Edicao::Reordenar(1),
+        Comando::Subir(n) => Edicao::Reordenar(-(n.max(1) as i64)),
         Comando::Desfazer => Edicao::Desfazer,
         Comando::Refazer => Edicao::Refazer,
         _ => return None,
@@ -392,6 +400,7 @@ pub fn tecla_normal(p: &mut Pendente, tecla: &str, ctrl: bool) -> Passo {
             return Passo::Aguardando;
         }
         "J" => Comando::JuntarLinhas,
+        "K" => Comando::Subir(vezes),
         "~" => Comando::TrocarCaixa,
         "u" => Comando::Desfazer,
         "/" => Comando::Busca,
@@ -648,6 +657,8 @@ mod testes {
             (vec!["2", ">", ">"], Some(Edicao::Deslocar(2))),
             (vec!["<", "<"], Some(Edicao::Deslocar(-1))),
             (vec!["~"], Some(Edicao::Alternar)),
+            (vec!["J"], Some(Edicao::Reordenar(1))),
+            (vec!["2", "K"], Some(Edicao::Reordenar(-2))),
             (vec!["u"], Some(Edicao::Desfazer)),
             (vec!["j"], None),
             (vec!["d", "w"], None),

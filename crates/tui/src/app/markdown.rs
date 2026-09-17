@@ -420,7 +420,7 @@ pub(super) fn no_markdown(e: &mut Estado, ed: Edicao, h: Hospedeiro) -> bool {
                 ir(e, destino);
             }
         }
-        Edicao::Deslocar(n) => {
+        Edicao::Deslocar(n) | Edicao::Reordenar(n) => {
             // Os vizinhos do MESMO pai: itens da mesma lista, ou blocos do
             // mesmo nível.
             let (pai, idx) = match alvo.split_last() {

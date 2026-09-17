@@ -553,7 +553,9 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
             // Enter num evento do vault abre a página dele (ciclo 317), o
             // que o clique faz na janela.
             // Enter numa transição do fluxo move a etapa (ciclo 335).
-            if tecla == "Enter" && (edicao::transicao_do_cursor(e) || edicao::cartao_na_coluna_vazia(e)) {
+            if tecla == "Enter"
+                && (edicao::transicao_do_cursor(e) || edicao::cartao_na_coluna_vazia(e) || edicao::busca_da_consulta(e))
+            {
                 return None;
             }
             if tecla == "Enter" {
@@ -1120,7 +1122,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             } else if let Some(modo) = e.arvore.em(&l.caminho).and_then(caixa_avulsa) {
                 vec![linha_de_caixa(l, &e.tema, largura_conteudo, Some(&e.cursor), modo)]
             } else {
-                vec![vec![linha_estilizada(
+                let linha = linha_estilizada(
                     // Sem fundo no texto (ciclo 295): quem diz onde se
                     // está é a moldura. Reintroduzi isto sem querer ao
                     // reescrever o laço, e o teste do 295 pegou.
@@ -1129,7 +1131,17 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                     e.dobrados.contains(&l.caminho),
                     &e.tema,
                     largura_conteudo,
-                )]]
+                );
+                // O texto QUEBRA na largura (ciclo 338), em vez de ser
+                // cortado na borda — e as quebras do parágrafo viram
+                // linhas. A continuação alinha depois da marca (`- `).
+                let marca = marca_com_dobra(l, e.dobrados.contains(&l.caminho));
+                let recuo = 2 * l.nivel + if marca.trim().is_empty() { 0 } else { marca.chars().count() + 1 };
+                if matches!(l.tipo, Tipo::Titulo(1)) {
+                    vec![vec![linha]]
+                } else {
+                    quebrar_texto(linha, largura_conteudo, recuo).into_iter().map(|x| vec![x]).collect()
+                }
             };
             // O bloco em inserção aparece NO LUGAR (ciclo 334): o texto
             // sendo digitado substitui a linha, ou entra antes/depois dela
@@ -1765,19 +1777,24 @@ fn linhas_da_consulta(e: &Estado, dono: &[usize], largura: usize) -> Vec<Line<'s
     let regua = || Faixa::default().mais("─".repeat(w), traco);
 
     // A barra: ⌕ recorte ····· N páginas ✲
-    let cab = embed.filhos.iter().find(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "cabecalho"));
+    let posicao_da_busca = embed.filhos.iter().position(|f| matches!(&f.tipo, Tipo::Parte { nome, .. } if nome == "busca"));
+    let cab = posicao_da_busca.map(|i| &embed.filhos[i]);
     let descricao = cab.map(|c| c.texto.clone()).unwrap_or_else(|| {
         consulta.as_ref().map(|q| q.descrever()).unwrap_or_default()
     });
     let contagem = cab.and_then(|c| valor_escondido(c, "contagem")).unwrap_or("").to_string();
-    let direita = format!("{contagem}  ✲");
+    // A barra é o campo de busca (ciclo 338): o cursor pousa nela, e
+    // `Enter` (ou `a`) edita o filtro.
+    let busca_acesa = posicao_da_busca.is_some_and(|i| aceso(&[dono, &[i]].concat()));
+    let fundo_da_busca = if busca_acesa { fundo_aceso } else { Style::default() };
+    let direita = format!("{contagem}  ↵ filtrar ");
     let cabe = w.saturating_sub(direita.chars().count() + 5);
     fora.push(
         Faixa::default()
-            .mais(" ⌕ ", apagado)
-            .mais(cortado(&descricao, cabe), apagado)
-            .ate(w - direita.chars().count() - 1, Style::default())
-            .mais(direita, apagado),
+            .mais(" ⌕ ", fundo_da_busca.fg(t.var("text-muted")))
+            .mais(cortado(&descricao, cabe), if busca_acesa { fundo_da_busca.fg(t.var("text-primary")) } else { apagado })
+            .ate(w - direita.chars().count() - 1, fundo_da_busca)
+            .mais(direita, fundo_da_busca.fg(t.var("text-muted"))),
     );
     fora.push(regua());
 
@@ -1962,6 +1979,68 @@ fn linhas_da_consulta(e: &Estado, dono: &[usize], largura: usize) -> Vec<Line<'s
     }
     fora.into_iter()
         .map(|f| Line::from([vec![Span::raw(recuo.clone())], f.spans].concat()))
+        .collect()
+}
+
+/// Quebra uma linha estilizada na largura, na última palavra que cabe
+/// (ciclo 338). `\n` dentro do texto força a quebra — é o parágrafo de
+/// várias linhas do arquivo. A continuação começa em `recuo` colunas.
+/// Nada de fundo é pintado: o fundo é de quem desenha em volta.
+fn quebrar_texto(linha: Line<'_>, largura: usize, recuo: usize) -> Vec<Line<'static>> {
+    let largura = largura.max(8);
+    let recuo = recuo.min(largura / 2);
+    let celulas: Vec<(char, Style)> =
+        linha.spans.iter().flat_map(|s| s.content.chars().map(move |c| (c, s.style))).collect();
+    let mut fora: Vec<Vec<(char, Style)>> = Vec::new();
+    let mut atual: Vec<(char, Style)> = Vec::new();
+    let quebrar = |atual: &mut Vec<(char, Style)>, fora: &mut Vec<Vec<(char, Style)>>| {
+        fora.push(std::mem::take(atual));
+        atual.extend(std::iter::repeat_n((' ', Style::default()), recuo));
+    };
+    for (c, st) in celulas {
+        if c == '\n' {
+            quebrar(&mut atual, &mut fora);
+            continue;
+        }
+        if atual.len() >= largura {
+            // Volta até o último espaço depois do recuo, se houver.
+            let corte = atual.iter().rposition(|(x, _)| *x == ' ').filter(|i| *i > recuo);
+            match corte {
+                Some(i) => {
+                    let resto: Vec<(char, Style)> = atual.split_off(i + 1);
+                    atual.pop();
+                    fora.push(std::mem::take(&mut atual));
+                    atual.extend(std::iter::repeat_n((' ', Style::default()), recuo));
+                    atual.extend(resto);
+                }
+                None => quebrar(&mut atual, &mut fora),
+            }
+        }
+        if !(c == ' ' && atual.len() == recuo && !fora.is_empty()) {
+            atual.push((c, st));
+        }
+    }
+    fora.push(atual);
+    fora.into_iter()
+        .map(|cs| {
+            // Junta células vizinhas de mesmo estilo num span só.
+            let mut spans: Vec<Span<'static>> = Vec::new();
+            let mut texto = String::new();
+            let mut estilo: Option<Style> = None;
+            for (c, st) in cs {
+                if estilo != Some(st) {
+                    if let Some(e) = estilo {
+                        spans.push(Span::styled(std::mem::take(&mut texto), e));
+                    }
+                    estilo = Some(st);
+                }
+                texto.push(c);
+            }
+            if let Some(e) = estilo {
+                spans.push(Span::styled(texto, e));
+            }
+            Line::from(spans)
+        })
         .collect()
 }
 
@@ -6197,6 +6276,62 @@ mod testes {
         let d = tabela_gravada(&e);
         assert_eq!((d.columns[2].name.as_str(), d.columns[3].name.as_str()), ("Tarefa", "Tarefa"));
         assert_eq!(d.rows[0].len(), 5);
+    }
+
+    #[test]
+    fn j_e_k_reordenam_o_cartao_na_coluna_e_a_linha_na_tabela() {
+        let mut e = pagina_com("{{ type: \"kanban\" }}\ncolumns:\n- A\n- B\nitems:\n- title: um\n  column: A\n- title: x\n  column: B\n- title: dois\n  column: A\n- title: três\n  column: A\n{{ /kanban }}\n");
+        e.cursor = vec![0, 0, 0];
+        tecla(&mut e, "J");
+        let titulos = |e: &Estado| -> Vec<String> {
+            let anotadinho_core::embed::EmbedData::Kanban(d) = embed_gravado(e) else { panic!() };
+            d.items.iter().filter(|c| c.column == "A").map(|c| c.title.clone()).collect()
+        };
+        assert_eq!(titulos(&e), ["dois", "um", "três"]);
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "um");
+        tecla(&mut e, "J");
+        assert_eq!(titulos(&e), ["dois", "três", "um"]);
+        tecla(&mut e, "2");
+        tecla(&mut e, "K");
+        assert_eq!(titulos(&e), ["um", "dois", "três"]);
+        assert_eq!(e.cursor, vec![0, 0, 0]);
+
+        let mut e = tabela_editavel();
+        e.cursor = vec![1, 1, 1];
+        tecla(&mut e, "J");
+        let d = tabela_gravada(&e);
+        assert_eq!((d.rows[0][0].as_str(), d.rows[1][0].as_str()), ("Docs", "API"));
+        assert_eq!(e.cursor, vec![1, 2, 1]);
+    }
+
+    #[test]
+    fn paragrafo_longo_quebra_na_largura_em_vez_de_cortar() {
+        let texto = "palavra ".repeat(30);
+        let mut e = Estado::novo(paginas(), analisar(&format!("{}\nsegunda linha do arquivo\n\n- item {}\n", texto.trim(), texto.trim())));
+        e.foco = Foco::Paginas;
+        let tela = desenho(&mut e, 80, 30);
+        let tudo = tela.join("\n");
+        assert!(tela.iter().filter(|l| l.contains("palavra")).count() >= 6, "{tudo}");
+        assert!(tudo.contains("segunda linha do arquivo"), "a quebra do parágrafo virou linha:\n{tudo}");
+        // A continuação do item alinha depois da marca.
+        let item = tela.iter().position(|l| l.contains("- item")).unwrap();
+        let col_item = tela[item].find("item").unwrap();
+        let continua = &tela[item + 1];
+        assert_eq!(continua.find("palavra"), Some(col_item), "\n{}\n{continua}", tela[item]);
+    }
+
+    #[test]
+    fn a_busca_da_consulta_e_destino_do_cursor_e_enter_edita_o_filtro() {
+        let mut e = pagina_com("{{ type: \"query\" }}\nfrom: pages\n{{ /query }}\n")
+            .com_indice_do_vault(vec![anotadinho_core::index::PageIndexEntry { path: "pages/a.md".into(), title: "A".into(), ..Default::default() }]);
+        e.cursor = vec![0];
+        tecla(&mut e, "Enter");
+        assert!(matches!(&e.arvore.em(&e.cursor).unwrap().tipo, Tipo::Parte { nome, .. } if nome == "busca"));
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "from:pages");
+        tecla(&mut e, "Escape");
+        tecla(&mut e, "j");
+        assert_eq!(e.arvore.em(&e.cursor).unwrap().texto, "A");
     }
 
     const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";

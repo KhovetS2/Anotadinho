@@ -379,7 +379,7 @@ pub(super) fn editar_item(e: &mut Estado, ed: Edicao) -> bool {
     let no_embed = e.cursor.len() == 1 && matches!(e.arvore.em(&e.cursor).map(|u| &u.tipo), Some(Tipo::Embed(_)));
     let de_bloco = matches!(
         ed,
-        Edicao::Criar { .. } | Edicao::Apagar | Edicao::Copiar | Edicao::Colar { .. } | Edicao::Deslocar(_)
+        Edicao::Criar { .. } | Edicao::Apagar | Edicao::Copiar | Edicao::Colar { .. } | Edicao::Deslocar(_) | Edicao::Reordenar(_)
     );
     let feito = if no_embed && de_bloco {
         super::markdown::no_markdown(e, ed, super::markdown::Hospedeiro::Pagina)
@@ -923,6 +923,22 @@ fn no_kanban(e: &mut Estado, ed: Edicao) -> bool {
                 ir(e, destino);
             }
         }
+        // `J`/`K`: o cartão desce/sobe DENTRO da coluna (ciclo 338).
+        (Edicao::Reordenar(n), Some(indice), Some(_)) => {
+            let Some(pos) = da_coluna.iter().position(|i| *i == indice) else { return false };
+            let destino = (pos as i64 + n).clamp(0, da_coluna.len() as i64 - 1) as usize;
+            if destino == pos {
+                e.aviso = Some("não há cartão desse lado".into());
+                return true;
+            }
+            let antes_de = if destino > pos { da_coluna.get(destino + 1).copied() } else { Some(da_coluna[destino]) };
+            if editar_kanban(e, &embed, |d| {
+                d.move_card(indice, nome.clone(), antes_de);
+                Ok(())
+            }) {
+                ir(e, Some([embed.as_slice(), &[coluna, destino]].concat()));
+            }
+        }
         (Edicao::Deslocar(n), Some(indice), Some(mut cartao)) => {
             let destino = (coluna as i64 + n).clamp(0, dados.columns.len() as i64 - 1) as usize;
             if destino == coluna {
@@ -1064,6 +1080,22 @@ fn no_cronograma(e: &mut Estado, ed: Edicao) -> bool {
                 ir(e, destino);
             }
         }
+        // `J`/`K`: a barra desce/sobe na pilha (a ordem do arquivo).
+        (Edicao::Reordenar(n), Some(indice), Some(barra)) => {
+            let destino = (indice as i64 + n).clamp(0, dados.items.len() as i64 - 1) as usize;
+            if destino == indice {
+                e.aviso = Some("não há barra desse lado".into());
+                return true;
+            }
+            if editar_cronograma(e, &embed, |d| {
+                d.items.remove(indice);
+                d.items.insert(destino, barra);
+                Ok(())
+            }) {
+                let alvo = achar_com_indice(&e.arvore, &embed, "barra", destino);
+                ir(e, alvo);
+            }
+        }
         (Edicao::Deslocar(n) | Edicao::Somar(n), Some(indice), Some(barra)) => {
             let mover = matches!(ed, Edicao::Deslocar(_));
             let Some(inicio) = barra.start.clone() else {
@@ -1177,6 +1209,21 @@ fn na_tabela(e: &mut Estado, ed: Edicao) -> bool {
                 e.registro = Some(Registro::Linha(linha));
                 e.aviso = Some("linha apagada".into());
                 ir(e, Some([embed.as_slice(), &[f.min(sobram), coluna]].concat()));
+            }
+        }
+        // `J`/`K`: a linha desce/sobe (ciclo 338).
+        (Edicao::Reordenar(n), Some((f, coluna))) if f > 0 => {
+            let destino = (f as i64 - 1 + n).clamp(0, dados.rows.len() as i64 - 1) as usize;
+            if destino == f - 1 {
+                e.aviso = Some("não há linha desse lado".into());
+                return true;
+            }
+            if editar_tabela(e, &embed, |d| {
+                let linha = d.rows.remove(f - 1);
+                d.rows.insert(destino, linha);
+                Ok(())
+            }) {
+                ir(e, Some([embed.as_slice(), &[destino + 1, coluna]].concat()));
             }
         }
         (Edicao::Copiar, Some((f, _))) if f > 0 => {
@@ -1328,6 +1375,8 @@ fn no_callout(e: &mut Estado, ed: Edicao) -> bool {
 // ---------------------------------------------------------------------
 
 fn nas_acoes(e: &mut Estado, ed: Edicao) -> bool {
+    // Numa lista na horizontal, `J`/`K` são o mesmo que `>>`/`<<`.
+    let ed = if let Edicao::Reordenar(n) = ed { Edicao::Deslocar(n) } else { ed };
     let Some(embed) = embed_do_cursor(e, "actions") else { return false };
     let Some(dados) = ler_acoes(e, &embed) else { return false };
     let total = dados.buttons.len();
@@ -1411,6 +1460,8 @@ fn nas_acoes(e: &mut Estado, ed: Edicao) -> bool {
 /// reordenam, `Ctrl+A`/`Ctrl+X` mudam as colunas da grade e `~` gira o
 /// tamanho das miniaturas (P → M → G).
 fn na_galeria(e: &mut Estado, ed: Edicao) -> bool {
+    // Numa lista na horizontal, `J`/`K` são o mesmo que `>>`/`<<`.
+    let ed = if let Edicao::Reordenar(n) = ed { Edicao::Deslocar(n) } else { ed };
     let Some(embed) = embed_do_cursor(e, "gallery") else { return false };
     let Some(dados) = ler_galeria(e, &embed) else { return false };
     let indice = indice_do_cursor(e).filter(|i| *i < dados.items.len());
@@ -1502,6 +1553,8 @@ fn na_galeria(e: &mut Estado, ed: Edicao) -> bool {
 /// `Ctrl+X` alargam e estreitam, e `i`/`a` começam a escrever no começo
 /// do painel. Dentro dele, o markdown é o da página (`markdown.rs`).
 fn nos_paineis(e: &mut Estado, ed: Edicao) -> bool {
+    // Numa lista na horizontal, `J`/`K` são o mesmo que `>>`/`<<`.
+    let ed = if let Edicao::Reordenar(n) = ed { Edicao::Deslocar(n) } else { ed };
     let Some(embed) = embed_do_cursor(e, "columns") else { return false };
     let Some(dados) = ler_colunas(e, &embed) else { return false };
     let Some(&painel) = e.cursor.get(embed.len()) else {
@@ -1724,6 +1777,8 @@ fn na_consulta(e: &mut Estado, ed: Edicao) -> bool {
 /// menos uma), `yy`/`p` duplicam com os cartões, `>>`/`<<` mudam a coluna
 /// de lugar. Colar um CARTÃO copiado numa coluna põe ele no fim dela.
 fn na_coluna_do_kanban(e: &mut Estado, ed: Edicao, embed: Caminho, coluna: usize, dados: em::KanbanEmbedData) -> bool {
+    // Numa lista na horizontal, `J`/`K` são o mesmo que `>>`/`<<`.
+    let ed = if let Edicao::Reordenar(n) = ed { Edicao::Deslocar(n) } else { ed };
     let total = dados.columns.len();
     let Some(nome) = dados.columns.get(coluna).cloned() else { return false };
     let cartoes: Vec<em::KanbanCard> = dados.items.iter().filter(|c| c.column == nome).cloned().collect();
@@ -1890,6 +1945,8 @@ fn tipo_pelo_nome(nome: &str, valores: &[String]) -> em::ColumnKind {
 /// (`Ctrl+A`/`Ctrl+X` pros dois lados) gira o tipo — texto, número, data,
 /// caixa, seleção, tags, url, página.
 pub(super) fn no_cabecalho_da_tabela(e: &mut Estado, ed: Edicao, embed: Caminho, coluna: usize) -> bool {
+    // Numa lista na horizontal, `J`/`K` são o mesmo que `>>`/`<<`.
+    let ed = if let Edicao::Reordenar(n) = ed { Edicao::Deslocar(n) } else { ed };
     let Some(dados) = ler_tabela(e, &embed) else { return false };
     let total = dados.columns.len();
     let Some(col) = dados.columns.get(coluna).cloned() else { return false };
@@ -1966,7 +2023,16 @@ pub(super) fn no_cabecalho_da_tabela(e: &mut Estado, ed: Edicao, embed: Caminho,
                 ir(e, None);
             }
         }
-        Edicao::Desfazer | Edicao::Refazer => return false,
+        Edicao::Desfazer | Edicao::Refazer | Edicao::Reordenar(_) => return false,
     }
     true
+}
+
+/// `Enter` na barra de busca de uma consulta: edita o filtro (ciclo 338).
+pub(super) fn busca_da_consulta(e: &mut Estado) -> bool {
+    let Some(embed) = embed_do_cursor(e, "query") else { return false };
+    if !e.arvore.em(&e.cursor).is_some_and(|u| matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "busca")) {
+        return false;
+    }
+    na_consulta(e, Edicao::Reescrever { limpar: false, no_fim: true })
 }
