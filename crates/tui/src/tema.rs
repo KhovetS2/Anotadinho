@@ -152,7 +152,22 @@ pub enum Realce {
 /// Uma paleta resolvida.
 pub struct Tema {
     cores: HashMap<String, Color>,
+    /// O estilo dos botões (ciclo 358): `arredondado`, `reto`, `pilula`.
+    pub botoes: String,
 }
+
+/// As cores de destaque da janela, aplicáveis sobre qualquer tema
+/// (ciclo 358): id, nome e cor.
+pub const DESTAQUES: &[(&str, &str, &str)] = &[
+    ("azul", "Azul", "#00B5FF"),
+    ("roxo", "Roxo", "#9327FF"),
+    ("verde", "Verde", "#1FA97C"),
+    ("ambar", "Âmbar", "#DB7E21"),
+    ("rosa", "Rosa", "#E7418C"),
+];
+
+/// Os estilos de botão da janela.
+pub const BOTOES: &[(&str, &str)] = &[("arredondado", "Arredondado"), ("reto", "Reto"), ("pilula", "Pílula")];
 
 impl Tema {
     /// A paleta de um tema pelo nome. Nome desconhecido cai no escuro,
@@ -169,7 +184,33 @@ impl Tema {
                 }
             }
         }
-        Self { cores }
+        Self { cores, botoes: "arredondado".into() }
+    }
+
+    /// Aplica a aparência escolhida (ciclo 358): a cor de destaque troca
+    /// o `--accent-blue` (vazio fica a do tema), e o estilo dos botões.
+    pub fn com_aparencia(mut self, destaque: &str, botoes: &str) -> Self {
+        if let Some((_, _, hex)) = DESTAQUES.iter().find(|(id, _, _)| *id == destaque) {
+            let h = hex.trim_start_matches('#');
+            let canal = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).unwrap_or(0);
+            let cor = Color::Rgb(canal(0), canal(2), canal(4));
+            self.cores.insert("accent-blue".into(), cor);
+            self.cores.insert("accent-blue-hover".into(), misturar(cor, Color::Rgb(0, 0, 0), 0.82));
+        }
+        if BOTOES.iter().any(|(id, _)| *id == botoes) {
+            self.botoes = botoes.to_string();
+        }
+        self
+    }
+
+    /// O contorno de um botão com miolo de `largura` células, no estilo
+    /// escolhido: cima, lado esquerdo, lado direito e baixo.
+    pub fn contorno_em_volta(&self, largura: usize) -> (String, &'static str, &'static str, String) {
+        match self.botoes.as_str() {
+            "reto" => (format!("┌{}┐", "─".repeat(largura)), "│", "│", format!("└{}┘", "─".repeat(largura))),
+            "pilula" => (format!("╭{}╮", "─".repeat(largura)), "(", ")", format!("╰{}╯", "─".repeat(largura))),
+            _ => (format!("▗{}▖", "▄".repeat(largura)), "▐", "▌", format!("▝{}▘", "▀".repeat(largura))),
+        }
     }
 
     /// A cor de uma variável, com um padrão de socorro.

@@ -12,6 +12,8 @@
 │                                  │ ϟ Nova página: Conversa                                            │                                  │
 │                                  │ ϟ Alternar tema                                                    │                                  │
 │                                  │ ϟ Escolher tema…                                                   │                                  │
+│                                  │ ϟ Cor de destaque…                                                 │                                  │
+│                                  │ ϟ Estilo dos botões…                                               │                                  │
 │                                  │ ϟ Alternar sidebar                                                 │                                  │
 │                                  │ ϟ Ir pra Hoje (journal)                                            │                                  │
 │                                  │ ϟ Personalizar…                                                    │                                  │
@@ -22,8 +24,6 @@
 │                                  │ ϟ Ver atalhos                                                      │                                  │
 │                                  │ ϟ Nova pasta…                                                      │                                  │
 │                                  │ ϟ Mover página pra pasta…                                          │                                  │
-│                                  │ ϟ Exportar pasta…                                                  │                                  │
-│                                  │ ϟ Exportar vault inteiro                                           │                                  │
 │                                  ╰ ↑↓ escolher · Enter · Ctrl+F buscar no conteúdo · Esc ─────────────╯                                  │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │

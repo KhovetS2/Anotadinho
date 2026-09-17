@@ -158,6 +158,16 @@ pub struct Preferencias {
     /// O agente das conversas.
     #[serde(default)]
     pub agente: Option<anotadinho_core::agente::Adaptador>,
+    /// A cor de destaque (ciclo 358); vazia é a do tema.
+    #[serde(default)]
+    pub destaque: String,
+    /// O estilo dos botões.
+    #[serde(default = "botoes_padrao")]
+    pub botoes: String,
+}
+
+fn botoes_padrao() -> String {
+    "arredondado".into()
 }
 
 fn tema_padrao() -> String {
@@ -169,7 +179,7 @@ fn verdadeiro() -> bool {
 
 impl Default for Preferencias {
     fn default() -> Self {
-        Self { tema: tema_padrao(), sidebar: true, agente: None }
+        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao() }
     }
 }
 
@@ -348,6 +358,10 @@ pub enum AcaoDaEscolha {
     Template,
     /// A marca do menu Formatar (ciclo 357).
     Formatar,
+    /// A cor de destaque (ciclo 358); chave vazia é a do tema.
+    Destaque,
+    /// O estilo dos botões.
+    Botoes,
 }
 
 /// Os comandos da barra, como na janela.
@@ -360,6 +374,8 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Nova página: Conversa", "nova-pagina:conversa"),
     ("Alternar tema", "alternar-tema"),
     ("Escolher tema…", "escolher-tema"),
+    ("Cor de destaque…", "destaque"),
+    ("Estilo dos botões…", "botoes"),
     ("Alternar sidebar", "alternar-sidebar"),
     ("Ir pra Hoje (journal)", "hoje"),
     ("Personalizar…", "personalizar"),
@@ -403,6 +419,8 @@ fn menu_de_personalizacao(e: &Estado) -> Lista {
     let agente = e.preferencias.agente.as_ref().map(|a| a.nome.clone()).unwrap_or_else(|| "padrão".into());
     Lista::menu(vec![
         Item::novo("◐", "Tema", "tema").com_detalhe(e.preferencias.tema.clone()),
+        Item::novo("●", "Cor de destaque", "destaque").com_detalhe(if e.preferencias.destaque.is_empty() { "do tema".to_string() } else { e.preferencias.destaque.clone() }),
+        Item::novo("▢", "Botões", "botoes").com_detalhe(e.preferencias.botoes.clone()),
         Item::novo("▤", "Sidebar", "sidebar").com_detalhe(if e.preferencias.sidebar { "visível" } else { "escondida" }),
         Item::novo("ϟ", "Agente das conversas", "agente").com_detalhe(agente),
         Item::novo("?", "Ver atalhos", "atalhos"),
@@ -418,6 +436,25 @@ fn escolha_de_tema(e: &Estado) -> Modal {
     );
     lista.selecionado = crate::tema::TEMAS.iter().position(|t| *t == e.preferencias.tema).unwrap_or(0);
     Modal::Escolha { titulo: "Tema".into(), lista, acao: AcaoDaEscolha::Tema }
+}
+
+fn escolha_de_destaque(e: &Estado) -> Modal {
+    let atual = e.preferencias.destaque.as_str();
+    let marca = |id: &str| if id == atual { "●" } else { "○" };
+    let mut itens = vec![Item::novo(marca(""), "Do tema", "")];
+    itens.extend(crate::tema::DESTAQUES.iter().map(|(id, nome, hex)| Item::novo(marca(id), *nome, *id).com_detalhe(*hex)));
+    let mut lista = Lista::menu(itens);
+    lista.selecionado = crate::tema::DESTAQUES.iter().position(|(id, _, _)| *id == atual).map_or(0, |i| i + 1);
+    Modal::Escolha { titulo: "Cor de destaque".into(), lista, acao: AcaoDaEscolha::Destaque }
+}
+
+fn escolha_de_botoes(e: &Estado) -> Modal {
+    let atual = e.preferencias.botoes.as_str();
+    let mut lista = Lista::menu(
+        crate::tema::BOTOES.iter().map(|(id, nome)| Item::novo(if *id == atual { "●" } else { "○" }, *nome, *id)).collect(),
+    );
+    lista.selecionado = crate::tema::BOTOES.iter().position(|(id, _)| *id == atual).unwrap_or(0);
+    Modal::Escolha { titulo: "Botões".into(), lista, acao: AcaoDaEscolha::Botoes }
 }
 
 fn escolha_de_agente(e: &Estado) -> Modal {
@@ -439,7 +476,7 @@ fn escolha_de_agente(e: &Estado) -> Modal {
 
 /// Aplica o tema e pede pra gravar a preferência.
 pub fn trocar_tema(e: &mut Estado, tema: &str) {
-    e.tema = crate::tema::Tema::novo(tema);
+    e.tema = crate::tema::Tema::novo(tema).com_aparencia(&e.preferencias.destaque, &e.preferencias.botoes);
     e.preferencias.tema = tema.to_string();
     e.pedidos.push(Pedido::GravarPreferencias);
     e.aviso = Some(format!("tema: {tema}"));
@@ -485,6 +522,8 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
             trocar_tema(e, proximo);
         }
         "escolher-tema" => e.modal = Some(escolha_de_tema(e)),
+        "destaque" => e.modal = Some(escolha_de_destaque(e)),
+        "botoes" => e.modal = Some(escolha_de_botoes(e)),
         "alternar-sidebar" => {
             e.preferencias.sidebar = !e.preferencias.sidebar;
             if !e.preferencias.sidebar {
@@ -566,13 +605,15 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             Resposta::Escolhido(chave) => match acao {
                 AcaoDaEscolha::Personalizar => match chave.as_str() {
                     "tema" => e.modal = Some(escolha_de_tema(e)),
+                    "destaque" => e.modal = Some(escolha_de_destaque(e)),
+                    "botoes" => e.modal = Some(escolha_de_botoes(e)),
                     "sidebar" => {
                         executar(e, "alternar-sidebar");
                         e.modal = Some(Modal::Escolha {
                             titulo,
                             lista: {
                                 let mut l = menu_de_personalizacao(e);
-                                l.selecionado = 1;
+                                l.selecionado = 3;
                                 l
                             },
                             acao,
@@ -601,6 +642,16 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 },
                 AcaoDaEscolha::Mostrar => {}
                 AcaoDaEscolha::Formatar => super::formatar::escolher(e, &chave),
+                AcaoDaEscolha::Destaque => {
+                    e.preferencias.destaque = chave;
+                    let tema = e.preferencias.tema.clone();
+                    trocar_tema(e, &tema);
+                }
+                AcaoDaEscolha::Botoes => {
+                    e.preferencias.botoes = chave;
+                    let tema = e.preferencias.tema.clone();
+                    trocar_tema(e, &tema);
+                }
                 AcaoDaEscolha::Template if chave.is_empty() => pedir_titulo_da_pagina(e),
                 AcaoDaEscolha::Template => {
                     e.modal = Some(Modal::Entrada {

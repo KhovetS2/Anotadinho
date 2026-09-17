@@ -438,7 +438,7 @@ impl Estado {
 
     /// Troca a paleta.
     pub fn com_tema(mut self, nome: &str) -> Self {
-        self.tema = Tema::novo(nome);
+        self.tema = Tema::novo(nome).com_aparencia(&self.preferencias.destaque, &self.preferencias.botoes);
         self.preferencias.tema = nome.to_string();
         self
     }
@@ -468,7 +468,7 @@ impl Estado {
 
     /// Aplica as preferências gravadas (ciclo 339).
     pub fn com_preferencias(mut self, p: Preferencias) -> Self {
-        self.tema = Tema::novo(&p.tema);
+        self.tema = Tema::novo(&p.tema).com_aparencia(&p.destaque, &p.botoes);
         if !p.sidebar {
             self.foco = Foco::Conteudo;
         }
@@ -2763,7 +2763,7 @@ fn linhas_de_fileira(
             };
             let largura_miolo = texto.chars().count() + 2;
             let (cima, lado_e, lado_d, baixo) = match cor_contorno {
-                Some(_) => (format!("▗{}▖", "▄".repeat(largura_miolo)), "▐", "▌", format!("▝{}▘", "▀".repeat(largura_miolo))),
+                Some(_) => tema.contorno_em_volta(largura_miolo),
                 None => (" ".repeat(largura_miolo + 2), " ", " ", " ".repeat(largura_miolo + 2)),
             };
             let contorno = match cor_contorno {
@@ -6772,7 +6772,9 @@ mod testes {
         digitar(&mut e, "personalizar");
         tecla(&mut e, "Enter");
         assert!(matches!(e.modal, Some(Modal::Escolha { .. })));
-        tecla(&mut e, "j");
+        for _ in 0..3 {
+            tecla(&mut e, "j");
+        }
         tecla(&mut e, "Enter");
         assert!(!e.preferencias.sidebar);
         assert_eq!(e.foco, Foco::Conteudo);
@@ -8941,5 +8943,36 @@ mod testes {
         let (x, y) = achar("velho").expect("sem velho");
         assert!(buf[(x, y)].style().add_modifier.contains(Modifier::CROSSED_OUT));
         assert!(!desenho(&mut e, 80, 6).join("\n").contains("span"));
+    }
+
+    // --- Ciclo 358: aparência ------------------------------------------------
+
+    #[test]
+    fn cor_de_destaque_e_estilo_dos_botoes_valem_e_gravam() {
+        let mut e = Estado::novo(paginas(), analisar("{{ type: \"actions\" }}\nbuttons:\n- label: Abrir\n  action: open-page\n  path: pages/beta.md\n{{ /actions }}\n"));
+        e.foco = Foco::Conteudo;
+        let azul_do_tema = e.tema.var("accent-blue");
+        modais::executar(&mut e, "destaque");
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("Cor de destaque") && tela.contains("Do tema") && tela.contains("Rosa"), "{tela}");
+        for _ in 0..5 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        assert_eq!(e.preferencias.destaque, "rosa");
+        assert_eq!(e.tema.var("accent-blue"), ratatui::style::Color::Rgb(0xE7, 0x41, 0x8C));
+        assert_ne!(e.tema.var("accent-blue"), azul_do_tema);
+        assert!(e.pedidos.contains(&Pedido::GravarPreferencias));
+        // Trocar o tema mantém o destaque.
+        modais::trocar_tema(&mut e, "papel");
+        assert_eq!(e.tema.var("accent-blue"), ratatui::style::Color::Rgb(0xE7, 0x41, 0x8C));
+        // Botões retos: o contorno troca de desenho.
+        assert!(desenho(&mut e, 100, 20).join("\n").contains("▗"));
+        modais::executar(&mut e, "botoes");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.preferencias.botoes, "reto");
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("┌") && tela.contains("Abrir"), "{tela}");
     }
 }
