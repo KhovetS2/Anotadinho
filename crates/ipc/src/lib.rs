@@ -1391,7 +1391,40 @@ pub fn handle_ler_para_contexto(
         Some((path, corpo))
     };
     let r = anotadinho_core::transclusao::resolver(&texto, &page_path, &mut buscar);
-    Ok(PaginaExpandida { texto: r.texto, trazidas: r.trazidas, avisos: r.avisos })
+    // Depois das transclusões, as consultas (ciclo 418): uma
+    // página-recorte pode dizer "as specs em rascunho" em vez de listar
+    // arquivo por arquivo, e o recorte continua certo semana que vem.
+    // Sem consulta no texto, nada a fazer — e nada de varrer o vault: a
+    // expansão roda a cada envio e a cada medição de peso (ciclo 417).
+    // O `r.texto` (não o do disco): a consulta pode ter chegado por
+    // transclusão.
+    if !r.texto.contains("type:") || !anotadinho_core::embed::segment(&r.texto).iter().any(|s| {
+        matches!(s, anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Query(_)))
+    }) {
+        return Ok(PaginaExpandida { texto: r.texto, trazidas: r.trazidas, avisos: r.avisos });
+    }
+    let indice = paginas;
+    let mut rodar = |q: &anotadinho_core::query::Query| -> Vec<(String, String, String)> {
+        q.run(&indice)
+            .into_iter()
+            .filter_map(|entrada| {
+                let conteudo = handle_read_page(vault_path.clone(), entrada.path.clone()).ok()?;
+                let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+                let titulo = if entrada.title.trim().is_empty() { entrada.path.clone() } else { entrada.title.clone() };
+                Some((entrada.path.clone(), titulo, corpo.to_string()))
+            })
+            .collect()
+    };
+    let c = anotadinho_core::transclusao::resolver_consultas(&r.texto, &mut rodar);
+    let mut trazidas = r.trazidas;
+    for t in c.trazidas {
+        if !trazidas.contains(&t) {
+            trazidas.push(t);
+        }
+    }
+    let mut avisos = r.avisos;
+    avisos.extend(c.avisos);
+    Ok(PaginaExpandida { texto: c.texto, trazidas, avisos })
 }
 
 /// Os gatilhos do vault (ciclo 412). Sem arquivo, lista vazia.
@@ -1501,6 +1534,37 @@ mod testes_semente {
         // O que faltou não some do texto nem da lista de avisos.
         assert!(r.texto.contains("não resolvida"), "{}", r.texto);
         assert_eq!(r.avisos, ["a página Sumida não existe"]);
+    }
+
+    /// Ciclo 418: a consulta dentro do recorte vira o conteúdo das
+    /// páginas que ela acha — o recorte fala de um RECORTE do vault, não
+    /// de uma lista de arquivos digitada à mão.
+    #[test]
+    fn ler_para_contexto_resolve_consulta() {
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        std::fs::create_dir_all(dir.path().join("pages/specs")).unwrap();
+        std::fs::write(
+            dir.path().join("pages/specs/uma.md"),
+            "---\ntitle: Uma\nstatus: rascunho\n---\n\nfalta decidir o formato\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("pages/specs/outra.md"),
+            "---\ntitle: Outra\nstatus: pronta\n---\n\njá saiu\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("pages/recorte.md"),
+            "---\ntitle: Recorte\n---\n\nEm rascunho:\n\n{{ type: \"query\" }}\nfrom: pages/specs\nwhere:\n- field: status\n  value: rascunho\n{{ /query }}\n",
+        )
+        .unwrap();
+
+        let r = handle_ler_para_contexto(raiz, "pages/recorte.md".into()).expect("expandiu");
+        assert!(r.texto.contains("falta decidir o formato"), "{}", r.texto);
+        assert!(!r.texto.contains("já saiu"), "só o que a consulta acha:\n{}", r.texto);
+        assert!(!r.texto.contains("type: \"query\""), "o embed some:\n{}", r.texto);
+        assert_eq!(r.trazidas, ["pages/specs/uma.md"]);
     }
 
     /// Sem transclusão, o texto tem que voltar igual ao do disco: o

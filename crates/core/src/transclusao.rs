@@ -337,3 +337,137 @@ mod testes {
         assert_eq!(resolver(fonte, "pages/a.md", &mut v).texto, fonte);
     }
 }
+
+// ---------------------------------------------------------------------
+// Consulta como contexto (ciclo 418)
+// ---------------------------------------------------------------------
+
+/// Quantas páginas uma consulta traz, quando ela não diz o limite.
+///
+/// Uma consulta sem teto numa página-recorte é um jeito fácil de mandar
+/// o vault inteiro pro modelo sem perceber. Dez é o que cabe num prompt
+/// e ainda responde "o que está em rascunho?".
+pub const PAGINAS_DA_CONSULTA: usize = 10;
+
+/// Troca cada embed de consulta pelo conteúdo das páginas que ele acha
+/// (ciclo 418).
+///
+/// É o que torna a página-recorte VIVA: `{{ type: "query" }} from:
+/// pages/specs, where: status=rascunho` como contexto significa "as
+/// specs em rascunho de hoje", não a lista que alguém digitou mês
+/// passado.
+///
+/// `rodar` recebe a consulta e devolve `(path, título, corpo)` das
+/// páginas achadas, na ordem — quem tem o índice é quem executa.
+pub fn resolver_consultas(
+    texto: &str,
+    rodar: &mut dyn FnMut(&crate::query::Query) -> Vec<(String, String, String)>,
+) -> Resolvido {
+    let mut r = Resolvido::default();
+    for seg in crate::embed::segment(texto) {
+        match seg {
+            crate::embed::DocSegment::Markdown(t) => r.texto.push_str(&t),
+            crate::embed::DocSegment::Embed(crate::embed::EmbedData::Query(q)) => {
+                let teto = q.limit.unwrap_or(PAGINAS_DA_CONSULTA);
+                let achadas = rodar(&q);
+                if achadas.is_empty() {
+                    let motivo = format!("a consulta em {} não achou nada", q.from.clone().unwrap_or_else(|| "todo o vault".into()));
+                    r.avisos.push(motivo.clone());
+                    r.texto.push_str(&format!("[consulta sem resultado: {motivo}]\n"));
+                    continue;
+                }
+                let total = achadas.len();
+                for (path, titulo, corpo) in achadas.into_iter().take(teto) {
+                    if !r.trazidas.contains(&path) {
+                        r.trazidas.push(path.clone());
+                    }
+                    r.texto.push_str(&format!("[da consulta · {titulo}]\n{}\n\n", corpo.trim()));
+                }
+                // O que ficou de fora é dito: um recorte que silencia
+                // metade do resultado engana quem confia nele.
+                if total > teto {
+                    let sobra = total - teto;
+                    r.avisos.push(format!("a consulta achou {total}; {sobra} não entraram (limite {teto})"));
+                    r.texto.push_str(&format!("[mais {sobra} página(s) fora do limite de {teto}]\n"));
+                }
+            }
+            // Outro embed não vira contexto: kanban e calendário como
+            // texto solto no prompt são ruído, e a página original
+            // continua a um wikilink de distância.
+            crate::embed::DocSegment::Embed(outro) => {
+                r.texto.push_str(&format!("[embed {} — abra a página pra ver]\n", outro.kind().type_name()));
+            }
+        }
+    }
+    r
+}
+
+#[cfg(test)]
+mod testes_de_consulta {
+    use super::*;
+    use crate::query::Query;
+
+    const RECORTE: &str = "O que está em rascunho:\n\n{{ type: \"query\" }}\nfrom: pages/specs\nwhere:\n- field: status\n  value: rascunho\n{{ /query }}\n";
+
+    fn pagina(n: &str) -> (String, String, String) {
+        (format!("pages/specs/{n}.md"), n.to_string(), format!("corpo de {n}"))
+    }
+
+    #[test]
+    fn a_consulta_vira_o_conteudo_das_paginas_achadas() {
+        let mut vistas: Vec<Query> = Vec::new();
+        let mut rodar = |q: &Query| {
+            vistas.push(q.clone());
+            vec![pagina("alfa"), pagina("beta")]
+        };
+        let r = resolver_consultas(RECORTE, &mut rodar);
+        assert!(r.texto.contains("O que está em rascunho:"), "{}", r.texto);
+        assert!(r.texto.contains("[da consulta · alfa]") && r.texto.contains("corpo de beta"), "{}", r.texto);
+        assert!(!r.texto.contains("type: \"query\""), "o embed some, o conteúdo fica:\n{}", r.texto);
+        assert_eq!(r.trazidas, ["pages/specs/alfa.md", "pages/specs/beta.md"]);
+        assert!(r.avisos.is_empty());
+        // A consulta chegou inteira em quem executa.
+        assert_eq!(vistas.len(), 1);
+        assert_eq!(vistas[0].from.as_deref(), Some("pages/specs"));
+        assert_eq!(vistas[0].conditions.len(), 1, "o filtro chega junto: {:?}", vistas[0].conditions);
+    }
+
+    #[test]
+    fn o_limite_corta_e_diz_quanto_ficou_de_fora() {
+        let muitas: Vec<(String, String, String)> = (0..14).map(|i| pagina(&format!("p{i}"))).collect();
+        let mut rodar = |_: &Query| muitas.clone();
+        let r = resolver_consultas(RECORTE, &mut rodar);
+        assert_eq!(r.trazidas.len(), PAGINAS_DA_CONSULTA);
+        assert!(r.texto.contains("mais 4 página(s) fora do limite de 10"), "{}", r.texto);
+        assert!(r.avisos.iter().any(|a| a.contains("14")), "{:?}", r.avisos);
+        // O limite da própria consulta manda.
+        let com_limite = RECORTE.replace("from: pages/specs", "from: pages/specs\nlimit: 2");
+        let r = resolver_consultas(&com_limite, &mut rodar);
+        assert_eq!(r.trazidas.len(), 2, "{}", r.texto);
+    }
+
+    #[test]
+    fn consulta_vazia_aparece_como_aviso() {
+        let mut rodar = |_: &Query| Vec::new();
+        let r = resolver_consultas(RECORTE, &mut rodar);
+        assert!(r.texto.contains("consulta sem resultado"), "{}", r.texto);
+        assert_eq!(r.avisos.len(), 1);
+        assert!(r.trazidas.is_empty());
+    }
+
+    #[test]
+    fn outro_embed_vira_recado_curto() {
+        let com_kanban = "antes\n\n{{ type: \"kanban\" }}\ncolumns: []\n{{ /kanban }}\n\ndepois\n";
+        let mut rodar = |_: &Query| Vec::new();
+        let r = resolver_consultas(com_kanban, &mut rodar);
+        assert!(r.texto.contains("[embed kanban — abra a página pra ver]"), "{}", r.texto);
+        assert!(r.texto.contains("antes") && r.texto.contains("depois"), "{}", r.texto);
+    }
+
+    #[test]
+    fn texto_sem_embed_volta_igual() {
+        let mut rodar = |_: &Query| Vec::new();
+        let fonte = "# Só texto\n\nnada de embed aqui\n";
+        assert_eq!(resolver_consultas(fonte, &mut rodar).texto, fonte);
+    }
+}
