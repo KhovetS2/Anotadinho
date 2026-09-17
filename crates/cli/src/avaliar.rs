@@ -223,7 +223,7 @@ mod testes {
     fn o_prompt_carrega_o_contrato_e_o_vault() {
         let p = prompt_da_tarefa(&tarefa("x", vec![]), std::path::Path::new("/tmp/v"));
         assert!(p.contains("diga algo") && p.contains("/tmp/v"), "{p}");
-        assert!(p.contains("propor(path, conteudo, [motivo])"), "{p}");
+        assert!(p.contains("propor(path, conteudo, [motivo], [lote])"), "{p}");
     }
 
     #[test]

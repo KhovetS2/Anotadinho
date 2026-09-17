@@ -856,6 +856,7 @@ mod tests {
             alvo: alvo.into(),
             operacao: op,
             conteudo: conteudo.into(),
+            lote: None,
         }
     }
 
@@ -1323,6 +1324,84 @@ pub fn handle_aplicar_proposta_parcial(
     Ok(proposta.alvo)
 }
 
+/// Aplica um LOTE de propostas: todas ou nenhuma (ciclo 420).
+///
+/// Uma mudança que atravessa páginas só faz sentido inteira. O caminho
+/// tem três tempos, e a ordem é o que garante o "nenhuma":
+///
+/// 1. valida TUDO (alvo dentro do vault, estado do disco, embeds,
+///    permissões por pasta) antes de escrever a primeira letra;
+/// 2. guarda o conteúdo atual de cada alvo;
+/// 3. escreve; se alguma escrita falhar, devolve as anteriores ao que
+///    eram e some com o que criou.
+///
+/// Devolve os alvos gravados, na ordem.
+pub fn handle_aplicar_lote(vault_path: String, lote: String) -> Result<Vec<String>, String> {
+    let raiz = std::path::Path::new(&vault_path);
+    let todas = handle_listar_propostas(vault_path.clone())?;
+    let do_lote: Vec<anotadinho_core::proposta::Proposta> =
+        todas.into_iter().filter(|p| p.lote.as_deref() == Some(lote.as_str())).collect();
+    if do_lote.is_empty() {
+        return Err(format!("lote {lote} não existe"));
+    }
+    let permissoes = handle_ler_permissoes(vault_path.clone())?;
+    // 1. Tudo conferido antes de qualquer escrita.
+    for p in &do_lote {
+        let existe = raiz.join(&p.alvo).exists();
+        if let Some(r) = p.validar(existe) {
+            return Err(format!("{}: {}", p.alvo, r.mensagem()));
+        }
+        if !permissoes.pode_propor(&p.alvo) {
+            return Err(permissoes.motivo(&p.alvo));
+        }
+    }
+    // 2. O que havia antes, pra poder voltar.
+    let antes: Vec<(String, Option<String>)> = do_lote
+        .iter()
+        .map(|p| (p.alvo.clone(), std::fs::read_to_string(raiz.join(&p.alvo)).ok()))
+        .collect();
+    // 3. Escreve, desfazendo se algo der errado no meio.
+    let vault = VaultIo::open(&vault_path);
+    let mut gravados: Vec<String> = Vec::new();
+    for p in &do_lote {
+        if let Err(e) = vault.write_page(&p.alvo, &p.conteudo) {
+            for (alvo, conteudo) in antes.iter().filter(|(a, _)| gravados.contains(a)) {
+                match conteudo {
+                    Some(c) => {
+                        let _ = vault.write_page(alvo, c);
+                    }
+                    None => {
+                        let _ = std::fs::remove_file(raiz.join(alvo));
+                    }
+                }
+            }
+            return Err(format!("{}: {e} — o lote inteiro foi desfeito", p.alvo));
+        }
+        gravados.push(p.alvo.clone());
+    }
+    // Só depois de tudo gravado as propostas saem da fila.
+    for p in &do_lote {
+        let _ = std::fs::remove_file(raiz.join(format!("{}/{}.json", anotadinho_core::proposta::PASTA, p.id)));
+    }
+    Ok(gravados)
+}
+
+/// Descarta um lote inteiro sem aplicar (ciclo 420).
+pub fn handle_recusar_lote(vault_path: String, lote: String) -> Result<usize, String> {
+    let raiz = std::path::Path::new(&vault_path);
+    let todas = handle_listar_propostas(vault_path.clone())?;
+    let mut quantas = 0;
+    for p in todas.iter().filter(|p| p.lote.as_deref() == Some(lote.as_str())) {
+        if std::fs::remove_file(raiz.join(format!("{}/{}.json", anotadinho_core::proposta::PASTA, p.id))).is_ok() {
+            quantas += 1;
+        }
+    }
+    if quantas == 0 {
+        return Err(format!("lote {lote} não existe"));
+    }
+    Ok(quantas)
+}
+
 /// Acrescenta uma decisão ao registro (ciclo 404).
 pub fn handle_registrar_decisao(
     vault_path: String,
@@ -1534,6 +1613,75 @@ mod testes_semente {
         // O que faltou não some do texto nem da lista de avisos.
         assert!(r.texto.contains("não resolvida"), "{}", r.texto);
         assert_eq!(r.avisos, ["a página Sumida não existe"]);
+    }
+
+    /// Ciclo 420: o lote aplica inteiro — e quando uma parte não pode,
+    /// NADA é escrito. É a razão de o lote existir.
+    #[test]
+    fn o_lote_aplica_junto_ou_nao_aplica() {
+        use anotadinho_core::proposta::{Operacao, Proposta};
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        std::fs::write(dir.path().join("pages/a.md"), "velho A\n").unwrap();
+        std::fs::write(dir.path().join("pages/b.md"), "velho B\n").unwrap();
+        let proposta = |id: &str, alvo: &str, conteudo: &str, op: Operacao| Proposta {
+            id: id.into(),
+            autor: "claude".into(),
+            quando: "2026-09-17 10:00".into(),
+            motivo: "renomear o conceito".into(),
+            alvo: alvo.into(),
+            operacao: op,
+            conteudo: conteudo.into(),
+            lote: Some("renomear".into()),
+        };
+        handle_propor(raiz.clone(), proposta("p1", "pages/a.md", "novo A\n", Operacao::Substituir)).unwrap();
+        handle_propor(raiz.clone(), proposta("p2", "pages/b.md", "novo B\n", Operacao::Substituir)).unwrap();
+        // O vault muda embaixo do lote: a página b some depois de
+        // proposta. É o caso real de proposta que envelhece.
+        std::fs::remove_file(dir.path().join("pages/b.md")).unwrap();
+
+        let erro = handle_aplicar_lote(raiz.clone(), "renomear".into()).expect_err("tinha que recusar");
+        assert!(erro.contains("pages/b.md"), "{erro}");
+        // NADA foi escrito, e as propostas continuam na fila.
+        assert_eq!(std::fs::read_to_string(dir.path().join("pages/a.md")).unwrap(), "velho A\n");
+        assert_eq!(handle_listar_propostas(raiz.clone()).unwrap().len(), 2);
+
+        // Com a página de volta, o lote inteiro entra.
+        std::fs::write(dir.path().join("pages/b.md"), "velho B\n").unwrap();
+        let gravados = handle_aplicar_lote(raiz.clone(), "renomear".into()).expect("aplicou");
+        assert_eq!(gravados.len(), 2);
+        assert_eq!(std::fs::read_to_string(dir.path().join("pages/a.md")).unwrap(), "novo A\n");
+        assert_eq!(std::fs::read_to_string(dir.path().join("pages/b.md")).unwrap(), "novo B\n");
+        assert!(handle_listar_propostas(raiz).unwrap().is_empty(), "a fila esvazia junto");
+    }
+
+    /// Recusar o lote descarta todas de uma vez.
+    #[test]
+    fn recusar_o_lote_descarta_todas() {
+        use anotadinho_core::proposta::{Operacao, Proposta};
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        for (id, alvo) in [("p1", "pages/x.md"), ("p2", "pages/y.md")] {
+            handle_propor(
+                raiz.clone(),
+                Proposta {
+                    id: id.into(),
+                    autor: "claude".into(),
+                    quando: "2026-09-17 10:00".into(),
+                    motivo: String::new(),
+                    alvo: alvo.into(),
+                    operacao: Operacao::Criar,
+                    conteudo: "# Nova\n".into(),
+                    lote: Some("ideia".into()),
+                },
+            )
+            .unwrap();
+        }
+        assert_eq!(handle_recusar_lote(raiz.clone(), "ideia".into()).unwrap(), 2);
+        assert!(handle_listar_propostas(raiz.clone()).unwrap().is_empty());
+        assert!(handle_recusar_lote(raiz, "ideia".into()).is_err(), "lote que não existe avisa");
     }
 
     /// Ciclo 418: a consulta dentro do recorte vira o conteúdo das

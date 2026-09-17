@@ -500,6 +500,30 @@ fn tecla_nas_propostas(e: &mut Estado, tecla: &str) -> bool {
         }
         // Com marcadas, `a` e `r` valem pra elas — e só inteiras: um
         // lote não é lugar de escolher trecho.
+        // Proposta de lote (ciclo 420): a decisão é do lote inteiro —
+        // aplicar três de quatro deixa o vault num estado que ninguém
+        // propôs.
+        "a" | "Enter" if p.lote.is_some() && t.marcadas.is_empty() => {
+            let lote = p.lote.clone().unwrap_or_default();
+            let alvos: Vec<String> = lista
+                .iter()
+                .filter(|x| x.proposta.lote.as_deref() == Some(lote.as_str()))
+                .map(|x| x.proposta.alvo.clone())
+                .collect();
+            e.modal = Some(Modal::Confirmar {
+                titulo: format!("Aplicar o lote {lote}"),
+                mensagem: format!("Gravar as {} página(s) juntas: {}?", alvos.len(), alvos.join(", ")),
+                acao: Pedido::DecidirLote { lote, aplicar: true, motivo: String::new() },
+            });
+        }
+        "r" if p.lote.is_some() && t.marcadas.is_empty() => {
+            let lote = p.lote.clone().unwrap_or_default();
+            e.modal = Some(Modal::Entrada {
+                titulo: format!("Recusar o lote {lote} — por quê?"),
+                campo: crate::componentes::Campo::default(),
+                acao: super::modais::AcaoDaEntrada::MotivoDaRecusaDoLote(lote),
+            });
+        }
         "a" | "Enter" if !t.marcadas.is_empty() => {
             let ids: Vec<String> = lista
                 .iter()
@@ -930,6 +954,12 @@ fn cartao_da_proposta(
     let esquerda = vec![
         Span::styled(if marcada { "◉ " } else { "  " }.to_string(), Style::default().fg(tema.var("accent-blue"))),
         Span::styled(format!(" {op} "), tema.pilula(papel)),
+        // O lote na frente do alvo (ciclo 420): quem decide precisa ver
+        // que aquela página não vem sozinha.
+        Span::styled(
+            proposta.lote.as_ref().map(|l| format!(" ⛓ {l} ")).unwrap_or_default(),
+            Style::default().fg(tema.var("accent-purple")),
+        ),
         Span::raw(" "),
         Span::styled(proposta.alvo.clone(), Style::default().fg(tema.var("text-primary")).add_modifier(Modifier::BOLD)),
         Span::raw("  "),
@@ -1058,7 +1088,19 @@ fn cartao_da_proposta(
             " m marca/desmarca · M todas ".to_string(),
         )
     } else {
-        (rotulo_aplicar, " Recusar r ".to_string(), " Editar e · h l trecho · espaço tira/põe · m marca ".to_string())
+        match &proposta.lote {
+            // No lote não há trecho a escolher: a decisão é do conjunto.
+            Some(l) => (
+                format!(" Aplicar o lote {l} a "),
+                format!(" Recusar o lote r "),
+                " a decisão vale pras páginas do lote ".to_string(),
+            ),
+            None => (
+                rotulo_aplicar,
+                " Recusar r ".to_string(),
+                " Editar e · h l trecho · espaço tira/põe · m marca ".to_string(),
+            ),
+        }
     };
     miolo.push(Line::from(vec![
         Span::styled(rotulo_aplicar, primario),

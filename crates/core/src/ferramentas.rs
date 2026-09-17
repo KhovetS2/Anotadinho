@@ -190,6 +190,12 @@ pub const CONTRATO: &[Ferramenta] = &[
                 descricao: "Por que esta mudança",
                 obrigatorio: false,
             },
+            Parametro {
+                nome: "lote",
+                tipo: Tipo::Texto,
+                descricao: "Nome do lote: propostas com o mesmo lote são UMA decisão, aplicadas juntas ou nenhuma. Use quando a mudança atravessa páginas.",
+                obrigatorio: false,
+            },
         ],
     },
     Ferramenta {
@@ -253,10 +259,10 @@ mod testes {
 
     #[test]
     fn a_assinatura_e_o_texto_servem_pra_prompt() {
-        assert_eq!(por_nome("propor").unwrap().assinatura(), "propor(path, conteudo, [motivo])");
+        assert_eq!(por_nome("propor").unwrap().assinatura(), "propor(path, conteudo, [motivo], [lote])");
         assert_eq!(por_nome("listar_paginas").unwrap().assinatura(), "listar_paginas()");
         let texto = em_texto();
-        assert!(texto.contains("propor(path, conteudo, [motivo]) [escreve, passa por revisão]"));
+        assert!(texto.contains("propor(path, conteudo, [motivo], [lote]) [escreve, passa por revisão]"));
         assert!(texto.contains("ler_pagina(path)"));
         assert!(texto.lines().count() == CONTRATO.len() + 1);
     }

@@ -75,6 +75,12 @@ pub enum Pedido {
         id: String,
         conteudo: String,
     },
+    /// Aplicar ou recusar um LOTE inteiro (ciclo 420): todas ou nenhuma.
+    DecidirLote {
+        lote: String,
+        aplicar: bool,
+        motivo: String,
+    },
     /// Aplicar ou recusar várias propostas de uma vez (ciclo 409).
     DecidirVarias {
         ids: Vec<String>,
@@ -553,6 +559,8 @@ pub enum AcaoDaEntrada {
     PaginaDeContexto,
     /// O motivo de recusar várias propostas de uma vez (ciclo 409).
     MotivoDaRecusaVarias(Vec<String>),
+    /// O motivo de recusar um lote inteiro (ciclo 420).
+    MotivoDaRecusaDoLote(String),
 }
 
 /// O que uma [`Modal::Escolha`] faz com o item escolhido.
@@ -1140,6 +1148,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                 }
             }
+            "Enter" if matches!(acao, AcaoDaEntrada::MotivoDaRecusaDoLote(_)) => {
+                let AcaoDaEntrada::MotivoDaRecusaDoLote(lote) = acao else { unreachable!() };
+                e.pedidos.push(Pedido::DecidirLote { lote, aplicar: false, motivo: campo.texto.trim().to_string() });
+            }
             "Enter" if matches!(acao, AcaoDaEntrada::MotivoDaRecusaVarias(_)) => {
                 let AcaoDaEntrada::MotivoDaRecusaVarias(ids) = acao else { unreachable!() };
                 e.pedidos.push(Pedido::DecidirVarias { ids, aplicar: false, motivo: campo.texto.trim().to_string() });
@@ -1196,6 +1208,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         | AcaoDaEntrada::Vault(_)
                         | AcaoDaEntrada::MotivoDaRecusa(_)
                         | AcaoDaEntrada::MotivoDaRecusaVarias(_)
+                        | AcaoDaEntrada::MotivoDaRecusaDoLote(_)
                         | AcaoDaEntrada::PaginaDeContexto
                         | AcaoDaEntrada::LimiteDeAgentes => return,
                     });

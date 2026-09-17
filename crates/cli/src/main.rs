@@ -135,6 +135,11 @@ enum Command {
         /// Quem propôs.
         #[arg(long, default_value = "cli")]
         autor: String,
+        /// Lote (ciclo 420): propostas com o mesmo nome de lote são UMA
+        /// decisão — aplicam juntas ou não aplicam. Use quando a mudança
+        /// atravessa páginas.
+        #[arg(long)]
+        lote: Option<String>,
     },
     /// Propõe mover a etapa de uma página do fluxo (ciclo 229).
     ///
@@ -593,7 +598,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 std::thread::sleep(std::time::Duration::from_millis(intervalo_ms));
             }
         }
-        Command::Propor { page_path, file, motivo, autor } => {
+        Command::Propor { page_path, file, motivo, autor, lote } => {
             let conteudo = match &file {
                 Some(p) => std::fs::read_to_string(p)
                     .map_err(|e| format!("erro ao ler {p}: {e}"))?,
@@ -605,7 +610,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     buf
                 }
             };
-            let id = propor_conteudo(&cli.vault, page_path, conteudo, motivo, autor)?;
+            let id = propor_conteudo(&cli.vault, page_path, conteudo, motivo, autor, lote)?;
             println!("{id}");
         }
         Command::Etapa { page_path, para, resumo, autor } => {
@@ -644,6 +649,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 novo,
                 format!("mover a etapa para \"{}\"", destino.slug()),
                 autor,
+                None,
             )?;
             println!("{id}");
         }
@@ -802,6 +808,7 @@ fn propor_conteudo(
     conteudo: String,
     motivo: String,
     autor: String,
+    lote: Option<String>,
 ) -> Result<String, String> {
     let existe = std::path::Path::new(vault).join(&page_path).exists();
     let proposta = anotadinho_core::proposta::Proposta {
@@ -826,6 +833,7 @@ fn propor_conteudo(
             anotadinho_core::proposta::Operacao::Criar
         },
         conteudo,
+        lote,
     };
     handle_propor(vault.to_string(), proposta)
 }

@@ -117,6 +117,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Peso do contexto no cabeçalho e prévia do prompt montado | ✅ | 417 — só na TUI; tokens estimados por parte, teto avisa antes de estourar |
 | Consulta dentro do recorte vira contexto (o vault de hoje, não uma lista velha) | ✅ | 418 — vale pros dois: TUI, janela e CLI passam pelo mesmo handler |
 | Poda explícita quando o contexto passa do teto | ✅ | 419 — só na TUI; histórico antigo, depois esqueleto do anexo maior, e diz o que cortou |
+| Proposta em lote atômico (mudança que atravessa páginas) | ✅ | 420 — núcleo/IPC/CLI/MCP valem pros dois; decisão do lote só na TUI |
 | Git: status, pull, commit & push | ✅ | 349 — "Git: status e sincronizar…" na barra; histórico da página |
 | Nova página a partir de template | ✅ | 350 — "Nova página" pergunta o template quando há |
 

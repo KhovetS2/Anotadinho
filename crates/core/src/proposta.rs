@@ -43,6 +43,32 @@ pub struct Proposta {
     pub operacao: Operacao,
     /// Conteúdo proposto, inteiro.
     pub conteudo: String,
+    /// O lote a que ela pertence (ciclo 420). Propostas do mesmo lote são
+    /// UMA decisão: aplicam juntas ou não aplicam.
+    ///
+    /// Uma mudança que atravessa páginas — renomear um conceito em
+    /// quatro specs — só faz sentido inteira. Sem isto, aprovar três de
+    /// quatro deixava o vault num estado que ninguém propôs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lote: Option<String>,
+}
+
+/// As propostas agrupadas por lote, na ordem em que aparecem (ciclo 420).
+///
+/// Sem lote, cada proposta é o próprio grupo — é o que faz a tela de
+/// aprovações tratar as duas formas pelo mesmo caminho.
+pub fn por_lote(propostas: &[Proposta]) -> Vec<(Option<String>, Vec<&Proposta>)> {
+    let mut fora: Vec<(Option<String>, Vec<&Proposta>)> = Vec::new();
+    for p in propostas {
+        match &p.lote {
+            Some(lote) => match fora.iter_mut().find(|(l, _)| l.as_deref() == Some(lote.as_str())) {
+                Some((_, grupo)) => grupo.push(p),
+                None => fora.push((Some(lote.clone()), vec![p])),
+            },
+            None => fora.push((None, vec![p])),
+        }
+    }
+    fora
 }
 
 /// Por que uma proposta não pode ser aplicada.
@@ -148,6 +174,7 @@ mod tests {
             alvo: "pages/nova.md".into(),
             operacao: Operacao::Criar,
             conteudo: "---\ntitle: Nova\n---\ncorpo\n".into(),
+            lote: None,
         }
     }
 
@@ -217,5 +244,35 @@ mod tests {
         // Senão a proposta apareceria como página e entraria em consulta.
         assert!(base().arquivo().starts_with(".anotadinho/"));
         assert!(!base().arquivo().starts_with("pages/"));
+    }
+
+    // --- Ciclo 420: lote ------------------------------------------------------------
+
+    #[test]
+    fn o_lote_junta_as_propostas_e_o_resto_fica_sozinho() {
+        let mut a = base();
+        a.id = "a".into();
+        a.lote = Some("renomear".into());
+        let mut b = base();
+        b.id = "b".into();
+        b.lote = Some("renomear".into());
+        let mut sozinha = base();
+        sozinha.id = "c".into();
+        let lista = vec![a.clone(), sozinha.clone(), b.clone()];
+        let grupos = por_lote(&lista);
+        assert_eq!(grupos.len(), 2);
+        assert_eq!(grupos[0].0.as_deref(), Some("renomear"));
+        assert_eq!(grupos[0].1.len(), 2, "as duas do lote entram juntas, mesmo separadas na lista");
+        assert_eq!(grupos[1].0, None);
+        assert_eq!(grupos[1].1[0].id, "c");
+    }
+
+    #[test]
+    fn proposta_sem_lote_continua_lendo_do_json_antigo() {
+        let antigo = r#"{"id":"p1","autor":"cli","quando":"2026-09-17 10:00","alvo":"pages/a.md","operacao":"substituir","conteudo":"x"}"#;
+        let p: Proposta = serde_json::from_str(antigo).expect("json de antes do 420");
+        assert_eq!(p.lote, None);
+        // E quem não tem lote não ganha campo no arquivo.
+        assert!(!serde_json::to_string(&p).unwrap().contains("lote"));
     }
 }

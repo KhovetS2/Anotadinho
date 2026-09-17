@@ -1034,6 +1034,42 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                     }
                     decidido(estado, vault, r);
                 }
+                // Lote atômico (ciclo 420): o IPC aplica todas ou
+                // nenhuma; aqui só se registra a decisão de cada uma,
+                // pra auditoria continuar por página.
+                Pedido::DecidirLote { lote, aplicar, motivo } => {
+                    let dados: Vec<anotadinho_core::proposta::Proposta> =
+                        anotadinho_ipc::handle_listar_propostas(vault.to_string())
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter(|p| p.lote.as_deref() == Some(lote.as_str()))
+                            .collect();
+                    // O lote mexe em VÁRIAS páginas: abrir uma delas
+                    // seria escolher arbitrariamente, então a tela fica
+                    // onde está e o aviso conta o que entrou.
+                    let feito = if aplicar {
+                        anotadinho_ipc::handle_aplicar_lote(vault.to_string(), lote.clone()).map(|alvos| {
+                            estado.aviso = Some(format!("lote {lote} aplicado: {}", alvos.join(", ")));
+                            String::new()
+                        })
+                    } else {
+                        anotadinho_ipc::handle_recusar_lote(vault.to_string(), lote.clone()).map(|n| {
+                            estado.aviso = Some(format!("lote {lote} recusado: {n} proposta(s)"));
+                            String::new()
+                        })
+                    };
+                    if feito.is_ok() {
+                        let acao = if aplicar {
+                            anotadinho_core::decisao::Acao::Aplicada
+                        } else {
+                            anotadinho_core::decisao::Acao::Recusada
+                        };
+                        for p in dados {
+                            registrar_decisao(estado, vault, Some(p), acao.clone(), motivo.clone());
+                        }
+                    }
+                    decidido(estado, vault, feito);
+                }
                 // Lote (ciclo 409): cada uma segue o mesmo caminho de
                 // uma só — inclusive o registro da decisão —, e o que
                 // falhar não impede as outras.
