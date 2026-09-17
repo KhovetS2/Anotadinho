@@ -64,6 +64,10 @@ enum Command {
         /// Path relativo ao vault (ex: pages/minha-nota.md) ou
         /// `pages/minha-nota.md^abc123` pra um bloco só.
         page_path: String,
+        /// Resolve as transclusões `![[Página#Seção]]` (ciclo 414) —
+        /// é como um agente pega uma página-recorte já montada.
+        #[arg(long)]
+        contexto: bool,
     },
     /// Desenha a ESTRUTURA de uma página — a árvore, não o markdown.
     ///
@@ -385,7 +389,17 @@ fn run(cli: Cli) -> Result<(), String> {
                 }
             }
         }
-        Command::Read { page_path } => {
+        Command::Read { page_path, contexto } => {
+            if contexto {
+                let x = anotadinho_ipc::handle_ler_para_contexto(cli.vault, page_path)?;
+                // Os avisos vão pro stderr: o stdout continua sendo só o
+                // conteúdo, pra `| agente` não engolir recado.
+                for aviso in &x.avisos {
+                    eprintln!("aviso: {aviso}");
+                }
+                print!("{}", x.texto);
+                return Ok(());
+            }
             // `caminho^id` devolve só aquele bloco — é o que deixa um
             // agente seguir uma referência `![[Página^id]]` sem baixar
             // a página inteira.

@@ -1342,6 +1342,58 @@ pub fn handle_registrar_decisao(
         .map_err(|e| e.to_string())
 }
 
+/// Uma página pronta pra virar contexto de prompt (ciclo 414): lida do
+/// disco e com as transclusões (`![[Página#Seção]]`) já trocadas pelo
+/// conteúdo.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PaginaExpandida {
+    /// O texto com as transclusões resolvidas.
+    pub texto: String,
+    /// As páginas que vieram junto, na ordem.
+    pub trazidas: Vec<String>,
+    /// O que não deu pra trazer, com o motivo.
+    pub avisos: Vec<String>,
+}
+
+/// Lê a página e resolve as transclusões dela (ciclo 414).
+///
+/// O título de um `![[…]]` é resolvido como o wikilink: pelo título do
+/// frontmatter ou pelo nome do arquivo, sem caixa. Cada página é lida no
+/// máximo uma vez por chamada — uma referência citada em cinco lugares
+/// não vira cinco leituras de disco.
+pub fn handle_ler_para_contexto(
+    vault_path: String,
+    page_path: String,
+) -> Result<PaginaExpandida, String> {
+    let texto = handle_read_page(vault_path.clone(), page_path.clone())?;
+    let paginas = handle_scan_vault(vault_path.clone())?;
+    let mut lidas: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut buscar = |titulo: &str| -> Option<(String, String)> {
+        let alvo = titulo.trim().to_lowercase();
+        let path = paginas
+            .iter()
+            .find(|p| p.title.to_lowercase() == alvo)
+            .or_else(|| {
+                paginas.iter().find(|p| {
+                    std::path::Path::new(&p.path)
+                        .file_stem()
+                        .is_some_and(|s| s.to_string_lossy().to_lowercase() == alvo)
+                })
+            })
+            .map(|p| p.path.clone())?;
+        if let Some(corpo) = lidas.get(&path) {
+            return Some((path, corpo.clone()));
+        }
+        let conteudo = handle_read_page(vault_path.clone(), path.clone()).ok()?;
+        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+        let corpo = corpo.to_string();
+        lidas.insert(path.clone(), corpo.clone());
+        Some((path, corpo))
+    };
+    let r = anotadinho_core::transclusao::resolver(&texto, &page_path, &mut buscar);
+    Ok(PaginaExpandida { texto: r.texto, trazidas: r.trazidas, avisos: r.avisos })
+}
+
 /// Os gatilhos do vault (ciclo 412). Sem arquivo, lista vazia.
 pub fn handle_ler_gatilhos(
     vault_path: String,
@@ -1423,6 +1475,47 @@ pub fn handle_recusar_proposta(vault_path: String, id: String) -> Result<(), Str
 mod testes_semente {
     use super::*;
     use tempfile::TempDir;
+
+    /// Ciclo 414: anexar uma página-recorte traz o que ela transclui —
+    /// é o que faz o recorte virar documento do vault.
+    #[test]
+    fn ler_para_contexto_resolve_transclusao() {
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        std::fs::write(
+            dir.path().join("pages/padroes.md"),
+            "---\ntitle: Padrões\n---\n\n## Regras\n\nsempre em minúsculas\n\n## Exemplos\n\nalfa\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("pages/recorte.md"),
+            "---\ntitle: Recorte\n---\n\nO que o agente precisa:\n\n![[Padrões#Regras]]\n\n![[Sumida]]\n",
+        )
+        .unwrap();
+
+        let r = handle_ler_para_contexto(raiz, "pages/recorte.md".into()).expect("expandiu");
+        assert!(r.texto.contains("sempre em minúsculas"), "{}", r.texto);
+        assert!(!r.texto.contains("alfa"), "só a seção pedida:\n{}", r.texto);
+        assert_eq!(r.trazidas, ["pages/padroes.md"]);
+        // O que faltou não some do texto nem da lista de avisos.
+        assert!(r.texto.contains("não resolvida"), "{}", r.texto);
+        assert_eq!(r.avisos, ["a página Sumida não existe"]);
+    }
+
+    /// Sem transclusão, o texto tem que voltar igual ao do disco: o
+    /// caminho novo não pode mexer em anexo comum.
+    #[test]
+    fn ler_para_contexto_nao_mexe_em_pagina_comum() {
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        let conteudo = "---\ntitle: Alfa\n---\n\ntexto com [[wikilink]] e nada mais\n";
+        std::fs::write(dir.path().join("pages/alfa.md"), conteudo).unwrap();
+        let r = handle_ler_para_contexto(raiz.clone(), "pages/alfa.md".into()).expect("leu");
+        assert_eq!(r.texto, handle_read_page(raiz, "pages/alfa.md".into()).unwrap());
+        assert!(r.trazidas.is_empty() && r.avisos.is_empty());
+    }
 
     /// Ciclo 406: o registro de execuções acumula e sai do mais novo pro
     /// mais velho — é o que a tela do agente mostra.

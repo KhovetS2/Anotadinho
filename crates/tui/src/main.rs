@@ -280,15 +280,39 @@ fn enviar_na_conversa(
         }
     };
     let historico = conversa::parse(&corpo_antes);
+    // O anexo entra com as transclusões resolvidas (ciclo 414): uma
+    // página-recorte feita de `![[Spec#Regras]]` chega ao agente com o
+    // conteúdo, não com o marcador.
+    let mut trazidas: Vec<String> = Vec::new();
+    let mut avisos: Vec<String> = Vec::new();
     let contextos: Vec<conversa::Contexto> = anexos
         .iter()
         .filter(|a| a.as_str() != path)
         .filter_map(|a| {
-            anotadinho_ipc::handle_read_page(vault.to_string(), a.clone())
-                .ok()
-                .map(|c| conversa::Contexto { nome: a.clone(), conteudo: c })
+            let expandida = anotadinho_ipc::handle_ler_para_contexto(vault.to_string(), a.clone()).ok()?;
+            for t in expandida.trazidas {
+                if !trazidas.contains(&t) {
+                    trazidas.push(t);
+                }
+            }
+            avisos.extend(expandida.avisos);
+            Some(conversa::Contexto { nome: a.clone(), conteudo: expandida.texto })
         })
         .collect();
+    if !trazidas.is_empty() || !avisos.is_empty() {
+        let mut nota = if trazidas.is_empty() {
+            String::new()
+        } else {
+            format!("transclusão trouxe {} página(s)", trazidas.len())
+        };
+        if !avisos.is_empty() {
+            if !nota.is_empty() {
+                nota.push_str(" · ");
+            }
+            nota.push_str(&avisos.join(" · "));
+        }
+        estado.aviso = Some(nota);
+    }
     let prompt = conversa::montar_prompt(&historico, pergunta, &contextos, app::conversa::HISTORICO_NO_PROMPT);
     let adaptador = estado.preferencias.agente.clone().unwrap_or_default().migrado();
     let cwd = if adaptador.cwd.trim().is_empty() {

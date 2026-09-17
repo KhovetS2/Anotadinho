@@ -27,6 +27,7 @@ pub mod date_util;
 pub mod embed;
 pub mod exportar;
 pub mod tabela_md;
+pub mod transclusao;
 // A grade mensal do calendário saiu da UI no ciclo 306: o terminal
 // desenha a mesma grade, e o algoritmo de faixas precisa ser um só.
 pub mod calendario;

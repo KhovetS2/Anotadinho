@@ -230,6 +230,30 @@ pub async fn read_page(vault_path: &str, page_path: &str) -> Result<String, Stri
     chamar_texto("read_page", Args::novo().texto("vaultPath", vault_path).texto("pagePath", page_path)).await
 }
 
+/// A página pronta pra virar contexto (ciclo 414): o espelho de
+/// `anotadinho_ipc::PaginaExpandida` — o `ui` compila pra WASM e não
+/// depende do crate de IO.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct PaginaExpandida {
+    /// O texto com as transclusões resolvidas.
+    pub texto: String,
+    /// As páginas que vieram junto.
+    #[serde(default)]
+    pub trazidas: Vec<String>,
+    /// O que não deu pra trazer, com o motivo.
+    #[serde(default)]
+    pub avisos: Vec<String>,
+}
+
+/// A página pronta pra virar contexto (ciclo 414): transclusões
+/// resolvidas, mais o que veio junto e o que não deu pra trazer.
+pub async fn ler_para_contexto(
+    vault_path: &str,
+    page_path: &str,
+) -> Result<PaginaExpandida, String> {
+    chamar("ler_para_contexto", Args::novo().texto("vaultPath", vault_path).texto("pagePath", page_path)).await
+}
+
 /// Controles da janela (ciclo 180) — a barra de título é do próprio
 /// app, então minimizar/maximizar/fechar passam por aqui.
 pub async fn window_minimize() -> Result<(), String> {

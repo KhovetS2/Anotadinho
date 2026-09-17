@@ -176,6 +176,16 @@ fn read_page(vault_path: String, page_path: String) -> Result<String, String> {
     handle_read_page(vault_path, page_path)
 }
 
+/// Leitura pra virar contexto de prompt (ciclo 414): com as
+/// transclusões trocadas pelo conteúdo, e a lista do que veio junto.
+#[tauri::command]
+fn ler_para_contexto(
+    vault_path: String,
+    page_path: String,
+) -> Result<anotadinho_ipc::PaginaExpandida, String> {
+    anotadinho_ipc::handle_ler_para_contexto(vault_path, page_path)
+}
+
 /// Leitura com marca de versão (ciclo 173) — o editor guarda a marca e
 /// devolve ela ao salvar, pra escrita concorrente não passar batida.
 #[tauri::command]
@@ -923,6 +933,7 @@ fn main() {
             list_pages,
             scan_vault,
             read_page,
+            ler_para_contexto,
             arvore_da_pagina,
             read_page_versioned,
             write_page,

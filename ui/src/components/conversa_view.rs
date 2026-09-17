@@ -502,8 +502,10 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     if *a == path {
                         continue; // a própria conversa não é contexto dela
                     }
-                    if let Ok(c) = api::read_page(&vault_path, a).await {
-                        contextos.push(conversa::Contexto { nome: a.clone(), conteudo: c });
+                    // Com as transclusões resolvidas (ciclo 414): a
+                    // página-recorte chega ao agente com o conteúdo.
+                    if let Ok(x) = api::ler_para_contexto(&vault_path, a).await {
+                        contextos.push(conversa::Contexto { nome: a.clone(), conteudo: x.texto });
                     }
                 }
                 let prompt = conversa::montar_prompt(
