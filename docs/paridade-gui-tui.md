@@ -66,6 +66,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Seletor de horário (15 em 15 min) | ✅ | 365 |
 | Cronograma: agendar item "Sem data" | ✅ | 366 — Enter na gaveta |
 | Tabela: células, linhas, colunas, tipo, opções | ✅ | 321, 337, 339 |
+| Tabela: número ▲▼, data, coluna de página (escolher e abrir) | ✅ | 367 — Ctrl+A/X; Enter na página |
 | Consulta: configuração completa | ✅ | 335, 338, 344 — `=` na consulta |
 | Ações: EXECUTAR o botão | ✅ | 342 — abrir, template, propriedade, busca |
 | Ações: configurar o botão (ação, destino, ícone) | ✅ | 344 — `=` no botão |

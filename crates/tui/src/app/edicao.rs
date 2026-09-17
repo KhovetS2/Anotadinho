@@ -1198,6 +1198,44 @@ pub(super) fn celula_do_cursor(e: &Estado) -> Option<(Caminho, usize, usize)> {
     Some((embed, fileira, coluna))
 }
 
+/// A escolha da página de uma célula de coluna "página" (ciclo 367).
+fn escolher_pagina_da_celula(e: &mut Estado, embed: Caminho, linha: usize, coluna: usize) {
+    use super::modais::{AcaoDaEscolha, Modal};
+    use crate::componentes::{Item, Lista};
+    let mut itens = vec![Item::novo("∅", "Nenhuma", "")];
+    itens.extend(e.paginas.iter().map(|p| Item::novo("≡", p.title.clone(), p.path.clone()).com_detalhe(p.path.clone())));
+    e.celula_pendente = Some((embed, linha, coluna));
+    e.modal = Some(Modal::Escolha { titulo: "Página".into(), lista: Lista::filtravel(itens), acao: AcaoDaEscolha::PaginaDaCelula });
+}
+
+/// A página escolhida vai pra célula.
+pub(super) fn pagina_escolhida(e: &mut Estado, path: &str) {
+    let Some((embed, linha, coluna)) = e.celula_pendente.take() else { return };
+    let path = path.to_string();
+    editar_tabela(e, &embed, |d| {
+        d.set_cell(linha, coluna, path);
+        Ok(())
+    });
+}
+
+/// `Enter` numa célula de coluna "página": abre a página (o "Abrir página"
+/// da janela); vazia, escolhe.
+pub(super) fn abrir_pagina_da_celula(e: &mut Estado) -> bool {
+    let Some((embed, f, coluna)) = celula_do_cursor(e) else { return false };
+    if f == 0 {
+        return false;
+    }
+    let Some(dados) = ler_tabela(e, &embed) else { return false };
+    if !matches!(dados.columns.get(coluna).map(|c| &c.kind), Some(em::ColumnKind::PageLink)) {
+        return false;
+    }
+    match dados.rows.get(f - 1).and_then(|r| r.get(coluna)).filter(|v| !v.trim().is_empty()) {
+        Some(path) => e.pedidos.push(super::modais::Pedido::AbrirPagina(path.clone())),
+        None => escolher_pagina_da_celula(e, embed, f - 1, coluna),
+    }
+    true
+}
+
 fn na_tabela(e: &mut Estado, ed: Edicao) -> bool {
     let Some(embed) = embed_do_cursor(e, "table") else { return false };
     let Some(dados) = ler_tabela(e, &embed) else { return false };
@@ -1247,6 +1285,13 @@ fn na_tabela(e: &mut Estado, ed: Edicao) -> bool {
         (Edicao::Reescrever { limpar, .. }, Some((0, coluna))) => {
             let texto = if limpar { String::new() } else { dados.columns.get(coluna).map(|c| c.name.clone()).unwrap_or_default() };
             perguntar(e, "Renomear coluna", texto, AcaoDaPergunta::RenomearColunaDaTabela { embed, coluna });
+        }
+        // Coluna de página: escolhe entre as páginas (ciclo 367), como o
+        // "Filtrar páginas..." da janela.
+        (Edicao::Reescrever { .. }, Some((f, coluna)))
+            if matches!(dados.columns.get(coluna).map(|c| &c.kind), Some(em::ColumnKind::PageLink)) =>
+        {
+            escolher_pagina_da_celula(e, embed, f - 1, coluna);
         }
         (Edicao::Reescrever { limpar, .. }, Some((f, coluna))) => {
             let texto = if limpar { String::new() } else { valor(f, coluna) };
@@ -1303,8 +1348,23 @@ fn na_tabela(e: &mut Estado, ed: Edicao) -> bool {
                     options[(base + n).rem_euclid(options.len() as i64) as usize].clone()
                 }
                 Some(em::ColumnKind::Checkbox) => (atual != "true").to_string(),
+                // O ▲▼ do número e dias na data (ciclo 367).
+                Some(em::ColumnKind::Number) => {
+                    let v = atual.trim().replace(',', ".").parse::<f64>().unwrap_or(0.0) + n as f64;
+                    if v.fract() == 0.0 { format!("{}", v as i64) } else { format!("{v}") }
+                }
+                Some(em::ColumnKind::Date) => {
+                    let base = if atual.trim().is_empty() { e.hoje.clone().unwrap_or_default() } else { atual.clone() };
+                    match add_days(&base, n) {
+                        Some(d) => d,
+                        None => {
+                            e.aviso = Some("data: use AAAA-MM-DD".into());
+                            return true;
+                        }
+                    }
+                }
                 _ => {
-                    e.aviso = Some("Ctrl+A/Ctrl+X trocam a opção de um select".into());
+                    e.aviso = Some("Ctrl+A/Ctrl+X: opção, número ou data".into());
                     return true;
                 }
             };

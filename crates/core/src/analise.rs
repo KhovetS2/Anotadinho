@@ -1031,6 +1031,12 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
                             .collect(),
                         Arranjo::Linha,
                     ),
+                    // Página: o nome dela, não o caminho (ciclo 367) — a
+                    // janela mostra o título resolvido.
+                    Some(embed::ColumnKind::PageLink) if !valor.trim().is_empty() => {
+                        let nome = std::path::Path::new(valor).file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                        item("cell", format!("↗ {nome}"))
+                    }
                     _ => item(&nome_da_celula(col, valor), valor),
                 }
             };

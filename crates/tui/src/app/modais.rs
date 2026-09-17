@@ -404,6 +404,8 @@ pub enum AcaoDaEscolha {
     Destaque,
     /// O estilo dos botões.
     Botoes,
+    /// A página de uma célula de tabela (ciclo 367).
+    PaginaDaCelula,
 }
 
 /// Os comandos da barra, como na janela.
@@ -694,6 +696,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 },
                 AcaoDaEscolha::Mostrar => {}
                 AcaoDaEscolha::Formatar => super::formatar::escolher(e, &chave),
+                AcaoDaEscolha::PaginaDaCelula => super::edicao::pagina_escolhida(e, &chave),
                 AcaoDaEscolha::Destaque => {
                     e.preferencias.destaque = chave;
                     let tema = e.preferencias.tema.clone();

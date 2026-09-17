@@ -136,6 +136,9 @@ pub struct Estado {
     /// A imagem nova da galeria esperando o arquivo escolhido em
     /// `assets/` (ciclo 356).
     pub imagem_pendente: Option<edicao::AcaoDaPergunta>,
+    /// A célula de coluna "página" esperando a escolha (ciclo 367):
+    /// tabela, linha e coluna.
+    pub celula_pendente: Option<(Caminho, usize, usize)>,
     /// A inserção guardada enquanto o menu Formatar está aberto (ciclo 357).
     pub pergunta_suspensa: Option<edicao::Pergunta>,
     /// Propostas do agente esperando revisão (ciclo 355), como o botão do
@@ -220,6 +223,7 @@ impl Estado {
             abas: Vec::new(),
             inicio: None,
             imagem_pendente: None,
+            celula_pendente: None,
             pergunta_suspensa: None,
             propostas_pendentes: 0,
             mudancas_no_git: None,
@@ -834,6 +838,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
                 && (edicao::transicao_do_cursor(e)
                     || edicao::acao_do_fluxo(e)
                     || edicao::agendar_sem_data(e)
+                    || edicao::abrir_pagina_da_celula(e)
                     || edicao::cartao_na_coluna_vazia(e)
                     || edicao::busca_da_consulta(e)
                     || edicao::abrir_opcoes(e)
@@ -9199,5 +9204,37 @@ mod testes {
         let esperado = anotadinho_core::date_util::add_days("2026-08-20", -(d.scale.days() / 4)).unwrap();
         assert_eq!(d.items[1].start.as_deref(), Some(esperado.as_str()));
         assert!(e.aviso.as_deref().unwrap().contains("agendado"));
+    }
+
+    // --- Ciclo 367: células de número, data e página ---------------------------
+
+    #[test]
+    fn celulas_de_numero_data_e_pagina_como_na_janela() {
+        use anotadinho_core::embed::EmbedData;
+        let mut e = pagina_com("{{ type: \"table\" }}\ncolumns:\n  - name: Horas\n    type: number\n  - name: Prazo\n    type: date\n  - name: Doc\n    type: page\n---\n| Horas | Prazo | Doc |\n| --- | --- | --- |\n| 3 | 2026-08-10 |  |\n{{ /table }}\n").com_hoje("2026-08-20");
+        e.foco = Foco::Conteudo;
+        let EmbedData::Table(d) = anotadinho_core::embed::segment(e.texto_da_pagina.as_deref().unwrap()).into_iter().find_map(|s| match s { anotadinho_core::embed::DocSegment::Embed(d) => Some(d), _ => None }).unwrap() else { panic!() };
+        assert!(matches!(d.columns[2].kind, anotadinho_core::embed::ColumnKind::PageLink), "{:?}", d.columns);
+        e.cursor = vec![0, 1, 0];
+        tecla(&mut e, "2");
+        tecla(&mut e, "Ctrl+a");
+        let EmbedData::Table(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.rows[0][0], "5");
+        e.cursor = vec![0, 1, 1];
+        tecla(&mut e, "Ctrl+x");
+        let EmbedData::Table(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.rows[0][1], "2026-08-09");
+        // Página vazia: Enter escolhe; cheia: Enter abre.
+        e.cursor = vec![0, 1, 2];
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Escolha { .. })));
+        digitar(&mut e, "beta");
+        tecla(&mut e, "Enter");
+        let EmbedData::Table(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.rows[0][2], "pages/beta.md");
+        assert!(desenho(&mut e, 120, 12).join("\n").contains("↗ beta"));
+        e.cursor = vec![0, 1, 2];
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos.last(), Some(&Pedido::AbrirPagina("pages/beta.md".into())));
     }
 }
