@@ -1191,6 +1191,12 @@ pub fn handle_propor(
     proposta: anotadinho_core::proposta::Proposta,
 ) -> Result<String, String> {
     let raiz = std::path::Path::new(&vault_path);
+    // As permissões do vault decidem ANTES da revisão (ciclo 405): o que
+    // está fora do alcance do agente não chega nem a virar proposta.
+    let permissoes = handle_ler_permissoes(vault_path.clone())?;
+    if !permissoes.pode_propor(&proposta.alvo) {
+        return Err(permissoes.motivo(&proposta.alvo));
+    }
     let existe = raiz.join(&proposta.alvo).exists();
     if let Some(r) = proposta.validar(existe) {
         return Err(r.mensagem());
@@ -1202,6 +1208,30 @@ pub fn handle_propor(
     let json = serde_json::to_string_pretty(&proposta).map_err(|e| e.to_string())?;
     std::fs::write(&arquivo, json).map_err(|e| format!("erro gravando proposta: {e}"))?;
     Ok(proposta.id)
+}
+
+/// As permissões de escrita do agente (ciclo 405). Sem arquivo, o padrão.
+pub fn handle_ler_permissoes(
+    vault_path: String,
+) -> Result<anotadinho_core::permissoes::Permissoes, String> {
+    let arquivo = std::path::Path::new(&vault_path).join(anotadinho_core::permissoes::ARQUIVO);
+    let Ok(texto) = std::fs::read_to_string(&arquivo) else {
+        return Ok(anotadinho_core::permissoes::Permissoes::default());
+    };
+    serde_json::from_str(&texto).map_err(|e| format!("permissoes.json ilegível: {e}"))
+}
+
+/// Grava as permissões no vault.
+pub fn handle_gravar_permissoes(
+    vault_path: String,
+    permissoes: anotadinho_core::permissoes::Permissoes,
+) -> Result<(), String> {
+    let arquivo = std::path::Path::new(&vault_path).join(anotadinho_core::permissoes::ARQUIVO);
+    if let Some(pai) = arquivo.parent() {
+        std::fs::create_dir_all(pai).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(&permissoes).map_err(|e| e.to_string())?;
+    std::fs::write(&arquivo, json).map_err(|e| format!("erro gravando permissões: {e}"))
 }
 
 /// Lista as propostas pendentes, das mais novas pras mais velhas.
@@ -1247,6 +1277,11 @@ pub fn handle_aplicar_proposta(vault_path: String, id: String) -> Result<String,
     if let Some(r) = proposta.validar(existe) {
         return Err(r.mensagem());
     }
+    // Proposta escrita antes de a regra mudar não passa por cima dela.
+    let permissoes = handle_ler_permissoes(vault_path.clone())?;
+    if !permissoes.pode_propor(&proposta.alvo) {
+        return Err(permissoes.motivo(&proposta.alvo));
+    }
     let vault = VaultIo::open(&vault_path);
     vault
         .write_page(&proposta.alvo, &proposta.conteudo)
@@ -1274,6 +1309,11 @@ pub fn handle_aplicar_proposta_parcial(
     let existe = raiz.join(&proposta.alvo).exists();
     if let Some(r) = proposta.validar(existe) {
         return Err(r.mensagem());
+    }
+    // Proposta escrita antes de a regra mudar não passa por cima dela.
+    let permissoes = handle_ler_permissoes(vault_path.clone())?;
+    if !permissoes.pode_propor(&proposta.alvo) {
+        return Err(permissoes.motivo(&proposta.alvo));
     }
     let vault = VaultIo::open(&vault_path);
     vault

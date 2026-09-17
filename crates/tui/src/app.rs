@@ -10341,4 +10341,30 @@ mod testes {
         tecla(&mut e, "Enter");
         assert_eq!(e.pedidos, [Pedido::DecidirProposta { id: "p9".into(), aplicar: false, motivo: "fora do escopo".into() }]);
     }
+
+    // --- Ciclo 405: permissões do agente ---------------------------------------------
+
+    #[test]
+    fn o_formulario_de_permissoes_grava_as_pastas() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::executar(&mut e, "permissoes");
+        assert_eq!(e.pedidos, [Pedido::LerPermissoes]);
+        e.pedidos.clear();
+        modais::abrir_permissoes(&mut e, &anotadinho_core::permissoes::Permissoes::default());
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("Onde o agente pode propor") && tela.contains("journals/") && tela.contains("Salvar no vault"), "{tela}");
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[0].valor = crate::componentes::Valor::Lista(vec!["pages/specs".into()]);
+        for _ in 0..20 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        assert_eq!(
+            e.pedidos,
+            [Pedido::GravarPermissoes(anotadinho_core::permissoes::Permissoes {
+                pode: vec!["pages/specs".into()],
+                nunca: vec!["journals/".into()]
+            })]
+        );
+    }
 }

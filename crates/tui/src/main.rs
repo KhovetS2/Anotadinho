@@ -644,6 +644,16 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         Err(e) => format!("não exportou: {e}"),
                     });
                 }
+                Pedido::LerPermissoes => match anotadinho_ipc::handle_ler_permissoes(vault.to_string()) {
+                    Ok(p) => app::modais::abrir_permissoes(estado, &p),
+                    Err(e) => estado.aviso = Some(format!("não leu as permissões: {e}")),
+                },
+                Pedido::GravarPermissoes(p) => {
+                    estado.aviso = Some(match anotadinho_ipc::handle_gravar_permissoes(vault.to_string(), p) {
+                        Ok(()) => "permissões do agente gravadas no vault".to_string(),
+                        Err(e) => format!("não gravou as permissões: {e}"),
+                    });
+                }
                 Pedido::ListarDecisoes => match anotadinho_ipc::handle_listar_decisoes(vault.to_string()) {
                     Ok(d) => app::modais::mostrar_decisoes(estado, &d),
                     Err(e) => estado.aviso = Some(format!("não leu as decisões: {e}")),

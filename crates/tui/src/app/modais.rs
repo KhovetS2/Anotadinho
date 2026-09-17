@@ -69,6 +69,10 @@ pub enum Pedido {
     ExportarHtml(String),
     /// Ver o registro de decisões sobre propostas (ciclo 404).
     ListarDecisoes,
+    /// Ler as permissões de escrita do agente (ciclo 405).
+    LerPermissoes,
+    /// Gravar as permissões no vault.
+    GravarPermissoes(anotadinho_core::permissoes::Permissoes),
     /// Ver o status do git e as ações (ciclo 349).
     StatusDoGit,
     /// `git pull`.
@@ -347,6 +351,8 @@ pub enum AlvoDoDetalhe {
     },
     /// O agente das conversas (ciclo 350).
     Agente,
+    /// As pastas onde o agente pode propor (ciclo 405).
+    Permissoes,
     /// O remapeamento de teclas (ciclo 359).
     Teclas,
     /// A imagem do menu `/` (ciclo 388).
@@ -552,6 +558,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Ver assets", "ver-assets"),
     ("Propostas do agente", "propostas"),
     ("Decisões sobre as propostas", "decisoes"),
+    ("Onde o agente pode propor…", "permissoes"),
     ("Definir/remover como início", "inicio"),
     ("Exportar HTML da página", "exportar-html"),
     ("Excluir a página aberta", "excluir-pagina"),
@@ -759,6 +766,7 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "ver-assets" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Assets)),
         "propostas" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Propostas)),
         "decisoes" => e.pedidos.push(Pedido::ListarDecisoes),
+        "permissoes" => e.pedidos.push(Pedido::LerPermissoes),
         "personalizar" => {
             e.modal = Some(Modal::Escolha {
                 titulo: "Personalizar".into(),
@@ -1041,6 +1049,15 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                 }
                 R::Mudou if alvo == AlvoDoDetalhe::Agente => {}
+                R::Botao("salvar") if alvo == AlvoDoDetalhe::Permissoes => {
+                    let p = anotadinho_core::permissoes::Permissoes {
+                        pode: form.lista("pode").into_iter().filter(|x| !x.trim().is_empty()).collect(),
+                        nunca: form.lista("nunca").into_iter().filter(|x| !x.trim().is_empty()).collect(),
+                    };
+                    e.pedidos.push(Pedido::GravarPermissoes(p));
+                    return;
+                }
+                R::Mudou if alvo == AlvoDoDetalhe::Permissoes => {}
                 R::Botao("remover") if alvo == AlvoDoDetalhe::Agente => {
                     remover_agente(e);
                     return;
@@ -1721,4 +1738,16 @@ pub fn mostrar_decisoes(e: &mut Estado, decisoes: &[anotadinho_core::decisao::De
         })
         .collect();
     e.modal = Some(Modal::Escolha { titulo: "Decisões sobre as propostas".into(), lista: Lista::filtravel(itens), acao: AcaoDaEscolha::AbrirPagina });
+}
+
+/// O formulário das permissões do agente (ciclo 405): onde ele pode
+/// propor e onde nunca.
+pub fn abrir_permissoes(e: &mut Estado, p: &anotadinho_core::permissoes::Permissoes) {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    let mut form = Formulario::novo(vec![
+        C::novo("pode", "Pode propor em", Valor::Lista(p.pode.clone())).com_dica("pages/specs (vazio: qualquer lugar)"),
+        C::novo("nunca", "Nunca", Valor::Lista(p.nunca.clone())).com_dica("journals/"),
+    ]);
+    form.botoes.push(("salvar", "Salvar no vault".into()));
+    e.modal = Some(Modal::Detalhe { titulo: "Onde o agente pode propor".into(), form, alvo: AlvoDoDetalhe::Permissoes });
 }
