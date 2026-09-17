@@ -32,6 +32,18 @@ pub struct Pergunta {
     pub cursor: usize,
     /// O que fazer com a resposta.
     pub acao: AcaoDaPergunta,
+    /// Onde a seleção começou, em caracteres (ciclo 395): o trecho vai
+    /// dela até o cursor.
+    pub selecao: Option<usize>,
+}
+
+impl Pergunta {
+    /// O trecho selecionado, `início..fim`, se há um.
+    pub fn trecho(&self) -> Option<std::ops::Range<usize>> {
+        let a = self.selecao?;
+        let (i, f) = if a < self.cursor { (a, self.cursor) } else { (self.cursor, a) };
+        (f > i).then_some(i..f)
+    }
 }
 
 /// O que a resposta de uma pergunta faz.
@@ -344,7 +356,7 @@ fn ir(e: &mut Estado, destino: Option<Caminho>) {
 
 pub(super) fn perguntar(e: &mut Estado, rotulo: impl Into<String>, texto: String, acao: AcaoDaPergunta) {
     let cursor = texto.chars().count();
-    e.pergunta = Some(Pergunta { rotulo: rotulo.into(), texto, cursor, acao });
+    e.pergunta = Some(Pergunta { rotulo: rotulo.into(), texto, cursor, acao, selecao: None });
 }
 
 /// `AAAA-MM-DD` como `DD/MM/AAAA`.
@@ -466,6 +478,41 @@ pub(super) fn tecla_na_pergunta(e: &mut Estado, tecla: &str) {
     }
     if tecla == "Escape" || tecla == "Enter" {
         e.wikilink_dispensado = None;
+    }
+    let Some(p) = e.pergunta.as_mut() else { return };
+    // Seleção (ciclo 395): Shift+setas estendem; digitar ou apagar com
+    // trecho selecionado troca o trecho; qualquer outro movimento desfaz.
+    let n_chars = p.texto.chars().count();
+    match tecla {
+        "Shift+ArrowLeft" | "Shift+ArrowRight" | "Shift+Home" | "Shift+End" => {
+            if p.selecao.is_none() {
+                p.selecao = Some(p.cursor.min(n_chars));
+            }
+            p.cursor = match tecla {
+                "Shift+ArrowLeft" => p.cursor.saturating_sub(1),
+                "Shift+ArrowRight" => (p.cursor + 1).min(n_chars),
+                "Shift+Home" => 0,
+                _ => n_chars,
+            };
+            return;
+        }
+        "Ctrl+b" | "Ctrl+t" | "Escape" | "Enter" => {}
+        t => {
+            if let Some(r) = p.trecho() {
+                let apaga = matches!(t, "Backspace" | "Delete");
+                let digita = t.chars().count() == 1;
+                if apaga || digita {
+                    let chars: Vec<char> = p.texto.chars().collect();
+                    p.texto = chars[..r.start].iter().chain(chars[r.end..].iter()).collect();
+                    p.cursor = r.start;
+                    p.selecao = None;
+                    if apaga {
+                        return;
+                    }
+                }
+            }
+            p.selecao = None;
+        }
     }
     let Some(p) = e.pergunta.as_mut() else { return };
     // `/` num bloco novo ainda vazio abre o menu de inserir (ciclo 347),

@@ -56,7 +56,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Lista dentro de lista (desenho recuado, aninhar/desaninhar) | ✅ | 393 — `Ctrl+A`/`Ctrl+X` no item |
 | Vim mode liga/desliga (sem vim: digitar edita direto) | ✅ | 376 — Enter cria o seguinte, Backspace apaga, Delete apaga o bloco, Ctrl+Z/Y |
 | Menu `/` (inserir bloco e embed) | ✅ | 347 — `/` num bloco novo vazio, ou "Inserir bloco ou embed…" |
-| Barra de seleção (negrito, itálico, link, cor) | ✅ | 357 — na inserção: `Ctrl+B` negrito, `Ctrl+T` menu Formatar (itálico, riscado, código, link, cor, fundo); 394 — cor personalizada `#hex` e tirar a cor |
+| Barra de seleção (negrito, itálico, link, cor) | ✅ | 357 — na inserção: `Ctrl+B` negrito, `Ctrl+T` menu Formatar (itálico, riscado, código, link, cor, fundo); 394 — cor personalizada `#hex` e tirar a cor; 395 — `Shift+setas` seleciona o trecho a formatar |
 | Painel de propriedades (frontmatter) | ✅ | 344 — "Propriedades da página…" |
 | Inserir imagem (texto alternativo, legenda, tamanho, alinhamento) | ✅ | 388 — menu `/` → Imagem; a figura aparece como ▨ legenda e Enter abre o arquivo |
 | Imagem colada/arrastada, Mermaid, PDF | — | terminal |

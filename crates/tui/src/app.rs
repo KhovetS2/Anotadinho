@@ -1846,7 +1846,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             // quando o bloco é novo.
             if let Some((b, p)) = insercao_no_lugar(e) {
                 if l.caminho == b.alvo {
-                    let edicao = linhas_em_insercao(l.nivel, &b.prefixo, &p.texto, p.cursor, &e.tema, largura_conteudo);
+                    let edicao = linhas_em_insercao(l.nivel, &b.prefixo, p, &e.tema, largura_conteudo);
                     if !b.novo {
                         desenhadas = vec![edicao];
                     } else if b.antes {
@@ -2884,8 +2884,26 @@ fn insercao_no_lugar(e: &Estado) -> Option<(&EdicaoDeBloco, &Pergunta)> {
 /// O texto com o cursor de inserção: a célula do cursor em vídeo inverso
 /// (um espaço, no fim).
 fn texto_com_cursor(texto: &str, cursor: usize, estilo: Style, tema: &Tema) -> Vec<Span<'static>> {
+    texto_com_selecao(texto, cursor, None, estilo, tema)
+}
+
+/// O texto com o cursor e, se há, o trecho selecionado aceso (ciclo 395).
+fn texto_com_selecao(texto: &str, cursor: usize, trecho: Option<std::ops::Range<usize>>, estilo: Style, tema: &Tema) -> Vec<Span<'static>> {
     let chars: Vec<char> = texto.chars().collect();
     let c = cursor.min(chars.len());
+    if let Some(r) = trecho.filter(|r| r.end <= chars.len()) {
+        let selecionado = Style::default().bg(crate::tema::misturar(tema.var("accent-blue"), tema.var("bg-base"), 0.45)).fg(tema.var("text-primary"));
+        let invertido = Style::default().fg(tema.var("bg-base")).bg(tema.var("text-primary"));
+        let mut spans = Vec::new();
+        for (i, ch) in chars.iter().enumerate() {
+            let st = if i == c { invertido } else if r.contains(&i) { selecionado } else { estilo };
+            spans.push(Span::styled(ch.to_string(), st));
+        }
+        if c >= chars.len() {
+            spans.push(Span::styled(" ", invertido));
+        }
+        return spans;
+    }
     let antes: String = chars[..c].iter().collect();
     let sob: String = chars.get(c).map(|x| x.to_string()).unwrap_or_else(|| " ".into());
     let depois: String = chars.get(c + 1..).map(|r| r.iter().collect()).unwrap_or_default();
@@ -2895,12 +2913,12 @@ fn texto_com_cursor(texto: &str, cursor: usize, estilo: Style, tema: &Tema) -> V
 
 /// As linhas de um bloco em inserção: o recuo dele, a marca apagada e o
 /// texto com o cursor, quebrado na largura.
-fn linhas_em_insercao(nivel: usize, prefixo: &str, texto: &str, cursor: usize, tema: &Tema, largura: usize) -> Vec<Line<'static>> {
+fn linhas_em_insercao(nivel: usize, prefixo: &str, p: &edicao::Pergunta, tema: &Tema, largura: usize) -> Vec<Line<'static>> {
     let mut spans = vec![Span::raw("  ".repeat(nivel))];
     if !prefixo.is_empty() {
         spans.push(Span::styled(prefixo.to_string(), tema.estilo(Realce::Marca)));
     }
-    spans.extend(texto_com_cursor(texto, cursor, tema.estilo(Realce::Texto), tema));
+    spans.extend(texto_com_selecao(&p.texto, p.cursor, p.trecho(), tema.estilo(Realce::Texto), tema));
     // A quebra pinta de fundo o que não tem; aqui o fundo é o da região
     // (página ou caixa do callout), então esse fundo sai de volta.
     let fundo = tema.var("bg-base");
@@ -10055,5 +10073,32 @@ mod testes {
         digitar(&mut e, "zz");
         tecla(&mut e, "Enter");
         assert!(e.aviso.as_deref().unwrap().contains("#rrggbb") && e.pergunta.is_some());
+    }
+
+    // --- Ciclo 395: seleção na inserção -----------------------------------------------
+
+    #[test]
+    fn shift_setas_selecionam_e_a_formatacao_vale_pro_trecho() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        digitar(&mut e, "um dois tres");
+        tecla(&mut e, "Home");
+        tecla(&mut e, "Shift+End");
+        for _ in 0..5 {
+            tecla(&mut e, "Shift+ArrowLeft");
+        }
+        assert_eq!(e.pergunta.as_ref().unwrap().trecho(), Some(0..7));
+        tecla(&mut e, "Ctrl+b");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "**um dois** tres");
+        // Digitar com trecho selecionado troca o trecho.
+        tecla(&mut e, "End");
+        for _ in 0..4 {
+            tecla(&mut e, "Shift+ArrowLeft");
+        }
+        digitar(&mut e, "3");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "**um dois** 3");
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("**um dois** 3"), "{tela}");
     }
 }

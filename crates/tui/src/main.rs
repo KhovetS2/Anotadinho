@@ -81,6 +81,19 @@ fn nome_da_tecla(k: &KeyEvent) -> Option<String> {
             _ => None,
         };
     }
+    // Shift+setas/Home/End selecionam na inserção (ciclo 395).
+    if k.modifiers.contains(KeyModifiers::SHIFT) {
+        let nome = match k.code {
+            KeyCode::Left => Some("Shift+ArrowLeft"),
+            KeyCode::Right => Some("Shift+ArrowRight"),
+            KeyCode::Home => Some("Shift+Home"),
+            KeyCode::End => Some("Shift+End"),
+            _ => None,
+        };
+        if let Some(n) = nome {
+            return Some(n.into());
+        }
+    }
     Some(match k.code {
         KeyCode::Char(c) => c.to_string(),
         KeyCode::Enter => "Enter".into(),

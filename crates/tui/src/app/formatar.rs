@@ -43,7 +43,11 @@ pub(super) fn embrulhar(p: &mut Pergunta, abre: &str, fecha: &str) {
     let chars: Vec<char> = p.texto.chars().collect();
     let (na, nf) = (abre.chars().count(), fecha.chars().count());
     let junta = |a: &[char]| a.iter().collect::<String>();
-    let Some((inicio, fim)) = palavra(&chars, p.cursor) else {
+    // Com trecho selecionado (ciclo 395), a marca vale pra ele, como a
+    // barra de seleção da janela.
+    let selecionado = p.trecho().map(|r| (r.start, r.end));
+    p.selecao = None;
+    let Some((inicio, fim)) = selecionado.or_else(|| palavra(&chars, p.cursor)) else {
         p.texto = format!("{}{abre}{fecha}{}", junta(&chars[..p.cursor]), junta(&chars[p.cursor..]));
         p.cursor += na;
         return;
