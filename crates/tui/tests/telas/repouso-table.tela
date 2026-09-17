@@ -13,9 +13,9 @@
 │                                        ││▌  ├────────┼─────────┼───────────────┼────────────┼────────────┼──────────────┼──────────────┤▌│
 │                                        ││▌  │        │         │               │            │            │              │              │▌│
 │                                        ││▌  └────────┴─────────┴───────────────┴────────────┴────────────┴──────────────┴──────────────┘▌│
+│                                        ││▌   o + linha                                                                                  ▌│
 │                                        ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
 │                                        ││Depois.                                                                                         │
-│                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -54,9 +54,9 @@ addddddddddddddddddddddddddddddddddddddddabghhikkkkkkkkihnnnnnnhhihooooooohhhhhh
 addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifb
 addddddddddddddddddddddddddddddddddddddddabghhikkkkkkkkigggggggggihhhhhhhhhhhhhhhikkkkkkkkkkkkikkkkkkkkkkkkikkkkkkkkkkkkkkikkkkkkkkkkkkkkifb
 addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifb
+addddddddddddddddddddddddddddddddddddddddabghhpppppppppphhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -95,3 +95,4 @@ l = fg #db7e21 bg #42362e
 m = fg #248569 bg #273739
 n = fg #00b5ff bg #213e4f
 o = fg #e71d32 bg #442730
+p = fg #989eb7 bg #423f40

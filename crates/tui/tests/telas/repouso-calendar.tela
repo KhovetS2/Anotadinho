@@ -2,8 +2,7 @@
 ┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
 │cena                                    ││Antes.                                                                                          │
 │                                        ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
-│                                        ││▌  [ ‹   ] ›   t hoje   m Mês                                                        5 eventos ▌│
-│                                        ││▌  Agosto 2026                                                                                 ▌│
+│                                        ││▌  [ ‹  Agosto 2026  ] ›   t Hoje   m  Mês    Manual                     5 eventos   o + evento▌│
 │                                        ││▌        D            S            T            Q            Q            S            S       ▌│
 │                                        ││▌  ┌────────────┬────────────┬────────────┬────────────┬────────────┬────────────┬────────────┐▌│
 │                                        ││▌  │         26 │         27 │         28 │         29 │         30 │         31 │          1 │▌│
@@ -24,7 +23,7 @@
 │                                        ││▌  │         30 │         31 │          1 │          2 │          3 │          4 │          5 │▌│
 │                                        ││▌  │            │            │            │            │            │            │            │▌│
 │                                        ││▌  └────────────┴────────────┴────────────┴────────────┴────────────┴────────────┴────────────┘▌│
-│                                        ││▌  Sem data (1)                                                                                ▌│
+│                                        ││▌  ▾ Sem data (1)   ╎ + evento sem data ╎                                                      ▌│
 │                                        ││▌    ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖                                                                  ▌│
 │                                        ││▌    ▐ Ligar pro fornecedor ▌                                                                  ▌│
 │                                        ││▌    ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘                                                                  ▌│
@@ -38,39 +37,40 @@
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
+│                                        ││                                                                                                │
 └────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────────────────────────────────┘
 == estilos ==
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiihfb
-addddddddddddddddddddddddddddddddddddddddabghhjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkfb
+addddddddddddddddddddddddddddddddddddddddabghhiiiiijjjjjjjjjjjiiiiiiiiiiiiiiiiiiikkkkkhhkkkkkkkkhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiifb
 addddddddddddddddddddddddddddddddddddddddabghhllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhiihlhhhhhhhhhiihlhhhhhhhhhiihlhhhhhhhhhiihlhhhhhhhhhiihlhhhhhhhhhiihlhhhhhhhhhmmhlfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlfb
-addddddddddddddddddddddddddddddddddddddddabghhllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlnnnnnnnnnnnnlooooooooooooloooooooooooolfb
-addddddddddddddddddddddddddddddddddddddddabghhllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhpphlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhhhhlqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlhhhhhhhhhhhhlfb
-addddddddddddddddddddddddddddddddddddddddabghhllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlfb
-addddddddddddddddddddddddddddddddddddddddabghhllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhmmhlfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlfb
-addddddddddddddddddddddddddddddddddddddddabghhllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhmmhlhhhhhhhhhmmhlhhhhhhhhhiihlhhhhhhhhhiihlhhhhhhhhhiihlhhhhhhhhhiihlhhhhhhhhhiihlfb
-addddddddddddddddddddddddddddddddddddddddabghhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlhhhhhhhhhhhhlfb
-addddddddddddddddddddddddddddddddddddddddabghhllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllfb
-addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhnnhmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmfb
+addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmoooooooooooomkkkkkkkkkkkkmkkkkkkkkkkkkmfb
+addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhpphmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqmhhhhhhhhhhhhmfb
+addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmfb
+addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmfb
+addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmfb
+addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmfb
+addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
+addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhhhgggggggggggggggggggggggghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhhhgrrrrrrrrrrrrrrrrrrrrrrghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabghhhhgggggggggggggggggggggggghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
 addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -90,11 +90,11 @@ g = fg #5fd3b2 bg #364148
 h = fg - bg #364148
 i = fg #989eb7 bg #364148
 j = fg #e4e8f5 bg #364148 negrito
-k = fg #989eb7 bg #364148 negrito
-l = fg #606475 bg #364148
-m = fg #e4e8f5 bg #364148
-n = fg #248569 bg #273739
-o = fg #e4e8f5 bg #3d404f
+k = fg #e4e8f5 bg #3d404f
+l = fg #989eb7 bg #364148 negrito
+m = fg #606475 bg #364148
+n = fg #e4e8f5 bg #364148
+o = fg #248569 bg #273739
 p = fg #00b5ff bg #213e4f negrito
 q = fg #00b5ff bg #213e4f
 r = fg #272930 bg #5fd3b2 negrito

@@ -1021,6 +1021,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                     &variante_do_callout(&e.arvore, dono),
                     papel_do_callout(&e.arvore, dono),
                     &e.tema,
+                    largura_conteudo,
                 )]]
             } else if no_calendario && nome_da_parte == "cabecalho" {
                 let visao = e
@@ -1028,14 +1029,39 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                     .get(l.dono_embed.as_deref().unwrap_or(&[]))
                     .copied()
                     .unwrap_or_default();
-                vec![vec![linha_do_cabecalho_do_calendario(l, visao, &e.tema, largura_conteudo)]]
+                let dono = l.dono_embed.as_deref().unwrap_or(&[]);
+                let periodo = l
+                    .caminho
+                    .split_last()
+                    .and_then(|(i, pai)| e.arvore.em(pai)?.filhos.get(i + 1))
+                    .filter(|u| matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "mes" || nome == "agenda"))
+                    .map(|u| u.texto.clone());
+                let vault = e
+                    .arvore
+                    .em(dono)
+                    .and_then(|u| u.fonte.as_deref())
+                    .and_then(dados_do_calendario)
+                    .is_some_and(|d| d.mode == anotadinho_core::embed::CalendarSource::Vault);
+                vec![vec![linha_do_cabecalho_do_calendario(l, visao, periodo.as_deref(), vault, &e.tema, largura_conteudo)]]
             } else if no_calendario && nome_da_parte == "agenda" && !e.dobrados.contains(&l.caminho) {
-                vec![vec![Line::from(vec![
-                    Span::styled("  ".repeat(l.nivel), Style::default()),
-                    Span::styled(l.texto.clone(), e.tema.estilo(Realce::TituloCartao)),
-                ])]]
+                // O dia já está no cabeçalho (ciclo 336).
+                Vec::new()
             } else if no_calendario && nome_da_parte.starts_with("compromisso") {
                 vec![vec![linha_do_compromisso(l, &e.arvore, &e.tema, largura_conteudo, Some(&e.cursor))]]
+            } else if matches!(l.embed_dono.as_deref(), Some("calendar" | "timeline")) && nome_da_parte == "sem-data" {
+                // A gaveta da janela: "▸ Sem data (N)" e o "+ evento sem
+                // data" tracejado ao lado (ciclo 336).
+                let aberta = !e.dobrados.contains(&l.caminho);
+                let apagado = Style::default().fg(e.tema.var("text-muted"));
+                let estilo = if no_foco && l.mostra(&e.cursor) { e.tema.estilo(Realce::Cursor) } else { apagado };
+                let mut spans = vec![
+                    Span::raw("  ".repeat(l.nivel)),
+                    Span::styled(format!("{} {}", if aberta { "▾" } else { "▸" }, l.texto), estilo),
+                ];
+                if no_calendario {
+                    spans.push(Span::styled("   ╎ + evento sem data ╎", apagado));
+                }
+                vec![vec![Line::from(spans)]]
             } else if l.embed_dono.is_some() && nome_da_parte == "nada" {
                 vec![vec![Line::from(vec![
                     Span::styled("  ".repeat(l.nivel), Style::default()),
@@ -1049,7 +1075,13 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 // uma linha comum com o resumo — sem semanas embaixo,
                 // uma borda de cima sem a de baixo leria como desenho
                 // quebrado.
-                vec![linhas_do_mes(l, &e.tema, largura_conteudo)]
+                // Com cabeçalho, o nome do mês já está nele (ciclo 336).
+                let com_cabecalho = l
+                    .caminho
+                    .split_last()
+                    .and_then(|(i, pai)| i.checked_sub(1).and_then(|k| e.arvore.em(pai)?.filhos.get(k)))
+                    .is_some_and(|u| matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "cabecalho"));
+                vec![linhas_do_mes(l, &e.tema, largura_conteudo, com_cabecalho)]
             } else if no_calendario && nome_da_parte == "semana" && !l.segmentos.is_empty() {
                 let (ultimo, pai) = l.caminho.split_last().unwrap_or((&0, &[]));
                 let ultima = e.arvore.em(pai).is_some_and(|m| m.filhos.len() == ultimo + 1);
@@ -2551,6 +2583,14 @@ fn linhas_de_tabela<'a>(
         (true, false) => regua_da_tabela(&recuo, larguras, ["╞", "╪", "╡", "═"], tema),
         (false, false) => regua_da_tabela(&recuo, larguras, ["├", "┼", "┤", "─"], tema),
     });
+    // O "+ linha" da janela embaixo da última (ciclo 336) — com a tecla.
+    if ultima {
+        fora.push(Line::from(vec![
+            Span::raw(recuo.clone()),
+            Span::styled(" o ", tema.estilo(Realce::Marca)),
+            Span::styled("+ linha", Style::default().fg(tema.var("text-muted"))),
+        ]));
+    }
     fora
 }
 
@@ -2586,24 +2626,28 @@ fn regua_do_mes<'a>(recuo: &str, cel: usize, pontas: [&str; 3], tema: &Tema) -> 
 /// O cabeçalho de um mês: o nome, os dias da semana e a borda de cima
 /// da grade (ciclo 306) — o `Agosto 2026` e a fileira `D S T Q Q S S`
 /// que a janela desenha em cima das semanas.
-fn linhas_do_mes(l: &crate::tela::Linha, tema: &Tema, largura: usize) -> Vec<Line<'static>> {
+fn linhas_do_mes(l: &crate::tela::Linha, tema: &Tema, largura: usize, sem_rotulo: bool) -> Vec<Line<'static>> {
     let recuo = "  ".repeat(l.nivel);
     let cel = largura_do_dia(largura.saturating_sub(recuo.len()));
     let dias: Vec<String> = anotadinho_core::calendario::WEEKDAY_LABELS
         .iter()
         .map(|d| format!("{d:^cel$}"))
         .collect();
-    vec![
-        Line::from(vec![
+    let mut fora = Vec::new();
+    if !sem_rotulo {
+        fora.push(Line::from(vec![
             Span::styled(recuo.clone(), Style::default()),
             Span::styled(l.texto.clone(), tema.estilo(Realce::TituloCartao)),
-        ]),
+        ]));
+    }
+    fora.extend([
         Line::from(vec![
             Span::styled(recuo.clone(), Style::default()),
             Span::styled(format!(" {} ", dias.join(" ")), tema.estilo(Realce::CabecalhoDeTabela)),
         ]),
         regua_do_mes(&recuo, cel, ["┌", "┬", "┐"], tema),
-    ]
+    ]);
+    fora
 }
 
 /// O cabeçalho do calendário ancorado (ciclo 315): as teclas que fazem
@@ -2612,18 +2656,35 @@ fn linhas_do_mes(l: &crate::tela::Linha, tema: &Tema, largura: usize) -> Vec<Lin
 fn linha_do_cabecalho_do_calendario(
     l: &crate::tela::Linha,
     visao: anotadinho_core::analise::Visao,
+    periodo: Option<&str>,
+    vault: bool,
     tema: &Tema,
     largura: usize,
 ) -> Line<'static> {
-    let recuo = "  ".repeat(l.nivel);
-    let teclas = format!("[ ‹   ] ›   t hoje   m {}", visao.rotulo());
-    let usado = recuo.chars().count() + teclas.chars().count() + l.texto.chars().count();
-    Line::from(vec![
-        Span::styled(recuo, Style::default()),
-        Span::styled(teclas.clone(), tema.estilo(Realce::Marca)),
-        Span::styled(" ".repeat(largura.saturating_sub(usado + 1).max(2)), Style::default()),
-        Span::styled(l.texto.clone(), tema.estilo(Realce::Marca)),
-    ])
+    // Como `.calendar-grid__header` (ciclo 336): ‹ o período em negrito ›,
+    // Hoje, a visão e a fonte; à direita a contagem e o "+ evento". A
+    // tecla de cada controle vem apagada na frente dele.
+    let tecla = tema.estilo(Realce::Marca);
+    let apagado = Style::default().fg(tema.var("text-muted"));
+    let caixa = Style::default().bg(tema.var("bg-elevated")).fg(tema.var("text-primary"));
+    let mut esquerda = Faixa::default().mais("  ".repeat(l.nivel), Style::default()).mais("[ ‹  ", tecla);
+    if let Some(p) = periodo {
+        esquerda = esquerda.mais(p.to_string(), Style::default().fg(tema.var("text-primary")).add_modifier(Modifier::BOLD));
+    }
+    esquerda = esquerda
+        .mais("  ] ›", tecla)
+        .mais("   t ", tecla)
+        .mais("Hoje", apagado)
+        .mais("   m ", tecla)
+        .mais(format!(" {} ", visao.rotulo()), caixa)
+        .mais("  ", Style::default())
+        .mais(format!(" {} ", if vault { "Vault" } else { "Manual" }), caixa);
+    let mut direita = Faixa::default().mais(l.texto.clone(), apagado);
+    if !vault {
+        direita = direita.mais("   o ", tecla).mais("+ evento", apagado);
+    }
+    let sobra = largura.saturating_sub(esquerda.largura + direita.largura).max(2);
+    Line::from(esquerda.mais(" ".repeat(sobra), Style::default()).juntar(direita).spans)
 }
 
 /// Um compromisso da agenda do Dia (ciclo 316): a hora (ou "dia
@@ -3845,12 +3906,20 @@ fn linha_do_titulo_do_callout<'a>(
     variante: &str,
     papel: Realce,
     tema: &Tema,
+    largura: usize,
 ) -> Line<'a> {
+    // A seta de recolher à direita, como o `chevron-down` da janela
+    // (ciclo 336) — `z` dobra.
+    let esquerda = 2 * l.nivel + 2 + l.texto.chars().count();
+    let sobra = largura.saturating_sub(esquerda + 4).max(1);
     Line::from(vec![
         Span::styled("  ".repeat(l.nivel), Style::default()),
         Span::styled(icone_do_callout(variante), tema.estilo(papel)),
         Span::styled(" ", Style::default()),
         Span::styled(l.texto.clone(), tema.estilo(Realce::TituloCartao)),
+        Span::raw(" ".repeat(sobra)),
+        Span::styled("z ", tema.estilo(Realce::Marca)),
+        Span::styled("⌄", Style::default().fg(tema.var("text-muted"))),
     ])
 }
 
@@ -5163,7 +5232,7 @@ mod testes {
         assert!(tudo.contains("Setembro 2026"), "{tudo}");
         assert!(!tudo.contains("Agosto 2026"), "{tudo}");
         assert!(!tudo.contains("Revisão"), "{tudo}");
-        assert!(tudo.contains("3 eventos") && tudo.contains("t hoje"), "sem cabeçalho:\n{tudo}");
+        assert!(tudo.contains("3 eventos") && tudo.contains("t Hoje"), "sem cabeçalho:\n{tudo}");
         // O 17 marcado como hoje.
         let buf = quadro(&mut e, 120, 40);
         let y = linhas.iter().position(|l| l.contains("17") && l.contains("13")).expect("sem a semana de hoje") as u16;
@@ -5249,7 +5318,7 @@ mod testes {
         tecla(&mut e, "m");
         let tudo = desenho(&mut e, 140, 40).join("\n");
         assert!(tudo.contains("9 – 15 de agosto de 2026"), "semana do dia 12:\n{tudo}");
-        assert!(tudo.contains("m Semana"), "{tudo}");
+        assert!(tudo.contains("m  Semana "), "{tudo}");
         assert!(tudo.contains("09:30 Reun"), "o horário vem na frente na semana:\n{tudo}");
         let linhas = desenho(&mut e, 140, 40);
         let pos = |t: &str| linhas.iter().position(|l| l.contains(t)).unwrap();
@@ -5265,7 +5334,7 @@ mod testes {
         tecla(&mut e, "m");
         let tudo = desenho(&mut e, 140, 40).join("\n");
         assert!(tudo.contains("quarta, 12 de agosto de 2026"), "{tudo}");
-        assert!(tudo.contains("m Dia"), "{tudo}");
+        assert!(tudo.contains("m  Dia "), "{tudo}");
         tecla(&mut e, "m");
         assert!(desenho(&mut e, 140, 40).join("\n").contains("Agosto 2026"));
     }
