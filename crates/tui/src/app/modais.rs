@@ -162,6 +162,35 @@ pub enum Modal {
     Prompt(SeletorDePrompt),
     /// Um texto longo pra ler, com a rolagem (o "Visualizar").
     Visualizar(String, usize),
+    /// Os detalhes de um item num formulário (ciclo 343): o cartão do
+    /// kanban, o evento do calendário.
+    Detalhe {
+        /// O título da caixa.
+        titulo: String,
+        /// Os campos.
+        form: crate::componentes::Formulario,
+        /// O que o formulário edita.
+        alvo: AlvoDoDetalhe,
+    },
+}
+
+/// O que um [`Modal::Detalhe`] edita.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AlvoDoDetalhe {
+    /// Um cartão do kanban.
+    Cartao {
+        /// O kanban.
+        embed: Caminho,
+        /// O item no arquivo.
+        indice: usize,
+    },
+    /// Um evento do calendário.
+    Evento {
+        /// O calendário.
+        embed: Caminho,
+        /// A entrada no arquivo.
+        indice: usize,
+    },
 }
 
 /// O seletor de prompt padrão: a lista e os campos das variáveis.
@@ -458,6 +487,21 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             _ => e.modal = Some(Modal::Atalhos(rolagem)),
         },
         Modal::Opcoes(editor) => super::edicao::tecla_nas_opcoes(e, editor, tecla),
+        Modal::Detalhe { titulo, mut form, alvo } => {
+            use crate::componentes::RespostaDoFormulario as R;
+            match form.tecla(tecla) {
+                R::Fechar => return,
+                R::Botao("excluir") => {
+                    super::edicao::excluir_do_detalhe(e, &alvo);
+                    return;
+                }
+                R::Mudou => {
+                    super::edicao::aplicar_detalhe(e, &alvo, &mut form);
+                }
+                _ => {}
+            }
+            e.modal = Some(Modal::Detalhe { titulo, form, alvo });
+        }
         Modal::Visualizar(texto, rolagem) => match tecla {
             "Escape" | "q" | "Enter" => {}
             "j" | "ArrowDown" => e.modal = Some(Modal::Visualizar(texto, rolagem + 1)),
@@ -642,6 +686,16 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
             }
             let max = linhas.len().saturating_sub(dentro.height as usize);
             f.render_widget(Paragraph::new(linhas).scroll(((*rolagem).min(max) as u16, 0)), dentro);
+        }
+        Modal::Detalhe { titulo, form, .. } => {
+            let linhas = form.linhas(62, t);
+            let altura = (linhas.len() as u16 + 2).min(tela.height.saturating_sub(2));
+            let area = componentes::area_do_modal(tela, 66, altura);
+            let rodape = if form.editando.is_some() { "Enter/Esc confirmar" } else { "j k · Enter editar · o item · dd · ~ marcar · Esc fechar" };
+            let dentro = componentes::desenhar_modal(f, area, titulo, rodape, t);
+            let cursor = form.linha_do_cursor();
+            let rolagem = cursor.saturating_sub(dentro.height.saturating_sub(2) as usize);
+            f.render_widget(Paragraph::new(linhas).scroll((rolagem as u16, 0)), dentro);
         }
         Modal::Visualizar(texto, rolagem) => {
             let area = componentes::area_do_modal(tela, 90, tela.height.saturating_sub(6));

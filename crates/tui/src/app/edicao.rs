@@ -2290,3 +2290,204 @@ pub(super) fn seguir_wikilink(e: &mut Estado) -> bool {
     e.modal = Some(Modal::Escolha { titulo: "Abrir link".into(), lista: crate::componentes::Lista::menu(itens), acao: AcaoDaEscolha::AbrirPagina });
     true
 }
+
+// ---------------------------------------------------------------------
+// Detalhes do cartão e do evento (ciclo 343)
+// ---------------------------------------------------------------------
+
+/// `Enter` num cartão do kanban abre os detalhes dele — o
+/// `CardDetailModal` da janela: título, descrição, tags, vencimento,
+/// checklist, comentários e anexos.
+pub(super) fn abrir_detalhe_do_cartao(e: &mut Estado) -> bool {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    let Some(embed) = embed_do_cursor(e, "kanban") else { return false };
+    if e.cursor.len() != embed.len() + 2 {
+        return false;
+    }
+    let Some(indice) = indice_do_cursor(e) else { return false };
+    let Some(c) = ler_kanban(e, &embed).and_then(|d| d.items.get(indice).cloned()) else { return false };
+    let mut form = Formulario::novo(vec![
+        C::novo("titulo", "Título", Valor::Texto(c.title.clone())),
+        C::novo("descricao", "Descrição", Valor::Texto(c.description.clone().unwrap_or_default())).com_dica("sem descrição"),
+        C::novo("tags", "Tags", Valor::Lista(c.tags.clone())).com_dica("tag"),
+        C::novo("vencimento", "Vencimento", Valor::Texto(c.due.clone().unwrap_or_default())).com_dica("AAAA-MM-DD"),
+        C::novo("checklist", "Checklist", Valor::Checklist(c.checklist.iter().map(|i| (i.done, i.text.clone())).collect()))
+            .com_dica("item"),
+        C::novo("comentarios", "Comentários", Valor::Lista(c.comments.iter().map(|x| x.text.clone()).collect())).com_dica("comentário"),
+        C::novo("anexos", "Anexos", Valor::Lista(c.attachments.iter().map(|x| x.path.clone()).collect())).com_dica("caminho do anexo"),
+    ]);
+    form.botoes.push(("excluir", "Excluir cartão".into()));
+    e.modal = Some(super::modais::Modal::Detalhe {
+        titulo: format!("Cartão · {}", c.column),
+        form,
+        alvo: super::modais::AlvoDoDetalhe::Cartao { embed, indice },
+    });
+    true
+}
+
+/// `Enter` num evento do calendário (fora do modo vault) abre os detalhes
+/// — o `EventDetailModal`: título, início, vários dias e fim, horário
+/// específico com início e fim, tags.
+pub(super) fn abrir_detalhe_do_evento(e: &mut Estado) -> bool {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    let Some(embed) = tela::calendario_do_cursor(&e.arvore, &e.cursor) else { return false };
+    let Some(indice) = indice_do_cursor(e) else { return false };
+    let Some(d) = ler_calendario(e, &embed) else { return false };
+    if d.mode == em::CalendarSource::Vault {
+        return false;
+    }
+    let Some(ev) = d.entries.get(indice).cloned() else { return false };
+    let varios = ev.end_date.as_ref().is_some_and(|f| Some(f) != ev.date.as_ref());
+    let horario = ev.start_time.is_some();
+    let mut form = Formulario::novo(vec![
+        C::novo("titulo", "Título", Valor::Texto(ev.title.clone())),
+        C::novo("inicio", "Início", Valor::Texto(ev.date.clone().unwrap_or_default())).com_dica("AAAA-MM-DD (vazio: sem data)"),
+        C::novo("varios", "Vários dias", Valor::Booleano(varios)),
+        C::novo("fim", "Fim", Valor::Texto(ev.end_date.clone().unwrap_or_default())).com_dica("AAAA-MM-DD"),
+        C::novo("horario", "Horário específico", Valor::Booleano(horario)),
+        C::novo("hora_inicio", "Das", Valor::Texto(ev.start_time.clone().unwrap_or_default())).com_dica("HH:MM"),
+        C::novo("hora_fim", "Até", Valor::Texto(ev.end_time.clone().unwrap_or_default())).com_dica("HH:MM"),
+        C::novo("tags", "Tags", Valor::Lista(ev.all_tags())).com_dica("tag"),
+    ]);
+    form.esconder("fim", !varios);
+    form.esconder("hora_inicio", !horario);
+    form.esconder("hora_fim", !horario);
+    form.botoes.push(("excluir", "Excluir evento".into()));
+    e.modal = Some(super::modais::Modal::Detalhe {
+        titulo: "Evento".into(),
+        form,
+        alvo: super::modais::AlvoDoDetalhe::Evento { embed, indice },
+    });
+    true
+}
+
+fn hora_valida(h: &str) -> bool {
+    let Some((a, b)) = h.split_once(':') else { return false };
+    a.len() == 2 && b.len() == 2 && a.parse::<u8>().is_ok_and(|x| x < 24) && b.parse::<u8>().is_ok_and(|x| x < 60)
+}
+
+/// Grava o que o formulário tem (a cada mudança, como a janela).
+pub(super) fn aplicar_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDetalhe, form: &mut crate::componentes::Formulario) {
+    use crate::componentes::Valor;
+    use super::modais::AlvoDoDetalhe;
+    let lista = |form: &crate::componentes::Formulario, chave: &str| match form.valor(chave) {
+        Some(Valor::Lista(l)) => l.clone(),
+        _ => Vec::new(),
+    };
+    let opcional = |t: String| (!t.trim().is_empty()).then_some(t);
+    match alvo {
+        AlvoDoDetalhe::Cartao { embed, indice } => {
+            let vencimento = form.texto("vencimento");
+            if !vencimento.is_empty() && anotadinho_core::date_util::parse_date(&vencimento).is_none() {
+                e.aviso = Some("vencimento: use AAAA-MM-DD".into());
+                return;
+            }
+            let agora = e.agora.clone().unwrap_or_default();
+            let indice = *indice;
+            editar_kanban(e, embed, |d| {
+                let mut c = d.items.get(indice).cloned().ok_or("o cartão sumiu do arquivo")?;
+                let titulo = form.texto("titulo");
+                if !titulo.is_empty() {
+                    c.title = titulo;
+                }
+                c.description = opcional(form.texto("descricao"));
+                c.tags = lista(form, "tags");
+                c.due = opcional(vencimento);
+                c.checklist = match form.valor("checklist") {
+                    Some(Valor::Checklist(l)) => l.iter().map(|(done, text)| em::ChecklistItem { text: text.clone(), done: *done }).collect(),
+                    _ => Vec::new(),
+                };
+                let velhos = c.comments.clone();
+                c.comments = lista(form, "comentarios")
+                    .into_iter()
+                    .map(|text| {
+                        let created = velhos.iter().find(|v| v.text == text).map(|v| v.created.clone()).unwrap_or_else(|| agora.clone());
+                        em::Comment { text, created }
+                    })
+                    .collect();
+                let velhos = c.attachments.clone();
+                c.attachments = lista(form, "anexos")
+                    .into_iter()
+                    .map(|path| {
+                        let name = velhos.iter().find(|v| v.path == path).map(|v| v.name.clone()).unwrap_or_else(|| {
+                            std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.clone())
+                        });
+                        em::Attachment { name, path }
+                    })
+                    .collect();
+                d.update_card(indice, c);
+                Ok(())
+            });
+        }
+        AlvoDoDetalhe::Evento { embed, indice } => {
+            form.esconder("fim", !form.booleano("varios"));
+            let horario = form.booleano("horario");
+            form.esconder("hora_inicio", !horario);
+            form.esconder("hora_fim", !horario);
+            let inicio = form.texto("inicio");
+            let fim = form.texto("fim");
+            let (hi, hf) = (form.texto("hora_inicio"), form.texto("hora_fim"));
+            for (nome, data) in [("início", &inicio), ("fim", &fim)] {
+                if !data.is_empty() && anotadinho_core::date_util::parse_date(data).is_none() {
+                    e.aviso = Some(format!("{nome}: use AAAA-MM-DD"));
+                    return;
+                }
+            }
+            if horario {
+                for (nome, h) in [("das", &hi), ("até", &hf)] {
+                    if !h.is_empty() && !hora_valida(h) {
+                        e.aviso = Some(format!("{nome}: use HH:MM"));
+                        return;
+                    }
+                }
+            }
+            let varios = form.booleano("varios");
+            let indice = *indice;
+            let data_antes = tela::data_do_cursor(&e.arvore, &e.cursor);
+            if editar_calendario(e, embed, |d| {
+                let mut ev = d.entries.get(indice).cloned().ok_or("o evento sumiu do arquivo")?;
+                let titulo = form.texto("titulo");
+                if !titulo.is_empty() {
+                    ev.title = titulo;
+                }
+                ev.date = opcional(inicio.clone());
+                ev.end_date = if varios { opcional(fim.clone()).filter(|f| Some(f) != ev.date.as_ref()) } else { None };
+                ev.start_time = if horario { opcional(hi.clone()) } else { None };
+                ev.end_time = if horario { opcional(hf.clone()) } else { None };
+                ev.tags = lista(form, "tags");
+                d.update_entry(indice, ev);
+                Ok(())
+            }) {
+                let destino = achar_evento(&e.arvore, embed, indice, data_antes.as_deref());
+                ir(e, destino);
+            }
+        }
+    }
+}
+
+/// O botão "Excluir" do formulário.
+pub(super) fn excluir_do_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDetalhe) {
+    use super::modais::AlvoDoDetalhe;
+    match alvo {
+        AlvoDoDetalhe::Cartao { embed, indice } => {
+            let i = *indice;
+            if editar_kanban(e, embed, |d| {
+                d.remove_card(i);
+                Ok(())
+            }) {
+                e.aviso = Some("cartão apagado".into());
+                e.seguir_cursor();
+            }
+        }
+        AlvoDoDetalhe::Evento { embed, indice } => {
+            let i = *indice;
+            if editar_calendario(e, embed, |d| {
+                d.remove_entry(i);
+                Ok(())
+            }) {
+                e.aviso = Some("evento apagado".into());
+                e.seguir_cursor();
+            }
+        }
+    }
+}

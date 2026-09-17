@@ -639,6 +639,8 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
                     || edicao::busca_da_consulta(e)
                     || edicao::abrir_opcoes(e)
                     || edicao::acionar_botao(e)
+                    || edicao::abrir_detalhe_do_cartao(e)
+                    || edicao::abrir_detalhe_do_evento(e)
                     || edicao::seguir_wikilink(e))
             {
                 return None;
@@ -6766,6 +6768,101 @@ mod testes {
         assert!(tela.contains("beta") && tela.contains("a sprint de agosto"), "{tela}");
         tecla(&mut e, "Enter");
         assert_eq!(e.pedidos, vec![Pedido::AbrirPagina("pages/beta.md".into())]);
+    }
+
+    #[test]
+    fn enter_no_cartao_abre_os_detalhes_e_grava_cada_campo() {
+        let mut e = kanban_editavel();
+        e.agora = Some("2026-09-17 11:00".into());
+        e.cursor = vec![1, 0, 0];
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Detalhe { .. })));
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        for t in ["Cartão · Backlog", "Título", "Escrever", "Descrição", "Tags", "doc", "Vencimento", "Checklist", "Comentários", "Anexos", "Excluir cartão"] {
+            assert!(tela.contains(t), "faltou {t}:\n{tela}");
+        }
+        let cartao = |e: &Estado| kanban_gravado(e).items[0].clone();
+        // descrição
+        tecla(&mut e, "j");
+        tecla(&mut e, "a");
+        digitar(&mut e, "com exemplos");
+        tecla(&mut e, "Enter");
+        assert_eq!(cartao(&e).description.as_deref(), Some("com exemplos"));
+        // tags: + tag
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "urgente");
+        tecla(&mut e, "Enter");
+        assert_eq!(cartao(&e).tags, ["doc", "urgente"]);
+        // vencimento inválido não grava (o cursor ficou no "+ tag")
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "amanhã");
+        tecla(&mut e, "Enter");
+        assert!(e.aviso.as_deref().unwrap_or("").contains("AAAA-MM-DD"));
+        assert_eq!(cartao(&e).due, None);
+        tecla(&mut e, "c");
+        digitar(&mut e, "2026-09-30");
+        tecla(&mut e, "Enter");
+        assert_eq!(cartao(&e).due.as_deref(), Some("2026-09-30"));
+        // checklist: novo item e marcar
+        tecla(&mut e, "j");
+        tecla(&mut e, "o");
+        digitar(&mut e, "revisar");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "k");
+        tecla(&mut e, "~");
+        assert_eq!(cartao(&e).checklist.iter().map(|c| (c.done, c.text.as_str())).collect::<Vec<_>>(), [(true, "revisar")]);
+        // comentário com a hora de agora
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "ok");
+        tecla(&mut e, "Enter");
+        let c = cartao(&e);
+        assert_eq!((c.comments[0].text.as_str(), c.comments[0].created.as_str()), ("ok", "2026-09-17 11:00"));
+        tecla(&mut e, "Escape");
+        assert!(e.modal.is_none());
+    }
+
+    #[test]
+    fn enter_no_evento_abre_os_detalhes_com_varios_dias_e_horario() {
+        let mut e = editavel();
+        e.cursor = achar_evento_na_tela(&e, "Reunião");
+        tecla(&mut e, "Enter");
+        let Some(Modal::Detalhe { form, .. }) = &e.modal else { panic!("{:?}", e.modal) };
+        assert!(!form.booleano("varios"));
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("Evento") && tela.contains("Vários dias") && !tela.contains("Fim "), "{tela}");
+        // título, início
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, " ");
+        assert!(desenho(&mut e, 120, 40).join("\n").contains("Fim"));
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "2026-08-13");
+        tecla(&mut e, "Enter");
+        assert_eq!(gravado(&e).entries[1].end_date.as_deref(), Some("2026-08-13"));
+        tecla(&mut e, "j");
+        tecla(&mut e, " ");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "9h");
+        tecla(&mut e, "Enter");
+        assert!(e.aviso.as_deref().unwrap_or("").contains("HH:MM"));
+        tecla(&mut e, "c");
+        digitar(&mut e, "09:30");
+        tecla(&mut e, "Enter");
+        assert_eq!(gravado(&e).entries[1].start_time.as_deref(), Some("09:30"));
+        // Excluir pelo botão.
+        for _ in 0..6 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        assert!(e.modal.is_none());
+        assert_eq!(gravado(&e).entries.len(), 1);
     }
 
     const PAGINA_COM_ACOES: &str = "Antes.\n\n{{ type: \"actions\" }}\nbuttons:\n- label: Nova página\n  variant: primary\n  action: new-page\n- label: Buscar\n  action: run-search\n  query: tag\n{{ /actions }}\n\nDepois.\n";

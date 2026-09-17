@@ -171,6 +171,8 @@ fn cenas() -> Vec<Cena> {
     v.push(cena("conversa-no-fim", CONVERSA.to_string(), &["Tab"], 160, 50));
     v.push(cena("conversa-resposta-selecionada", CONVERSA.to_string(), &["Tab", "k"], 160, 50));
     v.push(cena("conversa-escrevendo", CONVERSA.to_string(), &com(&[&["Tab", "i"], &digitado("Detalha a etapa 2")]), 160, 50));
+    // Detalhes num formulário (ciclo 343).
+    v.push(cena("kanban-detalhe-do-cartao", so_o_embed("kanban"), &["Tab", "j", "Enter", "Enter", "Enter", "j", "j", "j", "j"], 140, 40));
     // O cronograma na janela da tela: manual, escala Mês, e as teclas.
     let manual = so_o_embed("timeline").replace("source: vault\n", "").replace("scale: quarter\n", "scale: month\n");
     v.push(cena("cronograma-manual-mes", manual.clone(), &[], 140, 30));

@@ -399,3 +399,450 @@ mod testes {
         assert_eq!(l.atual().unwrap().chave, "a");
     }
 }
+
+// ---------------------------------------------------------------------
+// Formulário (ciclo 343)
+// ---------------------------------------------------------------------
+
+/// O valor de um campo de [`Formulario`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum Valor {
+    /// Uma linha de texto (título, data `AAAA-MM-DD`, hora `HH:MM`).
+    Texto(String),
+    /// Liga/desliga ("Vários dias", "Horário específico").
+    Booleano(bool),
+    /// Uma lista de textos (tags, comentários, anexos).
+    Lista(Vec<String>),
+    /// Itens com caixa (a checklist).
+    Checklist(Vec<(bool, String)>),
+}
+
+/// Um campo de [`Formulario`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct CampoDoFormulario {
+    /// Como quem montou reconhece o campo.
+    pub chave: &'static str,
+    /// O que se lê.
+    pub rotulo: String,
+    /// O valor.
+    pub valor: Valor,
+    /// Dica apagada quando vazio ("AAAA-MM-DD", "Nova tag").
+    pub dica: String,
+    /// Some da tela (ex.: "Fim" com "Vários dias" desligado).
+    pub escondido: bool,
+}
+
+impl CampoDoFormulario {
+    /// Um campo.
+    pub fn novo(chave: &'static str, rotulo: impl Into<String>, valor: Valor) -> Self {
+        Self { chave, rotulo: rotulo.into(), valor, dica: String::new(), escondido: false }
+    }
+    /// Com a dica de quando está vazio.
+    pub fn com_dica(mut self, dica: impl Into<String>) -> Self {
+        self.dica = dica.into();
+        self
+    }
+}
+
+/// Onde o cursor está num formulário: o campo e, numa lista, o item
+/// (`itens.len()` é o "+ item").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Posicao {
+    /// O campo.
+    pub campo: usize,
+    /// O item, em campos de lista.
+    pub item: usize,
+}
+
+/// O que o formulário fez com a tecla.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RespostaDoFormulario {
+    /// Nada mudou nos valores.
+    Nada,
+    /// Um valor mudou: quem montou grava.
+    Mudou,
+    /// `Esc` fora de edição: fechar.
+    Fechar,
+    /// Um botão do rodapé (a chave dele), ex. `"excluir"`.
+    Botao(&'static str),
+}
+
+/// Um formulário de campos, navegado pelo teclado como o resto da TUI:
+/// `j`/`k` andam (item por item dentro das listas), `Enter`/`i`/`a` editam,
+/// `o` acrescenta item, `dd` apaga item, `~`/espaço alternam
+/// (liga/desliga e a caixa da checklist), `Esc` fecha. Editando, `Enter` ou
+/// `Esc` confirmam.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Formulario {
+    /// Os campos.
+    pub campos: Vec<CampoDoFormulario>,
+    /// Botões no fim (`(chave, rótulo)`), como "Excluir evento".
+    pub botoes: Vec<(&'static str, String)>,
+    /// O cursor.
+    pub posicao: Posicao,
+    /// O texto sendo editado.
+    pub editando: Option<Campo>,
+    /// O primeiro `d` do `dd`.
+    pub d_pendente: bool,
+}
+
+impl Formulario {
+    /// Um formulário.
+    pub fn novo(campos: Vec<CampoDoFormulario>) -> Self {
+        Self { campos, botoes: Vec::new(), posicao: Posicao::default(), editando: None, d_pendente: false }
+    }
+
+    /// O valor de um campo pela chave.
+    pub fn valor(&self, chave: &str) -> Option<&Valor> {
+        self.campos.iter().find(|c| c.chave == chave).map(|c| &c.valor)
+    }
+
+    /// O texto de um campo de texto.
+    pub fn texto(&self, chave: &str) -> String {
+        match self.valor(chave) {
+            Some(Valor::Texto(t)) => t.clone(),
+            _ => String::new(),
+        }
+    }
+
+    /// O liga/desliga de um campo.
+    pub fn booleano(&self, chave: &str) -> bool {
+        matches!(self.valor(chave), Some(Valor::Booleano(true)))
+    }
+
+    /// Esconde ou mostra um campo.
+    pub fn esconder(&mut self, chave: &str, escondido: bool) {
+        if let Some(c) = self.campos.iter_mut().find(|c| c.chave == chave) {
+            c.escondido = escondido;
+        }
+    }
+
+    /// Os destinos do cursor, na ordem da tela: `(campo, item)`; o índice
+    /// `campos.len()` com `item = b` é o botão `b`.
+    fn paradas(&self) -> Vec<Posicao> {
+        let mut v = Vec::new();
+        for (i, c) in self.campos.iter().enumerate() {
+            if c.escondido {
+                continue;
+            }
+            match &c.valor {
+                Valor::Lista(l) => (0..=l.len()).for_each(|k| v.push(Posicao { campo: i, item: k })),
+                Valor::Checklist(l) => (0..=l.len()).for_each(|k| v.push(Posicao { campo: i, item: k })),
+                _ => v.push(Posicao { campo: i, item: 0 }),
+            }
+        }
+        for b in 0..self.botoes.len() {
+            v.push(Posicao { campo: self.campos.len(), item: b });
+        }
+        v
+    }
+
+    fn andar(&mut self, passo: i64) {
+        let paradas = self.paradas();
+        let agora = paradas.iter().position(|p| *p == self.posicao).unwrap_or(0) as i64;
+        let novo = (agora + passo).clamp(0, paradas.len() as i64 - 1) as usize;
+        if let Some(p) = paradas.get(novo) {
+            self.posicao = *p;
+        }
+    }
+
+    /// Aplica uma tecla.
+    pub fn tecla(&mut self, tecla: &str) -> RespostaDoFormulario {
+        let p = self.posicao;
+        // Editando um texto.
+        if let Some(mut campo) = self.editando.take() {
+            if matches!(tecla, "Enter" | "Escape") {
+                let texto = campo.texto.trim().to_string();
+                let Some(c) = self.campos.get_mut(p.campo) else { return RespostaDoFormulario::Nada };
+                match &mut c.valor {
+                    Valor::Texto(t) => *t = texto,
+                    Valor::Lista(l) if texto.is_empty() => {
+                        if p.item < l.len() {
+                            l.remove(p.item);
+                        }
+                    }
+                    Valor::Lista(l) => {
+                        if p.item < l.len() {
+                            l[p.item] = texto;
+                        } else {
+                            // O cursor fica no "+", pronto pro próximo.
+                            l.push(texto);
+                            self.posicao.item = l.len();
+                        }
+                    }
+                    Valor::Checklist(l) if texto.is_empty() => {
+                        if p.item < l.len() {
+                            l.remove(p.item);
+                        }
+                    }
+                    Valor::Checklist(l) => {
+                        if p.item < l.len() {
+                            l[p.item].1 = texto;
+                        } else {
+                            l.push((false, texto));
+                            self.posicao.item = l.len();
+                        }
+                    }
+                    Valor::Booleano(_) => {}
+                }
+                return RespostaDoFormulario::Mudou;
+            }
+            campo.tecla(tecla);
+            self.editando = Some(campo);
+            return RespostaDoFormulario::Nada;
+        }
+        let d_antes = std::mem::take(&mut self.d_pendente);
+        if p.campo >= self.campos.len() {
+            return match tecla {
+                "j" | "ArrowDown" | "Tab" => {
+                    self.andar(1);
+                    RespostaDoFormulario::Nada
+                }
+                "k" | "ArrowUp" => {
+                    self.andar(-1);
+                    RespostaDoFormulario::Nada
+                }
+                "Enter" => self.botoes.get(p.item).map(|(c, _)| RespostaDoFormulario::Botao(c)).unwrap_or(RespostaDoFormulario::Nada),
+                "Escape" | "q" => RespostaDoFormulario::Fechar,
+                _ => RespostaDoFormulario::Nada,
+            };
+        }
+        let valor = self.campos[p.campo].valor.clone();
+        match (tecla, valor) {
+            ("Escape" | "q", _) => return RespostaDoFormulario::Fechar,
+            ("j" | "ArrowDown" | "Tab", _) => self.andar(1),
+            ("k" | "ArrowUp", _) => self.andar(-1),
+            ("Enter" | "i" | "a" | " " | "~", Valor::Booleano(b)) => {
+                self.campos[p.campo].valor = Valor::Booleano(!b);
+                return RespostaDoFormulario::Mudou;
+            }
+            ("Enter" | "i" | "a" | "A", Valor::Texto(t)) => self.editando = Some(Campo::com(t)),
+            ("c", Valor::Texto(_)) => self.editando = Some(Campo::default()),
+            ("Enter" | "i" | "a" | "A", Valor::Lista(l)) => {
+                self.editando = Some(Campo::com(l.get(p.item).cloned().unwrap_or_default()));
+            }
+            ("Enter" | "i" | "a" | "A", Valor::Checklist(l)) => {
+                self.editando = Some(Campo::com(l.get(p.item).map(|x| x.1.clone()).unwrap_or_default()));
+            }
+            ("o", Valor::Lista(l)) => {
+                self.posicao.item = l.len();
+                self.editando = Some(Campo::default());
+            }
+            ("o", Valor::Checklist(l)) => {
+                self.posicao.item = l.len();
+                self.editando = Some(Campo::default());
+            }
+            (" " | "~" | "x", Valor::Checklist(mut l)) if p.item < l.len() => {
+                l[p.item].0 = !l[p.item].0;
+                self.campos[p.campo].valor = Valor::Checklist(l);
+                return RespostaDoFormulario::Mudou;
+            }
+            ("d", Valor::Lista(_) | Valor::Checklist(_)) if !d_antes => self.d_pendente = true,
+            ("d", Valor::Lista(mut l)) if p.item < l.len() => {
+                l.remove(p.item);
+                self.campos[p.campo].valor = Valor::Lista(l);
+                return RespostaDoFormulario::Mudou;
+            }
+            ("d", Valor::Checklist(mut l)) if p.item < l.len() => {
+                l.remove(p.item);
+                self.campos[p.campo].valor = Valor::Checklist(l);
+                return RespostaDoFormulario::Mudou;
+            }
+            _ => {}
+        }
+        RespostaDoFormulario::Nada
+    }
+
+    /// As linhas do formulário, com o cursor aceso.
+    pub fn linhas(&self, largura: usize, tema: &Tema) -> Vec<Line<'static>> {
+        let apagado = Style::default().fg(tema.var("text-muted"));
+        let texto = Style::default().fg(tema.var("text-primary"));
+        let aceso = Style::default().bg(tema.var("bg-elevated"));
+        let destaque = tema.var("accent-blue");
+        let mut fora: Vec<Line<'static>> = Vec::new();
+        let linha = |conteudo: Vec<Span<'static>>, esta: bool| -> Line<'static> {
+            if !esta {
+                return Line::from(conteudo);
+            }
+            let usado: usize = conteudo.iter().map(|s| s.content.chars().count()).sum();
+            let mut spans: Vec<Span<'static>> = conteudo
+                .into_iter()
+                .map(|s| {
+                    let st = if s.style.bg.is_none() { s.style.bg(tema.var("bg-elevated")) } else { s.style };
+                    Span::styled(s.content, st)
+                })
+                .collect();
+            spans.push(Span::styled(" ".repeat(largura.saturating_sub(usado)), aceso));
+            Line::from(spans)
+        };
+        let valor_editado = |p: Posicao| -> Option<Vec<Span<'static>>> {
+            (self.posicao == p).then_some(())?;
+            self.editando.as_ref().map(|c| c.spans(texto, "", tema))
+        };
+        for (i, c) in self.campos.iter().enumerate() {
+            if c.escondido {
+                continue;
+            }
+            match &c.valor {
+                Valor::Texto(t) => {
+                    let p = Posicao { campo: i, item: 0 };
+                    let esta = self.posicao == p;
+                    let mut spans = vec![Span::styled(format!(" {:<14}", c.rotulo), if esta { apagado.fg(destaque) } else { apagado })];
+                    match valor_editado(p) {
+                        Some(v) => spans.extend(v),
+                        None if t.is_empty() => spans.push(Span::styled(c.dica.clone(), apagado)),
+                        None => spans.push(Span::styled(t.clone(), texto)),
+                    }
+                    fora.push(linha(spans, esta));
+                }
+                Valor::Booleano(b) => {
+                    let p = Posicao { campo: i, item: 0 };
+                    let esta = self.posicao == p;
+                    fora.push(linha(
+                        vec![
+                            Span::styled(format!(" {} ", if *b { "▣" } else { "□" }), if *b { texto.fg(destaque) } else { apagado }),
+                            Span::styled(c.rotulo.clone(), texto),
+                        ],
+                        esta,
+                    ));
+                }
+                Valor::Lista(l) => {
+                    fora.push(Line::from(Span::styled(format!(" {}", c.rotulo), apagado)));
+                    for (k, item) in l.iter().enumerate() {
+                        let p = Posicao { campo: i, item: k };
+                        let esta = self.posicao == p;
+                        let mut spans = vec![Span::styled("   • ", apagado)];
+                        spans.extend(valor_editado(p).unwrap_or_else(|| vec![Span::styled(item.clone(), texto)]));
+                        fora.push(linha(spans, esta));
+                    }
+                    let p = Posicao { campo: i, item: l.len() };
+                    let esta = self.posicao == p;
+                    let mut spans = vec![Span::styled("   + ", apagado)];
+                    spans.extend(valor_editado(p).unwrap_or_else(|| vec![Span::styled(c.dica.clone(), apagado)]));
+                    fora.push(linha(spans, esta));
+                }
+                Valor::Checklist(l) => {
+                    let feitos = l.iter().filter(|x| x.0).count();
+                    fora.push(Line::from(Span::styled(format!(" {} {feitos}/{}", c.rotulo, l.len()), apagado)));
+                    for (k, (feito, item)) in l.iter().enumerate() {
+                        let p = Posicao { campo: i, item: k };
+                        let esta = self.posicao == p;
+                        let mut spans = vec![Span::styled(
+                            format!("   {} ", if *feito { "☑" } else { "☐" }),
+                            if *feito { texto.fg(tema.var("success")) } else { apagado },
+                        )];
+                        spans.extend(valor_editado(p).unwrap_or_else(|| {
+                            vec![Span::styled(
+                                item.clone(),
+                                if *feito { apagado.add_modifier(Modifier::CROSSED_OUT) } else { texto },
+                            )]
+                        }));
+                        fora.push(linha(spans, esta));
+                    }
+                    let p = Posicao { campo: i, item: l.len() };
+                    let esta = self.posicao == p;
+                    let mut spans = vec![Span::styled("   + ", apagado)];
+                    spans.extend(valor_editado(p).unwrap_or_else(|| vec![Span::styled(c.dica.clone(), apagado)]));
+                    fora.push(linha(spans, esta));
+                }
+            }
+        }
+        if !self.botoes.is_empty() {
+            fora.push(Line::from(""));
+            let mut spans = vec![Span::raw(" ")];
+            for (b, (_, rotulo)) in self.botoes.iter().enumerate() {
+                let esta = self.posicao == Posicao { campo: self.campos.len(), item: b };
+                let estilo = if esta {
+                    Style::default().bg(tema.var("error")).fg(tema.var("bg-base")).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(tema.var("error"))
+                };
+                spans.push(Span::styled(format!(" {rotulo} "), estilo));
+                spans.push(Span::raw("  "));
+            }
+            fora.push(Line::from(spans));
+        }
+        fora
+    }
+
+    /// Em que linha da tela está o cursor (pra rolar).
+    pub fn linha_do_cursor(&self) -> usize {
+        let mut n = 0;
+        for (i, c) in self.campos.iter().enumerate() {
+            if c.escondido {
+                continue;
+            }
+            match &c.valor {
+                Valor::Lista(l) => {
+                    n += 1;
+                    if self.posicao.campo == i {
+                        return n + self.posicao.item;
+                    }
+                    n += l.len() + 1;
+                }
+                Valor::Checklist(l) => {
+                    n += 1;
+                    if self.posicao.campo == i {
+                        return n + self.posicao.item;
+                    }
+                    n += l.len() + 1;
+                }
+                _ => {
+                    if self.posicao.campo == i {
+                        return n;
+                    }
+                    n += 1;
+                }
+            }
+        }
+        n + 1
+    }
+}
+
+#[cfg(test)]
+mod testes_do_formulario {
+    use super::*;
+
+    #[test]
+    fn o_formulario_edita_texto_lista_e_checklist() {
+        let mut f = Formulario::novo(vec![
+            CampoDoFormulario::novo("titulo", "Título", Valor::Texto("A".into())),
+            CampoDoFormulario::novo("varios", "Vários dias", Valor::Booleano(false)),
+            CampoDoFormulario::novo("tags", "Tags", Valor::Lista(vec!["x".into()])).com_dica("nova tag"),
+            CampoDoFormulario::novo("check", "Checklist", Valor::Checklist(vec![(false, "um".into())])),
+        ]);
+        f.botoes.push(("excluir", "Excluir".into()));
+        f.tecla("a");
+        f.tecla("B");
+        assert_eq!(f.tecla("Enter"), RespostaDoFormulario::Mudou);
+        assert_eq!(f.texto("titulo"), "AB");
+        f.tecla("j");
+        assert_eq!(f.tecla(" "), RespostaDoFormulario::Mudou);
+        assert!(f.booleano("varios"));
+        f.tecla("j"); // tag x
+        f.tecla("j"); // + tag
+        f.tecla("Enter");
+        f.tecla("y");
+        f.tecla("Escape");
+        assert_eq!(f.valor("tags"), Some(&Valor::Lista(vec!["x".into(), "y".into()])));
+        f.tecla("k");
+        f.tecla("k");
+        f.tecla("d");
+        assert_eq!(f.tecla("d"), RespostaDoFormulario::Mudou);
+        assert_eq!(f.valor("tags"), Some(&Valor::Lista(vec!["y".into()])));
+        f.tecla("j");
+        f.tecla("j"); // checklist "um"
+        assert_eq!(f.tecla("~"), RespostaDoFormulario::Mudou);
+        assert_eq!(f.valor("check"), Some(&Valor::Checklist(vec![(true, "um".into())])));
+        f.tecla("o");
+        f.tecla("d");
+        f.tecla("o");
+        f.tecla("s");
+        f.tecla("Enter");
+        assert_eq!(f.valor("check"), Some(&Valor::Checklist(vec![(true, "um".into()), (false, "dos".into())])));
+        f.tecla("j");
+        f.tecla("j");
+        assert_eq!(f.tecla("Enter"), RespostaDoFormulario::Botao("excluir"));
+        assert_eq!(f.tecla("Escape"), RespostaDoFormulario::Fechar);
+    }
+}
