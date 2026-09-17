@@ -150,6 +150,8 @@ pub struct Estado {
     pub busca_na_sidebar: Option<String>,
     /// O nome do vault aberto (ciclo 386), como o cabeçalho da janela.
     pub nome_do_vault: Option<String>,
+    /// O nome do agente aberto no formulário (ciclo 392).
+    pub agente_original: Option<String>,
     /// A página de início deste vault (ciclo 362): abre primeiro, e a aba
     /// dela fica fixa na frente.
     pub inicio: Option<String>,
@@ -249,6 +251,7 @@ impl Estado {
             busca_na_paleta: None,
             busca_na_sidebar: None,
             nome_do_vault: None,
+            agente_original: None,
             inicio: None,
             imagem_pendente: None,
             celula_pendente: None,
@@ -9967,5 +9970,40 @@ mod testes {
         digitar(&mut e, "lixo");
         tecla(&mut e, "Ctrl+c");
         assert!(e.gravacao.is_none() && e.modal.is_none());
+    }
+
+    // --- Ciclo 392: lista de agentes ------------------------------------------------
+
+    #[test]
+    fn agentes_criados_entram_na_lista_e_podem_ser_removidos() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::executar(&mut e, "trocar-agente");
+        let tela = desenho(&mut e, 100, 30).join("\n");
+        assert!(tela.contains("Novo agente…"), "{tela}");
+        let n_presets = anotadinho_core::agente::Adaptador::presets().len();
+        for _ in 0..n_presets {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!("{:?}", e.modal) };
+        form.campos[0].valor = crate::componentes::Valor::Texto("meu-agente".into());
+        form.campos[1].valor = crate::componentes::Valor::Texto("/opt/x".into());
+        for _ in 0..40 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        assert!(e.modal.is_none(), "{:?}", e.aviso);
+        assert_eq!(e.preferencias.agentes.iter().map(|a| a.nome.as_str()).collect::<Vec<_>>(), ["meu-agente"]);
+        // Na lista, e com Remover no formulário.
+        modais::executar(&mut e, "trocar-agente");
+        assert!(desenho(&mut e, 100, 30).join("\n").contains("meu-agente"));
+        e.modal = None;
+        modais::executar(&mut e, "configurar-agente");
+        assert!(desenho(&mut e, 100, 40).join("\n").contains("Remover"));
+        for _ in 0..41 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        assert!(e.preferencias.agentes.is_empty() && e.preferencias.agente.is_none(), "{:?}", e.preferencias.agentes);
     }
 }

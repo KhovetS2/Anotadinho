@@ -198,6 +198,9 @@ pub struct Preferencias {
     /// As teclas dos comandos globais: comando → tecla.
     #[serde(default)]
     pub teclas_globais: std::collections::BTreeMap<String, String>,
+    /// Os agentes que a pessoa criou (ciclo 392).
+    #[serde(default)]
+    pub agentes: Vec<anotadinho_core::agente::Adaptador>,
     /// A página de início de cada vault (ciclo 362): vault → página.
     #[serde(default)]
     pub inicio: std::collections::BTreeMap<String, String>,
@@ -227,7 +230,7 @@ fn verdadeiro() -> bool {
 
 impl Default for Preferencias {
     fn default() -> Self {
-        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default(), ultimo_vault: None, salvar_automatico: true, modo_vim: true }
+        Self { tema: tema_padrao(), sidebar: true, agente: None, destaque: String::new(), botoes: botoes_padrao(), teclas_vim: Default::default(), teclas_globais: Default::default(), inicio: Default::default(), agentes: Vec::new(), ultimo_vault: None, salvar_automatico: true, modo_vim: true }
     }
 }
 
@@ -593,16 +596,25 @@ fn escolha_de_botoes(e: &Estado) -> Modal {
 
 fn escolha_de_agente(e: &Estado) -> Modal {
     let atual = e.preferencias.agente.as_ref().map(|a| a.nome.clone());
+    let marca = |nome: &str| if Some(nome) == atual.as_deref() { "●" } else { "○" };
     let presets = anotadinho_core::agente::Adaptador::presets();
+    // Os presets e os agentes que a pessoa criou (ciclo 392), como a lista
+    // do AgenteConfig da janela.
     let lista = Lista::menu(
         presets
             .iter()
             .enumerate()
-            .map(|(i, a)| {
-                Item::novo(if Some(&a.nome) == atual.as_ref() { "●" } else { "○" }, a.nome.clone(), i.to_string())
-                    .com_detalhe(a.binario.clone())
-            })
-            .chain(std::iter::once(Item::novo("✎", "Configurar…", "configurar").com_detalhe("executável, argumentos, pastas")))
+            .map(|(i, a)| Item::novo(marca(&a.nome), a.nome.clone(), i.to_string()).com_detalhe(a.binario.clone()))
+            .chain(
+                e.preferencias
+                    .agentes
+                    .iter()
+                    .map(|a| Item::novo(marca(&a.nome), a.nome.clone(), format!("meu:{}", a.nome)).com_detalhe(a.binario.clone())),
+            )
+            .chain([
+                Item::novo("+", "Novo agente…", "novo").com_detalhe("outro executável"),
+                Item::novo("✎", "Configurar…", "configurar").com_detalhe("executável, argumentos, pastas"),
+            ])
             .collect(),
     );
     Modal::Escolha { titulo: "Agente das conversas".into(), lista, acao: AcaoDaEscolha::Agente }
@@ -872,6 +884,23 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                 }
                 AcaoDaEscolha::Agente if chave == "configurar" => abrir_configuracao_do_agente(e),
+                AcaoDaEscolha::Agente if chave == "novo" => {
+                    let novo = anotadinho_core::agente::Adaptador {
+                        nome: String::new(),
+                        binario: String::new(),
+                        args: vec!["{prompt}".into()],
+                        timeout_s: anotadinho_core::agente::TIMEOUT_MINIMO_S,
+                        ..Default::default()
+                    };
+                    abrir_formulario_do_agente(e, novo);
+                }
+                AcaoDaEscolha::Agente if chave.starts_with("meu:") => {
+                    if let Some(a) = e.preferencias.agentes.iter().find(|a| Some(a.nome.as_str()) == chave.strip_prefix("meu:")).cloned() {
+                        e.aviso = Some(format!("agente: {}", a.nome));
+                        e.preferencias.agente = Some(a);
+                        e.pedidos.push(Pedido::GravarPreferencias);
+                    }
+                }
                 AcaoDaEscolha::Agente => {
                     if let Some(a) = chave.parse::<usize>().ok().and_then(|i| anotadinho_core::agente::Adaptador::presets().get(i).cloned()) {
                         e.aviso = Some(format!("agente: {}", a.nome));
@@ -979,6 +1008,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                 }
                 R::Mudou if alvo == AlvoDoDetalhe::Agente => {}
+                R::Botao("remover") if alvo == AlvoDoDetalhe::Agente => {
+                    remover_agente(e);
+                    return;
+                }
                 R::Botao("salvar") if alvo == AlvoDoDetalhe::Teclas => {
                     if super::teclas::salvar(e, &form) {
                         return;
@@ -1542,9 +1575,14 @@ pub fn escolher_template(e: &mut Estado, templates: Vec<(String, String)>) {
 /// executável, argumentos (um tem `{prompt}`), formato, tempo limite e
 /// pastas.
 pub fn abrir_configuracao_do_agente(e: &mut Estado) {
+    let a = e.preferencias.agente.clone().unwrap_or_default();
+    abrir_formulario_do_agente(e, a);
+}
+
+fn abrir_formulario_do_agente(e: &mut Estado, a: anotadinho_core::agente::Adaptador) {
     use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
     use anotadinho_core::agente::FormatoSaida;
-    let a = e.preferencias.agente.clone().unwrap_or_default();
+    e.agente_original = Some(a.nome.clone());
     let formatos = vec![
         ("texto".to_string(), "Texto — a saída inteira é a resposta".to_string()),
         ("stream".to_string(), "JSON por linha — mostra o progresso".to_string()),
@@ -1560,6 +1598,10 @@ pub fn abrir_configuracao_do_agente(e: &mut Estado) {
         C::novo("pastas_extras", "Pastas extras", Valor::Lista(a.pastas_extras.clone())),
     ]);
     form.botoes.push(("salvar", "Salvar e usar".into()));
+    // Remover só o que a pessoa criou; preset não se apaga (ciclo 392).
+    if !a.nome.is_empty() && e.preferencias.agentes.iter().any(|x| x.nome == a.nome) {
+        form.botoes.push(("remover", "Remover".into()));
+    }
     e.modal = Some(Modal::Detalhe { titulo: "Agente das conversas".into(), form, alvo: AlvoDoDetalhe::Agente });
 }
 
@@ -1583,9 +1625,29 @@ fn salvar_agente(e: &mut Estado, form: &crate::componentes::Formulario) -> bool 
         return false;
     }
     e.aviso = Some(format!("agente: {}", a.nome));
+    // Guardado na lista (ciclo 392): renomear é trocar, não duplicar.
+    let e_preset = anotadinho_core::agente::Adaptador::presets().iter().any(|p| p.nome == a.nome);
+    if let Some(original) = e.agente_original.take().filter(|o| !o.is_empty() && *o != a.nome) {
+        e.preferencias.agentes.retain(|x| x.nome != original);
+    }
+    if !e_preset || e.preferencias.agentes.iter().any(|x| x.nome == a.nome) {
+        e.preferencias.agentes.retain(|x| x.nome != a.nome);
+        e.preferencias.agentes.push(a.clone());
+    }
     e.preferencias.agente = Some(a);
     e.pedidos.push(Pedido::GravarPreferencias);
     true
+}
+
+/// "Remover": esquece o agente criado; se era o em uso, volta ao padrão.
+fn remover_agente(e: &mut Estado) {
+    let Some(nome) = e.agente_original.take() else { return };
+    e.preferencias.agentes.retain(|x| x.nome != nome);
+    if e.preferencias.agente.as_ref().is_some_and(|a| a.nome == nome) {
+        e.preferencias.agente = None;
+    }
+    e.aviso = Some(format!("agente {nome} removido"));
+    e.pedidos.push(Pedido::GravarPreferencias);
 }
 
 /// Os resultados no conteúdo chegaram pra barra aberta (ciclo 379): entram
