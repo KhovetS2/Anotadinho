@@ -433,12 +433,20 @@ pub struct CampoDoFormulario {
     pub dica: String,
     /// Some da tela (ex.: "Fim" com "Vários dias" desligado).
     pub escondido: bool,
+    /// Texto que é data `AAAA-MM-DD`: `Enter` abre o seletor de data
+    /// (ciclo 364), `c` digita.
+    pub data: bool,
 }
 
 impl CampoDoFormulario {
     /// Um campo.
     pub fn novo(chave: &'static str, rotulo: impl Into<String>, valor: Valor) -> Self {
-        Self { chave, rotulo: rotulo.into(), valor, dica: String::new(), escondido: false }
+        Self { chave, rotulo: rotulo.into(), valor, dica: String::new(), escondido: false, data: false }
+    }
+    /// Um campo de data, com o seletor.
+    pub fn como_data(mut self) -> Self {
+        self.data = true;
+        self
     }
     /// Com a dica de quando está vazio.
     pub fn com_dica(mut self, dica: impl Into<String>) -> Self {
@@ -487,12 +495,16 @@ pub struct Formulario {
     pub editando: Option<Campo>,
     /// O primeiro `d` do `dd`.
     pub d_pendente: bool,
+    /// O seletor de data aberto: o dia apontado (ciclo 364).
+    pub calendario: Option<String>,
+    /// Hoje, pro `t` do seletor.
+    pub hoje: Option<String>,
 }
 
 impl Formulario {
     /// Um formulário.
     pub fn novo(campos: Vec<CampoDoFormulario>) -> Self {
-        Self { campos, botoes: Vec::new(), posicao: Posicao::default(), editando: None, d_pendente: false }
+        Self { campos, botoes: Vec::new(), posicao: Posicao::default(), editando: None, d_pendente: false, calendario: None, hoje: None }
     }
 
     /// O valor de um campo pela chave.
@@ -568,6 +580,36 @@ impl Formulario {
     /// Aplica uma tecla.
     pub fn tecla(&mut self, tecla: &str) -> RespostaDoFormulario {
         let p = self.posicao;
+        // O seletor de data, como o `DatePicker` da janela: `h`/`l` o dia,
+        // `j`/`k` a semana, `[`/`]` o mês, `t` hoje, `x` limpa, `Enter`
+        // escolhe, `Esc` desiste.
+        if let Some(dia) = self.calendario.take() {
+            use anotadinho_core::date_util as du;
+            let mes = |d: &str, passo: i32| -> String {
+                let (y, m, dd) = du::parse_date(d).unwrap_or((2026, 1, 1));
+                let (ny, nm) = if passo > 0 { du::next_month(y, m) } else { du::prev_month(y, m) };
+                du::format_date(ny, nm, dd.min(du::days_in_month(ny, nm)))
+            };
+            let novo = match tecla {
+                "h" | "ArrowLeft" => du::add_days(&dia, -1),
+                "l" | "ArrowRight" => du::add_days(&dia, 1),
+                "k" | "ArrowUp" => du::add_days(&dia, -7),
+                "j" | "ArrowDown" => du::add_days(&dia, 7),
+                "[" | "H" | "PageUp" => Some(mes(&dia, -1)),
+                "]" | "L" | "PageDown" => Some(mes(&dia, 1)),
+                "t" => self.hoje.clone(),
+                "Escape" | "q" => return RespostaDoFormulario::Nada,
+                "Enter" | "x" => {
+                    if let Some(c) = self.campos.get_mut(p.campo) {
+                        c.valor = Valor::Texto(if tecla == "x" { String::new() } else { dia });
+                    }
+                    return RespostaDoFormulario::Mudou;
+                }
+                _ => None,
+            };
+            self.calendario = Some(novo.unwrap_or(dia));
+            return RespostaDoFormulario::Nada;
+        }
         // Editando um texto.
         if let Some(mut campo) = self.editando.take() {
             if matches!(tecla, "Enter" | "Escape") {
@@ -642,6 +684,10 @@ impl Formulario {
             ("h" | "ArrowLeft", Valor::Opcoes(o, i)) if !o.is_empty() => {
                 self.campos[p.campo].valor = Valor::Opcoes(o.clone(), (i + o.len() - 1) % o.len());
                 return RespostaDoFormulario::Mudou;
+            }
+            ("Enter", Valor::Texto(t)) if self.campos[p.campo].data => {
+                let valido = anotadinho_core::date_util::parse_date(&t).map(|_| t.clone());
+                self.calendario = valido.or_else(|| self.hoje.clone()).or_else(|| Some("2026-01-01".into()));
             }
             ("Enter" | "i" | "a" | "A", Valor::Texto(t)) => self.editando = Some(Campo::com(t)),
             ("c", Valor::Texto(_)) => self.editando = Some(Campo::default()),
@@ -720,7 +766,13 @@ impl Formulario {
                         None if t.is_empty() => spans.push(Span::styled(c.dica.clone(), apagado)),
                         None => spans.push(Span::styled(t.clone(), texto)),
                     }
+                    if c.data && esta && self.calendario.is_none() && self.editando.is_none() {
+                        spans.push(Span::styled("  ◷ Enter escolhe · c digita", apagado));
+                    }
                     fora.push(linha(spans, esta));
+                    if let (true, Some(dia)) = (esta, &self.calendario) {
+                        fora.extend(mes_do_seletor(dia, self.hoje.as_deref(), tema));
+                    }
                 }
                 Valor::Opcoes(o, atual) => {
                     let p = Posicao { campo: i, item: 0 };
@@ -806,8 +858,13 @@ impl Formulario {
         fora
     }
 
-    /// Em que linha da tela está o cursor (pra rolar).
+    /// Em que linha da tela está o cursor (pra rolar). Com o seletor de
+    /// data aberto, o fim dele.
     pub fn linha_do_cursor(&self) -> usize {
+        self.linha_do_campo() + if self.calendario.is_some() { 8 } else { 0 }
+    }
+
+    fn linha_do_campo(&self) -> usize {
         let mut n = 0;
         for (i, c) in self.campos.iter().enumerate() {
             if c.escondido {
@@ -838,6 +895,53 @@ impl Formulario {
         }
         n + 1
     }
+}
+
+/// O mês do seletor de data: o nome, os dias da semana e as semanas, com
+/// o dia apontado aceso e hoje sublinhado.
+fn mes_do_seletor(dia: &str, hoje: Option<&str>, tema: &Tema) -> Vec<Line<'static>> {
+    use anotadinho_core::date_util as du;
+    let Some((y, m, d)) = du::parse_date(dia) else { return Vec::new() };
+    let apagado = Style::default().fg(tema.var("text-muted"));
+    let texto = Style::default().fg(tema.var("text-primary"));
+    let recuo = " ".repeat(16);
+    let mut fora = vec![
+        Line::from(vec![
+            Span::raw(recuo.clone()),
+            Span::styled(format!("‹ {} {y} ›", du::month_name(m)), texto.add_modifier(Modifier::BOLD)),
+            Span::styled("   [ ] mês · t hoje · x limpa", apagado),
+        ]),
+        Line::from(vec![Span::raw(recuo.clone()), Span::styled(" D  S  T  Q  Q  S  S", apagado)]),
+    ];
+    let primeiro = du::weekday_of(y, m, 1) as usize;
+    let total = du::days_in_month(y, m) as usize;
+    let mut semana: Vec<Span<'static>> = vec![Span::raw(recuo.clone()), Span::raw("   ".repeat(primeiro))];
+    let mut col = primeiro;
+    for n in 1..=total {
+        let data = du::format_date(y, m, n as u32);
+        let mut estilo = texto;
+        if Some(data.as_str()) == hoje {
+            estilo = estilo.fg(tema.var("accent-blue")).add_modifier(Modifier::UNDERLINED);
+        }
+        if n as u32 == d {
+            estilo = tema.estilo(crate::tema::Realce::Cursor).add_modifier(Modifier::BOLD);
+        }
+        semana.push(Span::styled(format!("{n:>2}"), estilo));
+        semana.push(Span::raw(" "));
+        col += 1;
+        if col == 7 {
+            fora.push(Line::from(std::mem::take(&mut semana)));
+            semana = vec![Span::raw(recuo.clone())];
+            col = 0;
+        }
+    }
+    if semana.len() > 1 {
+        fora.push(Line::from(semana));
+    }
+    while fora.len() < 8 {
+        fora.push(Line::default());
+    }
+    fora
 }
 
 #[cfg(test)]
@@ -885,5 +989,32 @@ mod testes_do_formulario {
         f.tecla("j");
         assert_eq!(f.tecla("Enter"), RespostaDoFormulario::Botao("excluir"));
         assert_eq!(f.tecla("Escape"), RespostaDoFormulario::Fechar);
+    }
+
+    #[test]
+    fn campo_de_data_abre_o_seletor_e_anda_por_dia_semana_e_mes() {
+        let mut f = Formulario::novo(vec![CampoDoFormulario::novo("vence", "Vencimento", Valor::Texto("2026-08-12".into())).como_data()]);
+        f.hoje = Some("2026-09-17".into());
+        f.tecla("Enter");
+        assert_eq!(f.calendario.as_deref(), Some("2026-08-12"));
+        let tema = crate::tema::Tema::novo("escuro");
+        let tela: String = f.linhas(60, &tema).iter().map(|l| l.spans.iter().map(|s| s.content.to_string()).collect::<String>() + "\n").collect();
+        assert!(tela.contains("Agosto 2026") && tela.contains(" D  S  T  Q  Q  S  S") && tela.contains("31"), "{tela}");
+        f.tecla("l");
+        f.tecla("j");
+        f.tecla("]");
+        assert_eq!(f.calendario.as_deref(), Some("2026-09-20"));
+        assert_eq!(f.tecla("Enter"), RespostaDoFormulario::Mudou);
+        assert_eq!(f.texto("vence"), "2026-09-20");
+        f.tecla("Enter");
+        f.tecla("t");
+        f.tecla("Enter");
+        assert_eq!(f.texto("vence"), "2026-09-17");
+        f.tecla("Enter");
+        f.tecla("x");
+        assert_eq!(f.texto("vence"), "");
+        // `c` continua digitando.
+        f.tecla("c");
+        assert!(f.editando.is_some() && f.calendario.is_none());
     }
 }

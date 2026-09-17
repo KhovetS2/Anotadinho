@@ -2362,13 +2362,14 @@ pub(super) fn abrir_detalhe_do_cartao(e: &mut Estado) -> bool {
         C::novo("titulo", "Título", Valor::Texto(c.title.clone())),
         C::novo("descricao", "Descrição", Valor::Texto(c.description.clone().unwrap_or_default())).com_dica("sem descrição"),
         C::novo("tags", "Tags", Valor::Lista(c.tags.clone())).com_dica("tag"),
-        C::novo("vencimento", "Vencimento", Valor::Texto(c.due.clone().unwrap_or_default())).com_dica("AAAA-MM-DD"),
+        C::novo("vencimento", "Vencimento", Valor::Texto(c.due.clone().unwrap_or_default())).com_dica("AAAA-MM-DD").como_data(),
         C::novo("checklist", "Checklist", Valor::Checklist(c.checklist.iter().map(|i| (i.done, i.text.clone())).collect()))
             .com_dica("item"),
         C::novo("comentarios", "Comentários", Valor::Lista(c.comments.iter().map(|x| x.text.clone()).collect())).com_dica("comentário"),
         C::novo("anexos", "Anexos", Valor::Lista(c.attachments.iter().map(|x| x.path.clone()).collect())).com_dica("caminho do anexo"),
     ]);
     form.botoes.push(("excluir", "Excluir cartão".into()));
+    form.hoje = e.hoje.clone();
     e.modal = Some(super::modais::Modal::Detalhe {
         titulo: format!("Cartão · {}", c.column),
         form,
@@ -2393,9 +2394,9 @@ pub(super) fn abrir_detalhe_do_evento(e: &mut Estado) -> bool {
     let horario = ev.start_time.is_some();
     let mut form = Formulario::novo(vec![
         C::novo("titulo", "Título", Valor::Texto(ev.title.clone())),
-        C::novo("inicio", "Início", Valor::Texto(ev.date.clone().unwrap_or_default())).com_dica("AAAA-MM-DD (vazio: sem data)"),
+        C::novo("inicio", "Início", Valor::Texto(ev.date.clone().unwrap_or_default())).com_dica("AAAA-MM-DD (vazio: sem data)").como_data(),
         C::novo("varios", "Vários dias", Valor::Booleano(varios)),
-        C::novo("fim", "Fim", Valor::Texto(ev.end_date.clone().unwrap_or_default())).com_dica("AAAA-MM-DD"),
+        C::novo("fim", "Fim", Valor::Texto(ev.end_date.clone().unwrap_or_default())).com_dica("AAAA-MM-DD").como_data(),
         C::novo("horario", "Horário específico", Valor::Booleano(horario)),
         C::novo("hora_inicio", "Das", Valor::Texto(ev.start_time.clone().unwrap_or_default())).com_dica("HH:MM"),
         C::novo("hora_fim", "Até", Valor::Texto(ev.end_time.clone().unwrap_or_default())).com_dica("HH:MM"),
@@ -2405,6 +2406,7 @@ pub(super) fn abrir_detalhe_do_evento(e: &mut Estado) -> bool {
     form.esconder("hora_inicio", !horario);
     form.esconder("hora_fim", !horario);
     form.botoes.push(("excluir", "Excluir evento".into()));
+    form.hoje = e.hoje.clone();
     e.modal = Some(super::modais::Modal::Detalhe {
         titulo: "Evento".into(),
         form,
@@ -2605,11 +2607,11 @@ pub(super) fn abrir_propriedades(e: &mut Estado) -> bool {
         tipos.push((atual.clone(), atual.clone()));
     }
     let idx = tipos.iter().position(|(k, _)| *k == atual).unwrap_or(0);
-    let form = Formulario::novo(vec![
+    let mut form = Formulario::novo(vec![
         C::novo("titulo", "Título", Valor::Texto(fm.title.clone().unwrap_or_default())).com_dica("(nome do arquivo)"),
         C::novo("tipo", "Tipo", Valor::Opcoes(tipos, idx)),
         C::novo("tags", "Tags", Valor::Lista(fm.tags.clone())).com_dica("tag"),
-        C::novo("criado", "Criado", Valor::Texto(fm.created.clone().unwrap_or_default())).com_dica("AAAA-MM-DD"),
+        C::novo("criado", "Criado", Valor::Texto(fm.created.clone().unwrap_or_default())).com_dica("AAAA-MM-DD").como_data(),
         C::novo("atualizado", "Atualizado", Valor::Texto(fm.updated.clone().unwrap_or_default())).com_dica("AAAA-MM-DD"),
         C::novo(
             "extra",
@@ -2619,6 +2621,7 @@ pub(super) fn abrir_propriedades(e: &mut Estado) -> bool {
         .com_dica("chave: valor"),
     ]);
     let titulo = e.paginas.get(e.pagina).map(|p| format!("Propriedades · {}", p.title)).unwrap_or_else(|| "Propriedades".into());
+    form.hoje = e.hoje.clone();
     e.modal = Some(super::modais::Modal::Detalhe { titulo, form, alvo: super::modais::AlvoDoDetalhe::Propriedades });
     true
 }

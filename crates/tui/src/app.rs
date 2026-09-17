@@ -7151,7 +7151,7 @@ mod testes {
         assert_eq!(cartao(&e).tags, ["doc", "urgente"]);
         // vencimento inválido não grava (o cursor ficou no "+ tag")
         tecla(&mut e, "j");
-        tecla(&mut e, "Enter");
+        tecla(&mut e, "c");
         digitar(&mut e, "amanhã");
         tecla(&mut e, "Enter");
         assert!(e.aviso.as_deref().unwrap_or("").contains("AAAA-MM-DD"));
@@ -7195,7 +7195,7 @@ mod testes {
         tecla(&mut e, " ");
         assert!(desenho(&mut e, 120, 40).join("\n").contains("Fim"));
         tecla(&mut e, "j");
-        tecla(&mut e, "Enter");
+        tecla(&mut e, "c");
         digitar(&mut e, "2026-08-13");
         tecla(&mut e, "Enter");
         assert_eq!(gravado(&e).entries[1].end_date.as_deref(), Some("2026-08-13"));
@@ -8872,7 +8872,7 @@ mod testes {
 
     #[test]
     fn pagina_de_calendario_e_o_calendario_do_vault_so_leitura() {
-        let mut e = pagina_com("---\ntitle: Agenda\ntype: calendar\n---\n\n- \n");
+        let e = pagina_com("---\ntitle: Agenda\ntype: calendar\n---\n\n- \n");
         assert!(e.texto_da_pagina.is_none());
         assert!(matches!(e.arvore.filhos.first().map(|u| &u.tipo), Some(Tipo::Embed(n)) if n == "calendar"));
     }
