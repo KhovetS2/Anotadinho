@@ -7,6 +7,8 @@ license.workspace = true
 [dependencies]
 anotadinho-core = { path = "../core" }
 anotadinho-ipc = { path = "../ipc" }
+# O watcher do vault (ciclo 398), o mesmo que a janela e o `cli watch` usam.
+anotadinho-vault = { path = "../vault" }
 clap = { version = "4.5", features = ["derive"] }
 ratatui = "0.30"
 crossterm = "0.29"

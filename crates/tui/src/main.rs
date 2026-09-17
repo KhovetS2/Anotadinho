@@ -935,6 +935,10 @@ fn laco<B: ratatui::backend::Backend>(
     trabalhos: &mut Trabalhos,
 ) -> Result<Option<(String, bool)>, String> {
     let mut voltas_sem_tecla: u64 = 0;
+    // Mudança de .md por fora chega pelo watcher (ciclo 398), como na
+    // janela; a consulta periódica fica de rede de segurança (e pro que
+    // não é .md: propostas e git).
+    let watcher = anotadinho_vault::VaultWatcher::start(std::path::PathBuf::from(vault)).ok();
     loop {
         estado.agora = Some(agora_local());
         term.draw(|f| app::desenhar(f, estado)).map_err(|e| e.to_string())?;
@@ -950,8 +954,11 @@ fn laco<B: ratatui::backend::Backend>(
         if !event::poll(std::time::Duration::from_millis(250)).map_err(|e| e.to_string())? {
             app::tique(estado);
             voltas_sem_tecla += 1;
-            if voltas_sem_tecla % 4 == 0 {
-                vigiar_disco(estado, vault, voltas_sem_tecla % 8 == 0);
+            let avisado = watcher.as_ref().is_some_and(|w| w.has_changes());
+            if avisado {
+                vigiar_disco(estado, vault, true);
+            } else if voltas_sem_tecla % 8 == 0 {
+                vigiar_disco(estado, vault, voltas_sem_tecla % 16 == 0);
             }
             acompanhar(estado, vault, trabalhos);
             atender(estado, vault, trabalhos);

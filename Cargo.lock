@@ -107,6 +107,7 @@ version = "0.1.0"
 dependencies = [
  "anotadinho-core",
  "anotadinho-ipc",
+ "anotadinho-vault",
  "clap",
  "crossterm",
  "libc",
