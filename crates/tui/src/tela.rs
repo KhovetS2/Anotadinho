@@ -288,6 +288,7 @@ const PARTES_SEM_ROTULO: &[&str] = &[
     "dia",
     "dia-fora",
     "sem-data",
+    "tags",
 ];
 
 /// A marca que abre a linha de cada tipo.
@@ -378,6 +379,9 @@ pub fn fica_fora_da_tela(nome: &str) -> bool {
     matches!(nome, "inicio" | "duracao" | "evento-continua" | "vazio" | "mais" | "variante")
         || nome == "evento"
         || nome.starts_with("evento--")
+        // As tags de uma célula multiselect (ciclo 308): quem as desenha
+        // é a linha da tabela, uma pílula ao lado da outra.
+        || nome.starts_with("tag--")
 }
 
 /// A página inteira em linhas, na ordem em que se lê.

@@ -466,11 +466,30 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
                     Some(embed::ColumnKind::Select { options }) => {
                         embed::badge_class(options, valor).to_string()
                     }
-                    Some(embed::ColumnKind::MultiSelect { options }) => {
-                        let primeira = valor.split(", ").next().unwrap_or("");
-                        embed::badge_class(options, primeira).to_string()
-                    }
                     _ => "cell".to_string(),
+                }
+            };
+            // Multiselect é UM BADGE POR TAG (ciclo 308), como a janela
+            // desenha `.task-table__tags`: a célula vira um galho em
+            // linha com uma "tag--info"/"tag--success"… por valor, cada
+            // uma com a cor da SUA posição nas opções. O texto da célula
+            // continua sendo o valor inteiro — é o que o arquivo guarda.
+            let celula = |col: Option<&embed::TableColumn>, valor: &str| -> Unidade {
+                match col.map(|c| &c.kind) {
+                    Some(embed::ColumnKind::MultiSelect { options }) => arranjado(
+                        "tags",
+                        valor,
+                        valor
+                            .split(", ")
+                            .filter(|t| !t.trim().is_empty())
+                            .map(|t| {
+                                let classe = embed::badge_class(options, t);
+                                item(&format!("tag{}", classe.strip_prefix("badge").unwrap_or("")), t)
+                            })
+                            .collect(),
+                        Arranjo::Linha,
+                    ),
+                    _ => item(&nome_da_celula(col, valor), valor),
                 }
             };
             let cabecalho = fileira(
@@ -484,7 +503,7 @@ fn partes_do_embed(dados: &embed::EmbedData) -> Vec<Unidade> {
                         linha
                             .iter()
                             .enumerate()
-                            .map(|(i, v)| item(&nome_da_celula(d.columns.get(i), v), v.clone()))
+                            .map(|(i, v)| celula(d.columns.get(i), v))
                             .collect(),
                     )
                 }))
@@ -1639,14 +1658,31 @@ mod partes_de_embed {
         );
         assert_eq!(partes(&e), ["parte:header", "parte:row", "parte:row"]);
         // options=[todo,doing,done]: done é a TERCEIRA (índice 2).
-        assert_eq!(partes(&e.filhos[1]), ["parte:cell", "parte:badge--warning", "parte:badge--warning"]);
-        // A cor vem da PRIMEIRA tag ("infra", índice 2 em
-        // [urgente,bug,infra]) — mostrar as duas juntas em badges
-        // separados fica pro próximo corte.
+        assert_eq!(partes(&e.filhos[1]), ["parte:cell", "parte:badge--warning", "parte:tags"]);
+        // Multiselect: uma tag por valor, cada uma com a cor da SUA
+        // posição em [urgente, bug, infra] (ciclo 308).
+        assert_eq!(partes(&e.filhos[1].filhos[2]), ["parte:tag--warning"]);
         assert_eq!(e.filhos[1].filhos[2].texto, "infra");
         // options=[todo,doing,done]: doing é a segunda (índice 1).
-        assert_eq!(partes(&e.filhos[2]), ["parte:cell", "parte:badge--success", "parte:badge--info"]);
-        assert_eq!(e.filhos[2].filhos[2].texto, "urgente, bug");
+        assert_eq!(partes(&e.filhos[2]), ["parte:cell", "parte:badge--success", "parte:tags"]);
+        let tags = &e.filhos[2].filhos[2];
+        assert_eq!(tags.tipo.arranjo(), Arranjo::Linha);
+        assert_eq!(partes(tags), ["parte:tag--info", "parte:tag--success"]);
+        assert_eq!(
+            tags.filhos.iter().map(|t| t.texto.as_str()).collect::<Vec<_>>(),
+            ["urgente", "bug"]
+        );
+        // O texto da célula ainda é o valor inteiro, como no arquivo.
+        assert_eq!(tags.texto, "urgente, bug");
+    }
+
+    #[test]
+    fn multiselect_vazio_nao_tem_tag() {
+        let e = embed_de(
+            "{{ type: \"table\" }}\ncolumns:\n- name: Tags\n  type: multiselect\n  options: [a]\n---\n| Tags |\n| --- |\n|  |\n{{ /table }}\n",
+        );
+        assert_eq!(partes(&e.filhos[1]), ["parte:tags"]);
+        assert!(e.filhos[1].filhos[0].filhos.is_empty());
     }
 
     /// O calendário da página de exemplos, mínimo.

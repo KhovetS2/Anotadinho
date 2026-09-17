@@ -140,6 +140,13 @@ pub enum Realce {
     CalloutAtencao,
     CalloutErro,
     CalloutDica,
+    /// As linhas de GRADE dentro de um embed: o `│` entre colunas da
+    /// tabela, as bordas dos dias do calendário (ciclo 308).
+    ///
+    /// Não é a `Borda` dos painéis: com o embed preenchido, `--border`
+    /// fica quase da cor do fundo e a grade some. É o texto apagado
+    /// misturado à superfície — traço visível, sem competir com o dado.
+    Grade,
 }
 
 /// Uma paleta resolvida.
@@ -291,6 +298,11 @@ impl Tema {
             Realce::CalloutAtencao => Style::default().fg(self.cor("warning", Color::Yellow)),
             Realce::CalloutErro => Style::default().fg(self.cor("error", Color::Red)),
             Realce::CalloutDica => Style::default().fg(self.cor("accent-purple", Color::Magenta)),
+            Realce::Grade => Style::default().fg(misturar(
+                apagado,
+                self.cor("bg-surface", Color::DarkGray),
+                0.45,
+            )),
             Realce::Evento => Style::default()
                 .fg(texto)
                 .bg(self.cor("bg-elevated", Color::DarkGray)),
@@ -356,20 +368,35 @@ impl Tema {
 }
 
 impl Tema {
-    /// O FUNDO de uma caixa preenchida, quando a região pede um
-    /// (ciclo 307).
+    /// O FUNDO de uma caixa preenchida, quando a região pede um.
     ///
-    /// Só o callout pede: é a caixa da janela com
+    /// Começou no callout (ciclo 307): é a caixa da janela com
     /// `background: color-mix(in srgb, var(--callout-accent) 8%,
     /// var(--bg-surface))` — o tom da variante bem de leve sobre a
-    /// superfície. Toda outra moldura é só borda, e devolve `None`.
+    /// superfície. No ciclo 308 todo EMBED ganhou a mesma caixa, tingida
+    /// pela cor do tipo (a do ciclo 304): um kanban é um bloco azul-claro
+    /// na página, não só um contorno azul.
+    ///
+    /// A moldura do FOCO (a unidade sob o cursor fora de embed) continua
+    /// só borda: ela diz "até onde vai o que você olha", não "isto é um
+    /// objeto", e pintar o fundo de um parágrafo seria mentir.
     pub fn fundo_da_regiao(&self, r: Realce) -> Option<Color> {
         match r {
             Realce::CalloutInfo
             | Realce::CalloutSucesso
             | Realce::CalloutAtencao
             | Realce::CalloutErro
-            | Realce::CalloutDica => {
+            | Realce::CalloutDica
+            | Realce::Embed
+            | Realce::EmbedKanban
+            | Realce::EmbedCalendar
+            | Realce::EmbedTable
+            | Realce::EmbedCallout
+            | Realce::EmbedColumns
+            | Realce::EmbedGallery
+            | Realce::EmbedQuery
+            | Realce::EmbedTimeline
+            | Realce::EmbedActions => {
                 let acento = self.estilo(r).fg.unwrap_or(Color::Gray);
                 Some(misturar(acento, self.cor("bg-surface", Color::DarkGray), 0.08))
             }
@@ -586,6 +613,7 @@ mod testes {
             Realce::CalloutAtencao,
             Realce::CalloutErro,
             Realce::CalloutDica,
+            Realce::Grade,
         ] {
             let e = t.estilo(r);
             let cor = e.fg.or(e.bg).unwrap_or(Color::Reset);
@@ -643,9 +671,8 @@ mod testes {
     }
 
     #[test]
-    fn so_o_callout_tem_fundo_e_cada_variante_o_seu() {
+    fn o_foco_nao_tem_fundo_e_cada_variante_do_callout_tem_o_seu() {
         let t = Tema::novo("escuro");
-        assert_eq!(t.fundo_da_regiao(Realce::EmbedKanban), None);
         assert_eq!(t.fundo_da_regiao(Realce::BordaUnidade), None);
         let fundos: Vec<Color> = [
             Realce::CalloutInfo,
@@ -666,5 +693,47 @@ mod testes {
         let base = t.cor("bg-base", Color::Reset);
         let superficie = t.cor("bg-surface", Color::Reset);
         assert!(fundos.iter().all(|f| *f != base && *f != superficie));
+    }
+
+    #[test]
+    fn todo_embed_tem_fundo_tingido_pela_sua_cor() {
+        // A caixa preenchida do callout, estendida (ciclo 308): cada tipo
+        // de embed com o fundo no tom dele — e fundos diferentes entre
+        // si, senão dois embeds vizinhos voltam a parecer um só.
+        let t = Tema::novo("escuro");
+        let papeis = [
+            Realce::Embed,
+            Realce::EmbedKanban,
+            Realce::EmbedCalendar,
+            Realce::EmbedTable,
+            Realce::EmbedColumns,
+            Realce::EmbedGallery,
+            Realce::EmbedQuery,
+            Realce::EmbedTimeline,
+            Realce::EmbedActions,
+        ];
+        let fundos: Vec<Color> = papeis
+            .iter()
+            .map(|r| t.fundo_da_regiao(*r).unwrap_or_else(|| panic!("{r:?} sem fundo")))
+            .collect();
+        for (i, a) in fundos.iter().enumerate() {
+            for (j, b) in fundos.iter().enumerate().skip(i + 1) {
+                assert_ne!(a, b, "{:?} e {:?} com o mesmo fundo", papeis[i], papeis[j]);
+            }
+        }
+    }
+
+    #[test]
+    fn a_grade_se_destaca_do_fundo_de_todo_embed() {
+        // Com `--border`, as bordas dos dias do calendário sumiam dentro
+        // da caixa preenchida (visto na tela, ciclo 308). A grade precisa
+        // de distância de TODO fundo de embed.
+        let t = Tema::novo("escuro");
+        let Some(Color::Rgb(gr, gg, gb)) = t.estilo(Realce::Grade).fg else { panic!() };
+        for r in [Realce::EmbedCalendar, Realce::EmbedTable, Realce::EmbedKanban] {
+            let Some(Color::Rgb(fr, fg, fb)) = t.fundo_da_regiao(r) else { panic!() };
+            let distancia = (gr as i32 - fr as i32).abs() + (gg as i32 - fg as i32).abs() + (gb as i32 - fb as i32).abs();
+            assert!(distancia > 60, "{r:?}: grade e fundo quase iguais ({distancia})");
+        }
     }
 }

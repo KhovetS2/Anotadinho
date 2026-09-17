@@ -717,6 +717,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 let cabecalho = matches!(&l.tipo, Tipo::Parte { nome, .. } if nome == "header");
                 vec![vec![linha_de_tabela(
                     l,
+                    &e.arvore,
                     &e.tema,
                     &larguras,
                     cabecalho,
@@ -947,6 +948,41 @@ fn linhas_de_fileira(
     fora
 }
 
+/// O papel de um badge pelo sufixo do nome (`--info`, `--success`…),
+/// o mesmo de `badge_class` no núcleo.
+fn papel_do_badge(sufixo: &str) -> Option<Realce> {
+    match sufixo {
+        "--info" => Some(Realce::BadgeInfo),
+        "--success" => Some(Realce::BadgeSucesso),
+        "--warning" => Some(Realce::BadgeAtencao),
+        "--error" => Some(Realce::BadgeErro),
+        _ => None,
+    }
+}
+
+/// Quanto uma célula ocupa na tela (ciclo 308).
+///
+/// Badge é PÍLULA: um espaço de respiro de cada lado, o `padding: 1px
+/// 8px` do `.badge` da janela. Uma célula de tags soma as pílulas e um
+/// espaço entre elas (o `gap: 4px` de `.task-table__tags`).
+fn largura_da_celula(celula: &Unidade) -> usize {
+    let nome = match &celula.tipo {
+        Tipo::Parte { nome, .. } => nome.as_str(),
+        _ => "",
+    };
+    if nome == "tags" {
+        let n = celula.filhos.len();
+        return celula.filhos.iter().map(|t| t.texto.chars().count() + 2).sum::<usize>()
+            + n.saturating_sub(1);
+    }
+    let texto = celula.texto.chars().count();
+    if nome.starts_with("badge") && !celula.texto.is_empty() {
+        texto + 2
+    } else {
+        texto
+    }
+}
+
 /// A largura de cada COLUNA de uma tabela — o máximo entre cabeçalho e
 /// linhas, pra célula ficar alinhada em grade (ciclo 305).
 ///
@@ -957,7 +993,7 @@ fn larguras_de_tabela(embed: &Unidade) -> Vec<usize> {
     let mut larguras: Vec<usize> = Vec::new();
     for linha in &embed.filhos {
         for (i, celula) in linha.filhos.iter().enumerate() {
-            let n = celula.texto.chars().count();
+            let n = largura_da_celula(celula);
             match larguras.get_mut(i) {
                 Some(atual) => *atual = (*atual).max(n),
                 None => larguras.push(n),
@@ -970,8 +1006,13 @@ fn larguras_de_tabela(embed: &Unidade) -> Vec<usize> {
 /// Uma linha de TABELA: célula ao lado de célula alinhada em coluna,
 /// texto simples — não a caixa de botão que toda outra fileira ganha
 /// (ciclo 305). Uma tabela é grade, não fileira de retângulos.
+///
+/// Select e multiselect saem em PÍLULA (ciclo 308): texto na cor do
+/// badge sobre o fundo tingido dele, e o multiselect com uma pílula
+/// por tag, cada uma na sua cor.
 fn linha_de_tabela<'a>(
     l: &crate::tela::Linha,
+    arvore: &Unidade,
     tema: &Tema,
     larguras: &[usize],
     cabecalho: bool,
@@ -981,19 +1022,54 @@ fn linha_de_tabela<'a>(
     let mut spans = vec![Span::styled(recuo, Style::default())];
     for (i, seg) in l.segmentos.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::styled(" │ ", tema.estilo(Realce::Borda)));
+            spans.push(Span::styled(" │ ", tema.estilo(Realce::Grade)));
         }
-        let aceso = cursor.is_some_and(|c| c == seg.caminho.as_slice());
-        let papel = if aceso {
-            Realce::Cursor
-        } else if cabecalho {
-            Realce::CabecalhoDeTabela
-        } else {
-            papel_da_parte(&seg.nome)
-        };
         let largura = larguras.get(i).copied().unwrap_or(0);
-        let texto = format!("{:largura$}", seg.texto, largura = largura);
-        spans.push(Span::styled(texto, tema.estilo(papel)));
+        let aceso = cursor.is_some_and(|c| c == seg.caminho.as_slice());
+        if aceso || cabecalho {
+            let papel = if aceso { Realce::Cursor } else { Realce::CabecalhoDeTabela };
+            spans.push(Span::styled(format!("{:largura$}", seg.texto), tema.estilo(papel)));
+            continue;
+        }
+        // As pílulas desta célula, como (texto, papel).
+        let pilulas: Vec<(String, Realce)> = if seg.nome == "tags" {
+            arvore
+                .em(&seg.caminho)
+                .map(|c| {
+                    c.filhos
+                        .iter()
+                        .filter_map(|t| match &t.tipo {
+                            Tipo::Parte { nome, .. } => nome
+                                .strip_prefix("tag")
+                                .map(|suf| (t.texto.clone(), papel_do_badge(suf).unwrap_or(Realce::Celula))),
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else if let Some(papel) = seg
+            .nome
+            .strip_prefix("badge")
+            .and_then(papel_do_badge)
+            .filter(|_| !seg.texto.is_empty())
+        {
+            vec![(seg.texto.clone(), papel)]
+        } else {
+            spans.push(Span::styled(format!("{:largura$}", seg.texto), tema.estilo(papel_da_parte(&seg.nome))));
+            continue;
+        };
+        let mut usado = 0;
+        for (k, (texto, papel)) in pilulas.iter().enumerate() {
+            if k > 0 {
+                spans.push(Span::styled(" ", Style::default()));
+                usado += 1;
+            }
+            spans.push(Span::styled(format!(" {texto} "), tema.pilula(*papel)));
+            usado += texto.chars().count() + 2;
+        }
+        if usado < largura {
+            spans.push(Span::styled(" ".repeat(largura - usado), Style::default()));
+        }
     }
     Line::from(spans)
 }
@@ -1023,7 +1099,7 @@ fn regua_do_mes<'a>(recuo: &str, cel: usize, pontas: [&str; 3], tema: &Tema) -> 
     let miolo = vec!["─".repeat(cel); 7].join(pontas[1]);
     Line::from(vec![
         Span::styled(recuo.to_string(), Style::default()),
-        Span::styled(format!("{}{miolo}{}", pontas[0], pontas[2]), tema.estilo(Realce::Borda)),
+        Span::styled(format!("{}{miolo}{}", pontas[0], pontas[2]), tema.estilo(Realce::Grade)),
     ])
 }
 
@@ -1082,7 +1158,7 @@ fn linhas_da_semana(
     // empurraria as bordas pra fora do alinhamento com o cabeçalho.
     let recuo = "  ".repeat(l.nivel.saturating_sub(1));
     let cel = largura_do_dia(largura.saturating_sub(recuo.len()));
-    let borda = tema.estilo(Realce::Borda);
+    let borda = tema.estilo(Realce::Grade);
     let nome = |u: &Unidade| match &u.tipo {
         Tipo::Parte { nome, .. } => nome.clone(),
         _ => String::new(),
@@ -2339,18 +2415,45 @@ mod testes {
         // pediam a mesma. O dono distingue.
         let mut e = Estado::novo(
             paginas(),
-            // Duas tabelas: a moldura delas é traço (`┌`). O callout
-            // virou caixa preenchida no ciclo 307, sem traço pra contar.
             analisar("{{ type: \"table\" }}\n| A |\n| --- |\n| um |\n{{ /table }}\n\n{{ type: \"table\" }}\n| B |\n| --- |\n| dois |\n{{ /table }}\n"),
         );
         e.foco = Foco::Paginas;
         let tudo = desenho(&mut e, 60, 14).join("\n");
-        // Duas caixas de embed, mais a borda dos dois painéis.
+        // Duas caixas de embed: desde o ciclo 308 todo embed é caixa
+        // preenchida, que abre com o canto de meio-bloco `▗`.
         assert_eq!(
-            tudo.matches('┌').count(),
-            4,
+            tudo.matches('▗').count(),
+            2,
             "os embeds vizinhos viraram uma caixa só:\n{tudo}"
         );
+    }
+
+    #[test]
+    fn o_kanban_e_uma_caixa_preenchida_sem_vao_em_volta_do_cartao() {
+        // A caixa do callout (ciclo 307) em todo embed (ciclo 308). O
+        // teste que importa é o do cartão: o contorno de meio-bloco dele
+        // deixa meia célula "de fora", e ela tem que ser do fundo da
+        // CAIXA — senão cada cartão fica cercado de uma faixa escura.
+        let mut e = Estado::novo(paginas(), com_kanban());
+        e.foco = Foco::Paginas;
+        let fundo = e.tema.fundo_da_regiao(Realce::EmbedKanban).unwrap();
+        let buf = quadro(&mut e, 60, 14);
+        let linha = (0..buf.area.height)
+            .find(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, *y)].symbol().to_string())
+                    .collect::<String>()
+                    .contains("Card A")
+            })
+            .expect("o cartão sumiu");
+        let simbolos: Vec<String> = (0..buf.area.width).map(|x| buf[(x, linha)].symbol().to_string()).collect();
+        let esquerda = simbolos.iter().position(|c| c == "▌").unwrap() as u16;
+        let contorno = simbolos.iter().position(|c| c == "▐").unwrap() as u16;
+        // Do lado de dentro da lateral da caixa até o contorno do cartão
+        // (inclusive a meia célula de fora dele): fundo da caixa.
+        for x in esquerda..=contorno {
+            assert_eq!(buf[(x, linha)].style().bg, Some(fundo), "vão sem fundo na coluna {x}");
+        }
     }
 
     #[test]
@@ -2782,6 +2885,47 @@ mod testes {
             col_status_curta, col_status_longa,
             "a coluna Status não ficou alinhada entre as linhas:\n{l_api}\n{l_longa}"
         );
+    }
+
+    #[test]
+    fn multiselect_tem_um_badge_por_tag() {
+        // Antes as duas tags saíam como um texto só, "urgente, bug", na
+        // cor da primeira. Na janela cada tag é um badge (ciclo 308).
+        let mut e = Estado::novo(
+            paginas(),
+            analisar(
+                "{{ type: \"table\" }}\ncolumns:\n\
+                 - name: Tarefa\n\
+                 - name: Tags\n  type: multiselect\n  options: [urgente, bug, infra]\n\
+                 ---\n| Tarefa | Tags |\n| --- | --- |\n\
+                 | UI | urgente, bug |\n\
+                 | API | infra |\n\
+                 {{ /table }}\n",
+            ),
+        );
+        e.foco = Foco::Paginas;
+        let info = e.tema.pilula(Realce::BadgeInfo);
+        let sucesso = e.tema.pilula(Realce::BadgeSucesso);
+        let buf = quadro(&mut e, 80, 14);
+        let linha = (0..buf.area.height)
+            .find(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, *y)].symbol().to_string())
+                    .collect::<String>()
+                    .contains("urgente")
+            })
+            .expect("a linha das tags sumiu");
+        let texto: String = (0..buf.area.width).map(|x| buf[(x, linha)].symbol().to_string()).collect();
+        assert!(texto.contains(" urgente   bug "), "as tags não viraram pílulas separadas:\n{texto}");
+        assert!(!texto.contains("urgente,"), "{texto}");
+        // A vírgula sumiu, e cada pílula tem o fundo da SUA cor.
+        let coluna = |palavra: &str| texto.find(palavra).map(|b| texto[..b].chars().count() as u16).unwrap();
+        let (u, b) = (coluna("urgente"), coluna("bug"));
+        assert_eq!(buf[(u, linha)].style().bg, info.bg);
+        assert_eq!(buf[(b, linha)].style().bg, sucesso.bg);
+        // O espaço ENTRE as pílulas não é pílula.
+        assert_ne!(buf[(b - 2, linha)].style().bg, info.bg);
+        assert_ne!(buf[(b - 2, linha)].style().bg, sucesso.bg);
     }
 
     #[test]
