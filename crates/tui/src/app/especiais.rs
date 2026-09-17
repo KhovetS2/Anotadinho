@@ -1005,7 +1005,9 @@ pub fn pagina_renderizada(corpo: &str, tema: &Tema, largura: usize) -> Vec<Line<
     e.tema = tema.clone();
     e.preferencias.sidebar = false;
     e.foco = Foco::Paginas;
-    let (w, h) = (largura as u16 + 2, 300u16);
+    // A trilha da sidebar recolhida ocupa 3 colunas (ciclo 400).
+    const TRILHA: u16 = 3;
+    let (w, h) = (largura as u16 + 2 + TRILHA, 300u16);
     let Ok(mut term) = Terminal::new(TestBackend::new(w, h)) else { return Vec::new() };
     if term.draw(|f| super::desenhar(f, &mut e)).is_err() {
         return Vec::new();
@@ -1016,7 +1018,7 @@ pub fn pagina_renderizada(corpo: &str, tema: &Tema, largura: usize) -> Vec<Line<
         let mut spans: Vec<Span<'static>> = Vec::new();
         let mut texto = String::new();
         let mut estilo: Option<Style> = None;
-        for x in 1..w - 1 {
+        for x in TRILHA + 1..w - 1 {
             let cel = &buf[(x, y)];
             let st = cel.style();
             if estilo != Some(st) {

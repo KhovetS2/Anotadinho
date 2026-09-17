@@ -1443,7 +1443,8 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     let divisao = if e.preferencias.sidebar {
         [Constraint::Percentage(30), Constraint::Percentage(70)]
     } else {
-        [Constraint::Length(0), Constraint::Percentage(100)]
+        // Recolhida, a trilha de ícones da janela (ciclo 400).
+        [Constraint::Length(3), Constraint::Min(1)]
     };
     let colunas = Layout::default()
         .direction(Direction::Horizontal)
@@ -1522,7 +1523,20 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     if !indicadores.is_empty() {
         bloco_paginas = bloco_paginas.title_bottom(Line::from(indicadores).right_aligned());
     }
-    f.render_widget(Paragraph::new(paginas).block(bloco_paginas), colunas[0]);
+    if e.preferencias.sidebar {
+        f.render_widget(Paragraph::new(paginas).block(bloco_paginas), colunas[0]);
+    } else {
+        // Páginas, journals e busca, como `.sidebar-collapsed`; Ctrl+B
+        // (ou "Alternar sidebar") expande.
+        let apagado = Style::default().fg(e.tema.var("text-muted"));
+        let trilha = vec![
+            Line::from(Span::styled(" ≡", apagado)),
+            Line::from(Span::styled(" ◷", apagado)),
+            Line::from(Span::styled(" ⌕", apagado)),
+        ];
+        let area = ratatui::layout::Rect { y: colunas[0].y + 1, height: colunas[0].height.saturating_sub(1), ..colunas[0] };
+        f.render_widget(Paragraph::new(trilha), area);
+    }
 
     // Uma conversa tem tela própria (ciclo 340).
     if e.conversa.is_some() {
@@ -10174,5 +10188,14 @@ mod testes {
         let tudo = texto.join("\n");
         assert!(tudo.contains("TODO") && tudo.contains("Cartão X") && !tudo.contains("{{ type"), "{tudo}");
         assert!(texto.iter().all(|l| l.chars().count() <= 80));
+    }
+
+    #[test]
+    fn sidebar_recolhida_vira_trilha_de_icones() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        e.preferencias.sidebar = false;
+        let tela = desenho(&mut e, 60, 8);
+        assert!(tela[1].starts_with(" ≡") && tela[2].starts_with(" ◷") && tela[3].starts_with(" ⌕"), "{tela:?}");
+        assert!(!tela[0].contains("páginas"));
     }
 }
