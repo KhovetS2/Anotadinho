@@ -932,6 +932,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
                 && (edicao::transicao_do_cursor(e)
                     || edicao::acao_do_fluxo(e)
                     || edicao::agendar_sem_data(e)
+                    || edicao::abrir_detalhe_da_barra(e)
                     || edicao::abrir_pagina_da_celula(e)
                     || edicao::cartao_na_coluna_vazia(e)
                     || edicao::busca_da_consulta(e)
@@ -9780,5 +9781,37 @@ mod testes {
         modais::executar(&mut e, "nova-landing");
         tecla(&mut e, "Enter");
         assert_eq!(e.pedidos, [Pedido::CriarPaginaComTitulo { titulo: "Início".into(), tipo: Some("landing".into()) }]);
+    }
+
+    // --- Ciclo 385: detalhe da etapa do cronograma -------------------------------
+
+    #[test]
+    fn enter_na_barra_abre_a_etapa_e_grava_datas_e_tags() {
+        use anotadinho_core::embed::EmbedData;
+        let mut e = pagina_com("{{ type: \"timeline\" }}\nscale: month\nitems:\n- title: Obra\n  start: '2026-08-10'\n  end: '2026-08-14'\n{{ /timeline }}\n").com_hoje("2026-08-12");
+        e.foco = Foco::Conteudo;
+        e.cursor = e
+            .arvore
+            .percorrer()
+            .into_iter()
+            .find(|(_, u)| matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "barra"))
+            .map(|(c, _)| c)
+            .expect("sem barra");
+        tecla(&mut e, "Enter");
+        let tela = desenho(&mut e, 120, 30).join("\n");
+        assert!(tela.contains("Etapa") && tela.contains("Início") && tela.contains("Excluir etapa"), "{tela}");
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[1].valor = crate::componentes::Valor::Texto("2026-08-08".into());
+        form.campos[3].valor = crate::componentes::Valor::Lista(vec!["infra".into()]);
+        let Some(Modal::Detalhe { form, alvo, .. }) = e.modal.clone() else { panic!() };
+        let mut form = form;
+        edicao::aplicar_detalhe(&mut e, &alvo, &mut form);
+        let EmbedData::Timeline(d) = embed_gravado(&e) else { panic!() };
+        assert_eq!(d.items[0].start.as_deref(), Some("2026-08-08"));
+        assert_eq!(d.items[0].tags, ["infra"]);
+        // Fim antes do início é recusado.
+        form.campos[2].valor = crate::componentes::Valor::Texto("2026-08-01".into());
+        edicao::aplicar_detalhe(&mut e, &alvo, &mut form);
+        assert!(e.aviso.as_deref().unwrap().contains("fim vem antes"));
     }
 }

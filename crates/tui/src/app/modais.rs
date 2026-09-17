@@ -320,6 +320,13 @@ pub enum AlvoDoDetalhe {
     Agente,
     /// O remapeamento de teclas (ciclo 359).
     Teclas,
+    /// Uma etapa do cronograma (ciclo 385).
+    Barra {
+        /// O cronograma.
+        embed: Caminho,
+        /// O item no arquivo.
+        indice: usize,
+    },
 }
 
 /// O conflito entre o que se escreveu e o que está no disco.

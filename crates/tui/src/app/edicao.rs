@@ -2691,6 +2691,32 @@ pub(super) fn aplicar_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDetalh
         }
         // O agente e as teclas gravam só no botão.
         AlvoDoDetalhe::Agente | AlvoDoDetalhe::Teclas => {}
+        AlvoDoDetalhe::Barra { embed, indice } => {
+            let (inicio, fim) = (form.texto("inicio"), form.texto("fim"));
+            for (nome, v) in [("início", &inicio), ("fim", &fim)] {
+                if !v.is_empty() && anotadinho_core::date_util::parse_date(v).is_none() {
+                    e.aviso = Some(format!("{nome}: use AAAA-MM-DD"));
+                    return;
+                }
+            }
+            if !inicio.is_empty() && !fim.is_empty() && fim < inicio {
+                e.aviso = Some("o fim vem antes do início".into());
+                return;
+            }
+            let indice = *indice;
+            editar_cronograma(e, embed, |d| {
+                let mut item = d.items.get(indice).cloned().ok_or("a etapa sumiu do arquivo")?;
+                let titulo = form.texto("titulo");
+                if !titulo.is_empty() {
+                    item.title = titulo;
+                }
+                item.start = opcional(inicio.clone());
+                item.end = opcional(fim.clone());
+                item.tags = lista(form, "tags");
+                d.update_item(indice, item);
+                Ok(())
+            });
+        }
         AlvoDoDetalhe::Evento { embed, indice } => {
             form.esconder("fim", !form.booleano("varios"));
             let horario = form.booleano("horario");
@@ -2765,6 +2791,16 @@ pub(super) fn excluir_do_detalhe(e: &mut Estado, alvo: &super::modais::AlvoDoDet
             }
         }
         AlvoDoDetalhe::Propriedades | AlvoDoDetalhe::Consulta { .. } | AlvoDoDetalhe::Agente | AlvoDoDetalhe::Teclas => {}
+        AlvoDoDetalhe::Barra { embed, indice } => {
+            let i = *indice;
+            if editar_cronograma(e, embed, |d| {
+                d.items.remove(i);
+                Ok(())
+            }) {
+                e.aviso = Some("etapa apagada".into());
+                e.seguir_cursor();
+            }
+        }
         AlvoDoDetalhe::Evento { embed, indice } => {
             let i = *indice;
             if editar_calendario(e, embed, |d| {
@@ -2859,9 +2895,39 @@ fn esconder_campos_do_botao(form: &mut crate::componentes::Formulario) {
 
 /// `=`: configurar o item sob o cursor (ciclo 344) — o botão de ações
 /// (`ActionButtonModal`) ou a consulta (`QuerySettingsModal`).
+/// Enter (ou `=`) numa barra do cronograma do embed abre o detalhe dela
+/// (ciclo 385): título, início, fim e tags — o que a janela faz
+/// arrastando as bordas e renomeando.
+pub(super) fn abrir_detalhe_da_barra(e: &mut Estado) -> bool {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    let Some(embed) = embed_do_cursor(e, "timeline") else { return false };
+    if !matches!(e.arvore.em(&e.cursor).map(|u| &u.tipo), Some(Tipo::Parte { nome, .. }) if nome == "barra") {
+        return false;
+    }
+    let Some(indice) = indice_do_cursor(e) else { return false };
+    let Some(d) = ler_cronograma(e, &embed) else { return false };
+    if d.source == em::TimelineSource::Vault {
+        return false;
+    }
+    let Some(item) = d.items.get(indice).cloned() else { return false };
+    let mut form = Formulario::novo(vec![
+        C::novo("titulo", "Título", Valor::Texto(item.title.clone())),
+        C::novo("inicio", "Início", Valor::Texto(item.start.clone().unwrap_or_default())).com_dica("AAAA-MM-DD").como_data(),
+        C::novo("fim", "Fim", Valor::Texto(item.end.clone().unwrap_or_default())).com_dica("AAAA-MM-DD").como_data(),
+        C::novo("tags", "Tags", Valor::Lista(item.tags.clone())).com_dica("tag"),
+    ]);
+    form.botoes.push(("excluir", "Excluir etapa".into()));
+    form.hoje = e.hoje.clone();
+    e.modal = Some(super::modais::Modal::Detalhe { titulo: "Etapa".into(), form, alvo: super::modais::AlvoDoDetalhe::Barra { embed, indice } });
+    true
+}
+
 pub(super) fn configurar(e: &mut Estado) -> bool {
     use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
     use super::modais::{AlvoDoDetalhe, Modal};
+    if abrir_detalhe_da_barra(e) {
+        return true;
+    }
     if let Some(embed) = embed_do_cursor(e, "actions") {
         let Some(indice) = (e.cursor.len() == embed.len() + 2).then(|| e.cursor[embed.len() + 1]) else {
             e.aviso = Some("entre num botão pra configurar".into());
