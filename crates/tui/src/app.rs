@@ -19,6 +19,7 @@ pub mod conversa;
 pub mod especiais;
 mod edicao;
 pub mod markdown;
+mod wikilink;
 pub mod modais;
 pub use edicao::{AcaoDaPergunta, Pergunta, Registro};
 pub use modais::{Modal, Pedido, Preferencias};
@@ -121,6 +122,10 @@ pub struct Estado {
     pub especial: Option<especiais::TelaEspecial>,
     /// O bloco novo à espera do que o menu `/` vai pôr nele (ciclo 347).
     pub bloco_a_inserir: Option<markdown::EdicaoDeBloco>,
+    /// A sugestão escolhida no autocompletar de wikilink (ciclo 352).
+    pub wikilink_sel: usize,
+    /// O `[[` cuja lista a pessoa fechou com `Esc`.
+    pub wikilink_dispensado: Option<usize>,
     /// O modal aberto — barra de comandos, escolha, confirmação (ciclo 339).
     pub modal: Option<Modal>,
     /// O que só o `main` pode fazer (abrir, criar, apagar, gravar
@@ -193,6 +198,8 @@ impl Estado {
             conversa: None,
             especial: None,
             bloco_a_inserir: None,
+            wikilink_sel: 0,
+            wikilink_dispensado: None,
             pedidos: Vec::new(),
             preferencias: Preferencias::default(),
             agora: None,
@@ -1511,6 +1518,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         );
     }
     f.render_widget(Paragraph::new(visiveis).block(bloco), colunas[1]);
+    wikilink::desenhar(f, e, colunas[1]);
     // Os modais por cima de tudo (ciclo 339).
     modais::desenhar(f, e);
     // Guardado só agora: `linhas_visiveis` empresta `e` até aqui, e o
@@ -8562,5 +8570,49 @@ mod testes {
         novas.insert(0, PageMeta { path: "pages/aaa.md".into(), title: "aaa".into(), section: "pages".into() });
         e.atualizar_paginas(novas);
         assert_eq!(e.paginas[e.pagina].path, "pages/beta.md");
+    }
+
+    // --- Ciclo 352: autocompletar wikilink -----------------------------------
+
+    #[test]
+    fn colchetes_duplos_sugerem_paginas_e_enter_completa() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        digitar(&mut e, "ver [[ga");
+        let tela = desenho(&mut e, 100, 30).join("\n");
+        assert!(tela.contains("Wikilink") && tela.contains("gama"), "{tela}");
+        tecla(&mut e, "Enter");
+        let p = e.pergunta.as_ref().expect("Enter completou em vez de confirmar");
+        assert_eq!((p.texto.as_str(), p.cursor), ("ver [[gama]]", 12));
+        // Fechado o `]]`, Enter volta a confirmar.
+        digitar(&mut e, " ok");
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).contains("ver [[gama]] ok"), "{}", corpo_gravado(&e));
+    }
+
+    #[test]
+    fn setas_escolhem_e_esc_fecha_so_a_lista() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        digitar(&mut e, "[[a");
+        // alfa começa com "a"; beta e gama só contêm.
+        tecla(&mut e, "ArrowDown");
+        tecla(&mut e, "Tab");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "[[beta]]");
+        tecla(&mut e, "Backspace");
+        tecla(&mut e, "Backspace");
+        digitar(&mut e, " [[x");
+        assert!(desenho(&mut e, 100, 30).join("\n").contains("Wikilink") == false, "nada bate com x");
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        digitar(&mut e, "[[al");
+        tecla(&mut e, "Escape");
+        assert!(e.pergunta.is_some(), "o primeiro Esc só fecha a lista");
+        assert!(!desenho(&mut e, 100, 30).join("\n").contains("Wikilink"));
+        tecla(&mut e, "Escape");
+        assert!(e.pergunta.is_none());
     }
 }

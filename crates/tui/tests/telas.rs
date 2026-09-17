@@ -177,6 +177,7 @@ fn cenas() -> Vec<Cena> {
     // O menu `/` (ciclo 347).
     let notas = "# Notas\n\nUm parágrafo.\n\n- item\n".to_string();
     v.push(cena("menu-inserir", notas.clone(), &["Tab", "o", "/"], 140, 40));
+    v.push(cena("wikilink-sugestoes", notas.clone(), &com(&[&["Tab", "o"], &digitado("ver [[ce")]), 140, 30));
     v.push(cena("menu-inserir-filtrado", notas, &com(&[&["Tab", "o", "/"], &digitado("tab")]), 140, 40));
     v.push(cena("conversa-no-fim", CONVERSA.to_string(), &["Tab"], 160, 50));
     v.push(cena("conversa-resposta-selecionada", CONVERSA.to_string(), &["Tab", "k"], 160, 50));

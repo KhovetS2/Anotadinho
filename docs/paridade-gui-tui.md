@@ -20,7 +20,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Busca no CONTEÚDO na paleta (FTS) | ✅ | 342 — `Ctrl+F` (ou Enter sem resultado) |
 | Atalhos (`?`) | ✅ | 339 |
 | Wikilink `[[Título]]` abre a página | ✅ | 342 — Enter; oferece criar a que não existe |
-| Autocompletar wikilink ao digitar | ❌ | |
+| Autocompletar wikilink ao digitar | ✅ | 352 — `[[` na inserção; ↑↓, Enter/Tab completa, Esc fecha a lista |
 | Recarregar quando o arquivo muda por fora | ✅ | 351 — relê a cada segundo parado, sem perder o lugar; lista de páginas também |
 | Escolher / criar vault | — | a TUI recebe `--vault` |
 | Controles da janela | — | |

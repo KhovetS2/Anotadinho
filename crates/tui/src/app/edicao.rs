@@ -448,6 +448,13 @@ pub(super) fn tecla_na_pergunta(e: &mut Estado, tecla: &str) {
     let n = p.texto.chars().count();
     p.cursor = p.cursor.min(n);
     let byte = |t: &str, c: usize| t.char_indices().nth(c).map_or(t.len(), |(i, _)| i);
+    if super::wikilink::tecla(e, tecla) {
+        return;
+    }
+    if tecla == "Escape" || tecla == "Enter" {
+        e.wikilink_dispensado = None;
+    }
+    let Some(p) = e.pergunta.as_mut() else { return };
     // `/` num bloco novo ainda vazio abre o menu de inserir (ciclo 347),
     // como digitar `/` numa linha vazia da janela.
     if tecla == "/" && p.texto.is_empty() {

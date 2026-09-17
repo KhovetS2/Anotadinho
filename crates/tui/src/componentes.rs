@@ -242,7 +242,7 @@ fn pontuar(termo: &str, rotulo: &str, detalhe: &str) -> Option<u8> {
     termo.chars().filter(|c| !c.is_whitespace()).all(|c| letras.any(|x| x == c)).then_some(4)
 }
 
-fn sem_acento(s: &str) -> String {
+pub fn sem_acento(s: &str) -> String {
     s.chars()
         .map(|c| match c {
             'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',
