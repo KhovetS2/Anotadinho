@@ -148,6 +148,8 @@ pub struct Estado {
     pub busca_na_paleta: Option<String>,
     /// O termo que a busca da sidebar quer no conteúdo (ciclo 370).
     pub busca_na_sidebar: Option<String>,
+    /// O nome do vault aberto (ciclo 386), como o cabeçalho da janela.
+    pub nome_do_vault: Option<String>,
     /// A página de início deste vault (ciclo 362): abre primeiro, e a aba
     /// dela fica fixa na frente.
     pub inicio: Option<String>,
@@ -246,6 +248,7 @@ impl Estado {
             salvar_agora: false,
             busca_na_paleta: None,
             busca_na_sidebar: None,
+            nome_do_vault: None,
             inicio: None,
             imagem_pendente: None,
             celula_pendente: None,
@@ -1411,7 +1414,11 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             }
         })
         .collect();
-    let mut bloco_paginas = borda("páginas", e.foco == Foco::Paginas, &e.tema);
+    let titulo_da_sidebar = match &e.nome_do_vault {
+        Some(nome) => format!("páginas · {nome}"),
+        None => "páginas".to_string(),
+    };
+    let mut bloco_paginas = borda(&titulo_da_sidebar, e.foco == Foco::Paginas, &e.tema);
     if let Some(rodape) = rodape_de_busca(e, Foco::Paginas) {
         bloco_paginas = bloco_paginas.title_bottom(rodape);
     }
@@ -9813,5 +9820,12 @@ mod testes {
         form.campos[2].valor = crate::componentes::Valor::Texto("2026-08-01".into());
         edicao::aplicar_detalhe(&mut e, &alvo, &mut form);
         assert!(e.aviso.as_deref().unwrap().contains("fim vem antes"));
+    }
+
+    #[test]
+    fn a_sidebar_mostra_o_nome_do_vault() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        e.nome_do_vault = Some("MeuVault".into());
+        assert!(desenho(&mut e, 100, 8)[0].contains("páginas · MeuVault"));
     }
 }

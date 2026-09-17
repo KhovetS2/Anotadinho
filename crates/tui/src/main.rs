@@ -819,6 +819,10 @@ fn montar_estado(vault: &str, recem_criado: bool, mut preferencias: Preferencias
     // Abre de novo pelo caminho de sempre: a primeira página pode ser uma
     // conversa, tags ou propostas, que têm tela própria.
     estado.abrir_texto(&texto, versao);
+    estado.nome_do_vault = std::fs::canonicalize(vault)
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .or_else(|| Some(vault.to_string()));
     Ok(estado)
 }
 
