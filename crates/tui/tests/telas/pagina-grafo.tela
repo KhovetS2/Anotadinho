@@ -1,0 +1,77 @@
+# cena pagina-grafo · 140x30 · teclas: Tab l l
+┌páginas─────────────────────────────────┐┌────────────────────────────────────────────────────────────────────────────────────────────────┐
+│cena                                    ││ cena                                                                         ✲ Propriedades  = │
+│                                        ││────────────────────────────────────────────────────────────────────────────────────────────────│
+│                                        ││ Grafo de conexões                                                       5 páginas · 3 ligações │
+│                                        ││                                                                                                │
+│                                        ││╭──────────────────────────────────────────────────────────────────────────────────────────────╮│
+│                                        │││  Roadmap  2 conexões                                                                         ││
+│                                        │││  ↔ Sprint 12   ↔ Lançamento                                                                  ││
+│                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
+│                                        ││╭──────────────────────────────────────────────────────────────────────────────────────────────╮│
+│                                        │││  Sprint 12  2 conexões                                                                       ││
+│                                        │││  ↔ Roadmap   ↔ Deploy                                                                        ││
+│                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
+│                                        ││╭──────────────────────────────────────────────────────────────────────────────────────────────╮│
+│                                        │││  Deploy  1 conexão                                                                           ││
+│                                        │││  ↔ Sprint 12                                                                                 ││
+│                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
+│                                        ││╭──────────────────────────────────────────────────────────────────────────────────────────────╮│
+│                                        │││  Lançamento  1 conexão                                                                       ││
+│                                        │││  ↔ Roadmap                                                                                   ││
+│                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
+│                                        ││╭──────────────────────────────────────────────────────────────────────────────────────────────╮│
+│                                        │││  Nota solta  sem conexões                                                                    ││
+│                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+│                                        ││                                                                                                │
+└────────────────────────────────────────┘└ j k página · h l conexão · Enter abre ─────────────────────────────────────────────────────────┘
+== estilos ==
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+accccddddddddddddddddddddddddddddddddddddabeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffffffffffffffffffb
+addddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+addddddddddddddddddddddddddddddddddddddddabggggggggggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddfffffffffffffffffffffffb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhb
+addddddddddddddddddddddddddddddddddddddddabhhiiiiiiiiijkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhb
+addddddddddddddddddddddddddddddddddddddddabhhllllllllllllljmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhb
+addddddddddddddddddddddddddddddddddddddddabhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhb
+addddddddddddddddddddddddddddddddddddddddabnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnb
+addddddddddddddddddddddddddddddddddddddddabnniiiiiiiiiiijkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjnnb
+addddddddddddddddddddddddddddddddddddddddabnnllllllllllljlllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjnnb
+addddddddddddddddddddddddddddddddddddddddabnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnb
+addddddddddddddddddddddddddddddddddddddddabnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnb
+addddddddddddddddddddddddddddddddddddddddabnniiiiiiiijkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjnnb
+addddddddddddddddddddddddddddddddddddddddabnnllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjnnb
+addddddddddddddddddddddddddddddddddddddddabnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnb
+addddddddddddddddddddddddddddddddddddddddabnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnb
+addddddddddddddddddddddddddddddddddddddddabnniiiiiiiiiiiijkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjnnb
+addddddddddddddddddddddddddddddddddddddddabnnllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjnnb
+addddddddddddddddddddddddddddddddddddddddabnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnb
+addddddddddddddddddddddddddddddddddddddddabnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnb
+addddddddddddddddddddddddddddddddddddddddabnniiiiiiiiiiiijkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjnnb
+addddddddddddddddddddddddddddddddddddddddabnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabooooooooooooooooooooooooooooooooooooooobbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+a = fg #3d404f bg #272930
+b = fg #00b5ff bg #272930
+c = fg - bg #272930 apagado
+d = fg - bg #272930
+e = fg #00b5ff bg #272930 negrito
+f = fg #989eb7 bg #272930
+g = fg #e4e8f5 bg #272930 negrito
+h = fg #00b5ff bg #32343f
+i = fg #e4e8f5 bg #32343f negrito
+j = fg - bg #32343f
+k = fg #989eb7 bg #32343f
+l = fg #e4e8f5 bg #3d404f
+m = fg #272930 bg #00b5ff
+n = fg #3d404f bg #32343f
+o = fg #989eb7 bg #272930 itálico

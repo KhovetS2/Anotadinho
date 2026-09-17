@@ -9,6 +9,7 @@
 │                                  │ ϟ Nova página: Kanban                                              │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
 │                                  │ ϟ Nova página: Calendário                                          │                                  │
 │                                  │ ϟ Nova página: Tabela de tarefas                                   │                                  │
+│                                  │ ϟ Nova página: Grafo de conexões                                   │                                  │
 │                                  │ ϟ Nova página: Conversa                                            │                                  │
 │                                  │ ϟ Alternar tema                                                    │                                  │
 │                                  │ ϟ Escolher tema…                                                   │                                  │
@@ -23,7 +24,6 @@
 │                                  │ ϟ Nova página a partir de template…                                │                                  │
 │                                  │ ϟ Propriedades da página…                                          │                                  │
 │                                  │ ϟ Ver atalhos                                                      │                                  │
-│                                  │ ϟ Nova pasta…                                                      │                                  │
 │                                  ╰ ↑↓ escolher · Enter · Ctrl+F buscar no conteúdo · Esc ─────────────╯                                  │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │

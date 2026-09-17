@@ -38,6 +38,9 @@ pub enum TipoEspecial {
     /// `type: table` de página inteira: as páginas com `status::` ou
     /// `priority::`.
     Tarefas,
+    /// `type: graph` (ciclo 361): as conexões por wikilink, em lista — o
+    /// grafo 3D da janela, lido no terminal.
+    Grafo,
 }
 
 impl TipoEspecial {
@@ -53,6 +56,7 @@ impl TipoEspecial {
             "propostas" => Some(Self::Propostas),
             "kanban" => Some(Self::Kanban),
             "table" => Some(Self::Tarefas),
+            "graph" => Some(Self::Grafo),
             _ => None,
         }
     }
@@ -65,6 +69,7 @@ impl TipoEspecial {
             Self::Propostas => ("pages/propostas.md", "Propostas"),
             Self::Kanban => ("pages/kanban.md", "Kanban"),
             Self::Tarefas => ("pages/tarefas.md", "Tarefas"),
+            Self::Grafo => ("pages/grafo.md", "Grafo"),
         }
     }
 }
@@ -95,6 +100,37 @@ pub enum Dados {
     /// As colunas (chave, rótulo) e os títulos dos cartões de cada uma.
     Kanban(Vec<(String, String, Vec<String>)>),
     Tarefas(Vec<Tarefa>),
+    /// Cada página (caminho, título) e as vizinhas, a mais ligada primeiro.
+    Grafo(Vec<(String, String, Vec<(String, String)>)>),
+}
+
+/// As conexões do vault, como o `montar` do grafo da janela: um
+/// `[[wikilink]]` pro título de outra página liga as duas, nos dois
+/// sentidos, uma vez só.
+pub fn grafo_do_indice(indice: &[anotadinho_core::index::PageIndexEntry]) -> Dados {
+    use std::collections::{BTreeSet, HashMap};
+    let por_titulo: HashMap<String, usize> = indice.iter().enumerate().map(|(i, p)| (p.title.to_lowercase(), i)).collect();
+    let mut vizinhos: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); indice.len()];
+    for (i, p) in indice.iter().enumerate() {
+        for alvo in &p.wikilinks {
+            if let Some(&j) = por_titulo.get(&alvo.to_lowercase()) {
+                if j != i {
+                    vizinhos[i].insert(j);
+                    vizinhos[j].insert(i);
+                }
+            }
+        }
+    }
+    let mut nos: Vec<(String, String, Vec<(String, String)>)> = indice
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let v = vizinhos[i].iter().map(|&j| (indice[j].path.clone(), indice[j].title.clone())).collect();
+            (p.path.clone(), p.title.clone(), v)
+        })
+        .collect();
+    nos.sort_by(|a, b| b.2.len().cmp(&a.2.len()).then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase())));
+    Dados::Grafo(nos)
 }
 
 /// Uma linha da tabela de tarefas.
@@ -205,6 +241,7 @@ impl TelaEspecial {
             Some(Dados::Propostas(p)) => p.len(),
             Some(Dados::Kanban(c)) => c.get(self.chip).map_or(0, |c| c.2.len()),
             Some(Dados::Tarefas(t)) => t.len(),
+            Some(Dados::Grafo(g)) => g.len(),
             None => 0,
         }
     }
@@ -308,6 +345,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
                 TipoEspecial::Propostas => tecla_nas_propostas(e, tecla),
                 TipoEspecial::Kanban => tecla_no_kanban(e, tecla),
                 TipoEspecial::Tarefas => tecla_nas_tarefas(e, tecla),
+                TipoEspecial::Grafo => tecla_no_grafo(e, tecla),
             };
         }
     }
@@ -324,6 +362,25 @@ fn tecla_nas_tags(e: &mut Estado, tecla: &str) -> bool {
         "Enter" => {
             if let Some((path, _)) = paginas.get(t.chip) {
                 e.pedidos.push(Pedido::AbrirPagina(path.clone()));
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// No grafo, `chip` 0 é a própria página e `k` a vizinha `k-1`.
+fn tecla_no_grafo(e: &mut Estado, tecla: &str) -> bool {
+    let Some(t) = e.especial.as_mut() else { return false };
+    let Some(Dados::Grafo(nos)) = &t.dados else { return false };
+    let Some((path, _, vizinhos)) = nos.get(t.selecionado) else { return false };
+    match tecla {
+        "l" | "ArrowRight" | "w" => t.chip = (t.chip + 1).min(vizinhos.len()),
+        "h" | "ArrowLeft" | "b" => t.chip = t.chip.saturating_sub(1),
+        "Enter" => {
+            let alvo = if t.chip == 0 { Some(path) } else { vizinhos.get(t.chip - 1).map(|v| &v.0) };
+            if let Some(p) = alvo {
+                e.pedidos.push(Pedido::AbrirPagina(p.clone()));
             }
         }
         _ => return false,
@@ -443,6 +500,7 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
         TipoEspecial::Propostas => " j k · a aplica · r recusa · v diff/visualização · Ctrl+D rola ",
         TipoEspecial::Kanban => " h l coluna · j k cartão ",
         TipoEspecial::Tarefas => " j k · Enter abre · s ordena ",
+        TipoEspecial::Grafo => " j k página · h l conexão · Enter abre ",
     };
     let mut borda = Block::default()
         .borders(Borders::ALL)
@@ -499,6 +557,11 @@ pub fn linhas_da_tela(t: &TelaEspecial, pagina: &str, tema: &Tema, w: usize, no_
         (TipoEspecial::Kanban, _) => ("Kanban", String::new()),
         (TipoEspecial::Tarefas, Some(Dados::Tarefas(l))) => ("Tarefas", format!("{} ", l.len())),
         (TipoEspecial::Tarefas, _) => ("Tarefas", String::new()),
+        (TipoEspecial::Grafo, Some(Dados::Grafo(g))) => (
+            "Grafo de conexões",
+            format!("{} páginas · {} ligações ", g.len(), g.iter().map(|n| n.2.len()).sum::<usize>() / 2),
+        ),
+        (TipoEspecial::Grafo, _) => ("Grafo de conexões", String::new()),
     };
     let esquerda = format!(" {titulo}");
     fora.push(Line::from(vec![
@@ -542,6 +605,18 @@ pub fn linhas_da_tela(t: &TelaEspecial, pagina: &str, tema: &Tema, w: usize, no_
             } else {
                 let antes = fora.len();
                 fora.extend(tabela_de_assets(t, tema, assets, w, no_foco, antes, &mut faixas));
+            }
+        }
+        Dados::Grafo(nos) => {
+            fora.push(Line::default());
+            if nos.iter().all(|n| n.2.is_empty()) {
+                fora.extend(paragrafo("Nenhuma conexão ainda. Ligue páginas com [[Título]] e elas aparecem aqui.", apagado, w));
+            }
+            for (i, (_, titulo, vizinhos)) in nos.iter().enumerate() {
+                let sel = no_foco && i == t.selecionado;
+                let inicio = fora.len();
+                fora.extend(no_do_grafo(tema, titulo, vizinhos, sel.then_some(t.chip), i == t.selecionado, w));
+                faixas.push((inicio, fora.len()));
             }
         }
         Dados::Kanban(colunas) => {
@@ -890,4 +965,30 @@ fn tabela_de_tarefas(t: &TelaEspecial, tema: &Tema, lista: &[Tarefa], w: usize, 
         faixas.push((base + i, base + i + 1));
     }
     fora
+}
+
+/// Uma página do grafo: o título (que abre) e as vizinhas em pílulas.
+fn no_do_grafo(tema: &Tema, titulo: &str, vizinhos: &[(String, String)], chip: Option<usize>, selecionado: bool, w: usize) -> Vec<Line<'static>> {
+    let apagado = Style::default().fg(tema.var("text-muted"));
+    let proprio = if chip == Some(0) {
+        tema.estilo(Realce::Cursor).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(tema.var("text-primary")).add_modifier(Modifier::BOLD)
+    };
+    let conta = match vizinhos.len() {
+        0 => "sem conexões".to_string(),
+        1 => "1 conexão".to_string(),
+        n => format!("{n} conexões"),
+    };
+    let mut miolo = vec![Line::from(vec![Span::styled(format!(" {titulo} "), proprio), Span::raw(" "), Span::styled(conta, apagado)])];
+    let chip_normal = Style::default().bg(tema.var("bg-elevated")).fg(tema.var("text-primary"));
+    miolo.extend(pilulas(
+        vizinhos
+            .iter()
+            .enumerate()
+            .map(|(k, (_, t))| (format!("↔ {t}"), if chip == Some(k + 1) { tema.estilo(Realce::Cursor) } else { chip_normal }))
+            .collect(),
+        w.saturating_sub(4),
+    ));
+    caixa(tema, miolo, w, cor_da_borda(tema, selecionado, chip.is_some()))
 }

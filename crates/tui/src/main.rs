@@ -343,6 +343,7 @@ fn vigiar_disco(estado: &mut Estado, vault: &str, tambem_a_lista: bool) {
 fn carregar_especial(estado: &mut Estado, vault: &str, tipo: TipoEspecial) {
     let dados = match tipo {
         TipoEspecial::Tags => handle_scan_vault(vault.to_string()).map(|i| especiais::tags_do_indice(&i)),
+        TipoEspecial::Grafo => handle_scan_vault(vault.to_string()).map(|i| especiais::grafo_do_indice(&i)),
         TipoEspecial::Assets => anotadinho_ipc::handle_list_assets_info(vault.to_string()).map(|lista| {
             // Um texto só com todas as páginas decide o "usado" de todos.
             let mut paginas = String::new();
@@ -411,6 +412,7 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                             TipoEspecial::Propostas => "propostas",
                         TipoEspecial::Kanban => "kanban",
                         TipoEspecial::Tarefas => "table",
+                        TipoEspecial::Grafo => "graph",
                         };
                         let md = format!("---\ntitle: {titulo}\ntype: {tipo_no_frontmatter}\n---\n");
                         match handle_write_page(vault.to_string(), path.to_string(), md) {

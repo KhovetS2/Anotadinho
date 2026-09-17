@@ -173,6 +173,7 @@ fn cenas() -> Vec<Cena> {
     v.push(cena("tags", especial("tags"), &["Tab", "j", "l"], 140, 36));
     v.push(cena("assets", especial("assets"), &["Tab", "j"], 140, 20));
     v.push(cena("pagina-kanban", "---\ntitle: Quadro\ntype: kanban\n---\n\n- Escrever o texto  column:: todo\n- title:: Revisar  column:: doing\n- Publicar  column:: done\n- Ideia solta\n".to_string(), &["Tab", "l", "l"], 140, 20));
+    v.push(cena("pagina-grafo", especial("graph"), &["Tab", "l", "l"], 140, 30));
     v.push(cena("pagina-tarefas", especial("table"), &["Tab", "j"], 140, 16));
     v.push(cena("pagina-calendario", especial("calendar"), &[], 140, 36));
     v.push(cena("propostas-diff", especial("propostas"), &["Tab"], 140, 40));
@@ -236,6 +237,21 @@ fn dados_falsos(tipo: especiais::TipoEspecial) -> especiais::Dados {
             "![](../assets/diagrama-arquitetura.png) capa.jpg",
         ),
         especiais::TipoEspecial::Kanban => unreachable!("o kanban lê a própria página"),
+        especiais::TipoEspecial::Grafo => {
+            let pagina = |path: &str, title: &str, links: &[&str]| anotadinho_core::index::PageIndexEntry {
+                path: path.into(),
+                title: title.into(),
+                wikilinks: links.iter().map(|t| t.to_string()).collect(),
+                ..Default::default()
+            };
+            especiais::grafo_do_indice(&[
+                pagina("pages/roadmap.md", "Roadmap", &["Sprint 12", "Lançamento"]),
+                pagina("pages/sprint.md", "Sprint 12", &["Deploy"]),
+                pagina("pages/lancamento.md", "Lançamento", &[]),
+                pagina("pages/deploy.md", "Deploy", &[]),
+                pagina("pages/solta.md", "Nota solta", &["Inexistente"]),
+            ])
+        }
         especiais::TipoEspecial::Tarefas => especiais::tarefas_das_paginas(vec![
             ("pages/deploy.md".into(), "Deploy".into(), "status:: doing\npriority:: alta".into()),
             ("pages/docs.md".into(), "Documentação".into(), "status:: todo".into()),

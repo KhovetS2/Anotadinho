@@ -9057,4 +9057,39 @@ mod testes {
         especiais::carregar(&mut e, especiais::Dados::Propostas(vec![]));
         assert!(!desenho(&mut e, 100, 20).join("\n").contains("Propriedades"));
     }
+
+    // --- Ciclo 361: grafo de conexões ------------------------------------------
+
+    #[test]
+    fn grafo_lista_as_conexoes_nos_dois_sentidos_e_abre() {
+        let pagina = |path: &str, title: &str, links: &[&str]| anotadinho_core::index::PageIndexEntry {
+            path: path.into(),
+            title: title.into(),
+            wikilinks: links.iter().map(|t| t.to_string()).collect(),
+            ..Default::default()
+        };
+        let especiais::Dados::Grafo(nos) = especiais::grafo_do_indice(&[
+            pagina("pages/a.md", "A", &["B", "b", "C"]),
+            pagina("pages/b.md", "B", &["A"]),
+            pagina("pages/c.md", "C", &[]),
+            pagina("pages/d.md", "D", &["nada"]),
+        ]) else {
+            panic!()
+        };
+        let resumo: Vec<(String, usize)> = nos.iter().map(|n| (n.1.clone(), n.2.len())).collect();
+        assert_eq!(resumo, [("A".into(), 2), ("B".into(), 1), ("C".into(), 1), ("D".into(), 0)]);
+        let mut e = especial_aberto("graph");
+        assert_eq!(e.pedidos, [Pedido::CarregarEspecial(especiais::TipoEspecial::Grafo)]);
+        e.pedidos.clear();
+        especiais::carregar(&mut e, especiais::Dados::Grafo(nos));
+        let tela = desenho(&mut e, 100, 30).join("\n");
+        assert!(tela.contains("Grafo de conexões") && tela.contains("4 páginas · 2 ligações") && tela.contains("↔ C"), "{tela}");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/a.md".into())]);
+        e.pedidos.clear();
+        tecla(&mut e, "l");
+        tecla(&mut e, "l");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/c.md".into())]);
+    }
 }

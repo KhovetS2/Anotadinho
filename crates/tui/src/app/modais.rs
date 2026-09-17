@@ -379,6 +379,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Nova página: Kanban", "nova-pagina:kanban"),
     ("Nova página: Calendário", "nova-pagina:calendar"),
     ("Nova página: Tabela de tarefas", "nova-pagina:table"),
+    ("Nova página: Grafo de conexões", "nova-pagina:graph"),
     ("Nova página: Conversa", "nova-pagina:conversa"),
     ("Alternar tema", "alternar-tema"),
     ("Escolher tema…", "escolher-tema"),
