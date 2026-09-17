@@ -603,18 +603,26 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             {
                 continue;
             }
-            // Embed ABERTO que tem título não desenha o próprio rótulo
-            // (ciclo 302): `[fluxo]` em cima de `PROPOSTA: Em revisão`
-            // diz duas vezes, e o título diz melhor. Fechado ele volta,
-            // porque aí o rótulo é a única identidade que sobra.
+            // Embed ABERTO não desenha o próprio rótulo (ciclo 309).
+            //
+            // O ciclo 302 já tirava `[fluxo]` quando havia título. Agora
+            // que todo embed é caixa preenchida na cor do tipo (308), o
+            // `[kanban]` em cima do conteúdo diz o que a caixa já diz — e
+            // na janela não há rótulo nenhum. Fechado ele volta, porque aí
+            // o rótulo é a única identidade que sobra; e um embed sem
+            // nenhuma linha de conteúdo também o mantém, senão não haveria
+            // caixa pra ver.
             if matches!(l.tipo, Tipo::Embed(_))
-                && !l.resumo.is_empty()
-                && l.resumo != l.texto
                 && !e.dobrados.contains(&l.caminho)
                 && linhas_visiveis
                     .iter()
-                    .any(|f| f.texto == l.resumo && f.caminho.starts_with(&l.caminho))
+                    .any(|f| f.caminho != l.caminho && f.dono_embed.as_ref() == Some(&l.caminho))
             {
+                // O cursor NO embed continua visível: a caixa inteira é
+                // quem o mostra (a lateral acende, logo abaixo).
+                if l.mostra(&e.cursor) {
+                    achou = true;
+                }
                 continue;
             }
             let quer = regiao(l);
@@ -713,16 +721,22 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             } else if !l.segmentos.is_empty() && l.embed_dono.as_deref() == Some("table")
             {
                 let embed = e.arvore.em(l.dono_embed.as_deref().unwrap_or(&[]));
-                let larguras = embed.map(larguras_de_tabela).unwrap_or_default();
+                let recuo = 2 * l.nivel;
+                let larguras = larguras_que_cabem(
+                    embed.map(larguras_de_tabela).unwrap_or_default(),
+                    largura_conteudo.saturating_sub(recuo),
+                );
                 let cabecalho = matches!(&l.tipo, Tipo::Parte { nome, .. } if nome == "header");
-                vec![vec![linha_de_tabela(
+                let ultima = embed.is_some_and(|t| l.caminho.last() == Some(&(t.filhos.len() - 1)));
+                vec![linhas_de_tabela(
                     l,
                     &e.arvore,
                     &e.tema,
                     &larguras,
                     cabecalho,
+                    ultima,
                     Some(&e.cursor),
-                )]]
+                )]
             } else if !l.segmentos.is_empty() {
                 linhas_de_fileira(l, &e.tema, largura_conteudo, Some(&e.cursor))
             } else if let Some(modo) = e.arvore.em(&l.caminho).and_then(caixa_avulsa) {
@@ -742,7 +756,12 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             // A lateral acende na linha do cursor: é como o foco se
             // marca dentro de um cartão que não é dele.
             let cor_lateral = match &atual {
-                Some((_, r)) if no_foco && !l.enfeite && l.mostra(&e.cursor) => {
+                // Com o cursor no próprio embed, é a caixa INTEIRA que
+                // acende: o rótulo, que era a linha do cursor, não é mais
+                // desenhado (ciclo 309).
+                Some((dono, r))
+                    if no_foco && !l.enfeite && (l.mostra(&e.cursor) || *dono == e.cursor) =>
+                {
                     let _ = r;
                     Some(Realce::BordaUnidade)
                 }
@@ -1003,32 +1022,64 @@ fn larguras_de_tabela(embed: &Unidade) -> Vec<usize> {
     larguras
 }
 
-/// Uma linha de TABELA: célula ao lado de célula alinhada em coluna,
-/// texto simples — não a caixa de botão que toda outra fileira ganha
-/// (ciclo 305). Uma tabela é grade, não fileira de retângulos.
+/// As larguras cabendo no painel: enquanto a grade passa da largura,
+/// a coluna mais larga cede uma célula (nunca abaixo de 3). O texto que
+/// não couber sai cortado com `…`, em vez de a borda direita sumir.
+fn larguras_que_cabem(mut larguras: Vec<usize>, disponivel: usize) -> Vec<usize> {
+    let total = |ls: &[usize]| ls.iter().map(|w| w + 3).sum::<usize>() + 1;
+    while total(&larguras) > disponivel {
+        let Some((i, maior)) = larguras.iter().copied().enumerate().max_by_key(|(_, w)| *w) else { break };
+        if maior <= 3 {
+            break;
+        }
+        larguras[i] -= 1;
+    }
+    larguras
+}
+
+/// Uma régua da grade da tabela: `┌──┬──┐`, `╞══╪══╡`, `├──┼──┤`,
+/// `└──┴──┘`. Cada coluna ocupa a largura dela e mais os dois espaços de
+/// respiro da célula.
+fn regua_da_tabela<'a>(recuo: &str, larguras: &[usize], pecas: [&str; 4], tema: &Tema) -> Line<'a> {
+    let miolo = larguras
+        .iter()
+        .map(|w| pecas[3].repeat(w + 2))
+        .collect::<Vec<_>>()
+        .join(pecas[1]);
+    Line::from(vec![
+        Span::styled(recuo.to_string(), Style::default()),
+        Span::styled(format!("{}{miolo}{}", pecas[0], pecas[2]), tema.estilo(Realce::Grade)),
+    ])
+}
+
+/// Uma linha de TABELA desenhada como GRADE (ciclo 309): borda dos
+/// quatro lados, `│` entre as colunas, uma régua depois de cada linha — o
+/// `border-bottom` de cada `<tr>` da janela — e o cabeçalho separado por
+/// régua dupla. O cabeçalho abre a grade; a última linha a fecha.
 ///
 /// Select e multiselect saem em PÍLULA (ciclo 308): texto na cor do
 /// badge sobre o fundo tingido dele, e o multiselect com uma pílula
 /// por tag, cada uma na sua cor.
-fn linha_de_tabela<'a>(
+#[allow(clippy::too_many_arguments)]
+fn linhas_de_tabela<'a>(
     l: &crate::tela::Linha,
     arvore: &Unidade,
     tema: &Tema,
     larguras: &[usize],
     cabecalho: bool,
+    ultima: bool,
     cursor: Option<&[usize]>,
-) -> Line<'a> {
+) -> Vec<Line<'a>> {
     let recuo = "  ".repeat(l.nivel);
-    let mut spans = vec![Span::styled(recuo, Style::default())];
+    let grade = tema.estilo(Realce::Grade);
+    let mut spans = vec![Span::styled(recuo.clone(), Style::default()), Span::styled("│", grade)];
     for (i, seg) in l.segmentos.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(" │ ", tema.estilo(Realce::Grade)));
-        }
         let largura = larguras.get(i).copied().unwrap_or(0);
         let aceso = cursor.is_some_and(|c| c == seg.caminho.as_slice());
         if aceso || cabecalho {
             let papel = if aceso { Realce::Cursor } else { Realce::CabecalhoDeTabela };
-            spans.push(Span::styled(format!("{:largura$}", seg.texto), tema.estilo(papel)));
+            spans.push(Span::styled(format!(" {} ", caber(&seg.texto, largura)), tema.estilo(papel)));
+            spans.push(Span::styled("│", grade));
             continue;
         }
         // As pílulas desta célula, como (texto, papel).
@@ -1055,23 +1106,52 @@ fn linha_de_tabela<'a>(
         {
             vec![(seg.texto.clone(), papel)]
         } else {
-            spans.push(Span::styled(format!("{:largura$}", seg.texto), tema.estilo(papel_da_parte(&seg.nome))));
+            spans.push(Span::styled(
+                format!(" {} ", caber(&seg.texto, largura)),
+                tema.estilo(papel_da_parte(&seg.nome)),
+            ));
+            spans.push(Span::styled("│", grade));
             continue;
         };
-        let mut usado = 0;
+        spans.push(Span::styled(" ", Style::default()));
+        let mut resta = largura;
         for (k, (texto, papel)) in pilulas.iter().enumerate() {
             if k > 0 {
+                if resta == 0 {
+                    break;
+                }
                 spans.push(Span::styled(" ", Style::default()));
-                usado += 1;
+                resta -= 1;
             }
-            spans.push(Span::styled(format!(" {texto} "), tema.pilula(*papel)));
-            usado += texto.chars().count() + 2;
+            let precisa = texto.chars().count() + 2;
+            if resta >= precisa {
+                spans.push(Span::styled(format!(" {texto} "), tema.pilula(*papel)));
+                resta -= precisa;
+            } else {
+                // A pílula que não cabe inteira sai cortada, e as
+                // seguintes ficam de fora — a borda da coluna é fixa.
+                if resta >= 3 {
+                    spans.push(Span::styled(format!(" {} ", caber(texto, resta - 2)), tema.pilula(*papel)));
+                    resta = 0;
+                }
+                break;
+            }
         }
-        if usado < largura {
-            spans.push(Span::styled(" ".repeat(largura - usado), Style::default()));
-        }
+        spans.push(Span::styled(" ".repeat(resta + 1), Style::default()));
+        spans.push(Span::styled("│", grade));
     }
-    Line::from(spans)
+
+    let mut fora = Vec::new();
+    if cabecalho {
+        fora.push(regua_da_tabela(&recuo, larguras, ["┌", "┬", "┐", "─"], tema));
+    }
+    fora.push(Line::from(spans));
+    fora.push(match (cabecalho, ultima) {
+        (_, true) => regua_da_tabela(&recuo, larguras, ["└", "┴", "┘", "─"], tema),
+        (true, false) => regua_da_tabela(&recuo, larguras, ["╞", "╪", "╡", "═"], tema),
+        (false, false) => regua_da_tabela(&recuo, larguras, ["├", "┼", "┤", "─"], tema),
+    });
+    fora
 }
 
 /// A largura de uma célula (dia) da grade do mês: sete dias e oito
@@ -1197,6 +1277,13 @@ fn linhas_da_semana(
         while col < dias.len() {
             let slot = faixas_de(dias[col]).get(faixa).cloned();
             let nome_slot = slot.as_ref().map(&nome).unwrap_or_default();
+            // O evento sob o cursor acende (ciclo 309): a faixa é a
+            // POSIÇÃO dela entre os filhos do dia, que vêm primeiro.
+            let aceso = cursor.is_some_and(|c| {
+                l.segmentos
+                    .get(col)
+                    .is_some_and(|s| c.len() == s.caminho.len() + 1 && c.starts_with(&s.caminho) && c[s.caminho.len()] == faixa)
+            });
             if nome_slot.starts_with("evento") {
                 let mut k = 1;
                 while col + k < dias.len()
@@ -1208,7 +1295,12 @@ fn linhas_da_semana(
                 }
                 let w = k * cel + (k - 1);
                 let texto = slot.map(|s| s.texto).unwrap_or_default();
-                spans.push(Span::styled(caber(&format!(" {texto}"), w), tema.pilula(papel_do_evento(&nome_slot))));
+                let estilo = if aceso {
+                    tema.estilo(Realce::Cursor)
+                } else {
+                    tema.pilula(papel_do_evento(&nome_slot))
+                };
+                spans.push(Span::styled(caber(&format!(" {texto}"), w), estilo));
                 col += k;
             } else {
                 spans.push(Span::styled(" ".repeat(cel), Style::default()));
@@ -2381,12 +2473,15 @@ mod testes {
     }
 
     #[test]
-    fn callout_sem_titulo_anuncia_o_rotulo_na_cor_da_variante() {
+    fn callout_fechado_anuncia_o_rotulo_na_cor_da_variante() {
+        // Aberto, o rótulo não aparece mais (ciclo 309); fechado ele é a
+        // única identidade da caixa, e veste a cor da variante.
         let mut e = Estado::novo(
             paginas(),
             analisar("{{ type: \"callout\" }}\nvariant: error\nbody: |\n  Quebrou.\n{{ /callout }}\n"),
         );
         e.foco = Foco::Paginas;
+        e.dobrados.insert(vec![0]);
         let erro = e.tema.estilo(Realce::CalloutErro).fg;
         let buf = quadro(&mut e, 80, 12);
         let rotulo = (0..buf.area.height)
@@ -2394,6 +2489,56 @@ mod testes {
             .find(|p| buf[*p].symbol() == "[")
             .expect("sem rótulo [callout]");
         assert_eq!(buf[rotulo].style().fg, erro);
+    }
+
+    #[test]
+    fn embed_aberto_nao_mostra_o_nome_do_tipo() {
+        // `[kanban]`, `[table]`… em cima de uma caixa já pintada na cor do
+        // tipo diziam a mesma coisa duas vezes; a janela não tem rótulo.
+        for pagina in [com_kanban(), com_tabela(), com_galeria(), com_acoes(), com_cronograma()] {
+            let mut e = Estado::novo(paginas(), pagina);
+            e.foco = Foco::Paginas;
+            let tudo = desenho(&mut e, 80, 20).join("\n");
+            for rotulo in ["[kanban]", "[table]", "[gallery]", "[actions]", "[timeline]"] {
+                assert!(!tudo.contains(rotulo), "{rotulo} ainda aparece:\n{tudo}");
+            }
+        }
+    }
+
+    #[test]
+    fn embed_fechado_ou_vazio_mantem_o_rotulo() {
+        let mut e = Estado::novo(paginas(), com_kanban());
+        e.foco = Foco::Paginas;
+        e.dobrados.insert(vec![0]);
+        assert!(desenho(&mut e, 80, 12).join("\n").contains("[kanban]"));
+
+        // Sem linha nenhuma de conteúdo, o rótulo é o que desenha a caixa.
+        let mut vazio = Estado::novo(
+            paginas(),
+            analisar("{{ type: \"query\" }}\nview: list\n{{ /query }}\n"),
+        );
+        vazio.foco = Foco::Paginas;
+        assert!(desenho(&mut vazio, 80, 12).join("\n").contains("[query]"));
+    }
+
+    #[test]
+    fn com_o_cursor_no_embed_a_caixa_inteira_acende() {
+        // O rótulo era a linha do cursor. Sem ele, quem diz "você está
+        // neste embed" é a lateral de TODAS as linhas da caixa.
+        let mut e = Estado::novo(paginas(), com_kanban());
+        e.cursor = vec![0];
+        e.foco = Foco::Conteudo;
+        let foco = e.tema.estilo(Realce::BordaUnidade).fg;
+        let buf = quadro(&mut e, 60, 14);
+        let laterais: Vec<_> = (0..buf.area.height)
+            .filter_map(|y| {
+                (0..buf.area.width)
+                    .find(|x| buf[(*x, y)].symbol() == "▌")
+                    .map(|x| buf[(x, y)].style().fg)
+            })
+            .collect();
+        assert!(laterais.len() >= 3, "{laterais:?}");
+        assert!(laterais.iter().all(|c| *c == foco), "nem toda lateral acendeu: {laterais:?}");
     }
 
     #[test]
@@ -2789,13 +2934,48 @@ mod testes {
     }
 
     #[test]
-    fn entrar_num_dia_nao_desce_nas_faixas() {
-        // As faixas de evento são lidas pelo desenho da semana e não têm
-        // linha própria: Enter num dia não pode levar o cursor pra elas.
-        let arvore = com_calendario();
-        let dia: Caminho = vec![0, 0, 1, 4];
-        assert!(!arvore.em(&dia).unwrap().filhos.is_empty());
-        assert_eq!(tela::andar(&arvore, &dia, Passo::Entrar), dia);
+    fn entrar_num_dia_pousa_no_primeiro_evento_e_j_anda_entre_eles() {
+        // Os eventos do dia são navegáveis (ciclo 309): Enter no dia vai
+        // pro primeiro, `j`/`k` andam entre eles pulando faixa vazia e
+        // continuação de barra, Backspace volta pro dia.
+        let arvore = analisar(
+            "{{ type: \"calendar\" }}\nentries:\n\
+             - date: 2026-08-10\n  title: Sprint\n  end_date: 2026-08-14\n\
+             - date: 2026-08-12\n  title: Reunião\n\
+             - date: 2026-08-12\n  title: Almoço\n\
+             {{ /calendar }}\n",
+        );
+        // embed → mês → semana de 9 a 15 → quarta, dia 12. As faixas
+        // dele: [continuação da sprint, Reunião, Almoço].
+        let dia: Caminho = vec![0, 0, 2, 3];
+        let primeiro = tela::andar(&arvore, &dia, Passo::Entrar);
+        assert_eq!(primeiro, vec![0, 0, 2, 3, 1], "não pulou a continuação da sprint");
+        assert_eq!(arvore.em(&primeiro).unwrap().texto, "Reunião");
+        let segundo = tela::andar(&arvore, &primeiro, Passo::Proximo);
+        assert_eq!(arvore.em(&segundo).unwrap().texto, "Almoço");
+        assert_eq!(tela::andar(&arvore, &segundo, Passo::Proximo), segundo);
+        assert_eq!(tela::andar(&arvore, &primeiro, Passo::Anterior), primeiro);
+        assert_eq!(tela::andar(&arvore, &segundo, Passo::Sair), dia);
+        // Dia sem evento nenhum: Enter não leva a lugar sem linha.
+        let domingo: Caminho = vec![0, 0, 2, 0];
+        assert_eq!(tela::andar(&arvore, &domingo, Passo::Entrar), domingo);
+    }
+
+    #[test]
+    fn o_evento_sob_o_cursor_acende_na_grade() {
+        let mut e = Estado::novo(paginas(), com_calendario());
+        // embed → mês → segunda semana → quinta, dia 6 → Revisão.
+        e.cursor = vec![0, 0, 1, 4, 0];
+        e.foco = Foco::Conteudo;
+        let cursor = e.tema.estilo(Realce::Cursor);
+        let linhas = desenho(&mut e, 140, 40);
+        let buf = quadro(&mut e, 140, 40);
+        let y = linhas.iter().position(|l| l.contains("Revis")).unwrap_or_else(|| panic!("a revisão sumiu:\n{}", linhas.join("\n"))) as u16;
+        let x = linhas[y as usize].find("Revis").map(|b| linhas[y as usize][..b].chars().count()).unwrap() as u16;
+        assert_eq!(buf[(x, y)].style().bg, cursor.bg, "o evento sob o cursor não acendeu");
+        // E a tela considera o cursor visível: a semana MOSTRA o evento.
+        let l = tela::linhas(&e.arvore);
+        assert!(tela::linha_de(&l, &e.cursor).is_some());
     }
 
     #[test]
@@ -2885,6 +3065,54 @@ mod testes {
             col_status_curta, col_status_longa,
             "a coluna Status não ficou alinhada entre as linhas:\n{l_api}\n{l_longa}"
         );
+    }
+
+    #[test]
+    fn a_tabela_e_uma_grade_fechada() {
+        // Até aqui a tabela era só células separadas por `│`, sem borda
+        // nem régua entre as linhas. A janela desenha a borda de baixo
+        // de cada `<tr>`; a grade fecha dos quatro lados (ciclo 309).
+        let mut e = Estado::novo(paginas(), com_tabela());
+        e.foco = Foco::Paginas;
+        let linhas = desenho(&mut e, 100, 20);
+        let tudo = linhas.join("\n");
+        let achar = |c: char| {
+            linhas
+                .iter()
+                .find(|l| l.contains(c))
+                .unwrap_or_else(|| panic!("sem `{c}`:\n{tudo}"))
+                .clone()
+        };
+        let topo = achar('┬');
+        let cabecalho = achar('╪');
+        let meio = achar('┼');
+        let fim = achar('┴');
+        // Duas colunas: uma divisão interna, na MESMA coluna em toda régua.
+        assert_eq!(colunas_de(&topo, '┬').len(), 1, "{topo}");
+        assert_eq!(colunas_de(&topo, '┬'), colunas_de(&cabecalho, '╪'));
+        assert_eq!(colunas_de(&topo, '┬'), colunas_de(&meio, '┼'));
+        assert_eq!(colunas_de(&topo, '┬'), colunas_de(&fim, '┴'));
+        // Duas linhas de dados: uma régua simples entre elas, e só uma.
+        assert_eq!(linhas.iter().filter(|l| l.contains('┼')).count(), 1, "{tudo}");
+        // A linha de "API" tem a borda interna na coluna do `┬`.
+        let api = linhas.iter().find(|l| l.contains("API")).unwrap();
+        let esquerda = colunas_de(&topo, '┌')[0];
+        let direita = colunas_de(&topo, '┐')[0];
+        let bordas: Vec<usize> = colunas_de(api, '│').into_iter().filter(|c| (esquerda..=direita).contains(c)).collect();
+        assert_eq!(bordas, vec![esquerda, colunas_de(&topo, '┬')[0], direita], "\n{topo}\n{api}");
+    }
+
+    #[test]
+    fn a_tabela_larga_cabe_no_painel_cortando_o_texto() {
+        // A borda direita não pode sumir num painel estreito: a coluna
+        // mais larga cede, e o texto sai cortado com `…`.
+        let mut e = Estado::novo(paginas(), com_tabela());
+        e.foco = Foco::Paginas;
+        let linhas = desenho(&mut e, 50, 20);
+        let tudo = linhas.join("\n");
+        let topo = linhas.iter().find(|l| l.contains('┬')).unwrap_or_else(|| panic!("{tudo}"));
+        assert!(topo.contains('┐'), "a borda direita sumiu:\n{tudo}");
+        assert!(tudo.contains('…'), "o nome longo devia ter sido cortado:\n{tudo}");
     }
 
     #[test]

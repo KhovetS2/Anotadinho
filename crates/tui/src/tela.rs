@@ -384,6 +384,22 @@ pub fn fica_fora_da_tela(nome: &str) -> bool {
         || nome.starts_with("tag--")
 }
 
+/// Parte sem linha própria que o cursor NÃO visita.
+///
+/// Quase todo dado de desenho é só isso — dado. O evento do calendário é
+/// a exceção (ciclo 309): ele não tem linha (quem o desenha é a semana),
+/// mas é CONTEÚDO, e Enter num dia tem que poder chegar nele. As faixas
+/// vazias e a continuação de uma barra de vários dias continuam sendo
+/// puladas.
+pub fn cursor_passa_por_cima(nome: &str) -> bool {
+    fica_fora_da_tela(nome) && !e_evento(nome)
+}
+
+/// O começo de um evento na grade do mês (`evento`, `evento--info`…).
+pub fn e_evento(nome: &str) -> bool {
+    nome == "evento" || nome.starts_with("evento--")
+}
+
 /// A página inteira em linhas, na ordem em que se lê.
 pub fn linhas(raiz: &Unidade) -> Vec<Linha> {
     let mut r = Linhas::default();
@@ -439,8 +455,13 @@ impl Linha {
     /// DENTRO da linha do galho, como um segmento. Sem isto, o cursor
     /// num botão não acha linha nenhuma — e a rolagem, a moldura e o
     /// realce ficam todos sem alvo (ciclo 298).
+    ///
+    /// E o que está DENTRO de um segmento também é desta linha (ciclo
+    /// 309): o evento de um dia do calendário não tem linha própria — a
+    /// semana o desenha na coluna do dia —, e sem isto o cursor num
+    /// evento ficaria, de novo, sem alvo.
     pub fn mostra(&self, caminho: &[usize]) -> bool {
-        self.caminho == caminho || self.segmentos.iter().any(|s| s.caminho == caminho)
+        self.caminho == caminho || self.segmentos.iter().any(|s| caminho.starts_with(&s.caminho))
     }
 }
 
@@ -474,7 +495,7 @@ pub fn rolar(topo: usize, altura: usize, linha: usize) -> usize {
 pub fn andar(raiz: &Unidade, cursor: &Caminho, passo: Passo) -> Caminho {
     let escondida = |c: &Caminho| {
         raiz.em(c)
-            .is_some_and(|u| matches!(&u.tipo, Tipo::Parte { nome, .. } if fica_fora_da_tela(nome)))
+            .is_some_and(|u| matches!(&u.tipo, Tipo::Parte { nome, .. } if cursor_passa_por_cima(nome)))
     };
     // Entrar numa unidade cujos filhos são TODOS dado de desenho (a barra
     // do cronograma, o dia do calendário) desceria pra um lugar sem linha
@@ -485,7 +506,7 @@ pub fn andar(raiz: &Unidade, cursor: &Caminho, passo: Passo) -> Caminho {
         if let Some(atual) = raiz.em(cursor) {
             let so_geometria = !atual.filhos.is_empty()
                 && atual.filhos.iter().all(
-                    |f| matches!(&f.tipo, Tipo::Parte { nome, .. } if fica_fora_da_tela(nome)),
+                    |f| matches!(&f.tipo, Tipo::Parte { nome, .. } if cursor_passa_por_cima(nome)),
                 );
             if so_geometria {
                 return cursor.clone();
