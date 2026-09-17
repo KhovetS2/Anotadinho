@@ -1009,6 +1009,38 @@ pub(super) fn trocar_escala(e: &mut Estado, embed: &[usize], escala: em::Timelin
     }
 }
 
+/// `Enter` num item da gaveta "Sem data" do cronograma (ciclo 366): agenda
+/// no começo do período à vista, como o clique na gaveta da janela.
+pub(super) fn agendar_sem_data(e: &mut Estado) -> bool {
+    let Some(embed) = embed_do_cursor(e, "timeline") else { return false };
+    let pai = &e.cursor[..e.cursor.len().saturating_sub(1)];
+    if !matches!(e.arvore.em(pai).map(|u| &u.tipo), Some(Tipo::Parte { nome, .. }) if nome == "sem-data") {
+        return false;
+    }
+    let Some(indice) = indice_do_cursor(e) else { return false };
+    let Some(dados) = ler_cronograma(e, &embed) else { return false };
+    if dados.source == em::TimelineSource::Vault {
+        e.aviso = Some("fonte vault: agende na página".into());
+        return true;
+    }
+    let hoje = e.hoje.clone().unwrap_or_else(|| "2026-01-01".into());
+    let inicio = e
+        .ancoras
+        .get(&embed)
+        .cloned()
+        .or_else(|| add_days(&hoje, -(dados.scale.days() / 4)))
+        .unwrap_or(hoje);
+    if editar_cronograma(e, &embed, |d| {
+        d.move_item(indice, inicio.clone());
+        Ok(())
+    }) {
+        e.aviso = Some(format!("agendado em {}", data_legivel(&inicio)));
+        let alvo = achar_com_indice(&e.arvore, &embed, "barra", indice);
+        ir(e, alvo);
+    }
+    true
+}
+
 fn no_cronograma(e: &mut Estado, ed: Edicao) -> bool {
     let Some(embed) = embed_do_cursor(e, "timeline") else { return false };
     // `~` alterna entre os itens do embed e as páginas do vault — o botão

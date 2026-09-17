@@ -63,6 +63,8 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Kanban: modal do cartão (descrição, tags, prazo, checklist, comentários, anexos) | ✅ | 343 — Enter no cartão |
 | Calendário: modal do evento (datas, horário, tags) | ✅ | 343 — Enter no evento |
 | Seletor de data nos formulários (prazo, início, fim, criado) | ✅ | 364 — Enter abre o mês; `c` digita |
+| Seletor de horário (15 em 15 min) | ✅ | 365 |
+| Cronograma: agendar item "Sem data" | ✅ | 366 — Enter na gaveta |
 | Tabela: células, linhas, colunas, tipo, opções | ✅ | 321, 337, 339 |
 | Consulta: configuração completa | ✅ | 335, 338, 344 — `=` na consulta |
 | Ações: EXECUTAR o botão | ✅ | 342 — abrir, template, propriedade, busca |

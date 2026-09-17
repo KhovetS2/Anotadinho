@@ -833,6 +833,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
             if tecla == "Enter"
                 && (edicao::transicao_do_cursor(e)
                     || edicao::acao_do_fluxo(e)
+                    || edicao::agendar_sem_data(e)
                     || edicao::cartao_na_coluna_vazia(e)
                     || edicao::busca_da_consulta(e)
                     || edicao::abrir_opcoes(e)
@@ -9176,5 +9177,27 @@ mod testes {
         tecla(&mut e, "Enter");
         assert_eq!(e.pedidos, [Pedido::GravarPorCima { path: "pages/alfa.md".into(), conteudo: "# Título\n\nmeu texto\n".into() }]);
         assert!(e.modal.is_none());
+    }
+
+    // --- Ciclo 366: agendar item sem data do cronograma --------------------------
+
+    #[test]
+    fn enter_no_item_sem_data_agenda_no_comeco_do_periodo() {
+        use anotadinho_core::embed::EmbedData;
+        let mut e = pagina_com("{{ type: \"timeline\" }}\nscale: month\nitems:\n- title: Com data\n  start: '2026-08-10'\n  end: '2026-08-12'\n- title: Solta\n{{ /timeline }}\n").com_hoje("2026-08-20");
+        e.foco = Foco::Conteudo;
+        let solta = e
+            .arvore
+            .percorrer()
+            .into_iter()
+            .find(|(_, u)| u.texto == "Solta" && matches!(&u.tipo, Tipo::Parte { nome, .. } if nome == "item"))
+            .map(|(c, _)| c)
+            .expect("sem a gaveta");
+        e.cursor = solta;
+        tecla(&mut e, "Enter");
+        let EmbedData::Timeline(d) = embed_gravado(&e) else { panic!() };
+        let esperado = anotadinho_core::date_util::add_days("2026-08-20", -(d.scale.days() / 4)).unwrap();
+        assert_eq!(d.items[1].start.as_deref(), Some(esperado.as_str()));
+        assert!(e.aviso.as_deref().unwrap().contains("agendado"));
     }
 }
