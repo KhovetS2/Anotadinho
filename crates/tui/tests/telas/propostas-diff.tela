@@ -8,26 +8,29 @@
 │                                        │││ 1 linha(s) removida(s) · 6 adicionada(s)                                 Diff  Visualização  ││
 │                                        │││  # Sprint 12                                                                                 ││
 │                                        │││                                                                                              ││
+│                                        │││  trecho 1/2 · −0 +2 · espaço tira                                                            ││
 │                                        │││ +## Pendentes                                                                                ││
 │                                        │││ +                                                                                            ││
 │                                        │││  - [ ] migrar o banco                                                                        ││
+│                                        │││  trecho 2/2 · −1 +4 · espaço tira                                                            ││
 │                                        │││ -- [ ] revisão do PR                                                                         ││
 │                                        │││ +                                                                                            ││
 │                                        │││ +## Feitas                                                                                   ││
 │                                        │││ +                                                                                            ││
 │                                        │││ +- [x] revisão do PR                                                                         ││
 │                                        │││                                                                                              ││
-│                                        │││  Aplicar a   Recusar r                                                                       ││
+│                                        │││  Aplicar a   Recusar r   h l trecho · espaço tira/põe · A tudo de volta                      ││
 │                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
 │                                        ││                                                                                                │
 │                                        ││╭──────────────────────────────────────────────────────────────────────────────────────────────╮│
 │                                        │││  CRIAR  pages/notas/ideias.md  ϟ claude                                     2026-08-12 13:40 ││
 │                                        │││ 0 linha(s) removida(s) · 3 adicionada(s)                                 Diff  Visualização  ││
+│                                        │││  trecho 1/1 · −0 +3 · espaço tira                                                            ││
 │                                        │││ +# Ideias                                                                                    ││
 │                                        │││ +                                                                                            ││
 │                                        │││ +- atalho pra duplicar cartão                                                                ││
 │                                        │││                                                                                              ││
-│                                        │││  Aplicar a   Recusar r                                                                       ││
+│                                        │││  Aplicar a   Recusar r   h l trecho · espaço tira/põe · A tudo de volta                      ││
 │                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -35,10 +38,7 @@
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-└────────────────────────────────────────┘└ j k · a aplica · r recusa · v diff/visualização · Ctrl+D rola ─────────────────────────────────┘
+└────────────────────────────────────────┘└ j k proposta · h l trecho · espaço tira · a aplica · r recusa · v visualização ────────────────┘
 == estilos ==
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddabeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffffffffffffffb
@@ -49,26 +49,29 @@ addddddddddddddddddddddddddddddddddddddddabggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm
 addddddddddddddddddddddddddddddddddddddddabgglllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnllllllllllllllggb
 addddddddddddddddddddddddddddddddddddddddabgglllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
 addddddddddddddddddddddddddddddddddddddddabggliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
-addddddddddddddddddddddddddddddddddddddddabggooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooggb
-addddddddddddddddddddddddddddddddddddddddabggooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooggb
-addddddddddddddddddddddddddddddddddddddddabggllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
+addddddddddddddddddddddddddddddddddddddddabggooooooooooooooooooooooooooooooooooiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
 addddddddddddddddddddddddddddddddddddddddabggppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppggb
-addddddddddddddddddddddddddddddddddddddddabggooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooggb
-addddddddddddddddddddddddddddddddddddddddabggooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooggb
-addddddddddddddddddddddddddddddddddddddddabggooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooggb
-addddddddddddddddddddddddddddddddddddddddabggooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooggb
+addddddddddddddddddddddddddddddddddddddddabggppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppggb
+addddddddddddddddddddddddddddddddddddddddabggllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
+addddddddddddddddddddddddddddddddddddddddabgglllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
+addddddddddddddddddddddddddddddddddddddddabggqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqggb
+addddddddddddddddddddddddddddddddddddddddabggppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppggb
+addddddddddddddddddddddddddddddddddddddddabggppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppggb
+addddddddddddddddddddddddddddddddddddddddabggppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppggb
+addddddddddddddddddddddddddddddddddddddddabggppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppggb
 addddddddddddddddddddddddddddddddddddddddabggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
-addddddddddddddddddddddddddddddddddddddddabggqqqqqqqqqqqirrrrrrrrrrriiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
+addddddddddddddddddddddddddddddddddddddddabggoooooooooooirrrrrrrrrrrilllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiggb
 addddddddddddddddddddddddddddddddddddddddabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssb
 addddddddddddddddddddddddddddddddddddddddabsstttttttijjjjjjjjjjjjjjjjjjjjjiikkkkkkkkiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiillllllllllllllllssb
 addddddddddddddddddddddddddddddddddddddddabsslllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnllllllllllllllssb
-addddddddddddddddddddddddddddddddddddddddabssoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooossb
-addddddddddddddddddddddddddddddddddddddddabssoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooossb
-addddddddddddddddddddddddddddddddddddddddabssoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooossb
+addddddddddddddddddddddddddddddddddddddddabsslllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiissb
+addddddddddddddddddddddddddddddddddddddddabssppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppssb
+addddddddddddddddddddddddddddddddddddddddabssppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppssb
+addddddddddddddddddddddddddddddddddddddddabssppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppssb
 addddddddddddddddddddddddddddddddddddddddabssiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiissb
-addddddddddddddddddddddddddddddddddddddddabssqqqqqqqqqqqirrrrrrrrrrriiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiissb
+addddddddddddddddddddddddddddddddddddddddabssoooooooooooirrrrrrrrrrrilllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiissb
 addddddddddddddddddddddddddddddddddddddddabssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -76,10 +79,7 @@ addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuubbbbbbbbbbbbbbbbb
 a = fg #45475a bg #1e1e2e
 b = fg #89b4fa bg #1e1e2e
 c = fg - bg #1e1e2e apagado
@@ -94,9 +94,9 @@ k = fg #cba6f7 bg #313244
 l = fg #a6adc8 bg #313244
 m = fg #cdd6f4 bg #313244
 n = fg #cdd6f4 bg #45475a negrito
-o = fg #cdd6f4 bg #444e53
-p = fg #cdd6f4 bg #504054
-q = fg #1e1e2e bg #89b4fa negrito
+o = fg #1e1e2e bg #89b4fa negrito
+p = fg #cdd6f4 bg #444e53
+q = fg #cdd6f4 bg #504054
 r = fg #cdd6f4 bg #45475a
 s = fg #45475a bg #313244
 t = fg #a6e3a1 bg #323c3f

@@ -108,6 +108,71 @@ pub fn contar(diff: &[LinhaDiff]) -> (usize, usize) {
     })
 }
 
+/// Um TRECHO do diff (ciclo 404): linhas mudadas vizinhas, com o
+/// contexto igual em volta ficando de fora.
+///
+/// É a unidade de aprovação parcial: revisar proposta grande tudo-ou-nada
+/// era o que fazia aceitar mudança que ninguém leu, ou recusar a proposta
+/// inteira por causa de uma linha.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Trecho {
+    /// Onde ele começa na lista do diff.
+    pub inicio: usize,
+    /// Onde ele termina (exclusivo).
+    pub fim: usize,
+    /// Quantas linhas saem.
+    pub removidas: usize,
+    /// Quantas entram.
+    pub adicionadas: usize,
+}
+
+/// Os trechos mudados de um diff, na ordem.
+pub fn trechos(diff: &[LinhaDiff]) -> Vec<Trecho> {
+    let mut fora: Vec<Trecho> = Vec::new();
+    let mut atual: Option<Trecho> = None;
+    for (i, l) in diff.iter().enumerate() {
+        if l.mudou() {
+            let t = atual.get_or_insert(Trecho { inicio: i, fim: i, removidas: 0, adicionadas: 0 });
+            t.fim = i + 1;
+            match l {
+                LinhaDiff::Removida { .. } => t.removidas += 1,
+                LinhaDiff::Adicionada { .. } => t.adicionadas += 1,
+                LinhaDiff::Igual { .. } => {}
+            }
+        } else if let Some(t) = atual.take() {
+            fora.push(t);
+        }
+    }
+    if let Some(t) = atual {
+        fora.push(t);
+    }
+    fora
+}
+
+/// Monta o texto aplicando SÓ os trechos escolhidos (ciclo 404): o que
+/// ficou de fora volta como estava.
+pub fn aplicar_trechos(diff: &[LinhaDiff], trechos: &[Trecho], escolhidos: &[bool]) -> String {
+    let aceito = |i: usize| -> bool {
+        match trechos.iter().position(|t| i >= t.inicio && i < t.fim) {
+            Some(k) => escolhidos.get(k).copied().unwrap_or(true),
+            // Linha igual: entra sempre.
+            None => true,
+        }
+    };
+    let mut fora: Vec<&str> = Vec::new();
+    for (i, l) in diff.iter().enumerate() {
+        match l {
+            LinhaDiff::Igual { texto } => fora.push(texto),
+            LinhaDiff::Adicionada { texto } if aceito(i) => fora.push(texto),
+            LinhaDiff::Removida { texto } if !aceito(i) => fora.push(texto),
+            _ => {}
+        }
+    }
+    let mut texto = fora.join("\n");
+    texto.push('\n');
+    texto
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,5 +235,22 @@ mod tests {
     fn preserva_a_ordem_do_conteudo() {
         let d = diff_linhas("1\n2\n3\n", "1\n3\n4\n");
         assert_eq!(resumo(&d), " 1\n-2\n 3\n+4");
+    }
+
+    #[test]
+    fn trechos_agrupam_mudancas_vizinhas_e_aplicam_so_o_escolhido() {
+        let atual = "a\nb\nc\nd\n";
+        let proposto = "a\nB1\nB2\nc\nD\n";
+        let d = diff_linhas(atual, proposto);
+        let ts = trechos(&d);
+        assert_eq!(ts.len(), 2, "{ts:?}");
+        assert_eq!((ts[0].removidas, ts[0].adicionadas), (1, 2));
+        // Só o primeiro trecho: `d` fica como estava.
+        assert_eq!(aplicar_trechos(&d, &ts, &[true, false]), "a\nB1\nB2\nc\nd\n");
+        // Só o segundo.
+        assert_eq!(aplicar_trechos(&d, &ts, &[false, true]), "a\nb\nc\nD\n");
+        // Os dois é a proposta inteira; nenhum é o atual.
+        assert_eq!(aplicar_trechos(&d, &ts, &[true, true]), proposto);
+        assert_eq!(aplicar_trechos(&d, &ts, &[false, false]), atual);
     }
 }

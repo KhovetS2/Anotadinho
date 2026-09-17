@@ -12,17 +12,18 @@
 │                                        │││ ## Feitas                                                                                    ││
 │                                        │││   - [x] revisão do PR                                                                        ││
 │                                        │││                                                                                              ││
-│                                        │││  Aplicar a   Recusar r                                                                       ││
+│                                        │││  Aplicar a   Recusar r   h l trecho · espaço tira/põe · A tudo de volta                      ││
 │                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
 │                                        ││                                                                                                │
 │                                        ││╭──────────────────────────────────────────────────────────────────────────────────────────────╮│
 │                                        │││  CRIAR  pages/notas/ideias.md  ϟ claude                                     2026-08-12 13:40 ││
 │                                        │││ 0 linha(s) removida(s) · 3 adicionada(s)                                 Diff  Visualização  ││
+│                                        │││  trecho 1/1 · −0 +3 · espaço tira                                                            ││
 │                                        │││ +# Ideias                                                                                    ││
 │                                        │││ +                                                                                            ││
 │                                        │││ +- atalho pra duplicar cartão                                                                ││
 │                                        │││                                                                                              ││
-│                                        │││  Aplicar a   Recusar r                                                                       ││
+│                                        │││  Aplicar a   Recusar r   h l trecho · espaço tira/põe · A tudo de volta                      ││
 │                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
@@ -37,8 +38,7 @@
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
 │                                        ││                                                                                                │
-│                                        ││                                                                                                │
-└────────────────────────────────────────┘└ j k · a aplica · r recusa · v diff/visualização · Ctrl+D rola ─────────────────────────────────┘
+└────────────────────────────────────────┘└ j k proposta · h l trecho · espaço tira · a aplica · r recusa · v visualização ────────────────┘
 == estilos ==
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddddddddddddabeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffffffffffffffb
@@ -53,17 +53,18 @@ addddddddddddddddddddddddddddddddddddddddabggddffqqqqqqqqqqqqqqqqqqddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabggfffppppppdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
 addddddddddddddddddddddddddddddddddddddddabggddffqqqqqqqqqqqqqqqqqdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
 addddddddddddddddddddddddddddddddddddddddabggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
-addddddddddddddddddddddddddddddddddddddddabggrrrrrrrrrrrisssssssssssiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
+addddddddddddddddddddddddddddddddddddddddabggrrrrrrrrrrrisssssssssssilllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiggb
 addddddddddddddddddddddddddddddddddddddddabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttb
 addddddddddddddddddddddddddddddddddddddddabttuuuuuuuijjjjjjjjjjjjjjjjjjjjjiikkkkkkkkiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiillllllllllllllllttb
 addddddddddddddddddddddddddddddddddddddddabttlllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnllllllllllllllttb
+addddddddddddddddddddddddddddddddddddddddabttlllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiittb
 addddddddddddddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvttb
 addddddddddddddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvttb
 addddddddddddddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvttb
 addddddddddddddddddddddddddddddddddddddddabttiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiittb
-addddddddddddddddddddddddddddddddddddddddabttrrrrrrrrrrrisssssssssssiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiittb
+addddddddddddddddddddddddddddddddddddddddabttrrrrrrrrrrrisssssssssssilllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiittb
 addddddddddddddddddddddddddddddddddddddddabttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -78,8 +79,7 @@ addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwbbbbbbbbbbbbbbbbb
 a = fg #45475a bg #1e1e2e
 b = fg #89b4fa bg #1e1e2e
 c = fg - bg #1e1e2e apagado

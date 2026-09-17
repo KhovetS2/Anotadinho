@@ -212,6 +212,10 @@ pub struct TelaEspecial {
     pub chip: usize,
     /// As propostas em modo Visualização.
     pub visualizando: BTreeSet<String>,
+    /// O trecho do diff sob o cursor, na proposta selecionada (ciclo 404).
+    pub trecho: usize,
+    /// Os trechos TIRADOS da aplicação, por `id#índice`.
+    pub fora: BTreeSet<String>,
     /// Rolagem dentro do item selecionado.
     pub deslocamento: usize,
     /// O erro da última ação.
@@ -228,6 +232,8 @@ impl TelaEspecial {
             selecionado: 0,
             chip: 0,
             visualizando: BTreeSet::new(),
+            trecho: 0,
+            fora: BTreeSet::new(),
             deslocamento: 0,
             erro: None,
             d_pendente: false,
@@ -308,6 +314,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
     match tecla {
         "j" | "ArrowDown" => {
             t.selecionado = (t.selecionado + 1).min(total.saturating_sub(1));
+            t.trecho = 0;
             if t.tipo != TipoEspecial::Kanban {
                 t.chip = 0;
             }
@@ -315,6 +322,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
         }
         "k" | "ArrowUp" => {
             t.selecionado = t.selecionado.saturating_sub(1);
+            t.trecho = 0;
             if t.tipo != TipoEspecial::Kanban {
                 t.chip = 0;
             }
@@ -453,31 +461,69 @@ fn tecla_nos_assets(e: &mut Estado, tecla: &str, d_antes: bool) -> bool {
 fn tecla_nas_propostas(e: &mut Estado, tecla: &str) -> bool {
     let Some(t) = e.especial.as_mut() else { return false };
     let Some(Dados::Propostas(lista)) = &t.dados else { return false };
-    let Some(p) = lista.get(t.selecionado).map(|p| p.proposta.clone()) else { return false };
+    let Some(na_tela) = lista.get(t.selecionado).cloned() else { return false };
+    let p = na_tela.proposta.clone();
+    let diff = p.diff(&na_tela.atual);
+    let trechos = anotadinho_core::diff::trechos(&diff);
+    let escolhidos: Vec<bool> = (0..trechos.len()).map(|i| !t.fora.contains(&format!("{}#{i}", p.id))).collect();
+    let aceitos = escolhidos.iter().filter(|x| **x).count();
     match tecla {
+        // Andar pelos trechos e tirar/pôr um deles (ciclo 404).
+        "l" | "ArrowRight" | "Tab" => t.trecho = (t.trecho + 1).min(trechos.len().saturating_sub(1)),
+        "h" | "ArrowLeft" => t.trecho = t.trecho.saturating_sub(1),
+        " " | "x" if !trechos.is_empty() => {
+            let chave = format!("{}#{}", p.id, t.trecho.min(trechos.len() - 1));
+            if !t.fora.remove(&chave) {
+                t.fora.insert(chave);
+            }
+        }
+        "A" if !trechos.is_empty() => {
+            let ids: Vec<String> = lista.iter().map(|x| x.proposta.id.clone()).collect();
+            t.fora.retain(|c| !ids.iter().any(|id| c.starts_with(&format!("{id}#"))));
+            e.aviso = Some("todos os trechos de volta".into());
+        }
         "v" => {
             if !t.visualizando.remove(&p.id) {
                 t.visualizando.insert(p.id.clone());
             }
             t.deslocamento = 0;
         }
+        "a" | "Enter" if aceitos == 0 && !trechos.is_empty() => {
+            e.aviso = Some("nenhum trecho escolhido: espaço põe de volta".into());
+        }
         "a" | "Enter" => {
+            let parcial = aceitos < trechos.len();
+            let acao = if parcial {
+                Pedido::AplicarPropostaParcial {
+                    id: p.id.clone(),
+                    conteudo: anotadinho_core::diff::aplicar_trechos(&diff, &trechos, &escolhidos),
+                    aceitos,
+                    de: trechos.len(),
+                }
+            } else {
+                Pedido::DecidirProposta { id: p.id.clone(), aplicar: true, motivo: String::new() }
+            };
             e.modal = Some(Modal::Confirmar {
-                titulo: "Aplicar proposta".into(),
-                mensagem: format!(
-                    "{} {} com o conteúdo proposto por {}?",
-                    if p.operacao == Operacao::Criar { "Criar" } else { "Substituir" },
-                    p.alvo,
-                    p.autor
-                ),
-                acao: Pedido::DecidirProposta { id: p.id.clone(), aplicar: true },
+                titulo: if parcial { "Aplicar os trechos escolhidos".into() } else { "Aplicar proposta".to_string() },
+                mensagem: if parcial {
+                    format!("Gravar {} com {aceitos} de {} trecho(s) da proposta de {}?", p.alvo, trechos.len(), p.autor)
+                } else {
+                    format!(
+                        "{} {} com o conteúdo proposto por {}?",
+                        if p.operacao == Operacao::Criar { "Criar" } else { "Substituir" },
+                        p.alvo,
+                        p.autor
+                    )
+                },
+                acao,
             });
         }
-        "r" | "x" => {
-            e.modal = Some(Modal::Confirmar {
-                titulo: "Recusar proposta".into(),
-                mensagem: format!("Descartar a proposta pra {}? Ela sai da fila.", p.alvo),
-                acao: Pedido::DecidirProposta { id: p.id.clone(), aplicar: false },
+        // Recusar pede o motivo (ciclo 404): ele entra no registro.
+        "r" => {
+            e.modal = Some(Modal::Entrada {
+                titulo: format!("Recusar {} — por quê? (Enter sem texto recusa sem motivo)", p.alvo),
+                campo: crate::componentes::Campo::default(),
+                acao: super::modais::AcaoDaEntrada::MotivoDaRecusa(p.id.clone()),
             });
         }
         _ => return false,
@@ -497,7 +543,7 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
     let dica = match t.tipo {
         TipoEspecial::Tags => " j k tag · h l página · Enter abre · R recarrega ",
         TipoEspecial::Assets => " j k · x exclui · R recarrega ",
-        TipoEspecial::Propostas => " j k · a aplica · r recusa · v diff/visualização · Ctrl+D rola ",
+        TipoEspecial::Propostas => " j k proposta · h l trecho · espaço tira · a aplica · r recusa · v visualização ",
         TipoEspecial::Kanban => " h l coluna · j k cartão ",
         TipoEspecial::Tarefas => " j k · Enter abre · s ordena ",
         TipoEspecial::Grafo => " j k página · h l conexão · Enter abre ",
@@ -644,7 +690,8 @@ pub fn linhas_da_tela(t: &TelaEspecial, pagina: &str, tema: &Tema, w: usize, no_
             for (i, p) in lista.iter().enumerate() {
                 let inicio = fora.len();
                 let visualizar = t.visualizando.contains(&p.proposta.id);
-                fora.extend(cartao_da_proposta(tema, p, visualizar, i == t.selecionado, no_foco, w));
+                let cursor_do_trecho = (i == t.selecionado && no_foco).then_some(t.trecho);
+                fora.extend(cartao_da_proposta(tema, p, visualizar, i == t.selecionado, no_foco, w, cursor_do_trecho, &t.fora));
                 faixas.push((inicio, fora.len()));
             }
         }
@@ -807,6 +854,8 @@ fn cartao_da_proposta(
     selecionado: bool,
     no_foco: bool,
     w: usize,
+    cursor_do_trecho: Option<usize>,
+    fora_da_aplicacao: &BTreeSet<String>,
 ) -> Vec<Line<'static>> {
     let proposta = &p.proposta;
     let apagado = Style::default().fg(tema.var("text-muted"));
@@ -853,16 +902,40 @@ fn cartao_da_proposta(
     } else {
         let sai = Style::default().fg(tema.var("text-primary")).bg(misturar(tema.var("error"), tema.var("bg-surface"), 0.16));
         let entra = Style::default().fg(tema.var("text-primary")).bg(misturar(tema.var("success"), tema.var("bg-surface"), 0.16));
-        for l in &linhas {
+        // Cada trecho ganha cabeçalho: dá pra tirar um e aplicar o resto
+        // (ciclo 404).
+        let trechos = anotadinho_core::diff::trechos(&linhas);
+        let esta_fora = |k: usize| fora_da_aplicacao.contains(&format!("{}#{k}", proposta.id));
+        for (i, l) in linhas.iter().enumerate() {
+            let k = trechos.iter().position(|t| i >= t.inicio && i < t.fim);
+            if let Some(k) = k.filter(|k| trechos[*k].inicio == i) {
+                let t = &trechos[k];
+                let rotulo = format!(
+                    " trecho {}/{} · −{} +{} {} ",
+                    k + 1,
+                    trechos.len(),
+                    t.removidas,
+                    t.adicionadas,
+                    if esta_fora(k) { "· FORA (espaço põe)" } else { "· espaço tira" }
+                );
+                let estilo = match (cursor_do_trecho == Some(k), esta_fora(k)) {
+                    (true, _) => tema.estilo(Realce::Cursor).add_modifier(Modifier::BOLD),
+                    (false, true) => apagado.add_modifier(Modifier::DIM),
+                    (false, false) => apagado,
+                };
+                miolo.push(Line::from(Span::styled(rotulo, estilo)));
+            }
+            let dentro_de_fora = k.is_some_and(esta_fora);
             let (marca, estilo) = match l {
                 LinhaDiff::Igual { .. } => (" ", apagado),
+                _ if dentro_de_fora => (if matches!(l, LinhaDiff::Removida { .. }) { "-" } else { "+" }, apagado.add_modifier(Modifier::DIM)),
                 LinhaDiff::Removida { .. } => ("-", sai),
                 LinhaDiff::Adicionada { .. } => ("+", entra),
             };
             let conteudo: String = format!("{marca}{}", l.texto()).chars().take(dentro).collect();
             let falta = dentro.saturating_sub(conteudo.chars().count());
             let mut spans = vec![Span::styled(conteudo, estilo)];
-            if l.mudou() {
+            if l.mudou() && !dentro_de_fora {
                 spans.push(Span::styled(" ".repeat(falta), estilo));
             }
             miolo.push(Line::from(spans));
@@ -871,10 +944,19 @@ fn cartao_da_proposta(
     miolo.push(Line::default());
     let primario = tema.estilo(Realce::Cursor).add_modifier(Modifier::BOLD);
     let fantasma = Style::default().fg(tema.var("text-primary")).bg(tema.var("bg-elevated"));
+    let n_trechos = anotadinho_core::diff::trechos(&linhas).len();
+    let de_fora = (0..n_trechos).filter(|k| fora_da_aplicacao.contains(&format!("{}#{k}", proposta.id))).count();
+    let rotulo_aplicar = if de_fora > 0 {
+        format!(" Aplicar {} de {n_trechos} a ", n_trechos - de_fora)
+    } else {
+        " Aplicar a ".to_string()
+    };
     miolo.push(Line::from(vec![
-        Span::styled(" Aplicar a ", primario),
+        Span::styled(rotulo_aplicar, primario),
         Span::raw(" "),
         Span::styled(" Recusar r ", fantasma),
+        Span::raw(" "),
+        Span::styled(" h l trecho · espaço tira/põe · A tudo de volta ", apagado),
     ]));
     let mut fora = caixa(tema, miolo, w, cor_da_borda(tema, selecionado, no_foco));
     fora.push(Line::default());

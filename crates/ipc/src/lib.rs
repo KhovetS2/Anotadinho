@@ -1255,6 +1255,66 @@ pub fn handle_aplicar_proposta(vault_path: String, id: String) -> Result<String,
     Ok(proposta.alvo)
 }
 
+/// Aplica SÓ os trechos escolhidos de uma proposta (ciclo 404): grava o
+/// conteúdo montado, apaga a proposta e devolve o alvo.
+///
+/// Revalida antes de escrever, como o aplicar inteiro — entre propor e
+/// aprovar o vault pode ter mudado.
+pub fn handle_aplicar_proposta_parcial(
+    vault_path: String,
+    id: String,
+    conteudo: String,
+) -> Result<String, String> {
+    let raiz = std::path::Path::new(&vault_path);
+    let arquivo = raiz.join(format!("{}/{id}.json", anotadinho_core::proposta::PASTA));
+    let texto =
+        std::fs::read_to_string(&arquivo).map_err(|_| format!("proposta {id} não existe"))?;
+    let proposta: anotadinho_core::proposta::Proposta =
+        serde_json::from_str(&texto).map_err(|e| format!("proposta ilegível: {e}"))?;
+    let existe = raiz.join(&proposta.alvo).exists();
+    if let Some(r) = proposta.validar(existe) {
+        return Err(r.mensagem());
+    }
+    let vault = VaultIo::open(&vault_path);
+    vault
+        .write_page(&proposta.alvo, &conteudo)
+        .map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(&arquivo);
+    Ok(proposta.alvo)
+}
+
+/// Acrescenta uma decisão ao registro (ciclo 404).
+pub fn handle_registrar_decisao(
+    vault_path: String,
+    decisao: anotadinho_core::decisao::Decisao,
+) -> Result<(), String> {
+    use std::io::Write;
+    let arquivo = std::path::Path::new(&vault_path).join(anotadinho_core::decisao::ARQUIVO);
+    if let Some(pai) = arquivo.parent() {
+        std::fs::create_dir_all(pai).map_err(|e| e.to_string())?;
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&arquivo)
+        .map_err(|e| e.to_string())?;
+    f.write_all(anotadinho_core::decisao::linha(&decisao).as_bytes())
+        .map_err(|e| e.to_string())
+}
+
+/// O registro de decisões, do mais novo pro mais velho (ciclo 404).
+pub fn handle_listar_decisoes(
+    vault_path: String,
+) -> Result<Vec<anotadinho_core::decisao::Decisao>, String> {
+    let arquivo = std::path::Path::new(&vault_path).join(anotadinho_core::decisao::ARQUIVO);
+    let Ok(texto) = std::fs::read_to_string(&arquivo) else {
+        return Ok(Vec::new());
+    };
+    let mut lidas = anotadinho_core::decisao::ler(&texto);
+    lidas.reverse();
+    Ok(lidas)
+}
+
 /// Descarta uma proposta sem aplicar.
 pub fn handle_recusar_proposta(vault_path: String, id: String) -> Result<(), String> {
     let arquivo = std::path::Path::new(&vault_path)

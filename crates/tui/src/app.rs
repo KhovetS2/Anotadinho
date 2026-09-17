@@ -8889,12 +8889,12 @@ mod testes {
         e.pedidos.clear();
         tecla(&mut e, "a");
         tecla(&mut e, "y");
-        assert_eq!(e.pedidos, [Pedido::DecidirProposta { id: "p1".into(), aplicar: true }]);
+        assert_eq!(e.pedidos, [Pedido::DecidirProposta { id: "p1".into(), aplicar: true, motivo: String::new() }]);
         e.pedidos.clear();
         tecla(&mut e, "j");
         tecla(&mut e, "r");
         tecla(&mut e, "Enter");
-        assert_eq!(e.pedidos, [Pedido::DecidirProposta { id: "p2".into(), aplicar: false }]);
+        assert_eq!(e.pedidos, [Pedido::DecidirProposta { id: "p2".into(), aplicar: false, motivo: String::new() }]);
         // Vazia, a frase da janela.
         let mut e = especial_aberto("propostas");
         especiais::carregar(&mut e, especiais::Dados::Propostas(vec![]));
@@ -10276,5 +10276,69 @@ mod testes {
         form.campos[i].valor = crate::componentes::Valor::Texto("zero".into());
         edicao::aplicar_detalhe(&mut e, &alvo, &mut form);
         assert!(e.aviso.as_deref().unwrap().contains("altura máxima"));
+    }
+
+    // --- Ciclo 404: aprovação parcial e registro ----------------------------------
+
+    #[test]
+    fn aprovar_so_um_trecho_da_proposta() {
+        use anotadinho_core::proposta::Operacao;
+        let mut e = especial_aberto("propostas");
+        let p = anotadinho_core::proposta::Proposta {
+            id: "p1".into(),
+            autor: "claude".into(),
+            quando: "2026-09-17 10:00".into(),
+            motivo: "duas mudanças".into(),
+            alvo: "pages/alfa.md".into(),
+            operacao: Operacao::Substituir,
+            conteudo: "a\nB\nc\nD\n".into(),
+        };
+        especiais::carregar(&mut e, especiais::Dados::Propostas(vec![especiais::PropostaNaTela { proposta: p, atual: "a\nb\nc\nd\n".into() }]));
+        e.pedidos.clear();
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("trecho 1/2") && tela.contains("trecho 2/2") && tela.contains("espaço tira"), "{tela}");
+        // Tira o segundo trecho: o rótulo do botão diz 1 de 2.
+        tecla(&mut e, "l");
+        tecla(&mut e, " ");
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("FORA") && tela.contains("Aplicar 1 de 2"), "{tela}");
+        tecla(&mut e, "a");
+        tecla(&mut e, "y");
+        assert_eq!(
+            e.pedidos,
+            [Pedido::AplicarPropostaParcial { id: "p1".into(), conteudo: "a\nB\nc\nd\n".into(), aceitos: 1, de: 2 }]
+        );
+        // Tirar todos e aplicar não faz nada.
+        e.pedidos.clear();
+        tecla(&mut e, "h");
+        tecla(&mut e, " ");
+        tecla(&mut e, "a");
+        assert!(e.pedidos.is_empty() && e.aviso.as_deref().unwrap().contains("nenhum trecho"));
+        // `A` devolve todos.
+        tecla(&mut e, "A");
+        tecla(&mut e, "a");
+        tecla(&mut e, "y");
+        assert_eq!(e.pedidos, [Pedido::DecidirProposta { id: "p1".into(), aplicar: true, motivo: String::new() }]);
+    }
+
+    #[test]
+    fn recusar_pede_o_motivo() {
+        let mut e = especial_aberto("propostas");
+        let p = anotadinho_core::proposta::Proposta {
+            id: "p9".into(),
+            autor: "claude".into(),
+            quando: "2026-09-17 10:00".into(),
+            motivo: String::new(),
+            alvo: "pages/beta.md".into(),
+            operacao: anotadinho_core::proposta::Operacao::Criar,
+            conteudo: "# Nova\n".into(),
+        };
+        especiais::carregar(&mut e, especiais::Dados::Propostas(vec![especiais::PropostaNaTela { proposta: p, atual: String::new() }]));
+        e.pedidos.clear();
+        tecla(&mut e, "r");
+        assert!(matches!(&e.modal, Some(Modal::Entrada { titulo, .. }) if titulo.contains("por quê")));
+        digitar(&mut e, "fora do escopo");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::DecidirProposta { id: "p9".into(), aplicar: false, motivo: "fora do escopo".into() }]);
     }
 }

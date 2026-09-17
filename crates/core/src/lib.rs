@@ -31,6 +31,7 @@ pub mod tabela_md;
 pub mod calendario;
 pub mod agente;
 pub mod conversa;
+pub mod decisao;
 pub mod diff;
 pub mod fluxo;
 pub mod sanitize;

@@ -301,6 +301,49 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
     }
 }
 
+/// A proposta pelo id, pra o registro saber alvo e autor (ciclo 404).
+fn proposta_por_id(vault: &str, id: &str) -> Option<anotadinho_core::proposta::Proposta> {
+    anotadinho_ipc::handle_listar_propostas(vault.to_string()).ok()?.into_iter().find(|p| p.id == id)
+}
+
+/// Acrescenta a decisão ao registro do vault (ciclo 404).
+fn registrar_decisao(
+    estado: &mut Estado,
+    vault: &str,
+    proposta: Option<anotadinho_core::proposta::Proposta>,
+    acao: anotadinho_core::decisao::Acao,
+    motivo: String,
+) {
+    let Some(p) = proposta else { return };
+    let decisao = anotadinho_core::decisao::Decisao {
+        quando: agora_local(),
+        proposta: p.id,
+        alvo: p.alvo,
+        autor: p.autor,
+        acao,
+        motivo,
+    };
+    if let Err(e) = anotadinho_ipc::handle_registrar_decisao(vault.to_string(), decisao) {
+        estado.aviso = Some(format!("não registrou a decisão: {e}"));
+    }
+}
+
+/// O depois de decidir: aplicada abre a página, o resto recarrega a fila.
+fn decidido(estado: &mut Estado, vault: &str, r: Result<String, String>) {
+    if let Some(t) = estado.especial.as_mut() {
+        t.erro = r.as_ref().err().cloned();
+    }
+    match r {
+        Ok(alvo) if !alvo.is_empty() => {
+            if let Ok(p) = handle_list_pages(vault.to_string()) {
+                estado.atualizar_paginas(p);
+            }
+            abrir(estado, vault, &alvo);
+        }
+        _ => carregar_especial(estado, vault, TipoEspecial::Propostas),
+    }
+}
+
 /// A conversa que o botão do fluxo abre (ciclo 348), como o
 /// `planejar_implementacao` da janela: uma spec aprovada abre "Planejar",
 /// uma proposta aprovada "Executar" — na conversa que a gerou, se ela
@@ -601,6 +644,10 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                         Err(e) => format!("não exportou: {e}"),
                     });
                 }
+                Pedido::ListarDecisoes => match anotadinho_ipc::handle_listar_decisoes(vault.to_string()) {
+                    Ok(d) => app::modais::mostrar_decisoes(estado, &d),
+                    Err(e) => estado.aviso = Some(format!("não leu as decisões: {e}")),
+                },
                 Pedido::StatusDoGit => app::modais::mostrar_git(
                     estado,
                     anotadinho_ipc::handle_git_status(vault.to_string())
@@ -635,23 +682,26 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
                     }
                     carregar_especial(estado, vault, TipoEspecial::Assets);
                 }
-                Pedido::DecidirProposta { id, aplicar } => {
+                Pedido::AplicarPropostaParcial { id, conteudo, aceitos, de } => {
+                    let dados = proposta_por_id(vault, &id);
+                    let r = anotadinho_ipc::handle_aplicar_proposta_parcial(vault.to_string(), id, conteudo);
+                    if r.is_ok() {
+                        registrar_decisao(estado, vault, dados, anotadinho_core::decisao::Acao::Parcial { aceitos, de }, String::new());
+                    }
+                    decidido(estado, vault, r);
+                }
+                Pedido::DecidirProposta { id, aplicar, motivo } => {
+                    let dados = proposta_por_id(vault, &id);
                     let r = if aplicar {
                         anotadinho_ipc::handle_aplicar_proposta(vault.to_string(), id)
                     } else {
                         anotadinho_ipc::handle_recusar_proposta(vault.to_string(), id).map(|_| String::new())
                     };
-                    if let Some(t) = estado.especial.as_mut() {
-                        t.erro = r.as_ref().err().cloned();
+                    if r.is_ok() {
+                        let acao = if aplicar { anotadinho_core::decisao::Acao::Aplicada } else { anotadinho_core::decisao::Acao::Recusada };
+                        registrar_decisao(estado, vault, dados, acao, motivo);
                     }
-                    match r {
-                        // Aplicada, abre a página, como a janela.
-                        Ok(alvo) if !alvo.is_empty() => {
-                            recarregar(estado);
-                            abrir(estado, vault, &alvo);
-                        }
-                        _ => carregar_especial(estado, vault, TipoEspecial::Propostas),
-                    }
+                    decidido(estado, vault, r);
                 }
                 Pedido::CriarPagina { path, conteudo } => match handle_write_page(vault.to_string(), path.clone(), conteudo) {
                     Ok(()) => {

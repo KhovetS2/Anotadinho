@@ -101,6 +101,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Configurar agente (binário, args, pasta, pastas extras) | ✅ | 350 — "Configurar agente…" (formulário, valida `{prompt}`) |
 | Lista de agentes (presets + criados, novo, remover) | ✅ | 392 — em "Trocar agente…" |
 | Propostas do agente (diff, aplicar, recusar) | ✅ | 346 — "Propostas do agente" na barra |
+| Aprovar trecho a trecho, recusar com motivo, registro das decisões | ✅ | 404 — só na TUI (a janela ainda é tudo-ou-nada) |
 | Git: status, pull, commit & push | ✅ | 349 — "Git: status e sincronizar…" na barra; histórico da página |
 | Nova página a partir de template | ✅ | 350 — "Nova página" pergunta o template quando há |
 

@@ -67,6 +67,8 @@ pub enum Pedido {
     AlternarInicio(String),
     /// Gravar a página como HTML.
     ExportarHtml(String),
+    /// Ver o registro de decisões sobre propostas (ciclo 404).
+    ListarDecisoes,
     /// Ver o status do git e as ações (ciclo 349).
     StatusDoGit,
     /// `git pull`.
@@ -85,6 +87,19 @@ pub enum Pedido {
         id: String,
         /// Aplicar; `false` recusa.
         aplicar: bool,
+        /// O motivo da recusa, quando a pessoa escreveu (ciclo 404).
+        motivo: String,
+    },
+    /// Aplicar só os trechos escolhidos de uma proposta (ciclo 404).
+    AplicarPropostaParcial {
+        /// O id da proposta.
+        id: String,
+        /// O conteúdo montado com os trechos escolhidos.
+        conteudo: String,
+        /// Quantos trechos entraram.
+        aceitos: usize,
+        /// De quantos.
+        de: usize,
     },
     /// Gravar uma página nova com este conteúdo e abri-la.
     CriarPagina {
@@ -443,6 +458,8 @@ pub enum AcaoDaEntrada {
     PastaDoAgente(bool),
     /// A pasta de outro vault (ciclo 373): `true` prepara um novo.
     Vault(bool),
+    /// O motivo da recusa de uma proposta (ciclo 404).
+    MotivoDaRecusa(String),
 }
 
 /// O que uma [`Modal::Escolha`] faz com o item escolhido.
@@ -534,6 +551,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Ver tags", "ver-tags"),
     ("Ver assets", "ver-assets"),
     ("Propostas do agente", "propostas"),
+    ("Decisões sobre as propostas", "decisoes"),
     ("Definir/remover como início", "inicio"),
     ("Exportar HTML da página", "exportar-html"),
     ("Excluir a página aberta", "excluir-pagina"),
@@ -740,6 +758,7 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "ver-tags" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Tags)),
         "ver-assets" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Assets)),
         "propostas" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Propostas)),
+        "decisoes" => e.pedidos.push(Pedido::ListarDecisoes),
         "personalizar" => {
             e.modal = Some(Modal::Escolha {
                 titulo: "Personalizar".into(),
@@ -942,6 +961,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     super::formatar::retomar(e);
                 }
             }
+            "Enter" if matches!(acao, AcaoDaEntrada::MotivoDaRecusa(_)) => {
+                let AcaoDaEntrada::MotivoDaRecusa(id) = acao else { unreachable!() };
+                e.pedidos.push(Pedido::DecidirProposta { id, aplicar: false, motivo: campo.texto.trim().to_string() });
+            }
             "Enter" if matches!(acao, AcaoDaEntrada::Vault(_)) => {
                 let AcaoDaEntrada::Vault(criar) = acao else { unreachable!() };
                 let pasta = campo.texto.trim().to_string();
@@ -984,7 +1007,11 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         AcaoDaEntrada::NovaPasta(dentro) => Pedido::CriarPasta(format!("{dentro}/{t}")),
                         AcaoDaEntrada::PaginaDeTemplate { template, pasta } => Pedido::CriarDeTemplate { template, titulo: t, pasta },
                         AcaoDaEntrada::Commit => Pedido::GitCommit(t),
-                        AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid | AcaoDaEntrada::Link | AcaoDaEntrada::CorLivre | AcaoDaEntrada::PastaDoAgente(_) | AcaoDaEntrada::Vault(_) => return,
+                        AcaoDaEntrada::Imagem | AcaoDaEntrada::Mermaid | AcaoDaEntrada::Link
+                        | AcaoDaEntrada::CorLivre
+                        | AcaoDaEntrada::PastaDoAgente(_)
+                        | AcaoDaEntrada::Vault(_)
+                        | AcaoDaEntrada::MotivoDaRecusa(_) => return,
                     });
                 }
             }
@@ -1671,4 +1698,27 @@ pub fn resultados_na_paleta(e: &mut Estado, termo: &str, hits: &[anotadinho_core
         let ancora = h.ancora.clone().unwrap_or_default();
         lista.itens.push(Item::novo("⌕", titulo, format!("resultado:{termo}\u{0}{}\u{0}{ancora}", h.path)).com_detalhe(format!("{origem}{trecho}")));
     }
+}
+
+/// O registro de decisões chegou (ciclo 404): a sequência, do mais novo
+/// pro mais velho, com o que foi decidido e por quê.
+pub fn mostrar_decisoes(e: &mut Estado, decisoes: &[anotadinho_core::decisao::Decisao]) {
+    if decisoes.is_empty() {
+        e.aviso = Some("nenhuma decisão registrada ainda".into());
+        return;
+    }
+    let itens = decisoes
+        .iter()
+        .map(|d| {
+            let glifo = match d.acao {
+                anotadinho_core::decisao::Acao::Aplicada => "✓",
+                anotadinho_core::decisao::Acao::Parcial { .. } => "◐",
+                anotadinho_core::decisao::Acao::Recusada => "✗",
+            };
+            let motivo = if d.motivo.is_empty() { String::new() } else { format!(" — {}", d.motivo) };
+            Item::novo(glifo, format!("{} · {}", d.acao.rotulo(), d.alvo), d.alvo.clone())
+                .com_detalhe(format!("{} · {}{motivo}", d.quando, d.autor))
+        })
+        .collect();
+    e.modal = Some(Modal::Escolha { titulo: "Decisões sobre as propostas".into(), lista: Lista::filtravel(itens), acao: AcaoDaEscolha::AbrirPagina });
 }
