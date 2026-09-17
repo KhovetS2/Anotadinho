@@ -1596,6 +1596,18 @@ fn nas_acoes(e: &mut Estado, ed: Edicao) -> bool {
                 ir(e, Some(no_botao(destino)));
             }
         }
+        // `~` no embed troca fileira ↔ grade (ciclo 380).
+        (Edicao::Alternar, None, _) => {
+            let mut grade = false;
+            if editar_acoes(e, &embed, |d| {
+                d.layout = if d.layout == em::ActionsLayout::Grid { em::ActionsLayout::Row } else { em::ActionsLayout::Grid };
+                grade = d.layout == em::ActionsLayout::Grid;
+                Ok(())
+            }) {
+                e.aviso = Some(if grade { "botões em grade" } else { "botões em fileira" }.into());
+                e.seguir_cursor();
+            }
+        }
         (Edicao::Alternar, Some(indice), Some(mut botao)) => {
             let destacar = botao.variant.as_deref() != Some("primary");
             botao.variant = destacar.then(|| "primary".to_string());

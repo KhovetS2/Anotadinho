@@ -2882,7 +2882,7 @@ fn linhas_de_fileira(
     }
 
     // Os ícones dos botões de ações, lidos do arquivo pela posição.
-    let icones: Vec<Option<String>> = arvore
+    let dados_das_acoes = arvore
         .em(dono)
         .filter(|u| matches!(&u.tipo, Tipo::Embed(n) if n == "actions"))
         .and_then(|u| u.fonte.as_deref())
@@ -2891,9 +2891,12 @@ fn linhas_de_fileira(
                 anotadinho_core::embed::DocSegment::Embed(anotadinho_core::embed::EmbedData::Actions(d)) => Some(d),
                 _ => None,
             })
-        })
-        .map(|d| d.buttons.iter().map(|b| b.icon.clone()).collect())
-        .unwrap_or_default();
+        });
+    // `layout: grid` (ciclo 380): botões da mesma largura, em grade, como
+    // o `.actions-embed--grid` da janela (colunas de no mínimo 180px).
+    let grade = dados_das_acoes.as_ref().is_some_and(|d| d.layout == anotadinho_core::embed::ActionsLayout::Grid);
+    let icones: Vec<Option<String>> =
+        dados_das_acoes.map(|d| d.buttons.iter().map(|b| b.icon.clone()).collect()).unwrap_or_default();
     let rotulo = |seg: &crate::tela::Segmento| -> String {
         let icone = seg.caminho.last().and_then(|i| icones.get(*i)).and_then(|i| i.as_deref());
         match icone {
@@ -2912,6 +2915,13 @@ fn linhas_de_fileira(
     // cursor, só o lembrete de onde se cria (com `o`).
     if e_acoes {
         itens.push(("+ ação".to_string(), None));
+    }
+    if grade {
+        let maior = itens.iter().map(|(t, _)| t.chars().count()).max().unwrap_or(0).max(16);
+        for (t, _) in itens.iter_mut() {
+            let falta = maior.saturating_sub(t.chars().count());
+            t.push_str(&" ".repeat(falta));
+        }
     }
     let mut faixas: Vec<Vec<&(String, Option<&crate::tela::Segmento>)>> = Vec::new();
     let mut faixa = Vec::new();
@@ -9633,5 +9643,23 @@ mod testes {
         tecla(&mut e, "Enter");
         assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/gama.md".into())]);
         assert_eq!(e.alvo_de_busca.as_deref(), Some("spr"));
+    }
+
+    // --- Ciclo 380: ações em grade -----------------------------------------------
+
+    #[test]
+    fn acoes_em_grade_tem_botoes_da_mesma_largura_e_til_troca() {
+        use anotadinho_core::embed::{ActionsLayout, EmbedData};
+        let mut e = pagina_com("{{ type: \"actions\" }}\nlayout: row\nbuttons:\n- label: A\n  action: open-page\n  path: pages/beta.md\n- label: Bem mais comprido\n  action: open-page\n  path: pages/gama.md\n{{ /actions }}\n");
+        e.cursor = vec![0, 0, 0];
+        tecla(&mut e, "Escape");
+        assert_eq!(e.cursor, vec![0, 0]);
+        tecla(&mut e, "Escape");
+        tecla(&mut e, "~");
+        let EmbedData::Actions(d) = embed_gravado(&e) else { panic!("{:?}", e.aviso) };
+        assert_eq!(d.layout, ActionsLayout::Grid);
+        let tela = desenho(&mut e, 120, 20).join("\n");
+        let linha = tela.lines().find(|l| l.contains(" A ")).expect("sem o botão A");
+        assert!(linha.contains("A                "), "o A não esticou:\n{tela}");
     }
 }

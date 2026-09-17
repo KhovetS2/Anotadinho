@@ -78,6 +78,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Consulta: recolher grupo (guardado no arquivo) | ✅ | 377 — `z` no grupo |
 | Ações: EXECUTAR o botão | ✅ | 342 — abrir, template, propriedade, busca |
 | Ações: configurar o botão (ação, destino, ícone) | ✅ | 344 — `=` no botão |
+| Ações: layout em grade | ✅ | 380 — botões da mesma largura; `~` fora de um botão troca |
 | Galeria: escolher arquivo de assets | ✅ | 356 — `o` lista as imagens de assets/ (ou digita o caminho) |
 | Fluxo: transições, nota | ✅ | 335 |
 | Fluxo: planejar/executar/pedir alteração (abre conversa) | ✅ | 348 — Enter na ação; executar continua na conversa de origem; botão "origem" |
