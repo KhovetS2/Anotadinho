@@ -315,6 +315,8 @@ fn conversa_do_fluxo(estado: &mut Estado, vault: &str, pagina: &str, alterar: bo
 /// da janela, por consulta.
 fn vigiar_disco(estado: &mut Estado, vault: &str, tambem_a_lista: bool) {
     if tambem_a_lista {
+        estado.propostas_pendentes = anotadinho_ipc::handle_listar_propostas(vault.to_string()).map(|l| l.len()).unwrap_or(0);
+        estado.mudancas_no_git = anotadinho_ipc::handle_git_status(vault.to_string()).map(|l| l.len());
         if let Ok(p) = handle_list_pages(vault.to_string()) {
             let chave = |l: &[anotadinho_ipc::PageMeta]| l.iter().map(|x| (x.path.clone(), x.title.clone())).collect::<Vec<_>>();
             if chave(&p) != chave(&estado.paginas) {

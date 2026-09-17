@@ -9,7 +9,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Janela | TUI | Ciclo / nota |
 |---|---|---|
 | Sidebar em árvore de pastas, filtro | ✅ | 299, 292 |
-| Seção Journals + "Journal de hoje" | 🟡 | "Ir pra Hoje" na barra (339); sem seção própria |
+| Seção Journals + "Journal de hoje" | ✅ | 339, 355 — seção no fim da sidebar, o mais novo em cima |
 | Nova página / por tipo | ✅ | 339 |
 | Nova pasta, nova página na pasta | ✅ | 345 — `O`/`o` na sidebar, "Nova pasta…" |
 | Mover página pra pasta | ✅ | 345 — `m` na sidebar |
@@ -17,6 +17,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Exportar pasta / vault | ✅ | 345 — grava `anotadinho-<pasta>.md` na pasta atual |
 | Abas de documentos (Ctrl+1..9) | ✅ | 354 — `Alt+1…9`, `Ctrl+W`/`Alt+H/L`, `Alt+Q` fecha; barra na borda de cima |
 | Paleta de comandos (Ctrl+K) | ✅ | 339 |
+| Cabeçalho: propostas pendentes e status do git | ✅ | 355 — no rodapé da sidebar |
 | Busca no CONTEÚDO na paleta (FTS) | ✅ | 342 — `Ctrl+F` (ou Enter sem resultado) |
 | Atalhos (`?`) | ✅ | 339 |
 | Wikilink `[[Título]]` abre a página | ✅ | 342 — Enter; oferece criar a que não existe |

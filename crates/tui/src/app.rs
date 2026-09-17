@@ -128,6 +128,11 @@ pub struct Estado {
     pub wikilink_dispensado: Option<usize>,
     /// As abas abertas, pelo caminho (ciclo 354), na ordem em que abriram.
     pub abas: Vec<String>,
+    /// Propostas do agente esperando revisão (ciclo 355), como o botão do
+    /// cabeçalho da janela.
+    pub propostas_pendentes: usize,
+    /// Arquivos mudados no git; `None` fora de repositório.
+    pub mudancas_no_git: Option<usize>,
     /// O modal aberto — barra de comandos, escolha, confirmação (ciclo 339).
     pub modal: Option<Modal>,
     /// O que só o `main` pode fazer (abrir, criar, apagar, gravar
@@ -203,6 +208,8 @@ impl Estado {
             wikilink_sel: 0,
             wikilink_dispensado: None,
             abas: Vec::new(),
+            propostas_pendentes: 0,
+            mudancas_no_git: None,
             pedidos: Vec::new(),
             preferencias: Preferencias::default(),
             agora: None,
@@ -1153,6 +1160,19 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     let mut bloco_paginas = borda("páginas", e.foco == Foco::Paginas, &e.tema);
     if let Some(rodape) = rodape_de_busca(e, Foco::Paginas) {
         bloco_paginas = bloco_paginas.title_bottom(rodape);
+    }
+    // O que a janela mostra no cabeçalho (ciclo 355): propostas esperando
+    // revisão e o que mudou no git — a barra de comandos abre os dois.
+    let mut indicadores = Vec::new();
+    if e.propostas_pendentes > 0 {
+        indicadores.push(Span::styled(format!(" ✓ {} proposta(s) ", e.propostas_pendentes), e.tema.pilula(Realce::BadgeAtencao)));
+    }
+    if let Some(n) = e.mudancas_no_git.filter(|n| *n > 0) {
+        indicadores.push(Span::raw(" "));
+        indicadores.push(Span::styled(format!(" ⑂ {n} "), Style::default().fg(e.tema.var("text-muted"))));
+    }
+    if !indicadores.is_empty() {
+        bloco_paginas = bloco_paginas.title_bottom(Line::from(indicadores).right_aligned());
     }
     f.render_widget(Paragraph::new(paginas).block(bloco_paginas), colunas[0]);
 
@@ -8830,5 +8850,15 @@ mod testes {
         let sem_beta: Vec<PageMeta> = paginas().into_iter().filter(|p| p.path != "pages/beta.md").collect();
         e.atualizar_paginas(sem_beta);
         assert_eq!(e.abas, ["pages/alfa.md"]);
+    }
+
+    #[test]
+    fn a_sidebar_mostra_propostas_pendentes_e_mudancas_no_git() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        assert!(!desenho(&mut e, 120, 12).join("\n").contains("proposta(s)"));
+        e.propostas_pendentes = 2;
+        e.mudancas_no_git = Some(3);
+        let tela = desenho(&mut e, 120, 12).join("\n");
+        assert!(tela.contains("✓ 2 proposta(s)") && tela.contains("⑂ 3"), "{tela}");
     }
 }

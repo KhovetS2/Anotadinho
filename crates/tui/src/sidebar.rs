@@ -106,7 +106,9 @@ fn descer(
     nivel: usize,
     fora: &mut Vec<Linha>,
 ) {
-    for (nome, filho) in &no.pastas {
+    // `journals/` não é pasta de páginas: é a seção Journals da janela,
+    // no FIM da sidebar, depois das páginas soltas (ciclo 355).
+    for (nome, filho) in no.pastas.iter().filter(|(n, _)| !(prefixo.is_empty() && n.as_str() == "journals")) {
         let caminho = if prefixo.is_empty() {
             nome.clone()
         } else {
@@ -136,6 +138,21 @@ fn descer(
             });
         }
     }
+    if prefixo.is_empty() {
+        if let Some(journals) = no.pastas.get("journals") {
+            fora.push(Linha { nivel, item: Item::Pasta { caminho: "journals".into(), nome: "Journals".into() } });
+            if !fechadas.contains("journals") {
+                // O mais novo em cima: o nome do journal é a data.
+                let mut dias: Vec<&PageMeta> = journals.paginas.iter().collect();
+                dias.sort_by(|a, b| b.path.cmp(&a.path));
+                for p in dias {
+                    if let Some(indice) = paginas.iter().position(|q| q.path == p.path) {
+                        fora.push(Linha { nivel: nivel + 1, item: Item::Pagina { indice, titulo: p.title.clone() } });
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// As pastas que nascem fechadas.
@@ -146,6 +163,8 @@ fn descer(
 pub fn fechadas_iniciais(raiz: &No) -> BTreeSet<String> {
     let mut fora = BTreeSet::new();
     juntar_caminhos(raiz, "", &mut fora);
+    // Journals é seção, e seção da janela nasce aberta.
+    fora.remove("journals");
     fora
 }
 
@@ -270,5 +289,23 @@ mod testes {
         assert!(f.contains("produto"));
         assert!(f.contains("produto/fundo"));
         assert!(f.contains("specs"));
+    }
+
+    #[test]
+    fn journals_vira_secao_no_fim_com_o_mais_novo_em_cima() {
+        let mut ps = vault();
+        ps.push(pagina("journals/2026-09-16.md", "2026-09-16"));
+        ps.push(pagina("journals/2026-09-17.md", "2026-09-17"));
+        ps.push(pagina("pages/zeta/z.md", "z"));
+        let a = arvore(&ps);
+        let ls = visiveis(&a, &ps, &fechadas_iniciais(&a));
+        let rotulos: Vec<String> = ls
+            .iter()
+            .map(|l| match &l.item {
+                Item::Pasta { nome, .. } => format!("{nome}/"),
+                Item::Pagina { titulo, .. } => titulo.clone(),
+            })
+            .collect();
+        assert_eq!(rotulos, ["produto/", "specs/", "zeta/", "solta", "Journals/", "2026-09-17", "2026-09-16"]);
     }
 }
