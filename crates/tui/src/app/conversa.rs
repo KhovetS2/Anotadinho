@@ -431,7 +431,7 @@ pub fn preencher_variavel(e: &mut Estado, nome: &str, valor: &str) {
 
 /// As linhas do corpo de uma mensagem: o markdown dela desenhado como a
 /// página, quebrado na largura.
-fn corpo_da_mensagem(texto: &str, tema: &Tema, largura: usize) -> Vec<Line<'static>> {
+pub(super) fn corpo_da_mensagem(texto: &str, tema: &Tema, largura: usize) -> Vec<Line<'static>> {
     let arvore = anotadinho_core::analise::analisar(texto);
     let linhas = crate::tela::linhas(&arvore);
     let mut fora = Vec::new();

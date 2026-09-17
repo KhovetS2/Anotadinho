@@ -7,6 +7,7 @@ use anotadinho_ipc::{
     handle_create_page_typed, handle_delete_page, handle_list_pages, handle_open_today_journal, handle_read_page_versioned,
     handle_scan_vault, handle_write_page, handle_write_page_checked,
 };
+use anotadinho_tui::app::especiais::{self, TipoEspecial};
 use anotadinho_tui::app::{Pedido, Preferencias};
 use anotadinho_tui::app::{self, Estado};
 use clap::Parser;
@@ -252,6 +253,39 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
     }
 }
 
+/// Lê do vault o que a tela de tags, assets ou propostas mostra (ciclo 346).
+fn carregar_especial(estado: &mut Estado, vault: &str, tipo: TipoEspecial) {
+    let dados = match tipo {
+        TipoEspecial::Tags => handle_scan_vault(vault.to_string()).map(|i| especiais::tags_do_indice(&i)),
+        TipoEspecial::Assets => anotadinho_ipc::handle_list_assets_info(vault.to_string()).map(|lista| {
+            // Um texto só com todas as páginas decide o "usado" de todos.
+            let mut paginas = String::new();
+            for p in handle_list_pages(vault.to_string()).unwrap_or_default() {
+                if let Ok(c) = anotadinho_ipc::handle_read_page(vault.to_string(), p.path) {
+                    paginas.push_str(&c);
+                    paginas.push('\n');
+                }
+            }
+            especiais::assets_com_uso(lista.into_iter().map(|a| (a.path, a.size)).collect(), &paginas)
+        }),
+        TipoEspecial::Propostas => anotadinho_ipc::handle_listar_propostas(vault.to_string()).map(|lista| {
+            especiais::Dados::Propostas(
+                lista
+                    .into_iter()
+                    .map(|proposta| especiais::PropostaNaTela {
+                        atual: anotadinho_ipc::handle_read_page(vault.to_string(), proposta.alvo.clone()).unwrap_or_default(),
+                        proposta,
+                    })
+                    .collect(),
+            )
+        }),
+    };
+    match dados {
+        Ok(d) => especiais::carregar(estado, d),
+        Err(e) => estado.aviso = Some(format!("não leu: {e}")),
+    }
+}
+
 /// Executa o que a TUI pediu e só quem tem o vault pode fazer (ciclo 339).
 fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
     let recarregar = |estado: &mut Estado| {
@@ -259,154 +293,211 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos) {
             estado.atualizar_paginas(p);
         }
     };
-    for pedido in std::mem::take(&mut estado.pedidos) {
-        match pedido {
-            Pedido::AbrirPagina(caminho) => abrir(estado, vault, &caminho),
-            Pedido::CriarPagina { path, conteudo } => match handle_write_page(vault.to_string(), path.clone(), conteudo) {
-                Ok(()) => {
-                    recarregar(estado);
-                    abrir(estado, vault, &path);
-                }
-                Err(e) => estado.aviso = Some(format!("não criou: {e}")),
-            },
-            Pedido::CriarPaginaComTitulo { titulo, tipo } => {
-                match handle_create_page_typed(vault.to_string(), titulo, tipo.unwrap_or_else(|| "md".into())) {
-                    Ok(meta) => {
-                        recarregar(estado);
-                        abrir(estado, vault, &meta.path);
+    // Um pedido pode deixar outro (abrir a página de tags pede os dados
+    // dela): atende até esvaziar, com um teto contra laço.
+    for _ in 0..4 {
+        if estado.pedidos.is_empty() {
+            break;
+        }
+        for pedido in std::mem::take(&mut estado.pedidos) {
+            match pedido {
+                Pedido::AbrirPagina(caminho) => abrir(estado, vault, &caminho),
+                Pedido::CarregarEspecial(tipo) => carregar_especial(estado, vault, tipo),
+                Pedido::AbrirEspecial(tipo) => {
+                    let (path, titulo) = tipo.pagina();
+                    let existe = estado.paginas.iter().any(|p| p.path == path);
+                    let criada = existe || {
+                        let tipo_no_frontmatter = match tipo {
+                            TipoEspecial::Tags => "tags",
+                            TipoEspecial::Assets => "assets",
+                            TipoEspecial::Propostas => "propostas",
+                        };
+                        let md = format!("---\ntitle: {titulo}\ntype: {tipo_no_frontmatter}\n---\n");
+                        match handle_write_page(vault.to_string(), path.to_string(), md) {
+                            Ok(_) => {
+                                recarregar(estado);
+                                true
+                            }
+                            Err(e) => {
+                                estado.aviso = Some(format!("não criou {path}: {e}"));
+                                false
+                            }
+                        }
+                    };
+                    if criada {
+                        abrir(estado, vault, path);
                     }
-                    Err(e) => estado.aviso = Some(format!("não criou: {e}")),
                 }
-            }
-            Pedido::AbrirHoje => match handle_open_today_journal(vault.to_string()) {
-                Ok(meta) => {
-                    recarregar(estado);
-                    abrir(estado, vault, &meta.path);
-                }
-                Err(e) => estado.aviso = Some(format!("não abriu o diário: {e}")),
-            },
-            Pedido::ExcluirPagina(caminho) => match handle_delete_page(vault.to_string(), caminho.clone()) {
-                Ok(()) => {
-                    recarregar(estado);
-                    if let Some(p) = estado.paginas.first().map(|p| p.path.clone()) {
-                        abrir(estado, vault, &p);
+                Pedido::ExcluirAsset(path) => {
+                    if let Err(e) = anotadinho_ipc::handle_delete_asset(vault.to_string(), path.clone()) {
+                        estado.aviso = Some(format!("Erro ao excluir: {e}"));
                     }
-                    estado.aviso = Some(format!("{caminho} excluída"));
+                    carregar_especial(estado, vault, TipoEspecial::Assets);
                 }
-                Err(e) => estado.aviso = Some(format!("não excluiu: {e}")),
-            },
-            Pedido::EnviarNaConversa { path, pergunta, anexos } => {
-                enviar_na_conversa(estado, vault, trabalhos, &path, &pergunta, &anexos);
-            }
-            Pedido::CriarDeTemplate { template, titulo, pasta } => {
-                match anotadinho_ipc::handle_create_page_from_template(vault.to_string(), template, titulo, pasta) {
-                    Ok(meta) => {
-                        recarregar(estado);
-                        abrir(estado, vault, &meta.path);
+                Pedido::DecidirProposta { id, aplicar } => {
+                    let r = if aplicar {
+                        anotadinho_ipc::handle_aplicar_proposta(vault.to_string(), id)
+                    } else {
+                        anotadinho_ipc::handle_recusar_proposta(vault.to_string(), id).map(|_| String::new())
+                    };
+                    if let Some(t) = estado.especial.as_mut() {
+                        t.erro = r.as_ref().err().cloned();
                     }
-                    Err(e) => estado.aviso = Some(format!("não criou: {e}")),
+                    match r {
+                        // Aplicada, abre a página, como a janela.
+                        Ok(alvo) if !alvo.is_empty() => {
+                            recarregar(estado);
+                            abrir(estado, vault, &alvo);
+                        }
+                        _ => carregar_especial(estado, vault, TipoEspecial::Propostas),
+                    }
                 }
-            }
-            Pedido::DefinirPropriedade { path, campo, valor } => {
-                let feito = anotadinho_ipc::handle_read_page(vault.to_string(), path.clone())
-                    .and_then(|c| anotadinho_core::MarkdownCodec::set_frontmatter_field(&c, &campo, &valor).map_err(|e| e.to_string()))
-                    .and_then(|novo| handle_write_page(vault.to_string(), path.clone(), novo));
-                match feito {
+                Pedido::CriarPagina { path, conteudo } => match handle_write_page(vault.to_string(), path.clone(), conteudo) {
                     Ok(()) => {
-                        estado.aviso = Some(format!("{campo} de {path} agora é \"{valor}\""));
-                        if estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path) {
-                            abrir(estado, vault, &path);
+                        recarregar(estado);
+                        abrir(estado, vault, &path);
+                    }
+                    Err(e) => estado.aviso = Some(format!("não criou: {e}")),
+                },
+                Pedido::CriarPaginaComTitulo { titulo, tipo } => {
+                    match handle_create_page_typed(vault.to_string(), titulo, tipo.unwrap_or_else(|| "md".into())) {
+                        Ok(meta) => {
+                            recarregar(estado);
+                            abrir(estado, vault, &meta.path);
+                        }
+                        Err(e) => estado.aviso = Some(format!("não criou: {e}")),
+                    }
+                }
+                Pedido::AbrirHoje => match handle_open_today_journal(vault.to_string()) {
+                    Ok(meta) => {
+                        recarregar(estado);
+                        abrir(estado, vault, &meta.path);
+                    }
+                    Err(e) => estado.aviso = Some(format!("não abriu o diário: {e}")),
+                },
+                Pedido::ExcluirPagina(caminho) => match handle_delete_page(vault.to_string(), caminho.clone()) {
+                    Ok(()) => {
+                        recarregar(estado);
+                        if let Some(p) = estado.paginas.first().map(|p| p.path.clone()) {
+                            abrir(estado, vault, &p);
+                        }
+                        estado.aviso = Some(format!("{caminho} excluída"));
+                    }
+                    Err(e) => estado.aviso = Some(format!("não excluiu: {e}")),
+                },
+                Pedido::EnviarNaConversa { path, pergunta, anexos } => {
+                    enviar_na_conversa(estado, vault, trabalhos, &path, &pergunta, &anexos);
+                }
+                Pedido::CriarDeTemplate { template, titulo, pasta } => {
+                    match anotadinho_ipc::handle_create_page_from_template(vault.to_string(), template, titulo, pasta) {
+                        Ok(meta) => {
+                            recarregar(estado);
+                            abrir(estado, vault, &meta.path);
+                        }
+                        Err(e) => estado.aviso = Some(format!("não criou: {e}")),
+                    }
+                }
+                Pedido::DefinirPropriedade { path, campo, valor } => {
+                    let feito = anotadinho_ipc::handle_read_page(vault.to_string(), path.clone())
+                        .and_then(|c| anotadinho_core::MarkdownCodec::set_frontmatter_field(&c, &campo, &valor).map_err(|e| e.to_string()))
+                        .and_then(|novo| handle_write_page(vault.to_string(), path.clone(), novo));
+                    match feito {
+                        Ok(()) => {
+                            estado.aviso = Some(format!("{campo} de {path} agora é \"{valor}\""));
+                            if estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path) {
+                                abrir(estado, vault, &path);
+                            }
+                        }
+                        Err(e) => estado.aviso = Some(format!("não gravou {campo}: {e}")),
+                    }
+                }
+                Pedido::BuscarConteudo(termo) => match anotadinho_ipc::handle_search_content(vault.to_string(), termo.clone()) {
+                    Ok(hits) => app::modais::mostrar_resultados_da_busca(estado, &termo, &hits),
+                    Err(e) => estado.aviso = Some(format!("a busca falhou: {e}")),
+                },
+                Pedido::CriarPasta(pasta) => match anotadinho_ipc::handle_create_folder(vault.to_string(), pasta.clone()) {
+                    Ok(()) => {
+                        estado.pastas_do_vault = anotadinho_ipc::handle_list_folders(vault.to_string()).unwrap_or_default();
+                        recarregar(estado);
+                        estado.aviso = Some(format!("pasta {pasta} criada"));
+                    }
+                    Err(e) => estado.aviso = Some(format!("não criou a pasta: {e}")),
+                },
+                Pedido::CriarPaginaNaPasta { pasta, titulo } => {
+                    match anotadinho_ipc::handle_create_page_in_folder(vault.to_string(), pasta, titulo, "md".into()) {
+                        Ok(meta) => {
+                            recarregar(estado);
+                            abrir(estado, vault, &meta.path);
+                        }
+                        Err(e) => estado.aviso = Some(format!("não criou: {e}")),
+                    }
+                }
+                Pedido::MoverPagina { de, para } => match anotadinho_ipc::handle_move_page(vault.to_string(), de, para.clone()) {
+                    Ok(meta) => {
+                        recarregar(estado);
+                        abrir(estado, vault, &meta.path);
+                        estado.aviso = Some(format!("movida pra {para}"));
+                    }
+                    Err(e) => estado.aviso = Some(format!("não moveu: {e}")),
+                },
+                Pedido::ExportarPasta(pasta) => match anotadinho_ipc::handle_export_folder(vault.to_string(), pasta.clone()) {
+                    Ok(texto) => {
+                        let nome = if pasta.is_empty() { "vault".to_string() } else { pasta.replace('/', "-") };
+                        let destino = std::env::current_dir().unwrap_or_default().join(format!("anotadinho-{nome}.md"));
+                        match std::fs::write(&destino, texto) {
+                            Ok(()) => estado.aviso = Some(format!("exportado em {}", destino.display())),
+                            Err(e) => estado.aviso = Some(format!("não exportou: {e}")),
                         }
                     }
-                    Err(e) => estado.aviso = Some(format!("não gravou {campo}: {e}")),
-                }
-            }
-            Pedido::BuscarConteudo(termo) => match anotadinho_ipc::handle_search_content(vault.to_string(), termo.clone()) {
-                Ok(hits) => app::modais::mostrar_resultados_da_busca(estado, &termo, &hits),
-                Err(e) => estado.aviso = Some(format!("a busca falhou: {e}")),
-            },
-            Pedido::CriarPasta(pasta) => match anotadinho_ipc::handle_create_folder(vault.to_string(), pasta.clone()) {
-                Ok(()) => {
-                    estado.pastas_do_vault = anotadinho_ipc::handle_list_folders(vault.to_string()).unwrap_or_default();
-                    recarregar(estado);
-                    estado.aviso = Some(format!("pasta {pasta} criada"));
-                }
-                Err(e) => estado.aviso = Some(format!("não criou a pasta: {e}")),
-            },
-            Pedido::CriarPaginaNaPasta { pasta, titulo } => {
-                match anotadinho_ipc::handle_create_page_in_folder(vault.to_string(), pasta, titulo, "md".into()) {
-                    Ok(meta) => {
-                        recarregar(estado);
-                        abrir(estado, vault, &meta.path);
-                    }
-                    Err(e) => estado.aviso = Some(format!("não criou: {e}")),
-                }
-            }
-            Pedido::MoverPagina { de, para } => match anotadinho_ipc::handle_move_page(vault.to_string(), de, para.clone()) {
-                Ok(meta) => {
-                    recarregar(estado);
-                    abrir(estado, vault, &meta.path);
-                    estado.aviso = Some(format!("movida pra {para}"));
-                }
-                Err(e) => estado.aviso = Some(format!("não moveu: {e}")),
-            },
-            Pedido::ExportarPasta(pasta) => match anotadinho_ipc::handle_export_folder(vault.to_string(), pasta.clone()) {
-                Ok(texto) => {
-                    let nome = if pasta.is_empty() { "vault".to_string() } else { pasta.replace('/', "-") };
-                    let destino = std::env::current_dir().unwrap_or_default().join(format!("anotadinho-{nome}.md"));
-                    match std::fs::write(&destino, texto) {
-                        Ok(()) => estado.aviso = Some(format!("exportado em {}", destino.display())),
-                        Err(e) => estado.aviso = Some(format!("não exportou: {e}")),
+                    Err(e) => estado.aviso = Some(format!("não exportou: {e}")),
+                },
+                Pedido::CarregarPrompt(path) => match anotadinho_ipc::handle_read_page(vault.to_string(), path.clone()) {
+                    Ok(conteudo) => app::conversa::aplicar_prompt(estado, &path, &conteudo),
+                    Err(e) => estado.aviso = Some(format!("não consegui ler o prompt: {e}")),
+                },
+                Pedido::InterromperAgente(path) => {
+                    if let Some(t) = trabalhos.get(&path) {
+                        t.interromper();
                     }
                 }
-                Err(e) => estado.aviso = Some(format!("não exportou: {e}")),
-            },
-            Pedido::CarregarPrompt(path) => match anotadinho_ipc::handle_read_page(vault.to_string(), path.clone()) {
-                Ok(conteudo) => app::conversa::aplicar_prompt(estado, &path, &conteudo),
-                Err(e) => estado.aviso = Some(format!("não consegui ler o prompt: {e}")),
-            },
-            Pedido::InterromperAgente(path) => {
-                if let Some(t) = trabalhos.get(&path) {
-                    t.interromper();
+                Pedido::AnexosDaConversa { conversa, lista } => {
+                    let feito = anotadinho_ipc::handle_read_page(vault.to_string(), conversa.clone()).and_then(|atual| {
+                        handle_write_page(vault.to_string(), conversa.clone(), anotadinho_core::conversa::reescrever_contexto(&atual, &lista))
+                    });
+                    match feito {
+                        Ok(()) => abrir(estado, vault, &conversa),
+                        Err(e) => estado.aviso = Some(format!("não gravou os anexos: {e}")),
+                    }
                 }
-            }
-            Pedido::AnexosDaConversa { conversa, lista } => {
-                let feito = anotadinho_ipc::handle_read_page(vault.to_string(), conversa.clone()).and_then(|atual| {
-                    handle_write_page(vault.to_string(), conversa.clone(), anotadinho_core::conversa::reescrever_contexto(&atual, &lista))
-                });
-                match feito {
-                    Ok(()) => abrir(estado, vault, &conversa),
-                    Err(e) => estado.aviso = Some(format!("não gravou os anexos: {e}")),
+                Pedido::ExecutarDaConversa { conversa, texto } => {
+                    use anotadinho_core::fluxo::{self, Artefato};
+                    let titulo = fluxo::titulo_sugerido(&texto, 60);
+                    let hoje = hoje_local();
+                    let md = fluxo::montar_pagina(Artefato::Execucao, &titulo, &texto, Some(&conversa), &hoje);
+                    let path = format!("{}/{}.md", Artefato::Execucao.pasta(), fluxo::slug_de_titulo(&titulo));
+                    if let Err(e) = handle_write_page(vault.to_string(), path.clone(), md) {
+                        estado.aviso = Some(format!("não criou a execução: {e}"));
+                        continue;
+                    }
+                    recarregar(estado);
+                    let mut anexos = estado.conversa.as_ref().map(|c| c.anexos.clone()).unwrap_or_default();
+                    if !anexos.contains(&path) {
+                        anexos.push(path.clone());
+                    }
+                    if let Ok(atual) = anotadinho_ipc::handle_read_page(vault.to_string(), conversa.clone()) {
+                        let _ = handle_write_page(
+                            vault.to_string(),
+                            conversa.clone(),
+                            anotadinho_core::conversa::reescrever_contexto(&atual, &anexos),
+                        );
+                    }
+                    let pergunta = fluxo::pergunta_de_execucao_da_conversa(&titulo, &path);
+                    enviar_na_conversa(estado, vault, trabalhos, &conversa, &pergunta, &anexos);
                 }
-            }
-            Pedido::ExecutarDaConversa { conversa, texto } => {
-                use anotadinho_core::fluxo::{self, Artefato};
-                let titulo = fluxo::titulo_sugerido(&texto, 60);
-                let hoje = hoje_local();
-                let md = fluxo::montar_pagina(Artefato::Execucao, &titulo, &texto, Some(&conversa), &hoje);
-                let path = format!("{}/{}.md", Artefato::Execucao.pasta(), fluxo::slug_de_titulo(&titulo));
-                if let Err(e) = handle_write_page(vault.to_string(), path.clone(), md) {
-                    estado.aviso = Some(format!("não criou a execução: {e}"));
-                    continue;
-                }
-                recarregar(estado);
-                let mut anexos = estado.conversa.as_ref().map(|c| c.anexos.clone()).unwrap_or_default();
-                if !anexos.contains(&path) {
-                    anexos.push(path.clone());
-                }
-                if let Ok(atual) = anotadinho_ipc::handle_read_page(vault.to_string(), conversa.clone()) {
-                    let _ = handle_write_page(
-                        vault.to_string(),
-                        conversa.clone(),
-                        anotadinho_core::conversa::reescrever_contexto(&atual, &anexos),
-                    );
-                }
-                let pergunta = fluxo::pergunta_de_execucao_da_conversa(&titulo, &path);
-                enviar_na_conversa(estado, vault, trabalhos, &conversa, &pergunta, &anexos);
-            }
-            Pedido::GravarPreferencias => {
-                if let Err(e) = gravar_preferencias(&estado.preferencias) {
-                    estado.aviso = Some(format!("não gravou as preferências: {e}"));
+                Pedido::GravarPreferencias => {
+                    if let Err(e) = gravar_preferencias(&estado.preferencias) {
+                        estado.aviso = Some(format!("não gravou as preferências: {e}"));
+                    }
                 }
             }
         }

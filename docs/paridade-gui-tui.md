@@ -31,9 +31,9 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 |---|---|---|
 | Markdown com embeds | ✅ | |
 | `type: conversa` | ✅ | 340, 341 |
-| `type: propostas` (revisar diff, aplicar/recusar) | ❌ | |
-| `type: tags` (tags do vault e onde aparecem) | ❌ | |
-| `type: assets` (arquivos, uso, excluir) | ❌ | |
+| `type: propostas` (revisar diff, aplicar/recusar) | ✅ | 346 — `a`/`r`, `v` Diff/Visualização |
+| `type: tags` (tags do vault e onde aparecem) | ✅ | 346 — "Ver tags"; `h`/`l` + Enter abre |
+| `type: assets` (arquivos, uso, excluir) | ✅ | 346 — "Ver assets"; `x`/`dd` exclui |
 | `type: kanban` / `calendar` / `table` de página inteira | ❌ | |
 | `type: graph` | — | grafo 3D; talvez lista de conexões |
 | Cabeçalho de página tipada + propriedades | 🟡 | 344 — propriedades pela barra |
@@ -72,7 +72,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 |---|---|---|
 | Conversa, anexos, prompt padrão, virar spec/proposta/execução | ✅ | 340, 341 |
 | Configurar agente (binário, args, pasta, pastas extras) | 🟡 | só presets |
-| Propostas do agente (diff, aplicar, recusar) | ❌ | |
+| Propostas do agente (diff, aplicar, recusar) | ✅ | 346 — "Propostas do agente" na barra |
 | Git: status, pull, commit & push | ❌ | |
 | Nova página a partir de template | 🟡 | 342 — pelo botão de ação; sem comando próprio |
 

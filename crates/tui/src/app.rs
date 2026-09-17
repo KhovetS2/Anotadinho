@@ -16,6 +16,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 pub mod conversa;
+pub mod especiais;
 mod edicao;
 mod markdown;
 pub mod modais;
@@ -116,6 +117,8 @@ pub struct Estado {
     /// A tela de conversa, quando a página aberta é `type: conversa`
     /// (ciclo 340).
     pub conversa: Option<conversa::TelaDeConversa>,
+    /// A tela de tags, assets ou propostas (ciclo 346).
+    pub especial: Option<especiais::TelaEspecial>,
     /// O modal aberto — barra de comandos, escolha, confirmação (ciclo 339).
     pub modal: Option<Modal>,
     /// O que só o `main` pode fazer (abrir, criar, apagar, gravar
@@ -186,6 +189,7 @@ impl Estado {
             registro: None,
             modal: None,
             conversa: None,
+            especial: None,
             pedidos: Vec::new(),
             preferencias: Preferencias::default(),
             agora: None,
@@ -222,7 +226,17 @@ impl Estado {
             }
             nova
         });
-        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(texto);
+        let (frontmatter, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(texto);
+        // Tags, assets e propostas mostram o vault (ciclo 346): a tela
+        // abre carregando e pede os dados. Reabrir a mesma mantém o lugar.
+        let velha = self.especial.take();
+        self.especial = especiais::TipoEspecial::do_frontmatter(frontmatter).map(|tipo| {
+            self.pedidos.push(Pedido::CarregarEspecial(tipo));
+            match velha {
+                Some(v) if v.tipo == tipo => v,
+                _ => especiais::TelaEspecial::nova(tipo),
+            }
+        });
         self.abrir(anotadinho_core::analise::analisar(corpo));
         self.desfazer.clear();
         self.refazer.clear();
@@ -659,6 +673,10 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
             conversa::tecla(e, tecla);
             None
         }
+        _ if e.especial.is_some() => {
+            especiais::tecla(e, tecla);
+            None
+        }
         _ => {
             // Enter num evento do vault abre a página dele (ciclo 317), o
             // que o clique faz na janela.
@@ -966,6 +984,11 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     // Uma conversa tem tela própria (ciclo 340).
     if e.conversa.is_some() {
         conversa::desenhar(f, e, colunas[1]);
+        modais::desenhar(f, e);
+        return;
+    }
+    if e.especial.is_some() {
+        especiais::desenhar(f, e, colunas[1]);
         modais::desenhar(f, e);
         return;
     }
@@ -2653,7 +2676,7 @@ fn glifo_do_icone(nome: &str) -> &'static str {
 
 /// O papel de um badge pelo sufixo do nome (`--info`, `--success`…),
 /// o mesmo de `badge_class` no núcleo.
-fn papel_do_badge(sufixo: &str) -> Option<Realce> {
+pub(super) fn papel_do_badge(sufixo: &str) -> Option<Realce> {
     match sufixo {
         "--info" => Some(Realce::BadgeInfo),
         "--success" => Some(Realce::BadgeSucesso),
@@ -8131,5 +8154,123 @@ mod testes {
         let mut e = estado();
         let linhas = desenho(&mut e, 10, 2);
         assert_eq!(linhas.len(), 2);
+    }
+
+    // --- Ciclo 346: tags, assets e propostas -------------------------
+
+    fn especial_aberto(tipo: &str) -> Estado {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto(&format!("---\ntitle: X\ntype: {tipo}\n---\n"), None);
+        e.foco = Foco::Conteudo;
+        e
+    }
+
+    fn proposta(id: &str, op: anotadinho_core::proposta::Operacao, alvo: &str, conteudo: &str) -> anotadinho_core::proposta::Proposta {
+        anotadinho_core::proposta::Proposta {
+            id: id.into(),
+            autor: "claude".into(),
+            quando: "2026-09-17 10:00".into(),
+            motivo: "arrumar a lista".into(),
+            alvo: alvo.into(),
+            operacao: op,
+            conteudo: conteudo.into(),
+        }
+    }
+
+    #[test]
+    fn pagina_de_tags_abre_carregando_e_pede_os_dados() {
+        let mut e = especial_aberto("tags");
+        assert_eq!(e.pedidos, [Pedido::CarregarEspecial(especiais::TipoEspecial::Tags)]);
+        assert!(desenho(&mut e, 100, 20).join("\n").contains("Carregando..."));
+        let indice = vec![
+            anotadinho_core::index::PageIndexEntry { path: "pages/a.md".into(), title: "Alfa".into(), embed_tags: vec!["infra".into(), "urgente".into()], ..Default::default() },
+            anotadinho_core::index::PageIndexEntry { path: "pages/b.md".into(), title: "Beta".into(), embed_tags: vec!["infra".into()], ..Default::default() },
+        ];
+        especiais::carregar(&mut e, especiais::tags_do_indice(&indice));
+        let tudo = desenho(&mut e, 100, 20).join("\n");
+        for esperado in ["Tags", " infra ", " 2", "Alfa", "Beta", " urgente ", "Enter abre"] {
+            assert!(tudo.contains(esperado), "faltou {esperado}:\n{tudo}");
+        }
+        // l anda pela página da tag; Enter abre.
+        e.pedidos.clear();
+        tecla(&mut e, "l");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/b.md".into())]);
+        e.pedidos.clear();
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/a.md".into())]);
+        // Sem tags, a frase da janela.
+        let mut e = especial_aberto("tags");
+        especiais::carregar(&mut e, especiais::tags_do_indice(&[]));
+        assert!(desenho(&mut e, 100, 20).join("\n").contains("Nenhuma tag encontrada"));
+    }
+
+    #[test]
+    fn assets_mostram_uso_e_excluir_pede_confirmacao() {
+        let mut e = especial_aberto("assets");
+        let dados = especiais::assets_com_uso(
+            vec![("assets/foto.png".into(), 2048), ("assets/velho.pdf".into(), 10)],
+            "![](../assets/foto.png)",
+        );
+        especiais::carregar(&mut e, dados);
+        let tudo = desenho(&mut e, 100, 20).join("\n");
+        for esperado in ["Assets", "2 arquivos · 2.0 KB · 1 não referenciados", "assets/foto.png", " usado ", " não usado ", "Excluir"] {
+            assert!(tudo.contains(esperado), "faltou {esperado}:\n{tudo}");
+        }
+        tecla(&mut e, "j");
+        tecla(&mut e, "d");
+        assert!(e.modal.is_none(), "um d só espera o segundo");
+        tecla(&mut e, "d");
+        assert!(matches!(&e.modal, Some(Modal::Confirmar { mensagem, .. }) if mensagem.contains("velho.pdf")));
+        e.pedidos.clear();
+        tecla(&mut e, "y");
+        assert_eq!(e.pedidos, [Pedido::ExcluirAsset("assets/velho.pdf".into())]);
+    }
+
+    #[test]
+    fn propostas_mostram_diff_e_aplicam_ou_recusam() {
+        use anotadinho_core::proposta::Operacao;
+        let mut e = especial_aberto("propostas");
+        especiais::carregar(
+            &mut e,
+            especiais::Dados::Propostas(vec![
+                especiais::PropostaNaTela { proposta: proposta("p1", Operacao::Substituir, "pages/alfa.md", "# Alfa\n\nnovo\n"), atual: "# Alfa\n\nvelho\n".into() },
+                especiais::PropostaNaTela { proposta: proposta("p2", Operacao::Criar, "pages/nova.md", "# Nova\n"), atual: String::new() },
+            ]),
+        );
+        let tudo = desenho(&mut e, 100, 40).join("\n");
+        for esperado in ["Propostas do agente", "2 pendente(s)", " SUBSTITUIR ", "pages/alfa.md", "ϟ claude", "arrumar a lista", "1 linha(s) removida(s) · 1 adicionada(s)", "-velho", "+novo", " CRIAR ", "Aplicar a", "Recusar r"] {
+            assert!(tudo.contains(esperado), "faltou {esperado}:\n{tudo}");
+        }
+        // v troca pra Visualização: o markdown, sem os sinais do diff.
+        tecla(&mut e, "v");
+        let tudo = desenho(&mut e, 100, 40).join("\n");
+        assert!(!tudo.contains("+novo") && tudo.contains("novo"), "{tudo}");
+        // a aplica, com confirmação; r recusa a segunda.
+        e.pedidos.clear();
+        tecla(&mut e, "a");
+        tecla(&mut e, "y");
+        assert_eq!(e.pedidos, [Pedido::DecidirProposta { id: "p1".into(), aplicar: true }]);
+        e.pedidos.clear();
+        tecla(&mut e, "j");
+        tecla(&mut e, "r");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::DecidirProposta { id: "p2".into(), aplicar: false }]);
+        // Vazia, a frase da janela.
+        let mut e = especial_aberto("propostas");
+        especiais::carregar(&mut e, especiais::Dados::Propostas(vec![]));
+        assert!(desenho(&mut e, 100, 20).join("\n").contains("Nada pendente."));
+    }
+
+    #[test]
+    fn a_barra_de_comandos_abre_tags_assets_e_propostas() {
+        let mut e = Estado::novo(paginas(), analisar("# x\n"));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, ":");
+        digitar(&mut e, "propostas do agente");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirEspecial(especiais::TipoEspecial::Propostas)]);
+        assert_eq!(especiais::TipoEspecial::Propostas.pagina().0, "pages/propostas.md");
     }
 }

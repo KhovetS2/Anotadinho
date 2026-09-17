@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use anotadinho_core::analise::analisar;
 use anotadinho_core::embed::{segment_com_intervalos, DocSegment};
 use anotadinho_ipc::PageMeta;
-use anotadinho_tui::app::{self, Estado, Foco};
+use anotadinho_tui::app::{self, especiais, Estado, Foco};
 use ratatui::backend::TestBackend;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::Terminal;
@@ -168,6 +168,12 @@ fn cenas() -> Vec<Cena> {
     v.push(cena("opcoes-da-selecao", so_o_embed("table"), &["Tab", "j", "Enter", "Enter", "l", "Enter"], 160, 36));
     v.push(cena("atalhos", so_o_embed("callout"), &["?"], 140, 40));
     // A tela de conversa (ciclo 340): no fim, numa resposta, e escrevendo.
+    // Tags, assets e propostas (ciclo 346).
+    let especial = |tipo: &str| format!("---\ntitle: X\ntype: {tipo}\n---\n");
+    v.push(cena("tags", especial("tags"), &["Tab", "j", "l"], 140, 36));
+    v.push(cena("assets", especial("assets"), &["Tab", "j"], 140, 20));
+    v.push(cena("propostas-diff", especial("propostas"), &["Tab"], 140, 40));
+    v.push(cena("propostas-visualizacao", especial("propostas"), &["Tab", "v"], 140, 40));
     v.push(cena("conversa-no-fim", CONVERSA.to_string(), &["Tab"], 160, 50));
     v.push(cena("conversa-resposta-selecionada", CONVERSA.to_string(), &["Tab", "k"], 160, 50));
     v.push(cena("conversa-escrevendo", CONVERSA.to_string(), &com(&[&["Tab", "i"], &digitado("Detalha a etapa 2")]), 160, 50));
@@ -194,11 +200,70 @@ fn cenas() -> Vec<Cena> {
     v
 }
 
+/// O que o `main` leria do vault pras telas de tags, assets e propostas
+/// (ciclo 346), fixo.
+fn dados_falsos(tipo: especiais::TipoEspecial) -> especiais::Dados {
+    use anotadinho_core::proposta::{Operacao, Proposta};
+    match tipo {
+        especiais::TipoEspecial::Tags => {
+            let pagina = |path: &str, title: &str, tags: &[&str]| anotadinho_core::index::PageIndexEntry {
+                path: path.into(),
+                title: title.into(),
+                embed_tags: tags.iter().map(|t| t.to_string()).collect(),
+                ..Default::default()
+            };
+            especiais::tags_do_indice(&[
+                pagina("pages/sprint.md", "Sprint 12", &["infra", "urgente", "backend"]),
+                pagina("pages/roadmap.md", "Roadmap", &["infra", "produto"]),
+                pagina("pages/lancamento.md", "Lançamento da versão 2", &["produto", "urgente"]),
+                pagina("pages/deploy.md", "Deploy", &["infra"]),
+            ])
+        }
+        especiais::TipoEspecial::Assets => especiais::assets_com_uso(
+            vec![
+                ("assets/diagrama-arquitetura.png".into(), 184_320),
+                ("assets/capa.jpg".into(), 2_450_000),
+                ("assets/rascunho-antigo.pdf".into(), 912),
+            ],
+            "![](../assets/diagrama-arquitetura.png) capa.jpg",
+        ),
+        especiais::TipoEspecial::Propostas => especiais::Dados::Propostas(vec![
+            especiais::PropostaNaTela {
+                proposta: Proposta {
+                    id: "p1".into(),
+                    autor: "claude".into(),
+                    quando: "2026-08-12 14:05".into(),
+                    motivo: "Separar as tarefas pendentes das concluídas e marcar a revisão como feita.".into(),
+                    alvo: "pages/sprint.md".into(),
+                    operacao: Operacao::Substituir,
+                    conteudo: "# Sprint 12\n\n## Pendentes\n\n- [ ] migrar o banco\n\n## Feitas\n\n- [x] revisão do PR\n".into(),
+                },
+                atual: "# Sprint 12\n\n- [ ] migrar o banco\n- [ ] revisão do PR\n".into(),
+            },
+            especiais::PropostaNaTela {
+                proposta: Proposta {
+                    id: "p2".into(),
+                    autor: "claude".into(),
+                    quando: "2026-08-12 13:40".into(),
+                    motivo: String::new(),
+                    alvo: "pages/notas/ideias.md".into(),
+                    operacao: Operacao::Criar,
+                    conteudo: "# Ideias\n\n- atalho pra duplicar cartão\n".into(),
+                },
+                atual: String::new(),
+            },
+        ]),
+    }
+}
+
 /// O que a cena produziu: a tela e o arquivo.
 fn rodar(c: &Cena) -> (ratatui::buffer::Buffer, Option<String>) {
     let paginas = vec![PageMeta { path: "pages/cena.md".into(), title: "cena".into(), section: "pages".into() }];
     let mut e = Estado::novo(paginas, analisar(""));
     e.abrir_texto(&c.pagina, Some("v1".into()));
+    if let Some(tipo) = e.especial.as_ref().map(|t| t.tipo) {
+        especiais::carregar(&mut e, dados_falsos(tipo));
+    }
     let mut e = e.com_hoje("2026-08-12");
     if c.com_indice {
         e = e.com_indice_do_vault(indice_falso());

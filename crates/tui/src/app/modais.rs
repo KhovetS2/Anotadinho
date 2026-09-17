@@ -25,6 +25,19 @@ use crate::componentes::{self, Campo, Item, Lista, Resposta};
 pub enum Pedido {
     /// Abrir esta página.
     AbrirPagina(String),
+    /// Ler do vault os dados da tela de tags, assets ou propostas (ciclo 346).
+    CarregarEspecial(super::especiais::TipoEspecial),
+    /// Abrir a página de tags, assets ou propostas, criando se falta.
+    AbrirEspecial(super::especiais::TipoEspecial),
+    /// Excluir um arquivo de `assets/`.
+    ExcluirAsset(String),
+    /// Aplicar (ou recusar) uma proposta do agente.
+    DecidirProposta {
+        /// O id da proposta.
+        id: String,
+        /// Aplicar; `false` recusa.
+        aplicar: bool,
+    },
     /// Gravar uma página nova com este conteúdo e abri-la.
     CriarPagina {
         /// Caminho no vault.
@@ -315,6 +328,9 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Mover página pra pasta…", "mover-pagina"),
     ("Exportar pasta…", "exportar-pasta"),
     ("Exportar vault inteiro", "exportar-vault"),
+    ("Ver tags", "ver-tags"),
+    ("Ver assets", "ver-assets"),
+    ("Propostas do agente", "propostas"),
     ("Excluir a página aberta", "excluir-pagina"),
 ];
 
@@ -424,6 +440,9 @@ fn executar(e: &mut Estado, chave: &str) {
             e.pedidos.push(Pedido::GravarPreferencias);
         }
         "hoje" => e.pedidos.push(Pedido::AbrirHoje),
+        "ver-tags" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Tags)),
+        "ver-assets" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Assets)),
+        "propostas" => e.pedidos.push(Pedido::AbrirEspecial(super::especiais::TipoEspecial::Propostas)),
         "personalizar" => {
             e.modal = Some(Modal::Escolha {
                 titulo: "Personalizar".into(),
