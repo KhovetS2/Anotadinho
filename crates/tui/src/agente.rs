@@ -31,11 +31,11 @@ pub struct Trabalho {
 
 impl Trabalho {
     /// Dispara o agente com o prompt, trabalhando em `cwd`.
-    pub fn iniciar(adaptador: &Adaptador, prompt: &str, cwd: &str) -> Result<Self, String> {
+    pub fn iniciar(adaptador: &Adaptador, prompt: &str, cwd: &str, config_mcp: &str) -> Result<Self, String> {
         if let Some(problema) = adaptador.validar() {
             return Err(format!("configuração do agente inválida: {}", problema.mensagem()));
         }
-        let args = adaptador.montar_args(prompt);
+        let args = adaptador.montar_args_com_mcp(prompt, config_mcp);
         let executavel = anotadinho_core::agente::executavel_para_spawn(&adaptador.binario);
         let binario = adaptador.binario.clone();
         let limite = adaptador.timeout_s;
@@ -215,19 +215,19 @@ mod testes {
 
     #[test]
     fn a_resposta_e_a_saida_e_o_prompt_vai_inteiro() {
-        let mut t = Trabalho::iniciar(&agente("echo", &["{prompt}"]), "olá \"mundo\" $(x)", ".").unwrap();
+        let mut t = Trabalho::iniciar(&agente("echo", &["{prompt}"]), "olá \"mundo\" $(x)", ".", "").unwrap();
         assert_eq!(esperar(&mut t), Ok("olá \"mundo\" $(x)".into()));
         assert_eq!(t.terminou(), None, "a resposta é entregue uma vez só");
     }
 
     #[test]
     fn falha_e_interrupcao_viram_erro() {
-        let mut t = Trabalho::iniciar(&agente("false", &["{prompt}"]), "x", ".").unwrap();
+        let mut t = Trabalho::iniciar(&agente("false", &["{prompt}"]), "x", ".", "").unwrap();
         assert!(esperar(&mut t).unwrap_err().contains("falhou"));
-        let mut t = Trabalho::iniciar(&agente("sleep", &["{prompt}"]), "30", ".").unwrap();
+        let mut t = Trabalho::iniciar(&agente("sleep", &["{prompt}"]), "30", ".", "").unwrap();
         t.interromper();
         assert!(esperar(&mut t).unwrap_err().contains("interrompida"));
-        assert!(Trabalho::iniciar(&agente("nao-existe-mesmo-xyz", &["{prompt}"]), "x", ".").is_err());
+        assert!(Trabalho::iniciar(&agente("nao-existe-mesmo-xyz", &["{prompt}"]), "x", ".", "").is_err());
     }
 }
 
@@ -248,7 +248,7 @@ mod testes_de_uso {
             timeout_s: 30,
             ..Adaptador::default()
         };
-        let mut t = Trabalho::iniciar(&adaptador, "oi", ".").expect("subiu");
+        let mut t = Trabalho::iniciar(&adaptador, "oi", ".", "").expect("subiu");
         for _ in 0..300 {
             if t.terminou().is_some() {
                 break;

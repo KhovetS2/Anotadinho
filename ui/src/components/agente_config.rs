@@ -252,6 +252,20 @@ pub fn agente_config(props: &AgenteConfigProps) -> Html {
                         </small>
                     </label>
 
+                    <label class="agente-config__campo">
+                        <span>{ "Argumento de config MCP" }</span>
+                        <input class="input" value={atual.arg_mcp.clone()} data-nav-item="true"
+                            placeholder="--mcp-config"
+                            oninput={de_input(editar(|a, v| a.arg_mcp = v))} />
+                        <small>
+                            { "Como este agente recebe um arquivo de configuração MCP. \
+                               Preenchido, o Anotadinho liga o servidor DELE na execução \
+                               e o agente ganha ler, buscar e propor neste vault — sem \
+                               configurar nada por fora. Vazio, o prompt ainda explica \
+                               como usar o CLI." }
+                        </small>
+                    </label>
+
                     if let Some(p) = &problema {
                         <p class="agente-config__erro" role="alert">{ p.mensagem() }</p>
                     } else if let Some(a) = &aviso {

@@ -116,6 +116,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Compor contexto: inserir transclusão pelo menu `/`, anexos viram página de contexto | ✅ | 416 — só na TUI; a página-recorte vira O anexo, reutilizável |
 | Peso do contexto no cabeçalho e prévia do prompt montado | ✅ | 417 (TUI), 423 (janela) — montagem única em `core::envio` |
 | O prompt diz ao agente onde é o vault e quais ferramentas existem | ✅ | 425 — vale pros dois; o MCP do CLI é o caminho, o CLI é o plano B |
+| MCP do vault ligado na execução, sem configurar por fora | ✅ | 426 — vale pros dois; `--mcp-config` gerado por vault, campo no formulário do agente |
 | Consulta dentro do recorte vira contexto (o vault de hoje, não uma lista velha) | ✅ | 418 — vale pros dois: TUI, janela e CLI passam pelo mesmo handler |
 | Poda explícita quando o contexto passa do teto | ✅ | 419 (TUI), 423 (janela) — histórico antigo, depois esqueleto do anexo maior |
 | Proposta em lote atômico (mudança que atravessa páginas) | ✅ | 420 — núcleo/IPC/CLI/MCP valem pros dois; decisão do lote só na TUI |

@@ -1908,6 +1908,8 @@ fn abrir_formulario_do_agente(e: &mut Estado, a: anotadinho_core::agente::Adapta
         C::novo("timeout", "Tempo limite (minutos)", Valor::Texto((a.timeout_s / 60).to_string())),
         C::novo("cwd", "Pasta de trabalho", Valor::Texto(a.cwd.clone())).com_dica("vazia: a raiz do projeto"),
         C::novo("arg_pasta_extra", "Argumento de pasta extra", Valor::Texto(a.arg_pasta_extra.clone())).com_dica("--add-dir"),
+        C::novo("arg_mcp", "Argumento de config MCP", Valor::Texto(a.arg_mcp.clone()))
+            .com_dica("--mcp-config (liga as ferramentas do vault)"),
         C::novo("pastas_extras", "Pastas extras", Valor::Lista(a.pastas_extras.clone())),
     ]);
     form.botoes.push(("salvar", "Salvar e usar".into()));
@@ -1930,6 +1932,7 @@ fn salvar_agente(e: &mut Estado, form: &crate::componentes::Formulario) -> bool 
         cwd: form.texto("cwd").trim().to_string(),
         pastas_extras: form.lista("pastas_extras").into_iter().filter(|x| !x.trim().is_empty()).collect(),
         arg_pasta_extra: form.texto("arg_pasta_extra").trim().to_string(),
+        arg_mcp: form.texto("arg_mcp").trim().to_string(),
         timeout_s: (minutos * 60).max(TIMEOUT_MINIMO_S),
         formato: if form.escolha("formato") == "stream" { FormatoSaida::StreamJson } else { FormatoSaida::Texto },
     };

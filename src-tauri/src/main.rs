@@ -494,7 +494,23 @@ fn iniciar_agente(
         }
     }
 
-    let args = adaptador.montar_args(&prompt);
+    // Liga o MCP do Anotadinho nesta execução (ciclo 426): o agente
+    // ganha as ferramentas do vault sem ninguém configurar por fora.
+    let config_mcp = {
+        let cli = anotadinho_core::agente::cli_ao_lado(std::env::current_exe().ok());
+        let json = anotadinho_core::agente::config_mcp(&cli, &vault_path);
+        let arquivo = std::path::Path::new(&vault_path).join(".anotadinho/mcp.json");
+        if let Some(pai) = arquivo.parent() {
+            let _ = std::fs::create_dir_all(pai);
+        }
+        match std::fs::write(&arquivo, json) {
+            Ok(()) => arquivo.to_string_lossy().to_string(),
+            // Sem o arquivo o agente continua rodando: o prompt explica
+            // o CLI (ciclo 425), que é o plano B.
+            Err(_) => String::new(),
+        }
+    };
+    let args = adaptador.montar_args_com_mcp(&prompt, &config_mcp);
     let vault_conversa = vault_path.clone();
     // Sem `cwd` configurado, o agente trabalha na raiz do PROJETO, não
     // no vault: rodar dentro das notas o deixava sem enxergar o código

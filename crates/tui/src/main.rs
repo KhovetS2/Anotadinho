@@ -210,6 +210,22 @@ struct EmAndamento {
     prompt: usize,
 }
 
+/// Grava a configuração MCP desta execução e devolve o caminho dela
+/// (ciclo 426). Vazio quando não deu — o prompt ainda explica o CLI.
+fn escrever_config_mcp(vault: &str) -> String {
+    let cli = anotadinho_core::agente::cli_ao_lado(std::env::current_exe().ok());
+    let json = anotadinho_core::agente::config_mcp(&cli, vault);
+    // Junto das propostas: é estado daquele vault, e some com ele.
+    let arquivo = std::path::Path::new(vault).join(".anotadinho/mcp.json");
+    if let Some(pai) = arquivo.parent() {
+        let _ = std::fs::create_dir_all(pai);
+    }
+    match std::fs::write(&arquivo, json) {
+        Ok(()) => arquivo.to_string_lossy().to_string(),
+        Err(_) => String::new(),
+    }
+}
+
 /// A chave de uma execução: o vault e a conversa (ciclo 396).
 fn chave_do_trabalho(vault: &str, conversa: &str) -> String {
     format!("{vault}\u{0}{conversa}")
@@ -377,7 +393,11 @@ fn enviar_na_conversa(
     } else {
         adaptador.cwd.clone()
     };
-    match anotadinho_tui::agente::Trabalho::iniciar(&adaptador, &prompt, &cwd) {
+    // Liga o MCP do Anotadinho nesta execução (ciclo 426): o agente
+    // ganha ler_pagina, buscar e propor apontados PRA ESTE vault, sem
+    // ninguém configurar nada por fora.
+    let config_mcp = escrever_config_mcp(vault);
+    match anotadinho_tui::agente::Trabalho::iniciar(&adaptador, &prompt, &cwd, &config_mcp) {
         Ok(t) => {
             trabalhos.insert(
                 chave_do_trabalho(vault, path),

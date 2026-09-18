@@ -18,6 +18,41 @@
 
 use serde::{Deserialize, Serialize};
 
+/// O JSON de configuração MCP que liga o servidor do Anotadinho num
+/// agente que aceita `--mcp-config` (ciclo 426).
+///
+/// `cli` é o caminho do `anotadinho-cli`; `vault` é o vault daquela
+/// conversa — o servidor nasce apontado pra ele, então o agente não
+/// consegue mexer noutro por engano.
+///
+/// O nome do servidor é `anotadinho`, o que faz as ferramentas chegarem
+/// ao agente como `mcp__anotadinho__propor` e afins.
+pub fn config_mcp(cli: &str, vault: &str) -> String {
+    let escapar = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(
+        "{{\n  \"mcpServers\": {{\n    \"anotadinho\": {{\n      \"command\": \"{}\",\n      \"args\": [\"--vault\", \"{}\", \"mcp\"]\n    }}\n  }}\n}}\n",
+        escapar(cli),
+        escapar(vault)
+    )
+}
+
+/// Onde gravar a configuração MCP daquela execução, e o caminho do CLI
+/// (ciclo 426).
+///
+/// Mora aqui porque TUI e janela precisam da MESMA resposta: um arquivo
+/// por vault, ao lado do binário que está rodando. Procurar o
+/// `anotadinho-cli` junto do executável atual é o que faz funcionar
+/// tanto instalado quanto em `target/debug`, sem configuração.
+pub fn cli_ao_lado(executavel_atual: Option<std::path::PathBuf>) -> String {
+    let nome = if cfg!(windows) { "anotadinho-cli.exe" } else { "anotadinho-cli" };
+    executavel_atual
+        .and_then(|exe| exe.parent().map(|d| d.join(nome)))
+        .filter(|c| c.exists())
+        .map(|c| c.to_string_lossy().to_string())
+        // Sem vizinho, tenta o PATH: quem instalou pelo cargo tem os dois lá.
+        .unwrap_or_else(|| nome.to_string())
+}
+
 /// Marcador substituído pelo prompt na linha de comando.
 pub const MARCADOR_PROMPT: &str = "{prompt}";
 
@@ -54,6 +89,16 @@ pub struct Adaptador {
     /// Vazio = ele não sabe receber, e `pastas_extras` é ignorado.
     #[serde(default)]
     pub arg_pasta_extra: String,
+    /// Argumento que o agente usa pra receber um arquivo de configuração
+    /// MCP (`--mcp-config`) — ciclo 426.
+    ///
+    /// Com isto o app LIGA o servidor MCP do próprio Anotadinho na
+    /// execução, e o agente ganha `ler_pagina`, `buscar`, `propor` e o
+    /// resto do contrato sem ninguém configurar nada por fora. Vazio = o
+    /// agente não sabe receber, e sobra o caminho do CLI, que o prompt
+    /// explica (ciclo 425).
+    #[serde(default)]
+    pub arg_mcp: String,
     /// Segundos até desistir. 0 = sem limite (desaconselhado).
     #[serde(default = "timeout_padrao")]
     pub timeout_s: u64,
@@ -204,7 +249,20 @@ impl Adaptador {
     /// de shell — então aspas, quebras de linha e `$(...)` dentro dele
     /// são texto, não código.
     pub fn montar_args(&self, prompt: &str) -> Vec<String> {
+        self.montar_args_com_mcp(prompt, "")
+    }
+
+    /// Como `montar_args`, mas ligando o servidor MCP do Anotadinho pelo
+    /// arquivo de configuração em `config_mcp` (ciclo 426).
+    ///
+    /// Caminho vazio, ou agente que não sabe receber, devolve os mesmos
+    /// argumentos de antes: ligar MCP é melhoria, não requisito.
+    pub fn montar_args_com_mcp(&self, prompt: &str, config_mcp: &str) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
+        if !self.arg_mcp.trim().is_empty() && !config_mcp.trim().is_empty() {
+            out.push(self.arg_mcp.clone());
+            out.push(config_mcp.to_string());
+        }
         // As pastas extras entram ANTES do resto: o `{prompt}` costuma
         // ser o último argumento, e alguns agentes tratam tudo depois
         // dele como parte do prompt.
@@ -314,6 +372,7 @@ impl Adaptador {
                 cwd: String::new(),
                 pastas_extras: Vec::new(),
                 arg_pasta_extra: "--add-dir".into(),
+                arg_mcp: "--mcp-config".into(),
                 timeout_s: TIMEOUT_PADRAO_S,
                 formato: FormatoSaida::StreamJson,
             },
@@ -345,6 +404,7 @@ impl Adaptador {
                 cwd: String::new(),
                 pastas_extras: Vec::new(),
                 arg_pasta_extra: "--add-dir".into(),
+                arg_mcp: String::new(),
                 timeout_s: TIMEOUT_PADRAO_S,
                 formato: FormatoSaida::StreamJson,
             },
@@ -357,6 +417,7 @@ impl Adaptador {
                 // Não confirmado contra o binário; vazio significa
                 // "não sei mandar pasta extra pra ele".
                 arg_pasta_extra: String::new(),
+                arg_mcp: String::new(),
                 timeout_s: TIMEOUT_PADRAO_S,
                 // O opencode tem `--format json`, mas o formato dos
                 // eventos dele não foi conferido contra um binário
@@ -646,6 +707,7 @@ mod tests {
             cwd: String::new(),
             pastas_extras: Vec::new(),
             arg_pasta_extra: String::new(),
+            arg_mcp: String::new(),
             timeout_s: 30,
             formato: FormatoSaida::Texto,
         }
@@ -801,6 +863,7 @@ mod tests {
             args: vec!["exec".into(), MARCADOR_PROMPT.into()],
             pastas_extras: vec!["/repo/a".into(), "/repo/b".into()],
             arg_pasta_extra: "--add-dir".into(),
+            arg_mcp: String::new(),
             ..base()
         };
         assert_eq!(
@@ -817,6 +880,7 @@ mod tests {
             args: vec![MARCADOR_PROMPT.into()],
             pastas_extras: vec!["/repo/a".into()],
             arg_pasta_extra: String::new(),
+            arg_mcp: String::new(),
             ..base()
         };
         assert_eq!(a.montar_args("p"), vec!["p"]);
@@ -828,6 +892,7 @@ mod tests {
             args: vec![MARCADOR_PROMPT.into()],
             pastas_extras: vec!["  ".into(), "/repo/a".into()],
             arg_pasta_extra: "--add-dir".into(),
+            arg_mcp: String::new(),
             ..base()
         };
         assert_eq!(a.montar_args("p"), vec!["--add-dir", "/repo/a", "p"]);
@@ -860,6 +925,7 @@ mod tests {
             cwd: String::new(),
             pastas_extras: Vec::new(),
             arg_pasta_extra: String::new(),
+            arg_mcp: String::new(),
             timeout_s: 180,
             formato: FormatoSaida::Texto,
         };
@@ -884,6 +950,7 @@ mod tests {
             args: vec!["exec".into(), "--json".into(), MARCADOR_PROMPT.into()],
             pastas_extras: vec!["/repo/meu".into()],
             arg_pasta_extra: String::new(),
+            arg_mcp: String::new(),
             ..base()
         };
         let novo = velho.migrado();
@@ -939,6 +1006,7 @@ mod tests {
             cwd: String::new(),
             pastas_extras: Vec::new(),
             arg_pasta_extra: String::new(),
+            arg_mcp: String::new(),
             timeout_s: 180,
             formato: FormatoSaida::Texto,
         };
@@ -1450,5 +1518,36 @@ mod testes_config {
         assert_eq!((total.entrada, total.saida), (300, 30));
         assert_eq!(total.custo_usd, Some(0.01), "quem não diz preço não zera o do outro");
         assert_eq!(Uso::default().somar(&Uso::default()).custo_usd, None);
+    }
+
+    // --- Ciclo 426: ligar o MCP na execução ------------------------------------------
+
+    #[test]
+    fn a_config_mcp_aponta_pro_cli_e_pro_vault() {
+        let json = config_mcp("/usr/bin/anotadinho-cli", "/home/eu/vault");
+        let v: serde_json::Value = serde_json::from_str(&json).expect("JSON válido");
+        let servidor = &v["mcpServers"]["anotadinho"];
+        assert_eq!(servidor["command"], "/usr/bin/anotadinho-cli");
+        assert_eq!(servidor["args"], serde_json::json!(["--vault", "/home/eu/vault", "mcp"]));
+        // Caminho com aspas ou barra invertida não quebra o arquivo.
+        let json = config_mcp("C:\\bin\\cli.exe", "/tmp/o \"meu\" vault");
+        let v: serde_json::Value = serde_json::from_str(&json).expect("JSON válido mesmo com aspas");
+        assert_eq!(v["mcpServers"]["anotadinho"]["args"][1], "/tmp/o \"meu\" vault");
+    }
+
+    #[test]
+    fn o_mcp_entra_nos_args_so_quando_o_agente_sabe_receber() {
+        let claude = Adaptador::presets().into_iter().find(|a| a.nome == "Claude Code").unwrap();
+        let com = claude.montar_args_com_mcp("oi", "/tmp/mcp.json");
+        assert!(com.windows(2).any(|p| p[0] == "--mcp-config" && p[1] == "/tmp/mcp.json"), "{com:?}");
+        // Antes do prompt: o que vem depois dele alguns agentes tratam
+        // como parte do prompt.
+        let i_mcp = com.iter().position(|a| a == "--mcp-config").unwrap();
+        let i_prompt = com.iter().position(|a| a == "oi").unwrap();
+        assert!(i_mcp < i_prompt, "{com:?}");
+        // Sem caminho, ou num agente que não sabe receber, nada muda.
+        assert_eq!(claude.montar_args_com_mcp("oi", ""), claude.montar_args("oi"));
+        let codex = Adaptador::presets().into_iter().find(|a| a.nome == "Codex").unwrap();
+        assert_eq!(codex.montar_args_com_mcp("oi", "/tmp/mcp.json"), codex.montar_args("oi"));
     }
 }
