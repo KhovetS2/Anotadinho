@@ -1362,14 +1362,25 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             }
             e.modal = Some(Modal::Conflito(c));
         }
-        Modal::TextoCru { titulo, texto, rolagem } => match tecla {
-            "Escape" | "q" | "Enter" => {}
-            "j" | "ArrowDown" => e.modal = Some(Modal::TextoCru { titulo, texto, rolagem: rolagem + 1 }),
-            "k" | "ArrowUp" => e.modal = Some(Modal::TextoCru { titulo, texto, rolagem: rolagem.saturating_sub(1) }),
-            "Ctrl+d" | "PageDown" => e.modal = Some(Modal::TextoCru { titulo, texto, rolagem: rolagem + 10 }),
-            "Ctrl+u" | "PageUp" => e.modal = Some(Modal::TextoCru { titulo, texto, rolagem: rolagem.saturating_sub(10) }),
-            _ => e.modal = Some(Modal::TextoCru { titulo, texto, rolagem }),
-        },
+        Modal::TextoCru { titulo, texto, rolagem } => {
+            // Não passa da última linha: rolar até o fim deixava a tela
+            // em branco, e em branco ninguém sabe se acabou ou quebrou.
+            let ultima = texto.lines().count().saturating_sub(1);
+            let novo = match tecla {
+                "Escape" | "q" | "Enter" => {
+                    e.modal = None;
+                    return;
+                }
+                "j" | "ArrowDown" => rolagem + 1,
+                "k" | "ArrowUp" => rolagem.saturating_sub(1),
+                "Ctrl+d" | "PageDown" => rolagem + 10,
+                "Ctrl+u" | "PageUp" => rolagem.saturating_sub(10),
+                "G" | "End" => ultima,
+                "g" | "Home" => 0,
+                _ => rolagem,
+            };
+            e.modal = Some(Modal::TextoCru { titulo, texto, rolagem: novo.min(ultima) });
+        }
         Modal::Visualizar(texto, rolagem) => match tecla {
             "Escape" | "q" | "Enter" => {}
             "j" | "ArrowDown" => e.modal = Some(Modal::Visualizar(texto, rolagem + 1)),
@@ -1655,10 +1666,15 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
             let dentro = componentes::desenhar_modal(f, area, titulo, "j k rolar · Ctrl+D/U de 10 · Esc", t);
             let largura = dentro.width as usize;
             let comum = Style::default().fg(t.var("text-primary"));
+            // A rolagem para na última TELA, não na última linha: senão
+            // o fim do texto aparece sozinho no topo, com o resto vazio.
+            let altura = dentro.height as usize;
+            let total = texto.lines().count();
+            let inicio = (*rolagem).min(total.saturating_sub(altura));
             let linhas: Vec<Line> = texto
                 .lines()
-                .skip(*rolagem)
-                .take(dentro.height as usize)
+                .skip(inicio)
+                .take(altura)
                 .map(|l| {
                     // Corta, não quebra: o que importa aqui é a FORMA do
                     // que vai — a linha longa continua sendo uma linha.

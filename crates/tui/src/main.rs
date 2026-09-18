@@ -284,6 +284,7 @@ fn montar_envio(
         pergunta,
         app::conversa::HISTORICO_NO_PROMPT,
         teto,
+        vault,
     );
     let mut nota = if trazidas.is_empty() {
         String::new()

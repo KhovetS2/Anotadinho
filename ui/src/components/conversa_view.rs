@@ -94,6 +94,7 @@ async fn montar_envio(
         pergunta,
         HISTORICO_NO_PROMPT,
         crate::state::load_aparencia().teto_de_contexto,
+        vault_path,
     );
     (envio, avisos)
 }

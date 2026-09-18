@@ -211,6 +211,27 @@ pub fn por_nome(nome: &str) -> Option<&'static Ferramenta> {
     CONTRATO.iter().find(|f| f.nome == nome)
 }
 
+/// Como o agente alcança o vault, pra entrar no prompt (ciclo 425).
+///
+/// Sem isto, o agente que a TUI e a janela disparam recebe o texto da
+/// conversa e mais nada: não sabe onde o vault está, nem que existe um
+/// jeito de propor. Ele respondia como um chat — e a proposta, que é a
+/// razão de o fluxo existir, dependia de a pessoa configurar o MCP por
+/// fora e o modelo adivinhar.
+///
+/// Os dois caminhos são ditos porque servem a agentes diferentes: quem
+/// fala MCP usa as ferramentas; quem só tem shell chama o CLI. O texto é
+/// curto de propósito — instrução longa compete com a pergunta.
+pub fn como_agir(vault: &str) -> String {
+    let mut t = String::from("# Como agir neste vault\n\n");
+    t.push_str(&format!(
+        "O vault está em {vault}. Pra LER e PROPOR, use o servidor MCP do Anotadinho (se estiver ligado) ou o CLI dele: `anotadinho-cli --vault {vault} <comando>`.\n\n"
+    ));
+    t.push_str("Você NÃO escreve página: a única escrita é propor, e o que você propõe só entra depois que a pessoa revisa o diff e aprova.\n\n");
+    t.push_str(&em_texto());
+    t
+}
+
 /// O contrato por escrito, pra colar em prompt de agente que não fala
 /// MCP (ciclo 407).
 pub fn em_texto() -> String {
@@ -270,5 +291,17 @@ mod testes {
     #[test]
     fn nome_desconhecido_nao_existe() {
         assert!(por_nome("apagar_vault").is_none());
+    }
+
+    #[test]
+    fn como_agir_diz_o_vault_o_cli_e_o_limite() {
+        let t = como_agir("/home/eu/vault");
+        assert!(t.contains("/home/eu/vault"), "{t}");
+        assert!(t.contains("anotadinho-cli --vault /home/eu/vault"), "{t}");
+        // A regra que protege o vault vai junto, não só a lista.
+        assert!(t.contains("só entra depois que a pessoa revisa"), "{t}");
+        assert!(t.contains("propor(path, conteudo, [motivo], [lote])"), "{t}");
+        // Curto: instrução longa compete com a pergunta.
+        assert!(t.lines().count() < 25, "{} linhas", t.lines().count());
     }
 }

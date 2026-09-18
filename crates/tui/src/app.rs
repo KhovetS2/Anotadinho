@@ -11000,4 +11000,21 @@ mod testes {
         assert!(c.rascunho.texto.contains("pages/a.md: aplicada"));
         assert!(!c.escrevendo, "não envia sozinho");
     }
+
+    #[test]
+    fn a_previa_nao_rola_alem_do_texto() {
+        use anotadinho_core::orcamento::Orcamento;
+        let mut e = conversa_aberta();
+        let texto: String = (1..=5).map(|i| format!("linha {i}\n")).collect();
+        conversa::mostrar_previa(&mut e, &texto, &Orcamento::default(), &[]);
+        for _ in 0..50 {
+            tecla(&mut e, "j");
+        }
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("linha 5"), "a última linha continua à vista:\n{tela}");
+        // `g` volta pro começo.
+        tecla(&mut e, "g");
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("O que vai pro agente"), "{tela}");
+    }
 }

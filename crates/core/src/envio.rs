@@ -37,17 +37,31 @@ pub fn montar(
     pergunta: &str,
     limite_historico: usize,
     teto: usize,
+    // `vault`: o caminho, pra dizer ao agente COMO agir (ciclo 425).
+    // Vazio omite o bloco.
+    vault: &str,
 ) -> Envio {
     let mut contextos: Vec<Contexto> = contextos.to_vec();
     let recentes = historico.len().min(limite_historico);
     let mut historico: Vec<Mensagem> = historico[historico.len() - recentes..].to_vec();
     let cortes = podar(&mut contextos, &mut historico, pergunta, teto);
-    let prompt = montar_prompt(&historico, pergunta, &contextos, limite_historico);
+    // O "como agir" vai ANTES da pergunta e fora dos blocos de dado: é
+    // instrução do app, não material lido do vault (ciclo 425).
+    let pergunta_com_regras = if vault.trim().is_empty() {
+        pergunta.to_string()
+    } else {
+        format!("{}\n\n{}", crate::ferramentas::como_agir(vault), pergunta.trim())
+    };
+    let prompt = montar_prompt(&historico, &pergunta_com_regras, &contextos, limite_historico);
     let mut partes: Vec<Peso> = contextos.iter().map(|c| Peso::novo(c.nome.clone(), &c.conteudo)).collect();
     let historico_texto: String =
         historico.iter().map(|m| m.texto.clone()).collect::<Vec<_>>().join("\n");
     partes.push(Peso::novo(format!("histórico ({} msg)", historico.len()), &historico_texto));
     partes.push(Peso::novo("pergunta", pergunta));
+    if !vault.trim().is_empty() {
+        // Pesa junto: são tokens que vão, e a prévia não pode escondê-los.
+        partes.push(Peso::novo("como agir", &crate::ferramentas::como_agir(vault)));
+    }
     Envio { prompt, orcamento: Orcamento::novo(partes, teto), cortes }
 }
 
@@ -66,7 +80,7 @@ mod testes {
 
     #[test]
     fn o_prompt_leva_contexto_historico_e_pergunta() {
-        let e = montar(&[ctx("spec.md", 10)], &[msg(1), msg(2)], "e agora?", 12, 0);
+        let e = montar(&[ctx("spec.md", 10)], &[msg(1), msg(2)], "e agora?", 12, 0, "");
         assert!(e.prompt.contains("spec.md"), "{}", e.prompt);
         assert!(e.prompt.contains("mensagem 2"), "{}", e.prompt);
         assert!(e.prompt.trim_end().ends_with("e agora?"), "a pergunta por último:\n{}", e.prompt);
@@ -80,7 +94,7 @@ mod testes {
     #[test]
     fn so_o_historico_recente_entra() {
         let historico: Vec<Mensagem> = (0..20).map(msg).collect();
-        let e = montar(&[], &historico, "p", 3, 0);
+        let e = montar(&[], &historico, "p", 3, 0, "");
         assert!(e.prompt.contains("mensagem 19") && !e.prompt.contains("mensagem 16"), "{}", e.prompt);
         assert!(e.orcamento.partes.iter().any(|p| p.nome == "histórico (3 msg)"));
     }
@@ -91,7 +105,7 @@ mod testes {
             nome: "spec.md".into(),
             conteudo: format!("# Título\n\n{}\n", "x".repeat(8000)),
         };
-        let e = montar(&[grande], &[msg(1)], "p", 12, 100);
+        let e = montar(&[grande], &[msg(1)], "p", 12, 100, "");
         assert!(!e.cortes.is_empty(), "tinha que podar");
         assert!(e.prompt.contains("# Título"), "o índice fica:\n{}", e.prompt);
         assert!(!e.prompt.contains(&"x".repeat(100)), "o corpo sai:\n{}", e.prompt);
@@ -102,8 +116,30 @@ mod testes {
     #[test]
     fn sem_teto_nada_e_podado() {
         let grande = Contexto { nome: "spec.md".into(), conteudo: "x".repeat(400_000) };
-        let e = montar(&[grande], &[msg(1)], "p", 12, 0);
+        let e = montar(&[grande], &[msg(1)], "p", 12, 0, "");
         assert!(e.cortes.is_empty());
         assert!(e.orcamento.tokens() > 99_000);
+    }
+
+    #[test]
+    fn com_vault_o_prompt_diz_como_agir() {
+        let e = montar(&[], &[msg(1)], "resuma", 12, 0, "/home/eu/vault");
+        assert!(e.prompt.contains("# Como agir neste vault"), "{}", e.prompt);
+        assert!(e.prompt.contains("/home/eu/vault"), "{}", e.prompt);
+        // Antes da pergunta, e fora do bloco de DADO: é instrução do
+        // app, não material lido do vault.
+        let onde_regras = e.prompt.find("Como agir").unwrap();
+        let onde_pergunta = e.prompt.rfind("resuma").unwrap();
+        assert!(onde_regras < onde_pergunta, "{}", e.prompt);
+        assert!(!e.prompt.contains("DADO-ANOTADINHO PAGINA como agir"), "{}", e.prompt);
+        // E pesa: são tokens que vão.
+        assert!(e.orcamento.partes.iter().any(|p| p.nome == "como agir"));
+    }
+
+    #[test]
+    fn sem_vault_nada_muda() {
+        let e = montar(&[], &[msg(1)], "resuma", 12, 0, "  ");
+        assert!(!e.prompt.contains("Como agir"), "{}", e.prompt);
+        assert!(!e.orcamento.partes.iter().any(|p| p.nome == "como agir"));
     }
 }
