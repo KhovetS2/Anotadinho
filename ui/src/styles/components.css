@@ -1493,6 +1493,16 @@
   font-size: 0.75rem;
 }
 .propostas__l { padding: 0 0.5rem; white-space: pre; color: var(--text-muted); }
+/* Trechos e realce fino na revisão (ciclo 424). */
+.propostas__trecho {
+  display: flex; align-items: center; gap: 8px;
+  margin: 6px 0 2px; font-size: 0.72rem; color: var(--text-muted);
+}
+.propostas__trecho-rot { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.propostas__trecho-fora { color: var(--warning); text-transform: uppercase; letter-spacing: .04em; }
+.propostas__l--fora { opacity: .45; }
+/* A palavra que mudou, dentro da linha que mudou. */
+.propostas__palavra { border-radius: 3px; padding: 0 1px; background: color-mix(in srgb, currentColor 22%, transparent); font-weight: 600; }
 .propostas__l--sai { background: color-mix(in srgb, var(--error) 16%, transparent); color: var(--text-primary); }
 .propostas__l--entra { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--text-primary); }
 .propostas__acoes { display: flex; gap: 0.4rem; }

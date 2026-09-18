@@ -425,6 +425,27 @@ fn aplicar_proposta(vault_path: String, id: String) -> Result<String, String> {
 }
 
 /// Descarta uma proposta.
+/// Aplica a proposta com o conteúdo que a pessoa escolheu — trecho a
+/// trecho (ciclo 404) ou editado à mão (411). A janela ganhou os dois no
+/// ciclo 424.
+#[tauri::command]
+fn aplicar_proposta_parcial(
+    vault_path: String,
+    id: String,
+    conteudo: String,
+) -> Result<String, String> {
+    anotadinho_ipc::handle_aplicar_proposta_parcial(vault_path, id, conteudo)
+}
+
+/// Acrescenta uma decisão ao registro (ciclo 404).
+#[tauri::command]
+fn registrar_decisao(
+    vault_path: String,
+    decisao: anotadinho_core::decisao::Decisao,
+) -> Result<(), String> {
+    anotadinho_ipc::handle_registrar_decisao(vault_path, decisao)
+}
+
 #[tauri::command]
 fn recusar_proposta(vault_path: String, id: String) -> Result<(), String> {
     anotadinho_ipc::handle_recusar_proposta(vault_path, id)
@@ -969,6 +990,8 @@ fn main() {
             propor,
             listar_propostas,
             aplicar_proposta,
+            aplicar_proposta_parcial,
+            registrar_decisao,
             recusar_proposta,
             check_changes,
             open_vault_dialog,

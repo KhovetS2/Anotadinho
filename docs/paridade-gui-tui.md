@@ -101,13 +101,13 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Configurar agente (binário, args, pasta, pastas extras) | ✅ | 350 — "Configurar agente…" (formulário, valida `{prompt}`) |
 | Lista de agentes (presets + criados, novo, remover) | ✅ | 392 — em "Trocar agente…" |
 | Propostas do agente (diff, aplicar, recusar) | ✅ | 346 — "Propostas do agente" na barra |
-| Aprovar trecho a trecho, recusar com motivo, registro das decisões | ✅ | 404 — só na TUI (a janela ainda é tudo-ou-nada) |
+| Aprovar trecho a trecho, registro das decisões | ✅ | 404 (TUI), 424 (janela) — caixinha por trecho e "Aplicar N de M" |
 | Permissões de escrita do agente por pasta | ✅ | 405 — no vault, valem pro CLI, TUI e janela; forma na TUI |
 | Registro de execuções do agente (o que rodou, duração, como terminou) | ✅ | 406 — só na TUI; `execucoes.jsonl` no vault, "Execuções do agente" na barra |
 | Contrato de ferramentas do agente (conjunto fechado, MCP) | ✅ | 407 — declarado no núcleo; "Ferramentas do agente" na barra; MCP deriva dele |
 | Vários agentes em paralelo com fila e limite | ✅ | 408 — só na TUI; limite nas preferências, "Agentes em andamento…" (`x` para tudo) |
 | Decidir várias propostas de uma vez (marcar, aplicar/recusar em lote) | ✅ | 409 — só na TUI; `m` marca, `M` todas, um motivo pro lote |
-| Realce palavra a palavra no diff da proposta | ✅ | 410 — só na TUI; a palavra trocada destaca dentro da linha |
+| Realce palavra a palavra no diff da proposta | ✅ | 410 (TUI), 424 (janela) |
 | Editar a proposta antes de aplicar | ✅ | 411 — só na TUI; `e` abre o conteúdo, registro diz "editada" |
 | Gatilhos: agente dispara por mudança, consulta ou hora | ✅ | 412 — só na TUI; `gatilhos.json` no vault, "Gatilhos do agente…" na barra |
 | Suíte de avaliação do agente (tarefas com resultado esperado) | — | 413 — `anotadinho-cli avaliar`; vale pros dois, não é tela |

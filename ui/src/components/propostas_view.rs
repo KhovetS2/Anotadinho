@@ -39,6 +39,10 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
     // visualização responde "como vai ficar", que é outra pergunta —
     // e a única que quem não escreve embed consegue responder.
     let visualizando = use_state(std::collections::HashSet::<String>::new);
+    // Os trechos TIRADOS da aplicação, por `id#índice` (ciclo 424, como
+    // a TUI faz desde o 404): revisar proposta grande tudo-ou-nada é o
+    // que faz aceitar mudança que ninguém leu.
+    let fora = use_state(std::collections::HashSet::<String>::new);
 
     {
         let propostas = propostas.clone();
@@ -61,6 +65,52 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
             || ()
         });
     }
+
+    let alternar_trecho = {
+        let fora = fora.clone();
+        Callback::from(move |chave: String| {
+            let mut novo = (*fora).clone();
+            if !novo.remove(&chave) {
+                novo.insert(chave);
+            }
+            fora.set(novo);
+        })
+    };
+
+    // Aplica só os trechos escolhidos e registra a decisão como parcial.
+    let aplicar_parcial = {
+        let vault_path = props.vault_path.clone();
+        let recarregar = recarregar.clone();
+        let erro = erro.clone();
+        let fora = fora.clone();
+        let on_fila_mudou = props.on_fila_mudou.clone();
+        Callback::from(move |(p, conteudo, aceitos, de): (Proposta, String, usize, usize)| {
+            let (vault_path, recarregar, erro) = (vault_path.clone(), recarregar.clone(), erro.clone());
+            let (fora, on_fila_mudou) = (fora.clone(), on_fila_mudou.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::aplicar_proposta_parcial(&vault_path, &p.id, &conteudo).await {
+                    Ok(_) => {
+                        let decisao = anotadinho_core::decisao::Decisao {
+                            quando: crate::state::agora_legivel(),
+                            proposta: p.id.clone(),
+                            alvo: p.alvo.clone(),
+                            autor: p.autor.clone(),
+                            acao: anotadinho_core::decisao::Acao::Parcial { aceitos, de },
+                            motivo: String::new(),
+                        };
+                        let _ = api::registrar_decisao(&vault_path, &decisao).await;
+                        // Os trechos daquela proposta somem junto com ela.
+                        let mut limpo = (*fora).clone();
+                        limpo.retain(|c| !c.starts_with(&format!("{}#", p.id)));
+                        fora.set(limpo);
+                    }
+                    Err(e) => erro.set(Some(e)),
+                }
+                recarregar.set(*recarregar + 1);
+                on_fila_mudou.emit(());
+            });
+        })
+    };
 
     let alternar_modo = {
         let visualizando = visualizando.clone();
@@ -133,6 +183,22 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                 let atual = atuais.get(&p.alvo).cloned().unwrap_or_default();
                 let linhas = p.diff(&atual);
                 let (removidas, adicionadas) = anotadinho_core::diff::contar(&linhas);
+                // Trechos (ciclo 404) e pares pro realce fino (410).
+                let trechos = anotadinho_core::diff::trechos(&linhas);
+                let id_do_trecho = p.id.clone();
+                let tirados = (*fora).clone();
+                let esta_fora = move |k: usize| tirados.contains(&format!("{id_do_trecho}#{k}"));
+                let escolhidos: Vec<bool> = (0..trechos.len()).map(|k| !esta_fora(k)).collect();
+                let aceitos = escolhidos.iter().filter(|x| **x).count();
+                let parcial = aceitos < trechos.len();
+                let conteudo_parcial = anotadinho_core::diff::aplicar_trechos(&linhas, &trechos, &escolhidos);
+                let mut par_de: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+                for t in &trechos {
+                    for (a, b) in anotadinho_core::diff::pares_do_trecho(&linhas, t) {
+                        par_de.insert(a, b);
+                        par_de.insert(b, a);
+                    }
+                }
                 let id_ok = p.id.clone();
                 let id_no = p.id.clone();
                 let preview = visualizando.contains(&p.id);
@@ -190,21 +256,74 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                             </div>
                         } else {
                             <pre class="propostas__diff">
-                                { for linhas.iter().map(|l| {
+                                { for linhas.iter().enumerate().map(|(i, l)| {
+                                    use anotadinho_core::diff::LinhaDiff;
+                                    let k = trechos.iter().position(|t| i >= t.inicio && i < t.fim);
+                                    let dentro_de_fora = k.is_some_and(|k| esta_fora(k));
+                                    let cabecalho = k.filter(|k| trechos[*k].inicio == i).map(|k| {
+                                        let t = &trechos[k];
+                                        let chave = format!("{}#{k}", p.id);
+                                        let alternar = alternar_trecho.clone();
+                                        let tirado = esta_fora(k);
+                                        html! {
+                                            <div class="propostas__trecho">
+                                                <label class="propostas__trecho-rot">
+                                                    <input type="checkbox" checked={!tirado}
+                                                        onchange={Callback::from(move |_: Event| alternar.emit(chave.clone()))} />
+                                                    { format!("trecho {}/{} · −{} +{}", k + 1, trechos.len(), t.removidas, t.adicionadas) }
+                                                </label>
+                                                if tirado { <span class="propostas__trecho-fora">{ "fora" }</span> }
+                                            </div>
+                                        }
+                                    });
                                     let (classe, marca) = match l {
-                                        anotadinho_core::diff::LinhaDiff::Igual { .. } => ("propostas__l", " "),
-                                        anotadinho_core::diff::LinhaDiff::Removida { .. } => ("propostas__l propostas__l--sai", "-"),
-                                        anotadinho_core::diff::LinhaDiff::Adicionada { .. } => ("propostas__l propostas__l--entra", "+"),
+                                        LinhaDiff::Igual { .. } => ("propostas__l", " "),
+                                        LinhaDiff::Removida { .. } => ("propostas__l propostas__l--sai", "-"),
+                                        LinhaDiff::Adicionada { .. } => ("propostas__l propostas__l--entra", "+"),
                                     };
-                                    html! { <div class={classe}>{ format!("{marca}{}", l.texto()) }</div> }
+                                    let classe = classes!(classe, dentro_de_fora.then_some("propostas__l--fora"));
+                                    // Realce palavra a palavra (ciclo 410, agora
+                                    // aqui): numa linha longa em que mudou uma
+                                    // data, pintar tudo faz reler tudo.
+                                    let pedacos = par_de.get(&i).filter(|_| l.mudou() && !dentro_de_fora).and_then(|outra| {
+                                        let (a, b) = (linhas[i.min(*outra)].texto(), linhas[i.max(*outra)].texto());
+                                        anotadinho_core::diff::diff_palavras(a, b)
+                                            .map(|(la, lb)| if i < *outra { la } else { lb })
+                                    });
+                                    html! {
+                                        <>
+                                            { cabecalho.unwrap_or_default() }
+                                            <div class={classe}>
+                                                { marca }
+                                                { match pedacos {
+                                                    Some(ps) => html! { for ps.into_iter().map(|pd| html! {
+                                                        <span class={classes!(pd.mudou.then_some("propostas__palavra"))}>{ pd.texto }</span>
+                                                    }) },
+                                                    None => html! { l.texto().to_string() },
+                                                } }
+                                            </div>
+                                        </>
+                                    }
                                 }) }
                             </pre>
                         }
 
                         <div class="propostas__acoes">
-                            <button class="btn btn--primary btn--sm"
-                                onclick={Callback::from(move |_: MouseEvent| d1.emit((id_ok.clone(), true)))}>
-                                { "Aplicar" }
+                            <button class="btn btn--primary btn--sm" disabled={parcial && aceitos == 0}
+                                onclick={{
+                                    let aplicar_parcial = aplicar_parcial.clone();
+                                    let proposta = p.clone();
+                                    let conteudo = conteudo_parcial.clone();
+                                    let total = trechos.len();
+                                    Callback::from(move |_: MouseEvent| {
+                                        if parcial {
+                                            aplicar_parcial.emit((proposta.clone(), conteudo.clone(), aceitos, total));
+                                        } else {
+                                            d1.emit((id_ok.clone(), true));
+                                        }
+                                    })
+                                }}>
+                                { if parcial { format!("Aplicar {aceitos} de {}", trechos.len()) } else { "Aplicar".to_string() } }
                             </button>
                             <button class="btn btn--ghost btn--sm"
                                 onclick={Callback::from(move |_: MouseEvent| d2.emit((id_no.clone(), false)))}>

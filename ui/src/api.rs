@@ -636,6 +636,32 @@ pub async fn listar_propostas(
 }
 
 /// Aplica uma proposta e devolve o path escrito.
+/// Aplica a proposta com o conteúdo escolhido — trechos ou texto
+/// editado (ciclo 424).
+pub async fn aplicar_proposta_parcial(
+    vault_path: &str,
+    id: &str,
+    conteudo: &str,
+) -> Result<String, String> {
+    chamar_texto(
+        "aplicar_proposta_parcial",
+        Args::novo().texto("vaultPath", vault_path).texto("id", id).texto("conteudo", conteudo),
+    )
+    .await
+}
+
+/// Registra a decisão tomada sobre uma proposta (ciclo 424).
+pub async fn registrar_decisao(
+    vault_path: &str,
+    decisao: &anotadinho_core::decisao::Decisao,
+) -> Result<(), String> {
+    chamar_sem_retorno(
+        "registrar_decisao",
+        Args::novo().texto("vaultPath", vault_path).serde("decisao", decisao),
+    )
+    .await
+}
+
 pub async fn aplicar_proposta(vault_path: &str, id: &str) -> Result<String, String> {
     chamar_proposta("aplicar_proposta", vault_path, id).await
 }
