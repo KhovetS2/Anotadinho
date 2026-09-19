@@ -778,8 +778,17 @@ pub async fn aplicar_proposta(vault_path: &str, id: &str) -> Result<String, Stri
 }
 
 /// Descarta uma proposta.
-pub async fn recusar_proposta(vault_path: &str, id: &str) -> Result<String, String> {
-    chamar_proposta("recusar_proposta", vault_path, id).await
+/// Descarta uma proposta. Não devolve nada — e é por isso que NÃO passa
+/// pelo `chamar_proposta`: ele exige texto na resposta, e o `null` de um
+/// comando sem retorno virava "a resposta não é texto" DEPOIS de a
+/// recusa já ter acontecido. O erro falso escondia a decisão que deveria
+/// ter sido registrada (achado ao testar a janela, ciclo 439).
+pub async fn recusar_proposta(vault_path: &str, id: &str) -> Result<(), String> {
+    chamar_sem_retorno(
+        "recusar_proposta",
+        Args::novo().texto("vaultPath", vault_path).texto("id", id),
+    )
+    .await
 }
 
 async fn chamar_proposta(cmd: &str, vault_path: &str, id: &str) -> Result<String, String> {

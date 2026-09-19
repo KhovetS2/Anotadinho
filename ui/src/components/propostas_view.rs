@@ -13,6 +13,41 @@
 
 use crate::api;
 use crate::components::icon::Icon;
+
+/// Um conjunto de ids que se liga e desliga por clique (ciclo 439).
+///
+/// Era `use_state` com `clone()` dentro do callback, e dois cliques
+/// antes do próximo render partiam do MESMO valor: marcar duas
+/// propostas depressa marcava uma só. Com reducer, cada ação enxerga o
+/// estado atual — que é o que o clique promete.
+#[derive(Default, PartialEq, Clone)]
+pub struct Marcados(pub std::collections::HashSet<String>);
+
+pub enum AcaoMarcados {
+    Alternar(String),
+    Limpar,
+    /// Tira tudo que começa com o prefixo (os trechos de uma proposta
+    /// que acabou de sair da fila).
+    LimparPrefixo(String),
+}
+
+impl yew::Reducible for Marcados {
+    type Action = AcaoMarcados;
+
+    fn reduce(self: std::rc::Rc<Self>, acao: Self::Action) -> std::rc::Rc<Self> {
+        let mut novo = self.0.clone();
+        match acao {
+            AcaoMarcados::Alternar(id) => {
+                if !novo.remove(&id) {
+                    novo.insert(id);
+                }
+            }
+            AcaoMarcados::Limpar => novo.clear(),
+            AcaoMarcados::LimparPrefixo(p) => novo.retain(|c| !c.starts_with(&p)),
+        }
+        std::rc::Rc::new(Marcados(novo))
+    }
+}
 use crate::components::modal::Modal;
 use crate::components::pagina_preview::PaginaPreview;
 use anotadinho_core::proposta::{Operacao, Proposta};
@@ -43,12 +78,12 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
     // Os trechos TIRADOS da aplicação, por `id#índice` (ciclo 424, como
     // a TUI faz desde o 404): revisar proposta grande tudo-ou-nada é o
     // que faz aceitar mudança que ninguém leu.
-    let fora = use_state(std::collections::HashSet::<String>::new);
+    let fora = use_reducer(Marcados::default);
     // Editar antes de aplicar (411) e recusar com motivo (404), que só
     // existiam na TUI; e as marcadas pra decidir em lote (409).
     let editando = use_state(|| None::<(String, String)>);
     let recusando = use_state(|| None::<(String, String)>);
-    let marcadas = use_state(std::collections::HashSet::<String>::new);
+    let marcadas = use_reducer(Marcados::default);
     /// O motivo da recusa em massa (um só pro lote de marcadas).
     let recusando_massa = use_state(|| None::<String>);
 
@@ -76,13 +111,7 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
 
     let alternar_trecho = {
         let fora = fora.clone();
-        Callback::from(move |chave: String| {
-            let mut novo = (*fora).clone();
-            if !novo.remove(&chave) {
-                novo.insert(chave);
-            }
-            fora.set(novo);
-        })
+        Callback::from(move |chave: String| fora.dispatch(AcaoMarcados::Alternar(chave)))
     };
 
     // Aplica só os trechos escolhidos e registra a decisão como parcial.
@@ -108,9 +137,7 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                         };
                         let _ = api::registrar_decisao(&vault_path, &decisao).await;
                         // Os trechos daquela proposta somem junto com ela.
-                        let mut limpo = (*fora).clone();
-                        limpo.retain(|c| !c.starts_with(&format!("{}#", p.id)));
-                        fora.set(limpo);
+                        fora.dispatch(AcaoMarcados::LimparPrefixo(format!("{}#", p.id)));
                     }
                     Err(e) => erro.set(Some(e)),
                 }
@@ -244,13 +271,7 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
     // acumulada, decidir uma por uma é o gargalo.
     let alternar_marca = {
         let marcadas = marcadas.clone();
-        Callback::from(move |id: String| {
-            let mut novo = (*marcadas).clone();
-            if !novo.remove(&id) {
-                novo.insert(id);
-            }
-            marcadas.set(novo);
-        })
+        Callback::from(move |id: String| marcadas.dispatch(AcaoMarcados::Alternar(id)))
     };
 
     let decidir_marcadas = {
@@ -261,7 +282,7 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
         Callback::from(move |(aplicar, motivo): (bool, String)| {
             let escolhidas: Vec<Proposta> = propostas
                 .iter()
-                .filter(|p| marcadas.contains(&p.id))
+                .filter(|p| marcadas.0.contains(&p.id))
                 .cloned()
                 .collect();
             if escolhidas.is_empty() {
@@ -277,7 +298,7 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                     let r = if aplicar {
                         api::aplicar_proposta(&vault_path, &p.id).await.map(|_| ())
                     } else {
-                        api::recusar_proposta(&vault_path, &p.id).await.map(|_| ())
+                        api::recusar_proposta(&vault_path, &p.id).await
                     };
                     match r {
                         Ok(()) => {
@@ -301,7 +322,7 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                 if !falhas.is_empty() {
                     erro.set(Some(falhas.join(" · ")));
                 }
-                marcadas.set(std::collections::HashSet::new());
+                marcadas.dispatch(AcaoMarcados::Limpar);
                 recarregar.set(*recarregar + 1);
                 on_fila_mudou.emit(());
             });
@@ -334,7 +355,8 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                 let r = if aplicar {
                     api::aplicar_proposta(&vault_path, &id).await
                 } else {
-                    api::recusar_proposta(&vault_path, &id).await
+                    // Recusar não devolve alvo: não há página pra abrir.
+                    api::recusar_proposta(&vault_path, &id).await.map(|_| String::new())
                 };
                 match r {
                     Ok(alvo) if aplicar && !alvo.is_empty() => {
@@ -375,9 +397,9 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                 </p>
             }
 
-            if !marcadas.is_empty() {
+            if !marcadas.0.is_empty() {
                 <div class="propostas__massa">
-                    <span>{ format!("{} marcada(s)", marcadas.len()) }</span>
+                    <span>{ format!("{} marcada(s)", marcadas.0.len()) }</span>
                     <button class="btn btn--primary btn--sm" onclick={{
                         let d = decidir_marcadas.clone();
                         Callback::from(move |_: MouseEvent| d.emit((true, String::new())))
@@ -390,7 +412,7 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                     }}>{ "Recusar as marcadas…" }</button>
                     <button class="btn btn--ghost btn--sm" onclick={{
                         let marcadas = marcadas.clone();
-                        Callback::from(move |_: MouseEvent| marcadas.set(std::collections::HashSet::new()))
+                        Callback::from(move |_: MouseEvent| marcadas.dispatch(AcaoMarcados::Limpar))
                     }}>{ "Desmarcar" }</button>
                 </div>
             }
@@ -402,7 +424,7 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                 // Trechos (ciclo 404) e pares pro realce fino (410).
                 let trechos = anotadinho_core::diff::trechos(&linhas);
                 let id_do_trecho = p.id.clone();
-                let tirados = (*fora).clone();
+                let tirados = fora.0.clone();
                 let esta_fora = move |k: usize| tirados.contains(&format!("{id_do_trecho}#{k}"));
                 let escolhidos: Vec<bool> = (0..trechos.len()).map(|k| !esta_fora(k)).collect();
                 let aceitos = escolhidos.iter().filter(|x| **x).count();
@@ -425,7 +447,7 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                         <header class="propostas__item-topo">
                             <input type="checkbox" class="propostas__marca"
                                 title="Marcar pra decidir em massa"
-                                checked={marcadas.contains(&p.id)}
+                                checked={marcadas.0.contains(&p.id)}
                                 onchange={{
                                     let alternar = alternar_marca.clone();
                                     let id = p.id.clone();

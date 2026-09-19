@@ -1429,20 +1429,26 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                     // pessoa lê e edita no marcador. O nome do arquivo
                     // resolve igual, mas `![[padroes]]` diz menos que
                     // `![[Padrões de nomenclatura]]`.
-                    let titulos: Vec<String> = anexos
+                    // O marcador usa o título quando ele é único no
+                    // conjunto; título repetido cai pro caminho (439).
+                    let pares: Vec<(String, String)> = anexos
                         .iter()
                         .map(|a| {
-                            estado
+                            let titulo = estado
                                 .indice_do_vault
                                 .iter()
                                 .find(|p| &p.path == a)
                                 .map(|p| p.title.clone())
                                 .filter(|t| !t.trim().is_empty())
                                 .or_else(|| estado.paginas.iter().find(|p| &p.path == a).map(|p| p.title.clone()))
-                                .unwrap_or_else(|| a.clone())
+                                .unwrap_or_default();
+                            (a.clone(), titulo)
                         })
                         .collect();
-                    let corpo: String = titulos.iter().map(|t| format!("![[{t}]]\n\n")).collect();
+                    let corpo: String = anotadinho_core::transclusao::marcadores_de_contexto(&pares)
+                        .iter()
+                        .map(|m| format!("{m}\n\n"))
+                        .collect();
                     let md = format!(
                         "---\ntitle: {titulo}\ntype: contexto\n---\n\nO que o agente precisa saber:\n\n{corpo}"
                     );

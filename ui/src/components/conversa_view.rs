@@ -597,16 +597,23 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                         // O título do frontmatter, não o nome do arquivo:
                         // `![[Padrões]]` diz o que `![[padroes]]` não diz.
                         let paginas = api::scan_vault(&vault_path).await.unwrap_or_default();
-                        let titulo_de = |alvo: &str| -> String {
-                            paginas
-                                .iter()
-                                .find(|p| p.path == alvo)
-                                .map(|p| p.title.clone())
-                                .filter(|t| !t.trim().is_empty())
-                                .unwrap_or_else(|| alvo.to_string())
-                        };
-                        let corpo: String =
-                            lista.iter().map(|a| format!("![[{}]]\n\n", titulo_de(a))).collect();
+                        // Título quando é único no conjunto; repetido cai
+                        // pro caminho, senão um anexo se perderia (439).
+                        let pares: Vec<(String, String)> = lista
+                            .iter()
+                            .map(|a| {
+                                let titulo = paginas
+                                    .iter()
+                                    .find(|p| &p.path == a)
+                                    .map(|p| p.title.clone())
+                                    .unwrap_or_default();
+                                (a.clone(), titulo)
+                            })
+                            .collect();
+                        let corpo: String = anotadinho_core::transclusao::marcadores_de_contexto(&pares)
+                            .iter()
+                            .map(|m| format!("{m}\n\n"))
+                            .collect();
                         let md = format!(
                             "---\ntitle: {nome}\ntype: contexto\n---\n\nO que o agente precisa saber:\n\n{corpo}"
                         );

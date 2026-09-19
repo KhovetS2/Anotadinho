@@ -338,6 +338,29 @@ mod testes {
     }
 }
 
+/// Os marcadores de uma página-recorte, a partir dos anexos (ciclo 439).
+///
+/// Usa o TÍTULO, que é o que a pessoa lê — `![[Padrões]]` diz o que
+/// `![[padroes]]` não diz. Mas título repetido no vault viraria dois
+/// marcadores idênticos: um dos anexos se perderia e o outro entraria
+/// duas vezes. Nesse caso vale o caminho, que é único por definição.
+pub fn marcadores_de_contexto(anexos: &[(String, String)]) -> Vec<String> {
+    let repetido = |titulo: &str| {
+        titulo.trim().is_empty()
+            || anexos.iter().filter(|(_, t)| t.trim() == titulo.trim()).count() > 1
+    };
+    anexos
+        .iter()
+        .map(|(path, titulo)| {
+            if repetido(titulo) {
+                format!("![[{path}]]")
+            } else {
+                format!("![[{titulo}]]")
+            }
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------
 // Consulta como contexto (ciclo 418)
 // ---------------------------------------------------------------------
@@ -400,6 +423,44 @@ pub fn resolver_consultas(
         }
     }
     r
+}
+
+#[cfg(test)]
+mod testes_de_marcadores {
+    use super::*;
+
+    #[test]
+    fn o_titulo_vale_quando_e_unico() {
+        let anexos = vec![
+            ("pages/padroes.md".to_string(), "Padrões".to_string()),
+            ("pages/specs/atual.md".to_string(), "Spec atual".to_string()),
+        ];
+        assert_eq!(
+            marcadores_de_contexto(&anexos),
+            ["![[Padrões]]", "![[Spec atual]]"]
+        );
+    }
+
+    #[test]
+    fn titulo_repetido_cai_pro_caminho() {
+        // Dois `![[X]]` trariam a mesma página duas vezes e perderiam a
+        // outra — o caminho é único por definição.
+        let anexos = vec![
+            ("pages/a.md".to_string(), "X".to_string()),
+            ("pages/b.md".to_string(), "X".to_string()),
+            ("pages/c.md".to_string(), "Só essa".to_string()),
+        ];
+        assert_eq!(
+            marcadores_de_contexto(&anexos),
+            ["![[pages/a.md]]", "![[pages/b.md]]", "![[Só essa]]"]
+        );
+    }
+
+    #[test]
+    fn titulo_vazio_tambem_cai_pro_caminho() {
+        let anexos = vec![("pages/sem-titulo.md".to_string(), "  ".to_string())];
+        assert_eq!(marcadores_de_contexto(&anexos), ["![[pages/sem-titulo.md]]"]);
+    }
 }
 
 #[cfg(test)]
