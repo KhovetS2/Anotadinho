@@ -110,7 +110,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Decidir várias propostas de uma vez (marcar, aplicar/recusar em lote) | ✅ | 409 — só na TUI; `m` marca, `M` todas, um motivo pro lote |
 | Realce palavra a palavra no diff da proposta | ✅ | 410 (TUI), 424 (janela) |
 | Editar a proposta antes de aplicar | ✅ | 411 (TUI), 428 (janela) — registro diz "editada" |
-| Gatilhos: agente dispara por mudança, consulta ou hora | ✅ | 412 — só na TUI; `gatilhos.json` no vault, "Gatilhos do agente…" na barra |
+| Gatilhos: agente dispara por mudança, consulta ou hora | ✅ | 412 (TUI), 431 (janela) — `gatilhos.json` no vault; a janela avalia de minuto em minuto |
 | Suíte de avaliação do agente (tarefas com resultado esperado) | — | 413 — `anotadinho-cli avaliar`; vale pros dois, não é tela |
 | Transclusão `![[Página#Seção]]` resolvida no contexto do prompt | ✅ | 414 — anexo chega ao agente com o conteúdo; `read --contexto` no CLI |
 | Transclusão DESENHADA na página (conteúdo de outra página à vista) | ✅ | 415 — conteúdo entra como enfeite sob o marcador, com teto de 12 linhas |

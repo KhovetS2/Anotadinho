@@ -507,6 +507,41 @@ pub fn app() -> Html {
     }
 
     // Polling
+    // Os gatilhos (ciclo 431): a janela não tem laço próprio como a TUI,
+    // então quem bate na porta é a tela, de minuto em minuto. O backend
+    // é quem decide se algo é devido — e a primeira volta só fotografa,
+    // pra o que existia antes de abrir o app não contar como mudança.
+    {
+        let vault_path = vault_path.clone();
+        use_effect_with(vault_path.clone(), move |_| {
+            let mut interval: Option<gloo_timers::callback::Interval> = None;
+            if let Some(ref p) = *vault_path {
+                let path = p.clone();
+                let ocupado = std::rc::Rc::new(std::cell::Cell::new(false));
+                interval = Some(gloo_timers::callback::Interval::new(60_000, move || {
+                    if ocupado.get() {
+                        return;
+                    }
+                    ocupado.set(true);
+                    let (path, ocupado) = (path.clone(), ocupado.clone());
+                    wasm_bindgen_futures::spawn_local(async move {
+                        let adaptador = crate::state::load_adaptador();
+                        let a = crate::state::load_aparencia();
+                        let _ = api::avaliar_gatilhos(
+                            &path,
+                            &adaptador,
+                            a.teto_de_contexto,
+                            a.limite_de_agentes,
+                        )
+                        .await;
+                        ocupado.set(false);
+                    });
+                }));
+            }
+            move || drop(interval)
+        });
+    }
+
     {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();

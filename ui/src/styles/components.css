@@ -2176,3 +2176,15 @@
 .conversa__na-fila {
   font-size: .75rem; color: var(--warning); white-space: nowrap;
 }
+
+/* Gatilhos no painel do agente (ciclo 431). */
+.agente-painel__gatilhos { list-style: none; margin: 0; padding: 0; }
+.agente-painel__gatilho {
+  display: grid; grid-template-columns: minmax(160px, auto) auto 1fr auto; gap: 10px;
+  align-items: baseline; padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  font-size: .8rem;
+}
+.agente-painel__liga { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.agente-painel__regra { color: var(--accent-purple); font-size: .76rem; }
+.agente-painel__gatilho small { color: var(--text-muted); }

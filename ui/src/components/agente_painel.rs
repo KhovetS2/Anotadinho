@@ -27,12 +27,14 @@ pub struct AgentePainelProps {
 #[function_component(AgentePainel)]
 pub fn agente_painel(props: &AgentePainelProps) -> Html {
     let permissoes = use_state(anotadinho_core::permissoes::Permissoes::default);
+    let gatilhos = use_state(Vec::<anotadinho_core::gatilho::Gatilho>::new);
     let execucoes = use_state(Vec::<anotadinho_core::execucao::Execucao>::new);
     let erro = use_state(|| None::<String>);
     let salvo = use_state(|| false);
 
     {
         let (permissoes, execucoes, erro) = (permissoes.clone(), execucoes.clone(), erro.clone());
+        let gatilhos = gatilhos.clone();
         let vault_path = props.vault_path.clone();
         use_effect_with(vault_path.clone(), move |_| {
             wasm_bindgen_futures::spawn_local(async move {
@@ -42,6 +44,9 @@ pub fn agente_painel(props: &AgentePainelProps) -> Html {
                 }
                 if let Ok(x) = api::listar_execucoes(&vault_path).await {
                     execucoes.set(x);
+                }
+                if let Ok(g) = api::ler_gatilhos(&vault_path).await {
+                    gatilhos.set(g);
                 }
             });
         });
@@ -93,6 +98,26 @@ pub fn agente_painel(props: &AgentePainelProps) -> Html {
         })
     };
 
+    // Ligar e desligar um gatilho — a decisão que mais se toma nesta
+    // lista, e a que não deve exigir editar arquivo.
+    let alternar_gatilho = {
+        let (gatilhos, erro) = (gatilhos.clone(), erro.clone());
+        let vault_path = props.vault_path.clone();
+        Callback::from(move |nome: String| {
+            let mut lista = (*gatilhos).clone();
+            for g in lista.iter_mut().filter(|g| g.nome == nome) {
+                g.ativo = !g.ativo;
+            }
+            gatilhos.set(lista.clone());
+            let (vault_path, erro) = (vault_path.clone(), erro.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Err(e) = api::gravar_gatilhos(&vault_path, &lista).await {
+                    erro.set(Some(e));
+                }
+            });
+        })
+    };
+
     let hoje = crate::state::agora_legivel();
     let dia = hoje.split_whitespace().next().unwrap_or("").to_string();
     let total = anotadinho_core::execucao::total_do_dia(&execucoes, &dia);
@@ -131,6 +156,41 @@ pub fn agente_painel(props: &AgentePainelProps) -> Html {
                         <span class="agente-painel__ok">{ "salvo" }</span>
                     }
                 </div>
+            </section>
+
+            <section class="agente-painel__secao">
+                <h3>{ "Quando ele trabalha sozinho" }</h3>
+                <p class="agente-painel__dica">
+                    { "Gatilhos disparam quando uma pasta muda, quando uma consulta passa \
+                       a ter resultado, ou todo dia a partir de uma hora. Cada disparo abre \
+                       uma conversa própria e passa pela mesma fila e revisão." }
+                </p>
+                if gatilhos.is_empty() {
+                    <p class="agente-painel__dica">
+                        { "Nenhum gatilho. O arquivo é .anotadinho/gatilhos.json no vault." }
+                    </p>
+                } else {
+                    <ul class="agente-painel__gatilhos">
+                        { for gatilhos.iter().map(|g| {
+                            let alternar = alternar_gatilho.clone();
+                            let nome = g.nome.clone();
+                            html! {
+                                <li class="agente-painel__gatilho">
+                                    <label class="agente-painel__liga">
+                                        <input type="checkbox" checked={g.ativo}
+                                            onchange={Callback::from(move |_: Event| alternar.emit(nome.clone()))} />
+                                        <strong>{ &g.nome }</strong>
+                                    </label>
+                                    <span class="agente-painel__regra">{ g.quando.rotulo() }</span>
+                                    <small>{ g.prompt.lines().next().unwrap_or("") }</small>
+                                    if !g.ultimo.trim().is_empty() {
+                                        <span class="agente-painel__quando">{ format!("último: {}", g.ultimo) }</span>
+                                    }
+                                </li>
+                            }
+                        }) }
+                    </ul>
+                }
             </section>
 
             <section class="agente-painel__secao">

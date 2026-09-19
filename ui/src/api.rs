@@ -658,6 +658,42 @@ pub async fn recusar_lote(vault_path: &str, lote: &str) -> Result<usize, String>
     chamar("recusar_lote", Args::novo().texto("vaultPath", vault_path).texto("lote", lote)).await
 }
 
+/// Os gatilhos do vault (ciclo 431).
+pub async fn ler_gatilhos(
+    vault_path: &str,
+) -> Result<Vec<anotadinho_core::gatilho::Gatilho>, String> {
+    chamar("ler_gatilhos", Args::novo().texto("vaultPath", vault_path)).await
+}
+
+pub async fn gravar_gatilhos(
+    vault_path: &str,
+    gatilhos: &[anotadinho_core::gatilho::Gatilho],
+) -> Result<(), String> {
+    chamar_sem_retorno(
+        "gravar_gatilhos",
+        Args::novo().texto("vaultPath", vault_path).serde("gatilhos", gatilhos),
+    )
+    .await
+}
+
+/// Avalia os gatilhos e dispara os devidos; devolve os que dispararam.
+pub async fn avaliar_gatilhos(
+    vault_path: &str,
+    adaptador: &anotadinho_core::agente::Adaptador,
+    teto: usize,
+    limite: usize,
+) -> Result<Vec<String>, String> {
+    chamar(
+        "avaliar_gatilhos",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .serde("adaptador", adaptador)
+            .serde("teto", &teto)
+            .serde("limite", &limite),
+    )
+    .await
+}
+
 /// As permissões de escrita do agente (ciclo 427).
 pub async fn ler_permissoes(
     vault_path: &str,

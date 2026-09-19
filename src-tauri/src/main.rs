@@ -465,6 +465,134 @@ fn recusar_lote(vault_path: String, lote: String) -> Result<usize, String> {
     anotadinho_ipc::handle_recusar_lote(vault_path, lote)
 }
 
+/// Os gatilhos do vault (ciclo 412); a janela ganhou no 431.
+#[tauri::command]
+fn ler_gatilhos(vault_path: String) -> Result<Vec<anotadinho_core::gatilho::Gatilho>, String> {
+    anotadinho_ipc::handle_ler_gatilhos(vault_path)
+}
+
+#[tauri::command]
+fn gravar_gatilhos(
+    vault_path: String,
+    gatilhos: Vec<anotadinho_core::gatilho::Gatilho>,
+) -> Result<(), String> {
+    anotadinho_ipc::handle_gravar_gatilhos(vault_path, gatilhos)
+}
+
+/// A foto das datas de modificação por vault, pra saber o que mudou
+/// entre duas avaliações de gatilho (ciclo 431).
+static VISTO: std::sync::LazyLock<Mutex<HashMap<String, HashMap<String, std::time::SystemTime>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Avalia os gatilhos e dispara os devidos (ciclo 431).
+///
+/// Quem chama é a tela, de minuto em minuto — a janela não tem laço
+/// próprio como a TUI. Devolve os nomes que dispararam, pra mostrar.
+///
+/// A primeira avaliação de um vault só FOTOGRAFA: o que existia antes de
+/// abrir o app não é mudança.
+#[tauri::command]
+fn avaliar_gatilhos(
+    vault_path: String,
+    adaptador: anotadinho_core::agente::Adaptador,
+    teto: usize,
+    limite: usize,
+) -> Result<Vec<String>, String> {
+    use anotadinho_core::gatilho::{self, Quando};
+    let mut lista = anotadinho_ipc::handle_ler_gatilhos(vault_path.clone())?;
+    if lista.is_empty() {
+        return Ok(Vec::new());
+    }
+    let paginas = anotadinho_ipc::handle_scan_vault(vault_path.clone())?;
+    let raiz = std::path::Path::new(&vault_path);
+    let agora: HashMap<String, std::time::SystemTime> = paginas
+        .iter()
+        .filter_map(|p| {
+            let q = std::fs::metadata(raiz.join(&p.path)).and_then(|m| m.modified()).ok()?;
+            Some((p.path.clone(), q))
+        })
+        .collect();
+    let mudaram: Vec<String> = {
+        let mut visto = VISTO.lock().map_err(|_| "registro de mudanças travado".to_string())?;
+        let anterior = visto.insert(vault_path.clone(), agora.clone());
+        match anterior {
+            None => Vec::new(),
+            Some(antes) => {
+                let mut m: Vec<String> = agora
+                    .iter()
+                    .filter(|(path, quando)| antes.get(*path).is_none_or(|a| a != *quando))
+                    .map(|(path, _)| path.clone())
+                    .collect();
+                m.sort();
+                m
+            }
+        }
+    };
+    let com_resultado: Vec<String> = lista
+        .iter()
+        .filter_map(|g| match &g.quando {
+            Quando::Consulta { de, onde } => {
+                let q = anotadinho_core::query::Query {
+                    from: Some(de.clone()),
+                    conditions: onde
+                        .iter()
+                        .filter_map(|c| anotadinho_core::query::Condition::parse(c).ok())
+                        .collect(),
+                    ..Default::default()
+                };
+                (!q.run(&paginas).is_empty()).then(|| g.nome.clone())
+            }
+            _ => None,
+        })
+        .collect();
+
+    let quando = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let devidos = gatilho::devidos(&lista, &quando, &mudaram, &com_resultado);
+    let mut dispararam = Vec::new();
+    for i in devidos {
+        let g = lista[i].clone();
+        let path = format!(
+            "pages/conversas/{}.md",
+            anotadinho_core::conversa::nome_de_arquivo(&format!("gatilho-{}-{quando}", g.nome))
+        );
+        let md = anotadinho_core::conversa::montar_pagina(&format!("Gatilho: {}", g.nome), None, &[]);
+        if anotadinho_ipc::handle_write_page(vault_path.clone(), path.clone(), md).is_err() {
+            continue;
+        }
+        let pergunta = format!(
+            "{}\n\n(disparado pelo gatilho \"{}\": {})",
+            g.prompt,
+            g.nome,
+            g.quando.rotulo()
+        );
+        // A pergunta vai pro arquivo antes do disparo, como no envio
+        // humano: se o agente falhar, o pedido não se perde.
+        if let Ok(atual) = anotadinho_ipc::handle_read_page(vault_path.clone(), path.clone()) {
+            let (fm, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&atual);
+            let minha = anotadinho_core::conversa::Mensagem {
+                autor: anotadinho_core::conversa::Autor::Voce,
+                quando: quando.clone(),
+                texto: pergunta.clone(),
+            };
+            let novo_corpo = anotadinho_core::conversa::append(corpo, &minha);
+            let novo = if fm.is_empty() { novo_corpo } else { format!("{fm}\n{novo_corpo}") };
+            let _ = anotadinho_ipc::handle_write_page(vault_path.clone(), path.clone(), novo);
+        }
+        let envio = anotadinho_core::envio::montar(&[], &[], &pergunta, 12, teto, &vault_path);
+        match iniciar_agente(adaptador.clone(), envio.prompt, vault_path.clone(), path, Some(limite)) {
+            Ok(_) => {
+                gatilho::marcar(&mut lista[i], &quando);
+                dispararam.push(g.nome.clone());
+            }
+            Err(e) => eprintln!("gatilho {}: {e}", g.nome),
+        }
+    }
+    if !dispararam.is_empty() {
+        anotadinho_ipc::handle_gravar_gatilhos(vault_path, lista)?;
+    }
+    Ok(dispararam)
+}
+
 /// As permissões de escrita do agente (ciclo 405), pro painel da janela
 /// (ciclo 427).
 #[tauri::command]
@@ -1126,6 +1254,9 @@ fn main() {
             aplicar_proposta_parcial,
             aplicar_lote,
             recusar_lote,
+            ler_gatilhos,
+            gravar_gatilhos,
+            avaliar_gatilhos,
             ler_permissoes,
             gravar_permissoes,
             listar_execucoes,
