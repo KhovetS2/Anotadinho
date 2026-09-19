@@ -49,6 +49,8 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
     let editando = use_state(|| None::<(String, String)>);
     let recusando = use_state(|| None::<(String, String)>);
     let marcadas = use_state(std::collections::HashSet::<String>::new);
+    /// O motivo da recusa em massa (um só pro lote de marcadas).
+    let recusando_massa = use_state(|| None::<String>);
 
     {
         let propostas = propostas.clone();
@@ -238,6 +240,74 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
         })
     };
 
+    // Marcar e decidir em massa (ciclo 432, como a TUI no 409): com fila
+    // acumulada, decidir uma por uma é o gargalo.
+    let alternar_marca = {
+        let marcadas = marcadas.clone();
+        Callback::from(move |id: String| {
+            let mut novo = (*marcadas).clone();
+            if !novo.remove(&id) {
+                novo.insert(id);
+            }
+            marcadas.set(novo);
+        })
+    };
+
+    let decidir_marcadas = {
+        let vault_path = props.vault_path.clone();
+        let (recarregar, erro, marcadas) = (recarregar.clone(), erro.clone(), marcadas.clone());
+        let propostas = propostas.clone();
+        let on_fila_mudou = props.on_fila_mudou.clone();
+        Callback::from(move |(aplicar, motivo): (bool, String)| {
+            let escolhidas: Vec<Proposta> = propostas
+                .iter()
+                .filter(|p| marcadas.contains(&p.id))
+                .cloned()
+                .collect();
+            if escolhidas.is_empty() {
+                return;
+            }
+            let (vault_path, recarregar, erro) = (vault_path.clone(), recarregar.clone(), erro.clone());
+            let (marcadas, on_fila_mudou) = (marcadas.clone(), on_fila_mudou.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                let mut falhas: Vec<String> = Vec::new();
+                for p in &escolhidas {
+                    // Uma a uma, pelo caminho de sempre: o que falhar não
+                    // impede as outras.
+                    let r = if aplicar {
+                        api::aplicar_proposta(&vault_path, &p.id).await.map(|_| ())
+                    } else {
+                        api::recusar_proposta(&vault_path, &p.id).await.map(|_| ())
+                    };
+                    match r {
+                        Ok(()) => {
+                            let decisao = anotadinho_core::decisao::Decisao {
+                                quando: crate::state::agora_legivel(),
+                                proposta: p.id.clone(),
+                                alvo: p.alvo.clone(),
+                                autor: p.autor.clone(),
+                                acao: if aplicar {
+                                    anotadinho_core::decisao::Acao::Aplicada
+                                } else {
+                                    anotadinho_core::decisao::Acao::Recusada
+                                },
+                                motivo: motivo.clone(),
+                            };
+                            let _ = api::registrar_decisao(&vault_path, &decisao).await;
+                        }
+                        Err(e) => falhas.push(format!("{}: {e}", p.alvo)),
+                    }
+                }
+                if !falhas.is_empty() {
+                    erro.set(Some(falhas.join(" · ")));
+                }
+                marcadas.set(std::collections::HashSet::new());
+                recarregar.set(*recarregar + 1);
+                on_fila_mudou.emit(());
+            });
+        })
+    };
+
     let alternar_modo = {
         let visualizando = visualizando.clone();
         Callback::from(move |id: String| {
@@ -305,6 +375,26 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                 </p>
             }
 
+            if !marcadas.is_empty() {
+                <div class="propostas__massa">
+                    <span>{ format!("{} marcada(s)", marcadas.len()) }</span>
+                    <button class="btn btn--primary btn--sm" onclick={{
+                        let d = decidir_marcadas.clone();
+                        Callback::from(move |_: MouseEvent| d.emit((true, String::new())))
+                    }}>{ "Aplicar as marcadas" }</button>
+                    <button class="btn btn--ghost btn--sm" onclick={{
+                        let d = decidir_marcadas.clone();
+                        let recusando_massa = recusando_massa.clone();
+                        let _ = &d;
+                        Callback::from(move |_: MouseEvent| recusando_massa.set(Some(String::new())))
+                    }}>{ "Recusar as marcadas…" }</button>
+                    <button class="btn btn--ghost btn--sm" onclick={{
+                        let marcadas = marcadas.clone();
+                        Callback::from(move |_: MouseEvent| marcadas.set(std::collections::HashSet::new()))
+                    }}>{ "Desmarcar" }</button>
+                </div>
+            }
+
             { for propostas.iter().map(|p| {
                 let atual = atuais.get(&p.alvo).cloned().unwrap_or_default();
                 let linhas = p.diff(&atual);
@@ -333,6 +423,14 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                 html! {
                     <article class="propostas__item">
                         <header class="propostas__item-topo">
+                            <input type="checkbox" class="propostas__marca"
+                                title="Marcar pra decidir em massa"
+                                checked={marcadas.contains(&p.id)}
+                                onchange={{
+                                    let alternar = alternar_marca.clone();
+                                    let id = p.id.clone();
+                                    Callback::from(move |_: Event| alternar.emit(id.clone()))
+                                }} />
                             <span class={classes!("propostas__op",
                                 if p.operacao == Operacao::Criar { "propostas__op--criar" } else { "propostas__op--substituir" })}>
                                 { if p.operacao == Operacao::Criar { "criar" } else { "substituir" } }
@@ -513,6 +611,37 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                     }} />
                 <div class="modal__actions">
                     <button class="btn btn--primary btn--sm" onclick={confirmar_recusa}>{ "Recusar" }</button>
+                </div>
+            </Modal>
+
+            <Modal title="Recusar as marcadas" open={recusando_massa.is_some()}
+                on_close={{
+                    let r = recusando_massa.clone();
+                    Callback::from(move |_| r.set(None))
+                }}>
+                <p class="propostas__dica">
+                    { "Um motivo só, gravado na decisão de cada uma." }
+                </p>
+                <textarea class="input" rows="3"
+                    value={(*recusando_massa).clone().unwrap_or_default()}
+                    oninput={{
+                        let r = recusando_massa.clone();
+                        Callback::from(move |e: InputEvent| {
+                            use wasm_bindgen::JsCast;
+                            let Some(a) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlTextAreaElement>().ok()) else { return };
+                            r.set(Some(a.value()));
+                        })
+                    }} />
+                <div class="modal__actions">
+                    <button class="btn btn--primary btn--sm" onclick={{
+                        let d = decidir_marcadas.clone();
+                        let r = recusando_massa.clone();
+                        Callback::from(move |_: MouseEvent| {
+                            let motivo = (*r).clone().unwrap_or_default();
+                            r.set(None);
+                            d.emit((false, motivo));
+                        })
+                    }}>{ "Recusar" }</button>
                 </div>
             </Modal>
 
