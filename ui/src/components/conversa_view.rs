@@ -60,6 +60,9 @@ pub struct ConversaViewProps {
     /// guardou poder esquecê-la (ciclo 227).
     #[prop_or_default]
     pub on_pergunta_consumida: Callback<()>,
+    /// Pra pedir o nome da página de contexto (ciclo 430).
+    #[prop_or_default]
+    pub open_dialog: Callback<crate::dialog::PendingDialog>,
 }
 
 /// Lê os anexos com as transclusões resolvidas e monta o envio pelo
@@ -558,6 +561,106 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         })
     };
 
+    // Os anexos viram um recorte do vault (ciclo 430, como a TUI no
+    // 416): uma página de transclusões, que passa a ser O anexo —
+    // reutilizável em outra conversa e versionada como qualquer página.
+    let guardar_contexto = {
+        let vault_path = props.vault_path.clone();
+        let path = props.page.path.clone();
+        let anexos = anexos.clone();
+        let erro = erro.clone();
+        let open_dialog = props.open_dialog.clone();
+        let on_page_selected = props.on_page_selected.clone();
+        Callback::from(move |_: MouseEvent| {
+            let lista = (*anexos).clone();
+            if lista.is_empty() {
+                return;
+            }
+            let (vault_path, path, anexos, erro) =
+                (vault_path.clone(), path.clone(), anexos.clone(), erro.clone());
+            let on_page_selected = on_page_selected.clone();
+            open_dialog.emit(crate::dialog::PendingDialog::Prompt {
+                title: format!("Nome da página de contexto ({} anexo(s))", lista.len()),
+                default: String::new(),
+                on_submit: Callback::from(move |nome: String| {
+                    let nome = nome.trim().to_string();
+                    if nome.is_empty() {
+                        return;
+                    }
+                    let (vault_path, path, anexos, erro) =
+                        (vault_path.clone(), path.clone(), anexos.clone(), erro.clone());
+                    let on_page_selected = on_page_selected.clone();
+                    let lista = (*anexos).clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        // O título do frontmatter, não o nome do arquivo:
+                        // `![[Padrões]]` diz o que `![[padroes]]` não diz.
+                        let paginas = api::scan_vault(&vault_path).await.unwrap_or_default();
+                        let titulo_de = |alvo: &str| -> String {
+                            paginas
+                                .iter()
+                                .find(|p| p.path == alvo)
+                                .map(|p| p.title.clone())
+                                .filter(|t| !t.trim().is_empty())
+                                .unwrap_or_else(|| alvo.to_string())
+                        };
+                        let corpo: String =
+                            lista.iter().map(|a| format!("![[{}]]\n\n", titulo_de(a))).collect();
+                        let md = format!(
+                            "---\ntitle: {nome}\ntype: contexto\n---\n\nO que o agente precisa saber:\n\n{corpo}"
+                        );
+                        let destino = format!(
+                            "pages/contextos/{}.md",
+                            anotadinho_core::fluxo::slug_de_titulo(&nome)
+                        );
+                        if let Err(e) = api::write_page(&vault_path, &destino, &md).await {
+                            erro.set(Some(e));
+                            return;
+                        }
+                        // A conversa passa a ter UM anexo: o recorte.
+                        let novo = vec![destino.clone()];
+                        anexos.set(novo.clone());
+                        if let Ok(atual) = api::read_page(&vault_path, &path).await {
+                            let reescrito = anotadinho_core::conversa::reescrever_contexto(&atual, &novo);
+                            let _ = api::write_page(&vault_path, &path, &reescrito).await;
+                        }
+                        on_page_selected.emit(api::PageMeta {
+                            path: destino,
+                            title: nome,
+                            section: "pages".to_string(),
+                        });
+                    });
+                }),
+            });
+        })
+    };
+
+    // Fecha o laço (ciclo 430, como a TUI no 421): o que foi aplicado e
+    // o que foi recusado — com o motivo — vai pro CAMPO, não é enviado.
+    let contar_decisoes = {
+        let vault_path = props.vault_path.clone();
+        let mensagens = mensagens.clone();
+        let rascunho = rascunho.clone();
+        let erro = erro.clone();
+        Callback::from(move |_: MouseEvent| {
+            let (vault_path, mensagens, rascunho, erro) =
+                (vault_path.clone(), mensagens.clone(), rascunho.clone(), erro.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                let desde = mensagens.last().map(|m| m.quando.clone()).unwrap_or_default();
+                match api::listar_decisoes(&vault_path).await {
+                    Ok(decisoes) => {
+                        let texto = anotadinho_core::decisao::resumo_para_agente(&decisoes, &desde);
+                        if texto.is_empty() {
+                            erro.set(Some("nenhuma decisão desde a última mensagem".into()));
+                        } else {
+                            rascunho.set(texto);
+                        }
+                    }
+                    Err(e) => erro.set(Some(e)),
+                }
+            });
+        })
+    };
+
     // Mandar a pergunta pro agente. Recebe os anexos em vez de lê-los do
     // estado porque quem promove uma execução acabou de criar uma página
     // e precisa que ELA entre no contexto — o handle capturado no render
@@ -1040,6 +1143,16 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 <button class="btn btn--ghost btn--xs" onclick={abrir_previa.clone()}
                     title="Ver o prompt que vai pro agente, com o peso de cada parte">
                     { "Prévia" }
+                </button>
+                if !anexos.is_empty() {
+                    <button class="btn btn--ghost btn--xs" onclick={guardar_contexto}
+                        title="Guardar os anexos como uma página de contexto reutilizável">
+                        { "Guardar contexto" }
+                    </button>
+                }
+                <button class="btn btn--ghost btn--xs" onclick={contar_decisoes}
+                    title="Pôr no campo o que você aplicou e o que recusou, com o motivo">
+                    { "Contar decisões" }
                 </button>
                 if let Some((resumo, estourou)) = (*peso).clone() {
                     <span class={classes!("conversa__peso", estourou.then_some("conversa__peso--estourou"))}

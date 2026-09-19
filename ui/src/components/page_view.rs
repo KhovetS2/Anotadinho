@@ -168,6 +168,7 @@ pub fn page_view(props: &PageViewProps) -> Html {
                     contexto_path={props.contexto_path.clone()}
                     on_page_selected={props.on_page_selected.clone()}
                     pergunta_inicial={props.pergunta_inicial.clone()}
+                    open_dialog={props.open_dialog.clone()}
                     on_pergunta_consumida={props.on_pergunta_consumida.clone()} />
             },
             None => html! {},

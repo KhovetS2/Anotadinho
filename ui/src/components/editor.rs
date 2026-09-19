@@ -184,6 +184,10 @@ static SLASH_BLOCKS: &[(&str, &str, &str, &str)] = &[
     ("Imagem", "URL ou arquivo de imagem", "image", "__IMG__"),
     ("Diagrama", "Mermaid (fluxograma)", "network", "__MERMAID__"),
     ("Assets", "Inserir arquivo do vault", "paperclip", "__ASSET__"),
+    // Transclusão (ciclo 430, como a TUI desde o 416): trazer o conteúdo
+    // de outra página é o jeito de montar um recorte de contexto sem
+    // decorar a sintaxe `![[...]]`.
+    ("Transclusão", "Trazer o conteúdo de outra página", "file-text", "__TRANSCLUSAO__"),
 ];
 
 /// Monta a lista do menu `/`: os blocos markdown fixos acima + um item
@@ -1296,6 +1300,49 @@ pub fn editor(props: &EditorProps) -> Html {
                                     }
                                 });
                             }),
+                        });
+                    }
+                    "__TRANSCLUSAO__" => {
+                        let vp = vault_path.clone();
+                        let open_dialog = open_dialog.clone();
+                        let content_md = content_md.clone();
+                        let editor_ref = editor_ref.clone();
+                        let segment_refs = segment_refs.clone();
+                        let mark_edited_estrutural = mark_edited_estrutural.clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            let paginas = crate::api::scan_vault(&vp).await.unwrap_or_default();
+                            if paginas.is_empty() {
+                                open_dialog.emit(PendingDialog::Alert {
+                                    message: "Nenhuma página pra transcluir.".to_string(),
+                                });
+                                return;
+                            }
+                            let titulos: Vec<String> = paginas
+                                .iter()
+                                .map(|p| if p.title.trim().is_empty() { p.path.clone() } else { p.title.clone() })
+                                .collect();
+                            let lista = titulos.join("\n");
+                            open_dialog.emit(PendingDialog::Prompt {
+                                title: format!("Páginas:\n{lista}\n\nQual transcluir? (pode usar Título#Seção)"),
+                                default: String::new(),
+                                on_submit: Callback::from(move |escolha: String| {
+                                    let escolha = escolha.trim().to_string();
+                                    if escolha.is_empty() {
+                                        return;
+                                    }
+                                    // O marcador entra como TEXTO: quem
+                                    // resolve é a leitura pro contexto
+                                    // (414) e o desenho da página (170).
+                                    let html = format!("<p>![[{}]]</p>", escolha.replace('<', "&lt;"));
+                                    if let Some(el) = parse_single_element(&html) {
+                                        if insert_element_at_cursor(&el, false) {
+                                            let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                            content_md.set(new_md.clone());
+                                            mark_edited_estrutural(new_md);
+                                        }
+                                    }
+                                }),
+                            });
                         });
                     }
                     "__ASSET__" => {
