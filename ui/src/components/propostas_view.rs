@@ -13,6 +13,7 @@
 
 use crate::api;
 use crate::components::icon::Icon;
+use crate::components::modal::Modal;
 use crate::components::pagina_preview::PaginaPreview;
 use anotadinho_core::proposta::{Operacao, Proposta};
 use yew::prelude::*;
@@ -43,6 +44,11 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
     // a TUI faz desde o 404): revisar proposta grande tudo-ou-nada é o
     // que faz aceitar mudança que ninguém leu.
     let fora = use_state(std::collections::HashSet::<String>::new);
+    // Editar antes de aplicar (411) e recusar com motivo (404), que só
+    // existiam na TUI; e as marcadas pra decidir em lote (409).
+    let editando = use_state(|| None::<(String, String)>);
+    let recusando = use_state(|| None::<(String, String)>);
+    let marcadas = use_state(std::collections::HashSet::<String>::new);
 
     {
         let propostas = propostas.clone();
@@ -103,6 +109,126 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                         let mut limpo = (*fora).clone();
                         limpo.retain(|c| !c.starts_with(&format!("{}#", p.id)));
                         fora.set(limpo);
+                    }
+                    Err(e) => erro.set(Some(e)),
+                }
+                recarregar.set(*recarregar + 1);
+                on_fila_mudou.emit(());
+            });
+        })
+    };
+
+    // Recusar registrando o motivo: é a parte que ENSINA o agente na
+    // volta seguinte (ciclo 421), e sem registro ela se perde.
+    let confirmar_recusa = {
+        let vault_path = props.vault_path.clone();
+        let (recarregar, erro, recusando) = (recarregar.clone(), erro.clone(), recusando.clone());
+        let propostas = propostas.clone();
+        let on_fila_mudou = props.on_fila_mudou.clone();
+        Callback::from(move |_: MouseEvent| {
+            let Some((id, motivo)) = (*recusando).clone() else { return };
+            let Some(p) = propostas.iter().find(|x| x.id == id).cloned() else { return };
+            let (vault_path, recarregar, erro) = (vault_path.clone(), recarregar.clone(), erro.clone());
+            let (recusando, on_fila_mudou) = (recusando.clone(), on_fila_mudou.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::recusar_proposta(&vault_path, &p.id).await {
+                    Ok(_) => {
+                        let decisao = anotadinho_core::decisao::Decisao {
+                            quando: crate::state::agora_legivel(),
+                            proposta: p.id.clone(),
+                            alvo: p.alvo.clone(),
+                            autor: p.autor.clone(),
+                            acao: anotadinho_core::decisao::Acao::Recusada,
+                            motivo,
+                        };
+                        let _ = api::registrar_decisao(&vault_path, &decisao).await;
+                        recusando.set(None);
+                    }
+                    Err(e) => erro.set(Some(e)),
+                }
+                recarregar.set(*recarregar + 1);
+                on_fila_mudou.emit(());
+            });
+        })
+    };
+
+    // Aplicar o conteúdo que a pessoa editou (ciclo 411).
+    let aplicar_editada = {
+        let vault_path = props.vault_path.clone();
+        let (recarregar, erro, editando) = (recarregar.clone(), erro.clone(), editando.clone());
+        let propostas = propostas.clone();
+        let on_fila_mudou = props.on_fila_mudou.clone();
+        Callback::from(move |_: MouseEvent| {
+            let Some((id, conteudo)) = (*editando).clone() else { return };
+            if conteudo.trim().is_empty() {
+                erro.set(Some("conteúdo vazio: recuse a proposta em vez de gravar nada".into()));
+                return;
+            }
+            let Some(p) = propostas.iter().find(|x| x.id == id).cloned() else { return };
+            let (vault_path, recarregar, erro) = (vault_path.clone(), recarregar.clone(), erro.clone());
+            let (editando, on_fila_mudou) = (editando.clone(), on_fila_mudou.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::aplicar_proposta_parcial(&vault_path, &p.id, &conteudo).await {
+                    Ok(_) => {
+                        let decisao = anotadinho_core::decisao::Decisao {
+                            quando: crate::state::agora_legivel(),
+                            proposta: p.id.clone(),
+                            alvo: p.alvo.clone(),
+                            autor: p.autor.clone(),
+                            // O que entrou não é o que o agente escreveu.
+                            acao: anotadinho_core::decisao::Acao::Editada,
+                            motivo: String::new(),
+                        };
+                        let _ = api::registrar_decisao(&vault_path, &decisao).await;
+                        editando.set(None);
+                    }
+                    Err(e) => erro.set(Some(e)),
+                }
+                recarregar.set(*recarregar + 1);
+                on_fila_mudou.emit(());
+            });
+        })
+    };
+
+    // O lote é UMA decisão: aplica inteiro ou não aplica (ciclo 420).
+    let decidir_lote = {
+        let vault_path = props.vault_path.clone();
+        let (recarregar, erro) = (recarregar.clone(), erro.clone());
+        let propostas = propostas.clone();
+        let on_fila_mudou = props.on_fila_mudou.clone();
+        Callback::from(move |(lote, aplicar): (String, bool)| {
+            let (vault_path, recarregar, erro) = (vault_path.clone(), recarregar.clone(), erro.clone());
+            let on_fila_mudou = on_fila_mudou.clone();
+            let do_lote: Vec<Proposta> = propostas
+                .iter()
+                .filter(|p| p.lote.as_deref() == Some(lote.as_str()))
+                .cloned()
+                .collect();
+            wasm_bindgen_futures::spawn_local(async move {
+                let r = if aplicar {
+                    api::aplicar_lote(&vault_path, &lote).await.map(|a| a.len())
+                } else {
+                    api::recusar_lote(&vault_path, &lote).await
+                };
+                match r {
+                    Ok(_) => {
+                        // A auditoria continua por página.
+                        let acao = if aplicar {
+                            anotadinho_core::decisao::Acao::Aplicada
+                        } else {
+                            anotadinho_core::decisao::Acao::Recusada
+                        };
+                        for p in do_lote {
+                            let decisao = anotadinho_core::decisao::Decisao {
+                                quando: crate::state::agora_legivel(),
+                                proposta: p.id.clone(),
+                                alvo: p.alvo.clone(),
+                                autor: p.autor.clone(),
+                                acao: acao.clone(),
+                                motivo: String::new(),
+                            };
+                            let _ = api::registrar_decisao(&vault_path, &decisao).await;
+                        }
                     }
                     Err(e) => erro.set(Some(e)),
                 }
@@ -211,6 +337,11 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                                 if p.operacao == Operacao::Criar { "propostas__op--criar" } else { "propostas__op--substituir" })}>
                                 { if p.operacao == Operacao::Criar { "criar" } else { "substituir" } }
                             </span>
+                            if let Some(l) = &p.lote {
+                                <span class="propostas__lote" title="Propostas deste lote são UMA decisão: aplicam juntas ou nenhuma">
+                                    { format!("⛓ {l}") }
+                                </span>
+                            }
                             <code class="propostas__alvo">{ &p.alvo }</code>
                             <span class="propostas__autor"><Icon name="zap" />{ &p.autor }</span>
                             <span class="propostas__quando">{ &p.quando }</span>
@@ -325,14 +456,91 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                                 }}>
                                 { if parcial { format!("Aplicar {aceitos} de {}", trechos.len()) } else { "Aplicar".to_string() } }
                             </button>
-                            <button class="btn btn--ghost btn--sm"
-                                onclick={Callback::from(move |_: MouseEvent| d2.emit((id_no.clone(), false)))}>
-                                { "Recusar" }
+                            <button class="btn btn--ghost btn--sm" onclick={{
+                                let recusando = recusando.clone();
+                                let id = id_no.clone();
+                                Callback::from(move |_: MouseEvent| recusando.set(Some((id.clone(), String::new()))))
+                            }}>
+                                { "Recusar…" }
                             </button>
+                            <button class="btn btn--ghost btn--sm" onclick={{
+                                let editando = editando.clone();
+                                let id = p.id.clone();
+                                let conteudo = p.conteudo.clone();
+                                Callback::from(move |_: MouseEvent| editando.set(Some((id.clone(), conteudo.clone()))))
+                            }} title="Trocar uma frase antes de gravar, em vez de recusar e pedir de novo">
+                                { "Editar…" }
+                            </button>
+                            if let Some(lote) = p.lote.clone() {
+                                <span class="propostas__lote-acoes">
+                                    <button class="btn btn--ghost btn--sm" onclick={{
+                                        let d = decidir_lote.clone();
+                                        let l = lote.clone();
+                                        Callback::from(move |_: MouseEvent| d.emit((l.clone(), true)))
+                                    }}>{ format!("Aplicar o lote {lote}") }</button>
+                                    <button class="btn btn--ghost btn--sm" onclick={{
+                                        let d = decidir_lote.clone();
+                                        let l = lote.clone();
+                                        Callback::from(move |_: MouseEvent| d.emit((l.clone(), false)))
+                                    }}>{ "Recusar o lote" }</button>
+                                </span>
+                            }
                         </div>
                     </article>
                 }
             }) }
+
+            <Modal title="Recusar a proposta" open={recusando.is_some()}
+                on_close={{
+                    let recusando = recusando.clone();
+                    Callback::from(move |_| recusando.set(None))
+                }}>
+                <p class="propostas__dica">
+                    { "Por quê? O motivo entra no registro de decisões e é o que você \
+                       conta ao agente na volta seguinte." }
+                </p>
+                <textarea class="input" rows="3" autofocus=true
+                    value={recusando.as_ref().map(|(_, m)| m.clone()).unwrap_or_default()}
+                    oninput={{
+                        let recusando = recusando.clone();
+                        Callback::from(move |e: InputEvent| {
+                            use wasm_bindgen::JsCast;
+                            let Some(a) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlTextAreaElement>().ok()) else { return };
+                            if let Some((id, _)) = (*recusando).clone() {
+                                recusando.set(Some((id, a.value())));
+                            }
+                        })
+                    }} />
+                <div class="modal__actions">
+                    <button class="btn btn--primary btn--sm" onclick={confirmar_recusa}>{ "Recusar" }</button>
+                </div>
+            </Modal>
+
+            <Modal title="Editar antes de aplicar" open={editando.is_some()} wide=true
+                on_close={{
+                    let editando = editando.clone();
+                    Callback::from(move |_| editando.set(None))
+                }}>
+                <p class="propostas__dica">
+                    { "O que entrar aqui é o que vai pro arquivo — e o registro dirá \
+                       \"editada\", porque não é mais o texto do agente." }
+                </p>
+                <textarea class="input propostas__editor" rows="18"
+                    value={editando.as_ref().map(|(_, c)| c.clone()).unwrap_or_default()}
+                    oninput={{
+                        let editando = editando.clone();
+                        Callback::from(move |e: InputEvent| {
+                            use wasm_bindgen::JsCast;
+                            let Some(a) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlTextAreaElement>().ok()) else { return };
+                            if let Some((id, _)) = (*editando).clone() {
+                                editando.set(Some((id, a.value())));
+                            }
+                        })
+                    }} />
+                <div class="modal__actions">
+                    <button class="btn btn--primary btn--sm" onclick={aplicar_editada}>{ "Aplicar editada" }</button>
+                </div>
+            </Modal>
         </main>
     }
 }

@@ -2162,3 +2162,12 @@
 .agente-painel__conversa { background: none; border: 0; color: var(--accent-blue); cursor: pointer; padding: 0; }
 .agente-painel__quando, .agente-painel__dur, .agente-painel__uso { color: var(--text-muted); }
 .agente-painel__uso { margin-left: auto; white-space: nowrap; }
+
+/* Lote e edição na revisão (ciclo 428). */
+.propostas__lote {
+  font-size: .7rem; color: var(--accent-purple);
+  border: 1px solid currentColor; border-radius: 10px; padding: 1px 7px;
+}
+.propostas__lote-acoes { display: inline-flex; gap: 6px; margin-left: auto; }
+.propostas__dica { font-size: .8rem; color: var(--text-muted); margin: 0 0 8px; }
+.propostas__editor { font-family: var(--font-mono, monospace); font-size: .8rem; width: 100%; }

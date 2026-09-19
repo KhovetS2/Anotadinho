@@ -437,6 +437,19 @@ fn aplicar_proposta_parcial(
     anotadinho_ipc::handle_aplicar_proposta_parcial(vault_path, id, conteudo)
 }
 
+/// Aplica um LOTE de propostas: todas ou nenhuma (ciclo 420). A janela
+/// ganhou no 428.
+#[tauri::command]
+fn aplicar_lote(vault_path: String, lote: String) -> Result<Vec<String>, String> {
+    anotadinho_ipc::handle_aplicar_lote(vault_path, lote)
+}
+
+/// Descarta um lote inteiro sem aplicar (ciclo 420).
+#[tauri::command]
+fn recusar_lote(vault_path: String, lote: String) -> Result<usize, String> {
+    anotadinho_ipc::handle_recusar_lote(vault_path, lote)
+}
+
 /// As permissões de escrita do agente (ciclo 405), pro painel da janela
 /// (ciclo 427).
 #[tauri::command]
@@ -1034,6 +1047,8 @@ fn main() {
             listar_propostas,
             aplicar_proposta,
             aplicar_proposta_parcial,
+            aplicar_lote,
+            recusar_lote,
             ler_permissoes,
             gravar_permissoes,
             listar_execucoes,

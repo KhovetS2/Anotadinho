@@ -102,13 +102,14 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Lista de agentes (presets + criados, novo, remover) | ✅ | 392 — em "Trocar agente…" |
 | Propostas do agente (diff, aplicar, recusar) | ✅ | 346 — "Propostas do agente" na barra |
 | Aprovar trecho a trecho, registro das decisões | ✅ | 404 (TUI), 424 (janela) — caixinha por trecho e "Aplicar N de M" |
+| Recusar com motivo, registrado na decisão | ✅ | 404 (TUI), 428 (janela) |
 | Permissões de escrita do agente por pasta | ✅ | 405 (TUI), 427 (janela) — no vault, valem pro CLI, TUI e janela |
 | Registro de execuções do agente (o que rodou, duração, como terminou) | ✅ | 406 (TUI), 427 (janela) — `execucoes.jsonl` no vault |
 | Contrato de ferramentas do agente (conjunto fechado, MCP) | ✅ | 407 (TUI), 427 (janela) — declarado no núcleo; o MCP deriva dele |
 | Vários agentes em paralelo com fila e limite | ✅ | 408 — só na TUI; limite nas preferências, "Agentes em andamento…" (`x` para tudo) |
 | Decidir várias propostas de uma vez (marcar, aplicar/recusar em lote) | ✅ | 409 — só na TUI; `m` marca, `M` todas, um motivo pro lote |
 | Realce palavra a palavra no diff da proposta | ✅ | 410 (TUI), 424 (janela) |
-| Editar a proposta antes de aplicar | ✅ | 411 — só na TUI; `e` abre o conteúdo, registro diz "editada" |
+| Editar a proposta antes de aplicar | ✅ | 411 (TUI), 428 (janela) — registro diz "editada" |
 | Gatilhos: agente dispara por mudança, consulta ou hora | ✅ | 412 — só na TUI; `gatilhos.json` no vault, "Gatilhos do agente…" na barra |
 | Suíte de avaliação do agente (tarefas com resultado esperado) | — | 413 — `anotadinho-cli avaliar`; vale pros dois, não é tela |
 | Transclusão `![[Página#Seção]]` resolvida no contexto do prompt | ✅ | 414 — anexo chega ao agente com o conteúdo; `read --contexto` no CLI |
@@ -119,7 +120,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | MCP do vault ligado na execução, sem configurar por fora | ✅ | 426 — vale pros dois; `--mcp-config` gerado por vault, campo no formulário do agente |
 | Consulta dentro do recorte vira contexto (o vault de hoje, não uma lista velha) | ✅ | 418 — vale pros dois: TUI, janela e CLI passam pelo mesmo handler |
 | Poda explícita quando o contexto passa do teto | ✅ | 419 (TUI), 423 (janela) — histórico antigo, depois esqueleto do anexo maior |
-| Proposta em lote atômico (mudança que atravessa páginas) | ✅ | 420 — núcleo/IPC/CLI/MCP valem pros dois; decisão do lote só na TUI |
+| Proposta em lote atômico (mudança que atravessa páginas) | ✅ | 420 (TUI), 428 (janela) — selo ⛓ e decisão do lote inteiro |
 | Contar ao agente o que foi aplicado e recusado (com o motivo) | ✅ | 421 — só na TUI; vai pro campo, não é enviado sozinho |
 | Tokens e custo por execução, com total do dia | ✅ | 422 (TUI), 427 (janela) — do `usage` do agente |
 | Git: status, pull, commit & push | ✅ | 349 — "Git: status e sincronizar…" na barra; histórico da página |
