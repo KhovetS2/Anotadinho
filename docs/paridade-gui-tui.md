@@ -122,6 +122,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Guardas do trabalho automático (teto de disparos, de custo, silêncio) | ✅ | 434 — vale pros dois; `guardas.json` no vault, freio só no automático |
 | MCP expõe páginas como recursos e prompts padrão como prompts | — | 435 — é do servidor (`anotadinho-cli mcp`), serve qualquer cliente |
 | Revisor: segundo agente critica a proposta, veredito no cartão | ✅ | 436 — `anotadinho-cli revisar <id>`; veredito visível nas duas telas |
+| Rodar de novo a partir do registro, e timeout que se conserta | ✅ | 437 — vale pros dois; a pergunta volta pro campo, não é enviada |
 | Consulta dentro do recorte vira contexto (o vault de hoje, não uma lista velha) | ✅ | 418 — vale pros dois: TUI, janela e CLI passam pelo mesmo handler |
 | Poda explícita quando o contexto passa do teto | ✅ | 419 (TUI), 423 (janela) — histórico antigo, depois esqueleto do anexo maior |
 | Proposta em lote atômico (mudança que atravessa páginas) | ✅ | 420 (TUI), 428 (janela) — selo ⛓ e decisão do lote inteiro |

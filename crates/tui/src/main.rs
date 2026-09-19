@@ -1064,6 +1064,36 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                         Err(e) => format!("não gravou as permissões: {e}"),
                     });
                 }
+                // Mais tempo pro agente (ciclo 437): meia vez a mais,
+                // gravado — o próximo envio já nasce com ele.
+                Pedido::MaisTempoParaOAgente => {
+                    let mut a = estado.preferencias.agente.clone().unwrap_or_default().migrado();
+                    let antes = a.timeout_s;
+                    a.timeout_s = (antes + antes / 2).max(antes + 60);
+                    let minutos = a.timeout_s / 60;
+                    estado.preferencias.agente = Some(a);
+                    estado.pedidos.push(Pedido::GravarPreferencias);
+                    estado.aviso = Some(format!("o agente agora tem {minutos} min; mande de novo"));
+                }
+                // Reexecutar (ciclo 437): a mesma pergunta, no campo.
+                Pedido::Reexecutar(conversa) => {
+                    match anotadinho_ipc::handle_read_page(vault.to_string(), conversa.clone()) {
+                        Ok(texto) => {
+                            let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
+                            let ultima = anotadinho_core::conversa::parse(corpo)
+                                .into_iter()
+                                .rev()
+                                .find(|m| m.autor == anotadinho_core::conversa::Autor::Voce)
+                                .map(|m| m.texto);
+                            abrir(estado, vault, &conversa);
+                            match ultima {
+                                Some(t) => app::conversa::escrever_no_campo(estado, &t),
+                                None => estado.aviso = Some("essa conversa não tem pergunta sua".into()),
+                            }
+                        }
+                        Err(e) => estado.aviso = Some(format!("não abriu: {e}")),
+                    }
+                }
                 Pedido::ListarExecucoes => match anotadinho_ipc::handle_listar_execucoes(vault.to_string()) {
                     Ok(x) => app::modais::mostrar_execucoes(estado, &x),
                     Err(e) => estado.aviso = Some(format!("não leu as execuções: {e}")),

@@ -1174,6 +1174,42 @@ pub fn app() -> Html {
         })
     };
 
+    // Rodar de novo (ciclo 437): abre a conversa da execução com a
+    // última pergunta dela no campo. No campo, não enviada: reexecutar
+    // é gastar de novo, e isso é decisão de quem lê o resultado.
+    let reexecutar = {
+        let vault_path = vault_path.clone();
+        let on_page_selected = on_page_selected.clone();
+        let pergunta_inicial = pergunta_inicial.clone();
+        Callback::from(move |conversa: String| {
+            let Some(vault) = (*vault_path).clone() else { return };
+            let (on_page_selected, pergunta_inicial) =
+                (on_page_selected.clone(), pergunta_inicial.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                let Ok(texto) = api::read_page(&vault, &conversa).await else { return };
+                let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
+                let ultima = anotadinho_core::conversa::parse(corpo)
+                    .into_iter()
+                    .rev()
+                    .find(|m| m.autor == anotadinho_core::conversa::Autor::Voce)
+                    .map(|m| m.texto);
+                if let Some(t) = ultima {
+                    pergunta_inicial.set(Some(
+                        crate::components::conversa_view::PerguntaInicial {
+                            conversa: conversa.clone(),
+                            texto: t,
+                        },
+                    ));
+                }
+                let title = std::path::Path::new(&conversa)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| conversa.clone());
+                on_page_selected.emit(PageMeta { path: conversa, title, section: "pages".into() });
+            });
+        })
+    };
+
     // O painel do agente (ciclo 427): como a tela de revisão, é uma
     // página do vault, criada na primeira vez que se pede.
     let abrir_painel_do_agente = {
@@ -1954,6 +1990,7 @@ pub fn app() -> Html {
                                 on_close={on_tab_close}
                             />
                             <PageView
+                                on_reexecutar={reexecutar.clone()}
                                 vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
                                 page={(*selected_page).clone()}
                                 on_page_deleted={on_page_deleted.clone()}

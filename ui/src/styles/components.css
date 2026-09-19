@@ -2214,3 +2214,10 @@
 .propostas__revisao--aprova { border-left-color: var(--success); }
 .propostas__revisao--ressalva { border-left-color: var(--warning); }
 .propostas__revisao--recusa { border-left-color: var(--error); }
+
+/* Rodar de novo, no registro de execuções (ciclo 437). */
+.agente-painel__reexecutar {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--text-muted); font-size: .72rem; text-decoration: underline;
+}
+.agente-painel__reexecutar:hover { color: var(--accent-blue); }

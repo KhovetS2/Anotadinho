@@ -63,6 +63,9 @@ pub struct PageViewProps {
     /// Repassa o aviso de que a pergunta inicial já foi usada (ciclo 227).
     #[prop_or_default]
     pub on_pergunta_consumida: Callback<()>,
+    /// Rodar de novo uma execução (ciclo 437).
+    #[prop_or_default]
+    pub on_reexecutar: Callback<String>,
     pub nav_mode_active: bool,
     #[prop_or_default]
     pub on_planejar: Callback<anotadinho_core::fluxo::Pedido>,
@@ -187,7 +190,8 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 { typed_header }
                 <crate::components::agente_painel::AgentePainel
                     vault_path={props.vault_path.clone()}
-                    on_page_selected={props.on_page_selected.clone()} />
+                    on_page_selected={props.on_page_selected.clone()}
+                    on_reexecutar={props.on_reexecutar.clone()} />
             </>
         },
         "tags" => html! {

@@ -663,6 +663,27 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         })
     };
 
+    // Mais tempo pro agente e a pergunta de volta no campo (ciclo 437).
+    let mais_tempo = {
+        let adaptador = adaptador.clone();
+        let erro = erro.clone();
+        let rascunho = rascunho.clone();
+        let mensagens = mensagens.clone();
+        Callback::from(move |_: MouseEvent| {
+            let mut a = (*adaptador).clone();
+            let antes = a.timeout_s;
+            // Meia vez a mais, no mínimo um minuto — e gravado, pro
+            // próximo envio já nascer com ele.
+            a.timeout_s = (antes + antes / 2).max(antes + 60);
+            crate::state::save_adaptador(&a);
+            adaptador.set(a);
+            erro.set(None);
+            if let Some(m) = mensagens.iter().rev().find(|m| m.autor == Autor::Voce) {
+                rascunho.set(m.texto.clone());
+            }
+        })
+    };
+
     // Mandar a pergunta pro agente. Recebe os anexos em vez de lê-los do
     // estado porque quem promove uma execução acabou de criar uma página
     // e precisa que ELA entre no contexto — o handle capturado no render
@@ -1311,7 +1332,16 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     </div>
                 }
                 if let Some(e) = &*erro {
-                    <p class="conversa__erro">{ e }</p>
+                    <p class="conversa__erro">
+                        { e }
+                        // Erro com AÇÃO (ciclo 437): o timeout é o único
+                        // que se conserta ali mesmo.
+                        if e.contains("passou de") && e.contains("interrompido") {
+                            <button class="btn btn--ghost btn--xs" onclick={mais_tempo.clone()}>
+                                { "Dar mais tempo e tentar de novo" }
+                            </button>
+                        }
+                    </p>
                 }
             </div>
 

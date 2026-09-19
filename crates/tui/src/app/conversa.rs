@@ -152,6 +152,11 @@ fn nome_curto(path: &str) -> String {
     std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string())
 }
 
+/// O erro é de tempo esgotado? (ciclo 437)
+pub fn e_de_timeout(erro: &str) -> bool {
+    erro.contains("passou de") && erro.contains("interrompido")
+}
+
 /// Uma tecla na tela de conversa. Devolve se foi usada.
 pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
     let rodando = e.conversa.as_ref().is_some_and(|c| c.trabalho.is_some() || c.na_fila.is_some());
@@ -212,6 +217,21 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
             let texto = c.mensagens[c.selecionada].texto.clone();
             e.registro = Some(super::Registro::Bloco(texto));
             e.aviso = Some("mensagem copiada".into());
+        }
+        // Mais tempo e manda de novo (ciclo 437).
+        "T" if c.erro.as_deref().is_some_and(e_de_timeout) => {
+            let pergunta = c
+                .mensagens
+                .iter()
+                .rev()
+                .find(|m| m.autor == Autor::Voce)
+                .map(|m| m.texto.clone())
+                .unwrap_or_default();
+            c.erro = None;
+            e.pedidos.push(Pedido::MaisTempoParaOAgente);
+            if !pergunta.is_empty() {
+                escrever_no_campo(e, &pergunta);
+            }
         }
         "Ctrl+x" if rodando => {
             let path = c.path.clone();
@@ -784,6 +804,15 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
     if let Some(erro) = &c.erro {
         for l in super::quebrar_texto(Line::from(Span::styled(format!(" {erro}"), Style::default().fg(t.var("error")))), w, 1) {
             msgs.push(l);
+        }
+        // Erro com AÇÃO (ciclo 437): o timeout é o único que se conserta
+        // ali mesmo, e dizer só "passou de 30 min" deixa a pessoa
+        // procurando onde se muda isso.
+        if e_de_timeout(erro) {
+            msgs.push(Line::from(Span::styled(
+                "   T dá mais tempo ao agente e manda de novo",
+                Style::default().fg(t.var("warning")),
+            )));
         }
     }
     // Com o campo (ou o fim) selecionado, a lista cola no fim; senão a

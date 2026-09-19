@@ -22,6 +22,10 @@ pub struct AgentePainelProps {
     /// Pra abrir a conversa de uma execução.
     #[prop_or_default]
     pub on_page_selected: Callback<api::PageMeta>,
+    /// Rodar de novo: abre a conversa com a última pergunta no campo
+    /// (ciclo 437).
+    #[prop_or_default]
+    pub on_reexecutar: Callback<String>,
 }
 
 #[function_component(AgentePainel)]
@@ -330,6 +334,13 @@ pub fn agente_painel(props: &AgentePainelProps) -> Html {
                                             .map(|s| s.to_string_lossy().to_string())
                                             .unwrap_or_else(|| x.conversa.clone()) }
                                     </button>
+                                    <button class="agente-painel__reexecutar"
+                                        title="Abrir a conversa com a mesma pergunta no campo"
+                                        onclick={{
+                                            let r = props.on_reexecutar.clone();
+                                            let c = x.conversa.clone();
+                                            Callback::from(move |_: MouseEvent| r.emit(c.clone()))
+                                        }}>{ "rodar de novo" }</button>
                                     <span class="agente-painel__quando">{ &x.quando }</span>
                                     <span class="agente-painel__fim">{ x.fim.rotulo() }</span>
                                     <span class="agente-painel__dur">{ format!("{}s", x.segundos) }</span>

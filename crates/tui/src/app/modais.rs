@@ -89,6 +89,10 @@ pub enum Pedido {
     },
     /// Ver o registro de execuções do agente (ciclo 406).
     ListarExecucoes,
+    /// Abrir a conversa e pôr a última pergunta no campo (ciclo 437).
+    Reexecutar(String),
+    /// Aumentar o timeout do agente depois de um estouro (ciclo 437).
+    MaisTempoParaOAgente,
     /// Ver o que está rodando e o que espera na fila (ciclo 408).
     VerAgentes,
     /// Pôr no campo o resumo das decisões desde este instante (421).
@@ -611,6 +615,9 @@ pub enum AcaoDaEscolha {
     /// A tela dos gatilhos (ciclo 412): Enter liga/desliga, `o` cria,
     /// `dd` apaga.
     Gatilhos,
+    /// O registro de execuções (ciclo 437): Enter abre a conversa, `r`
+    /// põe a última pergunta no campo pra rodar de novo.
+    Execucoes,
     /// O template da página nova (ciclo 350); chave vazia é em branco.
     Template,
     /// A marca do menu Formatar (ciclo 357).
@@ -983,6 +990,15 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 _ => e.modal = Some(Modal::Escolha { titulo, lista, acao: AcaoDaEscolha::Gatilhos }),
             }
         }
+        // `r` no registro de execuções roda de novo (ciclo 437): abre a
+        // conversa e põe a última pergunta no campo — não manda sozinho,
+        // porque reexecutar é gastar de novo.
+        Modal::Escolha { titulo, lista, acao: AcaoDaEscolha::Execucoes } if tecla == "r" => {
+            match lista.atual().map(|it| it.chave.clone()) {
+                Some(conversa) => e.pedidos.push(Pedido::Reexecutar(conversa)),
+                None => e.modal = Some(Modal::Escolha { titulo, lista, acao: AcaoDaEscolha::Execucoes }),
+            }
+        }
         // `x` na tela dos agentes interrompe tudo (ciclo 408) — a
         // lista não usa essa tecla.
         Modal::Escolha { titulo, lista, acao: AcaoDaEscolha::Agentes } if tecla == "x" => {
@@ -1034,6 +1050,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 },
                 AcaoDaEscolha::Mostrar => {}
                 AcaoDaEscolha::Agentes => e.pedidos.push(Pedido::AbrirPagina(chave)),
+                AcaoDaEscolha::Execucoes => e.pedidos.push(Pedido::AbrirPagina(chave)),
                 AcaoDaEscolha::Transcluir => super::markdown::inserir_trecho(e, &format!("![[{chave}]]")),
                 // Enter liga/desliga o gatilho; a linha de "nenhum" cria.
                 AcaoDaEscolha::Gatilhos if chave.starts_with('\u{0}') => {
@@ -2102,7 +2119,7 @@ pub fn mostrar_execucoes(e: &mut Estado, execucoes: &[anotadinho_core::execucao:
         }
         None => "Execuções do agente".to_string(),
     };
-    e.modal = Some(Modal::Escolha { titulo, lista: Lista::filtravel(itens), acao: AcaoDaEscolha::AbrirPagina });
+    e.modal = Some(Modal::Escolha { titulo, lista: Lista::filtravel(itens), acao: AcaoDaEscolha::Execucoes });
 }
 
 fn nome_de_arquivo(path: &str) -> String {

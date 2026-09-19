@@ -11066,4 +11066,68 @@ mod testes {
             })]
         );
     }
+
+    // --- Ciclo 437: reexecutar e erro com ação ---------------------------------------
+
+    #[test]
+    fn o_registro_de_execucoes_roda_de_novo_com_r() {
+        use anotadinho_core::execucao::{Execucao, Fim};
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        e.agora = Some("2026-09-19 10:00".into());
+        modais::mostrar_execucoes(
+            &mut e,
+            &[Execucao {
+                quando: "2026-09-19 09:00".into(),
+                conversa: "pages/conversas/uma.md".into(),
+                agente: "falso".into(),
+                binario: "/bin/x".into(),
+                anexos: 0,
+                prompt: 10,
+                segundos: 3,
+                fim: Fim::Falhou("o agente falhou".into()),
+                uso: None,
+            }],
+        );
+        tecla(&mut e, "r");
+        assert_eq!(e.pedidos, [Pedido::Reexecutar("pages/conversas/uma.md".into())]);
+        // Enter continua abrindo a conversa.
+        e.pedidos.clear();
+        modais::mostrar_execucoes(
+            &mut e,
+            &[Execucao {
+                quando: "2026-09-19 09:00".into(),
+                conversa: "pages/conversas/uma.md".into(),
+                agente: "falso".into(),
+                binario: "/bin/x".into(),
+                anexos: 0,
+                prompt: 10,
+                segundos: 3,
+                fim: Fim::Respondeu,
+                uso: None,
+            }],
+        );
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/conversas/uma.md".into())]);
+    }
+
+    #[test]
+    fn o_estouro_de_tempo_oferece_mais_tempo() {
+        let mut e = conversa_aberta();
+        // Erro comum não oferece nada.
+        e.conversa.as_mut().unwrap().erro = Some("o agente falhou: saiu 1".into());
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(!tela.contains("dá mais tempo"), "{tela}");
+        tecla(&mut e, "T");
+        assert!(e.pedidos.is_empty(), "{:?}", e.pedidos);
+        // Timeout oferece, e `T` aumenta e devolve a pergunta pro campo.
+        e.conversa.as_mut().unwrap().erro =
+            Some("o agente passou de 30 min e foi interrompido".into());
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("T dá mais tempo ao agente"), "{tela}");
+        tecla(&mut e, "T");
+        assert!(e.pedidos.contains(&Pedido::MaisTempoParaOAgente), "{:?}", e.pedidos);
+        let c = e.conversa.as_ref().unwrap();
+        assert!(c.erro.is_none(), "o erro sai da tela");
+        assert!(!c.rascunho.texto.is_empty(), "a pergunta volta pro campo");
+    }
 }
