@@ -10478,7 +10478,7 @@ mod testes {
     #[test]
     fn o_limite_de_agentes_se_ajusta_pela_barra() {
         let mut e = Estado::novo(paginas(), analisar("# a\n"));
-        assert_eq!(e.preferencias.limite_de_agentes, crate::fila::LIMITE_PADRAO);
+        assert_eq!(e.preferencias.limite_de_agentes, anotadinho_core::fila::LIMITE_PADRAO);
         modais::executar(&mut e, "limite_agentes");
         let tela = desenho(&mut e, 100, 20).join("\n");
         assert!(tela.contains("Quantos agentes em paralelo"), "{tela}");

@@ -156,6 +156,8 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     // TUI: sem isto, anexar aqui continua sendo escolher no escuro.
     let peso = use_state(|| None::<(String, bool)>);
     let previa = use_state(|| None::<String>);
+    /// A posição na fila, quando o envio espera vaga (ciclo 429).
+    let na_fila = use_state(|| None::<usize>);
     let adaptador = use_state(crate::state::load_adaptador);
     let trocando_agente = use_state(|| false);
     // Páginas anexadas, lidas do FRONTMATTER (ciclo 208) — sobrevivem a
@@ -671,6 +673,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         let ocupado = ocupado.clone();
         let erro = erro.clone();
         let peso = peso.clone();
+        let na_fila = na_fila.clone();
         let adaptador = adaptador.clone();
         let ativo = ativo.clone();
         let vault_path = props.vault_path.clone();
@@ -692,6 +695,7 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
             erro.set(None);
 
             let peso = peso.clone();
+            let na_fila = na_fila.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 let agora = crate::state::agora_legivel();
 
@@ -728,10 +732,21 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 // Só DISPARA. Quem acompanha é o efeito de polling
                 // abaixo — inclusive se esta tela for desmontada no
                 // meio, porque o processo é do backend.
-                if let Err(e) = api::iniciar_agente(&adaptador, &prompt, &vault_path, &path).await {
-                    erro.set(Some(e));
-                    *ativo.borrow_mut() = false;
-                    ocupado.set(false);
+                let limite = crate::state::load_aparencia().limite_de_agentes;
+                match api::iniciar_agente(&adaptador, &prompt, &vault_path, &path, limite).await {
+                    // Sem vaga, o envio espera (ciclo 429): a tela diz a
+                    // posição em vez de fingir que está rodando.
+                    Ok(api::StatusEnvio::NaFila { posicao }) => {
+                        na_fila.set(Some(posicao));
+                        *ativo.borrow_mut() = false;
+                        ocupado.set(false);
+                    }
+                    Ok(api::StatusEnvio::Rodando) => na_fila.set(None),
+                    Err(e) => {
+                        erro.set(Some(e));
+                        *ativo.borrow_mut() = false;
+                        ocupado.set(false);
+                    }
                 }
             });
         })
@@ -1154,6 +1169,11 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                     title="Pôr no campo o que você aplicou e o que recusou, com o motivo">
                     { "Contar decisões" }
                 </button>
+                if let Some(posicao) = *na_fila {
+                    <span class="conversa__na-fila" title="Esperando vaga: o limite de agentes em paralelo está cheio">
+                        { format!("{posicao}º na fila") }
+                    </span>
+                }
                 if let Some((resumo, estourou)) = (*peso).clone() {
                     <span class={classes!("conversa__peso", estourou.then_some("conversa__peso--estourou"))}
                         title="Tamanho estimado do que vai pro agente">

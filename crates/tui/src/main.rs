@@ -191,6 +191,11 @@ fn abrir(estado: &mut Estado, vault: &str, caminho: &str) {
     }
 }
 
+/// A fila desta UI (ciclo 429): a política é do núcleo, a carga é o que
+/// a TUI precisa pra disparar quando a vez chegar — a pergunta e os
+/// anexos, porque aqui o prompt é montado no disparo.
+type FilaDaTui = anotadinho_core::fila::Fila<(String, Vec<String>)>;
+
 /// As execuções do agente, por conversa (ciclo 340). Vivem aqui, fora do
 /// estado da tela: sair da conversa não para o agente, e a resposta cai no
 /// arquivo quando ele acaba — como o registro de jobs do backend da janela.
@@ -333,7 +338,7 @@ fn enviar_na_conversa(
     vault: &str,
     vault_atual: &str,
     trabalhos: &mut Trabalhos,
-    fila: &mut anotadinho_tui::fila::Fila,
+    fila: &mut FilaDaTui,
     path: &str,
     pergunta: &str,
     anexos: &[String],
@@ -351,11 +356,10 @@ fn enviar_na_conversa(
     // ela entra junto com a execução, pra o histórico do prompt não
     // ficar com duas perguntas e uma resposta.
     if !fila.tem_vaga(trabalhos.len()) {
-        let posicao = fila.enfileirar(anotadinho_tui::fila::Espera {
+        let posicao = fila.enfileirar(anotadinho_core::fila::Espera {
             vault: vault.to_string(),
             conversa: path.to_string(),
-            pergunta: pergunta.to_string(),
-            anexos: anexos.to_vec(),
+            carga: (pergunta.to_string(), anexos.to_vec()),
         });
         estado.aviso = Some(format!("{posicao}º na fila — {} rodando", trabalhos.len()));
         if let Some(c) = estado.conversa.as_mut() {
@@ -424,7 +428,7 @@ fn enviar_na_conversa(
 
 /// A cada volta: mostra o agente rodando na conversa aberta e, quando ele
 /// acaba, grava a resposta (ou o erro) e relê a conversa.
-fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &mut anotadinho_tui::fila::Fila) {
+fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &mut FilaDaTui) {
     use anotadinho_core::conversa::{Autor, Mensagem};
     let mut prontos = Vec::new();
     for (chave, a) in trabalhos.iter_mut() {
@@ -489,7 +493,8 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila:
     fila.limite = estado.preferencias.limite_de_agentes;
     while let Some(e) = fila.proxima(trabalhos.len()) {
         let antes = trabalhos.len();
-        enviar_na_conversa(estado, &e.vault, vault, trabalhos, fila, &e.conversa, &e.pergunta, &e.anexos);
+        let (pergunta, anexos) = e.carga.clone();
+        enviar_na_conversa(estado, &e.vault, vault, trabalhos, fila, &e.conversa, &pergunta, &anexos);
         // Se não subiu (binário quebrado, arquivo sumiu), para de puxar
         // pra não girar a fila inteira em erro na mesma volta.
         if trabalhos.len() == antes {
@@ -682,7 +687,7 @@ fn disparar_gatilhos(
     estado: &mut Estado,
     vault: &str,
     trabalhos: &mut Trabalhos,
-    fila: &mut anotadinho_tui::fila::Fila,
+    fila: &mut FilaDaTui,
     g: &mut Gatilhos,
     mudou_algo: bool,
 ) {
@@ -827,7 +832,7 @@ fn buscar_na_paleta(estado: &mut Estado, vault: &str) {
 }
 
 /// Executa o que a TUI pediu e só quem tem o vault pode fazer (ciclo 339).
-fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &mut anotadinho_tui::fila::Fila) {
+fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &mut FilaDaTui) {
     let recarregar = |estado: &mut Estado| {
         if let Ok(p) = handle_list_pages(vault.to_string()) {
             estado.atualizar_paginas(p);
@@ -1623,7 +1628,7 @@ fn main() -> Result<(), String> {
     // vault não mata o que está rodando, e a resposta cai na conversa
     // quando ele acaba.
     let mut trabalhos = Trabalhos::new();
-    let mut fila = anotadinho_tui::fila::Fila::nova(estado.preferencias.limite_de_agentes);
+    let mut fila = FilaDaTui::nova(estado.preferencias.limite_de_agentes);
     let resultado = loop {
         match laco(&mut term, &mut estado, &vault_da_sessao, &mut trabalhos, &mut fila) {
             Ok(Some((outro, criado))) => match montar_estado(&outro, criado, estado.preferencias.clone()) {
@@ -1649,7 +1654,7 @@ fn laco<B: ratatui::backend::Backend>(
     estado: &mut Estado,
     vault: &str,
     trabalhos: &mut Trabalhos,
-    fila: &mut anotadinho_tui::fila::Fila,
+    fila: &mut FilaDaTui,
 ) -> Result<Option<(String, bool)>, String> {
     let mut voltas_sem_tecla: u64 = 0;
     // Mudança de .md por fora chega pelo watcher (ciclo 398), como na

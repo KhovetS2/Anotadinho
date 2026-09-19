@@ -700,6 +700,14 @@ pub struct Aparencia {
     /// `0` desliga o aviso e a poda.
     #[serde(default = "teto_padrao")]
     pub teto_de_contexto: usize,
+    /// Quantas execuções do agente rodam em paralelo (ciclo 429); o
+    /// resto espera na fila. `0` = sem limite.
+    #[serde(default = "limite_padrao")]
+    pub limite_de_agentes: usize,
+}
+
+fn limite_padrao() -> usize {
+    anotadinho_core::fila::LIMITE_PADRAO
 }
 
 fn teto_padrao() -> usize {
@@ -713,6 +721,7 @@ impl Default for Aparencia {
             destaque: String::new(),
             botoes: "arredondado".into(),
             teto_de_contexto: teto_padrao(),
+            limite_de_agentes: limite_padrao(),
         }
     }
 }

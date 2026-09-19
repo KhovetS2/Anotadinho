@@ -588,19 +588,31 @@ pub async fn write_page(vault_path: &str, page_path: &str, content: &str) -> Res
 /// Não espera a resposta: quem acompanha é `estado_agente`. É o que
 /// permite sair da conversa no meio de uma execução longa sem matar o
 /// processo nem perder o que ele responder.
+/// O que aconteceu com o envio (ciclo 429): subiu, ou entrou na fila.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(tag = "estado", rename_all = "snake_case")]
+pub enum StatusEnvio {
+    Rodando,
+    NaFila {
+        posicao: usize,
+    },
+}
+
 pub async fn iniciar_agente(
     adaptador: &anotadinho_core::agente::Adaptador,
     prompt: &str,
     vault_path: &str,
     conversa_path: &str,
-) -> Result<(), String> {
-    chamar_sem_retorno(
+    limite: usize,
+) -> Result<StatusEnvio, String> {
+    chamar(
         "iniciar_agente",
         Args::novo()
             .serde("adaptador", adaptador)
             .texto("prompt", prompt)
             .texto("vaultPath", vault_path)
-            .texto("conversaPath", conversa_path),
+            .texto("conversaPath", conversa_path)
+            .serde("limite", &limite),
     )
     .await
 }

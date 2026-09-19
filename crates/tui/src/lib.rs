@@ -17,7 +17,6 @@
 
 pub mod app;
 pub mod agente;
-pub mod fila;
 pub mod componentes;
 pub mod sidebar;
 pub mod tela;

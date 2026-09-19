@@ -2171,3 +2171,8 @@
 .propostas__lote-acoes { display: inline-flex; gap: 6px; margin-left: auto; }
 .propostas__dica { font-size: .8rem; color: var(--text-muted); margin: 0 0 8px; }
 .propostas__editor { font-family: var(--font-mono, monospace); font-size: .8rem; width: 100%; }
+
+/* Espera na fila de agentes (ciclo 429). */
+.conversa__na-fila {
+  font-size: .75rem; color: var(--warning); white-space: nowrap;
+}

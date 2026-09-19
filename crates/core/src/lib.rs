@@ -39,6 +39,7 @@ pub mod diff;
 pub mod envio;
 pub mod execucao;
 pub mod ferramentas;
+pub mod fila;
 pub mod avaliacao;
 pub mod gatilho;
 pub mod fluxo;

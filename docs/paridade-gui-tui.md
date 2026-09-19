@@ -106,7 +106,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Permissões de escrita do agente por pasta | ✅ | 405 (TUI), 427 (janela) — no vault, valem pro CLI, TUI e janela |
 | Registro de execuções do agente (o que rodou, duração, como terminou) | ✅ | 406 (TUI), 427 (janela) — `execucoes.jsonl` no vault |
 | Contrato de ferramentas do agente (conjunto fechado, MCP) | ✅ | 407 (TUI), 427 (janela) — declarado no núcleo; o MCP deriva dele |
-| Vários agentes em paralelo com fila e limite | ✅ | 408 — só na TUI; limite nas preferências, "Agentes em andamento…" (`x` para tudo) |
+| Vários agentes em paralelo com fila e limite | ✅ | 408 (TUI), 429 (janela) — política única em `core::fila` |
 | Decidir várias propostas de uma vez (marcar, aplicar/recusar em lote) | ✅ | 409 — só na TUI; `m` marca, `M` todas, um motivo pro lote |
 | Realce palavra a palavra no diff da proposta | ✅ | 410 (TUI), 424 (janela) |
 | Editar a proposta antes de aplicar | ✅ | 411 (TUI), 428 (janela) — registro diz "editada" |

@@ -303,7 +303,7 @@ fn teto_padrao() -> usize {
 }
 
 fn limite_padrao() -> usize {
-    crate::fila::LIMITE_PADRAO
+    anotadinho_core::fila::LIMITE_PADRAO
 }
 
 fn botoes_padrao() -> String {

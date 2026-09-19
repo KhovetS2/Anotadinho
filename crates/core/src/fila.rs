@@ -1,4 +1,8 @@
-//! A fila de execuções do agente (ciclo 408).
+//! A fila de execuções do agente (ciclo 408; veio pro núcleo no 429).
+//!
+//! Mora aqui porque a janela precisa da MESMA política que a TUI: o
+//! limite de paralelismo não pode depender de por onde se mandou a
+//! pergunta. Quem dispara processo continua sendo cada UI.
 //!
 //! Desde o ciclo 340 dá pra ter uma execução por conversa, e várias
 //! conversas ao mesmo tempo — só que sem limite nenhum. Abrir cinco
@@ -15,14 +19,19 @@
 //! execução "furar" a fila custaria mais do que o ganho.
 
 /// Um envio esperando vaga.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Espera {
+///
+/// O que ele CARREGA muda com a UI — a TUI guarda a pergunta e os anexos
+/// (o prompt é montado na hora do disparo), a janela guarda o prompt já
+/// montado e o adaptador. Por isso o tipo é genérico: a política de fila
+/// é a mesma, o payload não.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Espera<T> {
     /// O vault de onde saiu (a pessoa pode trocar de vault antes da vez
     /// chegar — ciclo 396).
     pub vault: String,
     pub conversa: String,
-    pub pergunta: String,
-    pub anexos: Vec<String>,
+    /// O que aquela UI precisa pra disparar quando a vez chegar.
+    pub carga: T,
 }
 
 /// Quantas execuções em paralelo por padrão. Duas: uma que você olha e
@@ -31,14 +40,14 @@ pub const LIMITE_PADRAO: usize = 2;
 
 /// A fila e o limite.
 #[derive(Debug, Default)]
-pub struct Fila {
+pub struct Fila<T> {
     /// Máximo rodando ao mesmo tempo. `0` = sem limite (a fila nunca
     /// retém nada).
     pub limite: usize,
-    espera: Vec<Espera>,
+    espera: Vec<Espera<T>>,
 }
 
-impl Fila {
+impl<T> Fila<T> {
     pub fn nova(limite: usize) -> Self {
         Self { limite, espera: Vec::new() }
     }
@@ -49,13 +58,13 @@ impl Fila {
     }
 
     /// Guarda pra depois. Devolve a posição na fila (1 = próxima).
-    pub fn enfileirar(&mut self, e: Espera) -> usize {
+    pub fn enfileirar(&mut self, e: Espera<T>) -> usize {
         self.espera.push(e);
         self.espera.len()
     }
 
     /// A próxima da fila, se há vaga. Tira da fila ao devolver.
-    pub fn proxima(&mut self, rodando: usize) -> Option<Espera> {
+    pub fn proxima(&mut self, rodando: usize) -> Option<Espera<T>> {
         if !self.tem_vaga(rodando) || self.espera.is_empty() {
             return None;
         }
@@ -92,7 +101,7 @@ impl Fila {
     }
 
     /// Quem está esperando, na ordem.
-    pub fn esperando(&self) -> &[Espera] {
+    pub fn esperando(&self) -> &[Espera<T>] {
         &self.espera
     }
 
@@ -109,29 +118,24 @@ impl Fila {
 mod testes {
     use super::*;
 
-    fn espera(conversa: &str) -> Espera {
-        Espera {
-            vault: "/v".into(),
-            conversa: conversa.into(),
-            pergunta: "e aí".into(),
-            anexos: vec![],
-        }
+    fn espera(conversa: &str) -> Espera<String> {
+        Espera { vault: "/v".into(), conversa: conversa.into(), carga: "e aí".into() }
     }
 
     #[test]
     fn o_limite_decide_quem_roda_agora() {
-        let f = Fila::nova(2);
+        let f: Fila<String> = Fila::nova(2);
         assert!(f.tem_vaga(0) && f.tem_vaga(1));
         assert!(!f.tem_vaga(2), "no limite não cabe mais");
         assert!(!f.tem_vaga(5), "nem acima dele (o limite pode ter caído)");
         // Limite 0 é "sem limite": a fila nunca retém.
-        let sem = Fila::nova(0);
+        let sem: Fila<String> = Fila::nova(0);
         assert!(sem.tem_vaga(0) && sem.tem_vaga(99));
     }
 
     #[test]
     fn a_fila_e_de_chegada_e_a_vaga_chama_a_proxima() {
-        let mut f = Fila::nova(1);
+        let mut f: Fila<String> = Fila::nova(1);
         assert_eq!(f.enfileirar(espera("a.md")), 1);
         assert_eq!(f.enfileirar(espera("b.md")), 2);
         assert_eq!(f.posicao("/v", "b.md"), Some(2));
@@ -147,7 +151,7 @@ mod testes {
 
     #[test]
     fn a_mesma_conversa_nao_entra_duas_vezes_e_da_pra_desistir() {
-        let mut f = Fila::nova(1);
+        let mut f: Fila<String> = Fila::nova(1);
         f.enfileirar(espera("a.md"));
         assert!(f.ja_espera("/v", "a.md"));
         assert!(!f.ja_espera("/v", "z.md"));
@@ -163,7 +167,7 @@ mod testes {
 
     #[test]
     fn limpar_devolve_quantas_desistiram() {
-        let mut f = Fila::nova(1);
+        let mut f: Fila<String> = Fila::nova(1);
         f.enfileirar(espera("a.md"));
         f.enfileirar(espera("b.md"));
         assert_eq!(f.limpar(), 2);
@@ -172,7 +176,7 @@ mod testes {
 
     #[test]
     fn o_que_espera_sai_na_ordem_pra_tela() {
-        let mut f = Fila::nova(1);
+        let mut f: Fila<String> = Fila::nova(1);
         f.enfileirar(espera("a.md"));
         f.enfileirar(espera("b.md"));
         let nomes: Vec<&str> = f.esperando().iter().map(|e| e.conversa.as_str()).collect();

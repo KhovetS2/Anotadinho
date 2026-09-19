@@ -46,6 +46,21 @@ struct AppWatchers(Mutex<HashMap<String, VaultWatcher>>);
 static JOBS: std::sync::LazyLock<std::sync::Arc<Mutex<HashMap<String, Job>>>> =
     std::sync::LazyLock::new(|| std::sync::Arc::new(Mutex::new(HashMap::new())));
 
+/// A fila da janela (ciclo 429). A política é do núcleo, a mesma da TUI
+/// (408); a carga é o que ESTA UI precisa pra disparar quando a vez
+/// chegar — aqui o prompt já vem montado pela tela.
+static FILA: std::sync::LazyLock<Mutex<anotadinho_core::fila::Fila<(anotadinho_core::agente::Adaptador, String)>>> =
+    std::sync::LazyLock::new(|| Mutex::new(anotadinho_core::fila::Fila::nova(anotadinho_core::fila::LIMITE_PADRAO)));
+
+/// O que aconteceu com o pedido de envio (ciclo 429): subiu na hora, ou
+/// entrou na fila e vai subir quando abrir vaga.
+#[derive(serde::Serialize)]
+#[serde(tag = "estado", rename_all = "snake_case")]
+pub enum StatusEnvio {
+    Rodando,
+    NaFila { posicao: usize },
+}
+
 struct Job {
     /// `None` enquanto roda; `Some` quando terminou (de qualquer jeito).
     /// O resultado FICA aqui até a tela consumir — é o que evita perder
@@ -512,10 +527,8 @@ fn iniciar_agente(
     prompt: String,
     vault_path: String,
     conversa_path: String,
-) -> Result<(), String> {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-
+    limite: Option<usize>,
+) -> Result<StatusEnvio, String> {
     if let Some(problema) = adaptador.validar() {
         return Err(format!(
             "configuração do agente inválida: {}",
@@ -523,7 +536,7 @@ fn iniciar_agente(
         ));
     }
 
-    {
+    let rodando = {
         let mapa = JOBS
             .lock()
             .map_err(|_| "registro de execuções travado".to_string())?;
@@ -532,7 +545,43 @@ fn iniciar_agente(
                 return Err("já existe uma execução em andamento nesta conversa".to_string());
             }
         }
+        mapa.values().filter(|j| j.fim.is_none()).count()
+    };
+
+    // Sem vaga, espera (ciclo 429): cinco conversas mandando ao mesmo
+    // tempo subiam cinco processos de modelo, e quem paga por token
+    // levava cinco cobranças sem ter pedido isso.
+    {
+        let mut fila = FILA.lock().map_err(|_| "fila travada".to_string())?;
+        if let Some(l) = limite {
+            fila.limite = l;
+        }
+        if fila.ja_espera(&vault_path, &conversa_path) {
+            return Err("esta conversa já tem um envio esperando vaga".to_string());
+        }
+        if !fila.tem_vaga(rodando) {
+            let posicao = fila.enfileirar(anotadinho_core::fila::Espera {
+                vault: vault_path.clone(),
+                conversa: conversa_path.clone(),
+                carga: (adaptador, prompt),
+            });
+            return Ok(StatusEnvio::NaFila { posicao });
+        }
     }
+    disparar(adaptador, prompt, vault_path, conversa_path)?;
+    Ok(StatusEnvio::Rodando)
+}
+
+/// Sobe o processo do agente de verdade. Separado de `iniciar_agente`
+/// porque a fila também dispara daqui, quando uma vaga abre.
+fn disparar(
+    adaptador: anotadinho_core::agente::Adaptador,
+    prompt: String,
+    vault_path: String,
+    conversa_path: String,
+) -> Result<(), String> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     // Liga o MCP do Anotadinho nesta execução (ciclo 426): o agente
     // ganha as ferramentas do vault sem ninguém configurar por fora.
@@ -799,9 +848,37 @@ fn iniciar_agente(
                 }
             }
         }
+        // A vaga abriu: chama a próxima da fila (ciclo 429).
+        chamar_proxima_da_fila();
     });
 
     Ok(())
+}
+
+/// Sobe quem estava esperando, se agora cabe (ciclo 429).
+///
+/// Chamado por quem termina, não por um relógio: a fila só anda quando
+/// uma vaga abre, e assim não há laço rodando à toa.
+fn chamar_proxima_da_fila() {
+    let rodando = match JOBS.lock() {
+        Ok(m) => m.values().filter(|j| j.fim.is_none()).count(),
+        Err(_) => return,
+    };
+    let proxima = match FILA.lock() {
+        Ok(mut f) => f.proxima(rodando),
+        Err(_) => return,
+    };
+    let Some(e) = proxima else { return };
+    let (adaptador, prompt) = e.carga;
+    if let Err(erro) = disparar(adaptador, prompt, e.vault, e.conversa.clone()) {
+        // Falhou ao subir: registra como falha naquela conversa, senão a
+        // tela fica esperando uma resposta que nunca vem.
+        if let Ok(mut mapa) = JOBS.lock() {
+            if let Some(j) = mapa.get_mut(&e.conversa) {
+                j.fim = Some(anotadinho_core::agente::EstadoJob::Falhou { erro });
+            }
+        }
+    }
 }
 
 /// As últimas `n` linhas não vazias — o rabo do erro é o que interessa.
