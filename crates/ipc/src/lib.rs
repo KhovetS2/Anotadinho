@@ -856,6 +856,7 @@ mod tests {
             alvo: alvo.into(),
             operacao: op,
             conteudo: conteudo.into(),
+            revisao: None,
             lote: None,
         }
     }
@@ -1402,6 +1403,23 @@ pub fn handle_recusar_lote(vault_path: String, lote: String) -> Result<usize, St
     Ok(quantas)
 }
 
+/// Guarda a revisão de um segundo agente na proposta (ciclo 436).
+pub fn handle_registrar_revisao(
+    vault_path: String,
+    id: String,
+    revisao: anotadinho_core::proposta::Revisao,
+) -> Result<(), String> {
+    let arquivo = std::path::Path::new(&vault_path)
+        .join(format!("{}/{id}.json", anotadinho_core::proposta::PASTA));
+    let texto =
+        std::fs::read_to_string(&arquivo).map_err(|_| format!("proposta {id} não existe"))?;
+    let mut proposta: anotadinho_core::proposta::Proposta =
+        serde_json::from_str(&texto).map_err(|e| format!("proposta ilegível: {e}"))?;
+    proposta.revisao = Some(revisao);
+    let json = serde_json::to_string_pretty(&proposta).map_err(|e| e.to_string())?;
+    std::fs::write(&arquivo, json).map_err(|e| e.to_string())
+}
+
 /// Acrescenta uma decisão ao registro (ciclo 404).
 pub fn handle_registrar_decisao(
     vault_path: String,
@@ -1675,6 +1693,7 @@ mod testes_semente {
             alvo: alvo.into(),
             operacao: op,
             conteudo: conteudo.into(),
+            revisao: None,
             lote: Some("renomear".into()),
         };
         handle_propor(raiz.clone(), proposta("p1", "pages/a.md", "novo A\n", Operacao::Substituir)).unwrap();
@@ -1716,6 +1735,7 @@ mod testes_semente {
                     alvo: alvo.into(),
                     operacao: Operacao::Criar,
                     conteudo: "# Nova\n".into(),
+                    revisao: None,
                     lote: Some("ideia".into()),
                 },
             )

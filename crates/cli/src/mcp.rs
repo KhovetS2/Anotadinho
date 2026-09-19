@@ -292,6 +292,7 @@ fn chamar(vault: &str, id: Value, params: Option<&Value>) -> Value {
                     anotadinho_core::proposta::Operacao::Criar
                 },
                 conteudo: arg_str("conteudo"),
+                revisao: None,
                 lote: Some(arg_str("lote")).filter(|l| !l.trim().is_empty()),
             };
             match anotadinho_ipc::handle_propor(vault.to_string(), proposta) {

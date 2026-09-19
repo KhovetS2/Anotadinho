@@ -445,6 +445,19 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                             <span class="propostas__quando">{ &p.quando }</span>
                         </header>
 
+                        if let Some(r) = &p.revisao {
+                            // O veredito do revisor (ciclo 436) antes do
+                            // diff: muda a atenção com que se lê o resto.
+                            <div class={classes!("propostas__revisao", match r.veredito {
+                                anotadinho_core::proposta::Veredito::Aprova => "propostas__revisao--aprova",
+                                anotadinho_core::proposta::Veredito::Ressalva => "propostas__revisao--ressalva",
+                                anotadinho_core::proposta::Veredito::Recusa => "propostas__revisao--recusa",
+                            })}>
+                                <strong>{ format!("revisor: {}", r.veredito.rotulo()) }</strong>
+                                <span class="propostas__revisao-quem">{ format!("{} · {}", r.agente, r.quando) }</span>
+                                <p>{ &r.notas }</p>
+                            </div>
+                        }
                         if !p.motivo.trim().is_empty() {
                             <p class="propostas__motivo">{ &p.motivo }</p>
                         }

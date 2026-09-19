@@ -970,6 +970,23 @@ fn cartao_da_proposta(
     topo.push(Span::raw(" ".repeat(dentro.saturating_sub(usado + proposta.quando.chars().count()))));
     topo.push(Span::styled(proposta.quando.clone(), apagado));
     let mut miolo = vec![Line::from(topo)];
+    // O veredito do revisor (ciclo 436), antes do diff: é o que muda a
+    // atenção com que se lê o resto.
+    if let Some(r) = &proposta.revisao {
+        use anotadinho_core::proposta::Veredito;
+        let cor = match r.veredito {
+            Veredito::Aprova => tema.var("success"),
+            Veredito::Ressalva => tema.var("warning"),
+            Veredito::Recusa => tema.var("error"),
+        };
+        miolo.push(Line::from(vec![
+            Span::styled(format!(" revisor: {} ", r.veredito.rotulo()), Style::default().fg(cor).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("· {} · {}", r.agente, r.quando), apagado),
+        ]));
+        for l in super::quebrar_texto(Line::from(Span::styled(r.notas.clone(), apagado)), dentro, 1) {
+            miolo.push(l);
+        }
+    }
     if !proposta.motivo.trim().is_empty() {
         miolo.extend(super::quebrar_texto(Line::from(Span::styled(proposta.motivo.clone(), texto)), dentro, 0));
     }

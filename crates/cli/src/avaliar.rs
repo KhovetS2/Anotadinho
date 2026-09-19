@@ -69,6 +69,18 @@ fn rodar(adaptador: &Adaptador, tarefa: &Tarefa, vault: &std::path::Path) -> Obs
     }
 }
 
+/// Roda o agente uma vez e devolve a resposta (ciclo 436).
+///
+/// A revisão de proposta usa o MESMO caminho da avaliação: um disparo,
+/// espera com teto, resposta ou erro.
+pub fn rodar_uma_vez(
+    adaptador: &Adaptador,
+    prompt: &str,
+    cwd: &std::path::Path,
+) -> Result<String, String> {
+    executar(adaptador, prompt, cwd)
+}
+
 /// Chama o binário do agente e espera a saída, com o timeout dele.
 fn executar(adaptador: &Adaptador, prompt: &str, cwd: &std::path::Path) -> Result<String, String> {
     use std::process::{Command, Stdio};

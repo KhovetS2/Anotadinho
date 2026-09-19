@@ -43,6 +43,10 @@ pub struct Proposta {
     pub operacao: Operacao,
     /// Conteúdo proposto, inteiro.
     pub conteudo: String,
+    /// O que o revisor achou dela (ciclo 436), quando alguém pediu uma
+    /// revisão. Ausente = ninguém revisou.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revisao: Option<Revisao>,
     /// O lote a que ela pertence (ciclo 420). Propostas do mesmo lote são
     /// UMA decisão: aplicam juntas ou não aplicam.
     ///
@@ -69,6 +73,90 @@ pub fn por_lote(propostas: &[Proposta]) -> Vec<(Option<String>, Vec<&Proposta>)>
         }
     }
     fora
+}
+
+/// O veredito de um segundo agente sobre a proposta (ciclo 436).
+///
+/// Trabalho sem supervisão troca "confio no modelo" por dois olhares: um
+/// agente escreve, outro critica, e você lê a crítica junto do diff. O
+/// revisor NÃO decide — ele não aplica nem recusa nada; só diz o que
+/// viu, e a aprovação continua sendo humana.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Veredito {
+    /// Não achou problema.
+    Aprova,
+    /// Aplicável, mas com algo a observar.
+    Ressalva,
+    /// Achou problema que desaconselha aplicar.
+    Recusa,
+}
+
+impl Veredito {
+    pub fn rotulo(&self) -> &'static str {
+        match self {
+            Self::Aprova => "aprova",
+            Self::Ressalva => "ressalva",
+            Self::Recusa => "recusa",
+        }
+    }
+
+    /// Lê o veredito da resposta do revisor.
+    ///
+    /// Procura a PALAVRA no começo da resposta, que é onde o prompt pede
+    /// que ela esteja. Sem palavra reconhecível, vale `Ressalva`: um
+    /// revisor confuso não pode virar aprovação.
+    pub fn da_resposta(texto: &str) -> Self {
+        let inicio: String = texto
+            .trim_start()
+            .chars()
+            .take(40)
+            .collect::<String>()
+            .to_lowercase();
+        if inicio.starts_with("aprova") {
+            Self::Aprova
+        } else if inicio.starts_with("recusa") {
+            Self::Recusa
+        } else {
+            Self::Ressalva
+        }
+    }
+}
+
+/// A revisão registrada numa proposta.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Revisao {
+    /// `"AAAA-MM-DD HH:MM"`.
+    pub quando: String,
+    /// Quem revisou (nome do adaptador).
+    pub agente: String,
+    pub veredito: Veredito,
+    /// O que ele escreveu, inteiro — é o que a pessoa lê junto do diff.
+    pub notas: String,
+}
+
+/// O prompt do revisor (ciclo 436).
+///
+/// Pede a palavra do veredito na PRIMEIRA linha e o resto em prosa: é o
+/// que permite ler a decisão sem adivinhação e ainda ter o argumento.
+/// O conteúdo revisado entra como DADO, com a mesma blindagem do resto
+/// (ciclo 202): a proposta pode ter vindo de fora.
+pub fn prompt_de_revisao(p: &Proposta, atual: &str) -> String {
+    let diff = crate::diff::diff_linhas(atual, &p.conteudo);
+    let corpo: String = diff
+        .iter()
+        .map(|l| match l {
+            crate::diff::LinhaDiff::Igual { texto } => format!(" {texto}\n"),
+            crate::diff::LinhaDiff::Removida { texto } => format!("-{texto}\n"),
+            crate::diff::LinhaDiff::Adicionada { texto } => format!("+{texto}\n"),
+        })
+        .collect();
+    let motivo = if p.motivo.trim().is_empty() { "(sem motivo declarado)" } else { p.motivo.trim() };
+    format!(
+        "# Revisão de uma proposta\n\n         Outro agente propôs mudar `{}` dizendo: {motivo}\n\n         Você NÃO aplica nem recusa nada — só revisa. Responda com UMA palavra na primeira          linha: APROVA, RESSALVA ou RECUSA. Depois, em poucas linhas, o porquê: o que quebra,          o que contradiz o resto do vault, o que ficou pela metade.\n\n{}",
+        p.alvo,
+        crate::conversa::blindar_dado(&format!("DIFF {}", p.alvo), &corpo)
+    )
 }
 
 /// Por que uma proposta não pode ser aplicada.
@@ -174,6 +262,7 @@ mod tests {
             alvo: "pages/nova.md".into(),
             operacao: Operacao::Criar,
             conteudo: "---\ntitle: Nova\n---\ncorpo\n".into(),
+            revisao: None,
             lote: None,
         }
     }
@@ -274,5 +363,43 @@ mod tests {
         assert_eq!(p.lote, None);
         // E quem não tem lote não ganha campo no arquivo.
         assert!(!serde_json::to_string(&p).unwrap().contains("lote"));
+    }
+
+    // --- Ciclo 436: revisor ----------------------------------------------------------
+
+    #[test]
+    fn o_veredito_sai_da_primeira_palavra_e_o_resto_vira_ressalva() {
+        assert_eq!(Veredito::da_resposta("APROVA\n\nnada a dizer"), Veredito::Aprova);
+        assert_eq!(Veredito::da_resposta("  recusa: quebra o kanban"), Veredito::Recusa);
+        assert_eq!(Veredito::da_resposta("RESSALVA — falta a data"), Veredito::Ressalva);
+        // Revisor confuso não vira aprovação.
+        assert_eq!(Veredito::da_resposta("acho que talvez esteja ok"), Veredito::Ressalva);
+        assert_eq!(Veredito::da_resposta(""), Veredito::Ressalva);
+    }
+
+    #[test]
+    fn o_prompt_do_revisor_leva_o_diff_blindado_e_pede_a_palavra() {
+        let mut p = base();
+        p.operacao = Operacao::Substituir;
+        p.alvo = "pages/spec.md".into();
+        p.motivo = "renomear o conceito".into();
+        p.conteudo = "linha nova\n".into();
+        let prompt = prompt_de_revisao(&p, "linha velha\n");
+        assert!(prompt.contains("APROVA, RESSALVA ou RECUSA"), "{prompt}");
+        assert!(prompt.contains("renomear o conceito"), "{prompt}");
+        // O diff vai como DADO, com as duas linhas marcadas.
+        assert!(prompt.contains("DADO-ANOTADINHO DIFF pages/spec.md"), "{prompt}");
+        assert!(prompt.contains("-linha velha") && prompt.contains("+linha nova"), "{prompt}");
+        // E diz que o revisor não decide.
+        assert!(prompt.contains("NÃO aplica nem recusa"), "{prompt}");
+    }
+
+    #[test]
+    fn proposta_sem_revisao_nao_ganha_campo_no_arquivo() {
+        let p = base();
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(!json.contains("revisao"), "{json}");
+        let lida: Proposta = serde_json::from_str(&json).unwrap();
+        assert_eq!(lida.revisao, None);
     }
 }

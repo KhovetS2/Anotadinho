@@ -2203,3 +2203,14 @@
 .agente-painel__guardas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .agente-painel__guardas label { display: flex; flex-direction: column; gap: 4px; font-size: .78rem; }
 .agente-painel__pausado { font-size: .76rem; color: var(--warning); font-weight: 600; }
+
+/* Veredito do revisor (ciclo 436). */
+.propostas__revisao {
+  margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--text-muted);
+  background: var(--bg-elevated); border-radius: 0 6px 6px 0; font-size: .8rem;
+}
+.propostas__revisao p { margin: 4px 0 0; white-space: pre-wrap; color: var(--text-muted); }
+.propostas__revisao-quem { margin-left: 8px; font-size: .72rem; color: var(--text-muted); }
+.propostas__revisao--aprova { border-left-color: var(--success); }
+.propostas__revisao--ressalva { border-left-color: var(--warning); }
+.propostas__revisao--recusa { border-left-color: var(--error); }

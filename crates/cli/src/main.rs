@@ -177,6 +177,27 @@ enum Command {
         /// Id da proposta.
         id: String,
     },
+    /// Manda um SEGUNDO agente revisar a proposta (ciclo 436).
+    ///
+    /// Ele não aplica nem recusa nada: lê o diff e escreve um veredito
+    /// (APROVA, RESSALVA ou RECUSA) com o porquê, que fica guardado na
+    /// proposta e aparece no cartão de revisão das duas interfaces.
+    Revisar {
+        /// Id da proposta.
+        id: String,
+        /// Binário do revisor.
+        #[arg(long, default_value = "claude")]
+        agente: String,
+        /// Argumentos do revisor; um deles contém `{prompt}`.
+        #[arg(long = "arg", default_values_t = [String::from("-p"), String::from("{prompt}")])]
+        args: Vec<String>,
+        /// Segundos até desistir.
+        #[arg(long, default_value = "180")]
+        timeout_s: u64,
+        /// A saída é `stream-json` em vez de texto.
+        #[arg(long)]
+        stream: bool,
+    },
     /// Descarta uma proposta sem aplicar.
     Recusar {
         /// Id da proposta.
@@ -672,6 +693,45 @@ fn run(cli: Cli) -> Result<(), String> {
                 print!("{}", contexto_texto(&cli.vault, &paginas, &propostas));
             }
         }
+        Command::Revisar { id, agente, args, timeout_s, stream } => {
+            let propostas = handle_listar_propostas(cli.vault.clone())?;
+            let p = propostas
+                .into_iter()
+                .find(|p| p.id == id)
+                .ok_or_else(|| format!("proposta {id} não existe"))?;
+            let atual = handle_read_page(cli.vault.clone(), p.alvo.clone()).unwrap_or_default();
+            let adaptador = anotadinho_core::agente::Adaptador {
+                nome: "revisor".into(),
+                binario: agente,
+                args,
+                timeout_s,
+                formato: if stream {
+                    anotadinho_core::agente::FormatoSaida::StreamJson
+                } else {
+                    anotadinho_core::agente::FormatoSaida::Texto
+                },
+                ..Default::default()
+            };
+            let prompt = anotadinho_core::proposta::prompt_de_revisao(&p, &atual);
+            let notas = avaliar::rodar_uma_vez(&adaptador, &prompt, std::path::Path::new(&cli.vault))?;
+            let veredito = anotadinho_core::proposta::Veredito::da_resposta(&notas);
+            anotadinho_ipc::handle_registrar_revisao(
+                cli.vault.clone(),
+                id.clone(),
+                anotadinho_core::proposta::Revisao {
+                    quando: agora_legivel(),
+                    agente: adaptador.nome.clone(),
+                    veredito,
+                    notas: notas.clone(),
+                },
+            )?;
+            println!("{}: {}", veredito.rotulo(), notas.lines().take(3).collect::<Vec<_>>().join(" "));
+            // Sai diferente de zero quando o revisor recusa: dá pra usar
+            // num gatilho ou num script sem ler a saída.
+            if veredito == anotadinho_core::proposta::Veredito::Recusa {
+                std::process::exit(2);
+            }
+        }
         Command::Avaliar { tarefas, so, agente, args, timeout_s, stream } => {
             let lista = avaliar::ler_tarefas(&tarefas)?;
             if lista.is_empty() {
@@ -833,6 +893,7 @@ fn propor_conteudo(
             anotadinho_core::proposta::Operacao::Criar
         },
         conteudo,
+        revisao: None,
         lote,
     };
     handle_propor(vault.to_string(), proposta)
