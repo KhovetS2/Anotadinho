@@ -1506,6 +1506,48 @@ pub fn handle_ler_para_contexto(
     Ok(PaginaExpandida { texto: c.texto, trazidas, avisos })
 }
 
+/// As guardas do trabalho autônomo (ciclo 434). Sem arquivo, o padrão.
+pub fn handle_ler_guardas(
+    vault_path: String,
+) -> Result<anotadinho_core::guardas::Guardas, String> {
+    let arquivo = std::path::Path::new(&vault_path).join(anotadinho_core::guardas::ARQUIVO);
+    let Ok(texto) = std::fs::read_to_string(&arquivo) else {
+        return Ok(anotadinho_core::guardas::Guardas::default());
+    };
+    serde_json::from_str(&texto).map_err(|e| format!("guardas.json ilegível: {e}"))
+}
+
+/// Grava as guardas.
+pub fn handle_gravar_guardas(
+    vault_path: String,
+    guardas: anotadinho_core::guardas::Guardas,
+) -> Result<(), String> {
+    let arquivo = std::path::Path::new(&vault_path).join(anotadinho_core::guardas::ARQUIVO);
+    if let Some(pai) = arquivo.parent() {
+        std::fs::create_dir_all(pai).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(&guardas).map_err(|e| e.to_string())?;
+    std::fs::write(&arquivo, json).map_err(|e| e.to_string())
+}
+
+/// O freio do trabalho autônomo AGORA (ciclo 434): lê as guardas e o que
+/// o dia já consumiu, e responde se um gatilho pode disparar.
+///
+/// Mora aqui porque TUI e janela precisam da mesma resposta, e ela
+/// depende de dois arquivos do vault — guardas e registro de execuções.
+pub fn handle_freio_do_dia(
+    vault_path: String,
+    agora: String,
+) -> Result<anotadinho_core::guardas::Freio, String> {
+    let guardas = handle_ler_guardas(vault_path.clone())?;
+    let execucoes = handle_listar_execucoes(vault_path)?;
+    let dia = agora.split_whitespace().next().unwrap_or("");
+    let do_dia: Vec<&anotadinho_core::execucao::Execucao> =
+        execucoes.iter().filter(|x| x.quando.starts_with(dia)).collect();
+    let custo: f64 = do_dia.iter().filter_map(|x| x.uso.as_ref()).filter_map(|u| u.custo_usd).sum();
+    Ok(anotadinho_core::guardas::freio(&guardas, &agora, do_dia.len(), custo))
+}
+
 /// Os gatilhos do vault (ciclo 412). Sem arquivo, lista vazia.
 pub fn handle_ler_gatilhos(
     vault_path: String,
@@ -1682,6 +1724,47 @@ mod testes_semente {
         assert_eq!(handle_recusar_lote(raiz.clone(), "ideia".into()).unwrap(), 2);
         assert!(handle_listar_propostas(raiz.clone()).unwrap().is_empty());
         assert!(handle_recusar_lote(raiz, "ideia".into()).is_err(), "lote que não existe avisa");
+    }
+
+    /// Ciclo 434: o freio olha o registro de execuções do DIA, e o
+    /// custo só conta o que foi medido.
+    #[test]
+    fn o_freio_do_dia_soma_o_que_ja_rodou() {
+        use anotadinho_core::execucao::{Execucao, Fim};
+        use anotadinho_core::guardas::{Freio, Guardas};
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        let uma = |quando: &str, custo: Option<f64>| Execucao {
+            quando: quando.into(),
+            conversa: "pages/conversas/c.md".into(),
+            agente: "claude".into(),
+            binario: "claude".into(),
+            anexos: 0,
+            prompt: 10,
+            segundos: 5,
+            fim: Fim::Respondeu,
+            uso: custo.map(|c| anotadinho_core::agente::Uso {
+                entrada: 100,
+                saida: 10,
+                custo_usd: Some(c),
+            }),
+        };
+        handle_gravar_guardas(
+            raiz.clone(),
+            Guardas { teto_execucoes: 3, teto_custo_usd: 1.0, silencio_de: String::new(), silencio_ate: String::new() },
+        )
+        .unwrap();
+        // Dia vazio: sem freio.
+        assert_eq!(handle_freio_do_dia(raiz.clone(), "2026-09-19 10:00".into()).unwrap(), Freio::Nenhum);
+        // Duas de hoje e uma de ontem: ainda cabe.
+        handle_registrar_execucao(raiz.clone(), uma("2026-09-19 08:00", Some(0.2))).unwrap();
+        handle_registrar_execucao(raiz.clone(), uma("2026-09-19 09:00", None)).unwrap();
+        handle_registrar_execucao(raiz.clone(), uma("2026-09-18 09:00", Some(9.0))).unwrap();
+        assert_eq!(handle_freio_do_dia(raiz.clone(), "2026-09-19 10:00".into()).unwrap(), Freio::Nenhum);
+        // A terceira de hoje bate no teto de execuções.
+        handle_registrar_execucao(raiz.clone(), uma("2026-09-19 09:30", None)).unwrap();
+        let f = handle_freio_do_dia(raiz.clone(), "2026-09-19 10:00".into()).unwrap();
+        assert!(matches!(f, Freio::Execucoes { hoje: 3, teto: 3 }), "{f:?}");
     }
 
     /// Ciclo 418: a consulta dentro do recorte vira o conteúdo das

@@ -465,6 +465,27 @@ fn recusar_lote(vault_path: String, lote: String) -> Result<usize, String> {
     anotadinho_ipc::handle_recusar_lote(vault_path, lote)
 }
 
+/// As guardas do trabalho autônomo (ciclo 434).
+#[tauri::command]
+fn ler_guardas(vault_path: String) -> Result<anotadinho_core::guardas::Guardas, String> {
+    anotadinho_ipc::handle_ler_guardas(vault_path)
+}
+
+#[tauri::command]
+fn gravar_guardas(
+    vault_path: String,
+    guardas: anotadinho_core::guardas::Guardas,
+) -> Result<(), String> {
+    anotadinho_ipc::handle_gravar_guardas(vault_path, guardas)
+}
+
+/// O que está segurando o trabalho automático agora (ciclo 434).
+#[tauri::command]
+fn freio_do_dia(vault_path: String) -> Result<anotadinho_core::guardas::Freio, String> {
+    let agora = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+    anotadinho_ipc::handle_freio_do_dia(vault_path, agora)
+}
+
 /// Os gatilhos do vault (ciclo 412); a janela ganhou no 431.
 #[tauri::command]
 fn ler_gatilhos(vault_path: String) -> Result<Vec<anotadinho_core::gatilho::Gatilho>, String> {
@@ -502,6 +523,13 @@ fn avaliar_gatilhos(
     let mut lista = anotadinho_ipc::handle_ler_gatilhos(vault_path.clone())?;
     if lista.is_empty() {
         return Ok(Vec::new());
+    }
+    // O freio do dia (ciclo 434). Vale só pro automático: o que a pessoa
+    // manda na conversa é decisão dela.
+    let agora_str = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let freio = anotadinho_ipc::handle_freio_do_dia(vault_path.clone(), agora_str)?;
+    if freio.parou() {
+        return Err(format!("gatilhos pausados: {}", freio.motivo()));
     }
     let paginas = anotadinho_ipc::handle_scan_vault(vault_path.clone())?;
     let raiz = std::path::Path::new(&vault_path);
@@ -1296,6 +1324,9 @@ fn main() {
             aplicar_proposta_parcial,
             aplicar_lote,
             recusar_lote,
+            ler_guardas,
+            gravar_guardas,
+            freio_do_dia,
             ler_gatilhos,
             gravar_gatilhos,
             avaliar_gatilhos,

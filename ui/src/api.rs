@@ -658,6 +658,27 @@ pub async fn recusar_lote(vault_path: &str, lote: &str) -> Result<usize, String>
     chamar("recusar_lote", Args::novo().texto("vaultPath", vault_path).texto("lote", lote)).await
 }
 
+/// As guardas do trabalho automático (ciclo 434).
+pub async fn ler_guardas(vault_path: &str) -> Result<anotadinho_core::guardas::Guardas, String> {
+    chamar("ler_guardas", Args::novo().texto("vaultPath", vault_path)).await
+}
+
+pub async fn gravar_guardas(
+    vault_path: &str,
+    guardas: &anotadinho_core::guardas::Guardas,
+) -> Result<(), String> {
+    chamar_sem_retorno(
+        "gravar_guardas",
+        Args::novo().texto("vaultPath", vault_path).serde("guardas", guardas),
+    )
+    .await
+}
+
+/// O que está segurando o trabalho automático agora (ciclo 434).
+pub async fn freio_do_dia(vault_path: &str) -> Result<anotadinho_core::guardas::Freio, String> {
+    chamar("freio_do_dia", Args::novo().texto("vaultPath", vault_path)).await
+}
+
 /// Os gatilhos do vault (ciclo 431).
 pub async fn ler_gatilhos(
     vault_path: &str,

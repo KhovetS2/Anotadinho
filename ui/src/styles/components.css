@@ -2198,3 +2198,8 @@
   font-size: .8rem;
 }
 .propostas__marca { margin-right: 4px; }
+
+/* Guardas do trabalho automático (ciclo 434). */
+.agente-painel__guardas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.agente-painel__guardas label { display: flex; flex-direction: column; gap: 4px; font-size: .78rem; }
+.agente-painel__pausado { font-size: .76rem; color: var(--warning); font-weight: 600; }

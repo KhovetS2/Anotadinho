@@ -112,6 +112,10 @@ pub enum Pedido {
     ResolverTransclusoes(Vec<String>),
     /// Ver os gatilhos do vault (ciclo 412).
     ListarGatilhos,
+    /// Ler as guardas do trabalho automático (ciclo 434).
+    LerGuardas,
+    /// Gravar as guardas.
+    GravarGuardas(anotadinho_core::guardas::Guardas),
     /// Ligar ou desligar um gatilho pelo nome.
     AlternarGatilho(String),
     /// Gravar um gatilho novo ou mudado.
@@ -433,6 +437,8 @@ pub enum AlvoDoDetalhe {
     Agente,
     /// As pastas onde o agente pode propor (ciclo 405).
     Permissoes,
+    /// As guardas do trabalho automático (ciclo 434).
+    Guardas,
     /// Um gatilho do agente (ciclo 412); nome vazio é novo.
     Gatilho {
         nome: String,
@@ -669,6 +675,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Ferramentas do agente", "ferramentas"),
     ("Agentes em andamento…", "agentes_rodando"),
     ("Gatilhos do agente…", "gatilhos"),
+    ("Guardas do trabalho automático…", "guardas"),
     ("Limite de agentes em paralelo…", "limite_agentes"),
     ("Onde o agente pode propor…", "permissoes"),
     ("Definir/remover como início", "inicio"),
@@ -882,6 +889,7 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         "ferramentas" => mostrar_ferramentas(e),
         "agentes_rodando" => e.pedidos.push(Pedido::VerAgentes),
         "gatilhos" => e.pedidos.push(Pedido::ListarGatilhos),
+        "guardas" => e.pedidos.push(Pedido::LerGuardas),
         "limite_agentes" => {
             let atual = e.preferencias.limite_de_agentes;
             e.modal = Some(Modal::Entrada {
@@ -1267,6 +1275,32 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     return;
                 }
                 R::Mudou if matches!(alvo, AlvoDoDetalhe::PropostaEditada { .. }) => {}
+                R::Botao("salvar") if alvo == AlvoDoDetalhe::Guardas => {
+                    let numero = |chave: &str| form.texto(chave).trim().parse::<f64>().unwrap_or(-1.0);
+                    let (execucoes, custo) = (numero("execucoes"), numero("custo"));
+                    if execucoes < 0.0 || custo < 0.0 {
+                        e.aviso = Some("os tetos são números (0 desliga)".into());
+                        e.modal = Some(Modal::Detalhe { titulo, form, alvo });
+                        return;
+                    }
+                    let hora_ok = |chave: &str| {
+                        let v = form.texto(chave);
+                        v.trim().is_empty() || anotadinho_core::date_util::parse_time(&v).is_some()
+                    };
+                    if !hora_ok("de") || !hora_ok("ate") {
+                        e.aviso = Some("silêncio: use HH:MM (ou deixe vazio)".into());
+                        e.modal = Some(Modal::Detalhe { titulo, form, alvo });
+                        return;
+                    }
+                    e.pedidos.push(Pedido::GravarGuardas(anotadinho_core::guardas::Guardas {
+                        teto_execucoes: execucoes as usize,
+                        teto_custo_usd: custo,
+                        silencio_de: form.texto("de").trim().to_string(),
+                        silencio_ate: form.texto("ate").trim().to_string(),
+                    }));
+                    return;
+                }
+                R::Mudou if alvo == AlvoDoDetalhe::Guardas => {}
                 R::Botao("salvar") if matches!(alvo, AlvoDoDetalhe::Gatilho { .. }) => {
                     if salvar_gatilho(e, &form) {
                         return;
@@ -2250,4 +2284,25 @@ fn salvar_gatilho(e: &mut Estado, form: &crate::componentes::Formulario) -> bool
         ultimo: String::new(),
     }));
     true
+}
+
+/// As guardas do trabalho automático (ciclo 434): o freio que o agente
+/// sozinho respeita.
+pub fn abrir_guardas(e: &mut Estado, g: &anotadinho_core::guardas::Guardas, freio: &anotadinho_core::guardas::Freio) {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    let mut form = Formulario::novo(vec![
+        C::novo("execucoes", "Disparos por dia", Valor::Texto(g.teto_execucoes.to_string()))
+            .com_dica("0 desliga o teto"),
+        C::novo("custo", "Custo por dia (US$)", Valor::Texto(format!("{:.2}", g.teto_custo_usd)))
+            .com_dica("só conta o que o agente mede; 0 desliga"),
+        C::novo("de", "Silêncio das", Valor::Texto(g.silencio_de.clone())).com_dica("23:00").como_hora(),
+        C::novo("ate", "até", Valor::Texto(g.silencio_ate.clone())).com_dica("07:00").como_hora(),
+    ]);
+    form.botoes.push(("salvar", "Salvar no vault".into()));
+    let titulo = if freio.parou() {
+        format!("Guardas — pausado: {}", freio.motivo())
+    } else {
+        "Guardas do trabalho automático".to_string()
+    };
+    e.modal = Some(Modal::Detalhe { titulo, form, alvo: AlvoDoDetalhe::Guardas });
 }

@@ -28,6 +28,8 @@ pub struct AgentePainelProps {
 pub fn agente_painel(props: &AgentePainelProps) -> Html {
     let permissoes = use_state(anotadinho_core::permissoes::Permissoes::default);
     let gatilhos = use_state(Vec::<anotadinho_core::gatilho::Gatilho>::new);
+    let guardas = use_state(anotadinho_core::guardas::Guardas::default);
+    let freio = use_state(|| anotadinho_core::guardas::Freio::Nenhum);
     let execucoes = use_state(Vec::<anotadinho_core::execucao::Execucao>::new);
     let erro = use_state(|| None::<String>);
     let salvo = use_state(|| false);
@@ -35,6 +37,7 @@ pub fn agente_painel(props: &AgentePainelProps) -> Html {
     {
         let (permissoes, execucoes, erro) = (permissoes.clone(), execucoes.clone(), erro.clone());
         let gatilhos = gatilhos.clone();
+        let (guardas, freio) = (guardas.clone(), freio.clone());
         let vault_path = props.vault_path.clone();
         use_effect_with(vault_path.clone(), move |_| {
             wasm_bindgen_futures::spawn_local(async move {
@@ -47,6 +50,12 @@ pub fn agente_painel(props: &AgentePainelProps) -> Html {
                 }
                 if let Ok(g) = api::ler_gatilhos(&vault_path).await {
                     gatilhos.set(g);
+                }
+                if let Ok(g) = api::ler_guardas(&vault_path).await {
+                    guardas.set(g);
+                }
+                if let Ok(f) = api::freio_do_dia(&vault_path).await {
+                    freio.set(f);
                 }
             });
         });
@@ -118,6 +127,36 @@ pub fn agente_painel(props: &AgentePainelProps) -> Html {
         })
     };
 
+    // As guardas: número por campo, gravado no vault.
+    let editar_guarda = {
+        let (guardas, erro) = (guardas.clone(), erro.clone());
+        let vault_path = props.vault_path.clone();
+        move |campo: &'static str| {
+            let (guardas, erro, vault_path) = (guardas.clone(), erro.clone(), vault_path.clone());
+            Callback::from(move |e: Event| {
+                use wasm_bindgen::JsCast;
+                let Some(alvo) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok()) else {
+                    return;
+                };
+                let v = alvo.value();
+                let mut novo = (*guardas).clone();
+                match campo {
+                    "execucoes" => novo.teto_execucoes = v.trim().parse().unwrap_or(0),
+                    "custo" => novo.teto_custo_usd = v.trim().replace(',', ".").parse().unwrap_or(0.0),
+                    "de" => novo.silencio_de = v.trim().to_string(),
+                    _ => novo.silencio_ate = v.trim().to_string(),
+                }
+                guardas.set(novo.clone());
+                let (vault_path, erro) = (vault_path.clone(), erro.clone());
+                wasm_bindgen_futures::spawn_local(async move {
+                    if let Err(e) = api::gravar_guardas(&vault_path, &novo).await {
+                        erro.set(Some(e));
+                    }
+                });
+            })
+        }
+    };
+
     let hoje = crate::state::agora_legivel();
     let dia = hoje.split_whitespace().next().unwrap_or("").to_string();
     let total = anotadinho_core::execucao::total_do_dia(&execucoes, &dia);
@@ -155,6 +194,42 @@ pub fn agente_painel(props: &AgentePainelProps) -> Html {
                     if *salvo {
                         <span class="agente-painel__ok">{ "salvo" }</span>
                     }
+                </div>
+            </section>
+
+            <section class="agente-painel__secao">
+                <h3>
+                    { "Até onde ele pode ir sozinho" }
+                    if freio.parou() {
+                        <span class="agente-painel__pausado">{ format!("pausado: {}", freio.motivo()) }</span>
+                    }
+                </h3>
+                <p class="agente-painel__dica">
+                    { "Os limites valem pro que roda SEM ninguém olhando. O que você manda \
+                       na conversa é decisão sua e não passa por aqui." }
+                </p>
+                <div class="agente-painel__guardas">
+                    <label>
+                        <span>{ "Disparos por dia" }</span>
+                        <input class="input" type="number" min="0" value={guardas.teto_execucoes.to_string()}
+                            onchange={editar_guarda("execucoes")} />
+                    </label>
+                    <label>
+                        <span>{ "Custo por dia (US$)" }</span>
+                        <input class="input" type="number" min="0" step="0.5"
+                            value={format!("{:.2}", guardas.teto_custo_usd)}
+                            onchange={editar_guarda("custo")} />
+                    </label>
+                    <label>
+                        <span>{ "Silêncio das" }</span>
+                        <input class="input" type="time" value={guardas.silencio_de.clone()}
+                            onchange={editar_guarda("de")} />
+                    </label>
+                    <label>
+                        <span>{ "até" }</span>
+                        <input class="input" type="time" value={guardas.silencio_ate.clone()}
+                            onchange={editar_guarda("ate")} />
+                    </label>
                 </div>
             </section>
 

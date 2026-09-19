@@ -771,6 +771,21 @@ fn disparar_gatilhos(
     if g.lista.is_empty() {
         return;
     }
+    // O freio do dia (ciclo 434): silêncio, teto de disparos ou de
+    // custo. Vale só pro automático — o que a pessoa manda é decisão
+    // dela, com ela na frente da tela.
+    match anotadinho_ipc::handle_freio_do_dia(vault.to_string(), agora.clone()) {
+        Ok(freio) if freio.parou() => {
+            // Um aviso por minuto, não por volta do laço — quem acabou
+            // de trocar de minuto é quem conta.
+            if g.minuto == agora {
+                estado.aviso = Some(format!("gatilhos pausados: {}", freio.motivo()));
+            }
+            return;
+        }
+        Ok(_) => {}
+        Err(e) => estado.aviso = Some(format!("não li as guardas: {e}")),
+    }
     // As consultas: quem tem o índice responde se há resultado.
     let com_resultado: Vec<String> = g
         .lista
@@ -1456,6 +1471,18 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                         })
                         .collect();
                     estado.definir_transclusoes(resolvidas);
+                }
+                Pedido::LerGuardas => {
+                    let guardas = anotadinho_ipc::handle_ler_guardas(vault.to_string()).unwrap_or_default();
+                    let freio = anotadinho_ipc::handle_freio_do_dia(vault.to_string(), agora_local())
+                        .unwrap_or(anotadinho_core::guardas::Freio::Nenhum);
+                    app::modais::abrir_guardas(estado, &guardas, &freio);
+                }
+                Pedido::GravarGuardas(g) => {
+                    match anotadinho_ipc::handle_gravar_guardas(vault.to_string(), g) {
+                        Ok(()) => estado.aviso = Some("guardas salvas no vault".into()),
+                        Err(e) => estado.aviso = Some(format!("não gravou: {e}")),
+                    }
                 }
                 Pedido::ListarGatilhos => match anotadinho_ipc::handle_ler_gatilhos(vault.to_string()) {
                     Ok(g) => app::modais::mostrar_gatilhos(estado, &g),

@@ -42,6 +42,7 @@ pub mod ferramentas;
 pub mod fila;
 pub mod avaliacao;
 pub mod gatilho;
+pub mod guardas;
 pub mod fluxo;
 pub mod sanitize;
 pub mod semente;

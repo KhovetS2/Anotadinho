@@ -11017,4 +11017,46 @@ mod testes {
         let tela = desenho(&mut e, 100, 20).join("\n");
         assert!(tela.contains("O que vai pro agente"), "{tela}");
     }
+
+    // --- Ciclo 434: guardas do trabalho automático -----------------------------------
+
+    #[test]
+    fn o_formulario_das_guardas_valida_e_grava() {
+        use anotadinho_core::guardas::{Freio, Guardas};
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        modais::executar(&mut e, "guardas");
+        assert_eq!(e.pedidos, [Pedido::LerGuardas]);
+        e.pedidos.clear();
+        // Pausado, o título conta o motivo — é a primeira pergunta de
+        // quem abre essa tela vendo o agente parado.
+        modais::abrir_guardas(&mut e, &Guardas::default(), &Freio::Custo { hoje: 5.5, teto: 5.0 });
+        let tela = desenho(&mut e, 120, 24).join("\n");
+        assert!(tela.contains("pausado") && tela.contains("US$ 5.50"), "{tela}");
+        assert!(tela.contains("Disparos por dia") && tela.contains("Silêncio das"), "{tela}");
+        // Hora inválida não grava.
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[2].valor = crate::componentes::Valor::Texto("meia-noite".into());
+        let salvar = |e: &mut Estado| {
+            for _ in 0..12 {
+                tecla(e, "j");
+            }
+            tecla(e, "Enter");
+        };
+        salvar(&mut e);
+        assert!(e.pedidos.is_empty() && e.aviso.as_deref().unwrap().contains("HH:MM"));
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[2].valor = crate::componentes::Valor::Texto("22:30".into());
+        form.campos[0].valor = crate::componentes::Valor::Texto("10".into());
+        form.campos[1].valor = crate::componentes::Valor::Texto("2.5".into());
+        salvar(&mut e);
+        assert_eq!(
+            e.pedidos,
+            [Pedido::GravarGuardas(Guardas {
+                teto_execucoes: 10,
+                teto_custo_usd: 2.5,
+                silencio_de: "22:30".into(),
+                silencio_ate: "07:00".into(),
+            })]
+        );
+    }
 }
