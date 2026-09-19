@@ -32,6 +32,122 @@ fn ferramentas() -> Value {
     Value::Array(anotadinho_core::ferramentas::CONTRATO.iter().map(|f| f.para_mcp()).collect())
 }
 
+/// O esquema das URIs de recurso: `anotadinho://<path no vault>`.
+const ESQUEMA: &str = "anotadinho://";
+
+/// As páginas do vault como RECURSOS (ciclo 435).
+///
+/// Um cliente MCP mostra recursos pra pessoa escolher o que anexar, e o
+/// agente lê sem gastar chamada de ferramenta. É a mesma lista de
+/// `listar_paginas`, na forma que o protocolo espera.
+fn recursos(vault: &str, id: Value) -> Value {
+    match anotadinho_ipc::handle_scan_vault(vault.to_string()) {
+        Ok(paginas) => {
+            let itens: Vec<Value> = paginas
+                .iter()
+                .map(|p| {
+                    let nome = if p.title.trim().is_empty() { p.path.clone() } else { p.title.clone() };
+                    json!({
+                        "uri": format!("{ESQUEMA}{}", p.path),
+                        "name": nome,
+                        "description": format!("Página do vault ({})", p.path),
+                        "mimeType": "text/markdown"
+                    })
+                })
+                .collect();
+            ok(id, json!({ "resources": itens }))
+        }
+        Err(e) => erro(id, -32603, &e),
+    }
+}
+
+/// Lê um recurso. A transclusão vem RESOLVIDA (ciclo 414): quem pede uma
+/// página-recorte quer o conteúdo dela, não os marcadores.
+fn ler_recurso(vault: &str, id: Value, params: Option<&Value>) -> Value {
+    let uri = params
+        .and_then(|p| p.get("uri"))
+        .and_then(|u| u.as_str())
+        .unwrap_or("")
+        .to_string();
+    let Some(path) = uri.strip_prefix(ESQUEMA) else {
+        return erro(id, -32602, &format!("uri fora do vault: {uri}"));
+    };
+    match anotadinho_ipc::handle_ler_para_contexto(vault.to_string(), path.to_string()) {
+        Ok(x) => ok(
+            id,
+            json!({ "contents": [{ "uri": uri, "mimeType": "text/markdown", "text": x.texto }] }),
+        ),
+        Err(e) => erro(id, -32603, &e),
+    }
+}
+
+/// Os prompts padrão do vault como PROMPTS do protocolo (ciclo 435).
+///
+/// Eles já existem como páginas (`pages/prompts-default/`, ciclo 341) e
+/// já têm variáveis `{{assim}}`. Publicá-los aqui é o que faz o trabalho
+/// de escrever bons prompts valer também fora do app.
+fn prompts(vault: &str, id: Value) -> Value {
+    match anotadinho_ipc::handle_scan_vault(vault.to_string()) {
+        Ok(paginas) => {
+            let itens: Vec<Value> = anotadinho_core::prompt_padrao::descobrir(paginas)
+                .into_iter()
+                .map(|p| {
+                    json!({
+                        "name": p.title,
+                        "description": format!("Prompt padrão do vault ({})", p.path),
+                    })
+                })
+                .collect();
+            ok(id, json!({ "prompts": itens }))
+        }
+        Err(e) => erro(id, -32603, &e),
+    }
+}
+
+/// Entrega um prompt expandido com os argumentos que o cliente mandou.
+fn pegar_prompt(vault: &str, id: Value, params: Option<&Value>) -> Value {
+    let nome = params
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("")
+        .to_string();
+    let paginas = match anotadinho_ipc::handle_scan_vault(vault.to_string()) {
+        Ok(p) => p,
+        Err(e) => return erro(id, -32603, &e),
+    };
+    let Some(pagina) = anotadinho_core::prompt_padrao::descobrir(paginas)
+        .into_iter()
+        .find(|p| p.title == nome)
+    else {
+        return erro(id, -32602, &format!("prompt desconhecido: {nome}"));
+    };
+    let conteudo = match anotadinho_ipc::handle_read_page(vault.to_string(), pagina.path.clone()) {
+        Ok(c) => c,
+        Err(e) => return erro(id, -32603, &e),
+    };
+    let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
+    let molde = anotadinho_core::prompt_padrao::PromptPadrao::parse(corpo);
+    // Argumento que falta fica como estava: um prompt meio preenchido é
+    // mais útil que um erro, e o marcador diz o que falta.
+    let valores: std::collections::BTreeMap<String, String> = params
+        .and_then(|p| p.get("arguments"))
+        .and_then(|a| a.as_object())
+        .map(|o| {
+            o.iter()
+                .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let texto = molde.visualizar_parcial(&valores);
+    ok(
+        id,
+        json!({
+            "description": format!("Prompt padrão do vault ({})", pagina.path),
+            "messages": [{ "role": "user", "content": { "type": "text", "text": texto } }]
+        }),
+    )
+}
+
 /// Roda o servidor até o stdin fechar.
 pub fn servir(vault: String) -> Result<(), String> {
     let entrada = std::io::stdin();
@@ -64,11 +180,19 @@ pub fn servir(vault: String) -> Result<(), String> {
         let resposta = match metodo {
             "initialize" => ok(id, json!({
                 "protocolVersion": VERSAO_PROTOCOLO,
-                "capabilities": { "tools": {} },
+                // Recursos e prompts entraram no ciclo 435: um agente
+                // que fala MCP passa a LER o vault sem gastar uma
+                // chamada de ferramenta, e a usar os prompts padrão que
+                // já estão escritos nele.
+                "capabilities": { "tools": {}, "resources": {}, "prompts": {} },
                 "serverInfo": { "name": "anotadinho", "version": env!("CARGO_PKG_VERSION") }
             })),
             "tools/list" => ok(id, json!({ "tools": ferramentas() })),
             "tools/call" => chamar(&vault, id, req.get("params")),
+            "resources/list" => recursos(&vault, id),
+            "resources/read" => ler_recurso(&vault, id, req.get("params")),
+            "prompts/list" => prompts(&vault, id),
+            "prompts/get" => pegar_prompt(&vault, id, req.get("params")),
             "ping" => ok(id, json!({})),
             outro => erro(id, -32601, &format!("método desconhecido: {outro}")),
         };
@@ -232,5 +356,86 @@ mod testes {
         let r = chamar(&vault, json!(1), Some(&params));
         let texto = serde_json::to_string(&r).unwrap();
         assert!(texto.contains("nunca") && texto.contains("journals/"), "{texto}");
+    }
+
+    // --- Ciclo 435: recursos e prompts -----------------------------------------------
+
+    fn vault_com_prompt() -> tempfile::TempDir {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join("pages/prompts-default")).unwrap();
+        std::fs::write(
+            dir.path().join("pages/nota.md"),
+            "---\ntitle: Nota\n---\n\nconteúdo da nota\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("pages/prompts-default/entender.md"),
+            "---\ntitle: Entender um trecho\ntype: prompt\n---\n\nExplique {{trecho}} pra quem chega agora.\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn as_paginas_aparecem_como_recursos_e_leem_resolvidas() {
+        let dir = vault_com_prompt();
+        let vault = dir.path().to_string_lossy().to_string();
+        std::fs::write(
+            dir.path().join("pages/recorte.md"),
+            "---\ntitle: Recorte\n---\n\n![[Nota]]\n",
+        )
+        .unwrap();
+
+        let lista = recursos(&vault, json!(1));
+        let uris: Vec<String> = lista["result"]["resources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["uri"].as_str().unwrap().to_string())
+            .collect();
+        assert!(uris.contains(&"anotadinho://pages/nota.md".to_string()), "{uris:?}");
+
+        // Ler traz o conteúdo — e a transclusão já resolvida (414).
+        let lido = ler_recurso(&vault, json!(2), Some(&json!({ "uri": "anotadinho://pages/recorte.md" })));
+        let texto = lido["result"]["contents"][0]["text"].as_str().unwrap();
+        assert!(texto.contains("conteúdo da nota"), "{texto}");
+        // URI de fora do vault é recusada, não lida.
+        let fora = ler_recurso(&vault, json!(3), Some(&json!({ "uri": "file:///etc/passwd" })));
+        assert!(fora["error"]["message"].as_str().unwrap().contains("fora do vault"));
+    }
+
+    #[test]
+    fn os_prompts_padrao_do_vault_viram_prompts_do_protocolo() {
+        let dir = vault_com_prompt();
+        let vault = dir.path().to_string_lossy().to_string();
+        let lista = prompts(&vault, json!(1));
+        let nomes: Vec<String> = lista["result"]["prompts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["name"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(nomes, ["Entender um trecho"]);
+
+        // Com argumento, vem preenchido.
+        let pego = pegar_prompt(
+            &vault,
+            json!(2),
+            Some(&json!({ "name": "Entender um trecho", "arguments": { "trecho": "o kanban" } })),
+        );
+        let texto = pego["result"]["messages"][0]["content"]["text"].as_str().unwrap();
+        // O valor entra BLINDADO (ciclo 224): é dado, não instrução.
+        assert!(texto.contains("o kanban") && texto.contains("DADO-ANOTADINHO"), "{texto}");
+        assert!(texto.contains("pra quem chega agora"), "{texto}");
+
+        // Sem argumento, o marcador fica — meio preenchido é mais útil
+        // que um erro.
+        let cru = pegar_prompt(&vault, json!(3), Some(&json!({ "name": "Entender um trecho" })));
+        let texto = cru["result"]["messages"][0]["content"]["text"].as_str().unwrap();
+        assert!(texto.contains("trecho"), "{texto}");
+
+        // Nome que não existe avisa.
+        let zero = pegar_prompt(&vault, json!(4), Some(&json!({ "name": "não existe" })));
+        assert!(zero["error"]["message"].as_str().unwrap().contains("desconhecido"));
     }
 }

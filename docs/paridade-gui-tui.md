@@ -120,6 +120,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | MCP do vault ligado na execução, sem configurar por fora | ✅ | 426 — vale pros dois; `--mcp-config` gerado por vault, campo no formulário do agente |
 | Sessão contínua: a conversa continua sem remontar o histórico | ✅ | 433 — vale pros dois; `sessao:` no frontmatter, `--resume` no preset |
 | Guardas do trabalho automático (teto de disparos, de custo, silêncio) | ✅ | 434 — vale pros dois; `guardas.json` no vault, freio só no automático |
+| MCP expõe páginas como recursos e prompts padrão como prompts | — | 435 — é do servidor (`anotadinho-cli mcp`), serve qualquer cliente |
 | Consulta dentro do recorte vira contexto (o vault de hoje, não uma lista velha) | ✅ | 418 — vale pros dois: TUI, janela e CLI passam pelo mesmo handler |
 | Poda explícita quando o contexto passa do teto | ✅ | 419 (TUI), 423 (janela) — histórico antigo, depois esqueleto do anexo maior |
 | Proposta em lote atômico (mudança que atravessa páginas) | ✅ | 420 (TUI), 428 (janela) — selo ⛓ e decisão do lote inteiro |
