@@ -785,6 +785,13 @@ fn disparar(
 
     let parcial = Arc::new(Mutex::new(String::new()));
     let sessao_aberta: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let uso_medido: Arc<Mutex<Option<anotadinho_core::agente::Uso>>> = Arc::new(Mutex::new(None));
+    // Pro registro de execuções (ciclo 441): quando começou, com quem, e
+    // o tamanho do que foi mandado.
+    let comeco = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let inicio_da_execucao = std::time::Instant::now();
+    let nome_do_agente = adaptador.nome.clone();
+    let prompt_chars = prompt.chars().count();
     let filho_slot: Arc<Mutex<Option<std::process::Child>>> = Arc::new(Mutex::new(None));
     let cancelado = Arc::new(AtomicBool::new(false));
 
@@ -850,6 +857,7 @@ fn disparar(
             let saida = filho.stdout.take();
             let acumulado = parcial.clone();
             let sessao_lida = sessao_aberta.clone();
+            let uso_lido = uso_medido.clone();
             let leitor = saida.map(|s| {
                 std::thread::spawn(move || {
                     let mut stream = anotadinho_core::agente::LeitorStream::novo();
@@ -880,6 +888,9 @@ fn disparar(
                     // ela que a próxima pergunta continua.
                     if let (Ok(mut s), Some(id)) = (sessao_lida.lock(), stream.sessao()) {
                         *s = Some(id);
+                    }
+                    if let (Ok(mut u), Some(medido)) = (uso_lido.lock(), stream.uso()) {
+                        *u = Some(medido);
                     }
                     match formato {
                         anotadinho_core::agente::FormatoSaida::StreamJson => stream.resposta(),
@@ -1016,6 +1027,33 @@ fn disparar(
             Err(e) if e == "__CANCELADO__" => anotadinho_core::agente::EstadoJob::Cancelado,
             Err(erro) => anotadinho_core::agente::EstadoJob::Falhou { erro },
         };
+        // O registro de execuções (ciclo 441): a janela mostrava a lista
+        // desde o 427 e nunca escrevia nela — só a TUI registrava, e por
+        // isso o painel ficava vazio pra quem trabalha pela janela.
+        {
+            use anotadinho_core::execucao::{Execucao, Fim};
+            let como = match &estado {
+                anotadinho_core::agente::EstadoJob::Concluido { .. } => Fim::Respondeu,
+                anotadinho_core::agente::EstadoJob::Cancelado => Fim::Interrompida,
+                anotadinho_core::agente::EstadoJob::Falhou { erro } => Fim::Falhou(erro.clone()),
+                // Não chega aqui: `estado` é o FIM da execução.
+                anotadinho_core::agente::EstadoJob::Rodando { .. } => Fim::Interrompida,
+            };
+            let registro = Execucao {
+                quando: comeco.clone(),
+                conversa: conversa_path.clone(),
+                agente: nome_do_agente.clone(),
+                binario: binario.clone(),
+                anexos: 0,
+                prompt: prompt_chars,
+                segundos: inicio_da_execucao.elapsed().as_secs(),
+                fim: como,
+                uso: uso_medido.lock().ok().and_then(|u| *u),
+            };
+            if let Err(e) = anotadinho_ipc::handle_registrar_execucao(vault_conversa.clone(), registro) {
+                eprintln!("não registrou a execução: {e}");
+            }
+        }
         // A sessão fica na página (ciclo 433); falha limpa o id, e o
         // envio seguinte começa do zero — conserto automático de um id
         // que o agente não reconhece mais.

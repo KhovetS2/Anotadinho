@@ -19,6 +19,15 @@ while [ "$1" = "--add-dir" ]; do
   shift 2
 done
 
+# O mesmo vale pra sessão (ciclo 433) e pra config MCP (426): o app passa
+# esses pares ANTES do modo, e sem consumi-los o `case` abaixo caía no
+# ramo genérico — a execução "respondia" a string do id.
+RETOMADA=""
+while [ "$1" = "--resume" ] || [ "$1" = "--mcp-config" ]; do
+  if [ "$1" = "--resume" ]; then RETOMADA="$2"; fi
+  shift 2
+done
+
 case "$1" in
   # Ecoa a linha de argumentos inteira, pastas extras incluídas.
   --args) echo "$TODOS"; exit 0 ;;
@@ -88,7 +97,7 @@ case "$1" in
     ESCAPADO=$(printf '%s' "$2" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n\t' '  ')
     # Com `session_id` (ciclo 433): é o que o Claude Code manda, e é o
     # que a conversa guarda pra continuar na próxima pergunta.
-    echo '{"type":"system","subtype":"init","session_id":"sessao-falsa-1"}'
+    echo "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"${RETOMADA:-sessao-falsa-1}\"}"
     echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"}]}}'
     sleep 1
     echo '{"type":"assistant","message":{"content":[{"type":"text","text":"pensando alto"}]}}'

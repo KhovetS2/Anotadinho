@@ -104,7 +104,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Aprovar trecho a trecho, registro das decisões | ✅ | 404 (TUI), 424 (janela) — caixinha por trecho e "Aplicar N de M" |
 | Recusar com motivo, registrado na decisão | ✅ | 404 (TUI), 428 (janela) |
 | Permissões de escrita do agente por pasta | ✅ | 405 (TUI), 427 (janela) — no vault, valem pro CLI, TUI e janela |
-| Registro de execuções do agente (o que rodou, duração, como terminou) | ✅ | 406 (TUI), 427 (janela) — `execucoes.jsonl` no vault |
+| Registro de execuções do agente (o que rodou, duração, como terminou) | ✅ | 406 (TUI), 427 (tela da janela), 441 (a janela passou a GRAVAR) |
 | Contrato de ferramentas do agente (conjunto fechado, MCP) | ✅ | 407 (TUI), 427 (janela) — declarado no núcleo; o MCP deriva dele |
 | Vários agentes em paralelo com fila e limite | ✅ | 408 (TUI), 429 (janela) — política única em `core::fila` |
 | Decidir várias propostas de uma vez (marcar, aplicar/recusar em massa) | ✅ | 409 (TUI), 432 (janela) — um motivo só, gravado em cada decisão |
