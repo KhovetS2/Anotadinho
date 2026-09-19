@@ -24,6 +24,8 @@ pub struct Trabalho {
     parcial: Arc<Mutex<String>>,
     /// O que a execução consumiu, quando o agente conta (ciclo 422).
     uso: Arc<Mutex<Option<anotadinho_core::agente::Uso>>>,
+    /// A sessão que o agente abriu, pra continuar na próxima (433).
+    sessao: Arc<Mutex<Option<String>>>,
     fim: Arc<Mutex<Option<Result<String, String>>>>,
     cancelado: Arc<AtomicBool>,
     entregue: bool,
@@ -31,11 +33,17 @@ pub struct Trabalho {
 
 impl Trabalho {
     /// Dispara o agente com o prompt, trabalhando em `cwd`.
-    pub fn iniciar(adaptador: &Adaptador, prompt: &str, cwd: &str, config_mcp: &str) -> Result<Self, String> {
+    pub fn iniciar(
+        adaptador: &Adaptador,
+        prompt: &str,
+        cwd: &str,
+        config_mcp: &str,
+        sessao: &str,
+    ) -> Result<Self, String> {
         if let Some(problema) = adaptador.validar() {
             return Err(format!("configuração do agente inválida: {}", problema.mensagem()));
         }
-        let args = adaptador.montar_args_com_mcp(prompt, config_mcp);
+        let args = adaptador.montar_args_completo(prompt, config_mcp, sessao);
         let executavel = anotadinho_core::agente::executavel_para_spawn(&adaptador.binario);
         let binario = adaptador.binario.clone();
         let limite = adaptador.timeout_s;
@@ -51,12 +59,14 @@ impl Trabalho {
 
         let parcial = Arc::new(Mutex::new(String::new()));
         let uso: Arc<Mutex<Option<anotadinho_core::agente::Uso>>> = Arc::new(Mutex::new(None));
+        let sessao_aberta: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
         let fim = Arc::new(Mutex::new(None));
         let cancelado = Arc::new(AtomicBool::new(false));
 
         let saida = filho.stdout.take();
         let acumulado = parcial.clone();
         let uso_lido = uso.clone();
+        let sessao_lida = sessao_aberta.clone();
         let leitor = std::thread::spawn(move || -> Result<String, String> {
             let Some(saida) = saida else { return Err("não consegui ler a saída do agente".into()) };
             let mut stream = LeitorStream::novo();
@@ -83,6 +93,9 @@ impl Trabalho {
                 FormatoSaida::StreamJson => {
                     if let (Ok(mut u), Some(lido)) = (uso_lido.lock(), stream.uso()) {
                         *u = Some(lido);
+                    }
+                    if let (Ok(mut s), Some(id)) = (sessao_lida.lock(), stream.sessao()) {
+                        *s = Some(id);
                     }
                     stream.resposta()
                 }
@@ -147,7 +160,7 @@ impl Trabalho {
             }
         });
 
-        Ok(Self { inicio: Instant::now(), parcial, uso, fim, cancelado, entregue: false })
+        Ok(Self { inicio: Instant::now(), parcial, uso, sessao: sessao_aberta, fim, cancelado, entregue: false })
     }
 
     /// Há quantos segundos está rodando.
@@ -163,6 +176,11 @@ impl Trabalho {
     /// O que a execução consumiu, se o agente contou (ciclo 422).
     pub fn uso(&self) -> Option<anotadinho_core::agente::Uso> {
         self.uso.lock().ok().and_then(|u| *u)
+    }
+
+    /// A sessão aberta pelo agente, pra continuar na próxima (433).
+    pub fn sessao(&self) -> Option<String> {
+        self.sessao.lock().ok().and_then(|s| s.clone())
     }
 
     /// Pede pra parar.
@@ -215,19 +233,19 @@ mod testes {
 
     #[test]
     fn a_resposta_e_a_saida_e_o_prompt_vai_inteiro() {
-        let mut t = Trabalho::iniciar(&agente("echo", &["{prompt}"]), "olá \"mundo\" $(x)", ".", "").unwrap();
+        let mut t = Trabalho::iniciar(&agente("echo", &["{prompt}"]), "olá \"mundo\" $(x)", ".", "", "").unwrap();
         assert_eq!(esperar(&mut t), Ok("olá \"mundo\" $(x)".into()));
         assert_eq!(t.terminou(), None, "a resposta é entregue uma vez só");
     }
 
     #[test]
     fn falha_e_interrupcao_viram_erro() {
-        let mut t = Trabalho::iniciar(&agente("false", &["{prompt}"]), "x", ".", "").unwrap();
+        let mut t = Trabalho::iniciar(&agente("false", &["{prompt}"]), "x", ".", "", "").unwrap();
         assert!(esperar(&mut t).unwrap_err().contains("falhou"));
-        let mut t = Trabalho::iniciar(&agente("sleep", &["{prompt}"]), "30", ".", "").unwrap();
+        let mut t = Trabalho::iniciar(&agente("sleep", &["{prompt}"]), "30", ".", "", "").unwrap();
         t.interromper();
         assert!(esperar(&mut t).unwrap_err().contains("interrompida"));
-        assert!(Trabalho::iniciar(&agente("nao-existe-mesmo-xyz", &["{prompt}"]), "x", ".", "").is_err());
+        assert!(Trabalho::iniciar(&agente("nao-existe-mesmo-xyz", &["{prompt}"]), "x", ".", "", "").is_err());
     }
 }
 
@@ -248,7 +266,7 @@ mod testes_de_uso {
             timeout_s: 30,
             ..Adaptador::default()
         };
-        let mut t = Trabalho::iniciar(&adaptador, "oi", ".", "").expect("subiu");
+        let mut t = Trabalho::iniciar(&adaptador, "oi", ".", "", "").expect("subiu");
         for _ in 0..300 {
             if t.terminou().is_some() {
                 break;

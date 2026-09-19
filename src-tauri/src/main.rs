@@ -727,7 +727,20 @@ fn disparar(
             Err(_) => String::new(),
         }
     };
-    let args = adaptador.montar_args_com_mcp(&prompt, &config_mcp);
+    // Sessão contínua (ciclo 433): a conversa guarda o id, e o agente
+    // continua de onde parou em vez de reler tudo.
+    let sessao = if adaptador.arg_sessao.trim().is_empty() {
+        String::new()
+    } else {
+        anotadinho_ipc::handle_read_page(vault_path.clone(), conversa_path.clone())
+            .ok()
+            .and_then(|t| {
+                let (fm, _) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&t);
+                anotadinho_core::conversa::sessao_do_frontmatter(fm)
+            })
+            .unwrap_or_default()
+    };
+    let args = adaptador.montar_args_completo(&prompt, &config_mcp, &sessao);
     let vault_conversa = vault_path.clone();
     // Sem `cwd` configurado, o agente trabalha na raiz do PROJETO, não
     // no vault: rodar dentro das notas o deixava sem enxergar o código
@@ -743,6 +756,7 @@ fn disparar(
     let formato = adaptador.formato;
 
     let parcial = Arc::new(Mutex::new(String::new()));
+    let sessao_aberta: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let filho_slot: Arc<Mutex<Option<std::process::Child>>> = Arc::new(Mutex::new(None));
     let cancelado = Arc::new(AtomicBool::new(false));
 
@@ -807,6 +821,7 @@ fn disparar(
             // alguém ler, enquanto nós esperamos ele terminar.
             let saida = filho.stdout.take();
             let acumulado = parcial.clone();
+            let sessao_lida = sessao_aberta.clone();
             let leitor = saida.map(|s| {
                 std::thread::spawn(move || {
                     let mut stream = anotadinho_core::agente::LeitorStream::novo();
@@ -832,6 +847,11 @@ fn disparar(
                                 }
                             }
                         }
+                    }
+                    // A sessão sai junto com a resposta (ciclo 433): é
+                    // ela que a próxima pergunta continua.
+                    if let (Ok(mut s), Some(id)) = (sessao_lida.lock(), stream.sessao()) {
+                        *s = Some(id);
                     }
                     match formato {
                         anotadinho_core::agente::FormatoSaida::StreamJson => stream.resposta(),
@@ -968,6 +988,28 @@ fn disparar(
             Err(e) if e == "__CANCELADO__" => anotadinho_core::agente::EstadoJob::Cancelado,
             Err(erro) => anotadinho_core::agente::EstadoJob::Falhou { erro },
         };
+        // A sessão fica na página (ciclo 433); falha limpa o id, e o
+        // envio seguinte começa do zero — conserto automático de um id
+        // que o agente não reconhece mais.
+        {
+            let nova = sessao_aberta.lock().ok().and_then(|s| s.clone());
+            let manter = matches!(estado, anotadinho_core::agente::EstadoJob::Concluido { .. });
+            if let Ok(atual) =
+                anotadinho_ipc::handle_read_page(vault_conversa.clone(), conversa_path.clone())
+            {
+                let atualizado = anotadinho_core::conversa::reescrever_sessao(
+                    &atual,
+                    if manter { nova.as_deref() } else { None },
+                );
+                if atualizado != atual {
+                    let _ = anotadinho_ipc::handle_write_page(
+                        vault_conversa.clone(),
+                        conversa_path.clone(),
+                        atualizado,
+                    );
+                }
+            }
+        }
         if let Ok(mut mapa) = registro.lock() {
             if let Some(j) = mapa.get_mut(&conversa_path) {
                 j.fim = Some(estado);

@@ -713,8 +713,20 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                 // pode ter mudado desde então, e mandar a versão velha
                 // faria o modelo responder sobre o que não existe mais.
                 // Transclusões resolvidas (414), poda dentro do teto
-                // (419) e peso por parte (417) — tudo pelo núcleo.
-                let (envio, avisos) = montar_envio(&vault_path, &path, &anexados, &lista[..lista.len() - 1], &pergunta).await;
+                // (419) e peso por parte (417) — tudo pelo núcleo. Com
+                // sessão aberta (433), o histórico não vai: o agente já
+                // tem, e remontá-lo seria pagar duas vezes.
+                let continua = !adaptador.arg_sessao.trim().is_empty()
+                    && api::read_page(&vault_path, &path)
+                        .await
+                        .ok()
+                        .and_then(|t| {
+                            let (fm, _) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&t);
+                            anotadinho_core::conversa::sessao_do_frontmatter(fm)
+                        })
+                        .is_some();
+                let historico: &[Mensagem] = if continua { &[] } else { &lista[..lista.len() - 1] };
+                let (envio, avisos) = montar_envio(&vault_path, &path, &anexados, historico, &pergunta).await;
                 if !avisos.is_empty() {
                     erro.set(Some(avisos.join(" · ")));
                 }

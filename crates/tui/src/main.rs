@@ -215,6 +215,25 @@ struct EmAndamento {
     prompt: usize,
 }
 
+/// O adaptador em uso — quem decide se dá pra continuar sessão.
+fn adaptador_da_conversa(estado: &Estado) -> anotadinho_core::agente::Adaptador {
+    estado.preferencias.agente.clone().unwrap_or_default().migrado()
+}
+
+/// Esta conversa continua uma sessão aberta? (ciclo 433)
+///
+/// Uma função só porque o ENVIO e a PRÉVIA precisam da mesma resposta:
+/// com sessão, o histórico não vai no prompt, e uma prévia que mostrasse
+/// o histórico estaria mentindo sobre o que o agente recebe.
+fn sessao_da_conversa(estado: &Estado, vault: &str, path: &str) -> Option<String> {
+    if adaptador_da_conversa(estado).arg_sessao.trim().is_empty() {
+        return None;
+    }
+    let texto = anotadinho_ipc::handle_read_page(vault.to_string(), path.to_string()).ok()?;
+    let (fm, _) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&texto);
+    anotadinho_core::conversa::sessao_do_frontmatter(fm)
+}
+
 /// Grava a configuração MCP desta execução e devolve o caminho dela
 /// (ciclo 426). Vazio quando não deu — o prompt ainda explica o CLI.
 fn escrever_config_mcp(vault: &str) -> String {
@@ -379,8 +398,20 @@ fn enviar_na_conversa(
         }
     };
     let historico = conversa::parse(&corpo_antes);
-    let Envio { prompt, aviso, cortes, .. } =
-        montar_envio(vault, &historico, pergunta, anexos, path, estado.preferencias.teto_de_contexto);
+    // Sessão contínua (ciclo 433): se o agente já tem a conversa, o
+    // prompt não remonta o histórico — o que ele já entendeu fica com
+    // ele, e o envio é muito menor.
+    let sessao = sessao_da_conversa(estado, vault, path);
+    let historico_no_prompt: Vec<conversa::Mensagem> =
+        if sessao.is_some() { Vec::new() } else { historico.clone() };
+    let Envio { prompt, aviso, cortes, .. } = montar_envio(
+        vault,
+        &historico_no_prompt,
+        pergunta,
+        anexos,
+        path,
+        estado.preferencias.teto_de_contexto,
+    );
     if let Some(nota) = aviso {
         estado.aviso = Some(nota);
     }
@@ -401,7 +432,13 @@ fn enviar_na_conversa(
     // ganha ler_pagina, buscar e propor apontados PRA ESTE vault, sem
     // ninguém configurar nada por fora.
     let config_mcp = escrever_config_mcp(vault);
-    match anotadinho_tui::agente::Trabalho::iniciar(&adaptador, &prompt, &cwd, &config_mcp) {
+    match anotadinho_tui::agente::Trabalho::iniciar(
+        &adaptador,
+        &prompt,
+        &cwd,
+        &config_mcp,
+        sessao.as_deref().unwrap_or(""),
+    ) {
         Ok(t) => {
             trabalhos.insert(
                 chave_do_trabalho(vault, path),
@@ -435,10 +472,10 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila:
         if let Some(fim) = a.trabalho.terminou() {
             // O uso é lido JUNTO do fim: depois disto o trabalho sai do
             // mapa e não há a quem perguntar.
-            prontos.push((chave.clone(), fim, a.trabalho.segundos(), a.trabalho.uso()));
+            prontos.push((chave.clone(), fim, a.trabalho.segundos(), a.trabalho.uso(), a.trabalho.sessao()));
         }
     }
-    for (chave, fim, segundos, uso) in prontos {
+    for (chave, fim, segundos, uso, sessao) in prontos {
         let em_andamento = trabalhos.remove(&chave);
         // A resposta vai pro vault da conversa, mesmo que a TUI esteja em
         // outro agora (ciclo 396).
@@ -467,6 +504,17 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila:
             };
             if let Err(e) = anotadinho_ipc::handle_registrar_execucao(vault.to_string(), registro) {
                 estado.aviso = Some(format!("não registrou a execução: {e}"));
+            }
+        }
+        // A sessão aberta pelo agente fica na página (ciclo 433): a
+        // próxima pergunta continua de onde parou. Falhou? A sessão sai,
+        // e o envio seguinte começa do zero — é o conserto automático de
+        // um id que o agente não reconhece mais.
+        if let Ok(atual) = anotadinho_ipc::handle_read_page(vault.to_string(), path.clone()) {
+            let nova = if fim.is_ok() { sessao.as_deref() } else { None };
+            let atualizado = anotadinho_core::conversa::reescrever_sessao(&atual, nova);
+            if atualizado != atual {
+                let _ = handle_write_page(vault.to_string(), path.clone(), atualizado);
             }
         }
         let erro = match fim {
@@ -1289,7 +1337,12 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                 // Só o peso, pro cabeçalho (ciclo 417).
                 Pedido::PesarContexto(conversa) => {
                     let anexos = estado.conversa.as_ref().map(|c| c.anexos.clone()).unwrap_or_default();
-                    let historico = estado.conversa.as_ref().map(|c| c.mensagens.clone()).unwrap_or_default();
+                    // Com sessão aberta, o histórico não vai (ciclo 433).
+                    let historico = if sessao_da_conversa(estado, vault, &conversa).is_some() {
+                        Vec::new()
+                    } else {
+                        estado.conversa.as_ref().map(|c| c.mensagens.clone()).unwrap_or_default()
+                    };
                     let rascunho = estado.conversa.as_ref().map(|c| c.rascunho.texto.clone()).unwrap_or_default();
                     let envio = montar_envio(
                         vault,
@@ -1307,7 +1360,12 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                 // envio, sem gravar nada nem disparar o agente.
                 Pedido::PreviaDoPrompt { conversa, pergunta } => {
                     let anexos = estado.conversa.as_ref().map(|c| c.anexos.clone()).unwrap_or_default();
-                    let historico = estado.conversa.as_ref().map(|c| c.mensagens.clone()).unwrap_or_default();
+                    let continua = sessao_da_conversa(estado, vault, &conversa).is_some();
+                    let historico = if continua {
+                        Vec::new()
+                    } else {
+                        estado.conversa.as_ref().map(|c| c.mensagens.clone()).unwrap_or_default()
+                    };
                     let envio = montar_envio(
                         vault,
                         &historico,

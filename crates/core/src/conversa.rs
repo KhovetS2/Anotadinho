@@ -525,6 +525,32 @@ mod tests {
         assert!(!p.contains("CONVERSA-ATE-AQUI"));
         assert!(p.contains("oi"));
     }
+
+    // --- Ciclo 433: sessão contínua --------------------------------------------------
+
+    #[test]
+    fn a_sessao_vai_e_volta_do_frontmatter() {
+        let pagina = "---\ntitle: Conversa\ntype: conversa\n---\n\ncorpo\n";
+        assert_eq!(sessao_do_frontmatter(pagina), None);
+        let com = reescrever_sessao(pagina, Some("abc-123"));
+        let (fm, corpo) = crate::MarkdownCodec::split_frontmatter_text(&com);
+        assert_eq!(sessao_do_frontmatter(fm), Some("abc-123".into()));
+        assert!(fm.contains("type: conversa"), "o resto do frontmatter fica:\n{com}");
+        assert_eq!(corpo.trim(), "corpo");
+        // Trocar substitui, não duplica.
+        let trocada = reescrever_sessao(&com, Some("def-456"));
+        assert_eq!(trocada.matches("sessao:").count(), 1, "{trocada}");
+        assert!(trocada.contains("sessao: def-456"));
+        // Tirar some com a linha.
+        let sem = reescrever_sessao(&trocada, None);
+        assert!(!sem.contains("sessao:"), "{sem}");
+    }
+
+    #[test]
+    fn pagina_sem_frontmatter_nao_ganha_sessao() {
+        let solta = "só o corpo\n";
+        assert_eq!(reescrever_sessao(solta, Some("x")), solta);
+    }
 }
 
 /// Monta a página de uma conversa nova (ciclo 208).
@@ -564,6 +590,37 @@ pub fn nome_de_arquivo(carimbo: &str) -> String {
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
     format!("conversa-{}", limpo.trim_matches('-'))
+}
+
+/// O id da sessão do agente guardado no frontmatter (ciclo 433).
+///
+/// Mora na PÁGINA da conversa, não em memória: fechar o app e voltar
+/// amanhã continua a mesma conversa, e o `.md` segue legível.
+pub fn sessao_do_frontmatter(frontmatter: &str) -> Option<String> {
+    frontmatter
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("sessao:"))
+        .map(|v| v.trim().trim_matches('"').to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// Grava (ou tira) o id da sessão no frontmatter, preservando o resto.
+pub fn reescrever_sessao(conteudo: &str, sessao: Option<&str>) -> String {
+    let (frontmatter, corpo) = crate::MarkdownCodec::split_frontmatter_text(conteudo);
+    if frontmatter.is_empty() {
+        return conteudo.to_string();
+    }
+    let mut linhas: Vec<String> = frontmatter
+        .lines()
+        .filter(|l| !l.trim().starts_with("sessao:"))
+        .map(|l| l.to_string())
+        .collect();
+    if let Some(id) = sessao.filter(|s| !s.trim().is_empty()) {
+        // Antes do fechamento do frontmatter (a última linha `---`).
+        let fim = linhas.len().saturating_sub(1);
+        linhas.insert(fim, format!("sessao: {id}"));
+    }
+    format!("{}\n{corpo}", linhas.join("\n"))
 }
 
 /// Lê a lista de `contexto:` do frontmatter.

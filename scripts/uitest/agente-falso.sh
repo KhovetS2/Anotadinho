@@ -86,7 +86,9 @@ case "$1" in
     # produzia JSON inválido, a linha era ignorada e a resposta virava o
     # "pensando alto" do evento anterior (achado no ciclo 422).
     ESCAPADO=$(printf '%s' "$2" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n\t' '  ')
-    echo '{"type":"system","subtype":"init"}'
+    # Com `session_id` (ciclo 433): é o que o Claude Code manda, e é o
+    # que a conversa guarda pra continuar na próxima pergunta.
+    echo '{"type":"system","subtype":"init","session_id":"sessao-falsa-1"}'
     echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"}]}}'
     sleep 1
     echo '{"type":"assistant","message":{"content":[{"type":"text","text":"pensando alto"}]}}'

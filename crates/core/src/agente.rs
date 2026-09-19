@@ -89,6 +89,14 @@ pub struct Adaptador {
     /// Vazio = ele não sabe receber, e `pastas_extras` é ignorado.
     #[serde(default)]
     pub arg_pasta_extra: String,
+    /// Argumento que o agente usa pra CONTINUAR uma sessão (`--resume`)
+    /// — ciclo 433.
+    ///
+    /// Com ele, a segunda pergunta de uma conversa não remonta o
+    /// histórico: o agente já tem. Vazio = ele não sabe continuar, e
+    /// cada envio é um disparo novo, como era até aqui.
+    #[serde(default)]
+    pub arg_sessao: String,
     /// Argumento que o agente usa pra receber um arquivo de configuração
     /// MCP (`--mcp-config`) — ciclo 426.
     ///
@@ -258,7 +266,16 @@ impl Adaptador {
     /// Caminho vazio, ou agente que não sabe receber, devolve os mesmos
     /// argumentos de antes: ligar MCP é melhoria, não requisito.
     pub fn montar_args_com_mcp(&self, prompt: &str, config_mcp: &str) -> Vec<String> {
+        self.montar_args_completo(prompt, config_mcp, "")
+    }
+
+    /// Com MCP e com SESSÃO (ciclo 433): o conjunto completo.
+    pub fn montar_args_completo(&self, prompt: &str, config_mcp: &str, sessao: &str) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
+        if !self.arg_sessao.trim().is_empty() && !sessao.trim().is_empty() {
+            out.push(self.arg_sessao.clone());
+            out.push(sessao.to_string());
+        }
         if !self.arg_mcp.trim().is_empty() && !config_mcp.trim().is_empty() {
             out.push(self.arg_mcp.clone());
             out.push(config_mcp.to_string());
@@ -373,6 +390,7 @@ impl Adaptador {
                 pastas_extras: Vec::new(),
                 arg_pasta_extra: "--add-dir".into(),
                 arg_mcp: "--mcp-config".into(),
+                arg_sessao: "--resume".into(),
                 timeout_s: TIMEOUT_PADRAO_S,
                 formato: FormatoSaida::StreamJson,
             },
@@ -405,6 +423,7 @@ impl Adaptador {
                 pastas_extras: Vec::new(),
                 arg_pasta_extra: "--add-dir".into(),
                 arg_mcp: String::new(),
+                arg_sessao: String::new(),
                 timeout_s: TIMEOUT_PADRAO_S,
                 formato: FormatoSaida::StreamJson,
             },
@@ -418,6 +437,7 @@ impl Adaptador {
                 // "não sei mandar pasta extra pra ele".
                 arg_pasta_extra: String::new(),
                 arg_mcp: String::new(),
+                arg_sessao: String::new(),
                 timeout_s: TIMEOUT_PADRAO_S,
                 // O opencode tem `--format json`, mas o formato dos
                 // eventos dele não foi conferido contra um binário
@@ -708,6 +728,7 @@ mod tests {
             pastas_extras: Vec::new(),
             arg_pasta_extra: String::new(),
             arg_mcp: String::new(),
+            arg_sessao: String::new(),
             timeout_s: 30,
             formato: FormatoSaida::Texto,
         }
@@ -864,6 +885,7 @@ mod tests {
             pastas_extras: vec!["/repo/a".into(), "/repo/b".into()],
             arg_pasta_extra: "--add-dir".into(),
             arg_mcp: String::new(),
+            arg_sessao: String::new(),
             ..base()
         };
         assert_eq!(
@@ -881,6 +903,7 @@ mod tests {
             pastas_extras: vec!["/repo/a".into()],
             arg_pasta_extra: String::new(),
             arg_mcp: String::new(),
+            arg_sessao: String::new(),
             ..base()
         };
         assert_eq!(a.montar_args("p"), vec!["p"]);
@@ -893,6 +916,7 @@ mod tests {
             pastas_extras: vec!["  ".into(), "/repo/a".into()],
             arg_pasta_extra: "--add-dir".into(),
             arg_mcp: String::new(),
+            arg_sessao: String::new(),
             ..base()
         };
         assert_eq!(a.montar_args("p"), vec!["--add-dir", "/repo/a", "p"]);
@@ -926,6 +950,7 @@ mod tests {
             pastas_extras: Vec::new(),
             arg_pasta_extra: String::new(),
             arg_mcp: String::new(),
+            arg_sessao: String::new(),
             timeout_s: 180,
             formato: FormatoSaida::Texto,
         };
@@ -951,6 +976,7 @@ mod tests {
             pastas_extras: vec!["/repo/meu".into()],
             arg_pasta_extra: String::new(),
             arg_mcp: String::new(),
+            arg_sessao: String::new(),
             ..base()
         };
         let novo = velho.migrado();
@@ -1007,6 +1033,7 @@ mod tests {
             pastas_extras: Vec::new(),
             arg_pasta_extra: String::new(),
             arg_mcp: String::new(),
+            arg_sessao: String::new(),
             timeout_s: 180,
             formato: FormatoSaida::Texto,
         };
@@ -1149,6 +1176,7 @@ pub struct LeitorStream {
     resultado: Option<String>,
     erro: Option<String>,
     uso: Option<Uso>,
+    sessao: Option<String>,
 }
 
 /// O que a execução consumiu, quando o agente conta (ciclo 422).
@@ -1203,6 +1231,27 @@ impl LeitorStream {
         self.uso
     }
 
+    /// O identificador da sessão, quando o agente tem uma (ciclo 433).
+    ///
+    /// É o que permite CONTINUAR a conversa na próxima pergunta em vez
+    /// de remontar o histórico inteiro a cada envio — mais barato e mais
+    /// rápido, e o agente mantém o que já entendeu.
+    pub fn sessao(&self) -> Option<String> {
+        self.sessao.clone()
+    }
+
+    /// Guarda o id de sessão dos dois dialetos, se vier.
+    fn anotar_sessao(&mut self, v: &serde_json::Value) {
+        for campo in ["session_id", "thread_id"] {
+            if let Some(id) = v.get(campo).and_then(|x| x.as_str()) {
+                if !id.trim().is_empty() {
+                    self.sessao = Some(id.to_string());
+                    return;
+                }
+            }
+        }
+    }
+
     /// Lê o bloco de uso dos dois dialetos. Campo ausente vira zero, não
     /// erro: contar errado é pior que não contar, mas perder a resposta
     /// por causa da contabilidade seria pior ainda.
@@ -1235,6 +1284,7 @@ impl LeitorStream {
         match v.get("type").and_then(|t| t.as_str()) {
             // ── dialeto do Claude Code ──
             Some("system") => {
+                self.anotar_sessao(&v);
                 if v.get("subtype").and_then(|s| s.as_str()) == Some("init") {
                     self.anotar("conectado");
                 }
@@ -1262,6 +1312,7 @@ impl LeitorStream {
                 }
             }
             Some("result") => {
+                self.anotar_sessao(&v);
                 self.anotar_uso(v.get("usage"), v.get("total_cost_usd"));
                 if v.get("is_error").and_then(|e| e.as_bool()) == Some(true) {
                     self.erro = Some(
@@ -1276,7 +1327,10 @@ impl LeitorStream {
             }
 
             // ── dialeto do Codex ──
-            Some("thread.started") => self.anotar("conectado"),
+            Some("thread.started") => {
+                self.anotar_sessao(&v);
+                self.anotar("conectado");
+            }
             Some("turn.completed") => self.anotar_uso(v.get("usage"), v.get("total_cost_usd")),
             Some("item.started") | Some("item.completed") => {
                 let completo = v.get("type").and_then(|t| t.as_str()) == Some("item.completed");
@@ -1549,5 +1603,38 @@ mod testes_config {
         assert_eq!(claude.montar_args_com_mcp("oi", ""), claude.montar_args("oi"));
         let codex = Adaptador::presets().into_iter().find(|a| a.nome == "Codex").unwrap();
         assert_eq!(codex.montar_args_com_mcp("oi", "/tmp/mcp.json"), codex.montar_args("oi"));
+    }
+
+    #[test]
+    fn a_sessao_sai_dos_dois_dialetos() {
+        let mut l = LeitorStream::novo();
+        assert_eq!(l.sessao(), None);
+        l.linha(r#"{"type":"system","subtype":"init","session_id":"abc-123"}"#);
+        assert_eq!(l.sessao(), Some("abc-123".into()));
+        // O `result` também traz, e vale o mais recente.
+        l.linha(r#"{"type":"result","result":"ok","session_id":"abc-123"}"#);
+        assert_eq!(l.sessao(), Some("abc-123".into()));
+        // Codex: `thread_id` no `thread.started`.
+        let mut c = LeitorStream::novo();
+        c.linha(r#"{"type":"thread.started","thread_id":"t-9"}"#);
+        assert_eq!(c.sessao(), Some("t-9".into()));
+        // Campo vazio não vira sessão.
+        let mut v = LeitorStream::novo();
+        v.linha(r#"{"type":"system","subtype":"init","session_id":""}"#);
+        assert_eq!(v.sessao(), None);
+    }
+
+    #[test]
+    fn o_resume_entra_antes_do_prompt_e_so_com_id() {
+        let claude = Adaptador::presets().into_iter().find(|a| a.nome == "Claude Code").unwrap();
+        let com = claude.montar_args_completo("oi", "", "abc-123");
+        assert!(com.windows(2).any(|p| p[0] == "--resume" && p[1] == "abc-123"), "{com:?}");
+        let i_resume = com.iter().position(|a| a == "--resume").unwrap();
+        let i_prompt = com.iter().position(|a| a == "oi").unwrap();
+        assert!(i_resume < i_prompt, "{com:?}");
+        // Sem id, ou num agente que não sabe continuar, nada muda.
+        assert_eq!(claude.montar_args_completo("oi", "", ""), claude.montar_args("oi"));
+        let codex = Adaptador::presets().into_iter().find(|a| a.nome == "Codex").unwrap();
+        assert_eq!(codex.montar_args_completo("oi", "", "abc"), codex.montar_args("oi"));
     }
 }

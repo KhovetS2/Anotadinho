@@ -266,6 +266,19 @@ pub fn agente_config(props: &AgenteConfigProps) -> Html {
                         </small>
                     </label>
 
+                    <label class="agente-config__campo">
+                        <span>{ "Argumento de sessão" }</span>
+                        <input class="input" value={atual.arg_sessao.clone()} data-nav-item="true"
+                            placeholder="--resume"
+                            oninput={de_input(editar(|a, v| a.arg_sessao = v))} />
+                        <small>
+                            { "Como este agente CONTINUA uma conversa. Preenchido, a segunda \
+                               pergunta não remonta o histórico — ele já tem —, o que deixa \
+                               a conversa longa muito mais barata. Vazio, cada envio é um \
+                               disparo novo." }
+                        </small>
+                    </label>
+
                     if let Some(p) = &problema {
                         <p class="agente-config__erro" role="alert">{ p.mensagem() }</p>
                     } else if let Some(a) = &aviso {
