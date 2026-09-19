@@ -856,6 +856,7 @@ mod tests {
             alvo: alvo.into(),
             operacao: op,
             conteudo: conteudo.into(),
+            origem: None,
             revisao: None,
             lote: None,
         }
@@ -1200,7 +1201,14 @@ pub fn handle_propor(
         return Err(permissoes.motivo(&proposta.alvo));
     }
     let existe = raiz.join(&proposta.alvo).exists();
-    if let Some(r) = proposta.validar(existe) {
+    // Mover precisa de dois estados do disco (ciclo 438): quem sai tem
+    // que existir agora, senão a proposta nasce impossível.
+    let existe_origem = proposta
+        .origem
+        .as_deref()
+        .map(|o| raiz.join(o).exists())
+        .unwrap_or(false);
+    if let Some(r) = proposta.validar_com_origem(existe, existe_origem) {
         return Err(r.mensagem());
     }
     let pasta = raiz.join(anotadinho_core::proposta::PASTA);
@@ -1276,13 +1284,36 @@ pub fn handle_aplicar_proposta(vault_path: String, id: String) -> Result<String,
         serde_json::from_str(&texto).map_err(|e| format!("proposta ilegível: {e}"))?;
 
     let existe = raiz.join(&proposta.alvo).exists();
-    if let Some(r) = proposta.validar(existe) {
+    let existe_origem = proposta
+        .origem
+        .as_deref()
+        .map(|o| raiz.join(o).exists())
+        .unwrap_or(false);
+    if let Some(r) = proposta.validar_com_origem(existe, existe_origem) {
         return Err(r.mensagem());
     }
     // Proposta escrita antes de a regra mudar não passa por cima dela.
     let permissoes = handle_ler_permissoes(vault_path.clone())?;
     if !permissoes.pode_propor(&proposta.alvo) {
         return Err(permissoes.motivo(&proposta.alvo));
+    }
+    // Mover é uma escrita em DOIS lugares: o destino nasce e a origem
+    // some. A permissão vale pros dois — senão dava pra esvaziar uma
+    // pasta protegida "movendo" tudo pra fora dela (ciclo 438).
+    if proposta.operacao == anotadinho_core::proposta::Operacao::Mover {
+        let origem = proposta.origem.clone().unwrap_or_default();
+        if !permissoes.pode_propor(&origem) {
+            return Err(permissoes.motivo(&origem));
+        }
+        handle_move_page(vault_path.clone(), origem, proposta.alvo.clone())?;
+        // O conteúdo pode ter mudado junto com o caminho (renomear um
+        // conceito costuma mexer no título).
+        let vault = VaultIo::open(&vault_path);
+        vault
+            .write_page(&proposta.alvo, &proposta.conteudo)
+            .map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(&arquivo);
+        return Ok(proposta.alvo);
     }
     let vault = VaultIo::open(&vault_path);
     vault
@@ -1693,6 +1724,7 @@ mod testes_semente {
             alvo: alvo.into(),
             operacao: op,
             conteudo: conteudo.into(),
+            origem: None,
             revisao: None,
             lote: Some("renomear".into()),
         };
@@ -1735,6 +1767,7 @@ mod testes_semente {
                     alvo: alvo.into(),
                     operacao: Operacao::Criar,
                     conteudo: "# Nova\n".into(),
+                    origem: None,
                     revisao: None,
                     lote: Some("ideia".into()),
                 },
@@ -1744,6 +1777,66 @@ mod testes_semente {
         assert_eq!(handle_recusar_lote(raiz.clone(), "ideia".into()).unwrap(), 2);
         assert!(handle_listar_propostas(raiz.clone()).unwrap().is_empty());
         assert!(handle_recusar_lote(raiz, "ideia".into()).is_err(), "lote que não existe avisa");
+    }
+
+    /// Ciclo 438: mover só acontece na aprovação — e a permissão vale
+    /// pros DOIS lados, senão dava pra esvaziar pasta protegida.
+    #[test]
+    fn mover_como_proposta_so_move_depois_de_aprovado() {
+        use anotadinho_core::proposta::{Operacao, Proposta};
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        std::fs::create_dir_all(dir.path().join("pages/notas")).unwrap();
+        std::fs::write(dir.path().join("pages/notas/velha.md"), "---\ntitle: Velha\n---\n\ncorpo\n").unwrap();
+        let mudanca = Proposta {
+            id: "m1".into(),
+            autor: "mcp".into(),
+            quando: "2026-09-19 10:00".into(),
+            motivo: "reorganizar".into(),
+            alvo: "pages/specs/nova.md".into(),
+            operacao: Operacao::Mover,
+            conteudo: "---\ntitle: Velha\n---\n\ncorpo\n".into(),
+            origem: Some("pages/notas/velha.md".into()),
+            revisao: None,
+            lote: None,
+        };
+        handle_propor(raiz.clone(), mudanca).unwrap();
+        // Propor não moveu nada.
+        assert!(dir.path().join("pages/notas/velha.md").exists());
+        assert!(!dir.path().join("pages/specs/nova.md").exists());
+
+        handle_aplicar_proposta(raiz.clone(), "m1".into()).expect("aplica");
+        assert!(!dir.path().join("pages/notas/velha.md").exists(), "a origem sai");
+        assert!(dir.path().join("pages/specs/nova.md").exists(), "o destino nasce");
+    }
+
+    #[test]
+    fn mover_de_dentro_de_pasta_proibida_e_recusado() {
+        use anotadinho_core::proposta::{Operacao, Proposta};
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        std::fs::create_dir_all(dir.path().join("journals")).unwrap();
+        std::fs::create_dir_all(dir.path().join("pages")).unwrap();
+        std::fs::write(dir.path().join("journals/2026-09-19.md"), "---\ntitle: Hoje\n---\n").unwrap();
+        // O padrão já proíbe `journals/`.
+        let fuga = Proposta {
+            id: "m2".into(),
+            autor: "mcp".into(),
+            quando: "2026-09-19 10:00".into(),
+            motivo: String::new(),
+            alvo: "pages/roubado.md".into(),
+            operacao: Operacao::Mover,
+            conteudo: "---\ntitle: Hoje\n---\n".into(),
+            origem: Some("journals/2026-09-19.md".into()),
+            revisao: None,
+            lote: None,
+        };
+        // O destino é permitido, então propor passa...
+        handle_propor(raiz.clone(), fuga).unwrap();
+        // ...mas aplicar barra, porque a ORIGEM é protegida.
+        let erro = handle_aplicar_proposta(raiz.clone(), "m2".into()).expect_err("tinha que barrar");
+        assert!(erro.contains("journals"), "{erro}");
+        assert!(dir.path().join("journals/2026-09-19.md").exists(), "nada saiu do lugar");
     }
 
     /// Ciclo 434: o freio olha o registro de execuções do DIA, e o

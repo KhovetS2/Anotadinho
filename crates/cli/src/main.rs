@@ -893,6 +893,7 @@ fn propor_conteudo(
             anotadinho_core::proposta::Operacao::Criar
         },
         conteudo,
+        origem: None,
         revisao: None,
         lote,
     };

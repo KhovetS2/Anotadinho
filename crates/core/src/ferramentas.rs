@@ -199,6 +199,37 @@ pub const CONTRATO: &[Ferramenta] = &[
         ],
     },
     Ferramenta {
+        nome: "propor_mudanca",
+        descricao: "PROPÕE mover ou renomear uma página, pra revisão humana. Como `propor`, não executa: a mudança só acontece depois que a pessoa aprova. Use quando reorganizar o vault, não pra trocar conteúdo.",
+        escreve: true,
+        parametros: &[
+            Parametro {
+                nome: "de",
+                tipo: Tipo::Texto,
+                descricao: "Página que sai, relativa ao vault",
+                obrigatorio: true,
+            },
+            Parametro {
+                nome: "para",
+                tipo: Tipo::Texto,
+                descricao: "Caminho novo, relativo ao vault",
+                obrigatorio: true,
+            },
+            Parametro {
+                nome: "motivo",
+                tipo: Tipo::Texto,
+                descricao: "Por que esta mudança",
+                obrigatorio: false,
+            },
+            Parametro {
+                nome: "lote",
+                tipo: Tipo::Texto,
+                descricao: "Nome do lote, pra mover várias páginas numa decisão só.",
+                obrigatorio: false,
+            },
+        ],
+    },
+    Ferramenta {
         nome: "propostas_pendentes",
         descricao: "Lista o que já foi proposto e ainda aguarda revisão.",
         escreve: false,
@@ -247,13 +278,28 @@ pub fn em_texto() -> String {
 mod testes {
     use super::*;
 
-    /// A invariante do ciclo 204 escrita como teste: uma única
-    /// ferramenta de escrita, e ela é a que enfileira proposta.
+    /// A invariante do ciclo 204 escrita como teste: NADA muda o vault
+    /// sem passar por revisão.
+    ///
+    /// Era "uma única ferramenta escreve" até o ciclo 438, quando mover
+    /// uma página virou proposta também. O que protege o vault nunca foi
+    /// a quantidade de ferramentas — é o fato de toda escrita virar fila
+    /// de aprovação.
     #[test]
-    fn so_uma_ferramenta_escreve_e_ela_propoe() {
+    fn nada_escreve_sem_passar_por_revisao() {
         let escrevem: Vec<&str> = CONTRATO.iter().filter(|f| f.escreve).map(|f| f.nome).collect();
-        assert_eq!(escrevem, ["propor"]);
-        assert!(por_nome("propor").unwrap().descricao.contains("revisão humana"));
+        assert_eq!(escrevem, ["propor", "propor_mudanca"]);
+        for nome in escrevem {
+            let f = por_nome(nome).unwrap();
+            assert!(f.nome.starts_with("propor"), "quem escreve, propõe: {}", f.nome);
+            let d = f.descricao.to_lowercase();
+            assert!(
+                d.contains("revisão humana") || d.contains("depois que a pessoa aprova"),
+                "a descrição de {} precisa dizer que passa por revisão: {}",
+                f.nome,
+                f.descricao
+            );
+        }
         // E nenhuma ferramenta promete gravar direto.
         for f in CONTRATO {
             assert!(f.nome != "escrever" && f.nome != "gravar", "{}", f.nome);

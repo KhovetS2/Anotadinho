@@ -24,6 +24,13 @@ pub enum Operacao {
     Criar,
     /// Substituir o conteúdo de uma existente.
     Substituir,
+    /// Mover ou renomear uma página (ciclo 438).
+    ///
+    /// O `alvo` é o DESTINO e a `origem` diz de onde ela sai. Existe
+    /// porque refatorar um vault — renomear um conceito, reorganizar uma
+    /// pasta — era impossível pelo agente: `propor` só trocava conteúdo,
+    /// e criar no lugar novo deixava a página velha para trás.
+    Mover,
 }
 
 /// Uma escrita proposta, ainda não aplicada.
@@ -43,6 +50,9 @@ pub struct Proposta {
     pub operacao: Operacao,
     /// Conteúdo proposto, inteiro.
     pub conteudo: String,
+    /// De onde a página sai, numa proposta de mover (ciclo 438).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origem: Option<String>,
     /// O que o revisor achou dela (ciclo 436), quando alguém pediu uma
     /// revisão. Ausente = ninguém revisou.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -168,6 +178,8 @@ pub enum Recusa {
     /// existe — nos dois casos o agente decidiu com uma foto velha do
     /// vault, e aplicar seria escrever por cima do que ele não viu.
     EstadoMudou,
+    /// Mover sem dizer de onde, ou de um lugar que não existe mais.
+    OrigemInvalida(String),
     /// O conteúdo tem embed com erro (`EmbedData::validate`).
     ConteudoInvalido(String),
 }
@@ -179,6 +191,7 @@ impl Recusa {
             Self::EstadoMudou => {
                 "o vault mudou desde que a proposta foi escrita — peça de novo".to_string()
             }
+            Self::OrigemInvalida(d) => format!("não dá pra mover: {d}"),
             Self::ConteudoInvalido(d) => format!("o conteúdo tem embed inválido: {d}"),
         }
     }
@@ -190,8 +203,36 @@ impl Proposta {
     /// `existe_alvo` vem de fora pra esta função continuar pura e
     /// testável sem sistema de arquivos.
     pub fn validar(&self, existe_alvo: bool) -> Option<Recusa> {
+        self.validar_com_origem(existe_alvo, self.operacao != Operacao::Mover)
+    }
+
+    /// Como `validar`, dizendo também se a ORIGEM existe (ciclo 438).
+    ///
+    /// Mover é a única operação que precisa de dois estados do disco, e
+    /// quem tem disco é quem chama — aqui continua tudo puro.
+    pub fn validar_com_origem(&self, existe_alvo: bool, existe_origem: bool) -> Option<Recusa> {
         if caminho_escapa(&self.alvo) {
             return Some(Recusa::AlvoForaDoVault);
+        }
+        if self.operacao == Operacao::Mover {
+            let Some(origem) = self.origem.as_deref().filter(|o| !o.trim().is_empty()) else {
+                return Some(Recusa::OrigemInvalida("a proposta não diz de onde".into()));
+            };
+            if caminho_escapa(origem) {
+                return Some(Recusa::AlvoForaDoVault);
+            }
+            if origem == self.alvo {
+                return Some(Recusa::OrigemInvalida("origem e destino são a mesma página".into()));
+            }
+            if !existe_origem {
+                return Some(Recusa::OrigemInvalida(format!("{origem} não existe mais")));
+            }
+            // Mover PRA CIMA de uma página existente apagaria a outra
+            // sem ninguém ter proposto isso.
+            if existe_alvo {
+                return Some(Recusa::EstadoMudou);
+            }
+            return self.validar_conteudo();
         }
         if matches!(
             (self.operacao, existe_alvo),
@@ -262,6 +303,7 @@ mod tests {
             alvo: "pages/nova.md".into(),
             operacao: Operacao::Criar,
             conteudo: "---\ntitle: Nova\n---\ncorpo\n".into(),
+            origem: None,
             revisao: None,
             lote: None,
         }
@@ -401,5 +443,50 @@ mod tests {
         assert!(!json.contains("revisao"), "{json}");
         let lida: Proposta = serde_json::from_str(&json).unwrap();
         assert_eq!(lida.revisao, None);
+    }
+
+    // --- Ciclo 438: mover como proposta ----------------------------------------------
+
+    fn mudanca(origem: &str, destino: &str) -> Proposta {
+        Proposta {
+            operacao: Operacao::Mover,
+            alvo: destino.into(),
+            origem: Some(origem.into()),
+            conteudo: "---\ntitle: X\n---\ncorpo\n".into(),
+            ..base()
+        }
+    }
+
+    #[test]
+    fn mover_exige_origem_que_existe_e_destino_livre() {
+        let p = mudanca("pages/velha.md", "pages/nova.md");
+        assert_eq!(p.validar_com_origem(false, true), None, "o caso bom passa");
+        // Destino ocupado apagaria a outra página sem ninguém propor.
+        assert_eq!(p.validar_com_origem(true, true), Some(Recusa::EstadoMudou));
+        // Origem sumiu no meio do caminho.
+        let r = p.validar_com_origem(false, false);
+        assert!(matches!(&r, Some(Recusa::OrigemInvalida(m)) if m.contains("pages/velha.md")), "{r:?}");
+    }
+
+    #[test]
+    fn mover_sem_origem_ou_pra_si_mesma_e_recusado() {
+        let mut sem = mudanca("pages/velha.md", "pages/nova.md");
+        sem.origem = None;
+        assert!(matches!(sem.validar_com_origem(false, true), Some(Recusa::OrigemInvalida(_))));
+        let mesma = mudanca("pages/a.md", "pages/a.md");
+        assert!(matches!(mesma.validar_com_origem(false, true), Some(Recusa::OrigemInvalida(_))));
+        // E a fuga do vault continua barrada pelos dois lados.
+        let fuga = mudanca("../fora.md", "pages/nova.md");
+        assert_eq!(fuga.validar_com_origem(false, true), Some(Recusa::AlvoForaDoVault));
+    }
+
+    #[test]
+    fn as_outras_operacoes_nao_mudaram() {
+        let mut criar = base();
+        criar.operacao = Operacao::Criar;
+        assert_eq!(criar.validar(false), None);
+        assert_eq!(criar.validar(true), Some(Recusa::EstadoMudou));
+        // E proposta sem `origem` não ganha o campo no arquivo.
+        assert!(!serde_json::to_string(&criar).unwrap().contains("origem"));
     }
 }

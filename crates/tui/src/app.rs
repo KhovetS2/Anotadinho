@@ -8845,6 +8845,7 @@ mod testes {
             alvo: alvo.into(),
             operacao: op,
             conteudo: conteudo.into(),
+            origem: None,
             revisao: None,
             lote: None,
         }
@@ -10328,6 +10329,7 @@ mod testes {
             alvo: "pages/alfa.md".into(),
             operacao: Operacao::Substituir,
             conteudo: "a\nB\nc\nD\n".into(),
+            origem: None,
             revisao: None,
             lote: None,
         };
@@ -10370,6 +10372,7 @@ mod testes {
             alvo: "pages/beta.md".into(),
             operacao: anotadinho_core::proposta::Operacao::Criar,
             conteudo: "# Nova\n".into(),
+            origem: None,
             revisao: None,
             lote: None,
         };
@@ -10556,6 +10559,7 @@ mod testes {
             alvo: "pages/alfa.md".into(),
             operacao: Operacao::Substituir,
             conteudo: "A\n".into(),
+            origem: None,
             revisao: None,
             lote: None,
         };
@@ -10567,6 +10571,7 @@ mod testes {
             alvo: "pages/beta.md".into(),
             operacao: Operacao::Criar,
             conteudo: "# Beta\n".into(),
+            origem: None,
             revisao: None,
             lote: None,
         };
@@ -10640,6 +10645,7 @@ mod testes {
             alvo: "pages/alfa.md".into(),
             operacao: Operacao::Substituir,
             conteudo: "entrega combinada para segunda\n".into(),
+            origem: None,
             revisao: None,
             lote: None,
         };
@@ -10693,6 +10699,7 @@ mod testes {
             alvo: "pages/alfa.md".into(),
             operacao: Operacao::Substituir,
             conteudo: "# Alfa\n\nquase certo\n".into(),
+            origem: None,
             revisao: None,
             lote: None,
         };

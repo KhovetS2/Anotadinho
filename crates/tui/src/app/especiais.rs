@@ -950,6 +950,7 @@ fn cartao_da_proposta(
     let (op, papel) = match proposta.operacao {
         Operacao::Criar => ("CRIAR", Realce::BadgeSucesso),
         Operacao::Substituir => ("SUBSTITUIR", Realce::BadgeAtencao),
+        Operacao::Mover => ("MOVER", Realce::BadgeAtencao),
     };
     let esquerda = vec![
         Span::styled(if marcada { "◉ " } else { "  " }.to_string(), Style::default().fg(tema.var("accent-blue"))),
@@ -961,7 +962,15 @@ fn cartao_da_proposta(
             Style::default().fg(tema.var("accent-purple")),
         ),
         Span::raw(" "),
-        Span::styled(proposta.alvo.clone(), Style::default().fg(tema.var("text-primary")).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            match &proposta.origem {
+                // Mover é a única em que o alvo sozinho não conta a
+                // história: de onde ela sai é metade da mudança.
+                Some(de) if proposta.operacao == Operacao::Mover => format!("{de} → {}", proposta.alvo),
+                _ => proposta.alvo.clone(),
+            },
+            Style::default().fg(tema.var("text-primary")).add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  "),
         Span::styled(format!("ϟ {}", proposta.autor), Style::default().fg(tema.var("accent-purple"))),
     ];

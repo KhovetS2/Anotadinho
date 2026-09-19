@@ -292,6 +292,7 @@ fn chamar(vault: &str, id: Value, params: Option<&Value>) -> Value {
                     anotadinho_core::proposta::Operacao::Criar
                 },
                 conteudo: arg_str("conteudo"),
+                origem: None,
                 revisao: None,
                 lote: Some(arg_str("lote")).filter(|l| !l.trim().is_empty()),
             };
@@ -309,6 +310,43 @@ fn chamar(vault: &str, id: Value, params: Option<&Value>) -> Value {
             Ok(p) => texto(id, serde_json::to_string_pretty(&p).unwrap_or_default()),
             Err(e) => texto_erro(id, e),
         },
+        // Mover/renomear como proposta (ciclo 438).
+        "propor_mudanca" => {
+            let de = arg_str("de");
+            let para = arg_str("para");
+            let conteudo = match anotadinho_ipc::handle_read_page(vault.to_string(), de.clone()) {
+                Ok(c) => c,
+                Err(e) => return texto_erro(id, e),
+            };
+            let proposta = anotadinho_core::proposta::Proposta {
+                id: format!(
+                    "mover-{}-{}",
+                    anotadinho_core::fluxo::slug_de_titulo(&para),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                ),
+                autor: "mcp".to_string(),
+                quando: crate::agora_legivel(),
+                motivo: arg_str("motivo"),
+                alvo: para.clone(),
+                operacao: anotadinho_core::proposta::Operacao::Mover,
+                // O conteúdo vai como está: mover não reescreve a página
+                // — quem quiser mudar o texto usa `propor` depois.
+                conteudo,
+                origem: Some(de.clone()),
+                revisao: None,
+                lote: Some(arg_str("lote")).filter(|l| !l.trim().is_empty()),
+            };
+            match anotadinho_ipc::handle_propor(vault.to_string(), proposta) {
+                Ok(id_p) => texto(
+                    id,
+                    format!("proposta {id_p} criada: mover {de} → {para}. NADA foi movido — aguarda revisão humana."),
+                ),
+                Err(e) => texto_erro(id, e),
+            }
+        }
         "propostas_pendentes" => {
             match anotadinho_ipc::handle_listar_propostas(vault.to_string()) {
                 Ok(l) => texto(id, serde_json::to_string_pretty(&l).unwrap_or_default()),

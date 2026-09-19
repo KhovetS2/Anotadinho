@@ -431,16 +431,28 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                                     let id = p.id.clone();
                                     Callback::from(move |_: Event| alternar.emit(id.clone()))
                                 }} />
-                            <span class={classes!("propostas__op",
-                                if p.operacao == Operacao::Criar { "propostas__op--criar" } else { "propostas__op--substituir" })}>
-                                { if p.operacao == Operacao::Criar { "criar" } else { "substituir" } }
+                            <span class={classes!("propostas__op", match p.operacao {
+                                Operacao::Criar => "propostas__op--criar",
+                                Operacao::Substituir => "propostas__op--substituir",
+                                Operacao::Mover => "propostas__op--mover",
+                            })}>
+                                { match p.operacao {
+                                    Operacao::Criar => "criar",
+                                    Operacao::Substituir => "substituir",
+                                    Operacao::Mover => "mover",
+                                } }
                             </span>
                             if let Some(l) = &p.lote {
                                 <span class="propostas__lote" title="Propostas deste lote são UMA decisão: aplicam juntas ou nenhuma">
                                     { format!("⛓ {l}") }
                                 </span>
                             }
-                            <code class="propostas__alvo">{ &p.alvo }</code>
+                            <code class="propostas__alvo">{
+                                match (&p.origem, p.operacao) {
+                                    (Some(de), Operacao::Mover) => format!("{de} → {}", p.alvo),
+                                    _ => p.alvo.clone(),
+                                }
+                            }</code>
                             <span class="propostas__autor"><Icon name="zap" />{ &p.autor }</span>
                             <span class="propostas__quando">{ &p.quando }</span>
                         </header>
