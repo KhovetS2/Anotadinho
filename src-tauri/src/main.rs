@@ -437,6 +437,33 @@ fn aplicar_proposta_parcial(
     anotadinho_ipc::handle_aplicar_proposta_parcial(vault_path, id, conteudo)
 }
 
+/// As permissões de escrita do agente (ciclo 405), pro painel da janela
+/// (ciclo 427).
+#[tauri::command]
+fn ler_permissoes(vault_path: String) -> Result<anotadinho_core::permissoes::Permissoes, String> {
+    anotadinho_ipc::handle_ler_permissoes(vault_path)
+}
+
+#[tauri::command]
+fn gravar_permissoes(
+    vault_path: String,
+    permissoes: anotadinho_core::permissoes::Permissoes,
+) -> Result<(), String> {
+    anotadinho_ipc::handle_gravar_permissoes(vault_path, permissoes)
+}
+
+/// O registro de execuções, do mais novo pro mais velho (ciclo 406).
+#[tauri::command]
+fn listar_execucoes(vault_path: String) -> Result<Vec<anotadinho_core::execucao::Execucao>, String> {
+    anotadinho_ipc::handle_listar_execucoes(vault_path)
+}
+
+/// O registro de decisões sobre propostas (ciclo 404).
+#[tauri::command]
+fn listar_decisoes(vault_path: String) -> Result<Vec<anotadinho_core::decisao::Decisao>, String> {
+    anotadinho_ipc::handle_listar_decisoes(vault_path)
+}
+
 /// Acrescenta uma decisão ao registro (ciclo 404).
 #[tauri::command]
 fn registrar_decisao(
@@ -1007,6 +1034,10 @@ fn main() {
             listar_propostas,
             aplicar_proposta,
             aplicar_proposta_parcial,
+            ler_permissoes,
+            gravar_permissoes,
+            listar_execucoes,
+            listar_decisoes,
             registrar_decisao,
             recusar_proposta,
             check_changes,

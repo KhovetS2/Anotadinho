@@ -1139,6 +1139,32 @@ pub fn app() -> Html {
         })
     };
 
+    // O painel do agente (ciclo 427): como a tela de revisão, é uma
+    // página do vault, criada na primeira vez que se pede.
+    let abrir_painel_do_agente = {
+        let vault_path = vault_path.clone();
+        let on_page_selected = on_page_selected.clone();
+        let list_version = list_version.clone();
+        Callback::from(move |_: ()| {
+            let Some(vault) = (*vault_path).clone() else { return };
+            let on_page_selected = on_page_selected.clone();
+            let list_version = list_version.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let path = "pages/agente.md".to_string();
+                if api::read_page(&vault, &path).await.is_err() {
+                    let md = "---\ntitle: Painel do agente\ntype: agente\ntags:\n- agent-os\n---\n";
+                    let _ = api::write_page(&vault, &path, md).await;
+                    list_version.set(*list_version + 1);
+                }
+                on_page_selected.emit(PageMeta {
+                    path,
+                    title: "Painel do agente".to_string(),
+                    section: "pages".to_string(),
+                });
+            });
+        })
+    };
+
     let today_action = {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();
@@ -1844,6 +1870,7 @@ pub fn app() -> Html {
                 on_git_changed={on_git_changed}
                 propostas_pendentes={*propostas_pendentes}
                 on_abrir_propostas={abrir_propostas.clone()}
+                on_abrir_painel_do_agente={abrir_painel_do_agente.clone()}
                 on_toggle_sidebar={toggle_sidebar}
                 on_toggle_theme={toggle_theme}
                 on_open_aparencia={{

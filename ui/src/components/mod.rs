@@ -8,6 +8,7 @@ pub mod command_palette;
 pub mod date_picker;
 pub mod dialog_host;
 pub mod agente_config;
+pub mod agente_painel;
 pub mod conversa_view;
 pub mod pagina_preview;
 pub mod selection_toolbar;

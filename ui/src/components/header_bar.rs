@@ -38,6 +38,9 @@ pub struct HeaderBarProps {
     /// Abre a tela de revisão.
     #[prop_or_default]
     pub on_abrir_propostas: Callback<()>,
+    /// Abre o painel do agente (ciclo 427).
+    #[prop_or_default]
+    pub on_abrir_painel_do_agente: Callback<()>,
     pub on_toggle_sidebar: Callback<()>,
     pub on_toggle_theme: Callback<()>,
     /// Abre a tela de aparência (ciclo 253) — tema, cor de destaque e
@@ -380,6 +383,14 @@ pub fn header_bar(props: &HeaderBarProps) -> Html {
                                     {"Fechar vault"}
                                 </button>
                             }
+                            <div class="divider"></div>
+                            <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
+                                let menu_open = menu_open.clone();
+                                let abrir = props.on_abrir_painel_do_agente.clone();
+                                Callback::from(move |_| { menu_open.set(false); abrir.emit(()); })
+                            }}>
+                                <Icon name="zap" />{ " Painel do agente" }
+                            </button>
                             <div class="divider"></div>
                             <button class="header-menu__item btn btn--ghost btn--sm" onclick={{
                                 let menu_open = menu_open.clone();

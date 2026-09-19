@@ -636,6 +636,38 @@ pub async fn listar_propostas(
 }
 
 /// Aplica uma proposta e devolve o path escrito.
+/// As permissões de escrita do agente (ciclo 427).
+pub async fn ler_permissoes(
+    vault_path: &str,
+) -> Result<anotadinho_core::permissoes::Permissoes, String> {
+    chamar("ler_permissoes", Args::novo().texto("vaultPath", vault_path)).await
+}
+
+pub async fn gravar_permissoes(
+    vault_path: &str,
+    permissoes: &anotadinho_core::permissoes::Permissoes,
+) -> Result<(), String> {
+    chamar_sem_retorno(
+        "gravar_permissoes",
+        Args::novo().texto("vaultPath", vault_path).serde("permissoes", permissoes),
+    )
+    .await
+}
+
+/// O registro de execuções do agente (ciclo 427).
+pub async fn listar_execucoes(
+    vault_path: &str,
+) -> Result<Vec<anotadinho_core::execucao::Execucao>, String> {
+    chamar("listar_execucoes", Args::novo().texto("vaultPath", vault_path)).await
+}
+
+/// O registro de decisões sobre propostas (ciclo 427).
+pub async fn listar_decisoes(
+    vault_path: &str,
+) -> Result<Vec<anotadinho_core::decisao::Decisao>, String> {
+    chamar("listar_decisoes", Args::novo().texto("vaultPath", vault_path)).await
+}
+
 /// Aplica a proposta com o conteúdo escolhido — trechos ou texto
 /// editado (ciclo 424).
 pub async fn aplicar_proposta_parcial(

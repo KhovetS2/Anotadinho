@@ -102,9 +102,9 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Lista de agentes (presets + criados, novo, remover) | ✅ | 392 — em "Trocar agente…" |
 | Propostas do agente (diff, aplicar, recusar) | ✅ | 346 — "Propostas do agente" na barra |
 | Aprovar trecho a trecho, registro das decisões | ✅ | 404 (TUI), 424 (janela) — caixinha por trecho e "Aplicar N de M" |
-| Permissões de escrita do agente por pasta | ✅ | 405 — no vault, valem pro CLI, TUI e janela; forma na TUI |
-| Registro de execuções do agente (o que rodou, duração, como terminou) | ✅ | 406 — só na TUI; `execucoes.jsonl` no vault, "Execuções do agente" na barra |
-| Contrato de ferramentas do agente (conjunto fechado, MCP) | ✅ | 407 — declarado no núcleo; "Ferramentas do agente" na barra; MCP deriva dele |
+| Permissões de escrita do agente por pasta | ✅ | 405 (TUI), 427 (janela) — no vault, valem pro CLI, TUI e janela |
+| Registro de execuções do agente (o que rodou, duração, como terminou) | ✅ | 406 (TUI), 427 (janela) — `execucoes.jsonl` no vault |
+| Contrato de ferramentas do agente (conjunto fechado, MCP) | ✅ | 407 (TUI), 427 (janela) — declarado no núcleo; o MCP deriva dele |
 | Vários agentes em paralelo com fila e limite | ✅ | 408 — só na TUI; limite nas preferências, "Agentes em andamento…" (`x` para tudo) |
 | Decidir várias propostas de uma vez (marcar, aplicar/recusar em lote) | ✅ | 409 — só na TUI; `m` marca, `M` todas, um motivo pro lote |
 | Realce palavra a palavra no diff da proposta | ✅ | 410 (TUI), 424 (janela) |
@@ -121,7 +121,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Poda explícita quando o contexto passa do teto | ✅ | 419 (TUI), 423 (janela) — histórico antigo, depois esqueleto do anexo maior |
 | Proposta em lote atômico (mudança que atravessa páginas) | ✅ | 420 — núcleo/IPC/CLI/MCP valem pros dois; decisão do lote só na TUI |
 | Contar ao agente o que foi aplicado e recusado (com o motivo) | ✅ | 421 — só na TUI; vai pro campo, não é enviado sozinho |
-| Tokens e custo por execução, com total do dia | ✅ | 422 — só na TUI; do `usage` do agente (Claude Code e Codex) |
+| Tokens e custo por execução, com total do dia | ✅ | 422 (TUI), 427 (janela) — do `usage` do agente |
 | Git: status, pull, commit & push | ✅ | 349 — "Git: status e sincronizar…" na barra; histórico da página |
 | Nova página a partir de template | ✅ | 350 — "Nova página" pergunta o template quando há |
 

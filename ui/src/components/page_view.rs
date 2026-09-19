@@ -179,6 +179,16 @@ pub fn page_view(props: &PageViewProps) -> Html {
                 on_page_selected={props.on_page_selected.clone()}
                 on_fila_mudou={props.on_fila_mudou.clone()} />
         },
+        // O painel do agente (ciclo 427) — permissões, contrato e
+        // execuções, as três telas que só existiam na TUI.
+        "agente" => html! {
+            <>
+                { typed_header }
+                <crate::components::agente_painel::AgentePainel
+                    vault_path={props.vault_path.clone()}
+                    on_page_selected={props.on_page_selected.clone()} />
+            </>
+        },
         "tags" => html! {
             <>
                 { typed_header }

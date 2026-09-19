@@ -2128,3 +2128,37 @@
   border-top: 1px solid var(--border);
   padding-top: var(--sp-3);
 }
+
+/* Painel do agente (ciclo 427): as três telas que só existiam na TUI —
+   o que ele pode, o que sabe fazer, o que já fez. */
+.agente-painel { padding: 24px 32px; max-width: 900px; margin: 0 auto; }
+.agente-painel__titulo { margin: 0 0 4px; font-size: 1.3rem; }
+.agente-painel__erro { color: var(--error); }
+.agente-painel__secao { margin-top: 28px; }
+.agente-painel__secao h3 {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 0 0 6px; font-size: 1rem;
+}
+.agente-painel__hoje { font-size: .78rem; color: var(--text-muted); font-weight: 400; }
+.agente-painel__dica { margin: 0 0 10px; font-size: .8rem; color: var(--text-muted); }
+.agente-painel__permissoes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.agente-painel__permissoes label { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; }
+.agente-painel__permissoes textarea { font-family: var(--font-mono, monospace); font-size: .8rem; }
+.agente-painel__acoes { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.agente-painel__ok { font-size: .78rem; color: var(--success); }
+.agente-painel__ferramentas, .agente-painel__execucoes { list-style: none; margin: 0; padding: 0; }
+.agente-painel__ferramenta {
+  display: grid; grid-template-columns: minmax(180px, auto) auto 1fr; gap: 10px;
+  align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border-subtle, var(--border));
+}
+.agente-painel__ferramenta code { font-size: .8rem; }
+.agente-painel__ferramenta small { color: var(--text-muted); font-size: .76rem; }
+.agente-painel__marca { font-size: .7rem; color: var(--text-muted); white-space: nowrap; }
+.agente-painel__ferramenta--escreve .agente-painel__marca { color: var(--warning); font-weight: 600; }
+.agente-painel__execucao {
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 0; font-size: .8rem; border-bottom: 1px solid var(--border-subtle, var(--border));
+}
+.agente-painel__conversa { background: none; border: 0; color: var(--accent-blue); cursor: pointer; padding: 0; }
+.agente-painel__quando, .agente-painel__dur, .agente-painel__uso { color: var(--text-muted); }
+.agente-painel__uso { margin-left: auto; white-space: nowrap; }
