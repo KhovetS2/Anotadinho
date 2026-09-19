@@ -338,6 +338,32 @@ mod testes {
     }
 }
 
+/// Acha a página de um `![[alvo]]` (ciclo 439).
+///
+/// Quatro formas, na ordem: o CAMINHO exato, o caminho sem `.md`, o
+/// título do frontmatter e o nome do arquivo — todas sem caixa. O
+/// caminho entrou porque é o desempate quando dois títulos são iguais
+/// (`marcadores_de_contexto`), e porque quem escreve à mão às vezes cola
+/// o caminho: aceitar as duas formas custa nada e evita um marcador que
+/// não resolve.
+pub fn achar_pagina(alvo: &str, paginas: &[(String, String)]) -> Option<String> {
+    let alvo = alvo.trim().to_lowercase();
+    if alvo.is_empty() {
+        return None;
+    }
+    let por = |f: &dyn Fn(&(String, String)) -> bool| paginas.iter().find(|p| f(p)).map(|p| p.0.clone());
+    por(&|(path, _)| path.to_lowercase() == alvo)
+        .or_else(|| por(&|(path, _)| path.to_lowercase().trim_end_matches(".md") == alvo))
+        .or_else(|| por(&|(_, titulo)| titulo.to_lowercase() == alvo))
+        .or_else(|| {
+            por(&|(path, _)| {
+                std::path::Path::new(path)
+                    .file_stem()
+                    .is_some_and(|s| s.to_string_lossy().to_lowercase() == alvo)
+            })
+        })
+}
+
 /// Os marcadores de uma página-recorte, a partir dos anexos (ciclo 439).
 ///
 /// Usa o TÍTULO, que é o que a pessoa lê — `![[Padrões]]` diz o que
@@ -428,6 +454,29 @@ pub fn resolver_consultas(
 #[cfg(test)]
 mod testes_de_marcadores {
     use super::*;
+
+    fn vault() -> Vec<(String, String)> {
+        vec![
+            ("pages/padroes.md".to_string(), "Padrões".to_string()),
+            ("pages/specs/atual.md".to_string(), "Spec atual".to_string()),
+            ("pages/sem-titulo.md".to_string(), String::new()),
+        ]
+    }
+
+    #[test]
+    fn achar_aceita_caminho_titulo_e_nome_de_arquivo() {
+        let v = vault();
+        assert_eq!(achar_pagina("pages/padroes.md", &v).as_deref(), Some("pages/padroes.md"));
+        assert_eq!(achar_pagina("pages/padroes", &v).as_deref(), Some("pages/padroes.md"));
+        assert_eq!(achar_pagina("Padrões", &v).as_deref(), Some("pages/padroes.md"));
+        assert_eq!(achar_pagina("padroes", &v).as_deref(), Some("pages/padroes.md"));
+        // Sem caixa, e com espaço em volta.
+        assert_eq!(achar_pagina("  SPEC ATUAL ", &v).as_deref(), Some("pages/specs/atual.md"));
+        // Página sem título se acha pelo caminho.
+        assert_eq!(achar_pagina("pages/sem-titulo.md", &v).as_deref(), Some("pages/sem-titulo.md"));
+        assert_eq!(achar_pagina("não existe", &v), None);
+        assert_eq!(achar_pagina("  ", &v), None);
+    }
 
     #[test]
     fn o_titulo_vale_quando_e_unico() {

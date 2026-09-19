@@ -1496,19 +1496,12 @@ pub fn handle_ler_para_contexto(
     let texto = handle_read_page(vault_path.clone(), page_path.clone())?;
     let paginas = handle_scan_vault(vault_path.clone())?;
     let mut lidas: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    // A busca é do núcleo (ciclo 439): aceita caminho, título e nome de
+    // arquivo, e é a MESMA que a TUI usa pra desenhar a transclusão.
+    let indice: Vec<(String, String)> =
+        paginas.iter().map(|p| (p.path.clone(), p.title.clone())).collect();
     let mut buscar = |titulo: &str| -> Option<(String, String)> {
-        let alvo = titulo.trim().to_lowercase();
-        let path = paginas
-            .iter()
-            .find(|p| p.title.to_lowercase() == alvo)
-            .or_else(|| {
-                paginas.iter().find(|p| {
-                    std::path::Path::new(&p.path)
-                        .file_stem()
-                        .is_some_and(|s| s.to_string_lossy().to_lowercase() == alvo)
-                })
-            })
-            .map(|p| p.path.clone())?;
+        let path = anotadinho_core::transclusao::achar_pagina(titulo, &indice)?;
         if let Some(corpo) = lidas.get(&path) {
             return Some((path, corpo.clone()));
         }

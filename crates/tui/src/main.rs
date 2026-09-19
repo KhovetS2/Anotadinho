@@ -1469,26 +1469,19 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                 }
                 Pedido::ResolverTransclusoes(alvos) => {
                     use anotadinho_core::transclusao::{analisar_alvo, recortar};
-                    let paginas = estado.paginas.clone();
-                    let achar = |titulo: &str| -> Option<String> {
-                        let alvo = titulo.trim().to_lowercase();
-                        estado
-                            .indice_do_vault
-                            .iter()
-                            .find(|p| p.title.to_lowercase() == alvo)
-                            .map(|p| p.path.clone())
-                            .or_else(|| {
-                                paginas
-                                    .iter()
-                                    .find(|p| {
-                                        p.title.to_lowercase() == alvo
-                                            || std::path::Path::new(&p.path)
-                                                .file_stem()
-                                                .is_some_and(|s| s.to_string_lossy().to_lowercase() == alvo)
-                                    })
-                                    .map(|p| p.path.clone())
-                            })
-                    };
+                    // A mesma busca do contexto (ciclo 439): caminho,
+                    // título ou nome de arquivo.
+                    let mut indice: Vec<(String, String)> = estado
+                        .indice_do_vault
+                        .iter()
+                        .map(|p| (p.path.clone(), p.title.clone()))
+                        .collect();
+                    for p in &estado.paginas {
+                        if !indice.iter().any(|(path, _)| path == &p.path) {
+                            indice.push((p.path.clone(), p.title.clone()));
+                        }
+                    }
+                    let achar = |titulo: &str| anotadinho_core::transclusao::achar_pagina(titulo, &indice);
                     let resolvidas = alvos
                         .into_iter()
                         .map(|bruto| {
