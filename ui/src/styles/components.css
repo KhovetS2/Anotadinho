@@ -565,6 +565,10 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    /* Vault grande tem centenas de páginas: a lista rola em vez de
+       empurrar os botões do diálogo pra fora da tela (ciclo 442). */
+    max-height: 50vh;
+    overflow-y: auto;
     max-height: 320px;
     overflow-y: auto;
 }
@@ -2131,7 +2135,16 @@
 
 /* Painel do agente (ciclo 427): as três telas que só existiam na TUI —
    o que ele pode, o que sabe fazer, o que já fez. */
-.agente-painel { padding: 24px 32px; max-width: 900px; margin: 0 auto; }
+/* Rola por conta própria, como a tela de revisão (ciclo 442): sem isto
+   o conteúdo abaixo da dobra ficava inalcançável. */
+.agente-painel {
+  padding: 24px 32px;
+  max-width: 900px;
+  margin: 0 auto;
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
 .agente-painel__titulo { margin: 0 0 4px; font-size: 1.3rem; }
 .agente-painel__erro { color: var(--error); }
 .agente-painel__secao { margin-top: 28px; }

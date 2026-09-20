@@ -1303,6 +1303,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         });
                     }
                     "__TRANSCLUSAO__" => {
+                        let cursor = salvar_cursor();
                         let vp = vault_path.clone();
                         let open_dialog = open_dialog.clone();
                         let content_md = content_md.clone();
@@ -1317,18 +1318,34 @@ pub fn editor(props: &EditorProps) -> Html {
                                 });
                                 return;
                             }
-                            let titulos: Vec<String> = paginas
+                            // Uma LISTA pra escolher, não um campo com
+                            // todos os títulos despejados no título do
+                            // diálogo (ciclo 442): com vault grande
+                            // aquilo virava uma parede de texto.
+                            let opcoes: Vec<(String, String)> = paginas
                                 .iter()
-                                .map(|p| if p.title.trim().is_empty() { p.path.clone() } else { p.title.clone() })
+                                .map(|p| {
+                                    let rotulo = if p.title.trim().is_empty() {
+                                        p.path.clone()
+                                    } else {
+                                        format!("{} · {}", p.title, p.path)
+                                    };
+                                    // O valor é o CAMINHO: único por
+                                    // definição, e a resolução aceita ele
+                                    // desde o ciclo 440.
+                                    (p.path.clone(), rotulo)
+                                })
                                 .collect();
-                            let lista = titulos.join("\n");
-                            open_dialog.emit(PendingDialog::Prompt {
-                                title: format!("Páginas:\n{lista}\n\nQual transcluir? (pode usar Título#Seção)"),
-                                default: String::new(),
-                                on_submit: Callback::from(move |escolha: String| {
+                            open_dialog.emit(PendingDialog::Select {
+                                title: "Transcluir qual página?".to_string(),
+                                options: opcoes,
+                                on_select: Callback::from(move |escolha: String| {
                                     let escolha = escolha.trim().to_string();
                                     if escolha.is_empty() {
                                         return;
+                                    }
+                                    if let Some(r) = &cursor {
+                                        restaurar_cursor(r);
                                     }
                                     // O marcador entra como TEXTO: quem
                                     // resolve é a leitura pro contexto
@@ -1346,6 +1363,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         });
                     }
                     "__ASSET__" => {
+                        let cursor = salvar_cursor();
                         let vp = vault_path.clone();
                         let open_dialog = open_dialog.clone();
                         let content_md = content_md.clone();
@@ -1365,6 +1383,9 @@ pub fn editor(props: &EditorProps) -> Html {
                                             title: format!("Assets disponíveis:\n{}\n\nDigite o nome do arquivo", list),
                                             default: String::new(),
                                             on_submit: Callback::from(move |choice: String| {
+                                                if let Some(r) = &cursor {
+                                                    restaurar_cursor(r);
+                                                }
                                                 let relative = if choice.starts_with("assets/") { choice } else { format!("assets/{}", choice) };
                                                 let ext = std::path::Path::new(&relative).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
                                                 let html = match ext.as_str() {
@@ -4096,6 +4117,37 @@ fn insert_embed_marker_at_cursor(kind: &str, body: &str) -> bool {
 /// `- # Título` em vez de um heading de verdade). `false` pra conteúdo
 /// inline-safe (ex: imagem), que pode ficar aninhado normalmente dentro
 /// de um parágrafo.
+/// Guarda onde o cursor está, pra devolver depois de um diálogo
+/// (ciclo 442).
+///
+/// Abrir um modal tira o foco do editor e a seleção some: quem insere
+/// depois que a pessoa escolhe algo não tem mais onde colar, e o item
+/// simplesmente não acontecia — foi o que aconteceu com a transclusão do
+/// menu `/`, e acontecia igual com "Assets".
+fn salvar_cursor() -> Option<web_sys::Range> {
+    let sel = web_sys::window()?.get_selection().ok()??;
+    (sel.range_count() > 0).then(|| sel.get_range_at(0).ok())?
+}
+
+/// Devolve o cursor pro lugar guardado. `false` quando não deu.
+fn restaurar_cursor(range: &web_sys::Range) -> bool {
+    let Some(sel) = web_sys::window().and_then(|w| w.get_selection().ok().flatten()) else {
+        return false;
+    };
+    // O foco volta pro bloco de onde o cursor saiu: sem isso o
+    // `execCommand` seguinte escreveria no nada.
+    if let Some(el) = range
+        .start_container()
+        .ok()
+        .and_then(|n| n.dyn_ref::<web_sys::Element>().cloned().or_else(|| n.parent_element()))
+        .and_then(|e| e.closest(".editor__bloco").ok().flatten())
+        .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
+    {
+        let _ = el.focus();
+    }
+    sel.remove_all_ranges().is_ok() && sel.add_range(range).is_ok()
+}
+
 fn insert_element_at_cursor(el: &web_sys::Element, break_out_of_block: bool) -> bool {
     let Some(window) = web_sys::window() else {
         return false;
