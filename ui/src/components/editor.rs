@@ -1223,6 +1223,9 @@ pub fn editor(props: &EditorProps) -> Html {
         let image_range = image_range.clone();
         let image_drafts = image_drafts.clone();
         let image_error = image_error.clone();
+        // O caminho da página, pra transclusão recém-inserida saber quem
+        // é "ela mesma" ao resolver (ciclo 443).
+        let caminho_da_pagina = page.path.clone();
         // Recebe a posição na lista filtrada explicitamente (`vi`) em vez
         // de ler `*slash_idx` — o clique do mouse num item precisa
         // aplicar AQUELE item, não o que estava destacado por último via
@@ -1305,6 +1308,8 @@ pub fn editor(props: &EditorProps) -> Html {
                     "__TRANSCLUSAO__" => {
                         let cursor = salvar_cursor();
                         let vp = vault_path.clone();
+                        let vp2 = vault_path.clone();
+                        let pagina_atual = caminho_da_pagina.clone();
                         let open_dialog = open_dialog.clone();
                         let content_md = content_md.clone();
                         let editor_ref = editor_ref.clone();
@@ -1347,15 +1352,30 @@ pub fn editor(props: &EditorProps) -> Html {
                                     if let Some(r) = &cursor {
                                         restaurar_cursor(r);
                                     }
-                                    // O marcador entra como TEXTO: quem
-                                    // resolve é a leitura pro contexto
-                                    // (414) e o desenho da página (170).
+                                    // O marcador entra como TEXTO — é o que
+                                    // vai pro `.md`. Mas ele entra já
+                                    // RESOLVIDO na tela (ciclo 443):
+                                    // inserir e ver só um `![[...]]` cru
+                                    // até reabrir a página faz parecer
+                                    // que não funcionou.
                                     let html = format!("<p>![[{}]]</p>", escolha.replace('<', "&lt;"));
                                     if let Some(el) = parse_single_element(&html) {
                                         if insert_element_at_cursor(&el, false) {
                                             let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
                                             content_md.set(new_md.clone());
                                             mark_edited_estrutural(new_md);
+                                            // Troca o parágrafo cru pela caixa
+                                            // de transclusão e manda resolver,
+                                            // o mesmo caminho do carregamento.
+                                            let _ = el.set_attribute("data-transclusao", &escolha);
+                                            el.set_class_name("transclusao");
+                                            el.set_inner_html("");
+                                            // A varredura é nos DESCENDENTES, então
+                                            // quem recebe é a raiz do editor — passar
+                                            // o próprio marcador não achava nada.
+                                            if let Some(raiz) = editor_ref.cast::<web_sys::Element>() {
+                                                upgrade_transclusions_at(&raiz, vp2.clone(), pagina_atual.clone());
+                                            }
                                         }
                                     }
                                 }),

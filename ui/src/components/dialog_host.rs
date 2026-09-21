@@ -26,11 +26,18 @@ pub fn dialog_host(props: &DialogHostProps) -> Html {
     // (ex: Select → Prompt de um fluxo encadeado como "Nova página" com
     // templates). Ver comentário em `modal.rs::ModalProps::focus_nonce`.
     let dialog_nonce = use_state(|| 0u32);
+    /// O filtro da lista de escolha (ciclo 443): com vault grande,
+    /// rolar até achar a página é pior que digitar três letras.
+    let filtro = use_state(String::new);
 
     {
         let input_value = input_value.clone();
         let dialog_nonce = dialog_nonce.clone();
+        let filtro = filtro.clone();
         use_effect_with(props.pending.clone(), move |pending| {
+            // Diálogo novo começa sem filtro: o termo do anterior
+            // esconderia opções sem explicação (ciclo 443).
+            filtro.set(String::new());
             if let Some(PendingDialog::Prompt { default, .. }) = pending {
                 input_value.set(default.clone());
             }
@@ -133,12 +140,52 @@ pub fn dialog_host(props: &DialogHostProps) -> Html {
         }
         PendingDialog::Select { title, options, on_select } => {
             let dismiss = on_dismiss.clone();
+            let termo = filtro.to_lowercase();
+            // Casa em qualquer parte do rótulo, sem caixa: o rótulo traz
+            // título E caminho, então "spec" acha pelos dois.
+            let visiveis: Vec<&(String, String)> = options
+                .iter()
+                .filter(|(_, label)| termo.is_empty() || label.to_lowercase().contains(&termo))
+                .collect();
+            let digitou = {
+                let filtro = filtro.clone();
+                Callback::from(move |e: InputEvent| {
+                    use wasm_bindgen::JsCast;
+                    let Some(alvo) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
+                    else {
+                        return;
+                    };
+                    filtro.set(alvo.value());
+                })
+            };
+            // Enter com um resultado só escolhe ele: é o caminho de quem
+            // já sabe o nome e não quer tirar a mão do teclado.
+            let so_um = visiveis.len() == 1;
+            let atalho = {
+                let (on_dismiss, on_select) = (on_dismiss.clone(), on_select.clone());
+                let unico = visiveis.first().map(|(v, _)| v.clone());
+                Callback::from(move |e: KeyboardEvent| {
+                    if e.key() != "Enter" || !so_um {
+                        return;
+                    }
+                    if let Some(v) = unico.clone() {
+                        on_dismiss.emit(());
+                        on_select.emit(v);
+                    }
+                })
+            };
             (
                 title,
                 html! {
                     <>
+                        <input class="input modal__busca" type="search" autofocus=true
+                            placeholder="Buscar…" value={(*filtro).clone()}
+                            oninput={digitou} onkeydown={atalho} />
+                        if visiveis.is_empty() {
+                            <p class="modal__message">{ "Nada com esse termo." }</p>
+                        }
                         <ul class="modal__select-list">
-                            { for options.iter().map(|(value, label)| {
+                            { for visiveis.into_iter().map(|(value, label)| {
                                 let onclick = {
                                     let on_dismiss = on_dismiss.clone();
                                     let on_select = on_select.clone();

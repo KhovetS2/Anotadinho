@@ -2234,3 +2234,6 @@
   color: var(--text-muted); font-size: .72rem; text-decoration: underline;
 }
 .agente-painel__reexecutar:hover { color: var(--accent-blue); }
+
+/* Busca dentro do diálogo de escolha (ciclo 443). */
+.modal__busca { width: 100%; }
