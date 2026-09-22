@@ -84,6 +84,46 @@ pub fn recortar(corpo: &str, alvo: &Alvo) -> Result<String, String> {
     Ok(corpo.trim().to_string())
 }
 
+/// Como a tela chama um embed que veio DENTRO de uma transclusão
+/// (ciclo 447).
+///
+/// Uma frase só, e a mesma nas duas UIs — a janela põe num parágrafo
+/// com classe, a TUI põe numa linha de enfeite.
+pub fn aviso_de_embed(tipo: &str) -> String {
+    format!("Bloco {tipo} — abra a página pra usar.")
+}
+
+/// O corpo transcluído com cada embed trocado pelo aviso (ciclo 447).
+///
+/// Transcluir uma página de kanban despejava o YAML do quadro no meio
+/// do texto: quinze linhas de `columns:`/`cards:` que não são leitura
+/// nem são quadro, e que ainda comiam o limite de linhas da caixa. Um
+/// embed é INTERATIVO — quem quer o quadro abre a página, que é um
+/// Enter.
+///
+/// Só para MOSTRAR. O que vai pro agente continua sendo o corpo
+/// inteiro, YAML e tudo: lá os cartões são dado, não enfeite.
+pub fn resumir_embeds(corpo: &str) -> String {
+    use crate::embed::DocSegment;
+    let segmentos = crate::embed::segment(corpo);
+    if !segmentos.iter().any(|s| matches!(s, DocSegment::Embed(_))) {
+        return corpo.to_string();
+    }
+    let mut partes: Vec<String> = Vec::new();
+    for seg in &segmentos {
+        match seg {
+            DocSegment::Markdown(texto) => {
+                let t = texto.trim_matches('\n');
+                if !t.trim().is_empty() {
+                    partes.push(t.to_string());
+                }
+            }
+            DocSegment::Embed(dados) => partes.push(aviso_de_embed(dados.kind().type_name())),
+        }
+    }
+    partes.join("\n\n")
+}
+
 /// O que a resolução produziu.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Resolvido {
@@ -449,6 +489,51 @@ pub fn resolver_consultas(
         }
     }
     r
+}
+
+#[cfg(test)]
+mod testes_de_embed_na_transclusao {
+    use super::*;
+
+    const PAGINA_COM_KANBAN: &str = "# Quadro\n\nAntes do quadro.\n\n{{ type: \"kanban\" }}\ncolumns:\n- id: todo\n  title: A fazer\n  cards:\n  - title: Tarefa 1\n    column: todo\n{{ /kanban }}\n\nDepois do quadro.\n";
+
+    #[test]
+    fn o_yaml_do_quadro_vira_uma_linha_de_aviso() {
+        let visto = resumir_embeds(PAGINA_COM_KANBAN);
+        assert!(!visto.contains("columns:"), "o YAML vazou pra tela:\n{visto}");
+        assert!(!visto.contains("{{ type:"), "a cerca do embed vazou:\n{visto}");
+        assert!(visto.contains("Bloco kanban — abra a página pra usar."), "{visto}");
+        // O texto em volta fica, na ordem.
+        let antes = visto.find("Antes do quadro.").expect("sumiu o texto de antes");
+        let aviso = visto.find("Bloco kanban").unwrap();
+        let depois = visto.find("Depois do quadro.").expect("sumiu o texto de depois");
+        assert!(antes < aviso && aviso < depois, "fora de ordem:\n{visto}");
+        assert!(visto.contains("# Quadro"), "o título da página transcluída fica:\n{visto}");
+    }
+
+    #[test]
+    fn uma_linha_por_embed_e_o_tipo_de_cada_um() {
+        let fonte = "{{ type: \"kanban\" }}\ncolumns: []\n{{ /kanban }}\n\nmeio\n\n{{ type: \"calendar\" }}\nevents: []\n{{ /calendar }}\n";
+        let visto = resumir_embeds(fonte);
+        assert_eq!(visto.lines().filter(|l| l.starts_with("Bloco ")).count(), 2, "{visto}");
+        assert!(visto.contains("Bloco kanban"), "{visto}");
+        assert!(visto.contains("Bloco calendar"), "{visto}");
+        assert!(visto.contains("meio"), "{visto}");
+    }
+
+    #[test]
+    fn pagina_sem_embed_passa_intacta() {
+        let fonte = "# Padrões\n\n- minúsculas com hífen\n- título manda\n";
+        assert_eq!(resumir_embeds(fonte), fonte, "mexeu onde não tinha embed");
+        assert_eq!(resumir_embeds(""), "");
+    }
+
+    #[test]
+    fn a_janela_e_a_tui_dizem_a_mesma_frase() {
+        // O ponto de estar no core: a frase é uma só. Se alguém mudar
+        // aqui, muda nas duas UIs junto.
+        assert_eq!(aviso_de_embed("kanban"), "Bloco kanban — abra a página pra usar.");
+    }
 }
 
 #[cfg(test)]

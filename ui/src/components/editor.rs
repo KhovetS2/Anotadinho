@@ -5665,9 +5665,13 @@ fn upgrade_transclusions_at(el: &web_sys::Element, vault_path: String, pagina_at
                         html.push_str(&crate::markdown_render::render(texto));
                     }
                     crate::embed::DocSegment::Embed(dados) => {
+                        // A frase mora no core (ciclo 447): a TUI diz a
+                        // mesma, e só muda nos dois lugares junto.
                         html.push_str(&format!(
-                            "<p class=\"transclusao__embed\">Bloco <strong>{}</strong> — abra a página pra usar.</p>",
-                            dados.kind().type_name()
+                            "<p class=\"transclusao__embed\">{}</p>",
+                            escape_html(&anotadinho_core::transclusao::aviso_de_embed(
+                                dados.kind().type_name()
+                            ))
                         ));
                     }
                 }

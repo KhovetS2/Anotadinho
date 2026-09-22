@@ -754,6 +754,11 @@ pub fn com_transclusoes(
             let trazidas: Vec<String> = match estado {
                 Ok(conteudo) => {
                     let mut v: Vec<String> = vec![format!("▤ {alvo}")];
+                    // Embed transcluído é AVISO, não YAML (ciclo 447): um
+                    // kanban trazia quinze linhas de `columns:`/`cards:`
+                    // que não são leitura nem são quadro, e ainda comiam
+                    // o limite de linhas da caixa.
+                    let conteudo = anotadinho_core::transclusao::resumir_embeds(conteudo);
                     let corpo: Vec<&str> = conteudo.lines().collect();
                     v.extend(corpo.iter().take(LINHAS_DA_TRANSCLUSAO).map(|t| format!("│ {t}")));
                     if corpo.len() > LINHAS_DA_TRANSCLUSAO {
@@ -1222,6 +1227,27 @@ mod testes {
             assert!(l.enfeite, "{:?}", l.texto);
             assert_eq!(l.caminho, dono);
         }
+    }
+
+    #[test]
+    fn transcluir_pagina_de_kanban_mostra_aviso_e_nao_o_yaml() {
+        // Relatado como "ficou quebrada" (ciclo 447): a caixa vinha com
+        // `columns:`/`cards:` crus e o texto em volta era empurrado pra
+        // fora do teto de linhas.
+        let d = analisar("antes\n\n![[Quadro]]\n\ndepois\n");
+        let corpo = "# Quadro\n\nAntes do quadro.\n\n{{ type: \"kanban\" }}\ncolumns:\n- id: todo\n  title: A fazer\n  cards:\n  - title: Tarefa 1\n    column: todo\n{{ /kanban }}\n\nDepois do quadro.\n";
+        let mut mapa = std::collections::BTreeMap::new();
+        mapa.insert("Quadro".to_string(), Ok(corpo.to_string()));
+        let texto: Vec<String> =
+            com_transclusoes(linhas(&d), &d, &mapa).into_iter().map(|l| l.texto).collect();
+        let tela = texto.join("\n");
+        assert!(!tela.contains("columns:"), "o YAML do quadro vazou:\n{tela}");
+        assert!(!tela.contains("{{ type:"), "a cerca do embed vazou:\n{tela}");
+        assert!(tela.contains("Bloco kanban — abra a página pra usar."), "{tela}");
+        // E o que interessa ler continua na caixa, dos dois lados do quadro.
+        assert!(tela.contains("Antes do quadro.") && tela.contains("Depois do quadro."), "{tela}");
+        // Sem estourar o teto: o que sobrou cabe sem recado de corte.
+        assert!(!tela.contains("mais "), "não era pra cortar nada:\n{tela}");
     }
 
     #[test]
