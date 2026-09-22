@@ -155,6 +155,15 @@ fn walk(node: &Element, _depth: usize) -> String {
             }
         }
         "p" | "div" => {
+            // Caixa de transclusão (ciclo 170, consertada no 444): o que
+            // está DENTRO dela é conteúdo de OUTRA página, renderizado
+            // só pra leitura. Sem este caso, salvar uma página que
+            // transclui inlinava o texto alheio no arquivo e destruía o
+            // marcador — corrupção silenciosa, e a gravação seguinte
+            // ainda era recusada por o arquivo ter mudado embaixo.
+            if let Some(alvo) = node.get_attribute("data-transclusao") {
+                return format!("![[{alvo}]]\n\n");
+            }
             if let Some(href) = node.get_attribute("data-pdf-href") {
                 // Wrapper de embed de PDF (ver `editor.rs::
                 // upgrade_embedded_assets_at`, ciclo 121) — reconstrói
