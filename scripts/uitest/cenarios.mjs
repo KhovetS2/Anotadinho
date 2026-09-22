@@ -2518,3 +2518,93 @@ cenarios.push({
     );
   },
 });
+
+// ── ciclo 445: transclusão pelo `/` em página COM embed ──────────────
+
+cenarios.push({
+  nome: "transclusão pelo /: aparece resolvida na hora, mesmo com embed na página (445)",
+  async fn(bridge, ctx) {
+    const { writeFileSync, unlinkSync, existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const alvo = join(ctx.vault, "pages/__uitest-alvo445.md");
+    writeFileSync(alvo, "---\ntitle: Alvo 445\n---\n# Alvo\ntexto transcluido 445\n");
+    try {
+      // A página tem um EMBED: é o que muda o desenho do editor. Com
+      // embed ele renderiza por SEGMENTO, e o ciclo 443 mandava resolver
+      // a partir do `editor_ref` — que nesse caminho fica vazio. Dava
+      // caixa criada e vazia: só depois de salvar e reabrir o conteúdo
+      // aparecia, que foi exatamente o relato.
+      ctx.escrever(
+        '---\ntitle: __uitest\n---\nTexto antes.\n\n{{ type: "callout" }}\nvariant: info\ntitle: Nota\nbody: |\n  Corpo.\n{{ /callout }}\n\nTexto depois.\n',
+      );
+      await recarregar(bridge);
+      await ctx.abrirPagina(bridge, ctx.nomePagina);
+      await ctx.esperar(bridge, "document.querySelector('.callout')", "o embed renderizar");
+
+      // Bloco novo e vazio no fim, que é onde o menu `/` abre.
+      await bridge.js(`(() => {
+        const eds = [...document.querySelectorAll('.editor__bloco[contenteditable="true"]')];
+        const u = eds[eds.length - 1];
+        u.focus();
+        const r = document.createRange(); r.selectNodeContents(u); r.collapse(false);
+        const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+        u.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }));
+        return true;
+      })()`);
+      await PAUSA(400);
+      await bridge.js(`(() => {
+        const a = document.activeElement;
+        if (!a || !a.isContentEditable) return false;
+        document.execCommand('insertText', false, '/');
+        a.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: '/', bubbles: true }));
+        return true;
+      })()`);
+      await ctx.esperar(bridge, "document.querySelectorAll('.slash-menu__item').length > 0", "o menu / abrir");
+
+      await bridge.js(`(() => {
+        const i = [...document.querySelectorAll('.slash-menu__item-label')]
+          .find(e => e.textContent.trim() === 'Transclusão');
+        (i.closest('button') || i).click();
+        return true;
+      })()`);
+      await ctx.esperar(bridge, "document.querySelectorAll('.modal__select-item').length > 0", "a lista de páginas abrir");
+
+      // A busca (ciclo 443) é o que torna a lista usável em vault grande
+      // — e aqui é o que deixa o cenário escolher sem depender da ordem.
+      await bridge.js(`(() => {
+        const b = document.querySelector('.modal__busca');
+        if (!b) return false;
+        b.value = 'Alvo 445';
+        b.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      })()`);
+      await ctx.esperar(bridge, "document.querySelectorAll('.modal__select-item').length === 1", "a busca filtrar");
+      await bridge.js(`(() => { document.querySelector('.modal__select-item').click(); return true; })()`);
+
+      // NA HORA: sem salvar, sem reabrir.
+      // Espera o CONTEÚDO, não só a marca: o atributo é posto antes de
+      // o corpo chegar, e esperar por ele deixava o cenário verde por
+      // sorte de milissegundo.
+      await ctx.esperar(
+        bridge,
+        `(() => { const c = document.querySelector('.transclusao');
+                  return !!c && c.getAttribute('data-transcluido') === '1'
+                      && (c.textContent || '').includes('texto transcluido 445'); })()`,
+        "a transclusão resolver logo depois de escolher",
+        6000,
+      );
+      const caixa = await bridge.js(`(() => {
+        const c = document.querySelector('.transclusao');
+        return { texto: (c.textContent || '').trim().slice(0, 120),
+                 embedVivo: !!document.querySelector('.callout') };
+      })()`);
+      ctx.assert(
+        caixa.texto.includes("texto transcluido 445"),
+        `a caixa ficou vazia depois de escolher: ${JSON.stringify(caixa)}`,
+      );
+      ctx.assertEq(caixa.embedVivo, true, "inserir a transclusão não podia derrubar o embed");
+    } finally {
+      if (existsSync(alvo)) unlinkSync(alvo);
+    }
+  },
+});

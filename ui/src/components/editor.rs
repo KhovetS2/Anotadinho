@@ -1371,9 +1371,20 @@ pub fn editor(props: &EditorProps) -> Html {
                                             el.set_class_name("transclusao");
                                             el.set_inner_html("");
                                             // A varredura é nos DESCENDENTES, então
-                                            // quem recebe é a raiz do editor — passar
-                                            // o próprio marcador não achava nada.
-                                            if let Some(raiz) = editor_ref.cast::<web_sys::Element>() {
+                                            // quem recebe é um ANCESTRAL do marcador.
+                                            //
+                                            // Não dá pra usar o `editor_ref`: em página
+                                            // COM embed o editor renderiza por segmento
+                                            // e aquele ref fica vazio — era por isso que
+                                            // a caixa aparecia vazia justamente nas
+                                            // páginas cheias (ciclo 445). Subir do
+                                            // próprio elemento funciona nos dois casos.
+                                            let raiz = el
+                                                .closest("[contenteditable=true]")
+                                                .ok()
+                                                .flatten()
+                                                .or_else(|| el.parent_element());
+                                            if let Some(raiz) = raiz {
                                                 upgrade_transclusions_at(&raiz, vp2.clone(), pagina_atual.clone());
                                             }
                                         }
