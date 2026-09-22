@@ -887,6 +887,21 @@ pub fn tique(_e: &mut Estado) {}
 pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
     // O aviso vale até a próxima tecla.
     e.aviso = None;
+    // Ctrl+C NÃO fecha a TUI (ciclo 446).
+    //
+    // No terminal Ctrl+C é reflexo de duas coisas — copiar e matar o
+    // programa que travou. Aqui não é nenhuma das duas: é um editor com
+    // texto ainda não gravado na tela, e sair por reflexo perde o que
+    // estava aberto. Quem quer sair tem `q` (e `:q`), que não é tecla
+    // que se aperte sem querer.
+    //
+    // Modal fica de fora porque lá dentro Ctrl+C já QUER dizer alguma
+    // coisa: no editor de código ele descarta a edição. Era um caminho
+    // morto até agora — o `main` matava a TUI antes de a tecla chegar.
+    if tecla == "Ctrl+c" && e.modal.is_none() {
+        e.aviso = Some("Ctrl+C não fecha a TUI — `q` fecha (Esc antes, se estiver editando).".into());
+        return None;
+    }
     // A pergunta de uma edição, como a busca, recebe tudo enquanto está
     // aberta (ciclo 318).
     if e.pergunta.is_some() {
@@ -11136,5 +11151,57 @@ mod testes {
         let c = e.conversa.as_ref().unwrap();
         assert!(c.erro.is_none(), "o erro sai da tela");
         assert!(!c.rascunho.texto.is_empty(), "a pergunta volta pro campo");
+    }
+
+    // --- Ciclo 446: Ctrl+C não fecha a TUI ------------------------------
+
+    #[test]
+    fn ctrl_c_nao_fecha_a_tui_e_diz_qual_e_a_tecla_de_sair() {
+        let mut e = markdown_editavel();
+        tecla(&mut e, "Ctrl+c");
+        assert!(!e.sair, "Ctrl+C fechou a TUI");
+        let aviso = e.aviso.clone().expect("nem avisou");
+        assert!(aviso.contains("não fecha") && aviso.contains("`q`"), "{aviso}");
+        // Insistir não vence: não é confirmação de duas teclas, é trava.
+        tecla(&mut e, "Ctrl+c");
+        tecla(&mut e, "Ctrl+c");
+        assert!(!e.sair, "Ctrl+C repetido fechou a TUI");
+        // E `q` continua fechando — a saída não sumiu junto.
+        tecla(&mut e, "q");
+        assert!(e.sair, "`q` devia fechar");
+    }
+
+    #[test]
+    fn ctrl_c_no_meio_da_edicao_nao_fecha_nem_sujeita_o_texto() {
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "A");
+        digitar(&mut e, " mais");
+        tecla(&mut e, "Ctrl+c");
+        assert!(!e.sair, "Ctrl+C na edição fechou a TUI — era aí que doía");
+        let p = e.pergunta.as_ref().expect("a edição não podia ter fechado");
+        assert!(!p.texto.contains("Ctrl"), "a tecla virou texto: {:?}", p.texto);
+        tecla(&mut e, "Escape");
+        assert!(corpo_gravado(&e).contains("Um parágrafo com **negrito**. mais"), "{}", corpo_gravado(&e));
+    }
+
+    #[test]
+    fn no_modal_ctrl_c_continua_sendo_desistir() {
+        // O `main` matava a TUI antes de a tecla chegar aqui, então o
+        // "Ctrl+C desiste" do editor de código era caminho morto.
+        let mut e = markdown_editavel();
+        e.cursor = vec![1];
+        tecla(&mut e, "o");
+        tecla(&mut e, "/");
+        digitar(&mut e, "codigo");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "Escape");
+        e.gravacao = None;
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "lixo");
+        tecla(&mut e, "Ctrl+c");
+        assert!(!e.sair, "Ctrl+C no modal fechou a TUI");
+        assert!(e.modal.is_none(), "o modal devia ter fechado");
+        assert!(e.gravacao.is_none(), "desistir não podia gravar");
     }
 }

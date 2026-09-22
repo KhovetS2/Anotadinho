@@ -1813,10 +1813,6 @@ fn laco<B: ratatui::backend::Backend>(
         if k.kind != KeyEventKind::Press {
             continue;
         }
-        if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
-            salvar_pendente(estado, vault);
-            return Ok(None);
-        }
         let Some(nome) = nome_da_tecla(&k) else { continue };
         let destino = app::tecla(estado, &nome);
         if destino.is_some() || estado.sair || estado.trocar_de_vault.is_some() {

@@ -1516,7 +1516,7 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+T Ctrl+B", "alternar tema / sidebar"),
             ("Ctrl+D Ctrl+G Ctrl+U", "hoje / tags / assets"),
             ("/", "filtrar"),
-            ("q", "sair"),
+            ("q", "sair (Ctrl+C não sai)"),
         ],
     ),
     (
