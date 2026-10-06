@@ -710,6 +710,9 @@ fn run(cli: Cli) -> Result<(), String> {
                 } else {
                     anotadinho_core::agente::FormatoSaida::Texto
                 },
+                // Os `args` vêm da linha de comando, com `{prompt}`: o
+                // stdin do perfil padrão (ciclo 449) não vale pra eles.
+                entrada: anotadinho_core::agente::EntradaPrompt::Argumento,
                 ..Default::default()
             };
             let prompt = anotadinho_core::proposta::prompt_de_revisao(&p, &atual);
@@ -747,6 +750,9 @@ fn run(cli: Cli) -> Result<(), String> {
                 } else {
                     anotadinho_core::agente::FormatoSaida::Texto
                 },
+                // Os `args` vêm da linha de comando, com `{prompt}`: o
+                // stdin do perfil padrão (ciclo 449) não vale pra eles.
+                entrada: anotadinho_core::agente::EntradaPrompt::Argumento,
                 ..Default::default()
             };
             println!("avaliando {} tarefa(s) com {}", lista.len(), adaptador.binario);

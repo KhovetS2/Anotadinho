@@ -97,6 +97,45 @@ pub fn encerrar_arvore(filho: &mut std::process::Child) {
     let _ = filho.kill();
 }
 
+/// Como ligar o stdin do agente: um pipe quando há o que entregar,
+/// fechado quando não há (ciclo 449).
+///
+/// Fechado e não herdado: herdar deixaria o agente esperando o teclado
+/// de quem abriu o app — foi o "Reading additional input from stdin..."
+/// do ciclo 219.
+pub fn stdin_para(entrada: &Option<String>) -> std::process::Stdio {
+    if entrada.is_some() {
+        std::process::Stdio::piped()
+    } else {
+        std::process::Stdio::null()
+    }
+}
+
+/// Entrega o prompt pelo stdin do agente e FECHA o pipe (ciclo 449).
+///
+/// Numa thread própria, porque um prompt grande enche o buffer do pipe
+/// (64 KiB no Linux) e a escrita bloqueia até o agente ler. O agente,
+/// por sua vez, pode estar bloqueado escrevendo na saída que ninguém lê
+/// ainda — se a escrita fosse na mesma thread que depois lê a saída,
+/// os dois esperariam um pelo outro pra sempre.
+///
+/// Fechar é o que diz ao agente que o prompt acabou: sem o EOF, ele
+/// esperaria mais texto e nunca começaria.
+///
+/// Erro de escrita é ignorado de propósito: o agente que morre antes de
+/// ler tudo dá `BrokenPipe` aqui, e o motivo que interessa à pessoa vem
+/// da saída dele, não deste pipe.
+pub fn entregar_entrada(filho: &mut std::process::Child, entrada: Option<String>) {
+    let (Some(texto), Some(mut pipe)) = (entrada, filho.stdin.take()) else {
+        return;
+    };
+    std::thread::spawn(move || {
+        use std::io::Write;
+        let _ = pipe.write_all(texto.as_bytes());
+        // `pipe` sai de escopo aqui, e é isso que fecha.
+    });
+}
+
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
@@ -143,5 +182,37 @@ mod tests {
             unsafe { libc::kill(neto as i32, libc::SIGKILL) };
         }
         assert!(!vivo, "o neto {neto} sobreviveu ao cancelamento");
+    }
+
+    /// O prompt grande chega INTEIRO pelo stdin. 300 KiB passa do limite
+    /// de um argumento no Linux (128 KiB) e do buffer do pipe (64 KiB):
+    /// sem a thread de escrita, `cat` e este teste travariam um
+    /// esperando o outro.
+    #[test]
+    fn prompt_grande_chega_inteiro_pelo_stdin() {
+        use std::io::Read;
+        let prompt: String = (0..300 * 1024).map(|i| if i % 80 == 79 { '\n' } else { 'a' }).collect();
+        let entrada = Some(prompt.clone());
+        let mut comando = Command::new("cat");
+        comando.stdin(stdin_para(&entrada)).stdout(Stdio::piped()).stderr(Stdio::null());
+        preparar(&mut comando);
+        let mut filho = comando.spawn().expect("cat");
+        entregar_entrada(&mut filho, entrada);
+        let mut saida = String::new();
+        filho.stdout.take().unwrap().read_to_string(&mut saida).unwrap();
+        assert!(filho.wait().unwrap().success());
+        assert_eq!(saida.len(), prompt.len());
+        assert!(saida == prompt, "o conteúdo chegou diferente");
+    }
+
+    /// O mesmo prompt como ARGUMENTO não sai do lugar no Linux: é o
+    /// limite que o stdin existe pra contornar. Se um dia este teste
+    /// reprovar, o limite mudou — e o motivo do ciclo 449 no Linux
+    /// também.
+    #[test]
+    fn o_mesmo_prompt_como_argumento_e_recusado() {
+        let prompt: String = "a".repeat(300 * 1024);
+        let erro = Command::new("true").arg(&prompt).spawn().err();
+        assert!(erro.is_some(), "um argumento de 300 KiB passou");
     }
 }

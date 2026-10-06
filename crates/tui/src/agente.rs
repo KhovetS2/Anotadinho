@@ -2,8 +2,8 @@
 //!
 //! Na janela quem roda o agente é o backend do Tauri. A TUI não tem esse
 //! processo, então roda ela mesma, com as MESMAS peças do núcleo: o
-//! [`Adaptador`] monta os argumentos (o prompt como um argumento só, sem
-//! shell), o [`LeitorStream`] lê a saída em stream do Claude Code, e
+//! [`Adaptador`] monta os argumentos (sem shell; o prompt vai pelo stdin
+//! ou como um argumento só, ciclo 449), o [`LeitorStream`] lê a saída em stream do Claude Code, e
 //! `raiz_do_projeto` decide a pasta quando a configuração não diz.
 //!
 //! Um [`Trabalho`] é um processo filho numa thread: a tela pergunta
@@ -43,7 +43,8 @@ impl Trabalho {
         if let Some(problema) = adaptador.validar() {
             return Err(format!("configuração do agente inválida: {}", problema.mensagem()));
         }
-        let args = adaptador.montar_args_completo(prompt, config_mcp, sessao);
+        let anotadinho_core::agente::Execucao { args, entrada } = adaptador.montar_execucao(prompt, config_mcp, sessao);
+        let modo_de_entrada = adaptador.entrada;
         let executavel = anotadinho_core::agente::executavel_para_spawn(&adaptador.binario);
         let binario = adaptador.binario.clone();
         let limite = adaptador.timeout_s;
@@ -55,11 +56,12 @@ impl Trabalho {
         let mut filho: Child = comando
             .args(&args)
             .current_dir(cwd)
-            .stdin(Stdio::null())
+            .stdin(anotadinho_vault::processo::stdin_para(&entrada))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| format!("não consegui executar \"{binario}\": {e}"))?;
+            .map_err(|e| anotadinho_core::agente::explicar_erro_de_spawn(&binario, &e, modo_de_entrada))?;
+        anotadinho_vault::processo::entregar_entrada(&mut filho, entrada);
 
         let parcial = Arc::new(Mutex::new(String::new()));
         let uso: Arc<Mutex<Option<anotadinho_core::agente::Uso>>> = Arc::new(Mutex::new(None));
@@ -221,6 +223,7 @@ mod testes {
             args: args.iter().map(|a| a.to_string()).collect(),
             formato: FormatoSaida::Texto,
             timeout_s: 20,
+            entrada: anotadinho_core::agente::EntradaPrompt::Argumento,
             ..Adaptador::default()
         }
     }
@@ -268,6 +271,7 @@ mod testes_de_uso {
             args: vec!["--stream".into(), "{prompt}".into()],
             formato: FormatoSaida::StreamJson,
             timeout_s: 30,
+            entrada: anotadinho_core::agente::EntradaPrompt::Argumento,
             ..Adaptador::default()
         };
         let mut t = Trabalho::iniciar(&adaptador, "oi", ".", "", "").expect("subiu");

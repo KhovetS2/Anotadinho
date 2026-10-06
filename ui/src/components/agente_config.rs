@@ -12,7 +12,7 @@
 //! A configuração mora nas PREFERÊNCIAS, nunca no vault. Uma página que
 //! chegue de terceiro não pode escolher o que será executado.
 
-use anotadinho_core::agente::{Adaptador, FormatoSaida, TIMEOUT_MINIMO_S};
+use anotadinho_core::agente::{Adaptador, EntradaPrompt, FormatoSaida, TIMEOUT_MINIMO_S};
 use web_sys::{HtmlInputElement, HtmlSelectElement, HtmlTextAreaElement};
 use yew::prelude::*;
 
@@ -99,6 +99,9 @@ pub fn agente_config(props: &AgenteConfigProps) -> Html {
                 binario: String::new(),
                 args: vec!["{prompt}".to_string()],
                 timeout_s: TIMEOUT_MINIMO_S,
+                // Agente desconhecido: pelo argumento, que todo agente
+                // entende. O stdin é do perfil que foi medido (ciclo 449).
+                entrada: anotadinho_core::agente::EntradaPrompt::Argumento,
                 ..Default::default()
             });
         })
@@ -191,10 +194,41 @@ pub fn agente_config(props: &AgenteConfigProps) -> Html {
                                 })
                             }} />
                         <small>
-                            { "Exatamente um deles precisa conter " }
+                            { "Pelo argumento, exatamente um deles precisa conter " }
                             <code>{ "{prompt}" }</code>
-                            { ". O prompt entra como UM argumento, então aspas e quebras \
-                               de linha dentro dele são texto, não comando." }
+                            { ", e o prompt entra como UM argumento. Pela entrada padrão, \
+                               ele pode faltar. Nos dois casos não há shell: aspas e \
+                               quebras de linha no prompt são texto, não comando." }
+                        </small>
+                    </label>
+
+                    <label class="agente-config__campo">
+                        <span>{ "Entrega do prompt" }</span>
+                        <select class="input" data-nav-item="true"
+                            onchange={{
+                                let rascunho = rascunho.clone();
+                                Callback::from(move |e: Event| {
+                                    let Some(el) = e.target_dyn_into::<HtmlSelectElement>() else { return };
+                                    let mut novo = (*rascunho).clone();
+                                    novo.entrada = if el.value() == "stdin" {
+                                        EntradaPrompt::Stdin
+                                    } else {
+                                        EntradaPrompt::Argumento
+                                    };
+                                    rascunho.set(novo);
+                                })
+                            }}>
+                            <option value="argumento" selected={atual.entrada == EntradaPrompt::Argumento}>
+                                { "Argumento — no lugar de {prompt}" }
+                            </option>
+                            <option value="stdin" selected={atual.entrada == EntradaPrompt::Stdin}>
+                                { "Entrada padrão (stdin) — sem limite de tamanho" }
+                            </option>
+                        </select>
+                        <small>
+                            { "No Windows, um agente instalado pelo npm (.cmd) só recebe \
+                               o prompt pela entrada padrão: como argumento, quebra de \
+                               linha é recusada pelo sistema." }
                         </small>
                     </label>
 

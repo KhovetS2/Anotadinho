@@ -64,7 +64,8 @@ pub struct Adaptador {
     /// Executável. Sem shell no meio: nada de `sh -c`, pra não abrir
     /// espaço pra injeção pelo texto do prompt.
     pub binario: String,
-    /// Argumentos. Exatamente um deles deve conter `{prompt}`.
+    /// Argumentos. Com a entrega por argumento, exatamente um deles deve
+    /// conter `{prompt}`; pelo stdin, ele pode faltar (ver `entrada`).
     pub args: Vec<String>,
     /// Diretório de trabalho. Vazio = o PROJETO que contém o vault
     /// (ver `raiz_do_projeto`), não o vault.
@@ -114,6 +115,44 @@ pub struct Adaptador {
     /// onde `Texto` é o comportamento de sempre.
     #[serde(default)]
     pub formato: FormatoSaida,
+    /// Por onde o prompt chega ao agente (ciclo 449). Ausente em
+    /// configuração antiga, onde `Argumento` é o comportamento de sempre.
+    #[serde(default)]
+    pub entrada: EntradaPrompt,
+}
+
+/// Por onde o prompt chega ao agente (ciclo 449).
+///
+/// A linha de comando tem dois limites que o Anotadinho estoura. No
+/// Windows, `claude`/`codex` instalados pelo npm são shims `.cmd`, e a
+/// biblioteca padrão RECUSA argumento com `\r` ou `\n` pra `.cmd`/`.bat`
+/// (`batch file arguments are invalid`) — e todo prompt montado aqui tem
+/// quebra de linha, porque a blindagem do vault é feita em linhas
+/// próprias. Ou seja: no Windows nenhuma conversa chegava a rodar. No
+/// Linux, um argumento sozinho não passa de 128 KiB (`E2BIG`), e uma
+/// conversa com algumas transclusões chega lá.
+///
+/// Pelo stdin não há nenhum dos dois. Continua sem shell: são bytes num
+/// pipe, ninguém os interpreta.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EntradaPrompt {
+    /// O prompt no lugar de `{prompt}`, como um argumento só.
+    #[default]
+    Argumento,
+    /// O prompt pela entrada padrão. O argumento que for exatamente
+    /// `{prompt}` sai da lista; o agente que precisa de um marcador pra
+    /// ler o stdin (o `-` do Codex) o recebe nos próprios argumentos.
+    Stdin,
+}
+
+/// O que disparar: os argumentos e, se houver, o que vai pelo stdin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Execucao {
+    /// Argumentos finais, já com MCP, sessão e pastas extras.
+    pub args: Vec<String>,
+    /// O prompt, quando a entrega é pelo stdin. `None` = stdin fechado.
+    pub entrada: Option<String>,
 }
 
 fn timeout_padrao() -> u64 {
@@ -126,6 +165,9 @@ pub enum ProblemaConfig {
     SemBinario,
     SemMarcador,
     MarcadorRepetido,
+    /// Pelo stdin, `--msg={prompt}` não tem tradução: o marcador só pode
+    /// ser um argumento inteiro, que sai da lista.
+    MarcadorEmbutidoComStdin,
 }
 
 /// Uma ressalva sobre a configuração. Não impede nada (ciclo 241).
@@ -149,6 +191,10 @@ impl ProblemaConfig {
             Self::SemBinario => "informe o executável do agente",
             Self::SemMarcador => "um dos argumentos precisa conter {prompt}",
             Self::MarcadorRepetido => "{prompt} pode aparecer em um argumento só",
+            Self::MarcadorEmbutidoComStdin => {
+                "com o prompt pela entrada padrão, {prompt} só pode ser um argumento \
+                 inteiro (ou nenhum)"
+            }
         }
     }
 }
@@ -226,10 +272,15 @@ impl Adaptador {
             return Some(ProblemaConfig::SemBinario);
         }
         let com_marcador = self.args.iter().filter(|a| a.contains(MARCADOR_PROMPT)).count();
-        match com_marcador {
-            0 => Some(ProblemaConfig::SemMarcador),
-            1 => None,
-            _ => Some(ProblemaConfig::MarcadorRepetido),
+        match (self.entrada, com_marcador) {
+            (_, 2..) => Some(ProblemaConfig::MarcadorRepetido),
+            (EntradaPrompt::Argumento, 0) => Some(ProblemaConfig::SemMarcador),
+            (EntradaPrompt::Stdin, _)
+                if self.args.iter().any(|a| a.contains(MARCADOR_PROMPT) && a != MARCADOR_PROMPT) =>
+            {
+                Some(ProblemaConfig::MarcadorEmbutidoComStdin)
+            }
+            _ => None,
         }
     }
 
@@ -269,8 +320,14 @@ impl Adaptador {
         self.montar_args_completo(prompt, config_mcp, "")
     }
 
-    /// Com MCP e com SESSÃO (ciclo 433): o conjunto completo.
+    /// Com MCP e com SESSÃO (ciclo 433): só os argumentos. Pelo stdin, o
+    /// prompt NÃO está neles — quem dispara usa `montar_execucao`.
     pub fn montar_args_completo(&self, prompt: &str, config_mcp: &str, sessao: &str) -> Vec<String> {
+        self.montar_execucao(prompt, config_mcp, sessao).args
+    }
+
+    /// O que disparar (ciclo 449): argumentos e, pelo stdin, o prompt.
+    pub fn montar_execucao(&self, prompt: &str, config_mcp: &str, sessao: &str) -> Execucao {
         let mut out: Vec<String> = Vec::new();
         if !self.arg_sessao.trim().is_empty() && !sessao.trim().is_empty() {
             out.push(self.arg_sessao.clone());
@@ -289,12 +346,16 @@ impl Adaptador {
                 out.push(pasta.clone());
             }
         }
-        out.extend(
-            self.args
-                .iter()
-                .map(|a| a.replace(MARCADOR_PROMPT, prompt)),
-        );
-        out
+        match self.entrada {
+            EntradaPrompt::Argumento => {
+                out.extend(self.args.iter().map(|a| a.replace(MARCADOR_PROMPT, prompt)));
+                Execucao { args: out, entrada: None }
+            }
+            EntradaPrompt::Stdin => {
+                out.extend(self.args.iter().filter(|a| *a != MARCADOR_PROMPT).cloned());
+                Execucao { args: out, entrada: Some(prompt.to_string()) }
+            }
+        }
     }
 
     /// Devolve uma cópia com o timeout elevado ao piso, se estiver
@@ -325,7 +386,7 @@ impl Adaptador {
         // isso, quem já usou o app fica preso na versão velha — foi
         // como a configuração do usuário ficou sem `--sandbox
         // workspace-write` e a execução travava em "somente leitura".
-        const ANTIGOS: [(&str, &[&str]); 5] = [
+        const ANTIGOS: [(&str, &[&str]); 7] = [
             // ciclo 202
             ("Claude Code", &["-p", MARCADOR_PROMPT]),
             ("Codex", &["exec", MARCADOR_PROMPT]),
@@ -340,6 +401,21 @@ impl Adaptador {
                 "Codex",
                 &["exec", "--json", "--sandbox", "workspace-write", MARCADOR_PROMPT],
             ),
+            // ciclo 449: o prompt saiu da linha de comando pro stdin
+            (
+                "Claude Code",
+                &[
+                    "-p", "--output-format", "stream-json", "--verbose",
+                    "--permission-mode", "acceptEdits", MARCADOR_PROMPT,
+                ],
+            ),
+            (
+                "Codex",
+                &[
+                    "exec", "--json", "--sandbox", "workspace-write", "-c",
+                    "sandbox_workspace_write.network_access=true", MARCADOR_PROMPT,
+                ],
+            ),
         ];
         let antigo = ANTIGOS.iter().find(|(nome, args)| {
             self.nome == *nome
@@ -351,6 +427,7 @@ impl Adaptador {
                 Some(preset) => Self {
                     args: preset.args,
                     formato: preset.formato,
+                    entrada: preset.entrada,
                     // A pasta EXTRA configurada é da pessoa e fica;
                     // o argumento que a transporta é do preset.
                     arg_pasta_extra: preset.arg_pasta_extra,
@@ -384,7 +461,8 @@ impl Adaptador {
                     // agente pode mexer.
                     "--permission-mode".into(),
                     "acceptEdits".into(),
-                    MARCADOR_PROMPT.into(),
+                    // Sem prompt posicional, o `claude -p` lê do stdin
+                    // (medido em 2026-10-06, ciclo 449).
                 ],
                 cwd: String::new(),
                 pastas_extras: Vec::new(),
@@ -393,6 +471,7 @@ impl Adaptador {
                 arg_sessao: "--resume".into(),
                 timeout_s: TIMEOUT_PADRAO_S,
                 formato: FormatoSaida::StreamJson,
+                entrada: EntradaPrompt::Stdin,
             },
             Adaptador {
                 nome: "Codex".into(),
@@ -417,7 +496,9 @@ impl Adaptador {
                     // código — quem não quer, tira daqui.
                     "-c".into(),
                     "sandbox_workspace_write.network_access=true".into(),
-                    MARCADOR_PROMPT.into(),
+                    // `-` = instruções pelo stdin (ciclo 449; o `--help`
+                    // dele diz, e foi medido em 2026-10-06).
+                    "-".into(),
                 ],
                 cwd: String::new(),
                 pastas_extras: Vec::new(),
@@ -426,6 +507,7 @@ impl Adaptador {
                 arg_sessao: String::new(),
                 timeout_s: TIMEOUT_PADRAO_S,
                 formato: FormatoSaida::StreamJson,
+                entrada: EntradaPrompt::Stdin,
             },
             Adaptador {
                 nome: "opencode".into(),
@@ -445,6 +527,10 @@ impl Adaptador {
                 // configurado pra provocar uma saída. Fica em `Texto`,
                 // que funciona com qualquer agente, até alguém checar.
                 formato: FormatoSaida::Texto,
+                // O `--help` dele não diz se lê o stdin, e não deu pra
+                // medir. Fica no argumento — e no Windows, por isso,
+                // não roda via shim `.cmd` (spec do ciclo 449).
+                entrada: EntradaPrompt::Argumento,
             },
         ]
     }
@@ -571,6 +657,27 @@ pub fn executavel_para_spawn(binario: &str) -> String {
     let pathext = std::env::var("PATHEXT").unwrap_or_default();
     resolver_executavel(binario, &path_env, &pathext, true, |p| p.is_file())
         .unwrap_or_else(|| binario.to_string())
+}
+
+/// A mensagem de quando o spawn falha, na língua de quem configura.
+///
+/// O caso que importa é o do Windows (ciclo 449): prompt com quebra de
+/// linha indo como ARGUMENTO pra um shim `.cmd`. A biblioteca padrão
+/// recusa com `batch file arguments are invalid`, que não diz nem o que
+/// está errado nem o que fazer. Pelo stdin isso não acontece.
+pub fn explicar_erro_de_spawn(binario: &str, erro: &std::io::Error, entrada: EntradaPrompt) -> String {
+    let e_bat = erro.kind() == std::io::ErrorKind::InvalidInput
+        && erro.to_string().contains("batch file arguments are invalid");
+    if e_bat && entrada == EntradaPrompt::Argumento {
+        format!(
+            "\"{binario}\" é um script .cmd/.bat, e o Windows não deixa um script \
+             desses receber o prompt (que tem quebras de linha) como argumento. Na \
+             configuração do agente, troque a entrega do prompt para a entrada \
+             padrão (stdin)"
+        )
+    } else {
+        format!("não consegui executar \"{binario}\": {erro}")
+    }
 }
 
 #[cfg(test)]
@@ -731,6 +838,7 @@ mod tests {
             arg_sessao: String::new(),
             timeout_s: 30,
             formato: FormatoSaida::Texto,
+            entrada: EntradaPrompt::Argumento,
         }
     }
 
@@ -953,6 +1061,7 @@ mod tests {
             arg_sessao: String::new(),
             timeout_s: 180,
             formato: FormatoSaida::Texto,
+            entrada: EntradaPrompt::Argumento,
         };
         let novo = velho.migrado();
         assert_eq!(novo.formato, FormatoSaida::StreamJson);
@@ -1036,6 +1145,7 @@ mod tests {
             arg_sessao: String::new(),
             timeout_s: 180,
             formato: FormatoSaida::Texto,
+            entrada: EntradaPrompt::Argumento,
         };
         let depois = meu.clone().migrado();
         assert_eq!(depois.args, meu.args, "mexeu em configuração do usuário");
@@ -1528,6 +1638,7 @@ mod testes_config {
     #[test]
     fn o_marcador_continua_obrigatorio_e_unico() {
         let mut a = com_binario("claude");
+        a.entrada = EntradaPrompt::Argumento;
         a.args = vec!["-p".into()];
         assert_eq!(a.validar(), Some(ProblemaConfig::SemMarcador));
         a.args = vec!["{prompt}".into(), "{prompt}".into()];
@@ -1591,7 +1702,7 @@ mod testes_config {
 
     #[test]
     fn o_mcp_entra_nos_args_so_quando_o_agente_sabe_receber() {
-        let claude = Adaptador::presets().into_iter().find(|a| a.nome == "Claude Code").unwrap();
+        let claude = pelo_argumento(Adaptador::presets().into_iter().find(|a| a.nome == "Claude Code").unwrap());
         let com = claude.montar_args_com_mcp("oi", "/tmp/mcp.json");
         assert!(com.windows(2).any(|p| p[0] == "--mcp-config" && p[1] == "/tmp/mcp.json"), "{com:?}");
         // Antes do prompt: o que vem depois dele alguns agentes tratam
@@ -1626,7 +1737,7 @@ mod testes_config {
 
     #[test]
     fn o_resume_entra_antes_do_prompt_e_so_com_id() {
-        let claude = Adaptador::presets().into_iter().find(|a| a.nome == "Claude Code").unwrap();
+        let claude = pelo_argumento(Adaptador::presets().into_iter().find(|a| a.nome == "Claude Code").unwrap());
         let com = claude.montar_args_completo("oi", "", "abc-123");
         assert!(com.windows(2).any(|p| p[0] == "--resume" && p[1] == "abc-123"), "{com:?}");
         let i_resume = com.iter().position(|a| a == "--resume").unwrap();
@@ -1636,5 +1747,92 @@ mod testes_config {
         assert_eq!(claude.montar_args_completo("oi", "", ""), claude.montar_args("oi"));
         let codex = Adaptador::presets().into_iter().find(|a| a.nome == "Codex").unwrap();
         assert_eq!(codex.montar_args_completo("oi", "", "abc"), codex.montar_args("oi"));
+    }
+
+    /// O perfil do jeito de antes do ciclo 449: prompt no último
+    /// argumento. É onde a ORDEM dos argumentos ainda importa.
+    fn pelo_argumento(mut a: Adaptador) -> Adaptador {
+        a.args.retain(|x| x != "-");
+        a.args.push(MARCADOR_PROMPT.into());
+        a.entrada = EntradaPrompt::Argumento;
+        a
+    }
+
+    // --- Ciclo 449: o prompt pelo stdin -----------------------------------------------
+
+    #[test]
+    fn os_perfis_do_claude_e_do_codex_mandam_o_prompt_pelo_stdin() {
+        let prompt = "linha 1\nlinha 2";
+        for nome in ["Claude Code", "Codex"] {
+            let a = Adaptador::presets().into_iter().find(|a| a.nome == nome).unwrap();
+            assert_eq!(a.validar(), None, "{nome}");
+            let e = a.montar_execucao(prompt, "/tmp/mcp.json", "s-1");
+            assert_eq!(e.entrada.as_deref(), Some(prompt), "{nome}");
+            assert!(!e.args.iter().any(|x| x.contains("linha")), "{nome}: prompt nos args {:?}", e.args);
+            assert!(!e.args.iter().any(|x| x.contains(MARCADOR_PROMPT)), "{nome}: marcador sobrou {:?}", e.args);
+        }
+        // O Codex só lê o stdin com o `-` (ou sem posicional nenhum).
+        let codex = Adaptador::presets().into_iter().find(|a| a.nome == "Codex").unwrap();
+        assert_eq!(codex.montar_execucao("x", "", "").args.last().map(String::as_str), Some("-"));
+    }
+
+    #[test]
+    fn pelo_argumento_nada_vai_pro_stdin() {
+        let a = pelo_argumento(Adaptador::default());
+        let e = a.montar_execucao("oi\ntchau", "", "");
+        assert_eq!(e.entrada, None);
+        assert_eq!(e.args.last().map(String::as_str), Some("oi\ntchau"));
+    }
+
+    #[test]
+    fn pelo_stdin_o_marcador_e_opcional_mas_nunca_embutido() {
+        let mut a = com_binario("agente");
+        a.entrada = EntradaPrompt::Stdin;
+        a.args = vec!["run".into()];
+        assert_eq!(a.validar(), None);
+        a.args = vec!["run".into(), MARCADOR_PROMPT.into()];
+        assert_eq!(a.validar(), None);
+        assert_eq!(a.montar_execucao("p", "", "").args, vec!["run".to_string()]);
+        a.args = vec![format!("--msg={MARCADOR_PROMPT}")];
+        assert_eq!(a.validar(), Some(ProblemaConfig::MarcadorEmbutidoComStdin));
+        a.args = vec![MARCADOR_PROMPT.into(), MARCADOR_PROMPT.into()];
+        assert_eq!(a.validar(), Some(ProblemaConfig::MarcadorRepetido));
+    }
+
+    #[test]
+    fn configuracao_antiga_sem_o_campo_continua_pelo_argumento() {
+        let json = r#"{"nome":"meu","binario":"x","args":["{prompt}"]}"#;
+        let a: Adaptador = serde_json::from_str(json).unwrap();
+        assert_eq!(a.entrada, EntradaPrompt::Argumento);
+    }
+
+    #[test]
+    fn o_perfil_pronto_gravado_migra_pro_stdin_e_o_montado_a_mao_nao() {
+        for nome in ["Claude Code", "Codex"] {
+            let atual = Adaptador::presets().into_iter().find(|a| a.nome == nome).unwrap();
+            let gravado = pelo_argumento(atual.clone());
+            let migrado = gravado.migrado();
+            assert_eq!(migrado.entrada, EntradaPrompt::Stdin, "{nome}");
+            assert_eq!(migrado.args, atual.args, "{nome}");
+        }
+        let mut meu = pelo_argumento(Adaptador::default());
+        meu.args.insert(0, "--model".into());
+        meu.args.insert(1, "opus".into());
+        let depois = meu.clone().migrado();
+        assert_eq!(depois.entrada, EntradaPrompt::Argumento);
+        assert_eq!(depois.args, meu.args);
+    }
+
+    #[test]
+    fn o_erro_do_cmd_com_quebra_de_linha_diz_o_que_fazer() {
+        let erro = std::io::Error::new(std::io::ErrorKind::InvalidInput, "batch file arguments are invalid");
+        let m = explicar_erro_de_spawn("claude", &erro, EntradaPrompt::Argumento);
+        assert!(m.contains("stdin") && m.contains(".cmd"), "{m}");
+        assert!(!m.contains("batch file"), "{m}");
+        let outro = std::io::Error::new(std::io::ErrorKind::NotFound, "program not found");
+        assert_eq!(
+            explicar_erro_de_spawn("claude", &outro, EntradaPrompt::Argumento),
+            "não consegui executar \"claude\": program not found"
+        );
     }
 }

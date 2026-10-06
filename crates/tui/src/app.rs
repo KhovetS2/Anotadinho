@@ -9180,6 +9180,34 @@ mod testes {
         assert!(e.pedidos.contains(&Pedido::GravarPreferencias));
     }
 
+    /// Ciclo 449: a entrega do prompt aparece, vem do perfil e é gravada.
+    #[test]
+    fn configurar_agente_escolhe_a_entrega_do_prompt() {
+        use anotadinho_core::agente::EntradaPrompt;
+        let mut e = Estado::novo(paginas(), analisar("# x\n"));
+        modais::executar(&mut e, "configurar-agente");
+        let tela = desenho(&mut e, 100, 40).join("\n");
+        assert!(tela.contains("Entrega do prompt") && tela.contains("stdin"), "{tela}");
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        // O perfil padrão (Claude Code) já vem pelo stdin, e sem `{prompt}`.
+        assert_eq!(form.escolha("entrada"), "stdin");
+        // Trocar pra argumento sem `{prompt}` é recusado, com o motivo.
+        let i = form.campos.iter().position(|c| c.chave == "entrada").unwrap();
+        let crate::componentes::Valor::Opcoes(opcoes, _) = form.campos[i].valor.clone() else { panic!() };
+        form.campos[i].valor = crate::componentes::Valor::Opcoes(opcoes.clone(), 0);
+        for _ in 0..40 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        assert!(e.modal.is_some(), "salvou pelo argumento sem {{prompt}}");
+        // De volta ao stdin, grava.
+        let Some(Modal::Detalhe { form, .. }) = e.modal.as_mut() else { panic!() };
+        form.campos[i].valor = crate::componentes::Valor::Opcoes(opcoes, 1);
+        tecla(&mut e, "Enter");
+        assert!(e.modal.is_none(), "não salvou: {:?}", e.aviso);
+        assert_eq!(e.preferencias.agente.as_ref().unwrap().entrada, EntradaPrompt::Stdin);
+    }
+
     // --- Ciclo 351: arquivo mudado por fora --------------------------------
 
     #[test]

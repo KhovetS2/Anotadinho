@@ -535,6 +535,12 @@ const BOTAO_DA_PROPOSTA_DE_TESTE = (rotulo, alvo = "__uitest_proposta") => `(() 
   return true;
 })()`;
 
+// Espera o item DO CENÁRIO, não um item qualquer (ciclo 449). Com a fila
+// vazia os dois são o mesmo, e a corrida não aparece; com proposta de
+// verdade esperando revisão, o primeiro `.propostas__item` já está na
+// tela antes do de teste, e o clique procurava um item que não existia.
+const ITEM_DE_TESTE = `[...document.querySelectorAll('.propostas__item')].some(i => i.textContent.includes('__uitest'))`;
+
 const APLICAR_A_DE_TESTE = BOTAO_DA_PROPOSTA_DE_TESTE("Aplicar");
 const RECUSAR_A_DE_TESTE = BOTAO_DA_PROPOSTA_DE_TESTE("Recusar");
 
@@ -559,7 +565,7 @@ fluxo.push({
       ctx.escrever("---\ntitle: __uitest\ntype: propostas\n---\n");
       await recarregarEstavel(bridge);
       await abrirTelaDePropostas(bridge, ctx);
-      await esperar(bridge, "document.querySelector('.propostas__item')", "a proposta na tela");
+      await esperar(bridge, ITEM_DE_TESTE, "a proposta na tela");
 
       const linhas = await bridge.js(
         `[...document.querySelectorAll('.propostas__l--entra')].map(e => e.textContent)`,
@@ -605,7 +611,7 @@ fluxo.push({
       ctx.escrever("---\ntitle: __uitest\ntype: propostas\n---\n");
       await recarregarEstavel(bridge);
       await abrirTelaDePropostas(bridge, ctx);
-      await esperar(bridge, "document.querySelector('.propostas__item')", "a proposta");
+      await esperar(bridge, ITEM_DE_TESTE, "a proposta");
 
       const recusou = await bridge.js(RECUSAR_A_DE_TESTE);
       ctx.assertEq(recusou, true, "não achei o item da proposta de teste na tela");
@@ -1446,7 +1452,7 @@ fluxo.push({
       await recarregarEstavel(bridge);
       await esperar(bridge, "document.querySelector('.header-bar__propostas')", "o aviso da fila");
       await bridge.js(`(() => { document.querySelector('.header-bar__propostas').click(); return true; })()`);
-      await esperar(bridge, "document.querySelector('.propostas__item')", "a tela de revisão");
+      await esperar(bridge, ITEM_DE_TESTE, "a tela de revisão");
 
       // Diff é o padrão: continua sendo o que responde "o que mudou".
       const item = `[...document.querySelectorAll('.propostas__item')].find(e => e.textContent.includes(${JSON.stringify(alvo)}))`;
@@ -1534,7 +1540,7 @@ fluxo.push({
       await recarregarEstavel(bridge);
       await esperar(bridge, "document.querySelector('.header-bar__propostas')", "o aviso da fila");
       await bridge.js(`(() => { document.querySelector('.header-bar__propostas').click(); return true; })()`);
-      await esperar(bridge, "document.querySelector('.propostas__item')", "a tela de revisão");
+      await esperar(bridge, ITEM_DE_TESTE, "a tela de revisão");
 
       const aplicou = await bridge.js(BOTAO_DA_PROPOSTA_DE_TESTE("Aplicar", "__uitest"));
       ctx.assertEq(aplicou, true, "não achei a proposta de etapa na tela");
@@ -1825,7 +1831,7 @@ fluxo.push({
 
       // Clicar leva pra revisão — o aviso não pode levar a lugar nenhum.
       await bridge.js(`(() => { document.querySelector('.header-bar__propostas').click(); return true; })()`);
-      await esperar(bridge, "document.querySelector('.propostas__item')", "a tela de revisão");
+      await esperar(bridge, ITEM_DE_TESTE, "a tela de revisão");
 
       const recusou = await bridge.js(BOTAO_DA_PROPOSTA_DE_TESTE("Recusar", "__uitest_aviso"));
       ctx.assertEq(recusou, true, "não achei o item da proposta de teste na tela");
@@ -1918,6 +1924,7 @@ const DISPARAR = (
   timeout = 60,
   formato = "texto",
   vault = RAIZ,
+  entrada = "argumento",
 ) => `(async () => {
   await window.__TAURI_INTERNALS__.invoke('iniciar_agente', {
     adaptador: {
@@ -1927,6 +1934,7 @@ const DISPARAR = (
       cwd: '',
       timeout_s: ${timeout},
       formato: ${JSON.stringify(formato)},
+      entrada: ${JSON.stringify(entrada)},
     },
     prompt: ${JSON.stringify(prompt)},
     vaultPath: ${JSON.stringify(vault)},
@@ -2067,6 +2075,36 @@ fluxo.push({
     }
     ctx.assertEq(fim && fim.estado, "concluido", `esperava concluido, veio ${JSON.stringify(fim)}`);
     ctx.assertEq(fim.texto, "RESPOSTA para: pergunta", "a resposta não saiu do evento result");
+  },
+});
+
+// ── ciclo 449: o prompt pelo stdin ────────────────────────────────────
+
+fluxo.push({
+  nome: "agente: prompt grande e com quebras chega inteiro pelo stdin (449)",
+  async fn(bridge, ctx) {
+    const conversa = "pages/__uitest-stdin.md";
+    // 200 KiB passam do limite de UM argumento no Linux (128 KiB): pela
+    // linha de comando, o spawn falharia com E2BIG. E cada linha tem
+    // quebra, que é o que o Windows recusa num shim `.cmd`.
+    const linha = "x".repeat(99) + "\n";
+    const prompt = linha.repeat(2048);
+    await bridge.js(
+      DISPARAR(["--stdin", "{prompt}"], prompt, conversa, 30, "texto", RAIZ, "stdin"),
+    );
+    let fim = null;
+    for (let i = 0; i < 40; i++) {
+      await PAUSA(250);
+      fim = await bridge.js(ESTADO(conversa));
+      if (!fim || fim.estado !== "rodando") break;
+    }
+    ctx.assertEq(fim && fim.estado, "concluido", `esperava concluido, veio ${JSON.stringify(fim)}`);
+    // `argumentos: 1` = só o `--stdin`: o `{prompt}` saiu da lista.
+    ctx.assertEq(
+      fim.texto,
+      `RECEBI ${prompt.length} bytes em 2048 quebras; argumentos: 1`,
+      "o prompt não chegou inteiro pelo stdin",
+    );
   },
 });
 

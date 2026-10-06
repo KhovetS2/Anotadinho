@@ -766,7 +766,11 @@ fn disparar(
             })
             .unwrap_or_default()
     };
-    let args = adaptador.montar_args_completo(&prompt, &config_mcp, &sessao);
+    // Os argumentos e, pelo stdin (ciclo 449), o prompt: no Windows ele
+    // não passa como argumento de um shim `.cmd` (tem quebra de linha).
+    let anotadinho_core::agente::Execucao { args, entrada } =
+        adaptador.montar_execucao(&prompt, &config_mcp, &sessao);
+    let modo_de_entrada = adaptador.entrada;
     let vault_conversa = vault_path.clone();
     // Sem `cwd` configurado, o agente trabalha na raiz do PROJETO, não
     // no vault: rodar dentro das notas o deixava sem enxergar o código
@@ -827,7 +831,7 @@ fn disparar(
             comando
                 .args(&args)
                 .current_dir(&cwd)
-                .stdin(Stdio::null())
+                .stdin(anotadinho_vault::processo::stdin_para(&entrada))
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
             // Sem isso, o Windows abre uma janela de console pro
@@ -840,9 +844,10 @@ fn disparar(
                 use std::os::windows::process::CommandExt;
                 comando.creation_flags(0x0800_0000);
             }
-            let mut filho = comando
-                .spawn()
-                .map_err(|e| format!("não consegui executar \"{binario}\": {e}"))?;
+            let mut filho = comando.spawn().map_err(|e| {
+                anotadinho_core::agente::explicar_erro_de_spawn(&binario, &e, modo_de_entrada)
+            })?;
+            anotadinho_vault::processo::entregar_entrada(&mut filho, entrada);
 
             // Lê a saída LINHA A LINHA numa thread separada. Sem isso
             // não haveria nada pra mostrar durante a execução — e numa

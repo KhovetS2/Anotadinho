@@ -53,6 +53,17 @@ case "$1" in
     ;;
   # Diz onde está rodando (ciclo 215).
   --onde) pwd; exit 0 ;;
+  # Lê o prompt da ENTRADA PADRÃO (ciclo 449) e diz quanto chegou e como
+  # começa e termina: é o que prova que um prompt grande e com quebras
+  # chegou inteiro, sem passar pela linha de comando. Sem EOF no stdin,
+  # o `cat` não volta — e o cenário estoura o tempo.
+  --stdin)
+    RECEBIDO=$(cat; printf x)
+    RECEBIDO="${RECEBIDO%x}"
+    LINHAS=$(printf '%s' "$RECEBIDO" | wc -l | tr -d ' ')
+    printf 'RECEBI %s bytes em %s quebras; argumentos: %s' "$(printf '%s' "$RECEBIDO" | wc -c | tr -d ' ')" "$LINHAS" "$#"
+    exit 0
+    ;;
 
   # PROPÕE de verdade, pela mesma porta de um agente real (ciclo 413):
   # acha o vault na mensagem e chama `anotadinho-cli propor`. É o que faz

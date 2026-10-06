@@ -1102,6 +1102,9 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         binario: String::new(),
                         args: vec!["{prompt}".into()],
                         timeout_s: anotadinho_core::agente::TIMEOUT_MINIMO_S,
+                        // Agente desconhecido: pelo argumento, que todo
+                        // agente entende (ciclo 449).
+                        entrada: anotadinho_core::agente::EntradaPrompt::Argumento,
                         ..Default::default()
                     };
                     abrir_formulario_do_agente(e, novo);
@@ -1945,16 +1948,22 @@ pub fn abrir_configuracao_do_agente(e: &mut Estado) {
 
 fn abrir_formulario_do_agente(e: &mut Estado, a: anotadinho_core::agente::Adaptador) {
     use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
-    use anotadinho_core::agente::FormatoSaida;
+    use anotadinho_core::agente::{EntradaPrompt, FormatoSaida};
     e.agente_original = Some(a.nome.clone());
     let formatos = vec![
         ("texto".to_string(), "Texto — a saída inteira é a resposta".to_string()),
         ("stream".to_string(), "JSON por linha — mostra o progresso".to_string()),
     ];
+    let entregas = vec![
+        // Curtos: as opções vão lado a lado, e o resto se corta.
+        ("argumento".to_string(), "Argumento".to_string()),
+        ("stdin".to_string(), "stdin".to_string()),
+    ];
     let mut form = Formulario::novo(vec![
         C::novo("nome", "Nome", Valor::Texto(a.nome.clone())),
         C::novo("binario", "Executável", Valor::Texto(a.binario.clone())).com_dica("claude, codex, ou o caminho completo"),
         C::novo("args", "Argumentos, um por item ({prompt} em um)", Valor::Lista(a.args.clone())),
+        C::novo("entrada", "Entrega do prompt", Valor::Opcoes(entregas, usize::from(a.entrada == EntradaPrompt::Stdin))),
         C::novo("formato", "Formato da saída", Valor::Opcoes(formatos, usize::from(a.formato == FormatoSaida::StreamJson))),
         C::novo("timeout", "Tempo limite (minutos)", Valor::Texto((a.timeout_s / 60).to_string())),
         C::novo("cwd", "Pasta de trabalho", Valor::Texto(a.cwd.clone())).com_dica("vazia: a raiz do projeto"),
@@ -1976,7 +1985,7 @@ fn abrir_formulario_do_agente(e: &mut Estado, a: anotadinho_core::agente::Adapta
 /// "Salvar e usar": valida como a janela e grava. `false` deixa o
 /// formulário aberto, com o problema no aviso.
 fn salvar_agente(e: &mut Estado, form: &crate::componentes::Formulario) -> bool {
-    use anotadinho_core::agente::{Adaptador, FormatoSaida, TIMEOUT_MINIMO_S};
+    use anotadinho_core::agente::{Adaptador, EntradaPrompt, FormatoSaida, TIMEOUT_MINIMO_S};
     let minutos: u64 = form.texto("timeout").trim().parse().unwrap_or(0);
     let a = Adaptador {
         nome: Some(form.texto("nome").trim().to_string()).filter(|n| !n.is_empty()).unwrap_or_else(|| "personalizado".into()),
@@ -1989,6 +1998,7 @@ fn salvar_agente(e: &mut Estado, form: &crate::componentes::Formulario) -> bool 
         arg_sessao: form.texto("arg_sessao").trim().to_string(),
         timeout_s: (minutos * 60).max(TIMEOUT_MINIMO_S),
         formato: if form.escolha("formato") == "stream" { FormatoSaida::StreamJson } else { FormatoSaida::Texto },
+        entrada: if form.escolha("entrada") == "stdin" { EntradaPrompt::Stdin } else { EntradaPrompt::Argumento },
     };
     if let Some(p) = a.validar() {
         e.aviso = Some(p.mensagem().to_string());

@@ -100,14 +100,16 @@ fn executar(adaptador: &Adaptador, prompt: &str, cwd: &std::path::Path) -> Resul
     };
     let mut comando = Command::new(&executavel);
     anotadinho_vault::processo::preparar(&mut comando);
+    let execucao = adaptador.montar_execucao(prompt, "", "");
     let mut filho = comando
-        .args(adaptador.montar_args(prompt))
+        .args(&execucao.args)
         .current_dir(cwd)
-        .stdin(Stdio::null())
+        .stdin(anotadinho_vault::processo::stdin_para(&execucao.entrada))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("não consegui executar \"{}\": {e}", adaptador.binario))?;
+        .map_err(|e| anotadinho_core::agente::explicar_erro_de_spawn(&adaptador.binario, &e, adaptador.entrada))?;
+    anotadinho_vault::processo::entregar_entrada(&mut filho, execucao.entrada);
     // Espera com teto: um agente pendurado não pode travar a suíte.
     let limite = std::time::Duration::from_secs(if adaptador.timeout_s == 0 { 600 } else { adaptador.timeout_s });
     let comeco = std::time::Instant::now();
@@ -202,6 +204,7 @@ mod testes {
             args: vec![modo.into(), "{prompt}".into()],
             formato: anotadinho_core::agente::FormatoSaida::Texto,
             timeout_s: 30,
+            entrada: anotadinho_core::agente::EntradaPrompt::Argumento,
             ..Adaptador::default()
         }
     }
