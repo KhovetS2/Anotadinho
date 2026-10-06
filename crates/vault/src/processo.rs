@@ -96,3 +96,52 @@ pub fn encerrar_arvore(filho: &mut std::process::Child) {
         .status();
     let _ = filho.kill();
 }
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+
+    /// O neto já morreu (ou virou zumbi esperando quem o recolha, que
+    /// para quem olha de fora é o mesmo que morto).
+    fn morto(pid: u32) -> bool {
+        match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            Err(_) => true,
+            // `pid (comm) S ...`: o estado vem depois do último `)`.
+            Ok(stat) => stat.rsplit(')').next().map(|r| r.trim_start().starts_with('Z')).unwrap_or(true),
+        }
+    }
+
+    /// O caso que o módulo existe pra resolver: o filho cria um neto, e
+    /// interromper o filho tem que levar o neto junto.
+    #[test]
+    fn encerrar_arvore_alcanca_o_neto() {
+        let mut comando = Command::new("sh");
+        comando
+            .args(["-c", "sleep 30 & echo $!; wait"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        preparar(&mut comando);
+        let mut filho = comando.spawn().expect("sh");
+        let mut linha = String::new();
+        BufReader::new(filho.stdout.take().unwrap()).read_line(&mut linha).unwrap();
+        let neto: u32 = linha.trim().parse().expect("pid do neto");
+        assert!(!morto(neto), "o neto devia estar vivo antes do cancelamento");
+
+        encerrar_arvore(&mut filho);
+        let _ = filho.wait();
+
+        let prazo = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !morto(neto) && std::time::Instant::now() < prazo {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let vivo = !morto(neto);
+        if vivo {
+            // Não deixa o `sleep` órfão pra trás quando o teste reprova.
+            unsafe { libc::kill(neto as i32, libc::SIGKILL) };
+        }
+        assert!(!vivo, "o neto {neto} sobreviveu ao cancelamento");
+    }
+}

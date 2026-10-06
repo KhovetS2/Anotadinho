@@ -5,8 +5,6 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod grupo_de_processos;
-
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -825,7 +823,7 @@ fn disparar(
             // quem procura no `PATH` continua sendo o sistema.
             let executavel = anotadinho_core::agente::executavel_para_spawn(&binario);
             let mut comando = Command::new(&executavel);
-            grupo_de_processos::preparar(&mut comando);
+            anotadinho_vault::processo::preparar(&mut comando);
             comando
                 .args(&args)
                 .current_dir(&cwd)
@@ -930,7 +928,7 @@ fn disparar(
                     return Err("__CANCELADO__".to_string());
                 };
                 if cancelado.load(Ordering::Relaxed) {
-                    grupo_de_processos::encerrar_arvore(proc);
+                    anotadinho_vault::processo::encerrar_arvore(proc);
                     let _ = proc.wait();
                     return Err("__CANCELADO__".to_string());
                 }
@@ -938,7 +936,7 @@ fn disparar(
                     Ok(Some(s)) => break s,
                     Ok(None) => {
                         if limite > 0 && inicio.elapsed().as_secs() >= limite {
-                            grupo_de_processos::encerrar_arvore(proc);
+                            anotadinho_vault::processo::encerrar_arvore(proc);
                             let _ = proc.wait();
                             let minutos = limite / 60;
                             return Err(format!(
@@ -1190,7 +1188,7 @@ fn cancelar_agente(conversa_path: String) -> Result<(), String> {
     job.cancelado.store(true, Ordering::Relaxed);
     if let Ok(mut f) = job.filho.lock() {
         if let Some(ref mut c) = *f {
-            grupo_de_processos::encerrar_arvore(c);
+            anotadinho_vault::processo::encerrar_arvore(c);
         }
     }
     Ok(())

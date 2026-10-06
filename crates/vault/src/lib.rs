@@ -10,6 +10,7 @@ pub mod git_status;
 pub mod git_sync;
 pub mod index_cache;
 pub mod io;
+pub mod processo;
 pub mod watcher;
 
 pub use caminho::{normalizar, relativo};

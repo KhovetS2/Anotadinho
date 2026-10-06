@@ -15,9 +15,6 @@ crossterm = "0.29"
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
-
-# Só pelo `localtime_r` (ciclo 315): o calendário ancora no dia de HOJE,
-# e "hoje" é o do fuso da pessoa — em UTC, depois das 21h em Brasília a
-# TUI já estaria no dia seguinte. O núcleo não lê relógio de propósito.
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
+# O relógio no fuso da pessoa (ciclo 448), nos três sistemas. Já vinha
+# pela árvore do `vault`; aqui só fica declarado quem usa.
+chrono = { workspace = true, features = ["clock"] }

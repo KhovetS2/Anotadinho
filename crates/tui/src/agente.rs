@@ -48,7 +48,11 @@ impl Trabalho {
         let binario = adaptador.binario.clone();
         let limite = adaptador.timeout_s;
         let formato = adaptador.formato;
-        let mut filho: Child = Command::new(&executavel)
+        let mut comando = Command::new(&executavel);
+        // O mesmo preparo da janela: sem ele, interromper mata só o
+        // wrapper, e o neto Node segue rodando — no Windows, sempre.
+        anotadinho_vault::processo::preparar(&mut comando);
+        let mut filho: Child = comando
             .args(&args)
             .current_dir(cwd)
             .stdin(Stdio::null())
@@ -116,7 +120,7 @@ impl Trabalho {
             let inicio = Instant::now();
             let resultado = loop {
                 if cancelado_t.load(Ordering::Relaxed) {
-                    let _ = filho.kill();
+                    anotadinho_vault::processo::encerrar_arvore(&mut filho);
                     let _ = filho.wait();
                     break Err("execução interrompida por você".to_string());
                 }
@@ -146,7 +150,7 @@ impl Trabalho {
                     }
                     Ok(None) => {
                         if limite > 0 && inicio.elapsed().as_secs() >= limite {
-                            let _ = filho.kill();
+                            anotadinho_vault::processo::encerrar_arvore(&mut filho);
                             let _ = filho.wait();
                             break Err(format!("o agente passou de {} min e foi interrompido", limite / 60));
                         }

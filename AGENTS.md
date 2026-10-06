@@ -79,9 +79,12 @@ Se o binário não existir: `cargo build -p anotadinho-cli`.
 ### Escrever no vault: proponha, não grave
 
 ```bash
-cli propor --alvo pages/specs/nova.md --criar --de /tmp/conteudo.md
+cli propor pages/specs/nova.md --file /tmp/conteudo.md --motivo "por quê"
 cli propostas          # o humano revisa
 ```
+
+O arquivo de `--file` pode estar fora do vault; quem precisa estar dentro
+é a página alvo. Página nova e página existente usam o mesmo comando.
 
 `propor` grava um diff pra revisão humana em vez de escrever direto. É o
 modo recomendado pra você. Uma nota é trabalho de alguém: sobrescrever
@@ -137,7 +140,15 @@ compila os ramos `#[cfg(windows)]` que o build do Linux nem lê.
 ```bash
 rustup target add x86_64-pc-windows-gnu   # uma vez
 cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-gnu
+cargo check -p anotadinho-tui -p anotadinho-cli --target x86_64-pc-windows-gnu
 ```
+
+Se der `can't find crate for core` com o alvo instalado, o `cargo` que
+está rodando não é o do rustup: o Rust empacotado pela distribuição
+(`/usr/bin/cargo` no Fedora) vem antes no `PATH` e não enxerga os alvos
+do rustup. Ponha `~/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin`
+na frente. O erro tem cara de "o projeto não compila pro Windows", e não
+é isso (ciclo 448).
 
 E a regra que vem junto: quando o comportamento depende do sistema, o
 sistema entra por **parâmetro**, não por `cfg!` no meio da lógica. Um

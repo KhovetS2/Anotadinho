@@ -10,6 +10,7 @@ use anotadinho_ipc::{
 use anotadinho_tui::app::especiais::{self, TipoEspecial};
 use anotadinho_tui::app::{Pedido, Preferencias};
 use anotadinho_tui::app::{self, Estado};
+use anotadinho_tui::sistema;
 use clap::Parser;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
@@ -122,44 +123,27 @@ fn ler(vault: &str, caminho: &str) -> Result<(String, Option<String>), String> {
 
 /// O dia de hoje no fuso da pessoa, `AAAA-MM-DD` (ciclo 315).
 ///
-/// O núcleo não lê relógio de propósito; quem lê é quem roda. No Unix o
-/// fuso vem do `localtime_r`; fora dele, UTC — um dia a menos ou a mais
-/// perto da meia-noite, e só isso.
+/// O núcleo não lê relógio de propósito; quem lê é quem roda.
 fn hoje_local() -> String {
     agora_local().split(' ').next().unwrap_or_default().to_string()
 }
 
 /// Agora, `AAAA-MM-DD HH:MM`, no fuso da pessoa — o carimbo das conversas
 /// (ciclo 339).
+///
+/// Pelo `chrono` (ciclo 448), e não pelo `localtime_r` da libc: aquele
+/// só existia no Unix, e no Windows a TUI caía em UTC — depois das 21h
+/// em Brasília, o calendário já marcava amanhã como hoje. Um caminho só
+/// nos três sistemas é o que o Linux consegue exercer; e é o mesmo
+/// relógio que a janela usa pro registro de execuções (ciclo 441).
 fn agora_local() -> String {
-    let agora = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    #[cfg(unix)]
-    {
-        let t: libc::time_t = agora as libc::time_t;
-        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-        // SAFETY: `t` e `tm` são locais válidos; `localtime_r` só escreve
-        // em `tm` e devolve nulo se falhar.
-        let ok = unsafe { !libc::localtime_r(&t, &mut tm).is_null() };
-        if ok {
-            let dia = anotadinho_core::date_util::format_date(tm.tm_year + 1900, (tm.tm_mon + 1) as u32, tm.tm_mday as u32);
-            return format!("{dia} {:02}:{:02}", tm.tm_hour, tm.tm_min);
-        }
-    }
-    let dia = anotadinho_core::date_util::add_days("1970-01-01", agora.div_euclid(86_400)).unwrap_or_default();
-    let s = agora.rem_euclid(86_400);
-    format!("{dia} {:02}:{:02}", s / 3600, (s % 3600) / 60)
+    chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()
 }
 
 /// Onde as preferências da TUI moram: fora do vault, na pasta de
-/// configuração da pessoa.
+/// configuração da pessoa (`sistema::arquivo_de_preferencias`).
 fn caminho_das_preferencias() -> Option<std::path::PathBuf> {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))?;
-    Some(base.join("anotadinho").join("tui.json"))
+    sistema::arquivo_de_preferencias(sistema::ambiente, cfg!(windows)).map(std::path::PathBuf::from)
 }
 
 fn ler_preferencias() -> Preferencias {
@@ -950,10 +934,7 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                 ),
                 Pedido::PastaDoAgente { pasta, extra } => {
                     // `~` vale como a pasta da pessoa.
-                    let pasta = match (pasta.strip_prefix('~'), std::env::var("HOME")) {
-                        (Some(resto), Ok(casa)) => format!("{casa}{resto}"),
-                        _ => pasta,
-                    };
+                    let pasta = sistema::expandir_til(&pasta, sistema::ambiente, cfg!(windows));
                     if !(pasta.is_empty() && !extra) && !std::path::Path::new(&pasta).is_dir() {
                         estado.aviso = Some(format!("\"{pasta}\" não é uma pasta"));
                     } else {
@@ -979,7 +960,7 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                         alvo.clone()
                     } else {
                         let limpo = alvo.trim_start_matches("./").trim_start_matches("../");
-                        std::path::Path::new(vault).join(limpo).to_string_lossy().to_string()
+                        sistema::caminho_nativo(vault, limpo, cfg!(windows))
                     };
                     if !e_url && !std::path::Path::new(&destino).exists() {
                         estado.aviso = Some(format!("não achei {alvo}"));
@@ -998,10 +979,7 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                     }
                 }
                 Pedido::TrocarVault { pasta, criar } => {
-                    let pasta = match (pasta.strip_prefix('~'), std::env::var("HOME")) {
-                        (Some(resto), Ok(casa)) => format!("{casa}{resto}"),
-                        _ => pasta,
-                    };
+                    let pasta = sistema::expandir_til(&pasta, sistema::ambiente, cfg!(windows));
                     let tem_paginas = handle_list_pages(pasta.clone()).is_ok_and(|p| !p.is_empty());
                     if criar {
                         match anotadinho_ipc::handle_criar_vault(pasta.clone()) {

@@ -17,5 +17,10 @@ tracing = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 notify = { workspace = true }
 
+# Só pelo `setpgid`/`killpg` de `processo`: cancelar o agente precisa
+# alcançar os netos, e o wrapper Node dos agentes sempre tem um.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3.9"

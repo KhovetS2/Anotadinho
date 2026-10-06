@@ -98,7 +98,9 @@ fn executar(adaptador: &Adaptador, prompt: &str, cwd: &std::path::Path) -> Resul
     } else {
         executavel
     };
-    let mut filho = Command::new(&executavel)
+    let mut comando = Command::new(&executavel);
+    anotadinho_vault::processo::preparar(&mut comando);
+    let mut filho = comando
         .args(adaptador.montar_args(prompt))
         .current_dir(cwd)
         .stdin(Stdio::null())
@@ -113,7 +115,7 @@ fn executar(adaptador: &Adaptador, prompt: &str, cwd: &std::path::Path) -> Resul
         match filho.try_wait() {
             Ok(Some(_)) => break,
             Ok(None) if comeco.elapsed() >= limite => {
-                let _ = filho.kill();
+                anotadinho_vault::processo::encerrar_arvore(&mut filho);
                 let _ = filho.wait();
                 return Err(format!("o agente passou de {}s e foi interrompido", limite.as_secs()));
             }
