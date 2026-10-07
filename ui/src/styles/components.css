@@ -1483,6 +1483,10 @@
    que botão nenhum: some com o ponteiro do subárvore inteira.
    O scroll continua funcionando porque quem rola é o contêiner de fora. */
 .pagina-preview { pointer-events: none; }
+/* A Visualização usa a árvore do editor (ciclo 452) pra herdar a
+   tipografia dele; do contêiner sai só o que é de PAINEL — o editor
+   rola e tem margem própria, aqui quem rola é o cartão da proposta. */
+.pagina-preview.editor__wysiwyg-segments { flex: none; overflow: visible; padding: 0; }
 .pagina-preview__embed { margin: 0.6rem 0; }
 
 .propostas__diff {
@@ -1496,7 +1500,10 @@
   font-family: var(--font-mono);
   font-size: 0.75rem;
 }
-.propostas__l { padding: 0 0.5rem; white-space: pre; color: var(--text-muted); }
+/* `pre-wrap`, não `pre` (ciclo 452): a mudança no fim de uma linha longa
+   ficava fora da caixa até alguém rolar pro lado — e quem não rola
+   aprova sem ter visto. */
+.propostas__l { padding: 0 0.5rem; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); }
 /* Trechos e realce fino na revisão (ciclo 424). */
 .propostas__trecho {
   display: flex; align-items: center; gap: 8px;

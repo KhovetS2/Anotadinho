@@ -1446,6 +1446,104 @@ fluxo.push({
 
 // ── ciclo 230: revisar vendo a página, não só o texto ────────────────
 
+// ── ciclo 452: a Visualização é a tela final ─────────────────────────
+
+// O estilo calculado dos elementos que a pessoa LÊ: título, parágrafo,
+// lista, item, negrito e código. São os que divergiam (medido no 452).
+const ESTILO_DA_PAGINA = (raiz) => `(() => {
+  const r = ${raiz};
+  if (!r) return null;
+  const m = (sel) => {
+    // Dentro do CONTEÚDO: o .editor tem outros títulos (painéis).
+    const e = r.querySelector('.editor__wysiwyg ' + sel);
+    if (!e) return null;
+    const c = getComputedStyle(e);
+    return [c.fontSize, c.fontWeight, c.lineHeight, c.marginTop, c.marginBottom, c.paddingLeft, c.color, c.backgroundColor].join(' ');
+  };
+  return { h2: m('h2'), p: m('p'), ul: m('ul'), li: m('li'), strong: m('li strong'), code: m('li code') };
+})()`;
+
+fluxo.push({
+  nome: "revisão: a visualização tem o estilo da página e só os trechos escolhidos (452)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const id = "uitest-tela-final";
+    const pendente = `${ctx.vault}/.anotadinho/propostas/${id}.json`;
+    const alvo = "pages/__uitest_tela_final.md";
+    const arquivo = `${ctx.vault}/${alvo}`;
+    // Linha longa com a mudança NO FIM: é o caso em que o diff escondia
+    // o que mudou atrás da borda.
+    const longa = (fim) => "Uma linha bem comprida que descreve o requisito inteiro de uma vez, como o markdown do vault costuma ser escrito, e só no final diz " + fim + ".";
+    const corpo = (par, fim) => `## Seção\n\n${par}\n\n- item **forte**\n- item \`code\`\n\n${longa(fim)}\n`;
+    const atual = "---\ntitle: tela final\n---\n\n" + corpo("Parágrafo antigo.", "VELHO");
+    const proposto = "---\ntitle: tela final\n---\n\n" + corpo("Parágrafo novo.", "NOVO");
+    fs.rmSync(pendente, { force: true });
+    fs.writeFileSync(arquivo, atual);
+    try {
+      // 1. A página de VERDADE, no editor: é a referência.
+      await recarregarEstavel(bridge);
+      await abrirPaginaEstavel(bridge, "__uitest_tela_final");
+      await esperar(bridge, "document.querySelector('.editor__wysiwyg li code')", "a página no editor");
+      const noEditor = await bridge.js(ESTILO_DA_PAGINA("document.querySelector('.editor')"));
+
+      // 2. A proposta, na Visualização.
+      await bridge.js(`(async () => {
+        await window.__TAURI_INTERNALS__.invoke('propor', {
+          vaultPath: ${JSON.stringify(VAULT_ABS)},
+          proposta: {
+            id: ${JSON.stringify(id)}, autor: 'agente', quando: '2026-10-07 10:00',
+            motivo: 'tela final', alvo: ${JSON.stringify(alvo)}, operacao: 'substituir',
+            conteudo: ${JSON.stringify(proposto)},
+          },
+        });
+        return true;
+      })()`);
+      await recarregarEstavel(bridge);
+      await esperar(bridge, "document.querySelector('.header-bar__propostas')", "o aviso da fila");
+      await bridge.js(`(() => { document.querySelector('.header-bar__propostas').click(); return true; })()`);
+      const item = `[...document.querySelectorAll('.propostas__item')].find(e => e.textContent.includes(${JSON.stringify(alvo)}))`;
+      await esperar(bridge, `!!(${item})`, "a proposta na revisão");
+
+      // O diff QUEBRA a linha longa: a palavra do fim fica na caixa, sem
+      // rolar pro lado.
+      const diff = `(${item}).querySelector('.propostas__diff')`;
+      await esperar(bridge, diff, "o diff");
+      const rola = await bridge.js(`(() => { const d = ${diff}; return d.scrollWidth - d.clientWidth; })()`);
+      ctx.assert(rola <= 1, `o diff rola ${rola}px pro lado — a mudança do fim da linha fica escondida`);
+
+      const preview = `(${item}).querySelector('.pagina-preview')`;
+      await bridge.js(`([...(${item}).querySelectorAll('.propostas__modo')].find(b => b.textContent.includes('Visualização')).click(), true)`);
+      await esperar(bridge, `(${preview}) && (${preview}).querySelector('li code')`, "a visualização desenhada");
+      const naVisualizacao = await bridge.js(ESTILO_DA_PAGINA(preview));
+      for (const chave of Object.keys(noEditor)) {
+        ctx.assert(noEditor[chave], `a página no editor não tem ${chave} — o cenário mede o vazio`);
+        ctx.assertEq(naVisualizacao[chave], noEditor[chave], `${chave}: a visualização difere da página no editor`);
+      }
+      ctx.assertEq(
+        await bridge.js(`(${preview}).querySelectorAll('[contenteditable="true"]').length`),
+        0,
+        "a visualização tem bloco editável",
+      );
+      ctx.assert((await bridge.js(`(${preview}).textContent`)).includes("NOVO"), "a visualização não mostra a proposta inteira");
+
+      // 3. Tira o trecho do fim: a Visualização mostra o que SERÁ gravado.
+      await bridge.js(`([...(${item}).querySelectorAll('.propostas__modo')].find(b => b.textContent.trim() === 'Diff').click(), true)`);
+      const caixas = `[...(${item}).querySelectorAll('.propostas__trecho input[type=checkbox]')]`;
+      await esperar(bridge, `${caixas}.length === 2`, "os dois trechos");
+      await bridge.js(`(${caixas}[1].click(), true)`);
+      await esperar(bridge, `/Aplicar 1 de 2/.test((${item}).textContent)`, "o trecho sair da aplicação");
+      await bridge.js(`([...(${item}).querySelectorAll('.propostas__modo')].find(b => b.textContent.includes('Visualização')).click(), true)`);
+      await esperar(bridge, `(${preview}) && (${preview}).querySelector('li code')`, "a visualização de novo");
+      const texto = await bridge.js(`(${preview}).textContent`);
+      ctx.assert(texto.includes("VELHO") && !texto.includes("NOVO"), `com o trecho fora, a visualização devia manter o fim antigo:\n${texto}`);
+      ctx.assert(texto.includes("Parágrafo novo."), "o trecho escolhido sumiu da visualização");
+    } finally {
+      fs.rmSync(pendente, { force: true });
+      fs.rmSync(arquivo, { force: true });
+    }
+  },
+});
+
 fluxo.push({
   nome: "revisão: alternar para visualização renderiza o embed proposto (230)",
   async fn(bridge, ctx) {

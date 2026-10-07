@@ -5391,6 +5391,73 @@ fn estampar_filhos(doc: &web_sys::Document, grupo: &str, prefixo: &str) {
 /// O atributo que carrega o caminho da árvore (ciclo 281).
 pub const ATTR_CAMINHO: &str = "data-nav-caminho";
 
+/// Grupo é quem comporta filhos e não recebe texto (a lista, hoje).
+/// Perguntar ao modelo em vez de comparar tag faz um tipo novo de grupo
+/// funcionar aqui sem tocar no editor (ciclo 278).
+fn e_grupo(bloco: &web_sys::Element) -> bool {
+    anotadinho_core::unidade::Tipo::da_tag(&bloco.tag_name())
+        .map(|t| t.politica())
+        .is_some_and(|p| p.aceita_filhos && !p.aceita_texto)
+}
+
+/// O caminho de render do editor, SEM a edição (ciclo 452).
+///
+/// A Visualização da revisão de propostas desenhava com o mesmo
+/// `markdown_render`, mas fora do contêiner do editor e sem os passos de
+/// depois. Medido: sem margem entre blocos, lista sem recuo, `code` sem
+/// fundo, negrito sem cor, imagem do vault quebrada e `![[...]]` cru. A
+/// pessoa aprovava olhando uma página que não era a que ia ficar.
+///
+/// Por isso aqui é o MESMO pipeline do efeito de render do editor, na
+/// mesma ordem, e não uma cópia dele: o que o editor ganhar, a
+/// Visualização ganha junto. O que fica de fora é só o que é edição
+/// (`contenteditable`, `tabindex`, navegação) — sem isso nenhuma
+/// ferramenta de edição acorda ali, porque todas pedem um bloco
+/// `contenteditable="true"`.
+pub fn preparar_leitura(div: &web_sys::Element, markdown: &str, vault_path: String, pagina: String) {
+    div.set_inner_html(&crate::markdown_render::render(markdown));
+    upgrade_embedded_assets_at(div, vault_path.clone());
+    upgrade_transclusions_at(div, vault_path, pagina);
+    marcar_blocos_leitura(div);
+    let el = div.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
+        init_mermaid_at(&el);
+    });
+    init_highlight();
+}
+
+/// As CLASSES de `marcar_blocos`, sem os atributos de edição: é a
+/// classe `editor__bloco` que dá o espaçamento de bloco, e a lista fica
+/// sem ela (é grupo) enquanto os itens a recebem — igual ao editor.
+fn marcar_blocos_leitura(container: &web_sys::Element) {
+    fn itens(lista: &web_sys::Element) {
+        let filhos = lista.children();
+        for j in 0..filhos.length() {
+            let Some(item) = filhos.item(j) else { continue };
+            if item.tag_name().to_lowercase() != "li" {
+                continue;
+            }
+            let _ = item.class_list().add_1("editor__bloco");
+            let netos = item.children();
+            for k in 0..netos.length() {
+                if let Some(sub) = netos.item(k).filter(|n| matches!(n.tag_name().to_lowercase().as_str(), "ul" | "ol")) {
+                    itens(&sub);
+                }
+            }
+        }
+    }
+    let filhos = container.children();
+    for i in 0..filhos.length() {
+        let Some(bloco) = filhos.item(i) else { continue };
+        if e_grupo(&bloco) {
+            itens(&bloco);
+        } else {
+            let _ = bloco.class_list().add_1("editor__bloco");
+        }
+    }
+}
+
 fn marcar_blocos(container: &web_sys::Element) {
     // Segmento sem bloco nenhum não teria onde receber cursor desde que
     // o `contenteditable` desceu pro bloco (ciclo 175) — uma página nova
@@ -5452,13 +5519,7 @@ fn marcar_blocos(container: &web_sys::Element) {
         // Agora a lista é contêiner: entra-se nela com Enter e anda-se
         // entre os itens, que são os blocos de verdade — cada um com
         // seu `contenteditable`, como qualquer parágrafo.
-        // Grupo é quem comporta filhos e não recebe texto — a lista,
-        // hoje. Perguntar ao modelo em vez de comparar tag faz um tipo
-        // novo de grupo funcionar aqui sem tocar no editor (ciclo 278).
-        let e_grupo = anotadinho_core::unidade::Tipo::da_tag(&bloco.tag_name())
-            .map(|t| t.politica())
-            .is_some_and(|p| p.aceita_filhos && !p.aceita_texto);
-        if e_grupo {
+        if e_grupo(&bloco) {
             let _ = bloco.set_attribute("contenteditable", "false");
             let _ = bloco.set_attribute(crate::nav_mode::ATTR_BLOCO_TEXTO, "grupo");
             // A classe sai junto: `editor__bloco` significa "aqui se

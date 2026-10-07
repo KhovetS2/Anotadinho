@@ -522,10 +522,12 @@ pub fn propostas_view(props: &PropostasViewProps) -> Html {
                         </div>
 
                         if preview {
-                            // O conteúdo PROPOSTO, como a página fica se
-                            // for aplicada.
+                            // A página como FICA se aplicada — com os
+                            // trechos tirados fora (ciclo 452). Era o
+                            // conteúdo inteiro, e "Aplicar 1 de 3" gravava
+                            // uma página que esta tela não tinha mostrado.
                             <div class="propostas__preview">
-                                <PaginaPreview conteudo={p.conteudo.clone()}
+                                <PaginaPreview conteudo={if parcial { conteudo_parcial.clone() } else { p.conteudo.clone() }}
                                     vault_path={props.vault_path.clone()}
                                     page_path={p.alvo.clone()}
                                     nav_prefixo={p.id.clone()} />
