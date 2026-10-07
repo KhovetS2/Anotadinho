@@ -219,9 +219,12 @@ fn sessao_da_conversa(estado: &Estado, vault: &str, path: &str) -> Option<String
 }
 
 /// Grava a configuração MCP desta execução e devolve o caminho dela
-/// (ciclo 426). Vazio quando não deu — o prompt ainda explica o CLI.
+/// (ciclo 426). Vazio quando não deu — o prompt ainda explica o CLI —
+/// ou quando não há CLI nenhum pra atender (ciclo 450).
 fn escrever_config_mcp(vault: &str) -> String {
-    let cli = anotadinho_core::agente::cli_ao_lado(std::env::current_exe().ok());
+    let Some(cli) = anotadinho_core::agente::cli_ao_lado(std::env::current_exe().ok()) else {
+        return String::new();
+    };
     let json = anotadinho_core::agente::config_mcp(&cli, vault);
     // Junto das propostas: é estado daquele vault, e some com ele.
     let arquivo = std::path::Path::new(vault).join(".anotadinho/mcp.json");
@@ -416,6 +419,12 @@ fn enviar_na_conversa(
     // ganha ler_pagina, buscar e propor apontados PRA ESTE vault, sem
     // ninguém configurar nada por fora.
     let config_mcp = escrever_config_mcp(vault);
+    // O mesmo aviso da janela (ciclo 450): sem ele, um agente sem as
+    // ferramentas do vault só se denuncia pela resposta pior.
+    let aviso_mcp = (config_mcp.is_empty()
+        && !adaptador.arg_mcp.trim().is_empty()
+        && anotadinho_core::agente::cli_ao_lado(std::env::current_exe().ok()).is_none())
+    .then(|| anotadinho_core::agente::AVISO_SEM_CLI.to_string());
     match anotadinho_tui::agente::Trabalho::iniciar(
         &adaptador,
         &prompt,
@@ -424,10 +433,13 @@ fn enviar_na_conversa(
         sessao.as_deref().unwrap_or(""),
     ) {
         Ok(t) => {
+            if let Some(a) = &aviso_mcp {
+                estado.aviso = Some(a.clone());
+            }
             trabalhos.insert(
                 chave_do_trabalho(vault, path),
                 EmAndamento {
-                    trabalho: t,
+                    trabalho: t.com_aviso(aviso_mcp),
                     quando: agora_local(),
                     agente: adaptador.nome.clone(),
                     binario: adaptador.binario.clone(),

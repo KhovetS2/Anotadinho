@@ -43,3 +43,6 @@ cycles/run-logs/
 # Sem isto, um `git add -A` no meio de uma rodada commita o fixture do
 # cenário que estava correndo.
 VaultAnotadinho/pages/__uitest.md
+
+# CLI copiado pro instalador (scripts/build.sh, ciclo 450)
+src-tauri/binaries/

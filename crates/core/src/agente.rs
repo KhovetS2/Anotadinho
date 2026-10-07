@@ -36,22 +36,60 @@ pub fn config_mcp(cli: &str, vault: &str) -> String {
     )
 }
 
-/// Onde gravar a configuração MCP daquela execução, e o caminho do CLI
-/// (ciclo 426).
+/// O `anotadinho-cli` que vai atender o MCP daquela execução (ciclos
+/// 426 e 450), ou `None` quando não há nenhum.
 ///
-/// Mora aqui porque TUI e janela precisam da MESMA resposta: um arquivo
-/// por vault, ao lado do binário que está rodando. Procurar o
-/// `anotadinho-cli` junto do executável atual é o que faz funcionar
-/// tanto instalado quanto em `target/debug`, sem configuração.
-pub fn cli_ao_lado(executavel_atual: Option<std::path::PathBuf>) -> String {
-    let nome = if cfg!(windows) { "anotadinho-cli.exe" } else { "anotadinho-cli" };
-    executavel_atual
-        .and_then(|exe| exe.parent().map(|d| d.join(nome)))
-        .filter(|c| c.exists())
-        .map(|c| c.to_string_lossy().to_string())
-        // Sem vizinho, tenta o PATH: quem instalou pelo cargo tem os dois lá.
-        .unwrap_or_else(|| nome.to_string())
+/// Mora aqui porque TUI e janela precisam da MESMA resposta. Primeiro o
+/// vizinho do executável atual: é onde ele está em `target/debug` e,
+/// desde o ciclo 450, no app instalado (o instalador o leva como
+/// `externalBin`). Depois o `PATH`, de quem instalou pelo cargo.
+///
+/// Devolver `None` em vez do nome cru é o ponto: antes, sem CLI em lugar
+/// nenhum, o agente recebia `--mcp-config` apontando pra um programa que
+/// não existia, subia sem as ferramentas do vault, e a única pista era a
+/// qualidade da resposta.
+///
+/// O sistema e o disco entram por parâmetro, como em
+/// `resolver_executavel`, pra o ramo do Windows rodar no teste.
+pub fn localizar_cli(
+    executavel_atual: Option<&std::path::Path>,
+    path_env: &str,
+    windows: bool,
+    existe: impl Fn(&std::path::Path) -> bool,
+) -> Option<String> {
+    let nome = if windows { "anotadinho-cli.exe" } else { "anotadinho-cli" };
+    let sep_dir = if windows { '\\' } else { '/' };
+    // A pasta pelo TEXTO, não por `Path::parent`: no teste, que roda no
+    // Linux, `parent` não reconhece `\` e devolveria a pasta errada.
+    let pasta = executavel_atual.map(|exe| exe.to_string_lossy().to_string()).and_then(|exe| {
+        let corte = if windows { exe.rfind(['\\', '/']) } else { exe.rfind('/') };
+        corte.map(|i| exe[..i].to_string())
+    });
+    if let Some(pasta) = pasta {
+        let vizinho = format!("{pasta}{sep_dir}{nome}");
+        if existe(std::path::Path::new(&vizinho)) {
+            return Some(vizinho);
+        }
+    }
+    let sep_lista = if windows { ';' } else { ':' };
+    path_env
+        .split(sep_lista)
+        .map(|d| d.trim().trim_matches('"').trim_end_matches(['/', '\\']))
+        .filter(|d| !d.is_empty())
+        .map(|d| format!("{d}{sep_dir}{nome}"))
+        .find(|c| existe(std::path::Path::new(c)))
 }
+
+/// `localizar_cli` com o processo, o `PATH` e o disco de verdade.
+pub fn cli_ao_lado(executavel_atual: Option<std::path::PathBuf>) -> Option<String> {
+    let path_env = std::env::var("PATH").unwrap_or_default();
+    localizar_cli(executavel_atual.as_deref(), &path_env, cfg!(windows), |p| p.is_file())
+}
+
+/// O aviso de quando o agente sabe receber MCP e não há CLI pra atender
+/// (ciclo 450). Uma frase só, a MESMA na janela e na TUI.
+pub const AVISO_SEM_CLI: &str =
+    "sem as ferramentas do vault: não achei o anotadinho-cli ao lado do app nem no PATH";
 
 /// Marcador substituído pelo prompt na linha de comando.
 pub const MARCADOR_PROMPT: &str = "{prompt}";
@@ -1834,5 +1872,41 @@ mod testes_config {
             explicar_erro_de_spawn("claude", &outro, EntradaPrompt::Argumento),
             "não consegui executar \"claude\": program not found"
         );
+    }
+
+    // --- Ciclo 450: o CLI do MCP, ou nenhum -------------------------------------------
+
+    fn disco<'a>(arquivos: &'a [&'a str]) -> impl Fn(&std::path::Path) -> bool + 'a {
+        move |p| arquivos.iter().any(|a| std::path::Path::new(a) == p)
+    }
+
+    #[test]
+    fn o_cli_ao_lado_do_app_ganha_do_path() {
+        let achado = localizar_cli(
+            Some(std::path::Path::new("/usr/bin/anotadinho")),
+            "/home/ana/.cargo/bin",
+            false,
+            disco(&["/usr/bin/anotadinho-cli", "/home/ana/.cargo/bin/anotadinho-cli"]),
+        );
+        assert_eq!(achado.as_deref(), Some("/usr/bin/anotadinho-cli"));
+    }
+
+    #[test]
+    fn no_windows_o_cli_instalado_e_o_exe_vizinho() {
+        // O instalador põe o `externalBin` na pasta do app.
+        let achado = localizar_cli(
+            Some(std::path::Path::new(r"C:\Program Files\Anotadinho\anotadinho.exe")),
+            "",
+            true,
+            disco(&[r"C:\Program Files\Anotadinho\anotadinho-cli.exe"]),
+        );
+        assert_eq!(achado.as_deref(), Some(r"C:\Program Files\Anotadinho\anotadinho-cli.exe"));
+    }
+
+    #[test]
+    fn sem_vizinho_procura_no_path_e_sem_nenhum_diz_que_nao_achou() {
+        let pelo_path = localizar_cli(None, r"C:\x;C:\Users\ana\.cargo\bin", true, disco(&[r"C:\Users\ana\.cargo\bin\anotadinho-cli.exe"]));
+        assert_eq!(pelo_path.as_deref(), Some(r"C:\Users\ana\.cargo\bin\anotadinho-cli.exe"));
+        assert_eq!(localizar_cli(Some(std::path::Path::new("/opt/a/anotadinho")), "/usr/bin:/bin", false, disco(&[])), None);
     }
 }

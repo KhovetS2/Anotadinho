@@ -29,6 +29,9 @@ pub struct Trabalho {
     fim: Arc<Mutex<Option<Result<String, String>>>>,
     cancelado: Arc<AtomicBool>,
     entregue: bool,
+    /// Uma linha fixa no topo do progresso (ciclo 450): o motivo de o
+    /// agente estar rodando sem alguma coisa, que a saída dele não diz.
+    aviso: Option<String>,
 }
 
 impl Trabalho {
@@ -166,7 +169,7 @@ impl Trabalho {
             }
         });
 
-        Ok(Self { inicio: Instant::now(), parcial, uso, sessao: sessao_aberta, fim, cancelado, entregue: false })
+        Ok(Self { inicio: Instant::now(), parcial, uso, sessao: sessao_aberta, fim, cancelado, entregue: false, aviso: None })
     }
 
     /// Há quantos segundos está rodando.
@@ -174,9 +177,20 @@ impl Trabalho {
         self.inicio.elapsed().as_secs()
     }
 
-    /// O que o agente já escreveu (ou o progresso, no stream).
+    /// Fixa um aviso no topo do progresso (ciclo 450).
+    pub fn com_aviso(mut self, aviso: Option<String>) -> Self {
+        self.aviso = aviso;
+        self
+    }
+
+    /// O que o agente já escreveu (ou o progresso, no stream), com o
+    /// aviso fixo por cima.
     pub fn parcial(&self) -> String {
-        self.parcial.lock().map(|p| p.clone()).unwrap_or_default()
+        let p = self.parcial.lock().map(|p| p.clone()).unwrap_or_default();
+        match &self.aviso {
+            Some(a) => format!("{a}\n{p}"),
+            None => p,
+        }
     }
 
     /// O que a execução consumiu, se o agente contou (ciclo 422).
@@ -243,6 +257,25 @@ mod testes {
         let mut t = Trabalho::iniciar(&agente("echo", &["{prompt}"]), "olá \"mundo\" $(x)", ".", "", "").unwrap();
         assert_eq!(esperar(&mut t), Ok("olá \"mundo\" $(x)".into()));
         assert_eq!(t.terminou(), None, "a resposta é entregue uma vez só");
+    }
+
+    /// Ciclo 450: o aviso fica por cima do que o agente escreve, do
+    /// começo ao fim — a saída dele não sabe que faltou o MCP.
+    #[test]
+    fn o_aviso_fica_no_topo_do_progresso() {
+        let t = Trabalho::iniciar(&agente("sh", &["-c", "echo linha; sleep 5", "{prompt}"]), "x", ".", "", "")
+            .unwrap()
+            .com_aviso(Some("sem as ferramentas".into()));
+        for _ in 0..100 {
+            if t.parcial().contains("linha") {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(t.parcial(), "sem as ferramentas\nlinha\n");
+        t.interromper();
+        let sem = Trabalho::iniciar(&agente("true", &["{prompt}"]), "x", ".", "", "").unwrap();
+        assert!(!sem.parcial().contains("sem as ferramentas"));
     }
 
     #[test]

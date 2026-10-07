@@ -739,18 +739,26 @@ fn disparar(
 
     // Liga o MCP do Anotadinho nesta execução (ciclo 426): o agente
     // ganha as ferramentas do vault sem ninguém configurar por fora.
-    let config_mcp = {
-        let cli = anotadinho_core::agente::cli_ao_lado(std::env::current_exe().ok());
-        let json = anotadinho_core::agente::config_mcp(&cli, &vault_path);
-        let arquivo = std::path::Path::new(&vault_path).join(".anotadinho/mcp.json");
-        if let Some(pai) = arquivo.parent() {
-            let _ = std::fs::create_dir_all(pai);
-        }
-        match std::fs::write(&arquivo, json) {
-            Ok(()) => arquivo.to_string_lossy().to_string(),
-            // Sem o arquivo o agente continua rodando: o prompt explica
-            // o CLI (ciclo 425), que é o plano B.
-            Err(_) => String::new(),
+    //
+    // Sem CLI em lugar nenhum (ciclo 450), não há MCP pra ligar: o agente
+    // roda igual, e o progresso diz por que ele está sem as ferramentas.
+    let cli = anotadinho_core::agente::cli_ao_lado(std::env::current_exe().ok());
+    let aviso_mcp = (cli.is_none() && !adaptador.arg_mcp.trim().is_empty())
+        .then(|| anotadinho_core::agente::AVISO_SEM_CLI.to_string());
+    let config_mcp = match cli {
+        None => String::new(),
+        Some(cli) => {
+            let json = anotadinho_core::agente::config_mcp(&cli, &vault_path);
+            let arquivo = std::path::Path::new(&vault_path).join(".anotadinho/mcp.json");
+            if let Some(pai) = arquivo.parent() {
+                let _ = std::fs::create_dir_all(pai);
+            }
+            match std::fs::write(&arquivo, json) {
+                Ok(()) => arquivo.to_string_lossy().to_string(),
+                // Sem o arquivo o agente continua rodando: o prompt explica
+                // o CLI (ciclo 425), que é o plano B.
+                Err(_) => String::new(),
+            }
         }
     };
     // Sessão contínua (ciclo 433): a conversa guarda o id, e o agente
@@ -785,7 +793,7 @@ fn disparar(
     let limite = adaptador.timeout_s;
     let formato = adaptador.formato;
 
-    let parcial = Arc::new(Mutex::new(String::new()));
+    let parcial = Arc::new(Mutex::new(aviso_mcp.clone().map(|a| format!("{a}\n")).unwrap_or_default()));
     let sessao_aberta: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let uso_medido: Arc<Mutex<Option<anotadinho_core::agente::Uso>>> = Arc::new(Mutex::new(None));
     // Pro registro de execuções (ciclo 441): quando começou, com quem, e
@@ -874,7 +882,10 @@ fn disparar(
                                 // acabou de dizer), não o JSON cru —
                                 // que não diz nada pra quem olha.
                                 if let Ok(mut p) = acumulado.lock() {
-                                    *p = stream.progresso();
+                                    *p = match &aviso_mcp {
+                                        Some(a) => format!("{a}\n{}", stream.progresso()),
+                                        None => stream.progresso(),
+                                    };
                                 }
                             }
                             anotadinho_core::agente::FormatoSaida::Texto => {

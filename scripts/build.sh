@@ -11,8 +11,20 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 echo "==> Buildando anotadinho-cli (release)..."
 cargo build --release --manifest-path "$ROOT_DIR/Cargo.toml" -p anotadinho-cli || exit 1
 
+# O instalador leva o CLI junto (ciclo 450): é ele que atende o MCP do
+# agente, e o app o procura AO LADO do próprio executável. Sem isto, o app
+# instalado rodava o agente sem as ferramentas do vault.
+#
+# O `externalBin` mora em `tauri.bundle.json`, aplicado só aqui pelo
+# `--config`, e não no `tauri.conf.json`: o `tauri-build` exige o arquivo
+# em TODO build, e um `cargo build` de checkout limpo quebraria. O nome
+# leva o alvo como sufixo — é a convenção do Tauri, que o tira ao copiar.
+HOST="$(rustc -vV | sed -n 's/^host: //p')"
+mkdir -p "$ROOT_DIR/src-tauri/binaries"
+cp "$ROOT_DIR/target/release/anotadinho-cli" "$ROOT_DIR/src-tauri/binaries/anotadinho-cli-$HOST"
+
 echo "==> Buildando a GUI (cargo tauri build)..."
-( cd "$ROOT_DIR/src-tauri" && cargo tauri build )
+( cd "$ROOT_DIR/src-tauri" && cargo tauri build --config tauri.bundle.json "$@" )
 GUI_BUILD_STATUS=$?
 
 GUI_DIR="$ROOT_DIR/src-tauri/target/release"
@@ -52,6 +64,8 @@ else
     # vez de carregar os assets embutidos — tela em branco com
     # ERR_CONNECTION_REFUSED, já que não tem dev server rodando.
     ( cd "$ROOT_DIR/src-tauri" && cargo build --release --target "$WIN_TARGET" --features tauri/custom-protocol )
+    # O CLI vai junto pelo mesmo motivo do instalador (ciclo 450).
+    cargo build --release --manifest-path "$ROOT_DIR/Cargo.toml" -p anotadinho-cli --target "$WIN_TARGET"
     if [[ -f "$WIN_DIR/anotadinho.exe" ]]; then
         WIN_BUILD_OK=1
     else
@@ -64,6 +78,7 @@ if [[ $WIN_BUILD_OK -eq 1 ]]; then
     rm -rf "$WIN_DIST"
     mkdir -p "$WIN_DIST"
     cp "$WIN_DIR/anotadinho.exe" "$WIN_DIST/"
+    cp "$ROOT_DIR/target/$WIN_TARGET/release/anotadinho-cli.exe" "$WIN_DIST/"
     DLL="$(find "$WIN_DIR" -maxdepth 1 -iname 'WebView2Loader.dll' | head -1)"
     if [[ -n "$DLL" ]]; then
         cp "$DLL" "$WIN_DIST/"
@@ -100,5 +115,5 @@ else
     echo "    Aviso: $LOCAL_BIN não existe — CLI não foi linkado no PATH."
 fi
 if [[ $WIN_BUILD_OK -eq 1 ]]; then
-    echo "    Windows: $WIN_DIST/ (anotadinho.exe + WebView2Loader.dll — sem instalador, só o binário cru)"
+    echo "    Windows: $WIN_DIST/ (anotadinho.exe + anotadinho-cli.exe + WebView2Loader.dll — sem instalador, só os binários crus)"
 fi
