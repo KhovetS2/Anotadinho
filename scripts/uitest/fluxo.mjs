@@ -542,7 +542,32 @@ const BOTAO_DA_PROPOSTA_DE_TESTE = (rotulo, alvo = "__uitest_proposta") => `(() 
 const ITEM_DE_TESTE = `[...document.querySelectorAll('.propostas__item')].some(i => i.textContent.includes('__uitest'))`;
 
 const APLICAR_A_DE_TESTE = BOTAO_DA_PROPOSTA_DE_TESTE("Aplicar");
-const RECUSAR_A_DE_TESTE = BOTAO_DA_PROPOSTA_DE_TESTE("Recusar");
+// Recusar pede o motivo desde o ciclo 428: o botão do item virou
+// "Recusar…" e só ABRE o modal; quem recusa é o "Recusar" de dentro dele.
+// Os cenários procuravam o rótulo antigo e reprovavam com "não achei o
+// item", o que parecia defeito da fila e não era.
+const BOTAO_RECUSAR_DO_MODAL = `[...document.querySelectorAll('.modal')]
+  .find(m => m.querySelector('.modal__title')?.textContent.trim() === 'Recusar a proposta')
+  ?.querySelector('.modal__actions .btn--primary')`;
+
+async function recusarDeTeste(bridge, alvo = "__uitest_proposta", motivo = "") {
+  const abriu = await bridge.js(BOTAO_DA_PROPOSTA_DE_TESTE("Recusar…", alvo));
+  if (!abriu) return false;
+  // Espera o botão que vai ser TOCADO, não o modal em volta dele.
+  await esperar(bridge, BOTAO_RECUSAR_DO_MODAL, "o botão Recusar do modal");
+  if (motivo) {
+    await bridge.js(`(() => {
+      const t = [...document.querySelectorAll('.modal')]
+        .find(m => m.querySelector('.modal__title')?.textContent.trim() === 'Recusar a proposta')
+        ?.querySelector('textarea');
+      if (!t) return false;
+      t.value = ${JSON.stringify(motivo)};
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    })()`);
+  }
+  return await bridge.js(`(() => { const b = ${BOTAO_RECUSAR_DO_MODAL}; if (!b) return false; b.click(); return true; })()`);
+}
 
 fluxo.push({
   nome: "proposta: agente propõe e o arquivo NÃO muda até aprovar (204)",
@@ -613,7 +638,7 @@ fluxo.push({
       await abrirTelaDePropostas(bridge, ctx);
       await esperar(bridge, ITEM_DE_TESTE, "a proposta");
 
-      const recusou = await bridge.js(RECUSAR_A_DE_TESTE);
+      const recusou = await recusarDeTeste(bridge);
       ctx.assertEq(recusou, true, "não achei o item da proposta de teste na tela");
       await PAUSA(1500);
 
@@ -1833,7 +1858,7 @@ fluxo.push({
       await bridge.js(`(() => { document.querySelector('.header-bar__propostas').click(); return true; })()`);
       await esperar(bridge, ITEM_DE_TESTE, "a tela de revisão");
 
-      const recusou = await bridge.js(BOTAO_DA_PROPOSTA_DE_TESTE("Recusar", "__uitest_aviso"));
+      const recusou = await recusarDeTeste(bridge, "__uitest_aviso");
       ctx.assertEq(recusou, true, "não achei o item da proposta de teste na tela");
       await PAUSA(2500);
       // O aviso some quando a fila esvazia. Se o usuário tiver proposta
