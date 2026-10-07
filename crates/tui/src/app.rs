@@ -8952,6 +8952,66 @@ mod testes {
         assert!(desenho(&mut e, 100, 20).join("\n").contains("Nada pendente."));
     }
 
+    // --- Ciclo 453: o diff mostra a mudança, a visualização a página final ---------
+
+    const ANTES_453: &str = "# Spec\n\nUm parágrafo bem comprido que descreve o requisito inteiro numa linha só, como o markdown do vault costuma ser escrito, e termina com o prazo de 10 de outubro.\n\n- [ ] item um\n";
+    const DEPOIS_453: &str = "# Spec\n\nUm parágrafo bem comprido que descreve o requisito inteiro numa linha só, como o markdown do vault costuma ser escrito, e termina com o prazo de 24 de outubro.\n\n- [x] item um\n";
+
+    fn proposta_453() -> Estado {
+        use anotadinho_core::proposta::Operacao;
+        let mut e = especial_aberto("propostas");
+        especiais::carregar(
+            &mut e,
+            especiais::Dados::Propostas(vec![especiais::PropostaNaTela {
+                proposta: proposta("p1", Operacao::Substituir, "pages/alfa.md", DEPOIS_453),
+                atual: ANTES_453.into(),
+            }]),
+        );
+        e
+    }
+
+    #[test]
+    fn o_diff_quebra_a_linha_longa_e_a_mudanca_do_fim_aparece() {
+        let mut e = proposta_453();
+        // 90 de largura: o cartão tem uns 60, e a linha tem 160.
+        let tela = desenho(&mut e, 90, 40).join("\n");
+        assert!(tela.contains("10 de outubro") && tela.contains("24 de outubro"), "a mudança do fim sumiu:\n{tela}");
+        // O cabeçalho e os atalhos não perdem texto.
+        assert!(tela.contains("Visualização") && tela.contains("espaço tira/põe"), "{tela}");
+        // A palavra que mudou continua realçada depois da quebra: é ela que
+        // diz o que mudou numa linha de três.
+        let mut term = Terminal::new(TestBackend::new(90, 40)).unwrap();
+        term.draw(|f| desenhar(f, &mut e)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let estilo_de = |alvo: &str| {
+            (0..buf.area.height).find_map(|y| {
+                let linha: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect();
+                let x = linha.chars().collect::<Vec<_>>().windows(alvo.chars().count()).position(|w| w.iter().collect::<String>() == alvo)?;
+                Some((buf[(x as u16, y)].modifier, buf[(x as u16, y)].bg))
+            })
+        };
+        let (mod_24, fundo_24) = estilo_de("24 de").expect("o 24 na tela");
+        let (mod_de, fundo_de) = estilo_de("outubro.").expect("o fim da linha na tela");
+        assert!(mod_24.contains(ratatui::style::Modifier::BOLD), "o 24 não está realçado");
+        assert!(!mod_de.contains(ratatui::style::Modifier::BOLD) && fundo_de != fundo_24, "o resto da linha está realçado igual ao 24");
+    }
+
+    #[test]
+    fn a_visualizacao_mostra_so_os_trechos_escolhidos() {
+        let mut e = proposta_453();
+        tecla(&mut e, "v");
+        let tela = desenho(&mut e, 90, 40).join("\n");
+        assert!(tela.contains("24 de") && !tela.contains("10 de"), "{tela}");
+        // Tira o primeiro trecho (o do prazo): a visualização volta ao 10.
+        tecla(&mut e, "v");
+        tecla(&mut e, " ");
+        assert!(desenho(&mut e, 90, 40).join("\n").contains("Aplicar 1 de 2"));
+        tecla(&mut e, "v");
+        let tela = desenho(&mut e, 90, 40).join("\n");
+        assert!(tela.contains("10 de") && !tela.contains("24 de"), "a visualização ignorou o trecho tirado:\n{tela}");
+        assert!(tela.contains("[x] item um"), "o trecho escolhido sumiu:\n{tela}");
+    }
+
     #[test]
     fn a_barra_de_comandos_abre_tags_assets_e_propostas() {
         let mut e = Estado::novo(paginas(), analisar("# x\n"));

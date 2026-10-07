@@ -1011,20 +1011,37 @@ fn cartao_da_proposta(
     };
     let modos = vec![modo("Diff", !visualizar), modo("Visualização", visualizar)];
     let largura_modos: usize = modos.iter().map(|s| s.content.chars().count()).sum();
-    let mut linha_modo = vec![Span::styled(resumo.clone(), apagado)];
-    linha_modo.push(Span::raw(" ".repeat(dentro.saturating_sub(resumo.chars().count() + largura_modos))));
-    linha_modo.extend(modos);
-    miolo.push(Line::from(linha_modo));
+    // Sem espaço pros dois na mesma linha, os modos descem (ciclo 453):
+    // cortados, viravam "Visualizaç" — e o modo atual é justamente o que
+    // diz o que a pessoa está olhando.
+    if resumo.chars().count() + 1 + largura_modos <= dentro {
+        let mut linha_modo = vec![Span::styled(resumo.clone(), apagado)];
+        linha_modo.push(Span::raw(" ".repeat(dentro.saturating_sub(resumo.chars().count() + largura_modos))));
+        linha_modo.extend(modos);
+        miolo.push(Line::from(linha_modo));
+    } else {
+        miolo.extend(super::quebrar_texto(Line::from(Span::styled(resumo.clone(), apagado)), dentro, 0));
+        miolo.push(Line::from(modos));
+    }
+    let trechos = anotadinho_core::diff::trechos(&linhas);
+    let esta_fora = |k: usize| fora_da_aplicacao.contains(&format!("{}#{k}", proposta.id));
     if visualizar {
-        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&proposta.conteudo);
+        // A página que SERÁ gravada (ciclo 453): com trechos tirados, sem
+        // eles. Era o conteúdo inteiro, e "Aplicar 1 de 3" gravava uma
+        // página que a Visualização não tinha mostrado.
+        let escolhidos: Vec<bool> = (0..trechos.len()).map(|k| !esta_fora(k)).collect();
+        let conteudo = if escolhidos.iter().all(|x| *x) {
+            proposta.conteudo.clone()
+        } else {
+            anotadinho_core::diff::aplicar_trechos(&linhas, &trechos, &escolhidos)
+        };
+        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&conteudo);
         miolo.extend(pagina_renderizada(corpo, tema, dentro));
     } else {
         let sai = Style::default().fg(tema.var("text-primary")).bg(misturar(tema.var("error"), tema.var("bg-surface"), 0.16));
         let entra = Style::default().fg(tema.var("text-primary")).bg(misturar(tema.var("success"), tema.var("bg-surface"), 0.16));
         // Cada trecho ganha cabeçalho: dá pra tirar um e aplicar o resto
         // (ciclo 404).
-        let trechos = anotadinho_core::diff::trechos(&linhas);
-        let esta_fora = |k: usize| fora_da_aplicacao.contains(&format!("{}#{k}", proposta.id));
         // O realce fino (ciclo 410): numa troca de linha, a PALAVRA que
         // mudou fica mais forte que o resto. Sem isto, uma linha longa
         // em que mudou uma data pinta inteira, e a pessoa relê tudo pra
@@ -1070,29 +1087,35 @@ fn cartao_da_proposta(
                     .map(|(lado_a, lado_b)| if i < outra { lado_a } else { lado_b })
             });
             let mut spans = vec![Span::styled(marca.to_string(), estilo)];
-            let mut usado = 1;
             match pedacos {
                 Some(pedacos) => {
                     let realcado = forte(estilo, if matches!(l, LinhaDiff::Removida { .. }) { "error" } else { "success" });
                     for pedaco in pedacos {
-                        let cabe: String = pedaco.texto.chars().take(dentro.saturating_sub(usado)).collect();
-                        if cabe.is_empty() {
-                            break;
-                        }
-                        usado += cabe.chars().count();
-                        spans.push(Span::styled(cabe, if pedaco.mudou { realcado } else { estilo }));
+                        spans.push(Span::styled(pedaco.texto, if pedaco.mudou { realcado } else { estilo }));
                     }
                 }
-                None => {
-                    let cabe: String = l.texto().chars().take(dentro.saturating_sub(usado)).collect();
-                    usado += cabe.chars().count();
-                    spans.push(Span::styled(cabe, estilo));
+                None => spans.push(Span::styled(l.texto().to_string(), estilo)),
+            }
+            // A linha QUEBRA na largura do cartão (ciclo 453). Era cortada:
+            // numa linha longa de markdown, o `-` e o `+` saíam idênticos,
+            // porque o que mudou ficava depois da borda — e a pessoa
+            // aprovava sem ter visto a mudança. A continuação ganha recuo
+            // de uma coluna, no lugar do sinal, pra não parecer outra
+            // linha do diff.
+            let pintar = l.mudou() && !dentro_de_fora;
+            for mut pedaco in super::quebrar_texto(Line::from(spans), dentro, 1) {
+                if pintar {
+                    // O recuo nasce sem estilo; numa linha que mudou, o
+                    // fundo tem que seguir até a borda, senão a continuação
+                    // parece outra linha.
+                    for sp in pedaco.spans.iter_mut().filter(|sp| sp.style == Style::default()) {
+                        sp.style = estilo;
+                    }
+                    let usado: usize = pedaco.spans.iter().map(|sp| sp.content.chars().count()).sum();
+                    pedaco.spans.push(Span::styled(" ".repeat(dentro.saturating_sub(usado)), estilo));
                 }
+                miolo.push(pedaco);
             }
-            if l.mudou() && !dentro_de_fora {
-                spans.push(Span::styled(" ".repeat(dentro.saturating_sub(usado)), estilo));
-            }
-            miolo.push(Line::from(spans));
         }
     }
     miolo.push(Line::default());
@@ -1128,13 +1151,22 @@ fn cartao_da_proposta(
             ),
         }
     };
-    miolo.push(Line::from(vec![
-        Span::styled(rotulo_aplicar, primario),
-        Span::raw(" "),
-        Span::styled(rotulo_recusar, fantasma),
-        Span::raw(" "),
-        Span::styled(dica, apagado),
-    ]));
+    // Os atalhos descem pra linha de baixo quando não cabem (ciclo 453):
+    // cortados, perdiam justamente o fim — "espaço tira/põe", que é como
+    // se escolhe o trecho.
+    let botoes = rotulo_aplicar.chars().count() + rotulo_recusar.chars().count() + 2;
+    if botoes + dica.chars().count() <= dentro {
+        miolo.push(Line::from(vec![
+            Span::styled(rotulo_aplicar, primario),
+            Span::raw(" "),
+            Span::styled(rotulo_recusar, fantasma),
+            Span::raw(" "),
+            Span::styled(dica, apagado),
+        ]));
+    } else {
+        miolo.push(Line::from(vec![Span::styled(rotulo_aplicar, primario), Span::raw(" "), Span::styled(rotulo_recusar, fantasma)]));
+        miolo.extend(super::quebrar_texto(Line::from(Span::styled(dica.trim().to_string(), apagado)), dentro, 0));
+    }
     let mut fora = caixa(tema, miolo, w, cor_da_borda(tema, selecionado, no_foco));
     fora.push(Line::default());
     fora
