@@ -220,6 +220,11 @@ pub struct TelaEspecial {
     pub marcadas: BTreeSet<String>,
     /// Rolagem dentro do item selecionado.
     pub deslocamento: usize,
+    /// O que o último quadro mostrou do item selecionado: a altura da
+    /// tela e a faixa `[inicio, fim)` dele (ciclo 454). É a roda do mouse
+    /// que precisa: ela rola o item até o fim e SÓ ENTÃO passa pro
+    /// próximo, e o fim só se sabe desenhando.
+    pub vista: std::cell::Cell<(usize, usize, usize)>,
     /// O erro da última ação.
     pub erro: Option<String>,
     /// Um `d` esperando o segundo.
@@ -238,6 +243,7 @@ impl TelaEspecial {
             fora: BTreeSet::new(),
             marcadas: BTreeSet::new(),
             deslocamento: 0,
+            vista: std::cell::Cell::new((0, 0, 0)),
             erro: None,
             d_pendente: false,
         }
@@ -647,6 +653,9 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
     let titulo = e.paginas.get(e.pagina).map(|p| p.title.clone()).unwrap_or_default();
     let (linhas, faixas) = linhas_da_tela(t, &titulo, tema, w, no_foco);
     let altura = dentro.height as usize;
+    if let Some(&(inicio, fim)) = faixas.get(t.selecionado) {
+        t.vista.set((altura, inicio, fim));
+    }
     let topo = match faixas.get(t.selecionado) {
         Some(&(_, fim)) if fim <= altura => 0,
         Some(&(inicio, fim)) => (inicio.saturating_sub(1) + t.deslocamento).min(fim.saturating_sub(1)),
@@ -655,6 +664,27 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
     .min(linhas.len().saturating_sub(altura));
     let visiveis: Vec<Line<'static>> = linhas.into_iter().skip(topo).take(altura).collect();
     f.render_widget(Paragraph::new(visiveis), dentro);
+}
+
+/// Um passo da roda do mouse numa tela especial (ciclo 454): rola o item
+/// selecionado enquanto ele tiver o que mostrar, e depois passa pro
+/// vizinho — uma proposta longa se lê inteira antes de a roda pular pra
+/// seguinte.
+pub fn rolar(e: &mut Estado, desce: bool) {
+    const PASSO: usize = 3;
+    let Some(t) = e.especial.as_mut() else { return };
+    let (altura, inicio, fim) = t.vista.get();
+    // A mesma conta do `desenhar`: item que cabe começa no topo e não
+    // rola; o que não cabe rola até a última linha dele tocar o pé.
+    let base = inicio.saturating_sub(1);
+    let maximo = if fim <= altura { 0 } else { fim.saturating_sub(altura + base) };
+    if desce && t.deslocamento < maximo {
+        t.deslocamento = (t.deslocamento + PASSO).min(maximo);
+    } else if !desce && t.deslocamento > 0 {
+        t.deslocamento = t.deslocamento.saturating_sub(PASSO);
+    } else {
+        tecla(e, if desce { "j" } else { "k" });
+    }
 }
 
 /// As linhas da tela e, pra cada item, a faixa de linhas `[inicio, fim)`

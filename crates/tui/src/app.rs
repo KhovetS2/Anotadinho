@@ -173,6 +173,9 @@ pub struct Estado {
     /// Propostas do agente esperando revisão (ciclo 355), como o botão do
     /// cabeçalho da janela.
     pub propostas_pendentes: usize,
+    /// Até que coluna vai a sidebar no último quadro (ciclo 454): é o que
+    /// diz se a roda do mouse caiu nela ou no conteúdo.
+    pub largura_da_sidebar: u16,
     /// Arquivos mudados no git; `None` fora de repositório.
     pub mudancas_no_git: Option<usize>,
     /// O modal aberto — barra de comandos, escolha, confirmação (ciclo 339).
@@ -266,6 +269,7 @@ impl Estado {
             celula_pendente: None,
             pergunta_suspensa: None,
             propostas_pendentes: 0,
+            largura_da_sidebar: 0,
             mudancas_no_git: None,
             pedidos: Vec::new(),
             preferencias: Preferencias::default(),
@@ -1396,6 +1400,56 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
     }
 }
 
+/// Um passo da roda do mouse (ciclo 454).
+///
+/// A TUI não capturava o mouse, e a roda ia pro terminal — que, na tela
+/// alternativa, não tem o que rolar. Nada se mexia.
+///
+/// A roda age ONDE o ponteiro está, como em qualquer programa, e não
+/// onde está o foco: rolar a lista com o cursor no conteúdo não tira o
+/// foco de lugar nenhum.
+///
+/// No conteúdo ela anda o CURSOR, um bloco por passo, e a janela segue
+/// — como o vim com `mouse=a`. Mexer só no `topo` não dura: o desenho
+/// segue o cursor e puxaria a tela de volta no quadro seguinte.
+pub fn rolar(e: &mut Estado, desce: bool, coluna: u16) {
+    // Onde se digita, a roda não faz nada: andar o cursor no meio de uma
+    // edição levaria o texto pro bloco errado.
+    if e.pergunta.is_some() || e.barra_aberta {
+        return;
+    }
+    let seta = if desce { "ArrowDown" } else { "ArrowUp" };
+    if let Some(m) = &e.modal {
+        // Só nos modais em que a seta ANDA numa lista ou numa leitura. No
+        // conflito ela troca a opção, e num formulário é do campo.
+        if matches!(m, Modal::Paleta(_) | Modal::Escolha { .. } | Modal::Atalhos(_) | Modal::Visualizar(..) | Modal::TextoCru { .. }) {
+            modais::tecla(e, seta);
+        }
+        return;
+    }
+    if coluna < e.largura_da_sidebar {
+        // A trilha recolhida não tem lista.
+        if e.preferencias.sidebar {
+            e.andar_nas_paginas(desce);
+        }
+        return;
+    }
+    if let Some(c) = e.conversa.as_ref() {
+        if !c.escrevendo {
+            conversa::tecla(e, seta);
+        }
+        return;
+    }
+    if e.especial.is_some() {
+        especiais::rolar(e, desce);
+        return;
+    }
+    let passo = if desce { Passo::Proximo } else { Passo::Anterior };
+    e.cursor = tela::andar(&e.arvore, &e.cursor, passo);
+    pular_nivel_de_lista(e, passo);
+    e.seguir_cursor();
+}
+
 fn tecla_no_conteudo(e: &mut Estado, tecla: &str) {
     if tecla_do_calendario(e, tecla) {
         return;
@@ -1525,6 +1579,7 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
 
     // A altura útil exclui a borda de cima e a de baixo.
     e.altura = colunas[1].height.saturating_sub(2) as usize;
+    e.largura_da_sidebar = colunas[1].x;
     e.seguir_cursor();
 
     let paginas: Vec<Line> = e
@@ -8950,6 +9005,88 @@ mod testes {
         let mut e = especial_aberto("propostas");
         especiais::carregar(&mut e, especiais::Dados::Propostas(vec![]));
         assert!(desenho(&mut e, 100, 20).join("\n").contains("Nada pendente."));
+    }
+
+    // --- Ciclo 454: a roda do mouse ---------------------------------------------------
+
+    #[test]
+    fn a_roda_anda_o_cursor_no_conteudo_e_a_tela_segue() {
+        let texto: String = (1..=60).map(|i| format!("parágrafo {i}\n\n")).collect();
+        let mut e = pagina_com(&texto);
+        e.foco = Foco::Paginas;
+        desenho(&mut e, 80, 20);
+        let antes = e.cursor.clone();
+        let no_conteudo = e.largura_da_sidebar + 5;
+        for _ in 0..30 {
+            rolar(&mut e, true, no_conteudo);
+        }
+        assert_ne!(e.cursor, antes, "a roda não andou o cursor");
+        let tela = desenho(&mut e, 80, 20).join("\n");
+        assert!(tela.contains("parágrafo 31") && !tela.contains("parágrafo 1\n"), "a tela não acompanhou:\n{tela}");
+        // A roda age onde o ponteiro está, sem mexer no foco.
+        assert_eq!(e.foco, Foco::Paginas);
+        for _ in 0..30 {
+            rolar(&mut e, false, no_conteudo);
+        }
+        assert!(desenho(&mut e, 80, 20).join("\n").contains("parágrafo 1"));
+    }
+
+    #[test]
+    fn a_roda_sobre_a_sidebar_anda_a_lista() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        desenho(&mut e, 80, 20);
+        let antes = e.linha_sidebar;
+        rolar(&mut e, true, 2);
+        assert_eq!(e.linha_sidebar, antes + 1);
+        rolar(&mut e, false, 2);
+        assert_eq!(e.linha_sidebar, antes);
+    }
+
+    #[test]
+    fn a_roda_nao_mexe_onde_se_digita() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n\nb\n\nc\n"));
+        e.foco = Foco::Conteudo;
+        desenho(&mut e, 80, 20);
+        modais::abrir_paleta(&mut e);
+        digitar(&mut e, "j");
+        let cursor = e.cursor.clone();
+        // Na barra de comandos a seta anda a lista; o texto digitado fica.
+        rolar(&mut e, true, 50);
+        assert_eq!(e.cursor, cursor);
+        assert!(e.modal.is_some());
+        e.modal = None;
+        e.barra_aberta = true;
+        rolar(&mut e, true, 50);
+        assert_eq!(e.cursor, cursor, "a roda andou com a busca aberta");
+    }
+
+    #[test]
+    fn a_roda_le_a_proposta_longa_inteira_antes_de_pular() {
+        use anotadinho_core::proposta::Operacao;
+        let mut e = especial_aberto("propostas");
+        let longa: String = (1..=80).map(|i| format!("linha {i}\n")).collect();
+        especiais::carregar(
+            &mut e,
+            especiais::Dados::Propostas(vec![
+                especiais::PropostaNaTela { proposta: proposta("p1", Operacao::Criar, "pages/longa.md", &longa), atual: String::new() },
+                especiais::PropostaNaTela { proposta: proposta("p2", Operacao::Criar, "pages/curta.md", "oi\n"), atual: String::new() },
+            ]),
+        );
+        let coluna = 50;
+        desenho(&mut e, 100, 30);
+        let mut viu_o_fim = false;
+        for _ in 0..60 {
+            if e.especial.as_ref().unwrap().selecionado == 1 {
+                break;
+            }
+            viu_o_fim |= desenho(&mut e, 100, 30).join("\n").contains("+linha 80");
+            rolar(&mut e, true, coluna);
+        }
+        assert!(viu_o_fim, "a roda pulou pra próxima sem mostrar o fim da proposta longa");
+        assert_eq!(e.especial.as_ref().unwrap().selecionado, 1, "a roda não passou pra próxima");
+        // Pra cima, volta pra primeira.
+        rolar(&mut e, false, coluna);
+        assert_eq!(e.especial.as_ref().unwrap().selecionado, 0);
     }
 
     // --- Ciclo 453: o diff mostra a mudança, a visualização a página final ---------

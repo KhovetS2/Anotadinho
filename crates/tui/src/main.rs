@@ -12,7 +12,7 @@ use anotadinho_tui::app::{Pedido, Preferencias};
 use anotadinho_tui::app::{self, Estado};
 use anotadinho_tui::sistema;
 use clap::Parser;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::execute;
 use ratatui::backend::CrosstermBackend;
@@ -904,6 +904,15 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
             break;
         }
         for pedido in std::mem::take(&mut estado.pedidos) {
+            // Quem PEDE pra abrir algo quer olhar pra ele (ciclo 454). A
+            // barra de comandos, as escolhas e os links só faziam o
+            // pedido, e o foco ficava onde estava: abrir as propostas
+            // pela barra deixava a lista lateral com o foco, e `v` e
+            // espaço não faziam nada até um Tab. O Enter da lista lateral
+            // já fazia isto por conta própria.
+            if matches!(pedido, Pedido::AbrirPagina(_) | Pedido::AbrirEspecial(_)) {
+                estado.foco = app::Foco::Conteudo;
+            }
             match pedido {
                 Pedido::AbrirPagina(caminho) => abrir(estado, vault, &caminho),
                 Pedido::CarregarEspecial(tipo) => carregar_especial(estado, vault, tipo),
@@ -1724,7 +1733,10 @@ fn main() -> Result<(), String> {
     // acontece ANTES de qualquer erro subir.
     enable_raw_mode().map_err(|e| e.to_string())?;
     let mut saida = io::stdout();
-    execute!(saida, EnterAlternateScreen).map_err(|e| e.to_string())?;
+    // O mouse capturado (ciclo 454): sem isto a roda ia pro terminal, que
+    // na tela alternativa não rola nada. O preço é conhecido de todo
+    // programa de terminal que usa mouse: selecionar texto pede Shift.
+    execute!(saida, EnterAlternateScreen, EnableMouseCapture).map_err(|e| e.to_string())?;
     let mut term = Terminal::new(CrosstermBackend::new(saida)).map_err(|e| e.to_string())?;
 
     // Trocar de vault (ciclo 373) monta tudo de novo sem sair do terminal.
@@ -1748,7 +1760,7 @@ fn main() -> Result<(), String> {
     };
 
     disable_raw_mode().map_err(|e| e.to_string())?;
-    execute!(term.backend_mut(), LeaveAlternateScreen).map_err(|e| e.to_string())?;
+    execute!(term.backend_mut(), DisableMouseCapture, LeaveAlternateScreen).map_err(|e| e.to_string())?;
     term.show_cursor().map_err(|e| e.to_string())?;
     resultado
 }
@@ -1795,8 +1807,21 @@ fn laco<B: ratatui::backend::Backend>(
             buscar_na_paleta(estado, vault);
             continue;
         }
-        let Event::Key(k) = event::read().map_err(|e| e.to_string())? else {
-            continue;
+        let k = match event::read().map_err(|e| e.to_string())? {
+            Event::Key(k) => k,
+            Event::Mouse(m) => {
+                let desce = match m.kind {
+                    MouseEventKind::ScrollDown => true,
+                    MouseEventKind::ScrollUp => false,
+                    // Clique e arrasto ficam sem efeito: a TUI é de
+                    // teclado, e a roda é o que faltava.
+                    _ => continue,
+                };
+                app::rolar(estado, desce, m.column);
+                atender(estado, vault, trabalhos, fila);
+                continue;
+            }
+            _ => continue,
         };
         // O Windows manda Press E Release; sem esta guarda cada tecla
         // anda dois blocos.
