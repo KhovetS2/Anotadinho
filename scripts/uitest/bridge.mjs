@@ -238,6 +238,48 @@ export async function esperarEstavel(bridge, expr, descricao, limiteMs = 10000) 
 /// sidebar tem itens" passa na hora contra a tela velha. O cenário então
 /// clicava num nó que estava prestes a ser destruído. O marcador só
 /// desaparece quando o documento é REALMENTE trocado (ciclo 198).
+/// Foco simulado quando a janela do app NÃO tem o foco do sistema (ciclo 455).
+///
+/// Medido no WebKitGTK: sem foco do sistema (`document.hasFocus()` falso,
+/// a pessoa trabalhando noutra janela), `el.focus()` troca o
+/// `activeElement`, mas NÃO dispara `focus` nem `blur`. Três cenários
+/// gravam no blur (célula de tabela, corpo do callout, campo da consulta)
+/// e reprovavam inteiros, conforme quem estivesse com a janela em foco
+/// — inclusive isolados, o que parecia regressão e não era.
+///
+/// O calço só entra nessa condição e faz `focus()`/`blur()` dispararem o
+/// que uma janela focada dispararia. Ele não prova a fronteira com o
+/// sistema (ver o padrão "fronteira-do-sistema"): o que estes cenários
+/// medem é a lógica DEPOIS do foco, e é essa que continua exercida.
+/// Devolve se o calço está ativo, pra o relatório dizer.
+export async function garantirFoco(bridge) {
+  return await bridge.js(`(() => {
+    if (window.__uitest_foco_simulado) return true;
+    if (document.hasFocus()) return false;
+    window.__uitest_foco_simulado = true;
+    const focar = HTMLElement.prototype.focus;
+    const desfocar = HTMLElement.prototype.blur;
+    const sair = (el, para) => {
+      el.dispatchEvent(new FocusEvent('blur', { relatedTarget: para }));
+      el.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: para }));
+    };
+    HTMLElement.prototype.focus = function (...args) {
+      const antes = document.activeElement;
+      focar.apply(this, args);
+      if (document.activeElement !== this || antes === this) return;
+      if (antes && antes !== document.body) sair(antes, this);
+      this.dispatchEvent(new FocusEvent('focus', { relatedTarget: antes }));
+      this.dispatchEvent(new FocusEvent('focusin', { bubbles: true, relatedTarget: antes }));
+    };
+    HTMLElement.prototype.blur = function () {
+      const estava = document.activeElement === this;
+      desfocar.call(this);
+      if (estava) sair(this, null);
+    };
+    return true;
+  })()`);
+}
+
 export async function recarregarEstavel(bridge) {
   await bridge.js("window.__uitest_reload = 1; location.reload(); true");
   await esperar(
@@ -252,6 +294,8 @@ export async function recarregarEstavel(bridge) {
     "a sidebar voltar depois do reload",
     15000,
   );
+  // O reload troca o documento, e o calço de foco vai junto.
+  await garantirFoco(bridge);
 }
 
 /// Abre a página de rascunho e espera o conteúdo PARAR de mudar.

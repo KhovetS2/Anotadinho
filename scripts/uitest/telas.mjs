@@ -371,50 +371,70 @@ telas.push({
 telas.push({
   nome: "aparência: aplicar muda a tela na hora, e sobrevive ao recarregar (253)",
   async fn(bridge, ctx) {
-    await recarregarEstavel(bridge);
-    ctx.assertEq(await bridge.js(ABRIR_APARENCIA), true, "a tela de aparência não abriu");
-    await PAUSA(400);
+    // O ponto de partida é o PADRÃO do app, medido, e não um nome de tema
+    // escrito aqui (ciclo 455). O cenário afirmava "escuro", o padrão
+    // virou "mocha" no 387, e ele reprovou desde então dizendo que
+    // "voltar ao padrão" não funcionava — quando quem estava velho era a
+    // expectativa. Também partia do tema que a pessoa tivesse escolhido,
+    // e aí "voltar ao padrão" só batia se ela usasse o padrão.
+    const original = await bridge.js(`localStorage.getItem('anotadinho.aparencia')`);
+    try {
+      await bridge.js(`(localStorage.removeItem('anotadinho.aparencia'), true)`);
+      await recarregarEstavel(bridge);
+      ctx.assertEq(await bridge.js(ABRIR_APARENCIA), true, "a tela de aparência não abriu");
+      await PAUSA(400);
 
-    const antes = await bridge.js(ESTADO_APARENCIA);
+      const antes = await bridge.js(ESTADO_APARENCIA);
 
-    // Aplicar não recarrega a janela nem perde trabalho (RNF3): é só um
-    // atributo no `<html>`.
-    await clicar(bridge, 'button[data-tema="papel"]', "o tema papel");
-    await PAUSA(400);
-    await clicar(bridge, 'button[data-destaque="verde"]', "o destaque verde");
-    await PAUSA(400);
-    await clicar(bridge, 'button[data-botoes="pilula"]', "os botões pílula");
-    await PAUSA(400);
+      // Aplicar não recarrega a janela nem perde trabalho (RNF3): é só um
+      // atributo no `<html>`.
+      await clicar(bridge, 'button[data-tema="papel"]', "o tema papel");
+      await PAUSA(400);
+      await clicar(bridge, 'button[data-destaque="verde"]', "o destaque verde");
+      await PAUSA(400);
+      await clicar(bridge, 'button[data-botoes="pilula"]', "os botões pílula");
+      await PAUSA(400);
 
-    const depois = await bridge.js(ESTADO_APARENCIA);
-    ctx.assertEq(depois.tema, "papel", "o tema não foi aplicado");
-    ctx.assertEq(depois.botoes, "pilula", "a forma dos botões não foi aplicada");
-    ctx.assert(depois.fundo !== antes.fundo, "o fundo não mudou com o tema");
-    ctx.assert(
-      depois.destaque !== antes.destaque,
-      `a cor de destaque não mudou (${antes.destaque} → ${depois.destaque})`,
-    );
+      const depois = await bridge.js(ESTADO_APARENCIA);
+      ctx.assertEq(depois.tema, "papel", "o tema não foi aplicado");
+      ctx.assertEq(depois.botoes, "pilula", "a forma dos botões não foi aplicada");
+      ctx.assert(depois.fundo !== antes.fundo, "o fundo não mudou com o tema");
+      ctx.assert(
+        depois.destaque !== antes.destaque,
+        `a cor de destaque não mudou (${antes.destaque} → ${depois.destaque})`,
+      );
 
-    // Persistência (RF5).
-    await recarregarEstavel(bridge);
-    const recarregado = await bridge.js(ESTADO_APARENCIA);
-    ctx.assertEq(recarregado.tema, "papel", "o tema não sobreviveu ao recarregar");
-    ctx.assertEq(recarregado.botoes, "pilula", "a forma dos botões não sobreviveu");
-    ctx.assertEq(recarregado.destaque, depois.destaque, "o destaque não sobreviveu");
+      // Persistência (RF5).
+      await recarregarEstavel(bridge);
+      const recarregado = await bridge.js(ESTADO_APARENCIA);
+      ctx.assertEq(recarregado.tema, "papel", "o tema não sobreviveu ao recarregar");
+      ctx.assertEq(recarregado.botoes, "pilula", "a forma dos botões não sobreviveu");
+      ctx.assertEq(recarregado.destaque, depois.destaque, "o destaque não sobreviveu");
 
-    // Voltar ao padrão (RF6).
-    ctx.assertEq(await bridge.js(ABRIR_APARENCIA), true, "a tela não reabriu");
-    await PAUSA(400);
-    await bridge.js(`(() => {
-      const b = [...document.querySelectorAll('.aparencia__rodape button')][0];
-      if (b) b.click();
-      return !!b;
-    })()`);
-    await PAUSA(400);
-    const padrao = await bridge.js(ESTADO_APARENCIA);
-    ctx.assertEq(padrao.tema, "escuro", "voltar ao padrão não restaurou o tema");
-    ctx.assertEq(padrao.botoes, "arredondado", "voltar ao padrão não restaurou os botões");
-    ctx.assertEq(padrao.destaque, antes.destaque, "voltar ao padrão não restaurou o destaque");
+      // Voltar ao padrão (RF6): o mesmo estado de quando não havia
+      // preferência nenhuma.
+      ctx.assertEq(await bridge.js(ABRIR_APARENCIA), true, "a tela não reabriu");
+      await PAUSA(400);
+      await bridge.js(`(() => {
+        const b = [...document.querySelectorAll('.aparencia__rodape button')][0];
+        if (b) b.click();
+        return !!b;
+      })()`);
+      await PAUSA(400);
+      const padrao = await bridge.js(ESTADO_APARENCIA);
+      ctx.assertEq(padrao.tema, antes.tema, "voltar ao padrão não restaurou o tema");
+      ctx.assertEq(padrao.botoes, antes.botoes, "voltar ao padrão não restaurou os botões");
+      ctx.assertEq(padrao.destaque, antes.destaque, "voltar ao padrão não restaurou o destaque");
+    } finally {
+      // Devolve a escolha da pessoa, falhando ou não.
+      await bridge.js(`(() => {
+        const v = ${JSON.stringify(original)};
+        if (v === null) localStorage.removeItem('anotadinho.aparencia');
+        else localStorage.setItem('anotadinho.aparencia', v);
+        return true;
+      })()`);
+      await recarregarEstavel(bridge);
+    }
   },
 });
 

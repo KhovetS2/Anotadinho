@@ -1088,7 +1088,12 @@ fluxo.push({
       await bridge.js(`[...document.querySelectorAll('.conversa__prompt-rodape button')].find(b => b.textContent.includes('Visualizar')).click(); true`);
       await esperar(bridge, "document.querySelector('.conversa__prompt-final')", "o preview abrir");
       const preview = await bridge.js(`document.querySelector('.conversa__prompt-final').textContent`);
-      ctx.assertEq(preview, final, "preview não mostra o prompt final");
+      // Desde o 423 o preview é o prompt MONTADO — peso, "como agir", a
+      // pergunta, o contexto — e não só o texto do compositor. O texto
+      // final continua lá, inteiro; é ele que este cenário confere, junto
+      // com o contexto que o prompt padrão declarou (ciclo 455).
+      ctx.assert(preview.includes(final), `preview não mostra o prompt final inteiro:\n${preview.slice(0, 400)}`);
+      ctx.assert(preview.includes("pages/produto/missao.md"), "o contexto do prompt padrão não aparece no preview");
       ctx.assertEq(await bridge.js(`document.querySelectorAll('.conversa__msg').length`), 0, "preview enviou a mensagem");
       await clicar(bridge, '.modal__actions button', "o botão do modal");
       await PAUSA(900);

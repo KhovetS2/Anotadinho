@@ -1741,12 +1741,26 @@ cenarios.push({
         return await eh();
       };
       const inicio = await eh();
+      const tamanho = () => innerWidth + 'x' + innerHeight;
+      const tamanhoAntes = tamanho();
       const depois = await window.__TAURI_INTERNALS__.invoke('window_toggle_maximize', {});
       const conferido = await aguardar(depois);
+      const tamanhoDepois = tamanho();
       await window.__TAURI_INTERNALS__.invoke('window_toggle_maximize', {});
       const final = await aguardar(inicio);
-      return { inicio, depois, conferido, final };
+      return { inicio, depois, conferido, final, tamanhoAntes, tamanhoDepois };
     })()`);
+    // O gerenciador IGNOROU o pedido (ciclo 455): nem o estado nem o
+    // tamanho mudaram. Medido no Hyprland, com a janela encaixada em meia
+    // tela (979×832 de 2048): o GTK diz "maximizada", e restaurar não
+    // desfaz o encaixe. Isso é do gerenciador, não do app — mas também
+    // não é um maximizar conferido.
+    if (ciclo.conferido !== ciclo.depois && ciclo.tamanhoAntes === ciclo.tamanhoDepois) {
+      ctx.naoSeAplica(
+        `o gerenciador de janelas ignorou o pedido de ${ciclo.depois ? "maximizar" : "restaurar"} ` +
+          `(estado e tamanho ${ciclo.tamanhoAntes} iguais depois) — janela encaixada num gerenciador em mosaico?`,
+      );
+    }
     ctx.assertEq(ciclo.depois, !ciclo.inicio, "alternar devia inverter o estado");
     ctx.assertEq(ciclo.conferido, ciclo.depois, "o estado devolvido tem que bater com o real");
     ctx.assertEq(ciclo.final, ciclo.inicio, "a janela devia ter voltado como estava");

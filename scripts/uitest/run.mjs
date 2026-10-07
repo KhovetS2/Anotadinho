@@ -18,7 +18,7 @@
 
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { Bridge, esperar, abrirPagina, recarregarEstavel } from "./bridge.mjs";
+import { Bridge, esperar, abrirPagina, recarregarEstavel, garantirFoco } from "./bridge.mjs";
 import { cenarios } from "./cenarios.mjs";
 import { digitacao } from "./digitacao.mjs";
 import { blocos } from "./blocos.mjs";
@@ -64,6 +64,22 @@ function assertEq(atual, esperado, msg) {
 }
 ctx.assert = assert;
 ctx.assertEq = assertEq;
+
+/// O cenário mede algo que ESTE ambiente não oferece (ciclo 455).
+///
+/// Nasceu do cenário de maximizar (180): num gerenciador em mosaico
+/// (Hyprland, Sway) a janela vive encaixada, o GTK a reporta como
+/// maximizada, e o pedido de restaurar é ignorado. Reprovar culpava o app
+/// por uma decisão do gerenciador; passar calado diria que maximizar foi
+/// conferido, e não foi. Fica um terceiro resultado, com o motivo, que
+/// aparece no relatório e NÃO conta como verde.
+///
+/// Só vale com evidência de que o ambiente recusou — nunca como saída
+/// pra asserção que incomoda.
+class NaoSeAplica extends Error {}
+ctx.naoSeAplica = (motivo) => {
+  throw new NaoSeAplica(motivo);
+};
 
 // A bateria de digitação (ciclo 193) entra junto: é rede de segurança
 // permanente, não um cenário pontual.
@@ -137,22 +153,32 @@ try {
   console.log(`  ! não consegui normalizar as configurações: ${e.message}`);
 }
 
-// Guarda a configuração do AGENTE antes de rodar (ciclo 208).
+// Guarda as preferências que os cenários trocam, pra devolver no fim.
 //
-// Os cenários apontam o adaptador pro agente de mentira. Sem restaurar,
-// a suíte deixa o app do usuário configurado pra um script de teste — e
-// a próxima conversa dele falha com "erro proposital". Aconteceu.
-let adaptadorOriginal = null;
-try {
-  adaptadorOriginal = await bridge.js(
-    `localStorage.getItem('anotadinho.adaptador_agente')`,
-  );
-} catch {
-  /* app sem storage acessível: segue sem restaurar */
+// O agente (ciclo 208): os cenários apontam o adaptador pro agente de
+// mentira, e sem restaurar a próxima conversa da pessoa falha com "erro
+// proposital". Aconteceu.
+//
+// A aparência (ciclo 455): "o tema não entra no vault" grava `escuro` no
+// fim — e os snapshots, que rodam depois, dependem disso (a baseline foi
+// gravada nesse tema). A devolução fica pra DEPOIS dos snapshots.
+//
+// `undefined` = não deu pra ler; `null` = li, e não havia nada. Os dois
+// eram `null` aqui, e a restauração pulava justamente o caso de apagar:
+// quem nunca tinha gravado um agente ficava com o de teste.
+const PRESERVADAS = ["anotadinho.adaptador_agente", "anotadinho.aparencia"];
+const originais = {};
+for (const chave of PRESERVADAS) {
+  try {
+    originais[chave] = await bridge.js(`localStorage.getItem(${JSON.stringify(chave)})`);
+  } catch {
+    /* app sem storage acessível: segue sem restaurar esta */
+  }
 }
 
 let passaram = 0;
 const falharam = [];
+const naoSeAplicam = [];
 const inicio = Date.now();
 
 /// Devolve o app ao estado padrão ANTES de cada cenário.
@@ -225,15 +251,26 @@ async function diagnostico() {
   }
 }
 
+let avisouFoco = false;
 for (const cenario of selecionados) {
   const t0 = Date.now();
   try {
     ctx.apagar();
     await normalizar();
+    if ((await garantirFoco(bridge)) && !avisouFoco) {
+      avisouFoco = true;
+      console.log("  ! a janela do app está sem o foco do sistema: focus/blur simulados (ciclo 455)");
+    }
     await cenario.fn(bridge, ctx);
     passaram++;
     console.log(`  ✓ ${cenario.nome} (${Date.now() - t0}ms)`);
   } catch (e) {
+    if (e instanceof NaoSeAplica) {
+      naoSeAplicam.push({ nome: cenario.nome, motivo: e.message });
+      console.log(`  ○ ${cenario.nome} (${Date.now() - t0}ms)`);
+      console.log(`      não se aplica aqui: ${e.message}`);
+      continue;
+    }
     const estado = await diagnostico();
     falharam.push({ nome: cenario.nome, erro: e.message });
     console.log(`  ✗ ${cenario.nome} (${Date.now() - t0}ms)`);
@@ -290,25 +327,37 @@ if (!filtro && !soPendentes && !soEstresse && !soArvore && !process.argv.include
   selecionados.push({ nome: "snapshot visual no tema claro, só geometria (253)" });
 }
 
-// Devolve o adaptador do usuário.
-if (adaptadorOriginal !== null) {
+// Devolve as preferências da pessoa.
+for (const [chave, valor] of Object.entries(originais)) {
+  if (valor === undefined) continue;
   try {
     await bridge.js(`(() => {
-      const v = ${JSON.stringify(adaptadorOriginal)};
-      if (v === null) localStorage.removeItem('anotadinho.adaptador_agente');
-      else localStorage.setItem('anotadinho.adaptador_agente', v);
+      const v = ${JSON.stringify(valor)};
+      if (v === null) localStorage.removeItem(${JSON.stringify(chave)});
+      else localStorage.setItem(${JSON.stringify(chave)}, v);
       return true;
     })()`);
   } catch {
-    console.log("  ! não consegui restaurar a configuração do agente");
+    console.log(`  ! não consegui restaurar ${chave}`);
   }
+}
+// A aparência é lida na carga: sem recarregar, a janela fica no tema do
+// teste até a pessoa recarregar.
+try {
+  await bridge.js("location.reload(); true");
+} catch {
+  /* a janela fechou: nada a mostrar */
 }
 
 bridge.fechar();
 
 console.log(
-  `\n${passaram}/${selecionados.length} cenários passaram em ${((Date.now() - inicio) / 1000).toFixed(1)}s`,
+  `\n${passaram}/${selecionados.length} cenários passaram em ${((Date.now() - inicio) / 1000).toFixed(1)}s` +
+    (naoSeAplicam.length ? ` · ${naoSeAplicam.length} não se aplica(m) neste ambiente` : ""),
 );
+if (naoSeAplicam.length) {
+  console.log(`\nnão se aplicam aqui:\n${naoSeAplicam.map((n) => `  - ${n.nome}: ${n.motivo}`).join("\n")}`);
+}
 if (falharam.length) {
   console.log(`\nfalhas:\n${falharam.map((f) => `  - ${f.nome}: ${f.erro.split("\n")[0]}`).join("\n")}`);
   process.exit(1);
