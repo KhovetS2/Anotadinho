@@ -1,108 +1,108 @@
 # cena conversa-no-fim · 160x50 · teclas: Tab
-┌páginas───────────────────────────────────────┐┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│cena                                          ││ Planejar: Imagens arrastadas: persistir como as coladas   ϟ Claude Code                         ⌁ 2 anexo(s) │
-│                                              ││  imagens-coladas-e-arrastadas ×   escrita-no-vault ×                                                         │
-│                                              ││  ▭ trabalha na raiz do projeto   + pasta                                                                     │
-│                                              ││──────────────────────────────────────────────────────────────────────────────────────────────────────────────│
-│                                              ││ ▐   - Se for uma URL iniciada por http, o editor insere diretamente um <img>     ▌                           │
-│                                              ││ ▐     apontando para ela. A imagem não é copiada para o vault.                   ▌                           │
-│                                              ││ ▐   - Se for um caminho local, o backend copia o arquivo para assets/            ▌                           │
-│                                              ││ ▐     preservando o nome original.                                               ▌                           │
-│                                              ││ ▐   - Após a cópia, o frontend insere a imagem no cursor com                     ▌                           │
-│                                              ││ ▐     insert_element_at_cursor.                                                  ▌                           │
-│                                              ││ ▐   - O DOM é convertido novamente em markdown, o documento é marcado como       ▌                           │
-│                                              ││ ▐     editado e depois segue o salvamento normal da nota.                        ▌                           │
-│                                              ││ ▐ Portanto, /imagem é um fluxo com ação posterior e confirmação manual: o drop   ▌                           │
-│                                              ││ ▐ abriria o diálogo e a pessoa ainda teria que fornecer um caminho ou URL. Ele   ▌                           │
-│                                              ││ ▐ não recebe automaticamente o arquivo que está sendo arrastado.                 ▌                           │
-│                                              ││ ▐ Há ainda diferenças importantes em relação ao comportamento exigido pela spec: ▌                           │
-│                                              ││ ▐   - O drop imediato já possui o próprio arquivo e seus bytes; pedir novamente  ▌                           │
-│                                              ││ ▐     o caminho seria redundante.                                                ▌                           │
-│                                              ││ ▐   - O caminho local de /imagem usa copy_to_assets, que atualmente pode         ▌                           │
-│                                              ││ ▐     sobrescrever um asset de mesmo nome. Isso não atende ao RF7.               ▌                           │
-│                                              ││ ▐   - Erros na cópia local são atualmente ignorados silenciosamente, enquanto o  ▌                           │
-│                                              ││ ▐     RF6 exige comunicar o erro.                                                ▌                           │
-│                                              ││ ▐   - URLs externas são aceitas por /imagem, mas baixar imagens de URL está      ▌                           │
-│                                              ││ ▐     explicitamente fora do escopo desta spec.                                  ▌                           │
-│                                              ││ ▐   - O fluxo aceita uma entrada por vez, enquanto o drop precisa suportar       ▌                           │
-│                                              ││ ▐     vários arquivos.                                                           ▌                           │
-│                                              ││ ▐   - A gravação ocorre assincronamente e a inserção usa a seleção existente     ▌                           │
-│                                              ││ ▐     quando termina, o que merece atenção caso o cursor mude nesse intervalo.   ▌                           │
-│                                              ││ ▐ Assim, relacionar o drop ao fluxo de /imagem pode significar duas coisas       ▌                           │
-│                                              ││ ▐ distintas:                                                                     ▌                           │
-│                                              ││ ▐   - Reutilizar a infraestrutura interna: salvar em assets/, inserir pelo       ▌                           │
-│                                              ││ ▐     mecanismo seguro do editor, recomputar markdown e marcar como editado.     ▌                           │
-│                                              ││ ▐     Isso é compatível com a proposta aprovada.                                 ▌                           │
-│                                              ││ ▐   - Abrir literalmente o diálogo de /imagem: isso muda o drop para uma         ▌                           │
-│                                              ││ ▐     operação em duas etapas e não aproveita diretamente o arquivo arrastado.   ▌                           │
-│                                              ││ ▐     Também entra em tensão com o RF1, que descreve salvar e inserir ao         ▌                           │
-│                                              ││ ▐     arrastar.                                                                  ▌                           │
-│                                              ││ ▐ Minha leitura técnica é que “relacionar” pode ser atendido compartilhando a    ▌                           │
-│                                              ││ ▐ infraestrutura, sem abrir o diálogo. Porém, como a spec deixou essa            ▌                           │
-│                                              ││ ▐ experiência explicitamente em aberto, essa escolha ainda precisa ser feita     ▌                           │
-│                                              ││ ▐ pela pessoa antes da execução. Nenhum arquivo foi alterado.                    ▌                           │
-│                                              ││ ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘                           │
-│                                              ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
-│                                              ││▐ Escreva e mande. i escreve · p prompt padrão · Ctrl+J quebra linha.                                        ▌│
-│                                              ││▐                                                                                                            ▌│
-│                                              ││▐                                                                                                            ▌│
-│                                              ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
-│                                              ││ p ▤ Prompt padrão ⌃   : anexar, trocar agente                                                     Enviar  ↵  │
-└──────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌páginas───────────────────────┐┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│cena                          ││ Planejar: Imagens arrastadas: persistir como as coladas   ϟ Claude Code                                         ⌁ 2 anexo(s) │
+│                              ││  imagens-coladas-e-arrastadas ×   escrita-no-vault ×                                                                         │
+│                              ││  ▭ trabalha na raiz do projeto   + pasta                                                                                     │
+│                              ││──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────│
+│                              ││ ▐ Hoje, o fluxo de /imagem funciona assim:                                                   ▌                               │
+│                              ││ ▐   - A pessoa digita /imagem no editor e escolhe Imagem — URL ou arquivo de imagem.         ▌                               │
+│                              ││ ▐   - O texto do comando é removido.                                                         ▌                               │
+│                              ││ ▐   - Abre-se um campo pedindo “Caminho da imagem ou URL”.                                   ▌                               │
+│                              ││ ▐   - Se for uma URL iniciada por http, o editor insere diretamente um <img> apontando para  ▌                               │
+│                              ││ ▐     ela. A imagem não é copiada para o vault.                                              ▌                               │
+│                              ││ ▐   - Se for um caminho local, o backend copia o arquivo para assets/ preservando o nome     ▌                               │
+│                              ││ ▐     original.                                                                              ▌                               │
+│                              ││ ▐   - Após a cópia, o frontend insere a imagem no cursor com insert_element_at_cursor.       ▌                               │
+│                              ││ ▐   - O DOM é convertido novamente em markdown, o documento é marcado como editado e depois  ▌                               │
+│                              ││ ▐     segue o salvamento normal da nota.                                                     ▌                               │
+│                              ││ ▐ Portanto, /imagem é um fluxo com ação posterior e confirmação manual: o drop abriria o     ▌                               │
+│                              ││ ▐ diálogo e a pessoa ainda teria que fornecer um caminho ou URL. Ele não recebe              ▌                               │
+│                              ││ ▐ automaticamente o arquivo que está sendo arrastado.                                        ▌                               │
+│                              ││ ▐ Há ainda diferenças importantes em relação ao comportamento exigido pela spec:             ▌                               │
+│                              ││ ▐   - O drop imediato já possui o próprio arquivo e seus bytes; pedir novamente o caminho    ▌                               │
+│                              ││ ▐     seria redundante.                                                                      ▌                               │
+│                              ││ ▐   - O caminho local de /imagem usa copy_to_assets, que atualmente pode sobrescrever um     ▌                               │
+│                              ││ ▐     asset de mesmo nome. Isso não atende ao RF7.                                           ▌                               │
+│                              ││ ▐   - Erros na cópia local são atualmente ignorados silenciosamente, enquanto o RF6 exige    ▌                               │
+│                              ││ ▐     comunicar o erro.                                                                      ▌                               │
+│                              ││ ▐   - URLs externas são aceitas por /imagem, mas baixar imagens de URL está explicitamente   ▌                               │
+│                              ││ ▐     fora do escopo desta spec.                                                             ▌                               │
+│                              ││ ▐   - O fluxo aceita uma entrada por vez, enquanto o drop precisa suportar vários arquivos.  ▌                               │
+│                              ││ ▐   - A gravação ocorre assincronamente e a inserção usa a seleção existente quando          ▌                               │
+│                              ││ ▐     termina, o que merece atenção caso o cursor mude nesse intervalo.                      ▌                               │
+│                              ││ ▐ Assim, relacionar o drop ao fluxo de /imagem pode significar duas coisas distintas:        ▌                               │
+│                              ││ ▐   - Reutilizar a infraestrutura interna: salvar em assets/, inserir pelo mecanismo seguro  ▌                               │
+│                              ││ ▐     do editor, recomputar markdown e marcar como editado. Isso é compatível com a          ▌                               │
+│                              ││ ▐     proposta aprovada.                                                                     ▌                               │
+│                              ││ ▐   - Abrir literalmente o diálogo de /imagem: isso muda o drop para uma operação em duas    ▌                               │
+│                              ││ ▐     etapas e não aproveita diretamente o arquivo arrastado. Também entra em tensão com o   ▌                               │
+│                              ││ ▐     RF1, que descreve salvar e inserir ao arrastar.                                        ▌                               │
+│                              ││ ▐ Minha leitura técnica é que “relacionar” pode ser atendido compartilhando a                ▌                               │
+│                              ││ ▐ infraestrutura, sem abrir o diálogo. Porém, como a spec deixou essa experiência            ▌                               │
+│                              ││ ▐ explicitamente em aberto, essa escolha ainda precisa ser feita pela pessoa antes da        ▌                               │
+│                              ││ ▐ execução. Nenhum arquivo foi alterado.                                                     ▌                               │
+│                              ││ ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘                               │
+│                              ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
+│                              ││▐ Escreva e mande. i escreve · p prompt padrão · Ctrl+J quebra linha.                                                        ▌│
+│                              ││▐                                                                                                                            ▌│
+│                              ││▐                                                                                                                            ▌│
+│                              ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
+│                              ││ p ▤ Prompt padrão ⌃   : anexar, trocar agente                                                                     Enviar  ↵  │
+└──────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 == estilos ==
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-accccddddddddddddddddddddddddddddddddddddddddddabeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddfffffffffffffffddddddddddddddddddddddddgggggggggggggb
-addddddddddddddddddddddddddddddddddddddddddddddabdhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhdhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdfffffffffffffffffffffffffffffffgggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllmmmmlllllllllllllllllllllllllllllllllmmmmmjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmmmmmmmmmmmmmmmmljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijllllllllllmmmmmmmllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllmmmmmmmlllllmmmmmmmmmmmmmmllllllllllllllllllllljjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkkllllllllllllllllllllllllllllllmmmmmmmlllllllllllllllllllllllllllllllljjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkklllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllllllllllllllllllllllllllllllmmmmmmmlllllllllllllllllllllllllllljjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkknnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnlllllllllllmmmmmmmlllllllllllllljjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjkknnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnooooooonlllllllllllllllllllllllllljjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijjjjjllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdijllllllllllllllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabdppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppdddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqb
-addddddddddddddddddddddddddddddddddddddddddddddabrkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjrb
-addddddddddddddddddddddddddddddddddddddddddddddabrjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjrb
-addddddddddddddddddddddddddddddddddddddddddddddabrjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjrb
-addddddddddddddddddddddddddddddddddddddddddddddabqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqb
-addddddddddddddddddddddddddddddddddddddddddddddabggggggggggggggggggggggggggggggggggggggggggggggddddddddddddddddddddddddddddddddddddddddddddddddddddsssssssssssdb
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+accccddddddddddddddddddddddddddabeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddfffffffffffffffddddddddddddddddddddddddddddddddddddddddgggggggggggggb
+addddddddddddddddddddddddddddddabdhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhdhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdfffffffffffffffffffffffffffffffgggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+addddddddddddddddddddddddddddddabdijkkkkkkkkkkkkkkkkklllllllkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkklllllllkkkkkkkkkkkkkkkkkkkkknnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnkjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkkkkkkkknnnnnnnnnnnnnnnnnnnnnnnnnnkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllkkkkkkkkkkkkkkkjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllkkkkkkkkkkkkkkkkkkkjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllkjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijkkkkkkkkkklllllllkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkklllllllkkkkkllllllllllllllkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnkkkkkkkkkkklllllllkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjmmnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnooooooonkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppdddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqb
+addddddddddddddddddddddddddddddabrmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjrb
+addddddddddddddddddddddddddddddabrjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjrb
+addddddddddddddddddddddddddddddabrjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjrb
+addddddddddddddddddddddddddddddabqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqb
+addddddddddddddddddddddddddddddabggggggggggggggggggggggggggggggggggggggggggggggddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddsssssssssssdb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 a = fg #45475a bg #1e1e2e
 b = fg #89b4fa bg #1e1e2e
-c = fg - bg #1e1e2e apagado
+c = fg - bg #1e1e2e negrito apagado
 d = fg - bg #1e1e2e
 e = fg #cdd6f4 bg #1e1e2e negrito
 f = fg #a6adc8 bg #45475a
@@ -110,9 +110,9 @@ g = fg #a6adc8 bg #1e1e2e
 h = fg #89b4fa bg #2e354d
 i = fg #313244 bg #313244
 j = fg - bg #313244
-k = fg #a6adc8 bg #313244
-l = fg #cdd6f4 bg #313244
-m = fg #a6e3a1 bg #313244
+k = fg #cdd6f4 bg #313244
+l = fg #a6e3a1 bg #313244
+m = fg #a6adc8 bg #313244
 n = fg #cdd6f4 bg #313244 negrito
 o = fg #a6e3a1 bg #313244 negrito
 p = fg #313244 bg #1e1e2e

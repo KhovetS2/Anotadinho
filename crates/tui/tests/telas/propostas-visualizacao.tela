@@ -1,88 +1,88 @@
 # cena propostas-visualizacao · 140x40 · teclas: Tab v
-┌páginas─────────────────────────────────┐┌────────────────────────────────────────────────────────────────────────────────────────────────┐
-│cena                                    ││ Propostas do agente                                                              2 pendente(s) │
-│                                        ││────────────────────────────────────────────────────────────────────────────────────────────────│
-│                                        ││╭──────────────────────────────────────────────────────────────────────────────────────────────╮│
-│                                        │││    SUBSTITUIR  pages/sprint.md  ϟ claude                                    2026-08-12 14:05 ││
-│                                        │││ Separar as tarefas pendentes das concluídas e marcar a revisão como feita.                   ││
-│                                        │││ 1 linha(s) removida(s) · 6 adicionada(s)                                 Diff  Visualização  ││
-│                                        │││ # Sprint 12                                                                                  ││
-│                                        │││ ## Pendentes                                                                                 ││
-│                                        │││   - [ ] migrar o banco                                                                       ││
-│                                        │││ ## Feitas                                                                                    ││
-│                                        │││   - [x] revisão do PR                                                                        ││
-│                                        │││                                                                                              ││
-│                                        │││  Aplicar a   Recusar r   Editar e · h l trecho · espaço tira/põe · m marca                   ││
-│                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
-│                                        ││                                                                                                │
-│                                        ││╭──────────────────────────────────────────────────────────────────────────────────────────────╮│
-│                                        │││    CRIAR  pages/notas/ideias.md  ϟ claude                                   2026-08-12 13:40 ││
-│                                        │││ 0 linha(s) removida(s) · 3 adicionada(s)                                 Diff  Visualização  ││
-│                                        │││  trecho 1/1 · −0 +3 · espaço tira                                                            ││
-│                                        │││ +# Ideias                                                                                    ││
-│                                        │││ +                                                                                            ││
-│                                        │││ +- atalho pra duplicar cartão                                                                ││
-│                                        │││                                                                                              ││
-│                                        │││  Aplicar a   Recusar r   Editar e · h l trecho · espaço tira/põe · m marca                   ││
-│                                        ││╰──────────────────────────────────────────────────────────────────────────────────────────────╯│
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-└────────────────────────────────────────┘└ j k proposta · h l trecho · espaço tira · a aplica · r recusa · v visualização ────────────────┘
+┌páginas───────────────────────┐┌──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│cena                          ││ Propostas do agente                                                                        2 pendente(s) │
+│                              ││──────────────────────────────────────────────────────────────────────────────────────────────────────────│
+│                              ││╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮│
+│                              │││    SUBSTITUIR  pages/sprint.md  ϟ claude                                              2026-08-12 14:05 ││
+│                              │││ Separar as tarefas pendentes das concluídas e marcar a revisão como feita.                             ││
+│                              │││ 1 linha(s) removida(s) · 6 adicionada(s)                                           Diff  Visualização  ││
+│                              │││ # Sprint 12                                                                                            ││
+│                              │││ ## Pendentes                                                                                           ││
+│                              │││   - [ ] migrar o banco                                                                                 ││
+│                              │││ ## Feitas                                                                                              ││
+│                              │││   - [x] revisão do PR                                                                                  ││
+│                              │││                                                                                                        ││
+│                              │││  Aplicar a   Recusar r   Editar e · h l trecho · espaço tira/põe · m marca                             ││
+│                              ││╰────────────────────────────────────────────────────────────────────────────────────────────────────────╯│
+│                              ││                                                                                                          │
+│                              ││╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮│
+│                              │││    CRIAR  pages/notas/ideias.md  ϟ claude                                             2026-08-12 13:40 ││
+│                              │││ 0 linha(s) removida(s) · 3 adicionada(s)                                           Diff  Visualização  ││
+│                              │││  trecho 1/1 · −0 +3 · espaço tira                                                                      ││
+│                              │││ +# Ideias                                                                                              ││
+│                              │││ +                                                                                                      ││
+│                              │││ +- atalho pra duplicar cartão                                                                          ││
+│                              │││                                                                                                        ││
+│                              │││  Aplicar a   Recusar r   Editar e · h l trecho · espaço tira/põe · m marca                             ││
+│                              ││╰────────────────────────────────────────────────────────────────────────────────────────────────────────╯│
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+└──────────────────────────────┘└ j k proposta · h l trecho · espaço tira · a aplica · r recusa · v visualização ──────────────────────────┘
 == estilos ==
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-accccddddddddddddddddddddddddddddddddddddabeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffffffffffffffb
-addddddddddddddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
-addddddddddddddddddddddddddddddddddddddddabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggb
-addddddddddddddddddddddddddddddddddddddddabgggghhhhhhhhhhhhijjjjjjjjjjjjjjjiikkkkkkkkiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiillllllllllllllllggb
-addddddddddddddddddddddddddddddddddddddddabggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmiiiiiiiiiiiiiiiiiiggb
-addddddddddddddddddddddddddddddddddddddddabgglllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiillllllnnnnnnnnnnnnnnggb
-addddddddddddddddddddddddddddddddddddddddabggffooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooggb
-addddddddddddddddddddddddddddddddddddddddabggfffpppppppppddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
-addddddddddddddddddddddddddddddddddddddddabggddffqqqqqqqqqqqqqqqqqqddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
-addddddddddddddddddddddddddddddddddddddddabggfffppppppdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
-addddddddddddddddddddddddddddddddddddddddabggddffqqqqqqqqqqqqqqqqqdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
-addddddddddddddddddddddddddddddddddddddddabggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
-addddddddddddddddddddddddddddddddddddddddabggrrrrrrrrrrrisssssssssssillllllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiggb
-addddddddddddddddddddddddddddddddddddddddabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttb
-addddddddddddddddddddddddddddddddddddddddabttgguuuuuuuijjjjjjjjjjjjjjjjjjjjjiikkkkkkkkiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiillllllllllllllllttb
-addddddddddddddddddddddddddddddddddddddddabttlllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnllllllllllllllttb
-addddddddddddddddddddddddddddddddddddddddabttlllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiittb
-addddddddddddddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvttb
-addddddddddddddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvttb
-addddddddddddddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvttb
-addddddddddddddddddddddddddddddddddddddddabttiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiittb
-addddddddddddddddddddddddddddddddddddddddabttrrrrrrrrrrrisssssssssssillllllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiittb
-addddddddddddddddddddddddddddddddddddddddabttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwbbbbbbbbbbbbbbbbb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+accccddddddddddddddddddddddddddabeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffffffffffffffb
+addddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+addddddddddddddddddddddddddddddabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggb
+addddddddddddddddddddddddddddddabgggghhhhhhhhhhhhijjjjjjjjjjjjjjjiikkkkkkkkiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiillllllllllllllllggb
+addddddddddddddddddddddddddddddabggmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
+addddddddddddddddddddddddddddddabgglllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiillllllnnnnnnnnnnnnnnggb
+addddddddddddddddddddddddddddddabggffooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooggb
+addddddddddddddddddddddddddddddabggfffpppppppppddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
+addddddddddddddddddddddddddddddabggddffqqqqqqqqqqqqqqqqqqddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
+addddddddddddddddddddddddddddddabggfffppppppdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
+addddddddddddddddddddddddddddddabggddffqqqqqqqqqqqqqqqqqdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddggb
+addddddddddddddddddddddddddddddabggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiggb
+addddddddddddddddddddddddddddddabggrrrrrrrrrrrisssssssssssillllllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiggb
+addddddddddddddddddddddddddddddabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttb
+addddddddddddddddddddddddddddddabttgguuuuuuuijjjjjjjjjjjjjjjjjjjjjiikkkkkkkkiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiillllllllllllllllttb
+addddddddddddddddddddddddddddddabttlllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiinnnnnnllllllllllllllttb
+addddddddddddddddddddddddddddddabttlllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiittb
+addddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvttb
+addddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvttb
+addddddddddddddddddddddddddddddabttvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvttb
+addddddddddddddddddddddddddddddabttiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiittb
+addddddddddddddddddddddddddddddabttrrrrrrrrrrrisssssssssssillllllllllllllllllllllllllllllllllllllllllllllllllliiiiiiiiiiiiiiiiiiiiiiiiiiittb
+addddddddddddddddddddddddddddddabttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwbbbbbbbbbbbbbbbbbbbbbbbbbbb
 a = fg #45475a bg #1e1e2e
 b = fg #89b4fa bg #1e1e2e
-c = fg - bg #1e1e2e apagado
+c = fg - bg #1e1e2e negrito apagado
 d = fg - bg #1e1e2e
 e = fg #cdd6f4 bg #1e1e2e negrito
 f = fg #a6adc8 bg #1e1e2e

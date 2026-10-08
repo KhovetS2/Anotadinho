@@ -1,88 +1,88 @@
 # cena repouso-calendar · 140x40 · teclas: 
-┌páginas─────────────────────────────────┐┌cena────────────────────────────────────────────────────────────────────────────────────────────┐
-│cena                                    ││Antes.                                                                                          │
-│                                        ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
-│                                        ││▌  [ ‹  Agosto 2026  ] ›   t Hoje   m  Mês    Manual                     5 eventos   o + evento▌│
-│                                        ││▌        D            S            T            Q            Q            S            S       ▌│
-│                                        ││▌  ┌────────────┬────────────┬────────────┬────────────┬────────────┬────────────┬────────────┐▌│
-│                                        ││▌  │         26 │         27 │         28 │         29 │         30 │         31 │          1 │▌│
-│                                        ││▌  │            │            │            │            │            │            │            │▌│
-│                                        ││▌  ├────────────┼────────────┼────────────┼────────────┼────────────┼────────────┼────────────┤▌│
-│                                        ││▌  │          2 │          3 │          4 │          5 │          6 │          7 │          8 │▌│
-│                                        ││▌  │            │            │            │            │ Revisão de…│ Deploy pro…│ Retrospect…│▌│
-│                                        ││▌  ├────────────┼────────────┼────────────┼────────────┼────────────┼────────────┼────────────┤▌│
-│                                        ││▌  │          9 │         10 │         11 │         12 │         13 │         14 │         15 │▌│
-│                                        ││▌  │            │ Sprint de agosto                                               │            │▌│
-│                                        ││▌  ├────────────┼────────────┼────────────┼────────────┼────────────┼────────────┼────────────┤▌│
-│                                        ││▌  │         16 │         17 │         18 │         19 │         20 │         21 │         22 │▌│
-│                                        ││▌  │            │            │            │            │            │            │            │▌│
-│                                        ││▌  ├────────────┼────────────┼────────────┼────────────┼────────────┼────────────┼────────────┤▌│
-│                                        ││▌  │         23 │         24 │         25 │         26 │         27 │         28 │         29 │▌│
-│                                        ││▌  │            │            │            │            │            │            │            │▌│
-│                                        ││▌  ├────────────┼────────────┼────────────┼────────────┼────────────┼────────────┼────────────┤▌│
-│                                        ││▌  │         30 │         31 │          1 │          2 │          3 │          4 │          5 │▌│
-│                                        ││▌  │            │            │            │            │            │            │            │▌│
-│                                        ││▌  └────────────┴────────────┴────────────┴────────────┴────────────┴────────────┴────────────┘▌│
-│                                        ││▌  ▾ Sem data (1)   ╎ + evento sem data ╎                                                      ▌│
-│                                        ││▌    ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖                                                                  ▌│
-│                                        ││▌    ▐ Ligar pro fornecedor ▌                                                                  ▌│
-│                                        ││▌    ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘                                                                  ▌│
-│                                        ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
-│                                        ││Depois.                                                                                         │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-│                                        ││                                                                                                │
-└────────────────────────────────────────┘└────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌páginas───────────────────────┐┌cena──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│cena                          ││Antes.                                                                                                    │
+│                              ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
+│                              ││▌  [ ‹  Agosto 2026  ] ›   t Hoje   m  Mês    Manual                               5 eventos   o + evento▌│
+│                              ││▌         D             S             T             Q             Q             S             S          ▌│
+│                              ││▌  ┌─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┐   ▌│
+│                              ││▌  │          26 │          27 │          28 │          29 │          30 │          31 │           1 │   ▌│
+│                              ││▌  │             │             │             │             │             │             │             │   ▌│
+│                              ││▌  ├─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┤   ▌│
+│                              ││▌  │           2 │           3 │           4 │           5 │           6 │           7 │           8 │   ▌│
+│                              ││▌  │             │             │             │             │ Revisão de …│ Deploy prod…│ Retrospecti…│   ▌│
+│                              ││▌  ├─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┤   ▌│
+│                              ││▌  │           9 │          10 │          11 │          12 │          13 │          14 │          15 │   ▌│
+│                              ││▌  │             │ Sprint de agosto                                                    │             │   ▌│
+│                              ││▌  ├─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┤   ▌│
+│                              ││▌  │          16 │          17 │          18 │          19 │          20 │          21 │          22 │   ▌│
+│                              ││▌  │             │             │             │             │             │             │             │   ▌│
+│                              ││▌  ├─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┤   ▌│
+│                              ││▌  │          23 │          24 │          25 │          26 │          27 │          28 │          29 │   ▌│
+│                              ││▌  │             │             │             │             │             │             │             │   ▌│
+│                              ││▌  ├─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┤   ▌│
+│                              ││▌  │          30 │          31 │           1 │           2 │           3 │           4 │           5 │   ▌│
+│                              ││▌  │             │             │             │             │             │             │             │   ▌│
+│                              ││▌  └─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┴─────────────┘   ▌│
+│                              ││▌  ▾ Sem data (1)   ╎ + evento sem data ╎                                                                ▌│
+│                              ││▌    ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖                                                                            ▌│
+│                              ││▌    ▐ Ligar pro fornecedor ▌                                                                            ▌│
+│                              ││▌    ▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘                                                                            ▌│
+│                              ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
+│                              ││Depois.                                                                                                   │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+│                              ││                                                                                                          │
+└──────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 == estilos ==
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-accccddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddddddddabghhiiiiijjjjjjjjjjjiiiiiiiiiiiiiiiiiiikkkkkhhkkkkkkkkhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiifb
-addddddddddddddddddddddddddddddddddddddddabghhllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllfb
-addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhnnhmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmfb
-addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmoooooooooooomkkkkkkkkkkkkmkkkkkkkkkkkkmfb
-addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhpphmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqmhhhhhhhhhhhhmfb
-addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmfb
-addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhnnhmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmfb
-addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhnnhmhhhhhhhhhnnhmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmhhhhhhhhhiihmfb
-addddddddddddddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmhhhhhhhhhhhhmfb
-addddddddddddddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfb
-addddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhhhgggggggggggggggggggggggghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhhhgrrrrrrrrrrrrrrrrrrrrrrghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabghhhhgggggggggggggggggggggggghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+accccddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
+addddddddddddddddddddddddddddddabghhiiiiijjjjjjjjjjjiiiiiiiiiiiiiiiiiiikkkkkhhkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiifb
+addddddddddddddddddddddddddddddabghhlllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllhhhfb
+addddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhiihmhhhhhhhhhhiihmhhhhhhhhhhiihmhhhhhhhhhhiihmhhhhhhhhhhiihmhhhhhhhhhhiihmhhhhhhhhhhnnhmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhfb
+addddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmooooooooooooomkkkkkkkkkkkkkmkkkkkkkkkkkkkmhhhfb
+addddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhpphmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhhmqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqmhhhhhhhhhhhhhmhhhfb
+addddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhfb
+addddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhfb
+addddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhnnhmhhhhhhhhhhnnhmhhhhhhhhhhiihmhhhhhhhhhhiihmhhhhhhhhhhiihmhhhhhhhhhhiihmhhhhhhhhhhiihmhhhfb
+addddddddddddddddddddddddddddddabghhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhhhhhhhhhhhmhhhfb
+addddddddddddddddddddddddddddddabghhmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmhhhfb
+addddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddabghhhhgggggggggggggggggggggggghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddabghhhhgrrrrrrrrrrrrrrrrrrrrrrghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddabghhhhgggggggggggggggggggggggghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
+addddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 a = fg #89b4fa bg #1e1e2e
 b = fg #45475a bg #1e1e2e
-c = fg #1e1e2e bg #89b4fa
+c = fg #1e1e2e bg #89b4fa negrito
 d = fg - bg #1e1e2e
 e = fg #cdd6f4 bg #1e1e2e
 f = fg #3a404b bg #1e1e2e

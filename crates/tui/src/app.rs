@@ -619,8 +619,8 @@ impl Estado {
                 if caminho.starts_with("journals") { caminho } else { format!("pages/{caminho}") }
             }
             _ => self
-                .paginas
-                .get(self.pagina)
+                .pagina_sob_o_cursor()
+                .and_then(|i| self.paginas.get(i))
                 .and_then(|p| std::path::Path::new(&p.path).parent().map(|x| x.to_string_lossy().to_string()))
                 .unwrap_or_else(|| "pages".into()),
         }
@@ -823,19 +823,41 @@ impl Estado {
         } else {
             self.linha_sidebar.saturating_sub(1)
         };
+        // Só o CURSOR da lista anda (ciclo 456). Ele trocava também
+        // `pagina` — que é a página ABERTA —, e o vigia do disco relia
+        // `paginas[pagina]` dois segundos depois: a página passada por
+        // cima substituía a aberta sem nenhum Enter.
         self.linha_sidebar = nova;
-        // A página selecionada acompanha, pra o Enter abrir a certa.
-        if let Some(Item::Pagina { indice, .. } | Item::Resultado { indice, .. }) = visiveis.get(nova).map(|l| &l.item) {
-            self.pagina = *indice;
+    }
+
+    /// A página sob o cursor da lista, se ele estiver numa (e não numa
+    /// pasta). É ela que o Enter abre e que `m`/`dd` movem e excluem.
+    pub fn pagina_sob_o_cursor(&self) -> Option<usize> {
+        match self.sidebar_visivel().get(self.linha_sidebar).map(|l| l.item.clone()) {
+            Some(Item::Pagina { indice, .. } | Item::Resultado { indice, .. }) => Some(indice),
+            _ => None,
         }
     }
 
-    /// Traz a seleção de página pra dentro do que o filtro deixou.
-    fn corrigir_pagina(&mut self) {
-        let visiveis: Vec<usize> = self.paginas_visiveis().into_iter().map(|(i, _)| i).collect();
-        if !visiveis.contains(&self.pagina) {
-            self.pagina = visiveis.first().copied().unwrap_or(0);
+    /// Sobre qual página um comando de página age: na lista, a do cursor;
+    /// fora dela, a aberta.
+    pub fn pagina_alvo(&self) -> Option<usize> {
+        if self.foco == Foco::Paginas {
+            self.pagina_sob_o_cursor()
+        } else {
+            Some(self.pagina).filter(|i| *i < self.paginas.len())
         }
+    }
+
+    /// Com o filtro da lista mudando, o cursor vai pro primeiro resultado
+    /// — e a página aberta fica onde está (ciclo 456).
+    fn corrigir_linha_da_sidebar(&mut self) {
+        let visiveis = self.sidebar_visivel();
+        self.linha_sidebar = visiveis
+            .iter()
+            .position(|l| matches!(l.item, Item::Pagina { .. } | Item::Resultado { .. }))
+            .unwrap_or(0)
+            .min(visiveis.len().saturating_sub(1));
     }
 
     /// A unidade sob o cursor comporta filhos?
@@ -1279,14 +1301,14 @@ fn tecla_na_busca(e: &mut Estado, tecla: &str) -> Option<String> {
             e.barra_aberta = false;
             e.corrigir_cursor();
             if e.foco == Foco::Paginas {
-                return e.paginas.get(e.pagina).map(|p| p.path.clone());
+                return e.pagina_sob_o_cursor().and_then(|i| e.paginas.get(i)).map(|p| p.path.clone());
             }
             None
         }
         "Backspace" => {
             e.busca.pop();
             e.corrigir_cursor();
-            e.corrigir_pagina();
+            e.corrigir_linha_da_sidebar();
             buscar_conteudo_na_sidebar(e);
             None
         }
@@ -1294,7 +1316,7 @@ fn tecla_na_busca(e: &mut Estado, tecla: &str) -> Option<String> {
         t if t.chars().count() == 1 => {
             e.busca.push_str(t);
             e.corrigir_cursor();
-            e.corrigir_pagina();
+            e.corrigir_linha_da_sidebar();
             buscar_conteudo_na_sidebar(e);
             None
         }
@@ -1393,12 +1415,18 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
             if e.dobrar_pasta() {
                 return None;
             }
-            e.foco = Foco::Conteudo;
-            e.paginas.get(e.pagina).map(|p| p.path.clone())
+            let alvo = e.pagina_sob_o_cursor().and_then(|i| e.paginas.get(i)).map(|p| p.path.clone());
+            if alvo.is_some() {
+                e.foco = Foco::Conteudo;
+            }
+            alvo
         }
         _ => None,
     }
 }
+
+/// Colunas da sidebar aberta: os 260px da `.app-sidebar` da janela.
+pub const LARGURA_DA_SIDEBAR: u16 = 32;
 
 /// Um passo da roda do mouse (ciclo 454).
 ///
@@ -1567,7 +1595,12 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     );
     // Sem sidebar (preferência, ciclo 339), o conteúdo toma a tela.
     let divisao = if e.preferencias.sidebar {
-        [Constraint::Percentage(30), Constraint::Percentage(70)]
+        // Largura FIXA, como a gaveta da janela (`.app-sidebar`: 260px, que
+        // dão ~32 colunas), e não uma fatia da tela (ciclo 456): com 30%,
+        // num terminal largo a lista comia um terço do que é conteúdo.
+        // Num terminal estreito, no máximo 40%, pro conteúdo não sumir.
+        let largura = LARGURA_DA_SIDEBAR.min(f.area().width.saturating_mul(2) / 5);
+        [Constraint::Length(largura), Constraint::Min(1)]
     } else {
         // Recolhida, a trilha de ícones da janela (ciclo 400).
         [Constraint::Length(3), Constraint::Min(1)]
@@ -1616,10 +1649,20 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                         ),
                     ])
                 }
-                Item::Pagina { titulo, .. } => Line::from(vec![
-                    Span::styled(recuo, Style::default()),
-                    Span::styled(titulo.clone(), estilo),
-                ]),
+                // A página ABERTA tem marca própria (ciclo 456), como o item
+                // ativo da janela: com o cursor da lista separado dela, é
+                // o que diz onde se está enquanto o cursor passeia.
+                Item::Pagina { titulo, indice, .. } => {
+                    let aberta = *indice == e.pagina;
+                    let estilo = if !selecionada && aberta {
+                        Style::default().fg(e.tema.var("accent-blue")).add_modifier(Modifier::BOLD)
+                    } else if aberta {
+                        estilo.add_modifier(Modifier::BOLD)
+                    } else {
+                        estilo
+                    };
+                    Line::from(vec![Span::styled(recuo, Style::default()), Span::styled(titulo.clone(), estilo)])
+                }
                 // Resultado no conteúdo: a página e o trecho apagado.
                 Item::Resultado { titulo, trecho, .. } => Line::from(vec![
                     Span::styled("⌕ ", Style::default().fg(e.tema.var("text-muted"))),
@@ -5110,11 +5153,13 @@ mod testes {
         for _ in 0..10 {
             tecla(&mut e, "j");
         }
-        assert_eq!(e.pagina, 2, "passou do fim");
+        // O CURSOR da lista (ciclo 456): a página aberta não acompanha.
+        assert_eq!(e.pagina_sob_o_cursor(), Some(2), "passou do fim");
+        assert_eq!(e.pagina, 0, "andar na lista abriu outra página");
         for _ in 0..10 {
             tecla(&mut e, "k");
         }
-        assert_eq!(e.pagina, 0, "passou do começo");
+        assert_eq!(e.pagina_sob_o_cursor(), Some(0), "passou do começo");
     }
 
     #[test]
@@ -5192,9 +5237,12 @@ mod testes {
         let mut term = Terminal::new(TestBackend::new(60, 12)).unwrap();
         term.draw(|f| desenhar(f, e)).unwrap();
         let buf = term.backend().buffer().clone();
+        // Só o CONTEÚDO: a lista tem estilo próprio (a página aberta é
+        // negrito desde o ciclo 456), e não é dela que estes testes falam.
+        let inicio = e.largura_da_sidebar;
         (0..buf.area.height)
             .filter_map(|y| {
-                let texto: String = (0..buf.area.width)
+                let texto: String = (inicio..buf.area.width)
                     .filter(|x| buf[(*x, y)].style().add_modifier.contains(m))
                     .map(|x| buf[(x, y)].symbol().to_string())
                     .collect();
@@ -8243,7 +8291,7 @@ mod testes {
         // (ciclo 305).
         let mut e = Estado::novo(paginas(), com_tabela());
         e.foco = Foco::Paginas;
-        let tudo = desenho(&mut e, 80, 16);
+        let tudo = desenho(&mut e, 88, 16);
         let linha_de = |texto: &str| {
             tudo.iter()
                 .find(|l| l.contains(texto))
@@ -9007,6 +9055,95 @@ mod testes {
         assert!(desenho(&mut e, 100, 20).join("\n").contains("Nada pendente."));
     }
 
+    // --- Ciclo 456: o cursor da lista não é a página aberta ----------------------------
+
+    /// Estado com "alfa" aberta e o foco na lista, no topo dela.
+    fn lista_com_alfa_aberta() -> Estado {
+        let mut e = Estado::novo(paginas(), analisar("# alfa\n"));
+        e.pagina = 0;
+        e.foco = Foco::Paginas;
+        e.linha_sidebar = e.sidebar_visivel().iter().position(|l| matches!(&l.item, Item::Pagina { titulo, .. } if titulo == "alfa")).unwrap();
+        e
+    }
+
+    #[test]
+    fn passar_pela_lista_nao_troca_a_pagina_aberta() {
+        let mut e = lista_com_alfa_aberta();
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        assert_eq!(e.pagina, 0, "andar na lista trocou a página aberta");
+        // O título do conteúdo continua o da aberta.
+        let tela = desenho(&mut e, 120, 12);
+        assert!(tela[0].contains("alfa") && !tela[0].contains("gama"), "{}", tela[0]);
+        // A roda também não.
+        rolar(&mut e, false, 1);
+        assert_eq!(e.pagina, 0);
+        // Enter abre o item sob o cursor.
+        let destino = tecla(&mut e, "Enter");
+        assert_eq!(destino.as_deref(), Some("pages/beta.md"));
+    }
+
+    #[test]
+    fn buscar_na_lista_nao_troca_a_pagina_aberta() {
+        let mut e = lista_com_alfa_aberta();
+        tecla(&mut e, "/");
+        digitar(&mut e, "gam");
+        assert_eq!(e.pagina, 0, "o filtro da lista trocou a página aberta");
+        // Enter na busca abre o que sobrou sob o cursor.
+        assert_eq!(tecla(&mut e, "Enter").as_deref(), Some("pages/gama.md"));
+    }
+
+    #[test]
+    fn os_comandos_da_lista_agem_no_item_sob_o_cursor() {
+        let mut e = lista_com_alfa_aberta();
+        tecla(&mut e, "j");
+        tecla(&mut e, "d");
+        tecla(&mut e, "d");
+        assert!(
+            matches!(&e.modal, Some(Modal::Confirmar { acao: Pedido::ExcluirPagina(p), .. }) if p == "pages/beta.md"),
+            "dd na lista devia excluir o item sob o cursor: {:?}",
+            e.modal.as_ref().map(|_| "outro modal")
+        );
+        e.modal = None;
+        tecla(&mut e, "m");
+        assert!(matches!(&e.modal, Some(Modal::Escolha { titulo, .. }) if titulo.contains("beta")), "m devia mover beta");
+        // Pela barra de comandos, a página ABERTA.
+        e.modal = None;
+        e.foco = Foco::Conteudo;
+        modais::executar(&mut e, "excluir-pagina");
+        assert!(matches!(&e.modal, Some(Modal::Confirmar { acao: Pedido::ExcluirPagina(p), .. }) if p == "pages/alfa.md"));
+    }
+
+    #[test]
+    fn a_pagina_aberta_tem_marca_propria_na_lista() {
+        let mut e = lista_com_alfa_aberta();
+        tecla(&mut e, "j");
+        let mut term = Terminal::new(TestBackend::new(120, 12)).unwrap();
+        term.draw(|f| desenhar(f, &mut e)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let celula = |nome: &str| {
+            (0..buf.area.height).find_map(|y| {
+                let linha: String = (0..e.largura_da_sidebar).map(|x| buf[(x, y)].symbol().to_string()).collect();
+                linha.find(nome).map(|i| buf[(linha[..i].chars().count() as u16, y)].clone())
+            })
+        };
+        let aberta = celula("alfa").expect("alfa na lista");
+        let outra = celula("gama").expect("gama na lista");
+        assert!(aberta.modifier.contains(ratatui::style::Modifier::BOLD) && aberta.fg != outra.fg, "a aberta não se distingue");
+    }
+
+    #[test]
+    fn a_sidebar_tem_largura_fixa_como_na_janela() {
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        desenho(&mut e, 200, 10);
+        assert_eq!(e.largura_da_sidebar, 32, "num terminal largo, a lista não cresce junto");
+        desenho(&mut e, 60, 10);
+        assert_eq!(e.largura_da_sidebar, 24, "num terminal estreito, no máximo 40%");
+        e.preferencias.sidebar = false;
+        desenho(&mut e, 200, 10);
+        assert_eq!(e.largura_da_sidebar, 3, "recolhida, a trilha");
+    }
+
     // --- Ciclo 454: a roda do mouse ---------------------------------------------------
 
     #[test]
@@ -9110,14 +9247,14 @@ mod testes {
     #[test]
     fn o_diff_quebra_a_linha_longa_e_a_mudanca_do_fim_aparece() {
         let mut e = proposta_453();
-        // 90 de largura: o cartão tem uns 60, e a linha tem 160.
-        let tela = desenho(&mut e, 90, 40).join("\n");
+        // 95 de largura: o cartão tem uns 60, e a linha tem 160.
+        let tela = desenho(&mut e, 95, 40).join("\n");
         assert!(tela.contains("10 de outubro") && tela.contains("24 de outubro"), "a mudança do fim sumiu:\n{tela}");
         // O cabeçalho e os atalhos não perdem texto.
         assert!(tela.contains("Visualização") && tela.contains("espaço tira/põe"), "{tela}");
         // A palavra que mudou continua realçada depois da quebra: é ela que
         // diz o que mudou numa linha de três.
-        let mut term = Terminal::new(TestBackend::new(90, 40)).unwrap();
+        let mut term = Terminal::new(TestBackend::new(95, 40)).unwrap();
         term.draw(|f| desenhar(f, &mut e)).unwrap();
         let buf = term.backend().buffer().clone();
         let estilo_de = |alvo: &str| {
@@ -9953,7 +10090,7 @@ mod testes {
         assert!(tela.contains("⌕ gama · a sprint de agosto"), "{tela}");
         tecla(&mut e, "Enter");
         tecla(&mut e, "j");
-        assert_eq!(e.pagina, 2, "descer até o resultado seleciona a página dele");
+        assert_eq!(e.pagina_sob_o_cursor(), Some(2), "descer até o resultado põe o cursor na página dele");
         // Outro termo: o resultado velho some.
         tecla(&mut e, "/");
         digitar(&mut e, "xyz");

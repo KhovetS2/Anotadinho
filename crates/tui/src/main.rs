@@ -1837,6 +1837,12 @@ fn laco<B: ratatui::backend::Backend>(
             // Página que não abre não derruba a sessão: a pessoa
             // continua no que estava.
             if let Ok((texto, versao)) = ler(vault, &caminho) {
+                // Quem abriu foi o destino, então `pagina` passa a ser ele
+                // (ciclo 456). Antes o Enter da lista já tinha trocado
+                // `pagina` ao passar por cima; agora só a abertura troca.
+                if let Some(i) = estado.paginas.iter().position(|p| p.path == caminho) {
+                    estado.pagina = i;
+                }
                 estado.abrir_texto(&texto, versao);
             }
         }

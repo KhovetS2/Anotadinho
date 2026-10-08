@@ -1,68 +1,68 @@
 # cena tabela-coluna-nova-e-tipo · 160x30 · teclas: Tab j Enter Enter o D o n o Escape ~
-┌páginas───────────────────────────────────────┐┌cena──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│cena                                          ││Antes.                                                                                                        │
-│                                              ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
-│                                              ││▌  ┌────────┬──────┬─────────┬─────────────────┬────────────┬────────────┬─────────────────┬────────────────┐▌│
-│                                              ││▌  │ Tarefa │ Dono │ Status  │ Tags            │ Estimativa │ Prazo      │ Referência      │ Relacionado    │▌│
-│                                              ││▌  ╞════════╪══════╪═════════╪═════════════════╪════════════╪════════════╪═════════════════╪════════════════╡▌│
-│                                              ││▌  │ API    │      │  done   │  infra          │ 8          │ 2026-08-05 │ https://exampl… │ ↗ kanban-proj… │▌│
-│                                              ││▌  ├────────┼──────┼─────────┼─────────────────┼────────────┼────────────┼─────────────────┼────────────────┤▌│
-│                                              ││▌  │ UI     │      │  doing  │  urgente   bug  │ 5          │ 2026-08-10 │                 │                │▌│
-│                                              ││▌  ├────────┼──────┼─────────┼─────────────────┼────────────┼────────────┼─────────────────┼────────────────┤▌│
-│                                              ││▌  │ Testes │      │  todo   │  teste          │ 3          │            │                 │                │▌│
-│                                              ││▌  ├────────┼──────┼─────────┼─────────────────┼────────────┼────────────┼─────────────────┼────────────────┤▌│
-│                                              ││▌  │        │      │         │                 │            │            │                 │                │▌│
-│                                              ││▌  └────────┴──────┴─────────┴─────────────────┴────────────┴────────────┴─────────────────┴────────────────┘▌│
-│                                              ││▌   o + linha                                                                                                ▌│
-│                                              ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
-│                                              ││Depois.                                                                                                       │
-│                                              ││                                                                                                              │
-│                                              ││                                                                                                              │
-│                                              ││                                                                                                              │
-│                                              ││                                                                                                              │
-│                                              ││                                                                                                              │
-│                                              ││                                                                                                              │
-│                                              ││                                                                                                              │
-│                                              ││                                                                                                              │
-│                                              ││                                                                                                              │
-│                                              ││                                                                                                              │
-│                                              ││                                                                                                              │
-│                                              ││                                                                                                              │
-└──────────────────────────────────────────────┘└ Dono: número ────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌páginas───────────────────────┐┌cena──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│cena                          ││Antes.                                                                                                                        │
+│                              ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
+│                              ││▌  ┌────────┬──────┬─────────┬─────────────────┬────────────┬────────────┬─────────────────────┬──────────────────┐          ▌│
+│                              ││▌  │ Tarefa │ Dono │ Status  │ Tags            │ Estimativa │ Prazo      │ Referência          │ Relacionado      │          ▌│
+│                              ││▌  ╞════════╪══════╪═════════╪═════════════════╪════════════╪════════════╪═════════════════════╪══════════════════╡          ▌│
+│                              ││▌  │ API    │      │  done   │  infra          │ 8          │ 2026-08-05 │ https://example.com │ ↗ kanban-projeto │          ▌│
+│                              ││▌  ├────────┼──────┼─────────┼─────────────────┼────────────┼────────────┼─────────────────────┼──────────────────┤          ▌│
+│                              ││▌  │ UI     │      │  doing  │  urgente   bug  │ 5          │ 2026-08-10 │                     │                  │          ▌│
+│                              ││▌  ├────────┼──────┼─────────┼─────────────────┼────────────┼────────────┼─────────────────────┼──────────────────┤          ▌│
+│                              ││▌  │ Testes │      │  todo   │  teste          │ 3          │            │                     │                  │          ▌│
+│                              ││▌  ├────────┼──────┼─────────┼─────────────────┼────────────┼────────────┼─────────────────────┼──────────────────┤          ▌│
+│                              ││▌  │        │      │         │                 │            │            │                     │                  │          ▌│
+│                              ││▌  └────────┴──────┴─────────┴─────────────────┴────────────┴────────────┴─────────────────────┴──────────────────┘          ▌│
+│                              ││▌   o + linha                                                                                                                ▌│
+│                              ││▝▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
+│                              ││Depois.                                                                                                                       │
+│                              ││                                                                                                                              │
+│                              ││                                                                                                                              │
+│                              ││                                                                                                                              │
+│                              ││                                                                                                                              │
+│                              ││                                                                                                                              │
+│                              ││                                                                                                                              │
+│                              ││                                                                                                                              │
+│                              ││                                                                                                                              │
+│                              ││                                                                                                                              │
+│                              ││                                                                                                                              │
+│                              ││                                                                                                                              │
+│                              ││                                                                                                                              │
+└──────────────────────────────┘└ Dono: número ────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 == estilos ==
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-accccddddddddddddddddddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifb
-addddddddddddddddddddddddddddddddddddddddddddddabghhijjjjjjjjikkkkkkijjjjjjjjjijjjjjjjjjjjjjjjjjijjjjjjjjjjjjijjjjjjjjjjjjijjjjjjjjjjjjjjjjjijjjjjjjjjjjjjjjjifb
-addddddddddddddddddddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifb
-addddddddddddddddddddddddddddddddddddddddddddddablhhimmmmmmmmimmmmmmihnnnnnnhhihnnnnnnnhhhhhhhhhimmmmmmmmmmmmimmmmmmmmmmmmimmmmmmmmmmmmmmmmmimmmmmmmmmmmmmmmmifb
-addddddddddddddddddddddddddddddddddddddddddddddablhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifb
-addddddddddddddddddddddddddddddddddddddddddddddablhhimmmmmmmmimmmmmmihooooooohihppppppppphooooohimmmmmmmmmmmmimmmmmmmmmmmmimmmmmmmmmmmmmmmmmimmmmmmmmmmmmmmmmifb
-addddddddddddddddddddddddddddddddddddddddddddddablhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifb
-addddddddddddddddddddddddddddddddddddddddddddddablhhimmmmmmmmimmmmmmihpppppphhihqqqqqqqhhhhhhhhhimmmmmmmmmmmmimmmmmmmmmmmmimmmmmmmmmmmmmmmmmimmmmmmmmmmmmmmmmifb
-addddddddddddddddddddddddddddddddddddddddddddddablhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifb
-addddddddddddddddddddddddddddddddddddddddddddddablhhimmmmmmmmimmmmmmilllllllllihhhhhhhhhhhhhhhhhimmmmmmmmmmmmimmmmmmmmmmmmimmmmmmmmmmmmmmmmmimmmmmmmmmmmmmmmmifb
-addddddddddddddddddddddddddddddddddddddddddddddablhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifb
-addddddddddddddddddddddddddddddddddddddddddddddablhhrrrrrrrrrrhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabssssssssssssssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+accccddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
+addddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhfb
+addddddddddddddddddddddddddddddabghhijjjjjjjjikkkkkkijjjjjjjjjijjjjjjjjjjjjjjjjjijjjjjjjjjjjjijjjjjjjjjjjjijjjjjjjjjjjjjjjjjjjjjijjjjjjjjjjjjjjjjjjihhhhhhhhhhfb
+addddddddddddddddddddddddddddddabghhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhfb
+addddddddddddddddddddddddddddddablhhimmmmmmmmimmmmmmihnnnnnnhhihnnnnnnnhhhhhhhhhimmmmmmmmmmmmimmmmmmmmmmmmimmmmmmmmmmmmmmmmmmmmmimmmmmmmmmmmmmmmmmmihhhhhhhhhhfb
+addddddddddddddddddddddddddddddablhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhfb
+addddddddddddddddddddddddddddddablhhimmmmmmmmimmmmmmihooooooohihppppppppphooooohimmmmmmmmmmmmimmmmmmmmmmmmimmmmmmmmmmmmmmmmmmmmmimmmmmmmmmmmmmmmmmmihhhhhhhhhhfb
+addddddddddddddddddddddddddddddablhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhfb
+addddddddddddddddddddddddddddddablhhimmmmmmmmimmmmmmihpppppphhihqqqqqqqhhhhhhhhhimmmmmmmmmmmmimmmmmmmmmmmmimmmmmmmmmmmmmmmmmmmmmimmmmmmmmmmmmmmmmmmihhhhhhhhhhfb
+addddddddddddddddddddddddddddddablhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhfb
+addddddddddddddddddddddddddddddablhhimmmmmmmmimmmmmmilllllllllihhhhhhhhhhhhhhhhhimmmmmmmmmmmmimmmmmmmmmmmmimmmmmmmmmmmmmmmmmmmmmimmmmmmmmmmmmmmmmmmihhhhhhhhhhfb
+addddddddddddddddddddddddddddddablhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhfb
+addddddddddddddddddddddddddddddablhhrrrrrrrrrrhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
+addddddddddddddddddddddddddddddabeeeeeeedddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabssssssssssssssbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 a = fg #45475a bg #1e1e2e
 b = fg #89b4fa bg #1e1e2e
-c = fg - bg #1e1e2e apagado
+c = fg - bg #1e1e2e negrito apagado
 d = fg - bg #1e1e2e
 e = fg #cdd6f4 bg #1e1e2e
 f = fg #41404d bg #1e1e2e

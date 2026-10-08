@@ -926,7 +926,7 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
             e.modal = Some(Modal::Escolha { titulo: "Exportar pasta".into(), lista: Lista::filtravel(itens), acao: AcaoDaEscolha::Exportar });
         }
         "excluir-pagina" => {
-            if let Some(p) = e.paginas.get(e.pagina) {
+            if let Some(p) = e.pagina_alvo().and_then(|i| e.paginas.get(i)) {
                 e.modal = Some(Modal::Confirmar {
                     titulo: "Excluir página".into(),
                     mensagem: format!("Excluir \"{}\"? O arquivo {} sai do vault.", p.title, p.path),
@@ -1087,7 +1087,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 AcaoDaEscolha::Asset => super::markdown::asset_escolhido(e, &chave),
                 AcaoDaEscolha::Exportar => e.pedidos.push(Pedido::ExportarPasta(chave)),
                 AcaoDaEscolha::MoverPara => {
-                    if let Some(p) = e.paginas.get(e.pagina) {
+                    if let Some(p) = e.pagina_alvo().and_then(|i| e.paginas.get(i)) {
                         let arquivo = std::path::Path::new(&p.path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                         let para = format!("{chave}/{arquivo}");
                         if para != p.path {
@@ -1859,7 +1859,8 @@ pub fn abrir_entrada_na_pasta(e: &mut Estado, pasta_nova: bool) {
 
 /// Escolha da pasta de destino da página selecionada.
 pub fn abrir_mover_pagina(e: &mut Estado) {
-    let Some(p) = e.paginas.get(e.pagina) else { return };
+    // Na lista, a do cursor; fora dela, a aberta (ciclo 456).
+    let Some(p) = e.pagina_alvo().and_then(|i| e.paginas.get(i)) else { return };
     let atual = std::path::Path::new(&p.path).parent().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
     let itens = crate::sidebar::todas_as_pastas(&e.arvore_sidebar)
         .into_iter()
