@@ -16,6 +16,7 @@ use anotadinho_ipc::{
 };
 mod avaliar;
 mod mcp;
+mod projeto;
 
 use clap::{Parser, Subcommand};
 use std::io::Read;
@@ -170,6 +171,16 @@ enum Command {
     /// revisão e quais padrões existem pra anexar. Sem ele, o mesmo
     /// entendimento custa uma dezena de `list-pages` e `read`.
     Contexto,
+    /// Projetos (ciclo 458): o que escreve, propõe.
+    Projeto {
+        #[command(subcommand)]
+        action: projeto::ProjetoCommand,
+    },
+    /// Tarefas de projeto (ciclo 458): o que escreve, propõe.
+    Tarefa {
+        #[command(subcommand)]
+        action: projeto::TarefaCommand,
+    },
     /// Lista as propostas pendentes de revisão.
     Propostas,
     /// Aplica uma proposta aprovada.
@@ -789,6 +800,8 @@ fn run(cli: Cli) -> Result<(), String> {
         Command::Recusar { id } => {
             handle_recusar_proposta(cli.vault, id)?;
         }
+        Command::Projeto { action } => projeto::run_projeto(&cli.vault, cli.json, action)?,
+        Command::Tarefa { action } => projeto::run_tarefa(&cli.vault, action)?,
         Command::Embed { forcar, action } => {
             let vault = cli.vault.clone();
             let json = cli.json;
@@ -981,6 +994,23 @@ fn contexto_texto(
     }
     let _ = writeln!(s);
 
+    // Projetos (ciclo 458): o que espera a pessoa (revisão, bloqueio) é
+    // a pergunta "o que precisa de mim", como a do fluxo acima.
+    let projetos = projeto::projetos_do_indice(paginas);
+    if !projetos.is_empty() {
+        let _ = writeln!(s, "## Projetos, tarefas por etapa");
+        for (slug, titulo, contagem) in &projetos {
+            let etapas = if contagem.is_empty() {
+                "sem tarefas".to_string()
+            } else {
+                contagem.iter().map(|(e, n)| format!("{} {n}", e.slug())).collect::<Vec<_>>().join(", ")
+            };
+            let _ = writeln!(s, "  {slug:<32} {titulo}");
+            let _ = writeln!(s, "    {etapas}");
+        }
+        let _ = writeln!(s);
+    }
+
     let _ = writeln!(s, "## Esperando revisão humana");
     if propostas.is_empty() {
         let _ = writeln!(s, "  nada pendente");
@@ -1016,6 +1046,10 @@ fn contexto_json(
             .into_iter().map(|(k, v)| serde_json::json!({ "pasta": k, "paginas": v })).collect::<Vec<_>>(),
         "tipos": contar_por(paginas, |p| (!p.page_type.is_empty() && p.page_type != "md").then(|| p.page_type.clone()))
             .into_iter().map(|(k, v)| serde_json::json!({ "tipo": k, "paginas": v })).collect::<Vec<_>>(),
+        "projetos": projeto::projetos_do_indice(paginas).into_iter().map(|(slug, titulo, contagem)| serde_json::json!({
+            "slug": slug, "titulo": titulo,
+            "etapas": contagem.into_iter().map(|(e, n)| (e.slug().to_string(), serde_json::json!(n))).collect::<serde_json::Map<_, _>>(),
+        })).collect::<Vec<_>>(),
         "propostas_pendentes": propostas.iter().map(|p| serde_json::json!({ "id": p.id, "alvo": p.alvo })).collect::<Vec<_>>(),
         "padroes": paginas.iter().filter(|p| p.path.starts_with("pages/padroes/"))
             .map(|p| serde_json::json!({ "path": p.path, "titulo": p.title })).collect::<Vec<_>>(),

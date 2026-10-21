@@ -176,6 +176,46 @@ impl EtapaTarefa {
 }
 
 // ---------------------------------------------------------------------
+// Config (fora do vault de páginas)
+// ---------------------------------------------------------------------
+
+/// Onde mora a config dos projetos, relativo ao vault.
+pub const ARQUIVO_CONFIG: &str = ".anotadinho/projetos.json";
+
+/// A config de um projeto.
+///
+/// Fica em `.anotadinho/`, não na página do projeto: o padrão de agente
+/// e execução diz que config vem das preferências, nunca de página. Uma
+/// página que decidisse onde um agente com `acceptEdits` escreve seria
+/// uma porta aberta pra quem consegue editar uma nota.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigProjeto {
+    /// Caminho absoluto do repositório onde o agente trabalha.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repositorio: Option<String>,
+    /// Fila parada: nada sai de `executar`.
+    #[serde(default)]
+    pub pausado: bool,
+    /// Quantas tarefas rodam ao mesmo tempo. Um por padrão, porque
+    /// tarefas no mesmo repositório disputam os mesmos arquivos.
+    #[serde(default = "concorrencia_padrao")]
+    pub concorrencia: usize,
+}
+
+fn concorrencia_padrao() -> usize {
+    1
+}
+
+impl Default for ConfigProjeto {
+    fn default() -> Self {
+        Self { repositorio: None, pausado: false, concorrencia: concorrencia_padrao() }
+    }
+}
+
+/// A config de todos os projetos, por slug.
+pub type ConfigProjetos = BTreeMap<String, ConfigProjeto>;
+
+// ---------------------------------------------------------------------
 // Caminhos
 // ---------------------------------------------------------------------
 
@@ -780,6 +820,13 @@ mod testes {
     fn tarefa(numero: u32, status: &str, extra: &str) -> Tarefa {
         let caminho = format!("pages/projetos/saas/tarefas/{numero:03}-t.md");
         Tarefa::ler(&caminho, &tarefa_md(status, extra)).unwrap()
+    }
+
+    #[test]
+    fn config_sem_campos_vale_o_padrao() {
+        let c: ConfigProjeto = serde_json::from_str("{}").unwrap();
+        assert_eq!(c, ConfigProjeto::default());
+        assert_eq!(c.concorrencia, 1);
     }
 
     #[test]

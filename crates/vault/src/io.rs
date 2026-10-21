@@ -12,6 +12,19 @@ use anyhow::Result;
 /// frontend e o CLI reconhecem por ele pra dar o tratamento certo em vez
 /// de mostrar "erro ao gravar" genérico.
 pub const CONFLICT_PREFIX: &str = "CONFLITO: ";
+
+/// Até onde as varreduras descem a partir de `pages/` (e das outras
+/// raízes).
+///
+/// Era `3`, solto em cada `WalkDir`, sem motivo registrado (o ciclo 086
+/// só constata que "já listava subpastas"). Ninguém tinha passado de
+/// `pages/a/b/x.md` até o módulo Projeto (ciclo 458): em
+/// `pages/projetos/<slug>/tarefas/x.md`, nível 4, as tarefas e as
+/// conversas sumiam da sidebar, da busca, das consultas e do
+/// `contexto` — sem erro, só ausentes. O teto existe pra um link
+/// simbólico em ciclo não virar varredura infinita, não pra limitar
+/// organização.
+pub const PROFUNDIDADE_MAXIMA: usize = 8;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
@@ -64,7 +77,7 @@ impl VaultIo {
             if !dir.is_dir() {
                 continue;
             }
-            for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
+            for entry in WalkDir::new(&dir).max_depth(PROFUNDIDADE_MAXIMA).into_iter().filter_map(|e| e.ok()) {
                 let path = entry.path();
                 if path.extension().map_or(false, |ext| ext == "md") {
                     let relative = crate::caminho::relativo(&self.root, path);
@@ -312,7 +325,7 @@ impl VaultIo {
             return Ok(Vec::new());
         }
         let mut templates = Vec::new();
-        for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(&dir).max_depth(PROFUNDIDADE_MAXIMA).into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
             if path.extension().map_or(false, |ext| ext == "md") {
                 let relative = crate::caminho::relativo(&self.root, path);
@@ -387,7 +400,7 @@ impl VaultIo {
         }
         let mut folders = Vec::new();
         for entry in WalkDir::new(&dir)
-            .max_depth(3)
+            .max_depth(PROFUNDIDADE_MAXIMA)
             .min_depth(1)
             .into_iter()
             .filter_map(|e| e.ok())
@@ -440,7 +453,7 @@ impl VaultIo {
             return Ok(Vec::new());
         }
         let mut files = Vec::new();
-        for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(&dir).max_depth(PROFUNDIDADE_MAXIMA).into_iter().filter_map(|e| e.ok()) {
             if entry.path().is_file() {
                 let relative = crate::caminho::relativo(&self.root, entry.path());
                 files.push(relative);
@@ -460,7 +473,7 @@ impl VaultIo {
             return Ok(Vec::new());
         }
         let mut files = Vec::new();
-        for entry in WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(&dir).max_depth(PROFUNDIDADE_MAXIMA).into_iter().filter_map(|e| e.ok()) {
             if entry.path().is_file() {
                 let relative = crate::caminho::relativo(&self.root, entry.path());
                 let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
@@ -916,6 +929,18 @@ mod tests {
         let found = pages.iter().find(|p| p.path == "pages/trabalho/tarefa.md");
         assert!(found.is_some());
         assert_eq!(found.unwrap().title, "tarefa");
+    }
+
+    #[test]
+    fn list_pages_desce_ate_as_tarefas_de_projeto() {
+        // `pages/projetos/<slug>/tarefas/x.md` é nível 4: com o teto
+        // antigo de 3, as tarefas não existiam pra sidebar nem pra busca.
+        let (_dir, io) = setup_vault();
+        io.write_page("pages/projetos/saas/tarefas/001-login.md", "# Login\n").unwrap();
+        let pages = io.list_pages().unwrap();
+        assert!(pages.iter().any(|p| p.path == "pages/projetos/saas/tarefas/001-login.md"));
+        let folders = io.list_folders().unwrap();
+        assert!(folders.contains(&"pages/projetos/saas/tarefas".to_string()), "{folders:?}");
     }
 
     #[test]

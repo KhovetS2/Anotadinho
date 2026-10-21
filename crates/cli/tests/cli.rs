@@ -1130,3 +1130,89 @@ fn a_suite_de_avaliacao_passa_com_o_agente_falso() {
     assert!(saida.status.success(), "{texto}{}", String::from_utf8_lossy(&saida.stderr));
     assert!(texto.contains("2/2 tarefas passaram"), "{texto}");
 }
+
+// ── projeto e tarefa (ciclo 458) ─────────────────────────────────────
+
+fn cli_em(dir: &TempDir) -> Command {
+    let mut c = Command::cargo_bin("anotadinho-cli").unwrap();
+    c.args(["--vault", dir.path().to_str().unwrap()]);
+    c
+}
+
+fn aplicar_tudo(dir: &TempDir) {
+    let saida = cli_em(dir).arg("propostas").output().unwrap();
+    for linha in String::from_utf8_lossy(&saida.stdout).lines().filter(|l| l.contains('\t')) {
+        let id = linha.split('\t').next().unwrap();
+        cli_em(dir).args(["aplicar", id]).assert().success();
+    }
+}
+
+#[test]
+fn projeto_novo_propoe_num_lote_e_nao_grava() {
+    let dir = setup_vault();
+    cli_em(&dir).args(["projeto", "novo", "Meu SaaS: v1", "--slug", "saas"]).assert().success();
+    // Nada no disco antes de aplicar: o CLI é o canal do agente.
+    assert!(!dir.path().join("pages/projetos/saas/projeto.md").exists());
+    let props: Vec<serde_json::Value> = serde_json::from_slice(
+        &cli_em(&dir).args(["--json", "propostas"]).output().unwrap().stdout,
+    )
+    .unwrap();
+    assert_eq!(props.len(), 3);
+    assert!(props.iter().all(|p| p["lote"] == "projeto-saas"), "{props:?}");
+    aplicar_tudo(&dir);
+    assert!(dir.path().join("pages/projetos/saas/projeto.md").exists());
+    // De novo: nada a propor, nada sobrescrito.
+    cli_em(&dir)
+        .args(["projeto", "novo", "Meu SaaS: v1", "--slug", "saas"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("já existe"));
+}
+
+#[test]
+fn tarefa_nova_e_etapa_seguem_as_transicoes() {
+    let dir = setup_vault();
+    cli_em(&dir).args(["projeto", "novo", "SaaS", "--slug", "saas"]).assert().success();
+    aplicar_tudo(&dir);
+    cli_em(&dir).args(["tarefa", "nova", "saas", "Tela de login"]).assert().success();
+    aplicar_tudo(&dir);
+    let tarefa = "pages/projetos/saas/tarefas/001-tela-de-login.md";
+    assert!(dir.path().join(tarefa).exists());
+    // Pular o detalhe é recusado, e o erro diz pra onde dá.
+    cli_em(&dir)
+        .args(["tarefa", "etapa", tarefa, "--para", "executar"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("pronta"));
+    // `executando` é do sistema: nem pelo CLI.
+    cli_em(&dir).args(["tarefa", "etapa", tarefa, "--para", "pronta"]).assert().success();
+    aplicar_tudo(&dir);
+    cli_em(&dir).args(["tarefa", "etapa", tarefa, "--para", "executar"]).assert().success();
+    aplicar_tudo(&dir);
+    cli_em(&dir).args(["tarefa", "etapa", tarefa, "--para", "executando"]).assert().failure();
+    cli_em(&dir)
+        .args(["projeto", "tarefas", "saas"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("executar"));
+}
+
+#[test]
+fn tarefa_em_projeto_que_nao_existe_e_recusada() {
+    let dir = setup_vault();
+    cli_em(&dir).args(["tarefa", "nova", "fantasma", "x"]).assert().failure();
+}
+
+#[test]
+fn contexto_lista_os_projetos_por_etapa() {
+    let dir = setup_vault();
+    cli_em(&dir).args(["projeto", "novo", "SaaS", "--slug", "saas"]).assert().success();
+    aplicar_tudo(&dir);
+    cli_em(&dir).args(["tarefa", "nova", "saas", "Login"]).assert().success();
+    aplicar_tudo(&dir);
+    cli_em(&dir)
+        .arg("contexto")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("## Projetos").and(predicates::str::contains("ideia 1")));
+}

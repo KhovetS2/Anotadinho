@@ -5,6 +5,11 @@
 
 #![warn(missing_docs)]
 
+// O módulo Projeto (ciclo 458) mora em arquivo próprio: este já passa
+// das duas mil linhas.
+mod projeto;
+pub use projeto::*;
+
 use anotadinho_core::PageIndexEntry;
 use anotadinho_search::SearchIndex;
 use anotadinho_vault::{GitFileEntry, GitLogEntry, VaultIo};
