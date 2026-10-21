@@ -52,6 +52,8 @@ pub mod inserted_image;
 pub mod links;
 pub mod proposta;
 pub mod prompt_padrao;
+// O módulo Projeto (ciclo 457): projeto, tarefa e a fila de execução.
+pub mod projeto;
 pub mod query;
 pub mod vim;
 

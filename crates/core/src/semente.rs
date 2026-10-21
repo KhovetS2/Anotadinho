@@ -21,6 +21,7 @@ pub const PASTAS: &[&str] = &[
     "pages/conversas",
     "pages/padroes",
     "pages/prompts-default",
+    "pages/projetos",
     "journals",
     "templates",
     "assets",
@@ -69,6 +70,7 @@ pub fn arquivos() -> Vec<Arquivo> {
         Arquivo { caminho: "pages/prompts-default/escrever-cenario-de-harness.md", conteudo: include_str!("../seeds/prompts-default/escrever-cenario-de-harness.md") },
         Arquivo { caminho: "pages/prompts-default/planejar-a-partir-de-uma-spec.md", conteudo: include_str!("../seeds/prompts-default/planejar-a-partir-de-uma-spec.md") },
         Arquivo { caminho: "pages/prompts-default/entender-um-trecho-do-codigo.md", conteudo: include_str!("../seeds/prompts-default/entender-um-trecho-do-codigo.md") },
+        Arquivo { caminho: "pages/prompts-default/quebrar-em-tarefas.md", conteudo: include_str!("../seeds/prompts-default/quebrar-em-tarefas.md") },
     ]);
 
     lista
@@ -89,6 +91,7 @@ mod tests {
             "pages/execucoes",
             "pages/conversas",
             "pages/prompts-default",
+            "pages/projetos",
             "templates",
         ] {
             assert!(PASTAS.contains(&esperada), "faltou semear {esperada}");
@@ -125,6 +128,22 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn quebrar_em_tarefas_pede_o_formato_que_o_core_le() {
+        // O prompt e `projeto::separar_tarefas` são as duas pontas do
+        // mesmo combinado. Mudar o cabeçalho num lado só faria "virar
+        // tarefas" achar zero tarefa numa resposta perfeita.
+        let prompt = arquivos()
+            .into_iter()
+            .find(|a| a.caminho == "pages/prompts-default/quebrar-em-tarefas.md")
+            .expect("o prompt de quebrar em tarefas precisa ser semeado");
+        assert!(prompt.conteudo.contains(crate::projeto::CABECALHO_DE_TAREFA));
+        let (_, corpo) = crate::MarkdownCodec::split_frontmatter_text(prompt.conteudo);
+        let exemplo = corpo.split("```").nth(1).expect("o prompt traz um exemplo cercado");
+        let tarefas = crate::projeto::separar_tarefas(exemplo);
+        assert_eq!(tarefas.len(), 2, "o exemplo do prompt tem que ser lido pelo core");
     }
 
     #[test]
