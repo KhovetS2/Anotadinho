@@ -122,7 +122,89 @@ pub struct ProjetoNaTela {
     pub avisos: Vec<String>,
 }
 
+/// Largura mínima de uma coluna do quadro do projeto, em caracteres: o
+/// número e um título curto ainda cabem.
+const LARGURA_MINIMA_DA_COLUNA: usize = 22;
+/// Linhas de um cartão: até duas de título, a da dependência e o respiro
+/// até o próximo. FIXA, mesmo quando o título cabe numa linha: com
+/// alturas diferentes, as linhas das colunas lado a lado deixariam de
+/// alinhar.
+const ALTURA_DO_CARTAO: usize = 4;
+
+/// O título em até duas linhas de `n` caracteres, quebrando na palavra
+/// (como o cartão da janela), com "…" no que não couber.
+fn titulo_em_duas_linhas(titulo: &str, n: usize) -> (String, String) {
+    let mut linhas: Vec<String> = vec![String::new()];
+    for palavra in titulo.split_whitespace() {
+        let atual = linhas.last_mut().expect("começa com uma");
+        let cabe = if atual.is_empty() { palavra.chars().count() <= n } else { atual.chars().count() + 1 + palavra.chars().count() <= n };
+        if cabe {
+            if !atual.is_empty() {
+                atual.push(' ');
+            }
+            atual.push_str(palavra);
+        } else {
+            linhas.push(palavra.chars().take(n).collect());
+        }
+    }
+    let primeira = linhas.first().cloned().unwrap_or_default();
+    let mut segunda = linhas.get(1).cloned().unwrap_or_default();
+    if linhas.len() > 2 {
+        let mut s: String = segunda.chars().take(n.saturating_sub(1)).collect();
+        s.push('…');
+        segunda = s;
+    }
+    (primeira, segunda)
+}
+
 impl ProjetoNaTela {
+    /// As tarefas de uma etapa, por número: a ordem de cima pra baixo
+    /// numa coluna, a mesma do quadro da janela.
+    pub fn da_coluna(&self, etapa: anotadinho_core::projeto::EtapaTarefa) -> Vec<&anotadinho_core::projeto::Tarefa> {
+        let mut v: Vec<_> = self.tarefas.iter().filter(|t| t.etapa == etapa).collect();
+        v.sort_by_key(|t| (t.numero, t.caminho.clone()));
+        v
+    }
+
+    /// Onde cada tarefa está no quadro (coluna, linha), na ordem de
+    /// `na_ordem` — a mesma do `selecionado`.
+    fn posicoes(&self) -> Vec<(usize, usize)> {
+        let etapas = anotadinho_core::projeto::EtapaTarefa::all();
+        self.na_ordem()
+            .iter()
+            .map(|t| {
+                let col = etapas.iter().position(|e| *e == t.etapa).unwrap_or(0);
+                let lin = self.da_coluna(t.etapa).iter().position(|x| x.caminho == t.caminho).unwrap_or(0);
+                (col, lin)
+            })
+            .collect()
+    }
+
+    /// O vizinho de `atual` na direção pedida, pela geometria do quadro
+    /// (ciclo 468) — `core::espacial`, a mesma regra dos embeds da janela.
+    ///
+    /// As caixas são as do quadro LÓGICO (todas as colunas lado a lado),
+    /// não as da tela: quem está fora da janela de colunas continua
+    /// alcançável, e a janela desliza atrás do cursor. A altura conta em
+    /// dobro porque a célula do terminal tem o dobro da altura que de
+    /// largura: sem isso, "logo abaixo" ficaria mais longe que "duas
+    /// colunas ao lado".
+    pub fn vizinho(&self, atual: usize, direcao: anotadinho_core::espacial::Direcao) -> Option<usize> {
+        use anotadinho_core::espacial::{vizinho, Caixa};
+        let caixa = |(c, l): (usize, usize)| {
+            Caixa::nova(
+                (c * (LARGURA_MINIMA_DA_COLUNA + 1)) as f64,
+                (l * ALTURA_DO_CARTAO * 2) as f64,
+                LARGURA_MINIMA_DA_COLUNA as f64,
+                ((ALTURA_DO_CARTAO - 1) * 2) as f64,
+            )
+        };
+        let posicoes = self.posicoes();
+        let daqui = caixa(*posicoes.get(atual)?);
+        let candidatos: Vec<Caixa> = posicoes.iter().map(|p| caixa(*p)).collect();
+        vizinho(&daqui, &candidatos, direcao)
+    }
+
     /// As tarefas na ordem do quadro (etapa, depois número): é a ordem do
     /// `j`/`k` e a do desenho, que precisam ser a MESMA, senão o cursor
     /// aceso não é a tarefa que o número move.
@@ -261,6 +343,11 @@ pub struct TelaEspecial {
     pub erro: Option<String>,
     /// Um `d` esperando o segundo.
     d_pendente: bool,
+    /// A primeira coluna à vista no quadro do projeto (ciclo 468). Oito
+    /// etapas não cabem: a janela de colunas desliza com o cursor, como o
+    /// `overflow-x` do quadro da janela. `Cell` porque só o desenho sabe
+    /// quantas cabem.
+    pub primeira_coluna: std::cell::Cell<usize>,
 }
 
 impl TelaEspecial {
@@ -278,6 +365,7 @@ impl TelaEspecial {
             vista: std::cell::Cell::new((0, 0, 0)),
             erro: None,
             d_pendente: false,
+            primeira_coluna: std::cell::Cell::new(0),
         }
     }
 
@@ -367,6 +455,25 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
     let Some(t) = e.especial.as_mut() else { return false };
     let total = t.total();
     let d_antes = std::mem::take(&mut t.d_pendente);
+    // No quadro do projeto, as quatro direções são GEOMETRIA (ciclo 468):
+    // o `j` genérico andaria na ordem da lista, atravessando colunas.
+    if t.tipo == TipoEspecial::Projeto && matches!(tecla, "j" | "k" | "h" | "l" | "ArrowDown" | "ArrowUp" | "ArrowLeft" | "ArrowRight") {
+        use anotadinho_core::espacial::Direcao;
+        let direcao = match tecla {
+            "j" | "ArrowDown" => Direcao::Baixo,
+            "k" | "ArrowUp" => Direcao::Cima,
+            "h" | "ArrowLeft" => Direcao::Esquerda,
+            _ => Direcao::Direita,
+        };
+        if let Some(Dados::Projeto(p)) = &t.dados {
+            // Sem vizinho pra esse lado é BORDA: o cursor fica (navegacao).
+            if let Some(i) = p.vizinho(t.selecionado, direcao) {
+                t.selecionado = i;
+                t.deslocamento = 0;
+            }
+        }
+        return true;
+    }
     match tecla {
         "j" | "ArrowDown" => {
             t.selecionado = (t.selecionado + 1).min(total.saturating_sub(1));
@@ -731,7 +838,7 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
         TipoEspecial::Kanban => " h l coluna · j k cartão ",
         TipoEspecial::Tarefas => " j k · Enter abre · s ordena ",
         TipoEspecial::Grafo => " j k página · h l conexão · Enter abre ",
-        TipoEspecial::Projeto => " j k · 1-3 move · Enter abre · n nova · d detalha · c conversa · a arquitetura · p pausa · o repo ",
+        TipoEspecial::Projeto => " h j k l · 1-3 etapa · Enter abre · n nova · d detalha · c conversa · a arquitetura · p pausa · o repo ",
     };
     let mut borda = Block::default()
         .borders(Borders::ALL)
@@ -1389,12 +1496,69 @@ fn tela_do_projeto(
     for a in &p.avisos {
         fora.push(Line::from(Span::styled(corta(format!(" ⚠ {a}"), w), tema.estilo(Realce::BadgeAtencao))));
     }
-    let ordem = p.na_ordem();
     let indice = projeto::IndiceDeTarefas::novo(&p.tarefas);
-    let mut i = 0;
-    for etapa in EtapaTarefa::all() {
-        let da_etapa: Vec<_> = ordem.iter().filter(|x| x.etapa == *etapa).collect();
+    let ordem = p.na_ordem();
+    let etapas = EtapaTarefa::all();
+    let selecionada = ordem.get(t.selecionado).copied();
+
+    // A linha da tarefa selecionada, FIXA sobre o quadro: é onde ficam as
+    // transições numeradas — os botões do cartão na janela. Dentro do
+    // cartão ela mudaria a altura de um só, e as linhas das colunas
+    // deixariam de alinhar.
+    fora.push(Line::default());
+    match selecionada.filter(|_| no_foco) {
+        Some(x) => {
+            let destinos = x.etapa.proximas_para(Quem::Humano);
+            let opcoes: Vec<String> = destinos.iter().enumerate().map(|(k, d)| format!("{} → {}", k + 1, d.label())).collect();
+            fora.push(Line::from(vec![
+                Span::styled(corta(format!(" {:03} {}", x.numero, x.titulo), w / 2), texto.add_modifier(Modifier::BOLD)),
+                Span::styled(corta(format!("   {}", opcoes.join("   ")), w / 2), destaque),
+            ]));
+        }
+        None => fora.push(Line::from(Span::styled(" Tab entra no quadro", apagado))),
+    }
+
+    // Quantas colunas cabem, e quais: a janela desliza pra o cursor ficar
+    // dentro dela.
+    let cabem = ((w + 1) / (LARGURA_MINIMA_DA_COLUNA + 1)).clamp(1, etapas.len());
+    let largura = (w.saturating_sub(cabem + 1)) / cabem;
+    let col_sel = selecionada.and_then(|x| etapas.iter().position(|e| *e == x.etapa)).unwrap_or(0);
+    let mut primeira = t.primeira_coluna.get().min(etapas.len() - cabem);
+    if col_sel < primeira {
+        primeira = col_sel;
+    } else if col_sel >= primeira + cabem {
+        primeira = col_sel + 1 - cabem;
+    }
+    t.primeira_coluna.set(primeira);
+    let antes_col = primeira;
+    let depois_col = etapas.len() - (primeira + cabem);
+    if antes_col > 0 || depois_col > 0 {
+        let esq = if antes_col > 0 { format!(" ◂ {antes_col} etapa(s)") } else { String::new() };
+        let dir = if depois_col > 0 { format!("{depois_col} etapa(s) ▸ ") } else { String::new() };
+        fora.push(Line::from(vec![
+            Span::styled(esq.clone(), apagado),
+            Span::raw(" ".repeat(w.saturating_sub(esq.chars().count() + dir.chars().count()))),
+            Span::styled(dir, apagado),
+        ]));
+    } else {
         fora.push(Line::default());
+    }
+
+    let visiveis = &etapas[primeira..primeira + cabem];
+    let colunas: Vec<Vec<&projeto::Tarefa>> = visiveis.iter().map(|e| p.da_coluna(*e)).collect();
+    let altura = colunas.iter().map(|c| c.len()).max().unwrap_or(0).max(1);
+    let superficie = tema.var("bg-surface");
+    let elevado = tema.var("bg-elevated");
+    let celula = |s: &str, n: usize| -> String {
+        let mut c: String = s.chars().take(n).collect();
+        c.push_str(&" ".repeat(n.saturating_sub(c.chars().count())));
+        c
+    };
+
+    // Cabeçalho das colunas, como `.projeto__coluna-titulo`: a etapa na
+    // cor dela, e a contagem.
+    let mut cab: Vec<Span<'static>> = vec![Span::raw(" ")];
+    for (k, etapa) in visiveis.iter().enumerate() {
         let cor = match etapa {
             EtapaTarefa::Executando | EtapaTarefa::Executar => tema.var("accent-blue"),
             EtapaTarefa::Revisao => tema.var("accent-purple"),
@@ -1402,42 +1566,76 @@ fn tela_do_projeto(
             EtapaTarefa::Bloqueada => tema.var("error"),
             _ => tema.var("text-muted"),
         };
-        fora.push(Line::from(vec![
-            Span::styled(format!(" {}", etapa.label()), Style::default().fg(cor).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("  {}", da_etapa.len()), apagado),
-        ]));
-        for x in da_etapa {
-            let sel = i == t.selecionado;
-            let inicio = antes + fora.len();
-            let mut linha = format!("   {:03} {}", x.numero, x.titulo);
-            let pendentes = indice.pendentes(x);
-            if !x.depende.is_empty() {
-                linha.push_str(&format!("  · depende de {}", x.depende.join(", ")));
+        let nome = format!(" {}", etapa.label().to_uppercase());
+        let conta = format!("{} ", colunas[k].len());
+        cab.push(Span::styled(nome.clone(), Style::default().fg(cor).bg(superficie).add_modifier(Modifier::BOLD)));
+        cab.push(Span::styled(
+            format!("{}{conta}", " ".repeat(largura.saturating_sub(nome.chars().count() + conta.chars().count()))),
+            apagado.bg(superficie),
+        ));
+        cab.push(Span::raw(" "));
+    }
+    fora.push(Line::from(cab));
+
+    // Os cartões, linha a linha do quadro: cada cartão é título,
+    // dependência e um respiro — como `.projeto__cartao`.
+    let topo_do_quadro = antes + fora.len();
+    let mut linhas: Vec<Vec<Span<'static>>> = vec![vec![Span::raw(" ")]; altura * ALTURA_DO_CARTAO];
+    for coluna in &colunas {
+        for r in 0..altura {
+            let base = r * ALTURA_DO_CARTAO;
+            match coluna.get(r) {
+                Some(x) => {
+                    let aceso = no_foco && selecionada.is_some_and(|s| s.caminho == x.caminho);
+                    let corpo = if aceso { tema.estilo(Realce::Cursor) } else { texto.bg(elevado) };
+                    let numero = if aceso { corpo } else { apagado.bg(elevado) };
+                    let dentro = largura.saturating_sub(2);
+                    let (l1, l2) = titulo_em_duas_linhas(&x.titulo, dentro.saturating_sub(6));
+                    linhas[base].push(Span::styled(" ", Style::default().bg(superficie)));
+                    linhas[base].push(Span::styled(format!(" {:03} ", x.numero), numero));
+                    linhas[base].push(Span::styled(celula(&l1, dentro.saturating_sub(5)), corpo));
+                    linhas[base].push(Span::styled(" ", Style::default().bg(superficie)));
+                    linhas[base + 1].push(Span::styled(" ", Style::default().bg(superficie)));
+                    linhas[base + 1].push(Span::styled(celula(&format!("     {l2}"), dentro), corpo));
+                    linhas[base + 1].push(Span::styled(" ", Style::default().bg(superficie)));
+                    let dep = if x.depende.is_empty() { String::new() } else { format!("  ↳ depende de {}", x.depende.join(", ")) };
+                    let pendente = !indice.pendentes(x).is_empty();
+                    let estilo_dep = if aceso {
+                        corpo
+                    } else if pendente {
+                        Style::default().fg(tema.var("warning")).bg(elevado)
+                    } else {
+                        apagado.bg(elevado)
+                    };
+                    linhas[base + 2].push(Span::styled(" ", Style::default().bg(superficie)));
+                    linhas[base + 2].push(Span::styled(celula(&dep, dentro), estilo_dep));
+                    linhas[base + 2].push(Span::styled(" ", Style::default().bg(superficie)));
+                }
+                None => {
+                    for l in &mut linhas[base..base + 3] {
+                        l.push(Span::styled(" ".repeat(largura), Style::default().bg(superficie)));
+                    }
+                }
             }
-            let mut linha = corta(linha, w);
-            linha.push_str(&" ".repeat(w.saturating_sub(linha.chars().count())));
-            let estilo = if sel && no_foco {
-                tema.estilo(Realce::Cursor)
-            } else if !pendentes.is_empty() {
-                Style::default().fg(tema.var("warning"))
-            } else {
-                texto
-            };
-            fora.push(Line::from(Span::styled(linha, estilo)));
-            // As transições numeradas só na selecionada: em todas, a tela
-            // viraria um mar de setas e o número não diria de QUAL tarefa.
-            if sel && no_foco {
-                let destinos = x.etapa.proximas_para(Quem::Humano);
-                let opcoes: Vec<String> =
-                    destinos.iter().enumerate().map(|(k, d)| format!("{} → {}", k + 1, d.label())).collect();
-                fora.push(Line::from(Span::styled(corta(format!("       {}", opcoes.join("   ")), w), destaque)));
+            linhas[base + 3].push(Span::styled(" ".repeat(largura), Style::default().bg(superficie)));
+            for l in &mut linhas[base..base + ALTURA_DO_CARTAO] {
+                l.push(Span::raw(" "));
             }
-            faixas.push((inicio, antes + fora.len()));
-            i += 1;
+        }
+    }
+    fora.extend(linhas.into_iter().map(Line::from));
+
+    // A faixa de cada tarefa, na ordem do `selecionado`: é o que a rolagem
+    // vertical segue quando a coluna não cabe na tela.
+    for (col, lin) in p.posicoes() {
+        if (primeira..primeira + cabem).contains(&col) {
+            let inicio = topo_do_quadro + lin * ALTURA_DO_CARTAO;
+            faixas.push((inicio, inicio + ALTURA_DO_CARTAO - 1));
+        } else {
+            faixas.push((topo_do_quadro, topo_do_quadro + 1));
         }
     }
     if p.tarefas.is_empty() {
-        fora.push(Line::default());
         fora.push(Line::from(Span::styled(" Nenhuma tarefa ainda. n cria uma; na conversa (c), \"virar tarefas\" propõe várias.", apagado)));
     }
     fora

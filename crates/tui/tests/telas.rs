@@ -174,9 +174,11 @@ fn cenas() -> Vec<Cena> {
     v.push(cena("assets", especial("assets"), &["Tab", "j"], 140, 20));
     v.push(cena("pagina-kanban", "---\ntitle: Quadro\ntype: kanban\n---\n\n- Escrever o texto  column:: todo\n- title:: Revisar  column:: doing\n- Publicar  column:: done\n- Ideia solta\n".to_string(), &["Tab", "l", "l"], 140, 20));
     v.push(cena("pagina-grafo", especial("graph"), &["Tab", "l", "l"], 140, 30));
-    // O projeto (ciclo 461): o cursor na segunda tarefa, com as
-    // transições numeradas embaixo dela.
-    v.push(cena("pagina-projeto", especial("projeto"), &["Tab", "j"], 140, 40));
+    // O projeto (ciclo 461, quadro no 468): `l` vai pro cartão da coluna
+    // ao lado, e as transições dele aparecem na linha fixa.
+    v.push(cena("pagina-projeto", especial("projeto"), &["Tab", "l"], 140, 40));
+    // O quadro desliza pra mostrar as colunas da direita (ciclo 468).
+    v.push(cena("pagina-projeto-colunas-a-direita", especial("projeto"), &["Tab", "l", "l", "l"], 140, 40));
     v.push(cena("pagina-tarefas", especial("table"), &["Tab", "j"], 140, 16));
     v.push(cena("pagina-calendario", especial("calendar"), &[], 140, 36));
     v.push(cena("propostas-diff", especial("propostas"), &["Tab"], 140, 40));

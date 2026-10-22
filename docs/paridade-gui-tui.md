@@ -45,7 +45,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | `type: assets` (arquivos, uso, excluir) | ✅ | 346 — "Ver assets"; `x`/`dd` exclui |
 | `type: kanban` / `calendar` / `table` de página inteira | ✅ | 353 — quadro com `column::`, calendário do vault, tarefas com `status::` |
 | `type: graph` | ✅ | 361 — grafo 3D vira lista de conexões por wikilink; Enter abre |
-| `type: projeto` (quadro por etapa, fila, repositório, conversa) | ✅ | 460 (janela), 461 (TUI) — números movem pela transição; `d` detalha |
+| `type: projeto` (quadro por etapa, fila, repositório, conversa) | ✅ | 460 (janela), 461 e 468 (TUI) — quadro de colunas que desliza; `h j k l` por `core::espacial`; números movem pela transição; `d` detalha |
 | `type: tarefa` (barra de etapa sobre o editor) | 🟡 | 460 — na TUI, "Mover a tarefa aberta…" na barra de comandos |
 | Arrastar o cartão do projeto entre colunas | — | 465 — na TUI, os números |
 | Cabeçalho de página tipada + propriedades | ✅ | 344, 360 — título da página e "Propriedades" (`=`) nas telas de tipo |

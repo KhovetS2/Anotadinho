@@ -11705,17 +11705,65 @@ mod testes {
     }
 
     #[test]
-    fn pagina_de_projeto_abre_carregando_e_mostra_as_etapas() {
+    fn pagina_de_projeto_abre_carregando_e_mostra_o_quadro() {
         let mut e = especial_aberto("projeto");
         assert_eq!(e.pedidos, [Pedido::CarregarEspecial(especiais::TipoEspecial::Projeto)]);
         especiais::carregar(&mut e, projeto_na_tela(vec![tarefa_de_teste(1, "ideia", ""), tarefa_de_teste(2, "revisao", "")]));
         let tudo = desenho(&mut e, 140, 40).join("\n");
-        for esperado in ["Ideia", "Revisão", "Bloqueada", "001 Tarefa 1", "002 Tarefa 2", "sem repositório", "1 → Detalhando   2 → Pronta"] {
+        // Colunas como na janela, e as que não cabem anunciadas.
+        for esperado in ["IDEIA", "DETALHANDO", "PRONTA", "EXECUTAR", "etapa(s) ▸", "001 Tarefa 1", "sem repositório", "1 → Detalhando   2 → Pronta"] {
             assert!(tudo.contains(esperado), "faltou {esperado}:\n{tudo}");
         }
-        // As transições só aparecem na selecionada: a 2 está em revisão,
-        // e "Feita" não pode aparecer como opção antes de selecioná-la.
+        assert!(!tudo.contains("REVISÃO"), "a coluna de revisão não cabe ainda:\n{tudo}");
+        // As transições são só da selecionada (a 1, em ideia).
         assert!(!tudo.contains("→ Feita"), "{tudo}");
+    }
+
+    #[test]
+    fn hjkl_anda_pelo_quadro_por_geometria() {
+        // ideia: 1, 2 · detalhando: vazia · pronta: 3 · feita: 4
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(
+            &mut e,
+            projeto_na_tela(vec![
+                tarefa_de_teste(1, "ideia", ""),
+                tarefa_de_teste(2, "ideia", ""),
+                tarefa_de_teste(3, "pronta", ""),
+                tarefa_de_teste(4, "feita", ""),
+            ]),
+        );
+        let selecionada = |e: &mut Estado| {
+            e.pedidos.clear();
+            tecla(e, "Enter");
+            match e.pedidos.pop() {
+                Some(Pedido::AbrirPagina(c)) => c.rsplit('/').next().unwrap().to_string(),
+                outro => panic!("{outro:?}"),
+            }
+        };
+        assert_eq!(selecionada(&mut e), "001-t.md");
+        // k no topo da coluna é borda: fica.
+        tecla(&mut e, "k");
+        assert_eq!(selecionada(&mut e), "001-t.md");
+        // j desce NA coluna.
+        tecla(&mut e, "j");
+        assert_eq!(selecionada(&mut e), "002-t.md");
+        // j no fim da coluna também é borda: não atravessa pra outra.
+        tecla(&mut e, "j");
+        assert_eq!(selecionada(&mut e), "002-t.md");
+        // l pula a coluna vazia (não tem candidato) e cai na de pronta.
+        tecla(&mut e, "l");
+        assert_eq!(selecionada(&mut e), "003-t.md");
+        // l de novo vai até feita, fora da janela de colunas: ela desliza.
+        tecla(&mut e, "l");
+        assert_eq!(selecionada(&mut e), "004-t.md");
+        let tudo = desenho(&mut e, 140, 40).join("\n");
+        assert!(tudo.contains("FEITA") && tudo.contains("◂"), "a janela de colunas não acompanhou o cursor:\n{tudo}");
+        // h volta; h na primeira coluna é borda.
+        tecla(&mut e, "h");
+        assert_eq!(selecionada(&mut e), "003-t.md");
+        tecla(&mut e, "h");
+        tecla(&mut e, "h");
+        assert!(selecionada(&mut e).starts_with("00"), "h fora do quadro");
     }
 
     #[test]
