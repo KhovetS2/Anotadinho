@@ -686,7 +686,9 @@ fn avaliar_projetos(
 // núcleo compilado em wasm; este backend valida com o núcleo nativo).
 // O `tauri dev` só recompila quando muda `src-tauri/`: mudança SÓ no
 // núcleo deixa o backend velho, e a tela oferece um botão que o backend
-// recusa. Ao mexer em `core::projeto`, force os dois rebuilds.
+// recusa. Ao mexer em `core::projeto`, force os dois rebuilds: aqui um
+// `touch` em `src-tauri/` basta (o watcher é por evento de arquivo); no
+// `trunk serve` não, porque ele compara conteúdo (ciclo 464).
 
 #[tauri::command]
 fn criar_projeto(vault_path: String, titulo: String, hoje: String) -> Result<anotadinho_ipc::ProjetoCriado, String> {

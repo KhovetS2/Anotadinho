@@ -294,7 +294,16 @@ pub fn handle_tarefas_a_executar(
 
     let freio = handle_freio_do_dia(vault_path.clone(), params.agora.clone())?;
     if freio.parou() {
-        saida.avisos.push(format!("fila parada pelo freio do dia: {}", freio.motivo()));
+        // Diz QUAIS projetos esperam (ciclo 464): "a fila parou" sem dizer
+        // de quem não ajuda quem tem vários, e o texto igual a cada volta
+        // fazia a tela (que só repete aviso que mudou) calar o de um
+        // projeto novo esperando.
+        let esperando: Vec<&str> = com_pedido.iter().map(|(p, _)| p.slug.as_str()).collect();
+        saida.avisos.push(format!(
+            "fila parada pelo freio do dia: {} — esperando: {}",
+            freio.motivo(),
+            esperando.join(", ")
+        ));
         return Ok(saida);
     }
 
@@ -1054,5 +1063,17 @@ mod testes {
         pedir_execucao(&v, &c[0]);
         let t = handle_tarefas_a_executar(v, params()).unwrap().iniciar.remove(0);
         assert_eq!(t.conversa, conversa);
+    }
+
+    #[test]
+    fn freio_diz_quem_esta_esperando() {
+        let (_g, _r, v, c) = montar(1);
+        pedir_execucao(&v, &c[0]);
+        let guardas = anotadinho_core::guardas::Guardas { silencio_de: "00:00".into(), silencio_ate: "23:59".into(), ..Default::default() };
+        crate::handle_gravar_guardas(v.clone(), guardas).unwrap();
+        let r = handle_tarefas_a_executar(v.clone(), params()).unwrap();
+        assert!(r.iniciar.is_empty());
+        assert!(r.avisos.iter().any(|a| a.contains("freio") && a.contains("esperando: saas")), "{:?}", r.avisos);
+        assert_eq!(etapa(&v, &c[0]), EtapaTarefa::Executar, "o freio não pode reservar");
     }
 }

@@ -136,7 +136,10 @@ impl EtapaTarefa {
         match self {
             Self::Ideia => vec![Self::Detalhando, Self::Pronta],
             Self::Detalhando => vec![Self::Pronta, Self::Ideia],
-            Self::Pronta => vec![Self::Executar, Self::Detalhando],
+            // `Feita` POR ÚLTIMO (ciclo 464): resolvido sem execução — uma
+            // decisão, algo feito por fora. Por último pra os números da
+            // TUI e a ordem dos botões que já existiam não mudarem.
+            Self::Pronta => vec![Self::Executar, Self::Detalhando, Self::Feita],
             // Voltar pra `pronta` é desistir antes de a fila pegar.
             Self::Executar => vec![Self::Executando, Self::Pronta],
             Self::Executando => vec![Self::Revisao, Self::Bloqueada],
@@ -147,7 +150,10 @@ impl EtapaTarefa {
             // sistema alcança — e a pessoa ficava sem saída nenhuma de
             // uma tarefa feita (achado na tela, ciclo 460).
             Self::Feita => vec![Self::Detalhando],
-            Self::Bloqueada => vec![Self::Detalhando, Self::Pronta, Self::Executar],
+            // `Feita` aqui é o caso da tarefa 001 do projeto Anotadinho:
+            // o agente parou porque era uma decisão, a pessoa decidiu, e
+            // não havia como fechar sem pagar uma execução só pra isso.
+            Self::Bloqueada => vec![Self::Detalhando, Self::Pronta, Self::Executar, Self::Feita],
         }
     }
 
@@ -930,6 +936,18 @@ mod testes {
         for e in EtapaTarefa::all() {
             assert!(!e.proximas().is_empty(), "{} é beco sem saída", e.slug());
         }
+    }
+
+    #[test]
+    fn resolvido_sem_execucao_fecha_direto() {
+        for de in [EtapaTarefa::Pronta, EtapaTarefa::Bloqueada] {
+            assert!(de.pode_ir_para(EtapaTarefa::Feita, Quem::Humano), "{} → feita", de.slug());
+            assert!(!de.pode_ir_para(EtapaTarefa::Feita, Quem::Sistema), "o sistema fecharia {}", de.slug());
+            assert_eq!(de.proximas_para(Quem::Humano).last(), Some(&EtapaTarefa::Feita), "feita tem que vir por último");
+        }
+        // Sem detalhe, não se fecha: quase sempre é tarefa pra apagar.
+        assert!(!EtapaTarefa::Ideia.pode_ir_para(EtapaTarefa::Feita, Quem::Humano));
+        assert!(!EtapaTarefa::Detalhando.pode_ir_para(EtapaTarefa::Feita, Quem::Humano));
     }
 
     #[test]

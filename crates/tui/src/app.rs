@@ -11678,7 +11678,7 @@ mod testes {
         e.abrir_texto("---\ntitle: Login\ntype: tarefa\nprojeto: saas\nstatus: pronta\n---\n# Login\n", None);
         modais::executar(&mut e, "etapa-tarefa");
         let Some(Modal::Escolha { lista, .. }) = &e.modal else { panic!("{:?}", e.modal) };
-        assert_eq!(lista.itens.len(), 2, "pronta → executar ou detalhando");
+        assert_eq!(lista.itens.len(), 3, "pronta → executar, detalhando ou feita (464)");
         // Enter na primeira opção (executar).
         tecla(&mut e, "Enter");
         assert_eq!(

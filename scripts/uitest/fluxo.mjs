@@ -2752,6 +2752,9 @@ async function projetoTemporario() {
     "---\ntitle: Login\ntype: tarefa\nprojeto: saas\nstatus: executar\n---\n# Login\n\n## Objetivo\n\nentrar\n",
   );
   escrever(".anotadinho/projetos.json", JSON.stringify({ saas: { repositorio: repo } }));
+  // Sem janela de silêncio: o freio padrão para a fila das 23h às 7h, e
+  // estes cenários passavam à tarde e reprovavam à noite (ciclo 464).
+  escrever(".anotadinho/guardas.json", JSON.stringify({ teto_execucoes: 0, teto_custo_usd: 0, silencio_de: "", silencio_ate: "" }));
   const status = () => {
     const m = fs.readFileSync(path.join(vault, tarefa), "utf8").match(/^status: (.*)$/m);
     return m && m[1].trim();
@@ -2858,20 +2861,17 @@ fluxo.push({
     const fs = await import("node:fs");
     const raiz = `${ctx.vault}/pages/projetos`;
     const tinhaRaiz = fs.existsSync(raiz);
-    const pasta = `${raiz}/__uitest-fila`;
+    // Nome ÚNICO por execução: a tela só loga aviso que MUDOU, e com o
+    // mesmo nome o aviso do cenário anterior calava o deste.
+    const slug = `__uitest-fila-${Date.now()}`;
+    const pasta = `${raiz}/${slug}`;
     const cfg = `${ctx.vault}/.anotadinho/projetos.json`;
     const cfgAntes = fs.existsSync(cfg) ? fs.readFileSync(cfg, "utf8") : null;
     try {
-      fs.mkdirSync(`${pasta}/tarefas`, { recursive: true });
-      fs.writeFileSync(`${pasta}/projeto.md`, "---\ntitle: __uitest fila\ntype: projeto\n---\n# fila\n");
-      fs.writeFileSync(
-        `${pasta}/tarefas/001-x.md`,
-        "---\ntitle: x\ntype: tarefa\nprojeto: __uitest-fila\nstatus: executar\n---\n# x\n",
-      );
-      const config = cfgAntes ? JSON.parse(cfgAntes) : {};
-      config["__uitest-fila"] = { repositorio: ctx.vault, pausado: true };
-      fs.mkdirSync(`${ctx.vault}/.anotadinho`, { recursive: true });
-      fs.writeFileSync(cfg, JSON.stringify(config));
+      // A captura vem ANTES do projeto de teste: a tela só loga quando os
+      // avisos MUDAM, e uma volta do temporizador entre criar o projeto e
+      // instalar a captura logava cedo demais e não repetia — o cenário
+      // reprovava com a tela funcionando (ciclo 464).
       await bridge.js(`(() => {
         const original = console.warn;
         window.__avisosFila = { lista: [], original };
@@ -2881,14 +2881,28 @@ fluxo.push({
         };
         return true;
       })()`);
+
+      fs.mkdirSync(`${pasta}/tarefas`, { recursive: true });
+      fs.writeFileSync(`${pasta}/projeto.md`, "---\ntitle: __uitest fila\ntype: projeto\n---\n# fila\n");
+      fs.writeFileSync(
+        `${pasta}/tarefas/001-x.md`,
+        `---\ntitle: x\ntype: tarefa\nprojeto: ${slug}\nstatus: executar\n---\n# x\n`,
+      );
+      const config = cfgAntes ? JSON.parse(cfgAntes) : {};
+      config[slug] = { repositorio: ctx.vault, pausado: true };
+      fs.mkdirSync(`${ctx.vault}/.anotadinho`, { recursive: true });
+      fs.writeFileSync(cfg, JSON.stringify(config));
       let achou = false;
       try {
         // O bridge corta script em 5 s: a espera fica aqui, por condição.
         const limite = Date.now() + 12000;
         while (Date.now() < limite && !achou) {
           await PAUSA(250);
+          // As guardas do vault aberto são da pessoa e não se mexe nelas:
+          // de noite, o freio do dia fala antes da pausa. Os dois avisos
+          // só saem se a tela conferiu a fila com a tarefa do cenário.
           achou = await bridge.js(
-            "window.__avisosFila.lista.some(m => m.includes('__uitest-fila: fila pausada'))",
+            `window.__avisosFila.lista.some(m => m.includes(${JSON.stringify(slug + ": fila pausada")}) || (m.includes('freio do dia') && m.includes(${JSON.stringify(slug)})))`,
           );
         }
       } finally {
@@ -2998,7 +3012,7 @@ fluxo.push({
   nome: "projeto: o cartão mostra só as transições da pessoa e move a tarefa (460)",
   async fn(bridge, ctx) {
     const slug = `uitest-quadro-${Date.now()}`;
-    const p = await projetoNoVault(ctx, slug, [[1, "ideia", "Login"], [2, "executando", "Banco"], [3, "feita", "Base"]]);
+    const p = await projetoNoVault(ctx, slug, [[1, "ideia", "Login"], [2, "executando", "Banco"], [3, "feita", "Base"], [4, "bloqueada", "Agenda"]]);
     try {
       await recarregarEstavel(bridge);
       await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
@@ -3007,6 +3021,14 @@ fluxo.push({
       // `revisao` é do sistema: em executando, a pessoa só bloqueia.
       ctx.assertEq(JSON.stringify(await bridge.js(BOTOES_DO_CARTAO(2))), JSON.stringify(["bloqueada"]));
       ctx.assertEq(JSON.stringify(await bridge.js(BOTOES_DO_CARTAO(3))), JSON.stringify(["detalhando"]), "feita sem saída");
+      // Resolvido sem execução (ciclo 464): de bloqueada, fecha direto.
+      ctx.assertEq(
+        JSON.stringify(await bridge.js(BOTOES_DO_CARTAO(4))),
+        JSON.stringify(["detalhando", "pronta", "executar", "feita"]),
+      );
+      await clicar(bridge, `.projeto__cartao[data-tarefa$="/004-t.md"] .projeto__mover[data-destino="feita"]`, "→ Feita");
+      await esperar(bridge, `!!document.querySelector('.projeto__coluna[data-etapa=feita] .projeto__cartao[data-tarefa$="/004-t.md"]')`, "a tarefa fechada em Feita");
+      ctx.assertEq(p.status(4), "feita");
       ctx.assert(
         await bridge.js("[...document.querySelectorAll('.projeto__aviso')].some(a => a.textContent.includes('sem repositório'))"),
         "o cabeçalho não diz o que segura a fila",
@@ -3017,7 +3039,7 @@ fluxo.push({
       // Criar pelo quadro.
       await bridge.js(`(() => { const i = document.querySelector('.projeto__nova-titulo'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'Cobrança'); i.dispatchEvent(new InputEvent('input', { bubbles: true })); return true; })()`);
       await clicar(bridge, ".projeto__nova-criar", "Criar tarefa");
-      await esperar(bridge, `!!document.querySelector('.projeto__cartao[data-tarefa$="/004-cobranca.md"]')`, "a tarefa nova no quadro");
+      await esperar(bridge, `!!document.querySelector('.projeto__cartao[data-tarefa$="/005-cobranca.md"]')`, "a tarefa nova no quadro");
     } finally {
       p.limpar();
     }
