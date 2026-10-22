@@ -2788,8 +2788,11 @@ fluxo.push({
     try {
       const r = await bridge.js(AVALIAR(p.vault, ["--tarefa", "{prompt}"]));
       ctx.assertEq(JSON.stringify(r.iniciadas), JSON.stringify([p.tarefa]), `não subiu: ${JSON.stringify(r)}`);
-      // A reserva é síncrona com o comando: já voltou em executando.
-      ctx.assertEq(p.status(), "executando", "a tarefa não foi reservada antes do agente");
+      // A reserva é síncrona com o comando: quando ele volta, a tarefa
+      // JÁ saiu de `executar`. Pode estar em `executando` ou, com o agente
+      // falso de milissegundos, já em `revisao` — exigir `executando`
+      // aqui era corrida (reprovou 1 em 3 no ciclo 462).
+      ctx.assert(p.status() !== "executar", "a tarefa não foi reservada antes do agente");
       // Pedir de novo enquanto roda não sobe a mesma tarefa outra vez.
       const de_novo = await bridge.js(AVALIAR(p.vault, ["--tarefa", "{prompt}"]));
       ctx.assertEq(de_novo.iniciadas.length, 0, "a mesma tarefa subiu duas vezes");
