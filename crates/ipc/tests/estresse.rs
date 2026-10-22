@@ -290,3 +290,81 @@ fn pagina_indice_com_milhares_de_wikilinks() {
     assert_eq!(entradas[0].wikilinks.len(), 5000);
     dentro_do_teto("indexar página com 5 mil wikilinks distintos", t, Duration::from_secs(2));
 }
+
+/// Um projeto sintético com `n` tarefas (ciclo 462): 9 em 10 `feita`, e
+/// 1 em 10 em `executar`, dependendo da anterior. Uma tarefa em
+/// `executando` ocupa a única vaga, então a fila é calculada inteira e
+/// nada é reservado — a medida pode se repetir sem mudar o vault.
+fn projeto_sintetico(raiz: &Path, n: usize) -> String {
+    let vault = raiz.to_string_lossy().to_string();
+    anotadinho_ipc::handle_criar_projeto(vault.clone(), "Escala".into(), Some("escala".into()), "2026-10-21".into())
+        .unwrap();
+    let repo = raiz.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let mut cfg = anotadinho_core::projeto::ConfigProjetos::new();
+    cfg.insert(
+        "escala".into(),
+        anotadinho_core::projeto::ConfigProjeto { repositorio: Some(repo.to_string_lossy().to_string()), ..Default::default() },
+    );
+    anotadinho_ipc::handle_gravar_projetos_cfg(vault.clone(), cfg).unwrap();
+    let pasta = raiz.join(anotadinho_core::projeto::pasta_das_tarefas("escala"));
+    for i in 1..=n {
+        let (etapa, depende) = match i {
+            1 => ("executando", String::new()),
+            _ if i % 10 == 0 => ("executar", format!("depende:\n- {}\n", i - 1)),
+            _ => ("feita", String::new()),
+        };
+        // Numa linha só por `concat!`/`format!` com `\n` explícito: a
+        // continuação com `\` em literal de YAML já vazou indentação pro
+        // frontmatter três vezes (ciclos 283, 284, 296).
+        let md = format!(
+            "---\ntitle: Tarefa {i}\ntype: tarefa\nprojeto: escala\nstatus: {etapa}\n{depende}---\n# Tarefa {i}\n\n## Objetivo\n\nalgo\n"
+        );
+        std::fs::write(pasta.join(format!("{i:04}-t.md")), md).unwrap();
+    }
+    vault
+}
+
+#[test]
+#[ignore = "monta um projeto de milhares de tarefas; roda com --ignored"]
+fn fila_de_projeto_grande_e_linear() {
+    // A fila é conferida a cada 5 s pela janela e pela TUI, e a tela do
+    // projeto relê o estado a cada 3 s: um custo por tarefa que cresce
+    // com o projeto vira travamento justamente no projeto que deu certo.
+    let mut fila_por_tarefa: Vec<(usize, f64)> = Vec::new();
+    let mut tela_por_tarefa: Vec<(usize, f64)> = Vec::new();
+    for n in [250usize, 1000, 2000] {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault = projeto_sintetico(dir.path(), n);
+        let params = anotadinho_ipc::ParametrosDaFila {
+            agora: "2026-10-21 10:00".into(),
+            teto: 0,
+            limite_historico: 12,
+            vagas: None,
+        };
+        // Aquece o cache de disco do sistema: a primeira leitura mede o
+        // disco, não o código.
+        anotadinho_ipc::handle_tarefas_a_executar(vault.clone(), params.clone()).unwrap();
+        let (r, t_fila) = cronometrar(|| anotadinho_ipc::handle_tarefas_a_executar(vault.clone(), params.clone()).unwrap());
+        assert!(r.iniciar.is_empty(), "a vaga está ocupada: nada podia ser reservado");
+        let (e, t_tela) = cronometrar(|| anotadinho_ipc::handle_estado_do_projeto(vault.clone(), "escala".into()).unwrap());
+        assert_eq!(e.tarefas.len(), n);
+        println!("n={n}: fila {t_fila:?}, tela {t_tela:?}");
+        dentro_do_teto(&format!("fila com {n} tarefas"), t_fila, Duration::from_micros(1000) * n as u32);
+        dentro_do_teto(&format!("estado do projeto com {n} tarefas"), t_tela, Duration::from_micros(1000) * n as u32);
+        fila_por_tarefa.push((n, t_fila.as_secs_f64() * 1e6 / n as f64));
+        tela_por_tarefa.push((n, t_tela.as_secs_f64() * 1e6 / n as f64));
+    }
+    for (rotulo, serie) in [("fila", &fila_por_tarefa), ("tela", &tela_por_tarefa)] {
+        for (n, us) in serie.iter() {
+            println!("  {rotulo}: custo por tarefa com n={n}: {us:.1}µs");
+        }
+        let (menor, maior) = (serie[0].1, serie[serie.len() - 1].1);
+        assert!(
+            maior <= menor * 1.6,
+            "{rotulo}: o custo por tarefa subiu de {menor:.1}µs (n={}) pra {maior:.1}µs (n={}) — alguma coisa ficou quadrática",
+            serie[0].0,
+            serie[serie.len() - 1].0,
+        );
+    }
+}

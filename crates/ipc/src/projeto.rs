@@ -348,8 +348,9 @@ fn avisos_do_projeto(slug: &str, cfg: &ConfigProjeto, tarefas: &[Tarefa]) -> (Ve
         avisos.push(format!("{slug}: o repositório {repositorio} não é uma pasta"));
         return (avisos, None);
     }
+    let indice = projeto::IndiceDeTarefas::novo(tarefas);
     for t in tarefas.iter().filter(|t| t.etapa == EtapaTarefa::Executar) {
-        let pendentes = projeto::dependencias_pendentes(t, tarefas);
+        let pendentes = indice.pendentes(t);
         if !pendentes.is_empty() {
             avisos.push(format!("{}: esperando {}", t.caminho, pendentes.join(", ")));
         }

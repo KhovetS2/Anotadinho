@@ -403,6 +403,10 @@ impl Tarefa {
     }
 
     /// Esta tarefa é a que `referencia` aponta?
+    ///
+    /// Desde o ciclo 462 quem responde é o [`IndiceDeTarefas`]; isto fica
+    /// como GABARITO do teste que confere que os dois concordam.
+    #[cfg(test)]
     fn casa_com(&self, referencia: &str) -> bool {
         let r = referencia.trim().trim_start_matches("[[").trim_end_matches("]]").trim();
         if r.is_empty() {
@@ -550,22 +554,67 @@ fn peso_da_prioridade(p: Option<&str>) -> u8 {
     }
 }
 
-/// As dependências de `tarefa` que ainda não estão `feita`.
+/// As tarefas `feita`, indexadas pelas formas com que uma dependência as
+/// cita (ciclo 462): número, caminho, nome do arquivo e título.
 ///
-/// Referência que não casa com tarefa nenhuma também volta aqui, e
-/// segura a tarefa: rodar achando que a dependência existia é pior do
-/// que esperar com o motivo à vista.
+/// Antes, cada dependência era comparada com TODAS as tarefas, e quem
+/// pergunta é cada tarefa da fila e cada cartão do quadro: `O(n²)`. A
+/// bateria de escala pegou o custo por tarefa subindo de 76 µs (250
+/// tarefas) pra 143 µs (2000). O índice monta uma vez e responde cada
+/// dependência numa busca.
+#[derive(Debug, Default)]
+pub struct IndiceDeTarefas {
+    feitas: std::collections::HashSet<String>,
+}
+
+impl IndiceDeTarefas {
+    /// Monta a partir das tarefas (de um ou mais projetos).
+    pub fn novo(tarefas: &[Tarefa]) -> Self {
+        let mut feitas = std::collections::HashSet::new();
+        for t in tarefas.iter().filter(|t| t.etapa == EtapaTarefa::Feita) {
+            let nome = t.caminho.rsplit('/').next().unwrap_or("");
+            feitas.insert(chave(&t.projeto, "n", &t.numero.to_string()));
+            for exata in [t.caminho.as_str(), nome, nome.trim_end_matches(".md")] {
+                feitas.insert(chave(&t.projeto, "p", exata));
+            }
+            // O título casa sem diferenciar maiúscula (só ASCII), como
+            // `casa_com` sempre fez.
+            feitas.insert(chave(&t.projeto, "t", &t.titulo.to_ascii_lowercase()));
+        }
+        Self { feitas }
+    }
+
+    /// A referência aponta pra uma tarefa `feita` do mesmo projeto?
+    fn satisfeita(&self, projeto: &str, referencia: &str) -> bool {
+        let r = referencia.trim().trim_start_matches("[[").trim_end_matches("]]").trim();
+        if r.is_empty() {
+            return false;
+        }
+        if let Ok(n) = r.parse::<u32>() {
+            return self.feitas.contains(&chave(projeto, "n", &n.to_string()));
+        }
+        self.feitas.contains(&chave(projeto, "p", r)) || self.feitas.contains(&chave(projeto, "t", &r.to_ascii_lowercase()))
+    }
+
+    /// As dependências de `tarefa` que ainda não estão `feita`.
+    ///
+    /// Referência que não casa com tarefa nenhuma também volta aqui, e
+    /// segura a tarefa: rodar achando que a dependência existia é pior do
+    /// que esperar com o motivo à vista.
+    pub fn pendentes(&self, tarefa: &Tarefa) -> Vec<String> {
+        tarefa.depende.iter().filter(|r| !self.satisfeita(&tarefa.projeto, r)).cloned().collect()
+    }
+}
+
+fn chave(projeto: &str, tipo: &str, valor: &str) -> String {
+    format!("{projeto}\u{0}{tipo}\u{0}{valor}")
+}
+
+/// As dependências pendentes de UMA tarefa. Pra várias (a fila, o
+/// quadro), monte o [`IndiceDeTarefas`] uma vez e pergunte a ele: chamar
+/// isto num laço é o `O(n²)` que o ciclo 462 tirou.
 pub fn dependencias_pendentes(tarefa: &Tarefa, todas: &[Tarefa]) -> Vec<String> {
-    tarefa
-        .depende
-        .iter()
-        .filter(|r| {
-            !todas
-                .iter()
-                .any(|t| t.projeto == tarefa.projeto && t.casa_com(r) && t.etapa == EtapaTarefa::Feita)
-        })
-        .cloned()
-        .collect()
+    IndiceDeTarefas::novo(todas).pendentes(tarefa)
 }
 
 /// A fila do projeto: o que está em `executar` e pode rodar, na ordem.
@@ -580,10 +629,11 @@ pub fn dependencias_pendentes(tarefa: &Tarefa, todas: &[Tarefa]) -> Vec<String> 
 /// Ordem: prioridade, depois número, que é a ordem em que a pessoa
 /// escreveu.
 pub fn fila(tarefas: &[Tarefa]) -> Vec<&Tarefa> {
+    let indice = IndiceDeTarefas::novo(tarefas);
     let mut prontas: Vec<&Tarefa> = tarefas
         .iter()
         .filter(|t| t.etapa == EtapaTarefa::Executar)
-        .filter(|t| dependencias_pendentes(t, tarefas).is_empty())
+        .filter(|t| indice.pendentes(t).is_empty())
         .collect();
     prontas.sort_by_key(|t| (peso_da_prioridade(t.prioridade.as_deref()), t.numero, t.caminho.clone()));
     prontas
@@ -1018,6 +1068,41 @@ mod testes {
         let b = tarefa(3, "executar", "depende:\n- \"[[Banco de dados]]\"\n");
         let ts = vec![feita, a, b];
         assert_eq!(fila(&ts).len(), 2);
+    }
+
+    #[test]
+    fn o_indice_responde_como_a_comparacao_uma_a_uma() {
+        // O índice do ciclo 462 trocou a varredura por busca: tem que
+        // aceitar e recusar exatamente o que `casa_com` aceitava.
+        let mut feita = tarefa(7, "feita", "");
+        feita.titulo = "Banco de Dados".into();
+        let outra_feita_de_outro_projeto = {
+            let mut t = tarefa(8, "feita", "");
+            t.projeto = "outro".into();
+            t
+        };
+        let todas = vec![feita.clone(), outra_feita_de_outro_projeto, tarefa(9, "pronta", "")];
+        let indice = IndiceDeTarefas::novo(&todas);
+        for (referencia, esperado) in [
+            ("7", true),
+            ("007", true),
+            ("007-t", true),
+            ("007-t.md", true),
+            ("pages/projetos/saas/tarefas/007-t.md", true),
+            ("[[Banco de Dados]]", true),
+            ("banco de dados", true),
+            ("8", false),
+            ("9", false),
+            ("Banco", false),
+            ("", false),
+        ] {
+            assert_eq!(indice.satisfeita("saas", referencia), esperado, "{referencia:?}");
+            assert_eq!(
+                todas.iter().any(|t| t.projeto == "saas" && t.casa_com(referencia) && t.etapa == EtapaTarefa::Feita),
+                esperado,
+                "casa_com discorda em {referencia:?}"
+            );
+        }
     }
 
     #[test]

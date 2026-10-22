@@ -303,6 +303,9 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
         }
     };
 
+    // Um índice pro quadro inteiro (ciclo 462): perguntar
+    // `dependencias_pendentes` por cartão era `O(n²)`.
+    let indice = projeto::IndiceDeTarefas::novo(&tarefas);
     let quadro = {
         let oninput = {
             let nova = nova.clone();
@@ -344,7 +347,7 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                                     { etapa.label() }
                                     <span class="projeto__contagem">{ da_etapa.len() }</span>
                                 </h3>
-                                { for da_etapa.into_iter().map(|t| cartao(t, &tarefas, &abrir, &mover)) }
+                                { for da_etapa.into_iter().map(|t| cartao(t, &indice, &abrir, &mover)) }
                             </div>
                         }
                     }) }
@@ -405,11 +408,11 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
 /// pessoa pode fazer daqui.
 fn cartao(
     t: &Tarefa,
-    todas: &[Tarefa],
+    indice: &projeto::IndiceDeTarefas,
     abrir: &Callback<api::PageMeta>,
     mover: &Callback<(String, EtapaTarefa)>,
 ) -> Html {
-    let pendentes = projeto::dependencias_pendentes(t, todas);
+    let pendentes = indice.pendentes(t);
     let abrir_tarefa = {
         let abrir = abrir.clone();
         let (c, titulo) = (t.caminho.clone(), t.titulo.clone());

@@ -1390,6 +1390,7 @@ fn tela_do_projeto(
         fora.push(Line::from(Span::styled(corta(format!(" ⚠ {a}"), w), tema.estilo(Realce::BadgeAtencao))));
     }
     let ordem = p.na_ordem();
+    let indice = projeto::IndiceDeTarefas::novo(&p.tarefas);
     let mut i = 0;
     for etapa in EtapaTarefa::all() {
         let da_etapa: Vec<_> = ordem.iter().filter(|x| x.etapa == *etapa).collect();
@@ -1409,7 +1410,7 @@ fn tela_do_projeto(
             let sel = i == t.selecionado;
             let inicio = antes + fora.len();
             let mut linha = format!("   {:03} {}", x.numero, x.titulo);
-            let pendentes = projeto::dependencias_pendentes(x, &p.tarefas);
+            let pendentes = indice.pendentes(x);
             if !x.depende.is_empty() {
                 linha.push_str(&format!("  · depende de {}", x.depende.join(", ")));
             }
