@@ -2300,6 +2300,14 @@
   background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--r-sm);
   padding: var(--sp-2);
 }
+.projeto__cartao { cursor: grab; }
+.projeto__cartao--arrastando { opacity: .5; cursor: grabbing; }
+/* Durante o arrasto (ciclo 465): só acende o que o núcleo permite. */
+.projeto__coluna--destino {
+  outline: 2px dashed var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-surface));
+}
+.projeto__coluna--proibida { opacity: .45; }
 .projeto__cartao-titulo {
   background: none; border: 0; padding: 0; text-align: left; cursor: pointer;
   color: var(--text-primary); font: inherit; font-size: .85rem;

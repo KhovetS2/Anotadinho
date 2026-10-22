@@ -7,6 +7,8 @@
 //! a pessoa PODE fazer, como o embed de fluxo.
 
 use anotadinho_core::projeto::{self, EtapaTarefa, Quem, Tarefa};
+use gloo_events::EventListener;
+use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
 use crate::api;
@@ -75,6 +77,21 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
         });
     }
     let recarga = use_state(|| 0u32);
+    // A tarefa sendo arrastada (ciclo 465). Por mouse, como o
+    // `inline_kanban`: o arrasto nativo do HTML5 é instável no WebKitGTK.
+    let arrastando = use_state(|| None::<Tarefa>);
+    {
+        // Soltar FORA de qualquer coluna (sidebar, cabeçalho) também
+        // termina o arrasto: sem isto o estado ficava preso e a próxima
+        // coluna clicada recebia a tarefa. A coluna solta primeiro (o
+        // evento sobe dela até a janela), então este vem por último.
+        let arrastando = arrastando.clone();
+        use_effect_with((), move |_| {
+            let janela = web_sys::window().expect("sem janela");
+            let ouvinte = EventListener::new(&janela, "mouseup", move |_| arrastando.set(None));
+            move || drop(ouvinte)
+        });
+    }
     // O último estado lido, pra o intervalo comparar. `use_mut_ref`, e
     // não o `use_state` acima: capturado na closure do intervalo, o
     // handle fica CONGELADO no valor da montagem (ciclos 155, 157, 201,
@@ -341,13 +358,37 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                 <div class="projeto__quadro" data-nav-group="projeto-quadro">
                     { for EtapaTarefa::all().iter().map(|etapa| {
                         let da_etapa: Vec<&Tarefa> = tarefas.iter().filter(|t| t.etapa == *etapa).collect();
+                        // Quem decide se a coluna aceita é o núcleo, o mesmo
+                        // dos botões: `executando` e `revisao` nunca acendem,
+                        // porque nenhuma etapa leva a pessoa até elas.
+                        let aceita = arrastando
+                            .as_ref()
+                            .map(|t| t.etapa != *etapa && t.etapa.pode_ir_para(*etapa, Quem::Humano));
+                        let classe = classes!(
+                            "projeto__coluna",
+                            (aceita == Some(true)).then_some("projeto__coluna--destino"),
+                            (aceita == Some(false)
+                                && arrastando.as_ref().is_some_and(|t| t.etapa != *etapa))
+                            .then_some("projeto__coluna--proibida"),
+                        );
+                        let soltar = {
+                            let (arrastando, mover, destino) = (arrastando.clone(), mover.clone(), *etapa);
+                            Callback::from(move |_: MouseEvent| {
+                                if let Some(t) = (*arrastando).clone() {
+                                    if t.etapa != destino && t.etapa.pode_ir_para(destino, Quem::Humano) {
+                                        mover.emit((t.caminho, destino));
+                                    }
+                                }
+                                arrastando.set(None);
+                            })
+                        };
                         html! {
-                            <div class="projeto__coluna" data-etapa={etapa.slug()}>
+                            <div class={classe} data-etapa={etapa.slug()} onmouseup={soltar}>
                                 <h3 class="projeto__coluna-titulo">
                                     { etapa.label() }
                                     <span class="projeto__contagem">{ da_etapa.len() }</span>
                                 </h3>
-                                { for da_etapa.into_iter().map(|t| cartao(t, &indice, &abrir, &mover)) }
+                                { for da_etapa.into_iter().map(|t| cartao(t, &indice, &abrir, &mover, &arrastando)) }
                             </div>
                         }
                     }) }
@@ -411,7 +452,32 @@ fn cartao(
     indice: &projeto::IndiceDeTarefas,
     abrir: &Callback<api::PageMeta>,
     mover: &Callback<(String, EtapaTarefa)>,
+    arrastando: &UseStateHandle<Option<Tarefa>>,
 ) -> Html {
+    let pegar = {
+        let (arrastando, t) = (arrastando.clone(), t.clone());
+        Callback::from(move |e: MouseEvent| {
+            if e.button() != 0 {
+                return;
+            }
+            // Nos botões de mover, o gesto é o clique: começar um arrasto
+            // ali faria um clique trêmulo virar soltura na coluna vizinha.
+            let num_botao = e
+                .target()
+                .and_then(|alvo| alvo.dyn_into::<web_sys::Element>().ok())
+                .and_then(|el| el.closest(".projeto__mover").ok().flatten())
+                .is_some();
+            if num_botao {
+                return;
+            }
+            // Sem isto, segurar e mover seleciona o texto embaixo e o
+            // navegador começa o arrasto NATIVO de conteúdo por cima do
+            // nosso (a mesma "sombra" que o kanban teve).
+            e.prevent_default();
+            arrastando.set(Some(t.clone()));
+        })
+    };
+    let sendo_arrastado = arrastando.as_ref().is_some_and(|a| a.caminho == t.caminho);
     let pendentes = indice.pendentes(t);
     let abrir_tarefa = {
         let abrir = abrir.clone();
@@ -419,7 +485,8 @@ fn cartao(
         Callback::from(move |_: MouseEvent| abrir.emit(pagina(&c, &titulo)))
     };
     html! {
-        <article class="projeto__cartao" data-tarefa={t.caminho.clone()}>
+        <article class={classes!("projeto__cartao", sendo_arrastado.then_some("projeto__cartao--arrastando"))}
+            data-tarefa={t.caminho.clone()} onmousedown={pegar}>
             <button class="projeto__cartao-titulo" data-nav-item="true" data-nav-parent="projeto-quadro"
                 onclick={abrir_tarefa}>
                 <span class="projeto__numero">{ format!("{:03}", t.numero) }</span>

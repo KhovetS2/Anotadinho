@@ -917,9 +917,14 @@ fluxo.push({
       await esperar(bridge, "document.querySelector('.conversa')", "o painel abrir", 12000);
 
       // A página aberta entra como anexo — é o ponto 1 da spec.
-      const anexos = await bridge.js(
-        `[...document.querySelectorAll('.conversa__anexo')].map(e => e.textContent.replace('×','').trim())`,
-      );
+      // Espera o ANEXO, não o painel: ele chega num efeito assíncrono
+      // depois do `.conversa` existir (a mesma corrida do 210, vista de
+      // novo no ciclo 465).
+      const LER_ANEXOS = `[...document.querySelectorAll('.conversa__anexo')].map(e => e.textContent.replace('×','').trim())`;
+      try {
+        await esperar(bridge, `${LER_ANEXOS}.includes("__uitest")`, "a página aberta anexada");
+      } catch {}
+      const anexos = await bridge.js(LER_ANEXOS);
       ctx.assert(anexos.includes("__uitest"), `a página aberta não foi anexada: ${anexos.join(", ")}`);
 
       // E o vínculo fica no ARQUIVO, não em memória — ponto 2 da spec.
@@ -3125,6 +3130,76 @@ fluxo.push({
       }
       ctx.assertEq(fim, "cancelado", "o agente continuou rodando depois do bloqueio");
       ctx.assertEq(p.status(), "bloqueada");
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+// ── ciclo 465: arrastar no quadro, respeitando as etapas ───────────────
+
+const PEGAR = (n) => `(() => {
+  const c = [...document.querySelectorAll('.projeto__cartao')].find(x => x.dataset.tarefa.endsWith('/${String(n).padStart(3, "0")}-t.md'));
+  c.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+  return true;
+})()`;
+const SOLTAR_EM = (etapa) => `(() => {
+  const col = document.querySelector('.projeto__coluna[data-etapa=${etapa}]');
+  col.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+  return true;
+})()`;
+const ACESAS = `[...document.querySelectorAll('.projeto__coluna--destino')].map(c => c.dataset.etapa)`;
+
+fluxo.push({
+  nome: "projeto: arrastar o cartão só solta onde a etapa permite (465)",
+  async fn(bridge, ctx) {
+    const slug = `uitest-arrastar-${Date.now()}`;
+    const p = await projetoNoVault(ctx, slug, [[1, "ideia", "Login"], [2, "executando", "Banco"]]);
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      await esperar(bridge, `!!document.querySelector('.projeto__cartao[data-tarefa$="/001-t.md"]')`, "os cartões");
+
+      // Pegar acende SÓ o que a pessoa pode: de ideia, detalhando e pronta.
+      await bridge.js(PEGAR(1));
+      await esperar(bridge, `${ACESAS}.length > 0`, "as colunas acenderem");
+      ctx.assertEq(JSON.stringify(await bridge.js(ACESAS)), JSON.stringify(["detalhando", "pronta"]));
+      ctx.assert(
+        await bridge.js("document.querySelector('.projeto__coluna[data-etapa=executar]').classList.contains('projeto__coluna--proibida')"),
+        "executar devia aparecer proibida pra uma ideia",
+      );
+      // Soltar no proibido não grava.
+      await bridge.js(SOLTAR_EM("executar"));
+      await esperar(bridge, `${ACESAS}.length === 0`, "o arrasto terminar");
+      ctx.assertEq(p.status(1), "ideia", "soltar em executar pulou o detalhe");
+      // E a TELA nem tentou: o backend recusaria de novo (ele valida a
+      // etapa por conta própria, e o disco ficaria certo), mas aí quem
+      // soltou no lugar errado veria um erro em vez de nada acontecer.
+      // Sem esta linha o cenário passava com a regra da tela quebrada.
+      await PAUSA(300);
+      ctx.assertEq(await bridge.js("document.querySelector('.projeto__erro')?.textContent || ''"), "", "a tela mandou mover pra uma coluna proibida");
+
+      // Soltar no permitido grava, pelo mesmo caminho dos botões.
+      await bridge.js(PEGAR(1));
+      await esperar(bridge, `${ACESAS}.includes('pronta')`, "pronta acender");
+      await bridge.js(SOLTAR_EM("pronta"));
+      await esperar(bridge, `!!document.querySelector('.projeto__coluna[data-etapa=pronta] .projeto__cartao[data-tarefa$="/001-t.md"]')`, "o cartão em Pronta");
+      ctx.assertEq(p.status(1), "pronta");
+
+      // Revisão é do app: soltar uma tarefa em execução lá não grava.
+      await bridge.js(PEGAR(2));
+      await esperar(bridge, `${ACESAS}.includes('bloqueada')`, "bloqueada acender");
+      ctx.assertEq(JSON.stringify(await bridge.js(ACESAS)), JSON.stringify(["bloqueada"]));
+      await bridge.js(SOLTAR_EM("revisao"));
+      await esperar(bridge, `${ACESAS}.length === 0`, "o arrasto terminar");
+      ctx.assertEq(p.status(2), "executando");
+
+      // Soltar FORA do quadro termina o arrasto sem gravar.
+      await bridge.js(PEGAR(1));
+      await esperar(bridge, `${ACESAS}.length > 0`, "as colunas acenderem");
+      await bridge.js("document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); true");
+      await esperar(bridge, `${ACESAS}.length === 0`, "o arrasto não ficar preso");
+      ctx.assertEq(p.status(1), "pronta");
     } finally {
       p.limpar();
     }
