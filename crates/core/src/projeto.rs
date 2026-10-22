@@ -292,7 +292,7 @@ pub fn e_caminho_de_tarefa(caminho: &str) -> bool {
 }
 
 /// O número no começo do nome do arquivo (`007-login.md` → 7).
-fn numero_do_caminho(caminho: &str) -> Option<u32> {
+pub(crate) fn numero_do_caminho(caminho: &str) -> Option<u32> {
     let nome = caminho.rsplit('/').next()?;
     let digitos: String = nome.chars().take_while(|c| c.is_ascii_digit()).collect();
     digitos.parse().ok()
@@ -364,9 +364,13 @@ pub struct Tarefa {
     pub spec: Option<String>,
     /// Proposta vinculada, se houver.
     pub proposta: Option<String>,
+    /// O número da sprint (ciclo 469). `None` é o backlog. O NÚMERO, e não
+    /// o caminho: renomear a sprint não pode soltar as tarefas dela.
+    #[serde(default)]
+    pub sprint: Option<u32>,
 }
 
-fn texto_do_valor(v: &serde_yaml::Value) -> Option<String> {
+pub(crate) fn texto_do_valor(v: &serde_yaml::Value) -> Option<String> {
     match v {
         serde_yaml::Value::String(s) => Some(s.trim().to_string()).filter(|s| !s.is_empty()),
         serde_yaml::Value::Number(n) => Some(n.to_string()),
@@ -405,6 +409,8 @@ impl Tarefa {
             depende: lista_do_valor(fm.extra.get("depende")),
             spec: campo("spec"),
             proposta: campo("proposta"),
+            // `sprint: 3` ou `sprint: "3"`: a mão escreve dos dois jeitos.
+            sprint: campo("sprint").and_then(|s| s.trim().parse().ok()),
         })
     }
 
@@ -429,7 +435,7 @@ impl Tarefa {
     }
 }
 
-fn frontmatter_em_texto(fm: &Frontmatter, corpo: &str) -> String {
+pub(crate) fn frontmatter_em_texto(fm: &Frontmatter, corpo: &str) -> String {
     // `substituir_frontmatter` serializa por `serde_yaml`: título com
     // `: ` no meio continua YAML válido (o bug do ciclo 206 era montar
     // isso com `format!`).
@@ -437,7 +443,7 @@ fn frontmatter_em_texto(fm: &Frontmatter, corpo: &str) -> String {
         .expect("frontmatter de strings sempre serializa")
 }
 
-fn valor(s: &str) -> serde_yaml::Value {
+pub(crate) fn valor(s: &str) -> serde_yaml::Value {
     serde_yaml::Value::String(s.to_string())
 }
 
@@ -672,6 +678,9 @@ pub fn indice_de_tarefas(tarefas: &[Tarefa]) -> String {
             let mut linha = format!("- {:03} [{}] {} — {}", t.numero, t.etapa.slug(), t.titulo, t.caminho);
             if !t.depende.is_empty() {
                 linha.push_str(&format!(" (depende: {})", t.depende.join(", ")));
+            }
+            if let Some(n) = t.sprint {
+                linha.push_str(&format!(" · sprint {n}"));
             }
             linha
         })

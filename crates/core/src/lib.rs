@@ -54,6 +54,9 @@ pub mod proposta;
 pub mod prompt_padrao;
 // O módulo Projeto (ciclo 457): projeto, tarefa e a fila de execução.
 pub mod projeto;
+// Sprints e o plano de projeto (ciclo 469).
+pub mod sprint;
+pub mod plano;
 pub mod query;
 pub mod vim;
 
