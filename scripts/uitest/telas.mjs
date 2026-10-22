@@ -7,7 +7,7 @@
 // Escrito depois do ciclo 198, então usa espera por condição desde o
 // começo — nenhum `PAUSA` fixo de setup.
 
-import { esperar, clicar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
+import { esperar, clicar, recarregarEstavel, abrirPaginaEstavel, abrirPastaDe } from "./bridge.mjs";
 
 const PAUSA = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -112,6 +112,10 @@ for (const [comando, marca, desc, arquivo] of [
 // biblioteca.
 
 tela("página type: grafo entrega os dados pro renderizador", async (b, ctx) => {
+  // A página mora numa pasta, e pasta fechada não tem filhos no DOM
+  // (ciclo 466).
+  await abrirPastaDe(b, "produto");
+  await esperar(b, `[...document.querySelectorAll('.sidebar-item__title')].some(e => e.textContent.trim() === 'grafo')`, "a página 'grafo' na sidebar");
   await b.js(`(() => {
     const alvo = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.trim() === 'grafo');
     if (alvo) alvo.click();
@@ -139,6 +143,10 @@ tela("página type: grafo entrega os dados pro renderizador", async (b, ctx) => 
 });
 
 tela("página type: kanban mostra o board", async (b, ctx) => {
+  // A página mora numa pasta, e pasta fechada não tem filhos no DOM
+  // (ciclo 466).
+  await abrirPastaDe(b, "produto");
+  await esperar(b, `[...document.querySelectorAll('.sidebar-item__title')].some(e => e.textContent.trim() === 'roadmap')`, "a página 'roadmap' na sidebar");
   await b.js(`(() => {
     const alvo = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.trim() === 'roadmap');
     if (alvo) alvo.click();

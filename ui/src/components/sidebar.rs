@@ -131,12 +131,11 @@ pub fn sidebar(props: &SidebarProps) -> Html {
     let loading = use_state(|| true);
     let refresh_tick = use_state(|| 0u32);
     let search = use_state(String::new);
-    // Navegação por teclado (ciclo 106). `collapsed_folders` substitui
-    // o `<details open=true>` sempre-aberto de antes por um estado de
-    // verdade — precisa ser controlável pra `ArrowLeft`/`ArrowRight`
-    // funcionarem; um listener `ontoggle` mantém o clique nativo do
-    // mouse no `<summary>` sincronizado com esse mesmo estado (fonte
-    // única, não duas coisas competindo).
+    // Navegação por teclado (ciclo 106). `collapsed_folders` é a ÚNICA
+    // fonte de quais pastas estão abertas: o clique no cabeçalho e as
+    // setas mudam este estado, e a árvore só renderiza o que está aberto
+    // (ciclo 466 — antes era um `<details>` nativo sincronizado por
+    // `ontoggle`, e as pastas aninhadas abriam vazias no WebKitGTK).
     let collapsed_folders = use_state(HashSet::<String>::new);
     /// Marca que a primeira carga já recolheu as pastas — `use_mut_ref`
     /// porque handle de `use_state` capturado em efeito congela.
@@ -624,8 +623,8 @@ pub fn sidebar(props: &SidebarProps) -> Html {
             let refresh_tick = refresh_tick.clone();
             let open_dialog = open_dialog.clone();
             Callback::from(move |e: MouseEvent| {
-                // Botão vive dentro do <summary> da pasta — sem isso, o
-                // clique também dispararia o toggle nativo do <details>.
+                // Botão vive dentro do cabeçalho da pasta — sem isso, o
+                // clique também abriria ou fecharia a pasta.
                 e.prevent_default();
                 e.stop_propagation();
                 let vault_path = vault_path.clone();
@@ -1003,10 +1002,18 @@ fn render_movable_list<
 }
 
 /// Renderiza a árvore de pastas recursivamente — pastas primeiro,
-/// depois as páginas do nível atual. `<details open>` é CONTROLADO por
+/// depois as páginas do nível atual. Aberto ou fechado vem SÓ de
 /// `collapsed` (ciclo 106, pra `ArrowLeft`/`ArrowRight` poderem
-/// expandir/colapsar) — um `ontoggle` sincroniza de volta o clique
-/// nativo do mouse no `<summary>`, fonte única de verdade.
+/// expandir/colapsar).
+///
+/// Não é `<details>` (ciclo 466). A pasta era um `<details>` cujo `open`
+/// o Yew mexia por script a cada clique, e a primeira pasta aninhada em
+/// três níveis (`projetos/<slug>/tarefas`) passou a abrir VAZIA na
+/// janela: o espaço dos filhos reservado e nada pintado. No DOM tudo
+/// estava certo; é o caminho menos exercitado do WebKit (o conteúdo de
+/// `<details>` fechado é escondido por `content-visibility`). Com os
+/// filhos renderizados só quando a pasta está aberta, não há o que o
+/// navegador deixe de repintar.
 #[allow(clippy::too_many_arguments)]
 fn render_tree<
     F: Fn(String) -> Callback<MouseEvent>,
@@ -1040,28 +1047,31 @@ fn render_tree<
                     "sidebar-folder__header"
                 };
                 let summary_ref = if is_nav_active { nav_item_ref.clone() } else { NodeRef::default() };
-                let ontoggle = {
+                let alternar = {
                     let collapsed_folders = collapsed_folders.clone();
                     let full_path = full_path.clone();
-                    Callback::from(move |e: Event| {
-                        let Some(target) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlDetailsElement>().ok()) else { return };
+                    Callback::from(move |_: MouseEvent| {
                         let mut c = (*collapsed_folders).clone();
-                        if target.open() { c.remove(&full_path); } else { c.insert(full_path.clone()); }
+                        if !c.remove(&full_path) {
+                            c.insert(full_path.clone());
+                        }
                         collapsed_folders.set(c);
                     })
                 };
                 html! {
-                    <details class="sidebar-folder" open={is_open} {ontoggle}>
-                        <summary class={summary_class} ref={summary_ref}>
+                    <div class={classes!("sidebar-folder", is_open.then_some("sidebar-folder--aberta"))} data-pasta={full_path.clone()}>
+                        <div class={summary_class} ref={summary_ref} role="button" aria-expanded={is_open.to_string()} onclick={alternar}>
                             <span class="sidebar-folder__icon"><Icon name="folder" /></span>
                             <span class="sidebar-folder__name">{ name }</span>
                             <button class="btn btn--ghost btn--xs" title="Nova página nesta pasta" onclick={on_new}>{ "+" }</button>
                             <button class="btn btn--ghost btn--xs" title="Exportar pasta" onclick={on_export}><Icon name="download" /></button>
-                        </summary>
-                        <div class="sidebar-folder__body">
-                            { render_tree(sub, &full_path, selected_path, on_page_selected, make_on_move, make_on_new_page_in, make_on_export, make_on_delete, collapsed_folders, nav_active, nav_item_ref) }
                         </div>
-                    </details>
+                        if is_open {
+                            <div class="sidebar-folder__body">
+                                { render_tree(sub, &full_path, selected_path, on_page_selected, make_on_move, make_on_new_page_in, make_on_export, make_on_delete, collapsed_folders, nav_active, nav_item_ref) }
+                            </div>
+                        }
+                    </div>
                 }
             }) }
             { render_movable_list(&node.pages, selected_path, on_page_selected, make_on_move, make_on_delete, nav_active, nav_item_ref) }

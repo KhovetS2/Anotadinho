@@ -170,6 +170,51 @@ export async function clicar(bridge, seletor, descricao, limiteMs = 8000) {
 /// O clique acontece SEMPRE, mesmo que o título já bata: o app restaura
 /// as abas depois de um reload, então o título da página anterior pode
 /// estar na tela enquanto o conteúdo ainda é o velho.
+/// Abre as pastas fechadas da sidebar, um nível por chamada, até não
+/// sobrar nenhuma (ou `niveis` voltas).
+///
+/// Desde o ciclo 466 a página de uma pasta FECHADA não existe no DOM:
+/// com o `<details>` de antes ela existia escondida, e o clique por
+/// script achava o que nenhuma pessoa conseguiria clicar. Abrir a pasta é
+/// o que a pessoa faz. Cada volta é uma chamada própria porque os filhos
+/// só aparecem depois que o Yew renderiza.
+export async function abrirTodasAsPastas(bridge, niveis = 8) {
+  for (let i = 0; i < niveis; i++) {
+    const abriu = await bridge.js(`(() => {
+      const fechadas = [...document.querySelectorAll('.app-sidebar .sidebar-folder:not(.sidebar-folder--aberta) > .sidebar-folder__header')];
+      fechadas.forEach(h => h.click());
+      return fechadas.length;
+    })()`);
+    if (!abriu) return;
+    // Condição, não relógio: espera as que foram clicadas abrirem de fato
+    // (com a pasta de 168 ciclos, renderizar passa de 100 ms com a suíte
+    // carregada, e o clique seguinte achava a página ainda ausente).
+    const ate = Date.now() + 3000;
+    while (Date.now() < ate) {
+      const restam = await bridge.js(
+        "document.querySelectorAll('.app-sidebar .sidebar-folder:not(.sidebar-folder--aberta)').length",
+      );
+      if (restam === 0 || restam < abriu) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+}
+
+/// Abre só as pastas de um caminho (`"produto"`, `"projetos/x/tarefas"`),
+/// de fora pra dentro — o que a pessoa faz quando sabe onde a página
+/// está. Abrir TUDO renderiza as 168 páginas de ciclos, e com a tela
+/// pesada o grafo estourava o orçamento dele (ciclo 466).
+export async function abrirPastaDe(bridge, caminho) {
+  const partes = caminho.split("/").filter(Boolean);
+  for (let i = 1; i <= partes.length; i++) {
+    const sufixo = "/" + partes.slice(0, i).join("/");
+    const sel = `[...document.querySelectorAll('.app-sidebar .sidebar-folder')].find(d => d.dataset.pasta.endsWith(${JSON.stringify(sufixo)}))`;
+    await esperar(bridge, `!!${sel}`, `a pasta ${sufixo} na sidebar`);
+    await bridge.js(`(() => { const d = ${sel}; if (!d.classList.contains('sidebar-folder--aberta')) d.querySelector(':scope > .sidebar-folder__header').click(); return true; })()`);
+    await esperar(bridge, `${sel}.classList.contains('sidebar-folder--aberta')`, `a pasta ${sufixo} abrir`);
+  }
+}
+
 export async function abrirPagina(bridge, nome, limiteMs = 10000) {
   const clicar = `(() => {
     const alvo = [...document.querySelectorAll('*')]
@@ -182,6 +227,11 @@ export async function abrirPagina(bridge, nome, limiteMs = 10000) {
   let clicou = false;
   while (Date.now() < ate && !clicou) {
     clicou = await bridge.js(clicar);
+    if (!clicou) {
+      // A página pode estar numa pasta fechada (ciclo 466).
+      await abrirTodasAsPastas(bridge);
+      clicou = await bridge.js(clicar);
+    }
     if (!clicou) await new Promise((r) => setTimeout(r, 250));
   }
   if (!clicou) {

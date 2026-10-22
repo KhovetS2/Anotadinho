@@ -4,7 +4,7 @@
 // acoplamento com agentes: **nenhuma etapa avança sozinha**, e não
 // existe caminho da UI que pule a revisão.
 
-import { esperar, clicar, recarregarEstavel, abrirPaginaEstavel } from "./bridge.mjs";
+import { esperar, clicar, recarregarEstavel, abrirPaginaEstavel, abrirPastaDe } from "./bridge.mjs";
 
 const PAUSA = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -743,8 +743,8 @@ fluxo.push({
     await recarregarEstavel(bridge);
     const estado = () =>
       bridge.js(`(() => {
-        const d = [...document.querySelectorAll('.app-sidebar details')];
-        return { total: d.length, abertas: d.filter(x => x.open).length };
+        const d = [...document.querySelectorAll('.app-sidebar .sidebar-folder')];
+        return { total: d.length, abertas: d.filter(x => x.classList.contains('sidebar-folder--aberta')).length };
       })()`);
 
     // Espera a lista ASSENTAR: páginas e pastas chegam em chamadas
@@ -752,7 +752,7 @@ fluxo.push({
     // pastas já na tela e o recolhimento ainda não aplicado.
     await esperar(
       bridge,
-      "document.querySelectorAll('.app-sidebar details').length >= 3",
+      "document.querySelectorAll('.app-sidebar .sidebar-folder').length >= 3",
       "as pastas aparecerem",
     );
     await PAUSA(600);
@@ -762,7 +762,7 @@ fluxo.push({
     ctx.assertEq(inicial.abertas, 0, "as pastas deviam nascer recolhidas");
 
     await bridge.js(`(() => {
-      document.querySelector('.app-sidebar details summary').click();
+      document.querySelector('.app-sidebar .sidebar-folder__header').click();
       return true;
     })()`);
     await PAUSA(500);
@@ -835,6 +835,11 @@ fluxo.push({
       ctx.assertEq(inicial.fechar, false, "a home oferece fechar");
       ctx.assertEq(inicial.nav, true, "a home não participa da navegação por teclado");
 
+      // A página pode estar numa pasta fechada (ciclo 466).
+      await abrirPastaDe(bridge, "produto");
+      try {
+        await esperar(bridge, "[...document.querySelectorAll('.sidebar-item__title')].some(e => e.textContent.toLowerCase().includes('missao'))", "a segunda página na sidebar");
+      } catch {}
       const abriu = await bridge.js(`(() => {
         const alvo = [...document.querySelectorAll('.sidebar-item__title')].find(e => e.textContent.toLowerCase().includes('missao'));
         if (alvo) alvo.click();
@@ -3200,6 +3205,49 @@ fluxo.push({
       await bridge.js("document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); true");
       await esperar(bridge, `${ACESAS}.length === 0`, "o arrasto não ficar preso");
       ctx.assertEq(p.status(1), "pronta");
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+// ── ciclo 466: pastas aninhadas abrem com o conteúdo ───────────────────
+//
+// O bug era de PINTURA (espaço reservado, nada desenhado), e pintura
+// não se mede daqui. O que se mede é a garantia que o conserto dá: os
+// filhos de uma pasta só EXISTEM com ela aberta, e quem decide é o estado
+// — não há `<details>` pro navegador deixar de repintar.
+fluxo.push({
+  nome: "sidebar: pasta dentro de pasta abre e fecha com o conteúdo junto (466)",
+  async fn(bridge, ctx) {
+    const slug = `uitest-pastas-${Date.now()}`;
+    const p = await projetoNoVault(ctx, slug, [[1, "ideia", "Login"]]);
+    const PASTA = (rel) => `document.querySelector('.app-sidebar .sidebar-folder[data-pasta$="/projetos/${slug}${rel}"]')`;
+    const CLICAR = (rel) => `(() => { ${PASTA(rel)}.querySelector(':scope > .sidebar-folder__header').click(); return true; })()`;
+    const ABERTA = (rel) => `${PASTA(rel)}?.classList.contains('sidebar-folder--aberta')`;
+    try {
+      await recarregarEstavel(bridge);
+      ctx.assertEq(await bridge.js("document.querySelectorAll('.app-sidebar details').length"), 0, "ainda há <details> na sidebar");
+      // Abre projetos, depois o projeto, depois tarefas — três níveis.
+      await esperar(bridge, `!!document.querySelector('.app-sidebar .sidebar-folder[data-pasta$="/projetos"]')`, "a pasta projetos");
+      await bridge.js(`(() => { const p = document.querySelector('.app-sidebar .sidebar-folder[data-pasta$="/projetos"]'); if (!p.classList.contains('sidebar-folder--aberta')) p.querySelector(':scope > .sidebar-folder__header').click(); return true; })()`);
+      await esperar(bridge, `!!${PASTA("")}`, "a pasta do projeto");
+      await bridge.js(CLICAR(""));
+      await esperar(bridge, `!!${PASTA("/tarefas")}`, "tarefas dentro do projeto");
+      await bridge.js(CLICAR("/tarefas"));
+      await esperar(bridge, `${PASTA("/tarefas")}.querySelector('.sidebar-item__title')?.textContent.includes('001-t')`, "a tarefa dentro de tarefas");
+      // Fechar a do MEIO tira os filhos do DOM: nada fica reservado.
+      await bridge.js(CLICAR(""));
+      await esperar(bridge, `!${PASTA("/tarefas")}`, "os filhos sumirem com a pasta fechada");
+      ctx.assertEq(await bridge.js(`${PASTA("")}.querySelector(':scope > .sidebar-folder__body') === null`), true);
+      // Reabrir devolve tudo como estava: tarefas continua aberta.
+      await bridge.js(CLICAR(""));
+      await esperar(bridge, `${ABERTA("/tarefas")} && !!${PASTA("/tarefas")}.querySelector('.sidebar-item__title')`, "tarefas voltar aberta com a tarefa");
+      // Os botões do cabeçalho não abrem nem fecham a pasta.
+      const antes = await bridge.js(ABERTA(""));
+      await bridge.js(`(() => { ${PASTA("")}.querySelector(':scope > .sidebar-folder__header button[title="Exportar pasta"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); return true; })()`);
+      await PAUSA(300);
+      ctx.assertEq(await bridge.js(ABERTA("")), antes, "o botão do cabeçalho abriu ou fechou a pasta");
     } finally {
       p.limpar();
     }
