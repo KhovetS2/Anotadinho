@@ -42,10 +42,13 @@ pub enum PaletteAction {
     /// conversa e afins, que não passam pelo Editor e por isso não
     /// alcançavam o único botão de excluir que havia.
     ExcluirPaginaAberta,
+    /// Cria um projeto (ciclo 460): pasta, página, arquitetura e conversa.
+    NovoProjeto,
 }
 
 const COMMANDS: &[(&str, PaletteAction)] = &[
     ("Nova conversa com o agente", PaletteAction::NovaConversa),
+    ("Novo projeto", PaletteAction::NovoProjeto),
     ("Nova página", PaletteAction::NewPage),
     ("Nova pasta", PaletteAction::NewFolder),
     ("Nova página: Kanban", PaletteAction::NewPageOfType("kanban")),
@@ -179,10 +182,18 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
     }
 
     let q = query.to_lowercase();
+    // Casa também com o CAMINHO (ciclo 460): todo projeto tem um
+    // `projeto.md` e um `arquitetura.md`, e pelo nome do arquivo dois
+    // projetos eram dois "projeto" iguais — "saas/projeto" é como se acha
+    // o certo.
     let title_matches: Vec<PageMeta> = pages.iter()
-        .filter(|p| q.is_empty() || p.title.to_lowercase().contains(&q))
+        .filter(|p| {
+            q.is_empty() || p.title.to_lowercase().contains(&q) || p.path.to_lowercase().contains(&q)
+        })
         .cloned()
         .collect();
+    // Nome repetido mostra a pasta ao lado, senão a lista não diz qual é qual.
+    let repetido = |titulo: &str| title_matches.iter().filter(|p| p.title == titulo).count() > 1;
     let items: Vec<Item> = {
         let mut v: Vec<Item> = COMMANDS.iter()
             .filter(|(label, _)| q.is_empty() || label.to_lowercase().contains(&q))
@@ -302,6 +313,11 @@ pub fn command_palette(props: &CommandPaletteProps) -> Html {
                                             <div {class} ref={node_ref} {onmousedown} {onclick}>
                                                 <span class="command-palette__item-icon"><Icon name="file-text" /></span>
                                                 <span class="command-palette__item-title">{ &meta.title }</span>
+                                                if repetido(&meta.title) {
+                                                    <span class="command-palette__item-origem">
+                                                        { meta.path.rsplit_once('/').map(|(pasta, _)| pasta).unwrap_or("") }
+                                                    </span>
+                                                }
                                             </div>
                                         },
                                         Item::ContentResult(meta, hit) => html! {

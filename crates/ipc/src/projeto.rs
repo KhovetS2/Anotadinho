@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use anotadinho_core::conversa::{self, Autor, Contexto, Mensagem};
 use anotadinho_core::projeto::{
-    self, ConfigProjetos, EtapaTarefa, Projeto, Quem, Tarefa,
+    self, ConfigProjeto, ConfigProjetos, EtapaTarefa, Projeto, Quem, Tarefa,
 };
 use anotadinho_core::MarkdownCodec;
 use serde::{Deserialize, Serialize};
@@ -305,27 +305,12 @@ pub fn handle_tarefas_a_executar(
     let _trava = Trava::pegar(&vault_path)?;
     for (p, tarefas) in com_pedido {
         let cfg = config.get(&p.slug).cloned().unwrap_or_default();
-        if cfg.pausado {
-            saida.avisos.push(format!("{}: fila pausada", p.slug));
-            continue;
-        }
-        let Some(repositorio) = cfg.repositorio.clone().filter(|r| !r.trim().is_empty()) else {
-            saida.avisos.push(format!("{}: sem repositório configurado — escolha a pasta do código", p.slug));
-            continue;
-        };
-        if !Path::new(&repositorio).is_dir() {
-            saida.avisos.push(format!("{}: o repositório {repositorio} não é uma pasta", p.slug));
-            continue;
-        }
+        let (avisos, repositorio) = avisos_do_projeto(&p.slug, &cfg, &tarefas);
+        saida.avisos.extend(avisos);
+        let Some(repositorio) = repositorio else { continue };
         let ocupadas = tarefas.iter().filter(|t| t.etapa == EtapaTarefa::Executando).count();
         let vagas = cfg.concorrencia.max(1).saturating_sub(ocupadas);
         let fila = projeto::fila(&tarefas);
-        for t in tarefas.iter().filter(|t| t.etapa == EtapaTarefa::Executar) {
-            let pendentes = projeto::dependencias_pendentes(t, &tarefas);
-            if !pendentes.is_empty() {
-                saida.avisos.push(format!("{}: esperando {}", t.caminho, pendentes.join(", ")));
-            }
-        }
         for t in fila.into_iter().take(vagas) {
             if livres == 0 {
                 break;
@@ -341,6 +326,189 @@ pub fn handle_tarefas_a_executar(
         }
     }
     Ok(saida)
+}
+
+/// Por que a fila de um projeto não anda, e o repositório se ela pode
+/// andar.
+///
+/// Uma função só pra fila e pra tela (ciclo 460): o cabeçalho do projeto
+/// tem que dizer EXATAMENTE o que segura a fila, e duas cópias da regra
+/// acabariam dizendo coisas diferentes.
+fn avisos_do_projeto(slug: &str, cfg: &ConfigProjeto, tarefas: &[Tarefa]) -> (Vec<String>, Option<String>) {
+    let mut avisos = Vec::new();
+    if cfg.pausado {
+        avisos.push(format!("{slug}: fila pausada"));
+        return (avisos, None);
+    }
+    let Some(repositorio) = cfg.repositorio.clone().filter(|r| !r.trim().is_empty()) else {
+        avisos.push(format!("{slug}: sem repositório configurado — escolha a pasta do código"));
+        return (avisos, None);
+    };
+    if !Path::new(&repositorio).is_dir() {
+        avisos.push(format!("{slug}: o repositório {repositorio} não é uma pasta"));
+        return (avisos, None);
+    }
+    for t in tarefas.iter().filter(|t| t.etapa == EtapaTarefa::Executar) {
+        let pendentes = projeto::dependencias_pendentes(t, tarefas);
+        if !pendentes.is_empty() {
+            avisos.push(format!("{}: esperando {}", t.caminho, pendentes.join(", ")));
+        }
+    }
+    (avisos, Some(repositorio))
+}
+
+/// Tudo que a tela de um projeto mostra, numa chamada (ciclo 460).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EstadoDoProjeto {
+    /// A página do projeto.
+    pub projeto: Projeto,
+    /// A config (o padrão, se não houver).
+    pub config: ConfigProjeto,
+    /// As tarefas, por número.
+    pub tarefas: Vec<Tarefa>,
+    /// O que segura a fila agora. Só LÊ: não trava nem reserva nada.
+    pub avisos: Vec<String>,
+}
+
+/// O estado de um projeto pra tela, sem efeito nenhum.
+pub fn handle_estado_do_projeto(vault_path: String, slug: String) -> Result<EstadoDoProjeto, String> {
+    let caminho = projeto::caminho_do_projeto(&slug);
+    let texto = handle_read_page(vault_path.clone(), caminho.clone())?;
+    let p = Projeto::ler(&caminho, &texto).ok_or_else(|| format!("{caminho} não é um projeto"))?;
+    let config = handle_ler_projetos_cfg(vault_path.clone())?.remove(&slug).unwrap_or_default();
+    let tarefas = handle_tarefas_do_projeto(vault_path, slug.clone())?;
+    let (avisos, _) = avisos_do_projeto(&slug, &config, &tarefas);
+    Ok(EstadoDoProjeto { projeto: p, config, tarefas, avisos })
+}
+
+/// Grava a config de UM projeto, sem tocar na dos outros.
+pub fn handle_gravar_config_do_projeto(
+    vault_path: String,
+    slug: String,
+    config: ConfigProjeto,
+) -> Result<(), String> {
+    let mut todas = handle_ler_projetos_cfg(vault_path.clone())?;
+    todas.insert(slug, config);
+    handle_gravar_projetos_cfg(vault_path, todas)
+}
+
+/// Cria uma tarefa, como a PESSOA: grava direto e devolve o caminho.
+pub fn handle_criar_tarefa(
+    vault_path: String,
+    slug: String,
+    titulo: String,
+    hoje: String,
+) -> Result<String, String> {
+    let (caminho, conteudo) = handle_montar_tarefa(vault_path.clone(), slug, titulo, String::new(), hoje)?;
+    if Path::new(&vault_path).join(&caminho).exists() {
+        return Err(format!("{caminho} já existe"));
+    }
+    handle_write_page(vault_path, caminho.clone(), conteudo)?;
+    Ok(caminho)
+}
+
+/// O índice das tarefas de um projeto, pro contexto da conversa dele.
+pub fn handle_indice_do_projeto(vault_path: String, slug: String) -> Result<String, String> {
+    let tarefas = handle_tarefas_do_projeto(vault_path, slug)?;
+    Ok(projeto::indice_de_tarefas(&tarefas))
+}
+
+fn proposta_nova(
+    vault_path: &str,
+    alvo: String,
+    conteudo: String,
+    motivo: String,
+    quando: String,
+    lote: Option<String>,
+) -> anotadinho_core::proposta::Proposta {
+    use anotadinho_core::proposta::{Operacao, Proposta};
+    let existe = Path::new(vault_path).join(&alvo).exists();
+    let segundos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    Proposta {
+        // Alvo + relógio, como o CLI: legível na fila, e cada tarefa do
+        // lote tem alvo próprio, então não colidem no mesmo segundo.
+        id: format!("{}-{segundos}", anotadinho_core::fluxo::slug_de_titulo(&alvo)),
+        autor: "conversa".to_string(),
+        quando,
+        motivo,
+        alvo,
+        operacao: if existe { Operacao::Substituir } else { Operacao::Criar },
+        conteudo,
+        origem: None,
+        revisao: None,
+        lote,
+    }
+}
+
+/// "Virar tarefas" (ciclo 460): cada `## Tarefa:` da resposta vira uma
+/// proposta de tarefa, todas num lote.
+///
+/// PROPÕE, não grava: o prompt semeado diz "eu escolho quais viram
+/// tarefa", e escolher é aplicar parte do lote na revisão. A numeração
+/// é sequencial a partir da pasta: se cada tarefa pedisse o próximo
+/// número ao disco, as cinco de um lote nasceriam todas como 004, já
+/// que nenhuma existe até a aplicação.
+pub fn handle_propor_tarefas(
+    vault_path: String,
+    slug: String,
+    resposta: String,
+    quando: String,
+) -> Result<Vec<String>, String> {
+    if !Path::new(&vault_path).join(projeto::caminho_do_projeto(&slug)).exists() {
+        return Err(format!("não existe o projeto {slug}"));
+    }
+    let tarefas = projeto::separar_tarefas(&resposta);
+    if tarefas.is_empty() {
+        return Err(format!(
+            "a resposta não tem nenhuma tarefa no formato \"{} <título>\"",
+            projeto::CABECALHO_DE_TAREFA
+        ));
+    }
+    let pasta = Path::new(&vault_path).join(projeto::pasta_das_tarefas(&slug));
+    let existentes: Vec<String> = std::fs::read_dir(&pasta)
+        .map(|it| it.flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect())
+        .unwrap_or_default();
+    let primeiro = projeto::proximo_numero(&existentes);
+    let hoje = quando.split_whitespace().next().unwrap_or("").to_string();
+    let lote = format!("tarefas-{slug}-{}", anotadinho_core::fluxo::slug_de_titulo(&quando));
+    let mut ids = Vec::new();
+    for (i, (titulo, corpo)) in tarefas.into_iter().enumerate() {
+        let caminho = projeto::caminho_da_tarefa(&slug, primeiro + i as u32, &titulo);
+        let conteudo = projeto::montar_tarefa(&slug, &titulo, &corpo, &hoje);
+        let p = proposta_nova(
+            &vault_path,
+            caminho,
+            conteudo,
+            format!("tarefa da conversa: {titulo}"),
+            quando.clone(),
+            Some(lote.clone()),
+        );
+        ids.push(crate::handle_propor(vault_path.clone(), p)?);
+    }
+    Ok(ids)
+}
+
+/// "Atualizar arquitetura" (ciclo 460): a resposta entra como seção nova
+/// no fim de `arquitetura.md`, por proposta.
+///
+/// Acrescenta em vez de substituir: a resposta é um trecho da conversa,
+/// não a página inteira, e trocar a arquitetura pelo trecho apagaria o
+/// resto. Quem revisa vê o diff e corta o que não quer antes de aplicar.
+pub fn handle_propor_arquitetura(
+    vault_path: String,
+    slug: String,
+    texto: String,
+    quando: String,
+) -> Result<String, String> {
+    let caminho = projeto::caminho_da_arquitetura(&slug);
+    let atual = handle_read_page(vault_path.clone(), caminho.clone())
+        .map_err(|_| format!("não existe {caminho}"))?;
+    let novo = format!("{}\n\n## Da conversa — {quando}\n\n{}\n", atual.trim_end(), texto.trim());
+    let p = proposta_nova(&vault_path, caminho, novo, "arquitetura vinda da conversa".to_string(), quando, None);
+    crate::handle_propor(vault_path, p)
 }
 
 /// Reserva uma tarefa e monta o que o agente recebe.
@@ -407,11 +575,16 @@ fn reservar_e_preparar(
 }
 
 /// A página de conversa de uma tarefa que ainda não tinha.
+///
+/// O `contexto:` leva a tarefa, o projeto e a arquitetura: é o que a
+/// janela e a TUI anexam quando a PESSOA conversa ali (detalhando, por
+/// exemplo). A execução monta os anexos dela por conta própria
+/// (`contextos_da_execucao`), sem ler esta lista.
 fn pagina_da_conversa(p: &Projeto, tarefa: &Tarefa) -> String {
     let md = conversa::montar_pagina(
-        &format!("Execução — {}", tarefa.titulo),
+        &format!("Tarefa {:03} — {}", tarefa.numero, tarefa.titulo),
         Some(&tarefa.caminho),
-        std::slice::from_ref(&tarefa.caminho),
+        &[tarefa.caminho.clone(), p.caminho.clone(), projeto::caminho_da_arquitetura(&p.slug)],
     );
     let md = MarkdownCodec::set_frontmatter_field(&md, "projeto", &p.slug).unwrap_or(md);
     MarkdownCodec::set_frontmatter_field(&md, "tarefa", &tarefa.caminho).unwrap_or(md)
@@ -446,6 +619,25 @@ fn contextos_da_execucao(
         }
     }
     v
+}
+
+/// A conversa de uma tarefa, criada se ainda não existe (ciclo 460).
+///
+/// É a MESMA conversa onde a execução fica registrada: detalhar a tarefa
+/// com o agente e depois executá-la acontece no mesmo fio, e a execução
+/// chega sabendo o que foi combinado no detalhe.
+pub fn handle_conversa_da_tarefa(vault_path: String, caminho: String) -> Result<String, String> {
+    let texto = handle_read_page(vault_path.clone(), caminho.clone())?;
+    let tarefa = Tarefa::ler(&caminho, &texto).ok_or_else(|| format!("{caminho} não é uma tarefa"))?;
+    let conversa = projeto::caminho_da_conversa_da_tarefa(&tarefa.projeto, tarefa.numero);
+    if Path::new(&vault_path).join(&conversa).exists() {
+        return Ok(conversa);
+    }
+    let p_caminho = projeto::caminho_do_projeto(&tarefa.projeto);
+    let p_texto = handle_read_page(vault_path.clone(), p_caminho.clone())?;
+    let p = Projeto::ler(&p_caminho, &p_texto).ok_or_else(|| format!("{p_caminho} não é um projeto"))?;
+    handle_write_page(vault_path, conversa.clone(), pagina_da_conversa(&p, &tarefa))?;
+    Ok(conversa)
 }
 
 /// Como uma execução de tarefa acabou, do ponto de vista do executor.
@@ -517,7 +709,6 @@ pub fn handle_fechar_tarefa_da_conversa(
 #[cfg(test)]
 mod testes {
     use super::*;
-    use anotadinho_core::projeto::ConfigProjeto;
 
     const AGORA: &str = "2026-10-21 10:00";
 
@@ -780,5 +971,87 @@ mod testes {
         handle_mudar_etapa_tarefa(v.clone(), c[0].clone(), EtapaTarefa::Executar).unwrap();
         let t2 = handle_tarefas_a_executar(v, params()).unwrap().iniciar.remove(0);
         assert!(!t2.prompt.contains("RESPOSTA-UM"), "o histórico foi junto com a sessão aberta");
+    }
+
+    #[test]
+    fn estado_do_projeto_so_le() {
+        let (_g, _r, v, c) = montar(1);
+        handle_gravar_projetos_cfg(v.clone(), ConfigProjetos::new()).unwrap();
+        pedir_execucao(&v, &c[0]);
+        let e = handle_estado_do_projeto(v.clone(), "saas".into()).unwrap();
+        assert_eq!(e.tarefas.len(), 1);
+        assert!(e.avisos.iter().any(|a| a.contains("sem repositório")), "{:?}", e.avisos);
+        assert_eq!(etapa(&v, &c[0]), EtapaTarefa::Executar, "a tela não pode reservar");
+        assert!(!Path::new(&v).join(".anotadinho/projetos.lock").exists());
+    }
+
+    #[test]
+    fn gravar_config_de_um_nao_apaga_o_outro() {
+        let (_g, _r, v, _) = montar(0);
+        handle_gravar_config_do_projeto(v.clone(), "outro".into(), ConfigProjeto { pausado: true, ..Default::default() })
+            .unwrap();
+        let todas = handle_ler_projetos_cfg(v).unwrap();
+        assert!(todas["saas"].repositorio.is_some());
+        assert!(todas["outro"].pausado);
+    }
+
+    #[test]
+    fn virar_tarefas_numera_em_sequencia_num_lote() {
+        let (_g, _r, v, _) = montar(2);
+        let resposta = "intro\n## Tarefa: Banco\n### Objetivo\nx\n## Tarefa: Login\n### Objetivo\ny\n";
+        let ids = handle_propor_tarefas(v.clone(), "saas".into(), resposta.into(), AGORA.into()).unwrap();
+        assert_eq!(ids.len(), 2);
+        let props = crate::handle_listar_propostas(v.clone()).unwrap();
+        let mut alvos: Vec<&str> = props.iter().map(|p| p.alvo.as_str()).collect();
+        alvos.sort();
+        assert_eq!(
+            alvos,
+            ["pages/projetos/saas/tarefas/003-banco.md", "pages/projetos/saas/tarefas/004-login.md"]
+        );
+        assert!(props.iter().all(|p| p.lote == props[0].lote && p.lote.is_some()));
+        // Nada gravado antes de aplicar.
+        assert!(!Path::new(&v).join("pages/projetos/saas/tarefas/003-banco.md").exists());
+        let conteudo = &props.iter().find(|p| p.alvo.ends_with("003-banco.md")).unwrap().conteudo;
+        assert_eq!(Tarefa::ler(&props[0].alvo, conteudo).unwrap().etapa, EtapaTarefa::Ideia);
+    }
+
+    #[test]
+    fn virar_tarefas_sem_tarefa_e_erro() {
+        let (_g, _r, v, _) = montar(0);
+        assert!(handle_propor_tarefas(v, "saas".into(), "só conversa".into(), AGORA.into()).is_err());
+    }
+
+    #[test]
+    fn atualizar_arquitetura_acrescenta() {
+        let (_g, _r, v, _) = montar(0);
+        handle_propor_arquitetura(v.clone(), "saas".into(), "Postgres e fila".into(), AGORA.into()).unwrap();
+        let p = crate::handle_listar_propostas(v).unwrap().remove(0);
+        assert!(p.conteudo.contains("## Componentes"), "apagou o que havia");
+        assert!(p.conteudo.trim_end().ends_with("Postgres e fila"));
+    }
+
+    #[test]
+    fn criar_tarefa_grava_direto_e_numera() {
+        let (_g, _r, v, _) = montar(1);
+        let c = handle_criar_tarefa(v.clone(), "saas".into(), "Outra".into(), "2026-10-21".into()).unwrap();
+        assert_eq!(c, "pages/projetos/saas/tarefas/002-outra.md");
+        assert!(Path::new(&v).join(&c).exists());
+    }
+
+    #[test]
+    fn conversa_da_tarefa_e_a_mesma_da_execucao() {
+        let (_g, _r, v, c) = montar(1);
+        let conversa = handle_conversa_da_tarefa(v.clone(), c[0].clone()).unwrap();
+        let texto = handle_read_page(v.clone(), conversa.clone()).unwrap();
+        let (fm, _) = MarkdownCodec::split_frontmatter_text(&texto);
+        assert_eq!(
+            conversa::contexto_do_frontmatter(fm),
+            [c[0].clone(), "pages/projetos/saas/projeto.md".to_string(), "pages/projetos/saas/arquitetura.md".to_string()]
+        );
+        // Chamar de novo não recria; a execução usa a mesma.
+        assert_eq!(handle_conversa_da_tarefa(v.clone(), c[0].clone()).unwrap(), conversa);
+        pedir_execucao(&v, &c[0]);
+        let t = handle_tarefas_a_executar(v, params()).unwrap().iniciar.remove(0);
+        assert_eq!(t.conversa, conversa);
     }
 }

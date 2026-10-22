@@ -152,7 +152,7 @@ mod tests {
             .into_iter()
             .find(|a| a.caminho == PAGINA_INICIAL)
             .expect("a semente precisa de página inicial");
-        for tipo in ["conversa", "spec", "proposta", "execucao", "kanban", "prompt"] {
+        for tipo in ["conversa", "spec", "proposta", "execucao", "kanban", "prompt", "projeto", "tarefa"] {
             assert!(
                 guia.conteudo.contains(tipo),
                 "o guia não cita o tipo {tipo}"

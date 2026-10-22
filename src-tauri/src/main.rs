@@ -680,6 +680,83 @@ fn avaliar_projetos(
     Ok(feito)
 }
 
+// ── Projeto (ciclo 460): a tela da janela. A regra é do `ipc`. ──────
+//
+// A regra de etapa roda nos DOIS lados (a UI desenha os botões com o
+// núcleo compilado em wasm; este backend valida com o núcleo nativo).
+// O `tauri dev` só recompila quando muda `src-tauri/`: mudança SÓ no
+// núcleo deixa o backend velho, e a tela oferece um botão que o backend
+// recusa. Ao mexer em `core::projeto`, force os dois rebuilds.
+
+#[tauri::command]
+fn criar_projeto(vault_path: String, titulo: String, hoje: String) -> Result<anotadinho_ipc::ProjetoCriado, String> {
+    anotadinho_ipc::handle_criar_projeto(vault_path, titulo, None, hoje)
+}
+
+#[tauri::command]
+fn estado_do_projeto(vault_path: String, slug: String) -> Result<anotadinho_ipc::EstadoDoProjeto, String> {
+    anotadinho_ipc::handle_estado_do_projeto(vault_path, slug)
+}
+
+#[tauri::command]
+fn gravar_config_do_projeto(
+    vault_path: String,
+    slug: String,
+    config: anotadinho_core::projeto::ConfigProjeto,
+) -> Result<(), String> {
+    anotadinho_ipc::handle_gravar_config_do_projeto(vault_path, slug, config)
+}
+
+#[tauri::command]
+fn criar_tarefa(vault_path: String, slug: String, titulo: String, hoje: String) -> Result<String, String> {
+    anotadinho_ipc::handle_criar_tarefa(vault_path, slug, titulo, hoje)
+}
+
+#[tauri::command]
+fn conversa_da_tarefa(vault_path: String, caminho: String) -> Result<String, String> {
+    anotadinho_ipc::handle_conversa_da_tarefa(vault_path, caminho)
+}
+
+#[tauri::command]
+fn indice_do_projeto(vault_path: String, slug: String) -> Result<String, String> {
+    anotadinho_ipc::handle_indice_do_projeto(vault_path, slug)
+}
+
+#[tauri::command]
+fn propor_tarefas(vault_path: String, slug: String, resposta: String, quando: String) -> Result<Vec<String>, String> {
+    anotadinho_ipc::handle_propor_tarefas(vault_path, slug, resposta, quando)
+}
+
+#[tauri::command]
+fn propor_arquitetura(vault_path: String, slug: String, texto: String, quando: String) -> Result<String, String> {
+    anotadinho_ipc::handle_propor_arquitetura(vault_path, slug, texto, quando)
+}
+
+/// Move a etapa de uma tarefa, como a pessoa.
+///
+/// Bloquear uma tarefa em `executando` PARA o agente dela. Até o 459 a
+/// decisão valia (o fechamento não a desfazia), mas o processo seguia
+/// mexendo no repositório até o fim — e quem bloqueia quer exatamente
+/// que ele pare.
+#[tauri::command]
+fn mudar_etapa_tarefa(
+    vault_path: String,
+    caminho: String,
+    destino: anotadinho_core::projeto::EtapaTarefa,
+) -> Result<String, String> {
+    use anotadinho_core::projeto::{self, EtapaTarefa, Tarefa};
+    let antes = anotadinho_ipc::handle_read_page(vault_path.clone(), caminho.clone())
+        .ok()
+        .and_then(|t| Tarefa::ler(&caminho, &t));
+    let novo = anotadinho_ipc::handle_mudar_etapa_tarefa(vault_path, caminho, destino)?;
+    if let Some(t) = antes.filter(|t| t.etapa == EtapaTarefa::Executando && destino == EtapaTarefa::Bloqueada) {
+        // Sem execução registrada (rodou noutra janela, ou já acabou),
+        // não há o que parar.
+        let _ = cancelar_agente(projeto::caminho_da_conversa_da_tarefa(&t.projeto, t.numero));
+    }
+    Ok(novo)
+}
+
 /// As permissões de escrita do agente (ciclo 405), pro painel da janela
 /// (ciclo 427).
 #[tauri::command]
@@ -1471,6 +1548,15 @@ fn main() {
             gravar_gatilhos,
             avaliar_gatilhos,
             avaliar_projetos,
+            criar_projeto,
+            estado_do_projeto,
+            gravar_config_do_projeto,
+            criar_tarefa,
+            indice_do_projeto,
+            conversa_da_tarefa,
+            propor_tarefas,
+            propor_arquitetura,
+            mudar_etapa_tarefa,
             ler_permissoes,
             gravar_permissoes,
             listar_execucoes,

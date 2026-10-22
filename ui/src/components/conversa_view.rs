@@ -91,6 +91,21 @@ async fn montar_envio(
             Err(_) => avisos.push(format!("não consegui ler {a}")),
         }
     }
+    // Conversa de projeto (ciclo 460): o índice das tarefas vai junto,
+    // sem a pessoa anexar. É o que deixa o agente saber o que JÁ existe
+    // antes de propor tarefa nova — sem ele, "quebre em tarefas" devolvia
+    // de novo o que estava no quadro. O projeto sai do CAMINHO da
+    // conversa, que é onde ela mora; o índice não é página, então não
+    // cabe no `contexto:` do frontmatter.
+    if let Some(slug) = anotadinho_core::projeto::projeto_do_caminho(conversa_path) {
+        match api::indice_do_projeto(vault_path, slug).await {
+            Ok(indice) => contextos.push(conversa::Contexto {
+                nome: format!("{} (índice)", anotadinho_core::projeto::pasta_das_tarefas(slug)),
+                conteudo: indice,
+            }),
+            Err(_) => avisos.push(format!("não consegui ler as tarefas de {slug}")),
+        }
+    }
     let envio = anotadinho_core::envio::montar(
         &contextos,
         historico,
@@ -184,6 +199,12 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
     // Virar execução deixou de ser só criar um arquivo (ciclo 228): agora
     // gasta tempo de modelo, então pergunta antes.
     let confirmar_execucao = use_state(|| None::<String>);
+    // O que "virar tarefas" / "atualizar arquitetura" fez (ciclo 460):
+    // os dois PROPÕEM, então a página não muda na hora, e sem recado a
+    // pessoa clicaria de novo achando que não funcionou.
+    let nota = use_state(|| None::<String>);
+    let projeto_da_conversa =
+        anotadinho_core::projeto::projeto_do_caminho(&props.page.path).map(str::to_string);
     // A tela de configuração dos agentes (ciclo 239).
     let config_aberta = use_state(|| false);
     let carregando_prompts = use_state(|| true);
@@ -923,6 +944,39 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
         })
     };
 
+    // Uma resposta vira proposta no PROJETO desta conversa (ciclo 460).
+    let propor_no_projeto = {
+        let vault_path = props.vault_path.clone();
+        let slug = projeto_da_conversa.clone();
+        let (erro, nota) = (erro.clone(), nota.clone());
+        Callback::from(move |(arquitetura, texto): (bool, String)| {
+            let Some(slug) = slug.clone() else { return };
+            let (vault_path, erro, nota) = (vault_path.clone(), erro.clone(), nota.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                let quando = crate::state::agora_legivel();
+                let r = if arquitetura {
+                    api::propor_arquitetura(&vault_path, &slug, &texto, &quando)
+                        .await
+                        .map(|_| "Mudança na arquitetura proposta — revise em Propostas.".to_string())
+                } else {
+                    api::propor_tarefas(&vault_path, &slug, &texto, &quando).await.map(|ids| {
+                        format!("{} tarefa(s) propostas num lote — escolha quais ficam em Propostas.", ids.len())
+                    })
+                };
+                match r {
+                    Ok(n) => {
+                        erro.set(None);
+                        nota.set(Some(n));
+                    }
+                    Err(e) => {
+                        nota.set(None);
+                        erro.set(Some(e));
+                    }
+                }
+            });
+        })
+    };
+
     let adicionar_anexo = {
         let anexos = anexos.clone();
         let gravar = gravar_anexos.clone();
@@ -1312,6 +1366,21 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                                             </button>
                                         }
                                     }) }
+                                    if projeto_da_conversa.is_some() {
+                                        { for [(false, "virar tarefas", "Propor uma tarefa por \"## Tarefa:\" desta resposta, num lote"),
+                                               (true, "atualizar arquitetura", "Propor esta resposta como seção nova da arquitetura")]
+                                            .into_iter().map(|(arq, rotulo, dica)| {
+                                            let propor = propor_no_projeto.clone();
+                                            let texto = m.texto.clone();
+                                            let classe = if arq { "conversa__virar-arquitetura" } else { "conversa__virar-tarefas" };
+                                            html! {
+                                                <button class={classes!("btn", "btn--ghost", "btn--xs", classe)} title={dica}
+                                                    onclick={Callback::from(move |_: MouseEvent| propor.emit((arq, texto.clone())))}>
+                                                    { rotulo }
+                                                </button>
+                                            }
+                                        }) }
+                                    }
                                 </div>
                             }
                         </article>
@@ -1337,6 +1406,9 @@ pub fn conversa_view(props: &ConversaViewProps) -> Html {
                             </pre>
                         }
                     </div>
+                }
+                if let Some(n) = &*nota {
+                    <p class="conversa__nota">{ n }</p>
                 }
                 if let Some(e) = &*erro {
                     <p class="conversa__erro">

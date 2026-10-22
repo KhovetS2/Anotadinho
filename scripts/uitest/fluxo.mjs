@@ -2019,9 +2019,15 @@ fluxo.push({
         "veio a pergunta de planejar numa proposta",
       );
 
-      const anexos = await bridge.js(
-        `[...document.querySelectorAll('.conversa__anexo')].map(e => e.textContent.replace('×','').trim())`,
-      );
+      // Espera o ANEXO, não a conversa: os anexos chegam num efeito
+      // assíncrono depois do `.conversa` existir, e ler na mesma volta
+      // reprovava com a suíte carregada (vista no ciclo 460) — a corrida
+      // de "esperar o parente" do AGENTS.md.
+      const LER_ANEXOS = `[...document.querySelectorAll('.conversa__anexo')].map(e => e.textContent.replace('×','').trim())`;
+      try {
+        await esperar(bridge, `${LER_ANEXOS}.includes("__uitest")`, "a proposta anexada");
+      } catch {}
+      const anexos = await bridge.js(LER_ANEXOS);
       ctx.assert(anexos.includes("__uitest"), `a proposta não foi anexada: ${anexos.join(", ")}`);
 
       // E dá pra promover a resposta em execução.
@@ -2892,6 +2898,210 @@ fluxo.push({
       if (!tinhaRaiz) fs.rmSync(raiz, { recursive: true, force: true });
       if (cfgAntes === null) fs.rmSync(cfg, { force: true });
       else fs.writeFileSync(cfg, cfgAntes);
+    }
+  },
+});
+
+// ── ciclo 460: a tela de Projeto na janela ─────────────────────────────
+//
+// Projeto `uitest-*` no vault aberto, SEM repositório: a fila nunca
+// reserva nada (o adaptador da tela é o de verdade), e o `finally`
+// apaga a pasta, as propostas que o cenário gerou e a raiz
+// `pages/projetos` se ela não existia.
+
+async function projetoNoVault(ctx, slug, tarefas, conversa = null) {
+  const fs = await import("node:fs");
+  const raiz = `${ctx.vault}/pages/projetos`;
+  const tinhaRaiz = fs.existsSync(raiz);
+  const pasta = `${raiz}/${slug}`;
+  fs.mkdirSync(`${pasta}/tarefas`, { recursive: true });
+  fs.mkdirSync(`${pasta}/conversas`, { recursive: true });
+  fs.writeFileSync(`${pasta}/projeto.md`, `---\ntitle: Projeto ${slug}\ntype: projeto\nprojeto: ${slug}\n---\n# Projeto ${slug}\n\nvisão\n`);
+  fs.writeFileSync(`${pasta}/arquitetura.md`, `---\ntitle: Arquitetura\ntype: docs\nprojeto: ${slug}\n---\n# Arquitetura\n\n## Componentes\n`);
+  for (const [n, etapa, titulo] of tarefas) {
+    fs.writeFileSync(
+      `${pasta}/tarefas/${String(n).padStart(3, "0")}-t.md`,
+      `---\ntitle: ${titulo}\ntype: tarefa\nprojeto: ${slug}\nstatus: ${etapa}\n---\n# ${titulo}\n\n## Objetivo\n\nalgo\n`,
+    );
+  }
+  if (conversa) fs.writeFileSync(`${pasta}/conversas/geral.md`, conversa);
+  const status = (n) => {
+    const t = fs.readFileSync(`${pasta}/tarefas/${String(n).padStart(3, "0")}-t.md`, "utf8");
+    return t.match(/^status: (.*)$/m)[1].trim();
+  };
+  const limpar = () => {
+    fs.rmSync(pasta, { recursive: true, force: true });
+    if (!tinhaRaiz) fs.rmSync(raiz, { recursive: true, force: true });
+    const props = `${ctx.vault}/.anotadinho/propostas`;
+    if (fs.existsSync(props)) {
+      for (const f of fs.readdirSync(props)) {
+        const arq = `${props}/${f}`;
+        try {
+          if (JSON.parse(fs.readFileSync(arq, "utf8")).alvo.includes(`/projetos/${slug}/`)) fs.rmSync(arq);
+        } catch {}
+      }
+    }
+  };
+  return { fs, pasta, status, limpar };
+}
+
+/// Abre uma página pela paleta, pelo CAMINHO — que é o que distingue um
+/// `projeto.md` do outro (ciclo 460).
+async function abrirPeloCaminho(bridge, caminho) {
+  await bridge.js(`(() => { document.querySelector('.app-root').dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); return true; })()`);
+  await esperar(bridge, "document.querySelector('.command-palette__input')", "a paleta abrir");
+  await bridge.js(`(() => { const i = document.querySelector('.command-palette__input'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(caminho)}); i.dispatchEvent(new InputEvent('input', { bubbles: true })); return true; })()`);
+  await clicar(bridge, ".command-palette__item", `${caminho} na paleta`);
+}
+
+const BOTOES_DO_CARTAO = (n) => `[...document.querySelectorAll('.projeto__cartao')]
+  .filter(c => c.dataset.tarefa.endsWith('/${String(n).padStart(3, "0")}-t.md'))
+  .flatMap(c => [...c.querySelectorAll('.projeto__mover')].map(b => b.dataset.destino))`;
+
+fluxo.push({
+  nome: "projeto: a paleta cria o projeto e abre o quadro (460)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const titulo = `uitest projeto ${Date.now()}`;
+    const slug = titulo.replace(/ /g, "-");
+    const raiz = `${ctx.vault}/pages/projetos`;
+    const tinhaRaiz = fs.existsSync(raiz);
+    try {
+      await recarregarEstavel(bridge);
+      await bridge.js(`(() => { document.querySelector('.app-root').dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); return true; })()`);
+      await esperar(bridge, "document.querySelector('[class*=palette__item]')", "a paleta abrir");
+      const achou = await bridge.js(`(() => { const i = [...document.querySelectorAll('[class*=palette__item]')].find(x => x.textContent.includes('Novo projeto')); if (i) i.click(); return !!i; })()`);
+      ctx.assertEq(achou, true, "\"Novo projeto\" não está na paleta");
+      await esperar(bridge, "document.querySelector('.modal input')", "o pedido do nome");
+      await bridge.js(`(() => { const i = document.querySelector('.modal input'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(titulo)}); i.dispatchEvent(new InputEvent('input', { bubbles: true })); return true; })()`);
+      // O Enter vai numa chamada PRÓPRIA: na mesma volta do `input`, o
+      // `onkeydown` do diálogo ainda é a closure da renderização anterior
+      // e submete o valor padrão ("Novo projeto") — quem digita de
+      // verdade sempre tem uma renderização entre a tecla e o Enter.
+      await bridge.js(`(() => { document.querySelector('.modal input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
+      await esperar(bridge, `document.querySelector('.projeto__titulo')?.textContent === ${JSON.stringify(titulo)}`, "o quadro do projeto novo", 12000);
+      for (const f of ["projeto.md", "arquitetura.md", "conversas/geral.md"]) {
+        ctx.assert(fs.existsSync(`${raiz}/${slug}/${f}`), `não criou ${f}`);
+      }
+      ctx.assertEq(await bridge.js("document.querySelectorAll('.projeto__coluna').length"), 8, "uma coluna por etapa");
+    } finally {
+      fs.rmSync(`${raiz}/${slug}`, { recursive: true, force: true });
+      if (!tinhaRaiz) fs.rmSync(raiz, { recursive: true, force: true });
+    }
+  },
+});
+
+fluxo.push({
+  nome: "projeto: o cartão mostra só as transições da pessoa e move a tarefa (460)",
+  async fn(bridge, ctx) {
+    const slug = `uitest-quadro-${Date.now()}`;
+    const p = await projetoNoVault(ctx, slug, [[1, "ideia", "Login"], [2, "executando", "Banco"], [3, "feita", "Base"]]);
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      await esperar(bridge, `${BOTOES_DO_CARTAO(1)}.length > 0`, "os cartões");
+      ctx.assertEq(JSON.stringify(await bridge.js(BOTOES_DO_CARTAO(1))), JSON.stringify(["detalhando", "pronta"]));
+      // `revisao` é do sistema: em executando, a pessoa só bloqueia.
+      ctx.assertEq(JSON.stringify(await bridge.js(BOTOES_DO_CARTAO(2))), JSON.stringify(["bloqueada"]));
+      ctx.assertEq(JSON.stringify(await bridge.js(BOTOES_DO_CARTAO(3))), JSON.stringify(["detalhando"]), "feita sem saída");
+      ctx.assert(
+        await bridge.js("[...document.querySelectorAll('.projeto__aviso')].some(a => a.textContent.includes('sem repositório'))"),
+        "o cabeçalho não diz o que segura a fila",
+      );
+      await clicar(bridge, `.projeto__cartao[data-tarefa$="/001-t.md"] .projeto__mover[data-destino="pronta"]`, "→ Pronta");
+      await esperar(bridge, `!!document.querySelector('.projeto__coluna[data-etapa=pronta] .projeto__cartao[data-tarefa$="/001-t.md"]')`, "o cartão na coluna Pronta");
+      ctx.assertEq(p.status(1), "pronta");
+      // Criar pelo quadro.
+      await bridge.js(`(() => { const i = document.querySelector('.projeto__nova-titulo'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'Cobrança'); i.dispatchEvent(new InputEvent('input', { bubbles: true })); return true; })()`);
+      await clicar(bridge, ".projeto__nova-criar", "Criar tarefa");
+      await esperar(bridge, `!!document.querySelector('.projeto__cartao[data-tarefa$="/004-cobranca.md"]')`, "a tarefa nova no quadro");
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+fluxo.push({
+  nome: "projeto: virar tarefas propõe um lote numerado, sem gravar (460)",
+  async fn(bridge, ctx) {
+    const slug = `uitest-virar-${Date.now()}`;
+    const resposta = "Segue a quebra.\n\n## Tarefa: Agenda\n\n### Objetivo\nmarcar\n\n## Tarefa: Lembrete\n\n### Objetivo\navisar";
+    const conversa = `---\ntitle: Conversa\ntype: conversa\nprojeto: ${slug}\n---\n## você · 2026-10-21 10:00\n\nquebre\n\n## agente · 2026-10-21 10:01\n\n${resposta}\n`;
+    const p = await projetoNoVault(ctx, slug, [[1, "ideia", "Login"]], conversa);
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      await clicar(bridge, ".projeto__aba:nth-child(2)", "a aba Conversa");
+      await clicar(bridge, ".conversa__virar-tarefas", "virar tarefas");
+      await esperar(bridge, "!!document.querySelector('.conversa__nota')", "o recado de que propôs");
+      const props = p.fs
+        .readdirSync(`${ctx.vault}/.anotadinho/propostas`)
+        .map((f) => JSON.parse(p.fs.readFileSync(`${ctx.vault}/.anotadinho/propostas/${f}`, "utf8")))
+        .filter((x) => x.alvo.includes(`/projetos/${slug}/`));
+      const alvos = props.map((x) => x.alvo.split("/").pop()).sort();
+      ctx.assertEq(JSON.stringify(alvos), JSON.stringify(["002-agenda.md", "003-lembrete.md"]));
+      ctx.assert(props.every((x) => x.lote && x.lote === props[0].lote), "não saíram num lote");
+      ctx.assert(!p.fs.existsSync(`${p.pasta}/tarefas/002-agenda.md`), "gravou em vez de propor");
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+fluxo.push({
+  nome: "projeto: a barra da tarefa move a etapa e detalha na conversa dela (460)",
+  async fn(bridge, ctx) {
+    const slug = `uitest-barra-${Date.now()}`;
+    const p = await projetoNoVault(ctx, slug, [[1, "ideia", "Login"]]);
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/tarefas/001`);
+      await esperar(bridge, "document.querySelector('.tarefa-barra__etapa')?.textContent === 'Ideia'", "a barra da tarefa");
+      ctx.assert(await bridge.js("!!document.querySelector('.pagina-tarefa .editor')"), "o editor sumiu da tarefa");
+      await clicar(bridge, ".tarefa-barra__destino[data-destino=detalhando]", "→ Detalhando");
+      // O editor recarrega junto: é o que impede um salvamento depois
+      // de gravar o `status` velho por cima.
+      await esperar(bridge, "document.querySelector('.tarefa-barra__etapa')?.textContent === 'Detalhando'", "a etapa nova na barra");
+      ctx.assertEq(p.status(1), "detalhando");
+      await clicar(bridge, ".tarefa-barra__detalhar", "Detalhar com o agente");
+      await esperar(
+        bridge,
+        "document.querySelector('.conversa__campo')?.value.includes('Detalhe a tarefa')",
+        "a conversa da tarefa com o pedido escrito",
+        12000,
+      );
+      const conversa = p.fs.readFileSync(`${p.pasta}/conversas/tarefa-001.md`, "utf8");
+      ctx.assert(conversa.includes(`tarefa: pages/projetos/${slug}/tarefas/001-t.md`), conversa);
+      ctx.assert(!/^## você/m.test(conversa), "enviou sem a pessoa mandar");
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+fluxo.push({
+  nome: "projeto: bloquear a tarefa em execução para o agente dela (460)",
+  async fn(bridge, ctx) {
+    const p = await projetoTemporario();
+    try {
+      // `--demorar` dorme 60 s: sem o cancelamento, ele seguiria vivo
+      // mexendo no repositório depois do "bloqueada".
+      const r = await bridge.js(AVALIAR(p.vault, ["--demorar", "{prompt}"]));
+      ctx.assertEq(r.iniciadas.length, 1, `não subiu: ${JSON.stringify(r)}`);
+      const conversa = "pages/projetos/saas/conversas/tarefa-001.md";
+      await bridge.js(`window.__TAURI_INTERNALS__.invoke('mudar_etapa_tarefa', {
+        vaultPath: ${JSON.stringify(p.vault)}, caminho: ${JSON.stringify(p.tarefa)}, destino: 'bloqueada' })`);
+      const limite = Date.now() + 10000;
+      let fim = null;
+      while (Date.now() < limite) {
+        const e = await bridge.js(`window.__TAURI_INTERNALS__.invoke('estado_agente', { conversaPath: ${JSON.stringify(conversa)} })`);
+        if (e && e.estado !== "rodando") { fim = e.estado; break; }
+        await PAUSA(200);
+      }
+      ctx.assertEq(fim, "cancelado", "o agente continuou rodando depois do bloqueio");
+      ctx.assertEq(p.status(), "bloqueada");
+    } finally {
+      p.limpar();
     }
   },
 });

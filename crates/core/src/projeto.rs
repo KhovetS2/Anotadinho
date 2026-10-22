@@ -142,7 +142,11 @@ impl EtapaTarefa {
             Self::Executando => vec![Self::Revisao, Self::Bloqueada],
             // `executar` de novo é "refaça": o relato não serviu.
             Self::Revisao => vec![Self::Feita, Self::Executar, Self::Detalhando],
-            Self::Feita => vec![Self::Revisao],
+            // Reabrir é voltar ao detalhe: o que mudou de ideia muda o
+            // texto antes de rodar de novo. Era `Revisao`, que só o
+            // sistema alcança — e a pessoa ficava sem saída nenhuma de
+            // uma tarefa feita (achado na tela, ciclo 460).
+            Self::Feita => vec![Self::Detalhando],
             Self::Bloqueada => vec![Self::Detalhando, Self::Pronta, Self::Executar],
         }
     }
@@ -875,6 +879,15 @@ mod testes {
     fn toda_etapa_tem_saida_pra_alguem() {
         for e in EtapaTarefa::all() {
             assert!(!e.proximas().is_empty(), "{} é beco sem saída", e.slug());
+        }
+    }
+
+    #[test]
+    fn a_pessoa_sempre_tem_pra_onde_ir() {
+        // `toda_etapa_tem_saida_pra_alguem` deixou passar `feita`: a única
+        // saída era do sistema, e no quadro o cartão ficava sem botão.
+        for e in EtapaTarefa::all() {
+            assert!(!e.proximas_para(Quem::Humano).is_empty(), "a pessoa não sai de {}", e.slug());
         }
     }
 

@@ -71,6 +71,10 @@ pub struct PageViewProps {
     pub on_planejar: Callback<anotadinho_core::fluxo::Pedido>,
     #[prop_or_default]
     pub on_fila_mudou: Callback<()>,
+    /// Abre uma conversa com a pergunta escrita (ciclo 460): o
+    /// "Detalhar com o agente" da tarefa.
+    #[prop_or_default]
+    pub on_perguntar: Callback<crate::components::conversa_view::PerguntaInicial>,
 }
 
 #[function_component(PageView)]
@@ -175,6 +179,50 @@ pub fn page_view(props: &PageViewProps) -> Html {
                     on_pergunta_consumida={props.on_pergunta_consumida.clone()} />
             },
             None => html! {},
+        },
+        // O projeto (ciclo 460): quadro, conversa e execuções num lugar.
+        "projeto" => html! {
+            <crate::components::projeto_view::ProjetoView
+                vault_path={props.vault_path.clone()}
+                page={current_page.clone()}
+                on_page_selected={props.on_page_selected.clone()}
+                open_dialog={props.open_dialog.clone()}
+                pergunta_inicial={props.pergunta_inicial.clone()}
+                on_pergunta_consumida={props.on_pergunta_consumida.clone()} />
+        },
+        // A tarefa é texto como qualquer nota: o editor de sempre, com a
+        // barra de etapa em cima (ciclo 460).
+        "tarefa" => html! {
+            <div class="pagina-tarefa">
+                <crate::components::tarefa_barra::TarefaBarra
+                    vault_path={props.vault_path.clone()}
+                    page={current_page.clone()}
+                    on_page_selected={props.on_page_selected.clone()}
+                    on_perguntar={props.on_perguntar.clone()}
+                    on_mudou={{
+                        let reload_nonce = reload_nonce.clone();
+                        Callback::from(move |_: ()| reload_nonce.set(*reload_nonce + 1))
+                    }} />
+                <Editor
+                    vault_path={props.vault_path.clone()}
+                    page={props.page.clone()}
+                    on_page_deleted={props.on_page_deleted.clone()}
+                    open_dialog={props.open_dialog.clone()}
+                    on_page_selected={props.on_page_selected.clone()}
+                    autosave_enabled={props.autosave_enabled}
+                    vim_mode_enabled={props.vim_mode_enabled}
+                    vim_keymap={props.vim_keymap.clone()}
+                    global_action={props.global_action}
+                    home_page={props.home_page.clone()}
+                    on_toggle_home={props.on_toggle_home.clone()}
+                    on_search={props.on_search.clone()}
+                    vault_version={props.vault_version}
+                    on_enter_block_nav={props.on_enter_block_nav.clone()}
+                    on_leave_block_nav={props.on_leave_block_nav.clone()}
+                    nav_mode_active={props.nav_mode_active}
+                    on_planejar={props.on_planejar.clone()}
+                />
+            </div>
         },
         // Tela de revisão (ciclo 204) — uma página `type: propostas`.
         "propostas" => html! {

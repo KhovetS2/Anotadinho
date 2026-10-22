@@ -37,6 +37,8 @@ ele, é uma nota comum — que já é o bastante para a maior parte das coisas.
 | `table` | Tabela de tarefas |
 | `graph` | Grafo das conexões entre páginas |
 | `prompt` | Molde de pergunta reutilizável na conversa |
+| `projeto` | Quadro das tarefas, conversa com o agente e o que ele executou |
+| `tarefa` | Uma tarefa de projeto: o texto, com a etapa em cima |
 
 ## O que dá para colocar dentro de uma página
 
@@ -98,6 +100,8 @@ body: |
 - `pages/padroes/` — o que já se aprendeu, para anexar às conversas e o
   modelo não repetir erro conhecido
 - `pages/prompts-default/` — moldes de pergunta que aparecem na conversa
+- `pages/projetos/` — um projeto por pasta: a página dele, a arquitetura,
+  as tarefas e as conversas. Crie com "Novo projeto" na paleta
 - `journals/` — uma página por dia
 - `templates/` — modelos para páginas novas
 - `assets/` — imagens e arquivos colados ou arrastados

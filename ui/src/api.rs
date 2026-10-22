@@ -742,6 +742,104 @@ pub async fn avaliar_projetos(
     .await
 }
 
+// ── Projeto (ciclo 460) ───────────────────────────────────────────
+
+/// O que `criar_projeto` fez.
+#[derive(Debug, Clone, PartialEq, Default, serde::Deserialize)]
+pub struct ProjetoCriado {
+    /// Slug, que é o nome da pasta.
+    pub slug: String,
+    /// Páginas criadas agora.
+    pub criadas: Vec<String>,
+    /// Páginas que já existiam.
+    pub existiam: Vec<String>,
+}
+
+/// Tudo que a tela de um projeto mostra.
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+pub struct EstadoDoProjeto {
+    /// A página do projeto.
+    pub projeto: anotadinho_core::projeto::Projeto,
+    /// A config dele.
+    pub config: anotadinho_core::projeto::ConfigProjeto,
+    /// As tarefas, por número.
+    pub tarefas: Vec<anotadinho_core::projeto::Tarefa>,
+    /// O que segura a fila agora.
+    pub avisos: Vec<String>,
+}
+
+pub async fn criar_projeto(vault_path: &str, titulo: &str, hoje: &str) -> Result<ProjetoCriado, String> {
+    chamar(
+        "criar_projeto",
+        Args::novo().texto("vaultPath", vault_path).texto("titulo", titulo).texto("hoje", hoje),
+    )
+    .await
+}
+
+pub async fn estado_do_projeto(vault_path: &str, slug: &str) -> Result<EstadoDoProjeto, String> {
+    chamar("estado_do_projeto", Args::novo().texto("vaultPath", vault_path).texto("slug", slug)).await
+}
+
+pub async fn gravar_config_do_projeto(
+    vault_path: &str,
+    slug: &str,
+    config: &anotadinho_core::projeto::ConfigProjeto,
+) -> Result<(), String> {
+    chamar_sem_retorno(
+        "gravar_config_do_projeto",
+        Args::novo().texto("vaultPath", vault_path).texto("slug", slug).serde("config", config),
+    )
+    .await
+}
+
+pub async fn criar_tarefa(vault_path: &str, slug: &str, titulo: &str, hoje: &str) -> Result<String, String> {
+    chamar(
+        "criar_tarefa",
+        Args::novo().texto("vaultPath", vault_path).texto("slug", slug).texto("titulo", titulo).texto("hoje", hoje),
+    )
+    .await
+}
+
+pub async fn conversa_da_tarefa(vault_path: &str, caminho: &str) -> Result<String, String> {
+    chamar("conversa_da_tarefa", Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho)).await
+}
+
+pub async fn indice_do_projeto(vault_path: &str, slug: &str) -> Result<String, String> {
+    chamar("indice_do_projeto", Args::novo().texto("vaultPath", vault_path).texto("slug", slug)).await
+}
+
+pub async fn propor_tarefas(vault_path: &str, slug: &str, resposta: &str, quando: &str) -> Result<Vec<String>, String> {
+    chamar(
+        "propor_tarefas",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .texto("slug", slug)
+            .texto("resposta", resposta)
+            .texto("quando", quando),
+    )
+    .await
+}
+
+pub async fn propor_arquitetura(vault_path: &str, slug: &str, texto: &str, quando: &str) -> Result<String, String> {
+    chamar(
+        "propor_arquitetura",
+        Args::novo().texto("vaultPath", vault_path).texto("slug", slug).texto("texto", texto).texto("quando", quando),
+    )
+    .await
+}
+
+pub async fn mudar_etapa_tarefa(
+    vault_path: &str,
+    caminho: &str,
+    destino: anotadinho_core::projeto::EtapaTarefa,
+) -> Result<String, String> {
+    chamar(
+        "mudar_etapa_tarefa",
+        Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho).serde("destino", &destino),
+    )
+    .await
+}
+
 /// As permissões de escrita do agente (ciclo 427).
 pub async fn ler_permissoes(
     vault_path: &str,

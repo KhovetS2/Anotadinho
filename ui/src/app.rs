@@ -1215,6 +1215,63 @@ pub fn app() -> Html {
         })
     };
 
+    // Novo projeto (ciclo 460): pede o título e abre a página do
+    // projeto, que é a tela de quadro e conversa.
+    let novo_projeto = {
+        let vault_path = vault_path.clone();
+        let list_version = list_version.clone();
+        let on_page_selected = on_page_selected.clone();
+        let open_dialog = open_dialog.clone();
+        Callback::from(move |_: ()| {
+            let Some(vault) = (*vault_path).clone() else { return };
+            let (list_version, on_page_selected) = (list_version.clone(), on_page_selected.clone());
+            open_dialog.emit(PendingDialog::Prompt {
+                title: "Nome do projeto".to_string(),
+                default: "Novo projeto".to_string(),
+                on_submit: Callback::from(move |titulo: String| {
+                    let (vault, list_version, on_page_selected) =
+                        (vault.clone(), list_version.clone(), on_page_selected.clone());
+                    wasm_bindgen_futures::spawn_local(async move {
+                        let hoje = crate::state::agora_legivel();
+                        let hoje = hoje.split(' ').next().unwrap_or("").to_string();
+                        match api::criar_projeto(&vault, &titulo, &hoje).await {
+                            Ok(criado) => {
+                                list_version.set(*list_version + 1);
+                                on_page_selected.emit(PageMeta {
+                                    path: anotadinho_core::projeto::caminho_do_projeto(&criado.slug),
+                                    title: titulo.trim().to_string(),
+                                    section: "pages".to_string(),
+                                });
+                            }
+                            Err(e) => web_sys::console::warn_1(&format!("novo projeto: {e}").into()),
+                        }
+                    });
+                }),
+            });
+        })
+    };
+
+    // Abre uma conversa com a pergunta escrita (ciclo 460): é o
+    // "Detalhar com o agente" da tarefa. Escrita, não enviada — quem
+    // lê decide se manda.
+    let perguntar = {
+        let on_page_selected = on_page_selected.clone();
+        let pergunta_inicial = pergunta_inicial.clone();
+        let list_version = list_version.clone();
+        Callback::from(move |p: crate::components::conversa_view::PerguntaInicial| {
+            let path = p.conversa.clone();
+            pergunta_inicial.set(Some(p));
+            // A conversa pode ter acabado de nascer: a sidebar precisa
+            // enxergá-la.
+            list_version.set(*list_version + 1);
+            let title = std::path::Path::new(&path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.clone());
+            on_page_selected.emit(PageMeta { path, title, section: "pages".into() });
+        })
+    };
+
     // Rodar de novo (ciclo 437): abre a conversa da execução com a
     // última pergunta dela no campo. No campo, não enviada: reexecutar
     // é gastar de novo, e isso é decisão de quem lê o resultado.
@@ -1383,6 +1440,7 @@ pub fn app() -> Html {
             PaletteAction::ViewCheatsheet => cheatsheet_open.set(true),
             PaletteAction::NovaConversa => nova_conversa.emit(()),
             PaletteAction::ExcluirPaginaAberta => excluir_pagina_aberta.emit(()),
+            PaletteAction::NovoProjeto => novo_projeto.emit(()),
             PaletteAction::NewPageOfType(page_type) => {
                 let vault = (*vault_path).clone().unwrap_or_default();
                 prompt_title_and_create_typed(
@@ -2032,6 +2090,7 @@ pub fn app() -> Html {
                             />
                             <PageView
                                 on_reexecutar={reexecutar.clone()}
+                                on_perguntar={perguntar.clone()}
                                 vault_path={vault_path.as_ref().cloned().unwrap_or_default()}
                                 page={(*selected_page).clone()}
                                 on_page_deleted={on_page_deleted.clone()}

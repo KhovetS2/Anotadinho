@@ -2244,3 +2244,108 @@
 
 /* Busca dentro do diálogo de escolha (ciclo 443). */
 .modal__busca { width: 100%; }
+
+/* Projeto (ciclo 460): quadro, conversa e execuções. */
+.projeto {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  height: 100%; overflow: hidden; box-sizing: border-box;
+  padding: var(--sp-4) var(--sp-6);
+}
+.projeto__topo { display: flex; flex-direction: column; gap: var(--sp-2); }
+.projeto__titulo-linha { display: flex; align-items: baseline; gap: var(--sp-3); }
+.projeto__titulo { margin: 0; font-size: 1.3rem; }
+.projeto__rodando { font-size: .8rem; color: var(--accent-blue); }
+.projeto__config { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: .82rem; }
+.projeto__repo { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--text-muted); }
+.projeto__repo code { color: var(--text-primary); }
+.projeto__avisos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.projeto__aviso {
+  font-size: .8rem; color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  border-radius: var(--r-sm); padding: var(--sp-1) var(--sp-2);
+}
+.projeto__erro { margin: 0; font-size: .8rem; color: var(--error); }
+.projeto__abas { display: flex; gap: var(--sp-1); border-bottom: 1px solid var(--border); }
+.projeto__aba {
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--text-muted); cursor: pointer; padding: var(--sp-2) var(--sp-3); font: inherit;
+}
+.projeto__aba:hover { color: var(--text-primary); }
+.projeto__aba--ativa { color: var(--text-primary); border-bottom-color: var(--accent-blue); }
+.projeto__aba:focus-visible, .projeto__cartao-titulo:focus-visible, .projeto__link:focus-visible,
+.tarefa-barra__projeto:focus-visible { outline: 2px solid var(--accent-blue); }
+.projeto__quadro-area { display: flex; flex-direction: column; gap: var(--sp-3); min-height: 0; flex: 1; }
+.projeto__nova { display: flex; gap: var(--sp-2); }
+.projeto__nova-titulo { flex: 1; max-width: 32rem; }
+.projeto__quadro {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(10.5rem, 1fr);
+  gap: var(--sp-3); overflow-x: auto; overflow-y: hidden; flex: 1; min-height: 0;
+  padding-bottom: var(--sp-2);
+}
+.projeto__coluna {
+  display: flex; flex-direction: column; gap: var(--sp-2); overflow-y: auto;
+  background: var(--bg-surface); border-radius: var(--r-md); padding: var(--sp-2);
+}
+.projeto__coluna-titulo {
+  display: flex; justify-content: space-between; align-items: center;
+  margin: 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted);
+}
+.projeto__contagem { font-weight: 400; }
+.projeto__coluna[data-etapa="executando"] .projeto__coluna-titulo { color: var(--accent-blue); }
+.projeto__coluna[data-etapa="revisao"] .projeto__coluna-titulo { color: var(--accent-purple); }
+.projeto__coluna[data-etapa="bloqueada"] .projeto__coluna-titulo { color: var(--error); }
+.projeto__coluna[data-etapa="feita"] .projeto__coluna-titulo { color: var(--success); }
+.projeto__cartao {
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: var(--sp-2);
+}
+.projeto__cartao-titulo {
+  background: none; border: 0; padding: 0; text-align: left; cursor: pointer;
+  color: var(--text-primary); font: inherit; font-size: .85rem;
+}
+.projeto__cartao-titulo:hover { color: var(--accent-blue); }
+.projeto__numero { color: var(--text-muted); font-family: var(--font-mono); font-size: .75rem; }
+.projeto__depende { margin: 0; font-size: .72rem; color: var(--text-muted); }
+.projeto__depende--pendente { color: var(--warning); }
+.projeto__cartao-acoes { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.projeto__conversa { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.projeto__execucoes { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.projeto__execucao {
+  display: flex; gap: var(--sp-3); align-items: center; font-size: .8rem;
+  padding: var(--sp-1) 0; border-bottom: 1px solid var(--border);
+}
+.projeto__quando, .projeto__fim, .projeto__vazio { color: var(--text-muted); }
+.projeto__fim { margin-left: auto; }
+.projeto__link { background: none; border: 0; padding: 0; color: var(--accent-blue); cursor: pointer; font: inherit; }
+
+/* A barra de etapa da tarefa (ciclo 460). */
+.pagina-tarefa { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.pagina-tarefa > .editor { flex: 1; min-height: 0; }
+.tarefa-barra {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-6); border-bottom: 1px solid var(--border);
+  background: var(--bg-surface); font-size: .82rem;
+}
+.tarefa-barra__projeto { background: none; border: 0; padding: 0; color: var(--text-muted); cursor: pointer; font: inherit; }
+.tarefa-barra__projeto:hover { color: var(--accent-blue); }
+.tarefa-barra__etapa {
+  border-radius: var(--r-sm); padding: 0 var(--sp-2); font-weight: 600;
+  color: var(--text-primary); background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+}
+.tarefa-barra__etapa--executar, .tarefa-barra__etapa--executando {
+  color: var(--accent-blue); background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
+}
+.tarefa-barra__etapa--revisao { color: var(--accent-purple); background: color-mix(in srgb, var(--accent-purple) 15%, transparent); }
+.tarefa-barra__etapa--feita { color: var(--success); background: color-mix(in srgb, var(--success) 15%, transparent); }
+.tarefa-barra__etapa--bloqueada { color: var(--error); background: color-mix(in srgb, var(--error) 15%, transparent); }
+.tarefa-barra__mover, .tarefa-barra__conversa { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); }
+.tarefa-barra__conversa { margin-left: auto; }
+.tarefa-barra__erro { flex-basis: 100%; margin: 0; color: var(--error); }
+
+/* O recado de "propus, revise" na conversa (ciclo 460). */
+.conversa__nota {
+  margin: var(--sp-2) 0; font-size: .8rem; color: var(--success);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+  border-radius: var(--r-sm); padding: var(--sp-1) var(--sp-2);
+}
