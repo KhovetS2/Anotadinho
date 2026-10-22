@@ -1216,3 +1216,68 @@ fn contexto_lista_os_projetos_por_etapa() {
         .success()
         .stdout(predicates::str::contains("## Projetos").and(predicates::str::contains("ideia 1")));
 }
+
+// ── sprints e plano de projeto (ciclo 470) ───────────────────────────
+
+#[test]
+fn modelo_de_plano_montar_aplicar_e_ver() {
+    let dir = setup_vault();
+    let modelo = cli_em(&dir).args(["projeto", "modelo-de-plano"]).output().unwrap();
+    assert!(modelo.status.success());
+    let plano = dir.path().join("plano.yaml");
+    fs::write(&plano, &modelo.stdout).unwrap();
+    cli_em(&dir).args(["projeto", "montar", "--file", plano.to_str().unwrap()]).assert().success();
+    // Propõe, não grava.
+    assert!(!dir.path().join("pages/projetos/agenda/projeto.md").exists());
+    aplicar_tudo(&dir);
+    let ver = cli_em(&dir).args(["--json", "projeto", "ver", "agenda"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&ver.stdout).unwrap();
+    assert_eq!(v["sprints"].as_array().unwrap().len(), 2);
+    assert_eq!(v["tarefas"][1]["sprint"], 1, "{v}");
+    assert_eq!(v["tarefas"][1]["depende"][0], "1");
+}
+
+#[test]
+fn plano_com_campo_errado_diz_qual() {
+    let dir = setup_vault();
+    let plano = dir.path().join("plano.yaml");
+    fs::write(&plano, "projeto:\n  titulo: X\n  descricao: errado\n").unwrap();
+    cli_em(&dir)
+        .args(["projeto", "montar", "--file", plano.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("descricao").and(predicates::str::contains("modelo-de-plano")));
+}
+
+#[test]
+fn sprint_iniciar_encerrar_e_mover_tarefa_propondo() {
+    let dir = setup_vault();
+    cli_em(&dir).args(["projeto", "novo", "SaaS", "--slug", "saas"]).assert().success();
+    aplicar_tudo(&dir);
+    cli_em(&dir).args(["sprint", "nova", "saas", "Um", "--objetivo", "base"]).assert().success();
+    aplicar_tudo(&dir);
+    cli_em(&dir).args(["sprint", "nova", "saas", "Dois"]).assert().success();
+    aplicar_tudo(&dir);
+    cli_em(&dir).args(["tarefa", "nova", "saas", "Login", "--sprint", "um"]).assert().success();
+    aplicar_tudo(&dir);
+    let tarefa = "pages/projetos/saas/tarefas/001-login.md";
+    assert!(fs::read_to_string(dir.path().join(tarefa)).unwrap().contains("sprint: 1"));
+    cli_em(&dir).args(["sprint", "iniciar", "saas", "1"]).assert().success();
+    aplicar_tudo(&dir);
+    // A segunda ativa é recusada, com o nome da que está.
+    cli_em(&dir).args(["sprint", "iniciar", "saas", "Dois"]).assert().failure().stderr(predicates::str::contains("Um"));
+    // Sprint que não existe: o erro lista as que existem.
+    cli_em(&dir).args(["tarefa", "sprint", tarefa, "Nada"]).assert().failure().stderr(predicates::str::contains("Dois (2"));
+    cli_em(&dir).args(["sprint", "encerrar", "saas", "1", "--pendentes", "proxima"]).assert().success();
+    aplicar_tudo(&dir);
+    assert!(fs::read_to_string(dir.path().join(tarefa)).unwrap().contains("sprint: 2"));
+    cli_em(&dir)
+        .args(["sprint", "listar", "saas"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("encerrada  Um").and(predicates::str::contains("planejada  Dois")));
+    // E pro backlog, tirando o campo.
+    cli_em(&dir).args(["tarefa", "sprint", tarefa, "backlog"]).assert().success();
+    aplicar_tudo(&dir);
+    assert!(!fs::read_to_string(dir.path().join(tarefa)).unwrap().contains("sprint:"));
+}

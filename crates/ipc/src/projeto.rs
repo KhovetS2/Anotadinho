@@ -378,6 +378,9 @@ pub struct EstadoDoProjeto {
     pub tarefas: Vec<Tarefa>,
     /// O que segura a fila agora. Só LÊ: não trava nem reserva nada.
     pub avisos: Vec<String>,
+    /// As sprints do projeto (ciclo 470), por número.
+    #[serde(default)]
+    pub sprints: Vec<anotadinho_core::sprint::Sprint>,
 }
 
 /// O estado de um projeto pra tela, sem efeito nenhum.
@@ -386,9 +389,11 @@ pub fn handle_estado_do_projeto(vault_path: String, slug: String) -> Result<Esta
     let texto = handle_read_page(vault_path.clone(), caminho.clone())?;
     let p = Projeto::ler(&caminho, &texto).ok_or_else(|| format!("{caminho} não é um projeto"))?;
     let config = handle_ler_projetos_cfg(vault_path.clone())?.remove(&slug).unwrap_or_default();
-    let tarefas = handle_tarefas_do_projeto(vault_path, slug.clone())?;
-    let (avisos, _) = avisos_do_projeto(&slug, &config, &tarefas);
-    Ok(EstadoDoProjeto { projeto: p, config, tarefas, avisos })
+    let tarefas = handle_tarefas_do_projeto(vault_path.clone(), slug.clone())?;
+    let sprints = crate::handle_sprints_do_projeto(vault_path, slug.clone())?;
+    let (mut avisos, _) = avisos_do_projeto(&slug, &config, &tarefas);
+    avisos.extend(anotadinho_core::sprint::avisos(&sprints, &tarefas));
+    Ok(EstadoDoProjeto { projeto: p, config, tarefas, avisos, sprints })
 }
 
 /// Grava a config de UM projeto, sem tocar na dos outros.
@@ -423,8 +428,9 @@ pub fn handle_indice_do_projeto(vault_path: String, slug: String) -> Result<Stri
     Ok(projeto::indice_de_tarefas(&tarefas))
 }
 
-fn proposta_nova(
+pub(crate) fn proposta_nova(
     vault_path: &str,
+    autor: &str,
     alvo: String,
     conteudo: String,
     motivo: String,
@@ -441,7 +447,7 @@ fn proposta_nova(
         // Alvo + relógio, como o CLI: legível na fila, e cada tarefa do
         // lote tem alvo próprio, então não colidem no mesmo segundo.
         id: format!("{}-{segundos}", anotadinho_core::fluxo::slug_de_titulo(&alvo)),
-        autor: "conversa".to_string(),
+        autor: autor.to_string(),
         quando,
         motivo,
         alvo,
@@ -490,6 +496,7 @@ pub fn handle_propor_tarefas(
         let conteudo = projeto::montar_tarefa(&slug, &titulo, &corpo, &hoje);
         let p = proposta_nova(
             &vault_path,
+            "conversa",
             caminho,
             conteudo,
             format!("tarefa da conversa: {titulo}"),
@@ -517,7 +524,7 @@ pub fn handle_propor_arquitetura(
     let atual = handle_read_page(vault_path.clone(), caminho.clone())
         .map_err(|_| format!("não existe {caminho}"))?;
     let novo = format!("{}\n\n## Da conversa — {quando}\n\n{}\n", atual.trim_end(), texto.trim());
-    let p = proposta_nova(&vault_path, caminho, novo, "arquitetura vinda da conversa".to_string(), quando, None);
+    let p = proposta_nova(&vault_path, "conversa", caminho, novo, "arquitetura vinda da conversa".to_string(), quando, None);
     crate::handle_propor(vault_path, p)
 }
 

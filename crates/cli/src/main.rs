@@ -181,6 +181,11 @@ enum Command {
         #[command(subcommand)]
         action: projeto::TarefaCommand,
     },
+    /// Sprints de projeto (ciclo 470): o que escreve, propõe.
+    Sprint {
+        #[command(subcommand)]
+        action: projeto::SprintCommand,
+    },
     /// Lista as propostas pendentes de revisão.
     Propostas,
     /// Aplica uma proposta aprovada.
@@ -802,6 +807,7 @@ fn run(cli: Cli) -> Result<(), String> {
         }
         Command::Projeto { action } => projeto::run_projeto(&cli.vault, cli.json, action)?,
         Command::Tarefa { action } => projeto::run_tarefa(&cli.vault, action)?,
+        Command::Sprint { action } => projeto::run_sprint(&cli.vault, cli.json, action)?,
         Command::Embed { forcar, action } => {
             let vault = cli.vault.clone();
             let json = cli.json;
@@ -997,6 +1003,7 @@ fn contexto_texto(
     // Projetos (ciclo 458): o que espera a pessoa (revisão, bloqueio) é
     // a pergunta "o que precisa de mim", como a do fluxo acima.
     let projetos = projeto::projetos_do_indice(paginas);
+    let ativas = projeto::sprints_ativas_do_indice(paginas);
     if !projetos.is_empty() {
         let _ = writeln!(s, "## Projetos, tarefas por etapa");
         for (slug, titulo, contagem) in &projetos {
@@ -1007,7 +1014,17 @@ fn contexto_texto(
             };
             let _ = writeln!(s, "  {slug:<32} {titulo}");
             let _ = writeln!(s, "    {etapas}");
+            if let Some(sprint) = ativas.get(slug) {
+                let _ = writeln!(s, "    sprint ativa: {sprint}");
+            }
         }
+        // As rotas pra montar um projeto (ciclo 470): quem chega pelo
+        // `contexto` precisa saber que elas existem.
+        let _ = writeln!(s, "  (montar a base de um projeto: `projeto modelo-de-plano`, depois `projeto montar --file`)");
+        let _ = writeln!(s);
+    } else {
+        let _ = writeln!(s, "## Projetos");
+        let _ = writeln!(s, "  nenhum. Pra montar a base de um: `projeto modelo-de-plano`, depois `projeto montar --file`");
         let _ = writeln!(s);
     }
 

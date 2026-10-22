@@ -9,6 +9,9 @@
 // das duas mil linhas.
 mod projeto;
 pub use projeto::*;
+// Sprints e o plano de projeto (ciclo 470).
+mod sprint;
+pub use sprint::*;
 
 use anotadinho_core::PageIndexEntry;
 use anotadinho_search::SearchIndex;
