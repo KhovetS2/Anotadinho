@@ -2038,8 +2038,22 @@ fn laco<B: ratatui::backend::Backend>(
                 let desce = match m.kind {
                     MouseEventKind::ScrollDown => true,
                     MouseEventKind::ScrollUp => false,
-                    // Clique e arrasto ficam sem efeito: a TUI é de
-                    // teclado, e a roda é o que faltava.
+                    // O clique na sidebar (ciclo 467): pasta abre e fecha,
+                    // página abre. O resto do clique segue sem efeito.
+                    MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                        if let Some(caminho) = app::clicar(estado, m.column, m.row) {
+                            salvar_pendente(estado, vault);
+                            if let Ok((texto, versao)) = ler(vault, &caminho) {
+                                if let Some(i) = estado.paginas.iter().position(|p| p.path == caminho) {
+                                    estado.pagina = i;
+                                }
+                                estado.abrir_texto(&texto, versao);
+                            }
+                        }
+                        atender(estado, vault, trabalhos, fila);
+                        continue;
+                    }
+                    // Arrasto e os outros botões ficam sem efeito.
                     _ => continue,
                 };
                 app::rolar(estado, desce, m.column);

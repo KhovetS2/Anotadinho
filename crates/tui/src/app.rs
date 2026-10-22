@@ -60,6 +60,16 @@ pub struct Estado {
     pub pastas_fechadas: std::collections::BTreeSet<String>,
     /// Que linha da sidebar está selecionada.
     pub linha_sidebar: usize,
+    /// A primeira linha da sidebar à vista (ciclo 467). A lista não
+    /// rolava: num terminal baixo, abrir uma pasta perto do fim jogava o
+    /// conteúdo pra baixo da borda, e a pasta parecia não ter aberto.
+    pub topo_sidebar: usize,
+    /// Até onde mostrar depois de abrir uma pasta (ciclo 467): o último
+    /// filho dela, se couber sem tirar o cursor da tela.
+    pub revelar_sidebar: Option<usize>,
+    /// Onde a lista da sidebar está no último quadro: a primeira linha e
+    /// quantas cabem. É o que traduz um clique em item (ciclo 467).
+    pub area_da_sidebar: (u16, usize),
     /// A árvore da página aberta.
     pub arvore: Unidade,
     /// As linhas dela, já desenhadas.
@@ -221,6 +231,9 @@ impl Estado {
             transclusoes: Default::default(),
             pastas_fechadas,
             linha_sidebar: 0,
+            topo_sidebar: 0,
+            revelar_sidebar: None,
+            area_da_sidebar: (0, 0),
             vim: vim::Pendente::default(),
             busca: String::new(),
             busca_em: Foco::Paginas,
@@ -806,10 +819,55 @@ impl Estado {
         let Item::Pasta { caminho, .. } = &l.item else {
             return false;
         };
-        if !self.pastas_fechadas.remove(caminho) {
+        let abrindo = self.pastas_fechadas.remove(caminho);
+        if !abrindo {
             self.pastas_fechadas.insert(caminho.clone());
+        } else {
+            // Quanto entrou: as linhas logo abaixo, mais fundas que a pasta.
+            let nivel = l.nivel;
+            let agora = self.sidebar_visivel();
+            let filhos = agora.iter().skip(self.linha_sidebar + 1).take_while(|x| x.nivel > nivel).count();
+            self.revelar_sidebar = (filhos > 0).then_some(self.linha_sidebar + filhos);
         }
         true
+    }
+
+    /// `l`/`→` na sidebar (ciclo 467), pelo modelo de `core::navegacao`:
+    /// ENTRAR é um ato. Pasta fechada abre; pasta aberta entra no primeiro
+    /// filho; página é borda — fica.
+    fn entrar_na_sidebar(&mut self) {
+        let visiveis = self.sidebar_visivel();
+        let Some(l) = visiveis.get(self.linha_sidebar) else { return };
+        let Item::Pasta { caminho, .. } = &l.item else { return };
+        if self.pastas_fechadas.contains(caminho) {
+            self.dobrar_pasta();
+        } else if visiveis.get(self.linha_sidebar + 1).is_some_and(|x| x.nivel > l.nivel) {
+            self.linha_sidebar += 1;
+        }
+    }
+
+    /// `h`/`←` na sidebar (ciclo 467): SAIR é o outro ato. Pasta aberta
+    /// fecha; pasta fechada ou página sobe pra pasta que a contém; na raiz
+    /// fica. Antes `h` e `l` faziam o mesmo (alternavam), e `h` numa pasta
+    /// fechada a ABRIA — o contrário do que a tecla diz.
+    fn sair_na_sidebar(&mut self) {
+        let visiveis = self.sidebar_visivel();
+        let Some(l) = visiveis.get(self.linha_sidebar) else { return };
+        if let Item::Pasta { caminho, .. } = &l.item {
+            if !self.pastas_fechadas.contains(caminho) {
+                self.dobrar_pasta();
+                return;
+            }
+        }
+        if l.nivel == 0 {
+            return;
+        }
+        if let Some(pai) = (0..self.linha_sidebar)
+            .rev()
+            .find(|&i| visiveis[i].nivel + 1 == l.nivel && matches!(visiveis[i].item, Item::Pasta { .. }))
+        {
+            self.linha_sidebar = pai;
+        }
     }
 
     /// Anda na sidebar VISÍVEL — pastas e páginas, na ordem da tela.
@@ -1370,8 +1428,12 @@ fn tecla_nas_paginas(e: &mut Estado, tecla: &str) -> Option<String> {
         }
         // Numa árvore, direita/esquerda abrem e fecham — é o que se
         // espera de pasta em qualquer lugar (ciclo 299).
-        "l" | "ArrowRight" | "h" | "ArrowLeft" => {
-            e.dobrar_pasta();
+        "l" | "ArrowRight" => {
+            e.entrar_na_sidebar();
+            None
+        }
+        "h" | "ArrowLeft" => {
+            e.sair_na_sidebar();
             None
         }
         // Na sidebar, os comandos de vim são de PÁGINA e PASTA (ciclo 345):
@@ -1440,6 +1502,40 @@ pub const LARGURA_DA_SIDEBAR: u16 = 32;
 /// No conteúdo ela anda o CURSOR, um bloco por passo, e a janela segue
 /// — como o vim com `mouse=a`. Mexer só no `topo` não dura: o desenho
 /// segue o cursor e puxaria a tela de volta no quadro seguinte.
+/// Um clique do botão esquerdo (ciclo 467). Devolve a página a abrir,
+/// como `tecla` devolve no Enter.
+///
+/// Só a sidebar responde por enquanto: era o que faltava pra quem vem da
+/// janela, onde pasta se abre clicando. Na TUI o clique era ignorado e a
+/// árvore "não abria".
+pub fn clicar(e: &mut Estado, coluna: u16, linha: u16) -> Option<String> {
+    if e.pergunta.is_some() || e.barra_aberta || e.modal.is_some() {
+        return None;
+    }
+    if coluna >= e.largura_da_sidebar || !e.preferencias.sidebar {
+        return None;
+    }
+    let (y0, alt) = e.area_da_sidebar;
+    let fila = linha.checked_sub(y0)? as usize;
+    if fila >= alt {
+        return None;
+    }
+    let indice = e.topo_sidebar + fila;
+    let item = e.sidebar_visivel().get(indice)?.item.clone();
+    e.foco = Foco::Paginas;
+    e.linha_sidebar = indice;
+    match item {
+        Item::Pasta { .. } => {
+            e.dobrar_pasta();
+            None
+        }
+        Item::Pagina { indice, .. } | Item::Resultado { indice, .. } => {
+            e.foco = Foco::Conteudo;
+            e.paginas.get(indice).map(|p| p.path.clone())
+        }
+    }
+}
+
 pub fn rolar(e: &mut Estado, desce: bool, coluna: u16) {
     // Onde se digita, a roda não faz nada: andar o cursor no meio de uma
     // edição levaria o texto pro bloco errado.
@@ -1615,10 +1711,30 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
     e.largura_da_sidebar = colunas[1].x;
     e.seguir_cursor();
 
-    let paginas: Vec<Line> = e
-        .sidebar_visivel()
+    // A sidebar rola (ciclo 467). O cursor manda: ele fica sempre à vista;
+    // depois de abrir uma pasta, mostra-se o que entrou, se couber junto.
+    let visiveis_da_sidebar = e.sidebar_visivel();
+    let alt = colunas[0].height.saturating_sub(2) as usize;
+    e.area_da_sidebar = (colunas[0].y + 1, alt);
+    if alt > 0 {
+        if let Some(ultimo) = e.revelar_sidebar.take() {
+            if ultimo >= e.topo_sidebar + alt {
+                e.topo_sidebar = (ultimo + 1 - alt).min(e.linha_sidebar);
+            }
+        }
+        if e.linha_sidebar < e.topo_sidebar {
+            e.topo_sidebar = e.linha_sidebar;
+        } else if e.linha_sidebar >= e.topo_sidebar + alt {
+            e.topo_sidebar = e.linha_sidebar + 1 - alt;
+        }
+        e.topo_sidebar = e.topo_sidebar.min(visiveis_da_sidebar.len().saturating_sub(alt));
+    }
+    let topo_sidebar = e.topo_sidebar;
+    let paginas: Vec<Line> = visiveis_da_sidebar
         .into_iter()
         .enumerate()
+        .skip(topo_sidebar)
+        .take(alt.max(1))
         .map(|(i, l)| {
             let selecionada = i == e.linha_sidebar;
             let estilo = if selecionada {
@@ -11685,5 +11801,113 @@ mod testes {
             e.pedidos.last(),
             Some(&Pedido::MoverTarefa { caminho: "pages/projetos/saas/tarefas/001-t.md".into(), destino: EtapaTarefa::Executar })
         );
+    }
+
+    // ── sidebar que rola, clica e entra/sai (ciclo 467) ──────────────
+
+    /// Um vault com `n` páginas soltas e um projeto aninhado em três
+    /// níveis — o que o módulo Projeto pôs na sidebar.
+    fn vault_comprido(n: usize) -> Estado {
+        let mut paginas: Vec<PageMeta> = (0..n)
+            .map(|i| PageMeta { path: format!("pages/solta-{i:02}.md"), title: format!("solta-{i:02}"), section: "pages".into() })
+            .collect();
+        for t in ["001-login", "002-banco"] {
+            paginas.push(PageMeta { path: format!("pages/zprojetos/saas/tarefas/{t}.md"), title: t.into(), section: "pages".into() });
+        }
+        paginas.push(PageMeta { path: "pages/zprojetos/saas/projeto.md".into(), title: "projeto".into(), section: "pages".into() });
+        let mut e = Estado::novo(paginas, analisar(""));
+        e.foco = Foco::Paginas;
+        e
+    }
+
+    fn linha_de(e: &Estado, nome: &str) -> usize {
+        e.sidebar_visivel()
+            .iter()
+            .position(|l| match &l.item {
+                Item::Pasta { nome: n, .. } => n == nome,
+                Item::Pagina { titulo, .. } => titulo == nome,
+                _ => false,
+            })
+            .unwrap_or_else(|| panic!("{nome} não está visível"))
+    }
+
+    #[test]
+    fn a_sidebar_rola_e_o_cursor_nunca_some() {
+        let mut e = vault_comprido(40);
+        e.linha_sidebar = e.sidebar_visivel().len() - 1;
+        // Só a coluna da sidebar: o título do conteúdo é a página aberta.
+        let tela = desenho(&mut e, 100, 20).iter().map(|l| l.chars().take(32).collect::<String>()).collect::<Vec<_>>().join("\n");
+        // A última página tem que estar à vista; antes a lista era cortada
+        // e o cursor andava abaixo da borda.
+        assert!(tela.contains("solta-39"), "{tela}");
+        assert!(!tela.contains("solta-00"), "a lista não rolou:\n{tela}");
+    }
+
+    #[test]
+    fn abrir_pasta_perto_do_fim_mostra_o_que_entrou() {
+        let mut e = vault_comprido(0);
+        // Num terminal de 8 linhas a pasta funda fica no limite.
+        tecla(&mut e, "Enter"); // zprojetos (a primeira linha)
+        tecla(&mut e, "l");
+        tecla(&mut e, "Enter"); // saas
+        tecla(&mut e, "l");
+        assert_eq!(linha_de(&e, "tarefas"), e.linha_sidebar);
+        tecla(&mut e, "Enter"); // abre tarefas
+        let tela = desenho(&mut e, 100, 8).join("\n");
+        assert!(tela.contains("002-banco"), "o conteúdo da pasta ficou abaixo da borda:\n{tela}");
+        assert!(tela.contains("tarefas/"), "o cursor saiu da tela:\n{tela}");
+    }
+
+    #[test]
+    fn l_entra_e_h_sai_como_no_modelo_de_navegacao() {
+        let mut e = vault_comprido(0);
+        e.linha_sidebar = linha_de(&e, "zprojetos");
+        // l numa pasta fechada ABRE; l de novo ENTRA no primeiro filho.
+        tecla(&mut e, "l");
+        assert!(!e.pastas_fechadas.contains("zprojetos"));
+        assert_eq!(e.linha_sidebar, linha_de(&e, "zprojetos"));
+        tecla(&mut e, "l");
+        assert_eq!(e.linha_sidebar, linha_de(&e, "saas"));
+        // h numa pasta FECHADA não a abre (era o defeito): sobe pro pai.
+        assert!(e.pastas_fechadas.contains("zprojetos/saas"));
+        tecla(&mut e, "h");
+        assert!(e.pastas_fechadas.contains("zprojetos/saas"), "h abriu a pasta fechada");
+        assert_eq!(e.linha_sidebar, linha_de(&e, "zprojetos"));
+        // h numa pasta aberta fecha; na raiz, fica.
+        tecla(&mut e, "h");
+        assert!(e.pastas_fechadas.contains("zprojetos"));
+        let antes = e.linha_sidebar;
+        tecla(&mut e, "h");
+        assert_eq!(e.linha_sidebar, antes, "na raiz o cursor fica");
+        // l numa página é borda: fica.
+        tecla(&mut e, "l");
+        tecla(&mut e, "l");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "l");
+        let projeto = linha_de(&e, "projeto");
+        e.linha_sidebar = projeto;
+        tecla(&mut e, "l");
+        assert_eq!(e.linha_sidebar, projeto);
+        // h numa página sobe pra pasta dela.
+        tecla(&mut e, "h");
+        assert_eq!(e.linha_sidebar, linha_de(&e, "saas"));
+    }
+
+    #[test]
+    fn clique_na_sidebar_abre_pasta_e_pagina() {
+        let mut e = vault_comprido(3);
+        e.foco = Foco::Conteudo;
+        desenho(&mut e, 100, 20);
+        let (y0, _) = e.area_da_sidebar;
+        // zprojetos é a primeira linha (pastas antes das páginas).
+        assert_eq!(clicar(&mut e, 2, y0), None);
+        assert!(!e.pastas_fechadas.contains("zprojetos"), "o clique não abriu a pasta");
+        assert_eq!(e.foco, Foco::Paginas);
+        desenho(&mut e, 100, 20);
+        let fila = linha_de(&e, "solta-00") - e.topo_sidebar;
+        assert_eq!(clicar(&mut e, 2, y0 + fila as u16), Some("pages/solta-00.md".into()));
+        assert_eq!(e.foco, Foco::Conteudo);
+        // Fora da sidebar, nada.
+        assert_eq!(clicar(&mut e, 90, y0), None);
     }
 }
