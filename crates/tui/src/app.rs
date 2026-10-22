@@ -10959,7 +10959,9 @@ mod testes {
         modais::executar(&mut e, "ferramentas");
         // Vem do núcleo: nada de pedido de IO.
         assert!(e.pedidos.is_empty());
-        let tela = desenho(&mut e, 160, 24).join("\n");
+        // 40 linhas: o contrato cresceu pra 15 com as de projeto (ciclo
+        // 471). A lista rola num terminal baixo; aqui quer-se vê-la inteira.
+        let tela = desenho(&mut e, 160, 40).join("\n");
         assert!(tela.contains("Ferramentas do agente"), "{tela}");
         assert!(tela.contains("ler_pagina(path)") && tela.contains("propor(path, conteudo"), "{tela}");
         // A de escrita aparece marcada, e as de leitura também se declaram.

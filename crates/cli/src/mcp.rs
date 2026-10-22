@@ -306,6 +306,86 @@ fn chamar(vault: &str, id: Value, params: Option<&Value>) -> Value {
                 Err(e) => texto_erro(id, e),
             }
         }
+        // ── Projeto (ciclo 471). As três `propor_*` passam pelo mesmo
+        // `ipc` do CLI: a regra (numeração, sprint pelo nome, lote) é uma
+        // só, e o que volta pro agente diz que NADA foi gravado.
+        "ver_projeto" => {
+            let projeto = arg_str("projeto");
+            if projeto.trim().is_empty() {
+                let projetos = anotadinho_ipc::handle_listar_projetos(vault.to_string()).unwrap_or_default();
+                return texto(
+                    id,
+                    serde_json::to_string_pretty(&json!({
+                        "projetos": projetos,
+                        "modelo_de_plano": anotadinho_core::plano::MODELO_DE_PLANO,
+                        "como_montar": "Preencha um plano no formato de `modelo_de_plano` e chame propor_plano_de_projeto(plano). Ele vira um lote de propostas pra revisão humana.",
+                    }))
+                    .unwrap_or_default(),
+                );
+            }
+            match anotadinho_ipc::handle_estado_do_projeto(vault.to_string(), projeto) {
+                Ok(e) => texto(
+                    id,
+                    serde_json::to_string_pretty(&json!({
+                        "projeto": e.projeto,
+                        "config": e.config,
+                        "sprint_ativa": anotadinho_core::sprint::ativa(&e.sprints).map(|s| s.numero),
+                        "sprints": e.sprints,
+                        "tarefas": e.tarefas,
+                        "avisos": e.avisos,
+                    }))
+                    .unwrap_or_default(),
+                ),
+                Err(e) => texto_erro(id, e),
+            }
+        }
+        "propor_plano_de_projeto" => {
+            match anotadinho_ipc::handle_propor_plano(vault.to_string(), arg_str("plano"), crate::agora_legivel(), "mcp".into()) {
+                Ok(r) => texto(
+                    id,
+                    format!(
+                        "{} proposta(s) no lote {} pro projeto {}. NADA foi gravado: as páginas aguardam revisão humana, e o lote se aplica junto.{}",
+                        r.ids.len(),
+                        r.lote,
+                        r.slug,
+                        if r.avisos.is_empty() { String::new() } else { format!("\nAvisos:\n- {}", r.avisos.join("\n- ")) }
+                    ),
+                ),
+                Err(e) => texto_erro(id, e),
+            }
+        }
+        "propor_sprint" => {
+            let opcional = |k: &str| Some(arg_str(k)).filter(|v| !v.trim().is_empty());
+            match anotadinho_ipc::handle_propor_sprint(
+                vault.to_string(),
+                arg_str("projeto"),
+                arg_str("nome"),
+                arg_str("objetivo"),
+                opcional("inicio"),
+                opcional("fim"),
+                crate::agora_legivel(),
+                "mcp".into(),
+            ) {
+                Ok(id_p) => texto(id, format!("proposta {id_p} criada. A sprint NÃO foi gravada — ela aguarda revisão humana.")),
+                Err(e) => texto_erro(id, e),
+            }
+        }
+        "propor_tarefa" => {
+            let opcional = |k: &str| Some(arg_str(k)).filter(|v| !v.trim().is_empty());
+            match anotadinho_ipc::handle_propor_tarefa(
+                vault.to_string(),
+                arg_str("projeto"),
+                arg_str("titulo"),
+                arg_str("corpo"),
+                opcional("sprint"),
+                crate::agora_legivel(),
+                opcional("lote"),
+                "mcp".into(),
+            ) {
+                Ok(id_p) => texto(id, format!("proposta {id_p} criada. A tarefa NÃO foi gravada — ela aguarda revisão humana.")),
+                Err(e) => texto_erro(id, e),
+            }
+        }
         "onde_posso_escrever" => match anotadinho_ipc::handle_ler_permissoes(vault.to_string()) {
             Ok(p) => texto(id, serde_json::to_string_pretty(&p).unwrap_or_default()),
             Err(e) => texto_erro(id, e),

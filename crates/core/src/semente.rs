@@ -71,6 +71,7 @@ pub fn arquivos() -> Vec<Arquivo> {
         Arquivo { caminho: "pages/prompts-default/planejar-a-partir-de-uma-spec.md", conteudo: include_str!("../seeds/prompts-default/planejar-a-partir-de-uma-spec.md") },
         Arquivo { caminho: "pages/prompts-default/entender-um-trecho-do-codigo.md", conteudo: include_str!("../seeds/prompts-default/entender-um-trecho-do-codigo.md") },
         Arquivo { caminho: "pages/prompts-default/quebrar-em-tarefas.md", conteudo: include_str!("../seeds/prompts-default/quebrar-em-tarefas.md") },
+        Arquivo { caminho: "pages/prompts-default/montar-a-base-do-projeto.md", conteudo: include_str!("../seeds/prompts-default/montar-a-base-do-projeto.md") },
     ]);
 
     lista

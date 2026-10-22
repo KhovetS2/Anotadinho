@@ -229,6 +229,66 @@ pub const CONTRATO: &[Ferramenta] = &[
             },
         ],
     },
+    // ── Projeto (ciclo 471): ver e montar sem adivinhar frontmatter. ──
+    Ferramenta {
+        nome: "ver_projeto",
+        descricao: "O estado de um projeto: sprints (com a ativa), tarefas com etapa e sprint, config e avisos. Sem `projeto`, lista os projetos e devolve o MODELO de plano que `propor_plano_de_projeto` aceita — comece por aqui pra montar a base de um projeto.",
+        escreve: false,
+        parametros: &[Parametro {
+            nome: "projeto",
+            tipo: Tipo::Texto,
+            descricao: "Slug do projeto (a pasta em pages/projetos)",
+            obrigatorio: false,
+        }],
+    },
+    Ferramenta {
+        nome: "propor_plano_de_projeto",
+        descricao: "PROPÕE o projeto inteiro (projeto, arquitetura, sprints e tarefas) de um plano YAML no formato do modelo de `ver_projeto()`, num lote só, pra revisão humana. Nada é gravado: a pessoa aplica o lote. Num projeto que já existe, só acrescenta sprints e tarefas, numeradas depois das que existem.",
+        escreve: true,
+        parametros: &[
+            Parametro {
+                nome: "plano",
+                tipo: Tipo::Texto,
+                descricao: "O plano em YAML. Campos desconhecidos são recusados com o nome do campo",
+                obrigatorio: true,
+            },
+            Parametro { nome: "motivo", tipo: Tipo::Texto, descricao: "Por que este plano", obrigatorio: false },
+        ],
+    },
+    Ferramenta {
+        nome: "propor_sprint",
+        descricao: "PROPÕE uma sprint nova, planejada, pra revisão humana. Iniciar e encerrar sprints é decisão da pessoa.",
+        escreve: true,
+        parametros: &[
+            Parametro { nome: "projeto", tipo: Tipo::Texto, descricao: "Slug do projeto", obrigatorio: true },
+            Parametro { nome: "nome", tipo: Tipo::Texto, descricao: "Nome da sprint", obrigatorio: true },
+            Parametro { nome: "objetivo", tipo: Tipo::Texto, descricao: "O que ela entrega", obrigatorio: false },
+            Parametro { nome: "inicio", tipo: Tipo::Texto, descricao: "AAAA-MM-DD", obrigatorio: false },
+            Parametro { nome: "fim", tipo: Tipo::Texto, descricao: "AAAA-MM-DD", obrigatorio: false },
+        ],
+    },
+    Ferramenta {
+        nome: "propor_tarefa",
+        descricao: "PROPÕE uma tarefa nova, em `ideia`, pra revisão humana — opcionalmente já numa sprint. O corpo segue as quatro seções: Objetivo, Critérios de aceite, Abordagem, Fora de escopo.",
+        escreve: true,
+        parametros: &[
+            Parametro { nome: "projeto", tipo: Tipo::Texto, descricao: "Slug do projeto", obrigatorio: true },
+            Parametro { nome: "titulo", tipo: Tipo::Texto, descricao: "Título da tarefa", obrigatorio: true },
+            Parametro {
+                nome: "corpo",
+                tipo: Tipo::Texto,
+                descricao: "Markdown com as quatro seções (## Objetivo, ## Critérios de aceite, ## Abordagem, ## Fora de escopo). Omitido: o esqueleto",
+                obrigatorio: false,
+            },
+            Parametro { nome: "sprint", tipo: Tipo::Texto, descricao: "Nome ou número da sprint. Omitido: backlog", obrigatorio: false },
+            Parametro {
+                nome: "lote",
+                tipo: Tipo::Texto,
+                descricao: "Nome do lote, pra várias tarefas numa decisão só",
+                obrigatorio: false,
+            },
+        ],
+    },
     Ferramenta {
         nome: "propostas_pendentes",
         descricao: "Lista o que já foi proposto e ainda aguarda revisão.",
@@ -259,6 +319,9 @@ pub fn como_agir(vault: &str) -> String {
         "O vault está em {vault}. Pra LER e PROPOR, use o servidor MCP do Anotadinho (se estiver ligado) ou o CLI dele: `anotadinho-cli --vault {vault} <comando>`.\n\n"
     ));
     t.push_str("Você NÃO escreve página: a única escrita é propor, e o que você propõe só entra depois que a pessoa revisa o diff e aprova.\n\n");
+    // Projetos (ciclo 471): sem isto, "monte este projeto" virava páginas
+    // escritas na mão com o frontmatter adivinhado.
+    t.push_str("Pra montar a base de um projeto (projeto, arquitetura, sprints, tarefas), não escreva as páginas na mão: chame `ver_projeto()` pra ver o modelo de plano e depois `propor_plano_de_projeto` — ou, pelo CLI, `projeto modelo-de-plano` e `projeto montar --file`.\n\n");
     t.push_str(&em_texto());
     t
 }
@@ -288,7 +351,8 @@ mod testes {
     #[test]
     fn nada_escreve_sem_passar_por_revisao() {
         let escrevem: Vec<&str> = CONTRATO.iter().filter(|f| f.escreve).map(|f| f.nome).collect();
-        assert_eq!(escrevem, ["propor", "propor_mudanca"]);
+        // As três de projeto (ciclo 471) entram pela mesma porta: propõem.
+        assert_eq!(escrevem, ["propor", "propor_mudanca", "propor_plano_de_projeto", "propor_sprint", "propor_tarefa"]);
         for nome in escrevem {
             let f = por_nome(nome).unwrap();
             assert!(f.nome.starts_with("propor"), "quem escreve, propõe: {}", f.nome);

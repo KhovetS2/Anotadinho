@@ -1281,3 +1281,50 @@ fn sprint_iniciar_encerrar_e_mover_tarefa_propondo() {
     aplicar_tudo(&dir);
     assert!(!fs::read_to_string(dir.path().join(tarefa)).unwrap().contains("sprint:"));
 }
+
+// ── MCP: ver e montar projeto (ciclo 471) ────────────────────────────
+
+fn chamada(id: u64, nome: &str, args: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":nome,"arguments":args}})
+}
+
+fn texto_da(r: &serde_json::Value) -> String {
+    r["result"]["content"][0]["text"].as_str().unwrap_or_default().to_string()
+}
+
+#[test]
+fn mcp_monta_um_projeto_do_modelo_ate_a_tarefa_na_sprint() {
+    let dir = setup_vault();
+    // 1. Sem projeto, `ver_projeto` ensina o formato.
+    let r = mcp(&dir, &[chamada(1, "ver_projeto", serde_json::json!({}))]);
+    let v: serde_json::Value = serde_json::from_str(&texto_da(&r[0])).unwrap();
+    let modelo = v["modelo_de_plano"].as_str().unwrap().to_string();
+    assert!(modelo.contains("sprints:"), "{modelo}");
+    // 2. O plano vira um lote, sem gravar.
+    let r = mcp(&dir, &[chamada(2, "propor_plano_de_projeto", serde_json::json!({ "plano": modelo }))]);
+    let t = texto_da(&r[0]);
+    assert!(t.contains("NADA foi gravado") && t.contains("7 proposta"), "{t}");
+    assert!(!dir.path().join("pages/projetos/agenda/projeto.md").exists());
+    aplicar_tudo(&dir);
+    // 3. Com o projeto, o estado tem as sprints.
+    let r = mcp(&dir, &[chamada(3, "ver_projeto", serde_json::json!({ "projeto": "agenda" }))]);
+    let v: serde_json::Value = serde_json::from_str(&texto_da(&r[0])).unwrap();
+    assert_eq!(v["sprints"].as_array().unwrap().len(), 2, "{v}");
+    // 4. Tarefa nova na sprint, pelo nome.
+    let r = mcp(&dir, &[chamada(4, "propor_tarefa", serde_json::json!({ "projeto": "agenda", "titulo": "Lembrete", "sprint": "Agendamento" }))]);
+    assert!(texto_da(&r[0]).contains("NÃO foi gravada"), "{}", texto_da(&r[0]));
+    aplicar_tudo(&dir);
+    let md = fs::read_to_string(dir.path().join("pages/projetos/agenda/tarefas/003-lembrete.md")).unwrap();
+    assert!(md.contains("sprint: 2"), "{md}");
+    // 5. E uma sprint nova.
+    let r = mcp(&dir, &[chamada(5, "propor_sprint", serde_json::json!({ "projeto": "agenda", "nome": "Pagamentos" }))]);
+    assert!(texto_da(&r[0]).contains("NÃO foi gravada"));
+}
+
+#[test]
+fn mcp_plano_errado_volta_como_erro_pro_agente() {
+    let dir = setup_vault();
+    let r = mcp(&dir, &[chamada(1, "propor_plano_de_projeto", serde_json::json!({ "plano": "projeto:\n  titulo: X\n  descricao: y\n" }))]);
+    assert_eq!(r[0]["result"]["isError"], true, "{}", r[0]);
+    assert!(texto_da(&r[0]).contains("descricao"));
+}

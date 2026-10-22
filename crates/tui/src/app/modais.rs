@@ -1665,7 +1665,18 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
         Modal::Escolha { titulo, lista, .. } => {
             let filtro = if lista.filtro.is_some() { 2 } else { 0 };
             let altura = (lista.visiveis().len().max(1) as u16 + 2 + filtro).min(22);
-            let area = componentes::area_do_modal(tela, 56, altura);
+            // A caixa cresce até caber o item mais longo (ciclo 471): com
+            // 56 fixas, as assinaturas das ferramentas de projeto saíam
+            // cortadas ("propor_sprint(projeto, nome, [objetivo], [inicio]…")
+            // e quem lia não via os parâmetros. A tela é o teto.
+            let maior = lista
+                .itens
+                .iter()
+                .map(|i| i.rotulo.chars().count() + i.detalhe.chars().count() + 8)
+                .max()
+                .unwrap_or(0) as u16;
+            let largura = maior.clamp(56, tela.width.saturating_sub(4).max(56));
+            let area = componentes::area_do_modal(tela, largura, altura);
             let dentro = componentes::desenhar_modal(f, area, titulo, "j k · Enter · Esc", t);
             componentes::desenhar_lista(f, dentro, lista, "", t);
         }
