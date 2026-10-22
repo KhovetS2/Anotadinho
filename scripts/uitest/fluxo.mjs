@@ -2720,3 +2720,178 @@ fluxo.push({
     }
   },
 });
+
+// ── ciclo 459: a tarefa em `executar` roda no repositório do projeto ──
+//
+// Vault e repositório TEMPORÁRIOS, passados por parâmetro: o comando
+// recebe o `vaultPath`, então o cenário não toca no vault aberto no app.
+// O agente é o falso no modo `--tarefa`, que grava o `pwd` e responde
+// `RESULTADO: concluida` — o que se mede é o arranjo (reserva, `cwd`,
+// fechamento), não um modelo.
+
+async function projetoTemporario() {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), "anotadinho-projeto-"));
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "anotadinho-repo-"));
+  const escrever = (rel, texto) => {
+    fs.mkdirSync(path.dirname(path.join(vault, rel)), { recursive: true });
+    fs.writeFileSync(path.join(vault, rel), texto);
+  };
+  escrever("pages/projetos/saas/projeto.md", "---\ntitle: SaaS\ntype: projeto\nprojeto: saas\n---\n# SaaS\n\nvisão\n");
+  const tarefa = "pages/projetos/saas/tarefas/001-login.md";
+  escrever(
+    tarefa,
+    "---\ntitle: Login\ntype: tarefa\nprojeto: saas\nstatus: executar\n---\n# Login\n\n## Objetivo\n\nentrar\n",
+  );
+  escrever(".anotadinho/projetos.json", JSON.stringify({ saas: { repositorio: repo } }));
+  const status = () => {
+    const m = fs.readFileSync(path.join(vault, tarefa), "utf8").match(/^status: (.*)$/m);
+    return m && m[1].trim();
+  };
+  const limpar = () => {
+    fs.rmSync(vault, { recursive: true, force: true });
+    fs.rmSync(repo, { recursive: true, force: true });
+  };
+  return { fs, path, vault, repo, tarefa, status, limpar };
+}
+
+const AVALIAR = (vault, args) => `window.__TAURI_INTERNALS__.invoke('avaliar_projetos', {
+  vaultPath: ${JSON.stringify(vault)},
+  adaptador: { nome: 'falso', binario: ${JSON.stringify(FALSO)}, args: ${JSON.stringify(args)}, cwd: '', timeout_s: 30, formato: 'texto' },
+  teto: 0,
+  limite: 2,
+})`;
+
+/// Espera a etapa da tarefa SAIR de executando — condição, com teto.
+async function esperarFechar(p) {
+  const limite = Date.now() + 20000;
+  while (Date.now() < limite) {
+    const s = p.status();
+    if (s !== "executar" && s !== "executando") return s;
+    await PAUSA(150);
+  }
+  return p.status();
+}
+
+fluxo.push({
+  nome: "projeto: tarefa em executar roda no repositório e vai pra revisão (459)",
+  async fn(bridge, ctx) {
+    const p = await projetoTemporario();
+    try {
+      const r = await bridge.js(AVALIAR(p.vault, ["--tarefa", "{prompt}"]));
+      ctx.assertEq(JSON.stringify(r.iniciadas), JSON.stringify([p.tarefa]), `não subiu: ${JSON.stringify(r)}`);
+      // A reserva é síncrona com o comando: já voltou em executando.
+      ctx.assertEq(p.status(), "executando", "a tarefa não foi reservada antes do agente");
+      // Pedir de novo enquanto roda não sobe a mesma tarefa outra vez.
+      const de_novo = await bridge.js(AVALIAR(p.vault, ["--tarefa", "{prompt}"]));
+      ctx.assertEq(de_novo.iniciadas.length, 0, "a mesma tarefa subiu duas vezes");
+      ctx.assertEq(await esperarFechar(p), "revisao", "a tarefa não terminou em revisão");
+      const marca = p.path.join(p.repo, "feito-pelo-agente.txt");
+      ctx.assert(p.fs.existsSync(marca), "o agente não rodou no repositório do projeto");
+      ctx.assertEq(p.fs.realpathSync(p.fs.readFileSync(marca, "utf8").trim()), p.fs.realpathSync(p.repo));
+      const conversa = p.fs.readFileSync(
+        p.path.join(p.vault, "pages/projetos/saas/conversas/tarefa-001.md"),
+        "utf8",
+      );
+      ctx.assert(/^## agente · /m.test(conversa), "a resposta não foi gravada na conversa da tarefa");
+      ctx.assert(conversa.includes("RESULTADO: concluida"), "o relato não está na conversa");
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+fluxo.push({
+  nome: "projeto: agente que falha deixa a tarefa bloqueada, não presa (459)",
+  async fn(bridge, ctx) {
+    const p = await projetoTemporario();
+    try {
+      const r = await bridge.js(AVALIAR(p.vault, ["--falhar", "{prompt}"]));
+      ctx.assertEq(r.iniciadas.length, 1, `não subiu: ${JSON.stringify(r)}`);
+      ctx.assertEq(await esperarFechar(p), "bloqueada");
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+fluxo.push({
+  nome: "projeto: sem repositório configurado avisa e não reserva (459)",
+  async fn(bridge, ctx) {
+    const p = await projetoTemporario();
+    try {
+      p.fs.writeFileSync(p.path.join(p.vault, ".anotadinho/projetos.json"), "{}");
+      const r = await bridge.js(AVALIAR(p.vault, ["--tarefa", "{prompt}"]));
+      ctx.assertEq(r.iniciadas.length, 0);
+      ctx.assert(r.avisos.some((a) => a.includes("sem repositório")), JSON.stringify(r.avisos));
+      ctx.assertEq(p.status(), "executar", "ficou presa em executando sem agente");
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+fluxo.push({
+  nome: "projeto: a janela confere a fila sozinha, de poucos em poucos segundos (459)",
+  async fn(bridge, ctx) {
+    // Sem isto, o comando funcionaria e nada o chamaria: o mesmo buraco
+    // que o painel de execuções teve até o ciclo 441.
+    //
+    // Não dá pra contar as chamadas embrulhando `invoke`: a Tauri o
+    // define não-gravável e não-configurável, e a atribuição falha
+    // CALADA (a primeira versão deste cenário media zero e parecia
+    // defeito do app). Mede-se o EFEITO: um projeto PAUSADO no vault
+    // aberto faz a fila responder "fila pausada" — sem subir agente
+    // nenhum, porque o adaptador da tela é o de verdade — e a tela loga
+    // o aviso quando ele muda.
+    const fs = await import("node:fs");
+    const raiz = `${ctx.vault}/pages/projetos`;
+    const tinhaRaiz = fs.existsSync(raiz);
+    const pasta = `${raiz}/__uitest-fila`;
+    const cfg = `${ctx.vault}/.anotadinho/projetos.json`;
+    const cfgAntes = fs.existsSync(cfg) ? fs.readFileSync(cfg, "utf8") : null;
+    try {
+      fs.mkdirSync(`${pasta}/tarefas`, { recursive: true });
+      fs.writeFileSync(`${pasta}/projeto.md`, "---\ntitle: __uitest fila\ntype: projeto\n---\n# fila\n");
+      fs.writeFileSync(
+        `${pasta}/tarefas/001-x.md`,
+        "---\ntitle: x\ntype: tarefa\nprojeto: __uitest-fila\nstatus: executar\n---\n# x\n",
+      );
+      const config = cfgAntes ? JSON.parse(cfgAntes) : {};
+      config["__uitest-fila"] = { repositorio: ctx.vault, pausado: true };
+      fs.mkdirSync(`${ctx.vault}/.anotadinho`, { recursive: true });
+      fs.writeFileSync(cfg, JSON.stringify(config));
+      await bridge.js(`(() => {
+        const original = console.warn;
+        window.__avisosFila = { lista: [], original };
+        console.warn = function (...a) {
+          window.__avisosFila.lista.push(a.map(String).join(' '));
+          return original.apply(this, a);
+        };
+        return true;
+      })()`);
+      let achou = false;
+      try {
+        // O bridge corta script em 5 s: a espera fica aqui, por condição.
+        const limite = Date.now() + 12000;
+        while (Date.now() < limite && !achou) {
+          await PAUSA(250);
+          achou = await bridge.js(
+            "window.__avisosFila.lista.some(m => m.includes('__uitest-fila: fila pausada'))",
+          );
+        }
+      } finally {
+        await bridge.js(`(() => { console.warn = window.__avisosFila.original; delete window.__avisosFila; return true; })()`);
+      }
+      ctx.assert(achou, "em 12 s a tela não conferiu a fila dos projetos");
+      ctx.assert(fs.readFileSync(`${pasta}/tarefas/001-x.md`, "utf8").includes("status: executar"), "a pausa não segurou a tarefa");
+    } finally {
+      fs.rmSync(pasta, { recursive: true, force: true });
+      if (!tinhaRaiz) fs.rmSync(raiz, { recursive: true, force: true });
+      if (cfgAntes === null) fs.rmSync(cfg, { force: true });
+      else fs.writeFileSync(cfg, cfgAntes);
+    }
+  },
+});

@@ -542,6 +542,47 @@ pub fn app() -> Html {
         });
     }
 
+    // A fila dos projetos (ciclo 459): uma tarefa posta em `executar`
+    // sobe o agente em segundos, não no minuto dos gatilhos — é a
+    // resposta a "mudei o status e nada aconteceu". O backend só olha
+    // `pages/projetos/*/tarefas/`, então a volta sem pedido é barata.
+    {
+        let vault_path = vault_path.clone();
+        use_effect_with(vault_path.clone(), move |_| {
+            let mut interval: Option<gloo_timers::callback::Interval> = None;
+            if let Some(ref p) = *vault_path {
+                let path = p.clone();
+                let ocupado = std::rc::Rc::new(std::cell::Cell::new(false));
+                // Os avisos só saem quando MUDAM: repetidos a cada 5 s, um
+                // "sem repositório" enterraria qualquer outra mensagem.
+                let ultimos: std::rc::Rc<std::cell::RefCell<Vec<String>>> = Default::default();
+                interval = Some(gloo_timers::callback::Interval::new(5_000, move || {
+                    if ocupado.get() {
+                        return;
+                    }
+                    ocupado.set(true);
+                    let (path, ocupado, ultimos) = (path.clone(), ocupado.clone(), ultimos.clone());
+                    wasm_bindgen_futures::spawn_local(async move {
+                        let adaptador = crate::state::load_adaptador();
+                        let a = crate::state::load_aparencia();
+                        if let Ok(r) =
+                            api::avaliar_projetos(&path, &adaptador, a.teto_de_contexto, a.limite_de_agentes).await
+                        {
+                            if *ultimos.borrow() != r.avisos {
+                                for aviso in &r.avisos {
+                                    web_sys::console::warn_1(&format!("projetos: {aviso}").into());
+                                }
+                                *ultimos.borrow_mut() = r.avisos;
+                            }
+                        }
+                        ocupado.set(false);
+                    });
+                }));
+            }
+            move || drop(interval)
+        });
+    }
+
     {
         let vault_path = vault_path.clone();
         let list_version = list_version.clone();

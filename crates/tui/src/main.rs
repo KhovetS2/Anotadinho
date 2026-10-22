@@ -410,6 +410,27 @@ fn enviar_na_conversa(
         ));
     }
     let adaptador = estado.preferencias.agente.clone().unwrap_or_default().migrado();
+    subir_agente(estado, vault, vault_atual, trabalhos, path, &prompt, &adaptador, anexos.len(), sessao.as_deref());
+}
+
+/// Sobe o processo do agente pra uma conversa cuja pergunta JÁ está no
+/// arquivo e cujo prompt JÁ está montado.
+///
+/// Separado de `enviar_na_conversa` no ciclo 459: a fila dos projetos
+/// chega com as duas coisas prontas pelo `ipc` (que é compartilhado com
+/// a janela), e só precisa da parte que inicia e acompanha.
+#[allow(clippy::too_many_arguments)]
+fn subir_agente(
+    estado: &mut Estado,
+    vault: &str,
+    vault_atual: &str,
+    trabalhos: &mut Trabalhos,
+    path: &str,
+    prompt: &str,
+    adaptador: &anotadinho_core::agente::Adaptador,
+    anexos: usize,
+    sessao: Option<&str>,
+) -> bool {
     let cwd = if adaptador.cwd.trim().is_empty() {
         anotadinho_core::agente::raiz_do_projeto(vault, |d| d.join(".git").exists())
     } else {
@@ -425,12 +446,12 @@ fn enviar_na_conversa(
         && !adaptador.arg_mcp.trim().is_empty()
         && anotadinho_core::agente::cli_ao_lado(std::env::current_exe().ok()).is_none())
     .then(|| anotadinho_core::agente::AVISO_SEM_CLI.to_string());
-    match anotadinho_tui::agente::Trabalho::iniciar(
-        &adaptador,
-        &prompt,
+    let subiu = match anotadinho_tui::agente::Trabalho::iniciar(
+        adaptador,
+        prompt,
         &cwd,
         &config_mcp,
-        sessao.as_deref().unwrap_or(""),
+        sessao.unwrap_or(""),
     ) {
         Ok(t) => {
             if let Some(a) = &aviso_mcp {
@@ -443,19 +464,80 @@ fn enviar_na_conversa(
                     quando: agora_local(),
                     agente: adaptador.nome.clone(),
                     binario: adaptador.binario.clone(),
-                    anexos: anexos.len(),
+                    anexos,
                     prompt: prompt.chars().count(),
                 },
             );
+            true
         }
         Err(e) => {
+            // Se era tarefa de projeto, ela não pode ficar em
+            // `executando` sem processo (ciclo 459).
+            let _ = anotadinho_ipc::handle_fechar_tarefa_da_conversa(
+                vault.to_string(),
+                path.to_string(),
+                anotadinho_ipc::FimDaTarefa::Falhou(e.clone()),
+            );
             if let Some(c) = estado.conversa.as_mut() {
                 c.erro = Some(e);
             }
+            false
         }
-    }
+    };
     if vault == vault_atual && estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path) {
         abrir(estado, vault, path);
+    }
+    subiu
+}
+
+/// A fila dos projetos nesta TUI (ciclo 459): o que foi avisado por
+/// último, pra só repetir quando mudar.
+#[derive(Default)]
+struct Projetos {
+    avisos: Vec<String>,
+}
+
+/// Confere a fila dos projetos e sobe o agente de cada tarefa reservada.
+///
+/// A decisão do que roda é do `ipc`, a mesma da janela. Só reserva o
+/// que cabe agora nesta TUI: tarefa reservada que fosse pra espera
+/// ficaria em `executando` sem processo nenhum.
+fn conferir_projetos(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &FilaDaTui, projetos: &mut Projetos) {
+    let limite = estado.preferencias.limite_de_agentes.max(1);
+    let vagas = limite.saturating_sub(trabalhos.len() + fila.len());
+    let params = anotadinho_ipc::ParametrosDaFila {
+        agora: agora_local(),
+        teto: estado.preferencias.teto_de_contexto,
+        limite_historico: app::conversa::HISTORICO_NO_PROMPT,
+        vagas: Some(vagas),
+    };
+    let resultado = match anotadinho_ipc::handle_tarefas_a_executar(vault.to_string(), params) {
+        Ok(r) => r,
+        Err(e) => {
+            let aviso = vec![format!("projetos: {e}")];
+            if projetos.avisos != aviso {
+                estado.aviso = Some(aviso[0].clone());
+                projetos.avisos = aviso;
+            }
+            return;
+        }
+    };
+    if resultado.avisos != projetos.avisos {
+        if !resultado.avisos.is_empty() {
+            estado.aviso = Some(format!("projetos: {}", resultado.avisos.join(" · ")));
+        }
+        projetos.avisos = resultado.avisos;
+    }
+    let base = adaptador_da_conversa(estado);
+    for t in resultado.iniciar {
+        // O repositório entra por PARÂMETRO, no campo `cwd` que o
+        // adaptador já tinha — o mesmo caminho da janela.
+        let mut adaptador = base.clone();
+        adaptador.cwd = t.cwd.clone();
+        let sessao = sessao_da_conversa(estado, vault, &t.conversa);
+        if subir_agente(estado, vault, vault, trabalhos, &t.conversa, &t.prompt, &adaptador, 0, sessao.as_deref()) {
+            estado.aviso = Some(format!("tarefa em execução: {}", t.tarefa));
+        }
     }
 }
 
@@ -513,12 +595,25 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila:
                 let _ = handle_write_page(vault.to_string(), path.clone(), atualizado);
             }
         }
+        // A tarefa dona desta conversa sai de `executando` (ciclo 459),
+        // DEPOIS da resposta ir pro arquivo: quem abrir a tarefa em
+        // `revisao` tem que achar o relato lá.
+        let fim_da_tarefa = match &fim {
+            Ok(texto) => anotadinho_ipc::FimDaTarefa::Respondeu(texto.clone()),
+            Err(e) if e.contains("interrompida") => anotadinho_ipc::FimDaTarefa::Interrompida,
+            Err(e) => anotadinho_ipc::FimDaTarefa::Falhou(e.clone()),
+        };
         let erro = match fim {
             Ok(texto) => acrescentar_mensagem(vault, &path, &Mensagem { autor: Autor::Agente, quando: agora_local(), texto })
                 .err()
                 .map(|e| format!("não gravou a resposta: {e}")),
             Err(e) => Some(e),
         };
+        match anotadinho_ipc::handle_fechar_tarefa_da_conversa(vault.to_string(), path.clone(), fim_da_tarefa) {
+            Ok(Some(etapa)) => estado.aviso = Some(format!("tarefa foi pra {}: {path}", etapa.label())),
+            Ok(None) => {}
+            Err(e) => estado.aviso = Some(format!("não fechou a tarefa de {path}: {e}")),
+        }
         let aberta = deste_vault && estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path);
         if aberta {
             if let Some(c) = estado.conversa.as_mut() {
@@ -1778,6 +1873,7 @@ fn laco<B: ratatui::backend::Backend>(
     // não é .md: propostas e git).
     let watcher = anotadinho_vault::VaultWatcher::start(std::path::PathBuf::from(vault)).ok();
     let mut gatilhos = Gatilhos::novo(vault);
+    let mut projetos = Projetos::default();
     loop {
         estado.agora = Some(agora_local());
         term.draw(|f| app::desenhar(f, estado)).map_err(|e| e.to_string())?;
@@ -1802,6 +1898,11 @@ fn laco<B: ratatui::backend::Backend>(
             // Os gatilhos (ciclo 412): na mudança, na hora, ou quando a
             // consulta passa a ter resposta.
             disparar_gatilhos(estado, vault, trabalhos, fila, &mut gatilhos, avisado);
+            // A fila dos projetos (ciclo 459): a cada ~5 s (20 voltas de
+            // 250 ms), o mesmo ritmo da janela.
+            if voltas_sem_tecla % 20 == 0 {
+                conferir_projetos(estado, vault, trabalhos, fila, &mut projetos);
+            }
             acompanhar(estado, vault, trabalhos, fila);
             atender(estado, vault, trabalhos, fila);
             buscar_na_paleta(estado, vault);

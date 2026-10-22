@@ -252,6 +252,13 @@ pub struct ParametrosDaFila {
     pub teto: usize,
     /// Quantas mensagens recentes da conversa da tarefa entram.
     pub limite_historico: usize,
+    /// Quantas tarefas o frontend consegue INICIAR agora (vagas livres
+    /// na fila de agentes dele). `None` = sem limite.
+    ///
+    /// Reservar sem vaga pra iniciar deixaria a tarefa em `executando`
+    /// sem processo nenhum, segurando o projeto (ciclo 459).
+    #[serde(default)]
+    pub vagas: Option<usize>,
 }
 
 /// Confere a fila de todos os projetos e RESERVA o que pode começar.
@@ -291,6 +298,10 @@ pub fn handle_tarefas_a_executar(
         return Ok(saida);
     }
 
+    let mut livres = params.vagas.unwrap_or(usize::MAX);
+    if livres == 0 {
+        return Ok(saida);
+    }
     let _trava = Trava::pegar(&vault_path)?;
     for (p, tarefas) in com_pedido {
         let cfg = config.get(&p.slug).cloned().unwrap_or_default();
@@ -316,8 +327,14 @@ pub fn handle_tarefas_a_executar(
             }
         }
         for t in fila.into_iter().take(vagas) {
+            if livres == 0 {
+                break;
+            }
             match reservar_e_preparar(&vault_path, &p, t, &tarefas, &repositorio, &params) {
-                Ok(Some(trabalho)) => saida.iniciar.push(trabalho),
+                Ok(Some(trabalho)) => {
+                    livres -= 1;
+                    saida.iniciar.push(trabalho)
+                }
                 Ok(None) => {}
                 Err(e) => saida.avisos.push(format!("{}: {e}", t.caminho)),
             }
@@ -353,7 +370,14 @@ fn reservar_e_preparar(
     let conversa_atual = handle_read_page(vault_path.to_string(), conversa_path.clone()).ok();
     let base = conversa_atual.clone().unwrap_or_else(|| pagina_da_conversa(p, &tarefa));
     let (fm, corpo) = MarkdownCodec::split_frontmatter_text(&base);
-    let historico = conversa::parse(corpo);
+    // Com sessão aberta (ciclo 433), o agente já tem a conversa: repetir
+    // o histórico no prompt só pagaria tokens duas vezes. É o mesmo corte
+    // que a TUI faz na conversa comum.
+    let historico = if conversa::sessao_do_frontmatter(fm).is_some() {
+        Vec::new()
+    } else {
+        conversa::parse(corpo)
+    };
     let pergunta = projeto::pergunta_de_executar(&tarefa);
     let minha = Mensagem { autor: Autor::Voce, quando: params.agora.clone(), texto: pergunta.clone() };
     let corpo_novo = conversa::append(corpo, &minha);
@@ -464,6 +488,32 @@ pub fn handle_fechar_tarefa(
     Ok(destino)
 }
 
+/// Fecha a tarefa dona desta conversa, se houver uma.
+///
+/// É o que os executores chamam no fim de TODA execução, sem precisar
+/// saber se a conversa é de tarefa: a conversa de execução tem `tarefa:`
+/// no frontmatter (gravado por `handle_tarefas_a_executar`), e as
+/// outras não têm, então pra elas isto não faz nada. Uma pergunta que a
+/// pessoa mande à mão na conversa da tarefa, com a tarefa em `revisao`,
+/// também passa aqui e também não faz nada: `fechar` só mexe em
+/// `executando`.
+pub fn handle_fechar_tarefa_da_conversa(
+    vault_path: String,
+    conversa_path: String,
+    fim: FimDaTarefa,
+) -> Result<Option<EtapaTarefa>, String> {
+    let Ok(texto) = handle_read_page(vault_path.clone(), conversa_path) else {
+        return Ok(None);
+    };
+    let Ok((fm, _)) = MarkdownCodec::split_frontmatter(&texto) else {
+        return Ok(None);
+    };
+    let Some(tarefa) = fm.extra.get("tarefa").and_then(|v| v.as_str()).map(str::to_string) else {
+        return Ok(None);
+    };
+    handle_fechar_tarefa(vault_path, tarefa, fim).map(Some)
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -472,7 +522,7 @@ mod testes {
     const AGORA: &str = "2026-10-21 10:00";
 
     fn params() -> ParametrosDaFila {
-        ParametrosDaFila { agora: AGORA.into(), teto: 0, limite_historico: 12 }
+        ParametrosDaFila { agora: AGORA.into(), teto: 0, limite_historico: 12, vagas: None }
     }
 
     /// Vault com um projeto `saas`, um repositório de verdade e `n`
@@ -672,5 +722,63 @@ mod testes {
         let conversa = handle_read_page(v, t2.conversa).unwrap();
         let (_, corpo) = MarkdownCodec::split_frontmatter_text(&conversa);
         assert_eq!(conversa::parse(corpo).len(), 2);
+    }
+
+    #[test]
+    fn nao_reserva_alem_das_vagas_do_frontend() {
+        let (_g, _r, v, c) = montar(2);
+        let mut cfg = handle_ler_projetos_cfg(v.clone()).unwrap();
+        cfg.get_mut("saas").unwrap().concorrencia = 2;
+        handle_gravar_projetos_cfg(v.clone(), cfg).unwrap();
+        for x in &c {
+            pedir_execucao(&v, x);
+        }
+        let zero = ParametrosDaFila { vagas: Some(0), ..params() };
+        assert!(handle_tarefas_a_executar(v.clone(), zero).unwrap().iniciar.is_empty());
+        let uma = ParametrosDaFila { vagas: Some(1), ..params() };
+        assert_eq!(handle_tarefas_a_executar(v.clone(), uma).unwrap().iniciar.len(), 1);
+        // A segunda continua em `executar`, esperando a vaga, e não presa
+        // em `executando` sem processo.
+        let etapas: Vec<EtapaTarefa> = c.iter().map(|x| etapa(&v, x)).collect();
+        assert_eq!(etapas, [EtapaTarefa::Executando, EtapaTarefa::Executar]);
+    }
+
+    #[test]
+    fn fechar_pela_conversa_acha_a_tarefa() {
+        let (_g, _r, v, c) = montar(1);
+        pedir_execucao(&v, &c[0]);
+        let t = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        let r = handle_fechar_tarefa_da_conversa(
+            v.clone(),
+            t.conversa,
+            FimDaTarefa::Respondeu("RESULTADO: concluida".into()),
+        )
+        .unwrap();
+        assert_eq!(r, Some(EtapaTarefa::Revisao));
+        // Conversa comum: nada a fechar.
+        let geral = projeto::caminho_da_conversa_geral("saas");
+        assert_eq!(
+            handle_fechar_tarefa_da_conversa(v, geral, FimDaTarefa::Interrompida).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn com_sessao_o_historico_nao_se_repete() {
+        let (_g, _r, v, c) = montar(1);
+        pedir_execucao(&v, &c[0]);
+        let t = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        handle_fechar_tarefa(v.clone(), c[0].clone(), FimDaTarefa::Respondeu("RESPOSTA-UM\nRESULTADO: concluida".into()))
+            .unwrap();
+        // O executor grava a resposta e a sessão; aqui, à mão.
+        let atual = handle_read_page(v.clone(), t.conversa.clone()).unwrap();
+        let (fm, corpo) = MarkdownCodec::split_frontmatter_text(&atual);
+        let msg = Mensagem { autor: Autor::Agente, quando: AGORA.into(), texto: "RESPOSTA-UM".into() };
+        let com_resposta = format!("{fm}\n{}", conversa::append(corpo, &msg));
+        let com_sessao = conversa::reescrever_sessao(&com_resposta, Some("sess-1"));
+        handle_write_page(v.clone(), t.conversa.clone(), com_sessao).unwrap();
+        handle_mudar_etapa_tarefa(v.clone(), c[0].clone(), EtapaTarefa::Executar).unwrap();
+        let t2 = handle_tarefas_a_executar(v, params()).unwrap().iniciar.remove(0);
+        assert!(!t2.prompt.contains("RESPOSTA-UM"), "o histórico foi junto com a sessão aberta");
     }
 }

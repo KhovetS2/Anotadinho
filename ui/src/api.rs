@@ -715,6 +715,33 @@ pub async fn avaliar_gatilhos(
     .await
 }
 
+/// O que a checagem dos projetos fez (ciclo 459).
+#[derive(Debug, Clone, PartialEq, Default, serde::Deserialize)]
+pub struct ProjetosAvaliados {
+    /// Tarefas cujo agente subiu agora.
+    pub iniciadas: Vec<String>,
+    /// Por que alguma tarefa em `executar` não saiu.
+    pub avisos: Vec<String>,
+}
+
+/// Confere a fila dos projetos e sobe o agente das tarefas reservadas.
+pub async fn avaliar_projetos(
+    vault_path: &str,
+    adaptador: &anotadinho_core::agente::Adaptador,
+    teto: usize,
+    limite: usize,
+) -> Result<ProjetosAvaliados, String> {
+    chamar(
+        "avaliar_projetos",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .serde("adaptador", adaptador)
+            .serde("teto", &teto)
+            .serde("limite", &limite),
+    )
+    .await
+}
+
 /// As permissões de escrita do agente (ciclo 427).
 pub async fn ler_permissoes(
     vault_path: &str,

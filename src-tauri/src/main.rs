@@ -619,6 +619,67 @@ fn avaliar_gatilhos(
     Ok(dispararam)
 }
 
+/// O que a checagem dos projetos fez (ciclo 459).
+#[derive(serde::Serialize)]
+struct ProjetosAvaliados {
+    /// Tarefas cujo agente subiu agora.
+    iniciadas: Vec<String>,
+    /// Por que alguma tarefa em `executar` não saiu.
+    avisos: Vec<String>,
+}
+
+/// Confere a fila dos projetos e sobe o agente de cada tarefa reservada
+/// (ciclo 459).
+///
+/// A tela chama a cada poucos segundos. Quem decide o que roda é o
+/// `ipc`, o mesmo da TUI; aqui só se dá a cada tarefa o repositório do
+/// projeto como `cwd` e se sobe o processo pelo caminho de sempre.
+///
+/// Só reserva o que cabe AGORA na fila de agentes da janela: tarefa
+/// reservada que caísse na espera ficaria em `executando` sem processo.
+#[tauri::command]
+fn avaliar_projetos(
+    vault_path: String,
+    adaptador: anotadinho_core::agente::Adaptador,
+    teto: usize,
+    limite: usize,
+) -> Result<ProjetosAvaliados, String> {
+    let rodando = JOBS
+        .lock()
+        .map_err(|_| "registro de execuções travado".to_string())?
+        .values()
+        .filter(|j| j.fim.is_none())
+        .count();
+    let esperando = FILA.lock().map_err(|_| "fila travada".to_string())?.len();
+    let vagas = limite.max(1).saturating_sub(rodando + esperando);
+    let params = anotadinho_ipc::ParametrosDaFila {
+        agora: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
+        teto,
+        limite_historico: 12,
+        vagas: Some(vagas),
+    };
+    let fila = anotadinho_ipc::handle_tarefas_a_executar(vault_path.clone(), params)?;
+    let mut feito = ProjetosAvaliados { iniciadas: Vec::new(), avisos: fila.avisos };
+    for t in fila.iniciar {
+        // O repositório entra por PARÂMETRO, no campo que o adaptador já
+        // tinha: nada de estado global decidindo onde o agente escreve.
+        let mut a = adaptador.clone();
+        a.cwd = t.cwd.clone();
+        match iniciar_agente(a, t.prompt, vault_path.clone(), t.conversa.clone(), Some(limite)) {
+            Ok(_) => feito.iniciadas.push(t.tarefa),
+            Err(e) => {
+                let _ = anotadinho_ipc::handle_fechar_tarefa_da_conversa(
+                    vault_path.clone(),
+                    t.conversa,
+                    anotadinho_ipc::FimDaTarefa::Falhou(e.clone()),
+                );
+                feito.avisos.push(format!("{}: não subiu o agente: {e}", t.tarefa));
+            }
+        }
+    }
+    Ok(feito)
+}
+
 /// As permissões de escrita do agente (ciclo 405), pro painel da janela
 /// (ciclo 427).
 #[tauri::command]
@@ -1090,6 +1151,25 @@ fn disparar(
                 }
             }
         }
+        // A tarefa dona desta conversa sai de `executando` (ciclo 459).
+        // Vale pra TODO fim, inclusive falha e interrupção: uma tarefa
+        // presa em `executando` segura a vaga do projeto inteiro.
+        {
+            use anotadinho_core::agente::EstadoJob;
+            use anotadinho_ipc::FimDaTarefa;
+            let fim = match &estado {
+                EstadoJob::Concluido { texto } => FimDaTarefa::Respondeu(texto.clone()),
+                EstadoJob::Falhou { erro } => FimDaTarefa::Falhou(erro.clone()),
+                EstadoJob::Cancelado | EstadoJob::Rodando { .. } => FimDaTarefa::Interrompida,
+            };
+            if let Err(e) = anotadinho_ipc::handle_fechar_tarefa_da_conversa(
+                vault_conversa.clone(),
+                conversa_path.clone(),
+                fim,
+            ) {
+                eprintln!("não fechou a tarefa de {conversa_path}: {e}");
+            }
+        }
         if let Ok(mut mapa) = registro.lock() {
             if let Some(j) = mapa.get_mut(&conversa_path) {
                 j.fim = Some(estado);
@@ -1120,7 +1200,15 @@ fn chamar_proxima_da_fila() {
     };
     let Some(e) = proxima else { return };
     let (adaptador, prompt) = e.carga;
+    let vault = e.vault.clone();
     if let Err(erro) = disparar(adaptador, prompt, e.vault, e.conversa.clone()) {
+        // Se era tarefa de projeto, ela não pode ficar em `executando`
+        // sem processo (ciclo 459).
+        let _ = anotadinho_ipc::handle_fechar_tarefa_da_conversa(
+            vault,
+            e.conversa.clone(),
+            anotadinho_ipc::FimDaTarefa::Falhou(erro.clone()),
+        );
         // Falhou ao subir: registra como falha naquela conversa, senão a
         // tela fica esperando uma resposta que nunca vem.
         if let Ok(mut mapa) = JOBS.lock() {
@@ -1382,6 +1470,7 @@ fn main() {
             ler_gatilhos,
             gravar_gatilhos,
             avaliar_gatilhos,
+            avaliar_projetos,
             ler_permissoes,
             gravar_permissoes,
             listar_execucoes,

@@ -53,6 +53,15 @@ case "$1" in
     ;;
   # Diz onde está rodando (ciclo 215).
   --onde) pwd; exit 0 ;;
+  # Executa uma tarefa de projeto (ciclo 459): deixa a marca de ONDE
+  # rodou no próprio diretório de trabalho — é o que prova que o agente
+  # mexeu no repositório do projeto, e não no vault — e fecha com a
+  # linha que o app lê pra decidir a etapa.
+  --tarefa)
+    pwd > feito-pelo-agente.txt
+    printf 'Fiz a tarefa em %s.\n\nRESULTADO: concluida\n' "$(pwd)"
+    exit 0
+    ;;
   # Lê o prompt da ENTRADA PADRÃO (ciclo 449) e diz quanto chegou e como
   # começa e termina: é o que prova que um prompt grande e com quebras
   # chegou inteiro, sem passar pela linha de comando. Sem EOF no stdin,
