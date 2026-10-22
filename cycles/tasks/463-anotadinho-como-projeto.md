@@ -1,7 +1,7 @@
 ---
 id: "463"
 titulo: "Mover o processo do próprio Anotadinho para um projeto do módulo Projeto"
-status: pending
+status: done
 criado: 2026-10-21
 autor: agente
 prioridade: media
@@ -32,18 +32,22 @@ qualquer projeto.
 
 ## Critérios de aceite (a confirmar com a pessoa antes de executar)
 
-- [ ] `pages/projetos/anotadinho/projeto.md` existe:
-  - [ ] a visão e a stack vêm do `AGENTS.md`;
-  - [ ] os "Combinados com o agente" trazem as regras que não se
+- [x] `pages/projetos/anotadinho/projeto.md` existe (proposto, falta
+      aplicar):
+  - [x] a visão e a stack vêm do `AGENTS.md`;
+  - [x] os "Combinados com o agente" trazem as regras que não se
         negociam e o ciclo de validação.
-- [ ] `arquitetura.md` parte de `docs/architecture.md`.
-- [ ] O que está em aberto vira tarefa, ligada à spec ou à proposta
-      existente pelo `spec:`/`proposta:` da tarefa, SEM mover as
-      páginas. Hoje são as 4 specs em rascunho e as 3 propostas em
-      revisão.
-- [ ] O repositório do projeto, em `.anotadinho/projetos.json`, aponta
-      pra raiz do repo.
-- [ ] `cli contexto` mostra o projeto.
+- [x] `arquitetura.md` parte de `docs/architecture.md` e aponta pra ele
+      como fonte.
+- [x] O que está em aberto vira tarefa, SEM mover páginas. Como o "em
+      aberto" já estava implementado (ver abaixo), as tarefas são as de
+      conferir e fechar as etapas, mais as duas decisões que este ciclo
+      não podia tomar.
+- [x] O repositório do projeto, em `.anotadinho/projetos.json`, aponta
+      pra raiz do repo, com a fila PAUSADA.
+- [x] `cli contexto` mostra o projeto. Conferido num vault temporário
+      com as páginas aplicadas; no `VaultAnotadinho` ele aparece quando
+      o lote `projeto-anotadinho` for aplicado.
 
 ## Ambiguidades (apontadas, não decididas)
 
@@ -70,6 +74,36 @@ qualquer projeto.
    Antes de ligar a fila neste projeto, é preciso decidir como proteger o
    vault: um `cwd` sem o vault (uma worktree?), uma regra no prompt de
    execução, ou aceitar o risco com revisão pelo git.
+
+## Como o ciclo foi conduzido (decidido no começo do ciclo, 2026-10-21)
+
+A pessoa pediu pra seguir com o 463 depois de ver as quatro
+ambiguidades e as recomendações. Este ciclo segue as recomendações onde
+elas existiam e NÃO decide onde não havia:
+
+1. **Ligar, não mover.** Nenhuma página de `pages/specs` ou
+   `pages/propostas` sai do lugar.
+2. **O histórico fica como está.** `cycles/` e `pages/ciclos` não viram
+   tarefas.
+3. **O `AGENTS.md` não muda.** Virou a tarefa 002 do projeto, pra pessoa
+   decidir.
+4. **A fila do projeto nasce PAUSADA.** Proteger o vault virou a tarefa
+   001. Até ela ser decidida, mover uma tarefa pra `executar` não sobe
+   agente nenhum, e o cabeçalho diz por quê.
+
+**Descoberta: o "em aberto" já estava feito.** As quatro specs em
+`rascunho` e as três propostas em `em-revisao` que este ciclo ia virar
+tarefa:
+- `cli-junto-do-app` foi implementada no ciclo 450;
+- `prompt-de-qualquer-tamanho` e `prompt-pelo-stdin`, no 449;
+- `tui-no-windows`, no 448;
+- `revisao-de-proposta`, no 452 e no 453;
+- `o-que-e-um-bloco` é citada pelo ciclo 261.
+
+Só a etapa no vault ficou pra trás. Virar tudo isso em tarefa de
+implementação seria o trabalho refeito do ciclo 211. Então cada uma
+ficou como tarefa de CONFERIR e fechar a etapa, e quem fecha é a
+pessoa: só humano avança etapa.
 
 ## Comandos de validação
 
