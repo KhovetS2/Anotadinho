@@ -41,6 +41,9 @@ pub enum TipoEspecial {
     /// `type: graph` (ciclo 361): as conexões por wikilink, em lista — o
     /// grafo 3D da janela, lido no terminal.
     Grafo,
+    /// `type: projeto` (ciclo 461): as tarefas por etapa, a fila e o
+    /// repositório — a `ProjetoView` da janela.
+    Projeto,
 }
 
 impl TipoEspecial {
@@ -57,6 +60,7 @@ impl TipoEspecial {
             "kanban" => Some(Self::Kanban),
             "table" => Some(Self::Tarefas),
             "graph" => Some(Self::Grafo),
+            "projeto" => Some(Self::Projeto),
             _ => None,
         }
     }
@@ -70,6 +74,9 @@ impl TipoEspecial {
             Self::Kanban => ("pages/kanban.md", "Kanban"),
             Self::Tarefas => ("pages/tarefas.md", "Tarefas"),
             Self::Grafo => ("pages/grafo.md", "Grafo"),
+            // Projeto não se abre pela barra como página única: cada um
+            // mora na própria pasta, e quem cria é "Novo projeto…".
+            Self::Projeto => ("pages/projetos.md", "Projetos"),
         }
     }
 }
@@ -102,6 +109,31 @@ pub enum Dados {
     Tarefas(Vec<Tarefa>),
     /// Cada página (caminho, título) e as vizinhas, a mais ligada primeiro.
     Grafo(Vec<(String, String, Vec<(String, String)>)>),
+    Projeto(ProjetoNaTela),
+}
+
+/// O que a tela de um projeto mostra (ciclo 461): o mesmo
+/// `EstadoDoProjeto` que a janela recebe, montado pelo `main`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjetoNaTela {
+    pub projeto: anotadinho_core::projeto::Projeto,
+    pub config: anotadinho_core::projeto::ConfigProjeto,
+    pub tarefas: Vec<anotadinho_core::projeto::Tarefa>,
+    pub avisos: Vec<String>,
+}
+
+impl ProjetoNaTela {
+    /// As tarefas na ordem do quadro (etapa, depois número): é a ordem do
+    /// `j`/`k` e a do desenho, que precisam ser a MESMA, senão o cursor
+    /// aceso não é a tarefa que o número move.
+    pub fn na_ordem(&self) -> Vec<&anotadinho_core::projeto::Tarefa> {
+        let posicao = |e: anotadinho_core::projeto::EtapaTarefa| {
+            anotadinho_core::projeto::EtapaTarefa::all().iter().position(|x| *x == e).unwrap_or(0)
+        };
+        let mut v: Vec<_> = self.tarefas.iter().collect();
+        v.sort_by_key(|t| (posicao(t.etapa), t.numero, t.caminho.clone()));
+        v
+    }
 }
 
 /// As conexões do vault, como o `montar` do grafo da janela: um
@@ -257,6 +289,7 @@ impl TelaEspecial {
             Some(Dados::Kanban(c)) => c.get(self.chip).map_or(0, |c| c.2.len()),
             Some(Dados::Tarefas(t)) => t.len(),
             Some(Dados::Grafo(g)) => g.len(),
+            Some(Dados::Projeto(p)) => p.tarefas.len(),
             None => 0,
         }
     }
@@ -291,7 +324,21 @@ pub fn assets_com_uso(lista: Vec<(String, u64)>, paginas: &str) -> Dados {
 /// Os dados chegaram.
 pub fn carregar(e: &mut Estado, dados: Dados) {
     let Some(t) = e.especial.as_mut() else { return };
+    // No projeto, o cursor segue a TAREFA, não a posição: a tela se
+    // recarrega sozinha e a tarefa que a pessoa acabou de mover muda de
+    // seção — pela posição, o cursor cairia noutra e o próximo número
+    // moveria a tarefa errada.
+    let seguir = match (&t.dados, &dados) {
+        (Some(Dados::Projeto(antes)), Dados::Projeto(depois)) => antes
+            .na_ordem()
+            .get(t.selecionado)
+            .and_then(|sel| depois.na_ordem().iter().position(|x| x.caminho == sel.caminho)),
+        _ => None,
+    };
     t.dados = Some(dados);
+    if let Some(i) = seguir {
+        t.selecionado = i;
+    }
     let total = t.total();
     t.selecionado = t.selecionado.min(total.saturating_sub(1));
     if t.tipo != TipoEspecial::Kanban {
@@ -363,6 +410,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
                 TipoEspecial::Kanban => tecla_no_kanban(e, tecla),
                 TipoEspecial::Tarefas => tecla_nas_tarefas(e, tecla),
                 TipoEspecial::Grafo => tecla_no_grafo(e, tecla),
+                TipoEspecial::Projeto => tecla_no_projeto(e, tecla),
             };
         }
     }
@@ -416,6 +464,54 @@ fn tecla_no_kanban(e: &mut Estado, tecla: &str) -> bool {
     }
     let cartoes = colunas.get(t.chip).map_or(0, |c| c.2.len());
     t.selecionado = t.selecionado.min(cartoes.saturating_sub(1));
+    true
+}
+
+/// As teclas do projeto (ciclo 461). Os números movem a tarefa
+/// selecionada pela transição daquele número — as mesmas que a janela
+/// mostra como botão, e na mesma ordem.
+fn tecla_no_projeto(e: &mut Estado, tecla: &str) -> bool {
+    use anotadinho_core::projeto::{self, Quem};
+    let Some(t) = e.especial.as_ref() else { return false };
+    let Some(Dados::Projeto(p)) = &t.dados else { return false };
+    let sel = p.na_ordem().get(t.selecionado).map(|x| (*x).clone());
+    let slug = p.projeto.slug.clone();
+    let config = p.config.clone();
+    let pedido = match tecla {
+        d if d.len() == 1 && d.chars().all(|c| c.is_ascii_digit()) => {
+            let Some(s) = sel else { return false };
+            let destinos = s.etapa.proximas_para(Quem::Humano);
+            let n: usize = d.parse().unwrap_or(0);
+            let Some(destino) = n.checked_sub(1).and_then(|i| destinos.get(i)).copied() else { return false };
+            Pedido::MoverTarefa { caminho: s.caminho, destino }
+        }
+        "Enter" => Pedido::AbrirPagina(sel.map(|s| s.caminho).unwrap_or_else(|| p.projeto.caminho.clone())),
+        "d" => match sel {
+            Some(s) => Pedido::DetalharTarefa(s.caminho),
+            None => return false,
+        },
+        "c" => Pedido::AbrirPagina(projeto::caminho_da_conversa_geral(&slug)),
+        "a" => Pedido::AbrirPagina(projeto::caminho_da_arquitetura(&slug)),
+        "p" => Pedido::GravarConfigDoProjeto { slug, config: projeto::ConfigProjeto { pausado: !config.pausado, ..config } },
+        "n" => {
+            e.modal = Some(Modal::Entrada {
+                titulo: "Título da tarefa nova".into(),
+                campo: crate::componentes::Campo::default(),
+                acao: super::modais::AcaoDaEntrada::NovaTarefa(slug),
+            });
+            return true;
+        }
+        "o" => {
+            e.modal = Some(Modal::Entrada {
+                titulo: "Pasta do repositório do projeto".into(),
+                campo: crate::componentes::Campo::com(config.repositorio.clone().unwrap_or_default()),
+                acao: super::modais::AcaoDaEntrada::RepositorioDoProjeto(slug),
+            });
+            return true;
+        }
+        _ => return false,
+    };
+    e.pedidos.push(pedido);
     true
 }
 
@@ -635,6 +731,7 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
         TipoEspecial::Kanban => " h l coluna · j k cartão ",
         TipoEspecial::Tarefas => " j k · Enter abre · s ordena ",
         TipoEspecial::Grafo => " j k página · h l conexão · Enter abre ",
+        TipoEspecial::Projeto => " j k · 1-3 move · Enter abre · n nova · d detalha · c conversa · a arquitetura · p pausa · o repo ",
     };
     let mut borda = Block::default()
         .borders(Borders::ALL)
@@ -696,6 +793,12 @@ pub fn linhas_da_tela(t: &TelaEspecial, pagina: &str, tema: &Tema, w: usize, no_
     // O cabeçalho da página tipada (ciclo 360), como o `TypedPageHeader`
     // da janela: o título dela e "Propriedades" (`=`). A revisão de
     // propostas não tem, lá também não.
+    // No projeto, o título dele: o arquivo de TODO projeto é
+    // `projeto.md`, e o cabeçalho diria "projeto" em todos (ciclo 461).
+    let pagina = match &t.dados {
+        Some(Dados::Projeto(p)) => p.projeto.titulo.as_str(),
+        _ => pagina,
+    };
     if t.tipo != TipoEspecial::Propostas && !pagina.is_empty() {
         let esquerda = format!(" {pagina}");
         let direita = "✲ Propriedades  = ";
@@ -720,6 +823,8 @@ pub fn linhas_da_tela(t: &TelaEspecial, pagina: &str, tema: &Tema, w: usize, no_
             format!("{} páginas · {} ligações ", g.len(), g.iter().map(|n| n.2.len()).sum::<usize>() / 2),
         ),
         (TipoEspecial::Grafo, _) => ("Grafo de conexões", String::new()),
+        (TipoEspecial::Projeto, Some(Dados::Projeto(p))) => ("Projeto", format!("{} tarefa(s) ", p.tarefas.len())),
+        (TipoEspecial::Projeto, _) => ("Projeto", String::new()),
     };
     let esquerda = format!(" {titulo}");
     fora.push(Line::from(vec![
@@ -780,6 +885,10 @@ pub fn linhas_da_tela(t: &TelaEspecial, pagina: &str, tema: &Tema, w: usize, no_
         Dados::Kanban(colunas) => {
             fora.push(Line::default());
             fora.extend(quadro_kanban(t, tema, colunas, w, no_foco));
+        }
+        Dados::Projeto(p) => {
+            let antes = fora.len();
+            fora.extend(tela_do_projeto(t, tema, p, w, no_foco, antes, &mut faixas));
         }
         Dados::Tarefas(lista) => {
             fora.push(Line::default());
@@ -1244,6 +1353,93 @@ fn quadro_kanban(t: &TelaEspecial, tema: &Tema, colunas: &[(String, String, Vec<
         }
     }
     linhas.into_iter().map(Line::from).collect()
+}
+
+/// A tela do projeto (ciclo 461): cabeçalho com repositório, fila e
+/// avisos; depois uma seção por etapa, na ordem do quadro. Lista, e não
+/// colunas: oito colunas num terminal de 140 dariam ~16 caracteres por
+/// cartão e cortariam todo título.
+fn tela_do_projeto(
+    t: &TelaEspecial,
+    tema: &Tema,
+    p: &ProjetoNaTela,
+    w: usize,
+    no_foco: bool,
+    antes: usize,
+    faixas: &mut Vec<(usize, usize)>,
+) -> Vec<Line<'static>> {
+    use anotadinho_core::projeto::{self, EtapaTarefa, Quem};
+    let texto = Style::default().fg(tema.var("text-primary"));
+    let apagado = Style::default().fg(tema.var("text-muted"));
+    let destaque = Style::default().fg(tema.var("accent-blue"));
+    let corta = |s: String, n: usize| -> String { s.chars().take(n).collect() };
+    let mut fora = Vec::new();
+    let repo = p.config.repositorio.clone().unwrap_or_else(|| "sem repositório".into());
+    fora.push(Line::from(vec![
+        Span::styled(" repositório ", apagado),
+        Span::styled(corta(repo, w.saturating_sub(14)), texto),
+    ]));
+    let executando = p.tarefas.iter().filter(|x| x.etapa == EtapaTarefa::Executando).count();
+    let fila = if p.config.pausado { "pausada" } else { "ativa" };
+    let mut linha_fila = vec![Span::styled(" fila ", apagado), Span::styled(fila, if p.config.pausado { tema.estilo(Realce::BadgeAtencao) } else { texto })];
+    if executando > 0 {
+        linha_fila.push(Span::styled(format!(" · {executando} executando"), destaque));
+    }
+    fora.push(Line::from(linha_fila));
+    for a in &p.avisos {
+        fora.push(Line::from(Span::styled(corta(format!(" ⚠ {a}"), w), tema.estilo(Realce::BadgeAtencao))));
+    }
+    let ordem = p.na_ordem();
+    let mut i = 0;
+    for etapa in EtapaTarefa::all() {
+        let da_etapa: Vec<_> = ordem.iter().filter(|x| x.etapa == *etapa).collect();
+        fora.push(Line::default());
+        let cor = match etapa {
+            EtapaTarefa::Executando | EtapaTarefa::Executar => tema.var("accent-blue"),
+            EtapaTarefa::Revisao => tema.var("accent-purple"),
+            EtapaTarefa::Feita => tema.var("success"),
+            EtapaTarefa::Bloqueada => tema.var("error"),
+            _ => tema.var("text-muted"),
+        };
+        fora.push(Line::from(vec![
+            Span::styled(format!(" {}", etapa.label()), Style::default().fg(cor).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("  {}", da_etapa.len()), apagado),
+        ]));
+        for x in da_etapa {
+            let sel = i == t.selecionado;
+            let inicio = antes + fora.len();
+            let mut linha = format!("   {:03} {}", x.numero, x.titulo);
+            let pendentes = projeto::dependencias_pendentes(x, &p.tarefas);
+            if !x.depende.is_empty() {
+                linha.push_str(&format!("  · depende de {}", x.depende.join(", ")));
+            }
+            let mut linha = corta(linha, w);
+            linha.push_str(&" ".repeat(w.saturating_sub(linha.chars().count())));
+            let estilo = if sel && no_foco {
+                tema.estilo(Realce::Cursor)
+            } else if !pendentes.is_empty() {
+                Style::default().fg(tema.var("warning"))
+            } else {
+                texto
+            };
+            fora.push(Line::from(Span::styled(linha, estilo)));
+            // As transições numeradas só na selecionada: em todas, a tela
+            // viraria um mar de setas e o número não diria de QUAL tarefa.
+            if sel && no_foco {
+                let destinos = x.etapa.proximas_para(Quem::Humano);
+                let opcoes: Vec<String> =
+                    destinos.iter().enumerate().map(|(k, d)| format!("{} → {}", k + 1, d.label())).collect();
+                fora.push(Line::from(Span::styled(corta(format!("       {}", opcoes.join("   ")), w), destaque)));
+            }
+            faixas.push((inicio, antes + fora.len()));
+            i += 1;
+        }
+    }
+    if p.tarefas.is_empty() {
+        fora.push(Line::default());
+        fora.push(Line::from(Span::styled(" Nenhuma tarefa ainda. n cria uma; na conversa (c), \"virar tarefas\" propõe várias.", apagado)));
+    }
+    fora
 }
 
 /// A tabela de tarefas, com o status em badge como `.task-table`.

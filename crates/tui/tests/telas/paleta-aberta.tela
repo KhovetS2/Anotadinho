@@ -5,9 +5,10 @@
 │                              ││▌ │  Buscar página ou comando...                                       │                             z ⌄ ▌│
 │                              ││▌ │────────────────────────────────────────────────────────────────────│                                 ▌│
 │                              ││▌ │ ϟ Nova conversa com o agente                                       │                                 ▌│
-│                              ││▌ │ ϟ Nova página                                                      │                                 ▌│
-│                              ││▝▀│ ϟ Nova página: Kanban                                              │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
-│                              ││De│ ϟ Nova página: Calendário                                          │                                  │
+│                              ││▌ │ ϟ Novo projeto…                                                    │                                 ▌│
+│                              ││▝▀│ ϟ Nova página                                                      │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
+│                              ││De│ ϟ Nova página: Kanban                                              │                                  │
+│                              ││  │ ϟ Nova página: Calendário                                          │                                  │
 │                              ││  │ ϟ Nova página: Tabela de tarefas                                   │                                  │
 │                              ││  │ ϟ Nova página: Grafo de conexões                                   │                                  │
 │                              ││  │ ϟ Nova página inicial (landing)                                    │                                  │
@@ -23,7 +24,6 @@
 │                              ││  │ ϟ Salvar (Ctrl+S)                                                  │                                  │
 │                              ││  │ ϟ Ir pra Hoje (journal)                                            │                                  │
 │                              ││  │ ϟ Personalizar…                                                    │                                  │
-│                              ││  │ ϟ Trocar agente…                                                   │                                  │
 │                              ││  ╰ ↑↓ escolher · Enter · Ctrl+F buscar no conteúdo · Esc ─────────────╯                                  │
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │

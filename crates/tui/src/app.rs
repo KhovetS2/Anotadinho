@@ -11566,4 +11566,124 @@ mod testes {
         assert!(e.modal.is_none(), "o modal devia ter fechado");
         assert!(e.gravacao.is_none(), "desistir não podia gravar");
     }
+
+    // ── Projeto (ciclo 461) ───────────────────────────────────────────
+
+    fn tarefa_de_teste(n: u32, etapa: &str, extra: &str) -> anotadinho_core::projeto::Tarefa {
+        let caminho = format!("pages/projetos/saas/tarefas/{n:03}-t.md");
+        let md = format!("---\ntitle: Tarefa {n}\ntype: tarefa\nprojeto: saas\nstatus: {etapa}\n{extra}---\n# T\n");
+        anotadinho_core::projeto::Tarefa::ler(&caminho, &md).unwrap()
+    }
+
+    fn projeto_na_tela(tarefas: Vec<anotadinho_core::projeto::Tarefa>) -> especiais::Dados {
+        especiais::Dados::Projeto(especiais::ProjetoNaTela {
+            projeto: anotadinho_core::projeto::Projeto {
+                slug: "saas".into(),
+                titulo: "SaaS".into(),
+                caminho: "pages/projetos/saas/projeto.md".into(),
+            },
+            config: Default::default(),
+            tarefas,
+            avisos: vec!["saas: sem repositório configurado — escolha a pasta do código".into()],
+        })
+    }
+
+    #[test]
+    fn pagina_de_projeto_abre_carregando_e_mostra_as_etapas() {
+        let mut e = especial_aberto("projeto");
+        assert_eq!(e.pedidos, [Pedido::CarregarEspecial(especiais::TipoEspecial::Projeto)]);
+        especiais::carregar(&mut e, projeto_na_tela(vec![tarefa_de_teste(1, "ideia", ""), tarefa_de_teste(2, "revisao", "")]));
+        let tudo = desenho(&mut e, 140, 40).join("\n");
+        for esperado in ["Ideia", "Revisão", "Bloqueada", "001 Tarefa 1", "002 Tarefa 2", "sem repositório", "1 → Detalhando   2 → Pronta"] {
+            assert!(tudo.contains(esperado), "faltou {esperado}:\n{tudo}");
+        }
+        // As transições só aparecem na selecionada: a 2 está em revisão,
+        // e "Feita" não pode aparecer como opção antes de selecioná-la.
+        assert!(!tudo.contains("→ Feita"), "{tudo}");
+    }
+
+    #[test]
+    fn numero_move_pela_transicao_daquele_numero() {
+        use anotadinho_core::projeto::EtapaTarefa;
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_na_tela(vec![tarefa_de_teste(1, "ideia", "")]));
+        e.pedidos.clear();
+        tecla(&mut e, "2");
+        assert_eq!(
+            e.pedidos,
+            [Pedido::MoverTarefa { caminho: "pages/projetos/saas/tarefas/001-t.md".into(), destino: EtapaTarefa::Pronta }]
+        );
+        e.pedidos.clear();
+        tecla(&mut e, "9");
+        assert!(e.pedidos.is_empty(), "número sem transição não pode mover");
+    }
+
+    #[test]
+    fn em_executando_a_pessoa_so_bloqueia() {
+        use anotadinho_core::projeto::EtapaTarefa;
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_na_tela(vec![tarefa_de_teste(1, "executando", "")]));
+        e.pedidos.clear();
+        tecla(&mut e, "1");
+        assert_eq!(
+            e.pedidos,
+            [Pedido::MoverTarefa { caminho: "pages/projetos/saas/tarefas/001-t.md".into(), destino: EtapaTarefa::Bloqueada }]
+        );
+        e.pedidos.clear();
+        tecla(&mut e, "2");
+        assert!(e.pedidos.is_empty(), "revisão é do sistema");
+    }
+
+    #[test]
+    fn o_cursor_segue_a_tarefa_quando_ela_muda_de_etapa() {
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_na_tela(vec![tarefa_de_teste(1, "ideia", ""), tarefa_de_teste(2, "ideia", "")]));
+        tecla(&mut e, "j");
+        // A 2 (selecionada) foi pra pronta e a 1 ficou: pela posição, o
+        // cursor cairia na 1, e o próximo número moveria a tarefa errada.
+        especiais::carregar(&mut e, projeto_na_tela(vec![tarefa_de_teste(1, "ideia", ""), tarefa_de_teste(2, "pronta", "")]));
+        e.pedidos.clear();
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/projetos/saas/tarefas/002-t.md".into())]);
+    }
+
+    #[test]
+    fn teclas_do_projeto_pedem_o_que_a_tela_mostra() {
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_na_tela(vec![tarefa_de_teste(1, "ideia", "")]));
+        e.pedidos.clear();
+        tecla(&mut e, "p");
+        match e.pedidos.pop() {
+            Some(Pedido::GravarConfigDoProjeto { slug, config }) => {
+                assert_eq!(slug, "saas");
+                assert!(config.pausado);
+            }
+            outro => panic!("{outro:?}"),
+        }
+        tecla(&mut e, "d");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::DetalharTarefa("pages/projetos/saas/tarefas/001-t.md".into())));
+        tecla(&mut e, "c");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::AbrirPagina("pages/projetos/saas/conversas/geral.md".into())));
+        tecla(&mut e, "n");
+        assert!(matches!(e.modal, Some(Modal::Entrada { acao: modais::AcaoDaEntrada::NovaTarefa(ref s), .. }) if s == "saas"));
+    }
+
+    #[test]
+    fn mover_a_tarefa_aberta_pela_barra_de_comandos() {
+        use anotadinho_core::projeto::EtapaTarefa;
+        let mut e = Estado::novo(
+            vec![PageMeta { path: "pages/projetos/saas/tarefas/001-t.md".into(), title: "001-t".into(), section: "pages".into() }],
+            analisar(""),
+        );
+        e.abrir_texto("---\ntitle: Login\ntype: tarefa\nprojeto: saas\nstatus: pronta\n---\n# Login\n", None);
+        modais::executar(&mut e, "etapa-tarefa");
+        let Some(Modal::Escolha { lista, .. }) = &e.modal else { panic!("{:?}", e.modal) };
+        assert_eq!(lista.itens.len(), 2, "pronta → executar ou detalhando");
+        // Enter na primeira opção (executar).
+        tecla(&mut e, "Enter");
+        assert_eq!(
+            e.pedidos.last(),
+            Some(&Pedido::MoverTarefa { caminho: "pages/projetos/saas/tarefas/001-t.md".into(), destino: EtapaTarefa::Executar })
+        );
+    }
 }

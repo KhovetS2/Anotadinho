@@ -174,6 +174,9 @@ fn cenas() -> Vec<Cena> {
     v.push(cena("assets", especial("assets"), &["Tab", "j"], 140, 20));
     v.push(cena("pagina-kanban", "---\ntitle: Quadro\ntype: kanban\n---\n\n- Escrever o texto  column:: todo\n- title:: Revisar  column:: doing\n- Publicar  column:: done\n- Ideia solta\n".to_string(), &["Tab", "l", "l"], 140, 20));
     v.push(cena("pagina-grafo", especial("graph"), &["Tab", "l", "l"], 140, 30));
+    // O projeto (ciclo 461): o cursor na segunda tarefa, com as
+    // transições numeradas embaixo dela.
+    v.push(cena("pagina-projeto", especial("projeto"), &["Tab", "j"], 140, 40));
     v.push(cena("pagina-tarefas", especial("table"), &["Tab", "j"], 140, 16));
     v.push(cena("pagina-calendario", especial("calendar"), &[], 140, 36));
     v.push(cena("propostas-diff", especial("propostas"), &["Tab"], 140, 40));
@@ -239,6 +242,32 @@ fn dados_falsos(tipo: especiais::TipoEspecial) -> especiais::Dados {
             "![](../assets/diagrama-arquitetura.png) capa.jpg",
         ),
         especiais::TipoEspecial::Kanban => unreachable!("o kanban lê a própria página"),
+        especiais::TipoEspecial::Projeto => {
+            let tarefa = |n: u32, etapa: &str, titulo: &str, extra: &str| {
+                let caminho = format!("pages/projetos/saas/tarefas/{n:03}-t.md");
+                let md = format!("---\ntitle: {titulo}\ntype: tarefa\nprojeto: saas\nstatus: {etapa}\n{extra}---\n");
+                anotadinho_core::projeto::Tarefa::ler(&caminho, &md).unwrap()
+            };
+            especiais::Dados::Projeto(especiais::ProjetoNaTela {
+                projeto: anotadinho_core::projeto::Projeto {
+                    slug: "saas".into(),
+                    titulo: "SaaS de agendamento".into(),
+                    caminho: "pages/projetos/saas/projeto.md".into(),
+                },
+                config: anotadinho_core::projeto::ConfigProjeto {
+                    repositorio: Some("/home/ana/codigo/agenda".into()),
+                    ..Default::default()
+                },
+                tarefas: vec![
+                    tarefa(1, "feita", "Esqueleto do projeto", ""),
+                    tarefa(2, "executando", "Banco de dados", ""),
+                    tarefa(3, "pronta", "Tela de login", "depende:\n- 2\n"),
+                    tarefa(4, "ideia", "Notificações por e-mail", ""),
+                    tarefa(5, "bloqueada", "Integração com agenda", ""),
+                ],
+                avisos: vec!["pages/projetos/saas/tarefas/003-t.md: esperando 2".into()],
+            })
+        }
         especiais::TipoEspecial::Grafo => {
             let pagina = |path: &str, title: &str, links: &[&str]| anotadinho_core::index::PageIndexEntry {
                 path: path.into(),

@@ -201,14 +201,20 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> bool {
             let m = &c.mensagens[c.selecionada];
             if m.autor == Autor::Agente {
                 let i = c.selecionada;
+                let mut itens = vec![
+                    Item::novo("▤", "virar spec", "spec").com_detalhe("cria e abre a spec"),
+                    Item::novo("▤", "virar proposta", "proposta").com_detalhe("cria e abre a proposta"),
+                    Item::novo("ϟ", "virar execução", "execucao").com_detalhe("cria e pede a implementação"),
+                ];
+                // Conversa de projeto (ciclo 461), como na janela.
+                if anotadinho_core::projeto::projeto_do_caminho(&c.path).is_some() {
+                    itens.push(Item::novo("▤", "virar tarefas", "tarefas").com_detalhe("propõe uma por \"## Tarefa:\", num lote"));
+                    itens.push(Item::novo("▤", "atualizar arquitetura", "arquitetura").com_detalhe("propõe a resposta como seção nova"));
+                }
+                itens.push(Item::novo("⎘", "copiar o texto", "copiar"));
                 e.modal = Some(Modal::Escolha {
                     titulo: "Resposta do agente".into(),
-                    lista: Lista::menu(vec![
-                        Item::novo("▤", "virar spec", "spec").com_detalhe("cria e abre a spec"),
-                        Item::novo("▤", "virar proposta", "proposta").com_detalhe("cria e abre a proposta"),
-                        Item::novo("ϟ", "virar execução", "execucao").com_detalhe("cria e pede a implementação"),
-                        Item::novo("⎘", "copiar o texto", "copiar"),
-                    ]),
+                    lista: Lista::menu(itens),
                     acao: AcaoDaEscolha::RespostaDoAgente(i),
                 });
             }
@@ -278,6 +284,15 @@ pub fn acao_na_resposta(e: &mut Estado, indice: usize, chave: &str) {
     let Some(m) = c.mensagens.get(indice) else { return };
     let texto = m.texto.clone();
     let conversa = c.path.clone();
+    if let (Some(slug), "tarefas" | "arquitetura") = (anotadinho_core::projeto::projeto_do_caminho(&conversa), chave) {
+        let slug = slug.to_string();
+        e.pedidos.push(if chave == "tarefas" {
+            Pedido::ProporTarefas { slug, texto }
+        } else {
+            Pedido::ProporArquitetura { slug, texto }
+        });
+        return;
+    }
     let artefato = match chave {
         "spec" => Artefato::Spec,
         "proposta" => Artefato::Proposta,

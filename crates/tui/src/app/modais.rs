@@ -25,6 +25,20 @@ use crate::componentes::{self, Campo, Item, Lista, Resposta};
 pub enum Pedido {
     /// Abrir esta página.
     AbrirPagina(String),
+    /// Criar um projeto com este título (ciclo 461).
+    CriarProjeto(String),
+    /// Criar uma tarefa no projeto, como a pessoa (grava direto).
+    CriarTarefa { slug: String, titulo: String },
+    /// Mover a etapa de uma tarefa, como a pessoa.
+    MoverTarefa { caminho: String, destino: anotadinho_core::projeto::EtapaTarefa },
+    /// Abrir a conversa da tarefa com o pedido de detalhar escrito.
+    DetalharTarefa(String),
+    /// Gravar a config de um projeto (pausa, repositório).
+    GravarConfigDoProjeto { slug: String, config: anotadinho_core::projeto::ConfigProjeto },
+    /// "Virar tarefas" numa resposta: propõe um lote.
+    ProporTarefas { slug: String, texto: String },
+    /// "Atualizar arquitetura" numa resposta: propõe a seção nova.
+    ProporArquitetura { slug: String, texto: String },
     /// Ler do vault os dados da tela de tags, assets ou propostas (ciclo 346).
     CarregarEspecial(super::especiais::TipoEspecial),
     /// Abrir a página de tags, assets ou propostas, criando se falta.
@@ -540,6 +554,12 @@ pub struct EditorDeOpcoes {
 pub enum AcaoDaEntrada {
     /// Título de uma página nova, com o tipo.
     NovaPagina(Option<String>),
+    /// O título de um projeto novo (ciclo 461).
+    NovoProjeto,
+    /// O título de uma tarefa nova no projeto.
+    NovaTarefa(String),
+    /// A pasta do repositório do projeto.
+    RepositorioDoProjeto(String),
     /// Título de uma página nova dentro de uma pasta (ciclo 345).
     PaginaNaPasta(String),
     /// Nome de uma pasta nova dentro de outra.
@@ -582,6 +602,9 @@ pub enum AcaoDaEntrada {
 pub enum AcaoDaEscolha {
     /// O menu de personalização.
     Personalizar,
+    /// A etapa nova da tarefa aberta (ciclo 461). A chave é
+    /// `caminho\u{0}destino`: a escolha é `Copy` e não carrega o caminho.
+    EtapaDaTarefa,
     /// Trocar o tema pela chave.
     Tema,
     /// Trocar o agente pelo índice do preset.
@@ -637,6 +660,7 @@ pub enum AcaoDaEscolha {
 /// Os comandos da barra, como na janela.
 const COMANDOS: &[(&str, &str)] = &[
     ("Nova conversa com o agente", "nova-conversa"),
+    ("Novo projeto…", "novo-projeto"),
     ("Nova página", "nova-pagina"),
     ("Nova página: Kanban", "nova-pagina:kanban"),
     ("Nova página: Calendário", "nova-pagina:calendar"),
@@ -659,6 +683,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Configurar agente…", "configurar-agente"),
     ("Nova página a partir de template…", "nova-pagina"),
     ("Propriedades da página…", "propriedades"),
+    ("Mover a tarefa aberta…", "etapa-tarefa"),
     ("Ver atalhos", "atalhos"),
     ("Nova pasta…", "nova-pasta"),
     ("Mover página pra pasta…", "mover-pagina"),
@@ -810,6 +835,38 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         // Com templates no vault, primeiro qual (ciclo 350), como a janela.
         "nova-pagina" => e.pedidos.push(Pedido::ListarTemplates),
         "configurar-agente" => abrir_configuracao_do_agente(e),
+        "novo-projeto" => {
+            e.modal = Some(Modal::Entrada {
+                titulo: "Nome do projeto".into(),
+                campo: crate::componentes::Campo::default(),
+                acao: AcaoDaEntrada::NovoProjeto,
+            });
+        }
+        // Na página de uma tarefa, as transições da pessoa (ciclo 461):
+        // o mesmo que a barra de etapa da janela, sem mexer no desenho do
+        // documento.
+        "etapa-tarefa" => {
+            let caminho = e.paginas.get(e.pagina).map(|p| p.path.clone()).unwrap_or_default();
+            let tarefa = e
+                .texto_da_pagina
+                .as_deref()
+                .and_then(|t| anotadinho_core::projeto::Tarefa::ler(&caminho, t));
+            let Some(tarefa) = tarefa else {
+                e.aviso = Some("a página aberta não é uma tarefa de projeto".into());
+                return;
+            };
+            let itens: Vec<Item> = tarefa
+                .etapa
+                .proximas_para(anotadinho_core::projeto::Quem::Humano)
+                .into_iter()
+                .map(|d| Item::novo("→", d.label(), format!("{caminho}\u{0}{}", d.slug())))
+                .collect();
+            e.modal = Some(Modal::Escolha {
+                titulo: format!("{} — {}", tarefa.titulo, tarefa.etapa.label()),
+                lista: Lista::menu(itens),
+                acao: AcaoDaEscolha::EtapaDaTarefa,
+            });
+        }
         "nova-conversa" => {
             let Some(carimbo) = e.agora.clone() else {
                 e.aviso = Some("sem relógio pra datar a conversa".into());
@@ -1031,6 +1088,14 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     _ => {}
                 },
                 AcaoDaEscolha::Tema => trocar_tema(e, &chave),
+                AcaoDaEscolha::EtapaDaTarefa => {
+                    let destino = chave
+                        .split_once('\u{0}')
+                        .and_then(|(c, d)| Some((c.to_string(), anotadinho_core::projeto::EtapaTarefa::from_slug(d)?)));
+                    if let Some((caminho, destino)) = destino {
+                        e.pedidos.push(Pedido::MoverTarefa { caminho, destino });
+                    }
+                }
                 AcaoDaEscolha::RespostaDoAgente(i) => super::conversa::acao_na_resposta(e, i, &chave),
                 AcaoDaEscolha::Anexar => super::conversa::mudar_anexo(e, &chave, true),
                 AcaoDaEscolha::Desanexar => super::conversa::mudar_anexo(e, &chave, false),
@@ -1229,6 +1294,22 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 if !t.is_empty() {
                     e.pedidos.push(match acao {
                         AcaoDaEntrada::NovaPagina(tipo) => Pedido::CriarPaginaComTitulo { titulo: t, tipo },
+                        AcaoDaEntrada::NovoProjeto => Pedido::CriarProjeto(t),
+                        AcaoDaEntrada::NovaTarefa(slug) => Pedido::CriarTarefa { slug, titulo: t },
+                        AcaoDaEntrada::RepositorioDoProjeto(slug) => {
+                            // A config atual vem da tela aberta: só o
+                            // repositório muda, a pausa fica como está.
+                            let mut config = e
+                                .especial
+                                .as_ref()
+                                .and_then(|x| match &x.dados {
+                                    Some(super::especiais::Dados::Projeto(p)) if p.projeto.slug == slug => Some(p.config.clone()),
+                                    _ => None,
+                                })
+                                .unwrap_or_default();
+                            config.repositorio = Some(t);
+                            Pedido::GravarConfigDoProjeto { slug, config }
+                        }
                         AcaoDaEntrada::PaginaNaPasta(pasta) if pasta == "pages" => Pedido::CriarPaginaComTitulo { titulo: t, tipo: None },
                         AcaoDaEntrada::PaginaNaPasta(pasta) => Pedido::CriarPaginaNaPasta { pasta, titulo: t },
                         AcaoDaEntrada::NovaPasta(dentro) => Pedido::CriarPasta(format!("{dentro}/{t}")),

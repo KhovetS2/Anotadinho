@@ -283,7 +283,7 @@ fn montar_envio(
     use anotadinho_core::conversa;
     let mut trazidas: Vec<String> = Vec::new();
     let mut avisos: Vec<String> = Vec::new();
-    let contextos: Vec<conversa::Contexto> = anexos
+    let mut contextos: Vec<conversa::Contexto> = anexos
         .iter()
         .filter(|a| a.as_str() != conversa_path)
         .filter_map(|a| {
@@ -305,6 +305,18 @@ fn montar_envio(
             Some(conversa::Contexto { nome: a.clone(), conteudo: expandida.texto })
         })
         .collect();
+    // Conversa de projeto (ciclo 461): o índice das tarefas vai junto,
+    // como na janela (460) — sem ele, "quebre em tarefas" devolvia de
+    // novo o que já estava no quadro.
+    if let Some(slug) = anotadinho_core::projeto::projeto_do_caminho(conversa_path) {
+        match anotadinho_ipc::handle_indice_do_projeto(vault.to_string(), slug.to_string()) {
+            Ok(indice) => contextos.push(conversa::Contexto {
+                nome: format!("{} (índice)", anotadinho_core::projeto::pasta_das_tarefas(slug)),
+                conteudo: indice,
+            }),
+            Err(_) => avisos.push(format!("não consegui ler as tarefas de {slug}")),
+        }
+    }
     let montado = anotadinho_core::envio::montar(
         &contextos,
         historico,
@@ -952,6 +964,20 @@ fn carregar_especial(estado: &mut Estado, vault: &str, tipo: TipoEspecial) {
                     .collect(),
             )
         }),
+        TipoEspecial::Projeto => {
+            let caminho = estado.paginas.get(estado.pagina).map(|p| p.path.clone()).unwrap_or_default();
+            match anotadinho_core::projeto::projeto_do_caminho(&caminho) {
+                Some(slug) => anotadinho_ipc::handle_estado_do_projeto(vault.to_string(), slug.to_string()).map(|e| {
+                    especiais::Dados::Projeto(especiais::ProjetoNaTela {
+                        projeto: e.projeto,
+                        config: e.config,
+                        tarefas: e.tarefas,
+                        avisos: e.avisos,
+                    })
+                }),
+                None => Err(format!("{caminho} não está dentro de {}", anotadinho_core::projeto::PASTA)),
+            }
+        }
         TipoEspecial::Propostas => anotadinho_ipc::handle_listar_propostas(vault.to_string()).map(|lista| {
             especiais::Dados::Propostas(
                 lista
@@ -1011,6 +1037,98 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
             match pedido {
                 Pedido::AbrirPagina(caminho) => abrir(estado, vault, &caminho),
                 Pedido::CarregarEspecial(tipo) => carregar_especial(estado, vault, tipo),
+                // ── Projeto (ciclo 461): a regra é do `ipc`, a mesma da janela.
+                Pedido::CriarProjeto(titulo) => {
+                    let hoje = agora_local().split(' ').next().unwrap_or("").to_string();
+                    match anotadinho_ipc::handle_criar_projeto(vault.to_string(), titulo, None, hoje) {
+                        Ok(c) => {
+                            recarregar(estado);
+                            abrir(estado, vault, &anotadinho_core::projeto::caminho_do_projeto(&c.slug));
+                            estado.foco = app::Foco::Conteudo;
+                        }
+                        Err(e) => estado.aviso = Some(format!("não criou o projeto: {e}")),
+                    }
+                }
+                Pedido::CriarTarefa { slug, titulo } => {
+                    let hoje = agora_local().split(' ').next().unwrap_or("").to_string();
+                    match anotadinho_ipc::handle_criar_tarefa(vault.to_string(), slug, titulo, hoje) {
+                        Ok(c) => {
+                            recarregar(estado);
+                            estado.aviso = Some(format!("criada: {c}"));
+                            carregar_especial(estado, vault, TipoEspecial::Projeto);
+                        }
+                        Err(e) => estado.aviso = Some(format!("não criou a tarefa: {e}")),
+                    }
+                }
+                Pedido::MoverTarefa { caminho, destino } => {
+                    use anotadinho_core::projeto::{self, EtapaTarefa, Tarefa};
+                    let antes = anotadinho_ipc::handle_read_page(vault.to_string(), caminho.clone())
+                        .ok()
+                        .and_then(|t| Tarefa::ler(&caminho, &t));
+                    match anotadinho_ipc::handle_mudar_etapa_tarefa(vault.to_string(), caminho.clone(), destino) {
+                        Ok(_) => {
+                            // Bloquear o que está rodando PARA o agente
+                            // aqui, como a janela (460). Se ele roda
+                            // noutro app, quem para é aquele.
+                            if let Some(t) = antes.filter(|t| t.etapa == EtapaTarefa::Executando && destino == EtapaTarefa::Bloqueada) {
+                                let conversa = projeto::caminho_da_conversa_da_tarefa(&t.projeto, t.numero);
+                                if let Some(a) = trabalhos.get(&chave_do_trabalho(vault, &conversa)) {
+                                    a.trabalho.interromper();
+                                }
+                            }
+                            estado.aviso = Some(format!("tarefa → {}", destino.label()));
+                            // Na hora, sem esperar a volta de 5 s: quem
+                            // moveu pra `executar` quer ver o agente subir.
+                            conferir_projetos(estado, vault, trabalhos, fila, &mut Projetos::default());
+                            if estado.especial.as_ref().is_some_and(|x| x.tipo == TipoEspecial::Projeto) {
+                                carregar_especial(estado, vault, TipoEspecial::Projeto);
+                            } else if estado.paginas.get(estado.pagina).is_some_and(|p| p.path == caminho) {
+                                abrir(estado, vault, &caminho);
+                            }
+                        }
+                        Err(e) => estado.aviso = Some(e),
+                    }
+                }
+                Pedido::DetalharTarefa(caminho) => {
+                    let texto = anotadinho_ipc::handle_read_page(vault.to_string(), caminho.clone()).unwrap_or_default();
+                    match (
+                        anotadinho_core::projeto::Tarefa::ler(&caminho, &texto),
+                        anotadinho_ipc::handle_conversa_da_tarefa(vault.to_string(), caminho.clone()),
+                    ) {
+                        (Some(t), Ok(conversa)) => {
+                            recarregar(estado);
+                            abrir(estado, vault, &conversa);
+                            estado.foco = app::Foco::Conteudo;
+                            app::conversa::escrever_no_campo(estado, &anotadinho_core::projeto::pergunta_de_detalhar(&t));
+                        }
+                        (_, Err(e)) => estado.aviso = Some(e),
+                        (None, _) => estado.aviso = Some(format!("{caminho} não é uma tarefa")),
+                    }
+                }
+                Pedido::GravarConfigDoProjeto { slug, config } => {
+                    let repositorio = config.repositorio.clone().map(|r| sistema::expandir_til(&r, sistema::ambiente, cfg!(windows)));
+                    if repositorio.as_ref().is_some_and(|r| !std::path::Path::new(r).is_dir()) {
+                        estado.aviso = Some(format!("\"{}\" não é uma pasta", repositorio.unwrap_or_default()));
+                    } else {
+                        let config = anotadinho_core::projeto::ConfigProjeto { repositorio, ..config };
+                        match anotadinho_ipc::handle_gravar_config_do_projeto(vault.to_string(), slug, config) {
+                            Ok(()) => carregar_especial(estado, vault, TipoEspecial::Projeto),
+                            Err(e) => estado.aviso = Some(e),
+                        }
+                    }
+                }
+                Pedido::ProporTarefas { slug, texto } => {
+                    match anotadinho_ipc::handle_propor_tarefas(vault.to_string(), slug, texto, agora_local()) {
+                        Ok(ids) => estado.aviso = Some(format!("{} tarefa(s) propostas num lote — revise em Propostas", ids.len())),
+                        Err(e) => estado.aviso = Some(e),
+                    }
+                }
+                Pedido::ProporArquitetura { slug, texto } => {
+                    match anotadinho_ipc::handle_propor_arquitetura(vault.to_string(), slug, texto, agora_local()) {
+                        Ok(_) => estado.aviso = Some("mudança na arquitetura proposta — revise em Propostas".into()),
+                        Err(e) => estado.aviso = Some(e),
+                    }
+                }
                 Pedido::AbrirEspecial(tipo) => {
                     let (path, titulo) = tipo.pagina();
                     let existe = estado.paginas.iter().any(|p| p.path == path);
@@ -1022,6 +1140,7 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                         TipoEspecial::Kanban => "kanban",
                         TipoEspecial::Tarefas => "table",
                         TipoEspecial::Grafo => "graph",
+                        TipoEspecial::Projeto => "projeto",
                         };
                         let md = format!("---\ntitle: {titulo}\ntype: {tipo_no_frontmatter}\n---\n");
                         match handle_write_page(vault.to_string(), path.to_string(), md) {
@@ -1902,6 +2021,11 @@ fn laco<B: ratatui::backend::Backend>(
             // 250 ms), o mesmo ritmo da janela.
             if voltas_sem_tecla % 20 == 0 {
                 conferir_projetos(estado, vault, trabalhos, fila, &mut projetos);
+            }
+            // A tela do projeto se relê (~3 s): quem move as tarefas pra
+            // `executando` e `revisao` é o agente, sem tecla nenhuma.
+            if voltas_sem_tecla % 12 == 0 && estado.especial.as_ref().is_some_and(|x| x.tipo == TipoEspecial::Projeto) {
+                carregar_especial(estado, vault, TipoEspecial::Projeto);
             }
             acompanhar(estado, vault, trabalhos, fila);
             atender(estado, vault, trabalhos, fila);
