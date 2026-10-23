@@ -7,6 +7,7 @@ use web_sys::KeyboardEvent;
 use yew::prelude::*;
 
 use crate::api::{self, PageMeta};
+use crate::components::construtor_mermaid::ConstrutorMermaid;
 use crate::components::embeds::InlineEmbed;
 use crate::components::icon::Icon;
 use crate::components::modal::Modal;
@@ -182,7 +183,7 @@ static SLASH_BLOCKS: &[(&str, &str, &str, &str)] = &[
     ("Tabela", "Tabela 3×2", "table", "<table><tr><td>A</td><td>B</td><td>C</td></tr><tr><td></td><td></td><td></td></tr></table>"),
     ("Linha", "Divisor horizontal", "minus", "<hr>"),
     ("Imagem", "URL ou arquivo de imagem", "image", "__IMG__"),
-    ("Diagrama", "Mermaid (fluxograma)", "network", "__MERMAID__"),
+    ("Diagrama", "Mermaid, no construtor", "network", "__MERMAID__"),
     ("Assets", "Inserir arquivo do vault", "paperclip", "__ASSET__"),
     // Transclusão (ciclo 430, como a TUI desde o 416): trazer o conteúdo
     // de outra página é o jeito de montar um recorte de contexto sem
@@ -848,6 +849,32 @@ pub fn editor(props: &EditorProps) -> Html {
         });
     }
     let properties_modal_open = use_state(|| false);
+    // O construtor mermaid aberto (ciclo 488), e onde o `/mermaid` estava:
+    // com o foco no modal, a seleção já não está no bloco (442).
+    let construtor = use_state(|| None::<AlvoConstrutor>);
+    let cursor_do_construtor = use_mut_ref(|| None::<web_sys::Range>);
+    {
+        // O bloco pede o construtor por evento (botão ou Ctrl+Enter, em
+        // `mermaid.rs`): o listener mora no documento e é desfeito ao sair.
+        let construtor = construtor.clone();
+        use_effect_with((), move |_| {
+            let doc = web_sys::window().and_then(|w| w.document());
+            let ouvinte = wasm_bindgen::closure::Closure::<dyn Fn(web_sys::Event)>::new(move |e: web_sys::Event| {
+                if let Some(pre) = e.target().and_then(|t| t.dyn_into::<web_sys::HtmlElement>().ok()) {
+                    construtor.set(Some(AlvoConstrutor::Bloco(pre)));
+                }
+            });
+            if let Some(d) = &doc {
+                let _ = d.add_event_listener_with_callback(crate::mermaid::EVENTO_CONSTRUTOR, ouvinte.as_ref().unchecked_ref());
+            }
+            move || {
+                if let Some(d) = &doc {
+                    let _ = d.remove_event_listener_with_callback(crate::mermaid::EVENTO_CONSTRUTOR, ouvinte.as_ref().unchecked_ref());
+                }
+                drop(ouvinte);
+            }
+        });
+    }
 
     let doc_exec = {
         let edited = edited.clone();
@@ -1213,6 +1240,8 @@ pub fn editor(props: &EditorProps) -> Html {
         let image_range = image_range.clone();
         let image_drafts = image_drafts.clone();
         let image_error = image_error.clone();
+        let construtor = construtor.clone();
+        let cursor_do_construtor = cursor_do_construtor.clone();
         // O caminho da página, pra transclusão recém-inserida saber quem
         // é "ela mesma" ao resolver (ciclo 443).
         let caminho_da_pagina = page.path.clone();
@@ -1252,37 +1281,10 @@ pub fn editor(props: &EditorProps) -> Html {
                         });
                     }
                     "__MERMAID__" => {
-                        let content_md = content_md.clone();
-                        let editor_ref = editor_ref.clone();
-                        let segment_refs = segment_refs.clone();
-                        let mark_edited_estrutural = mark_edited_estrutural.clone();
-                        open_dialog.emit(PendingDialog::Prompt {
-                            title: "Código Mermaid (ex: graph TD; A-->B)".to_string(),
-                            default: String::new(),
-                            on_submit: Callback::from(move |code: String| {
-                                // O mesmo `<pre>` que uma fence salva vira
-                                // (ciclo 485): um caminho só de desenho, e
-                                // o save não precisa de caso à parte.
-                                let html = format!(
-                                    "<pre><code class=\"language-mermaid\">{}</code></pre>",
-                                    escape_html(&code)
-                                );
-                                if let Some(el) = parse_single_element(&html) {
-                                    if insert_element_at_cursor(&el, true) {
-                                        let new_md = recompute_markdown_from_dom(
-                                            &content_md,
-                                            &editor_ref,
-                                            &segment_refs,
-                                        );
-                                        content_md.set(new_md.clone());
-                                        mark_edited_estrutural(new_md);
-                                        if let Some(pai) = el.parent_element() {
-                                            crate::mermaid::desenhar_em(&pai);
-                                        }
-                                    }
-                                }
-                            }),
-                        });
+                        // O construtor (ciclo 488) no lugar do campo de uma
+                        // linha. A inserção acontece no "Inserir" do modal.
+                        *cursor_do_construtor.borrow_mut() = salvar_cursor();
+                        construtor.set(Some(AlvoConstrutor::Novo));
                     }
                     "__TRANSCLUSAO__" => {
                         let cursor = salvar_cursor();
@@ -3605,6 +3607,77 @@ pub fn editor(props: &EditorProps) -> Html {
                     }
                 </div>
             }
+            if let Some(alvo) = (*construtor).clone() {
+                {{
+                    let inicial = match &alvo {
+                        AlvoConstrutor::Novo => String::new(),
+                        AlvoConstrutor::Bloco(pre) => pre
+                            .query_selector(":scope > code.language-mermaid").ok().flatten()
+                            .and_then(|c| c.text_content())
+                            .unwrap_or_default()
+                            .trim_end_matches('\n')
+                            .to_string(),
+                    };
+                    let fechar = {
+                        let construtor = construtor.clone();
+                        Callback::from(move |_: ()| construtor.set(None))
+                    };
+                    let aplicar = {
+                        let construtor = construtor.clone();
+                        let cursor = cursor_do_construtor.clone();
+                        let content_md = content_md.clone();
+                        let editor_ref = editor_ref.clone();
+                        let segment_refs = segment_refs.clone();
+                        let mark_edited_estrutural = mark_edited_estrutural.clone();
+                        let alvo = alvo.clone();
+                        let inicial = inicial.clone();
+                        Callback::from(move |codigo: String| {
+                            construtor.set(None);
+                            let codigo = codigo.trim_end_matches('\n').to_string();
+                            let mudou = match &alvo {
+                                // Nada mudou: nem o DOM nem o "não salvo" (RF8).
+                                AlvoConstrutor::Bloco(_) if codigo == inicial => false,
+                                AlvoConstrutor::Bloco(pre) => {
+                                    match pre.query_selector(":scope > code.language-mermaid").ok().flatten() {
+                                        Some(code) if pre.is_connected() => {
+                                            // O `\n` final é o do `<code>` que o markdown gera.
+                                            code.set_text_content(Some(&format!("{codigo}\n")));
+                                            if let Some(pai) = pre.parent_element() {
+                                                crate::mermaid::desenhar_em(&pai);
+                                            }
+                                            true
+                                        }
+                                        _ => false,
+                                    }
+                                }
+                                AlvoConstrutor::Novo => {
+                                    let html = format!(
+                                        "<pre><code class=\"language-mermaid\">{}\n</code></pre>",
+                                        escape_html(&codigo)
+                                    );
+                                    let guardado = cursor.borrow_mut().take();
+                                    let no_lugar = guardado.as_ref().map(restaurar_cursor).unwrap_or(false);
+                                    match parse_single_element(&html) {
+                                        Some(el) if no_lugar && insert_element_at_cursor(&el, true) => {
+                                            if let Some(pai) = el.parent_element() {
+                                                crate::mermaid::desenhar_em(&pai);
+                                            }
+                                            true
+                                        }
+                                        _ => false,
+                                    }
+                                }
+                            };
+                            if mudou {
+                                let new_md = recompute_markdown_from_dom(&content_md, &editor_ref, &segment_refs);
+                                content_md.set(new_md.clone());
+                                mark_edited_estrutural(new_md);
+                            }
+                        })
+                    };
+                    html! { <ConstrutorMermaid {inicial} on_aplicar={aplicar} on_fechar={fechar} /> }
+                }}
+            }
             if *properties_modal_open {
                 <Modal title={"Propriedades".to_string()} open={true} on_close={{
                     let properties_modal_open = properties_modal_open.clone();
@@ -4093,6 +4166,15 @@ fn insert_embed_marker_at_cursor(kind: &str, body: &str) -> bool {
     }
     div.set_inner_html(&body.replace('\n', "<br>"));
     insert_element_at_cursor(&div, true)
+}
+
+/// Para quem o construtor mermaid está aberto (ciclo 488).
+#[derive(Clone, PartialEq)]
+enum AlvoConstrutor {
+    /// `/mermaid`: insere onde o cursor estava.
+    Novo,
+    /// "Editar no construtor" de um bloco: troca o código daquele `<pre>`.
+    Bloco(web_sys::HtmlElement),
 }
 
 /// Insere `el` na posição do cursor via `Range::insert_node` em vez de

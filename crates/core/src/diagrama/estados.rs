@@ -1,6 +1,13 @@
 //! Estados: estados, transições com rótulo, início e fim (`[*]`).
 
-use super::{desescapar, escapar, id_valido, linha_de_posicoes, tomar_id, ForaDoModelo, Instrucao, Posicoes};
+use super::{desescapar, id_valido, linha_de_posicoes, tomar_id, ForaDoModelo, Instrucao, Posicoes};
+
+/// O mermaid não aceita `:` no rótulo da transição (ele já separa o rótulo
+/// por `:`): achado passando as amostras pelo `mermaid.parse` de verdade
+/// (ciclo 488). No nome entre aspas, o escape vai junto, pela mesma regra.
+fn escapar(t: &str) -> String {
+    super::escapar(t).replace(':', "#58;")
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Estado {

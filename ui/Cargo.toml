@@ -70,4 +70,5 @@ features = [
     "Text",
     "CharacterData",
     "SvgElement",
+    "EventInit",
 ]

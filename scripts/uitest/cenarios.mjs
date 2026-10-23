@@ -1028,6 +1028,153 @@ cenarios.push({
   },
 });
 
+// ── ciclo 488: o construtor mermaid ─────────────────────────────────
+
+/// Escreve no `<textarea>` do construtor como a digitação faria: o valor
+/// pelo setter nativo (o Yew controla o `value`) e o `input` em seguida.
+const CODIGO_DO_CONSTRUTOR = (texto) => `(() => {
+  const t = document.querySelector('.construtor-mermaid__codigo');
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, ${JSON.stringify(texto)});
+  t.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  return true;
+})()`;
+const ABA_DO_CONSTRUTOR = (nome) => `(() => { [...document.querySelectorAll('.construtor-mermaid__aba')].find(a => a.textContent.trim() === ${JSON.stringify(nome)}).click(); return true; })()`;
+const CTRL_ENTER_NO_BLOCO = (n) => `(() => {
+  const pre = document.querySelectorAll('.editor__wysiwyg pre.editor__bloco--mermaid')[${n}];
+  pre.focus();
+  pre.querySelector('code').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }));
+  return true;
+})()`;
+
+cenarios.push({
+  nome: "construtor: o mermaid aceita tudo o que o construtor escreve (488)",
+  async fn(bridge, ctx) {
+    // Os testes do núcleo provam que o NOSSO leitor entende o NOSSO
+    // escritor. Quem tem que entender é o mermaid: as amostras (exemplos +
+    // diagramas gerados com texto difícil) passam pelo `mermaid.parse`.
+    // Na primeira rodada, 29 de 164 reprovaram aqui.
+    const { execFileSync } = await import("node:child_process");
+    const { mkdtempSync, readFileSync, rmSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(join(tmpdir(), "anotadinho-amostras-"));
+    try {
+      const destino = join(dir, "amostras.json");
+      execFileSync("cargo", ["test", "-q", "-p", "anotadinho-core", "--lib", "diagrama::tests::amostras", "--", "--ignored"], {
+        env: { ...process.env, ANOTADINHO_AMOSTRAS: destino },
+        stdio: "ignore",
+      });
+      const codigos = JSON.parse(readFileSync(destino, "utf8"));
+      ctx.assert(codigos.length > 100, `poucas amostras: ${codigos.length}`);
+      await bridge.js(`(() => { if (!window.mermaid && !document.querySelector('script[data-biblioteca=mermaid]')) { const s = document.createElement('script'); s.src = '/mermaid.min.js'; s.dataset.biblioteca = 'mermaid'; document.head.append(s); } return true; })()`);
+      await ctx.esperar(bridge, "typeof window.mermaid === 'object'", "o mermaid carregar", 15000);
+      const falhas = await bridge.js(`(async () => {
+        const falhas = [];
+        for (const c of ${JSON.stringify(codigos)}) {
+          try { await mermaid.parse(c); } catch (e) { falhas.push(c + '\\n  → ' + String(e.message || e).split('\\n')[0]); }
+        }
+        return falhas;
+      })()`);
+      ctx.assertEq(falhas.length, 0, `o mermaid recusou ${falhas.length} de ${codigos.length}:\n${falhas.slice(0, 3).join("\n---\n")}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+});
+
+cenarios.push({
+  nome: "construtor: /mermaid abre o modal, e Inserir põe o bloco desenhado (488)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\n\nPrimeiro parágrafo.\n");
+    await recarregar(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
+    // O `/` só abre o menu no começo ou depois de espaço.
+    await bridge.js(DIGITAR(" /"));
+    await ctx.esperar(bridge, "document.querySelectorAll('.slash-menu__item').length > 0", "o menu / abrir");
+    await bridge.js(`(() => { [...document.querySelectorAll('.slash-menu__item')].find(i => i.querySelector('.slash-menu__item-label')?.textContent === 'Diagrama').click(); return true; })()`);
+    await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid')", "o construtor abrir");
+    ctx.assertEq(await bridge.js("document.querySelector('.construtor-mermaid__aba--ativa')?.textContent.trim()"), "Construtor", "o diagrama novo devia abrir no construtor");
+    // Trocar o tipo troca o exemplo; a prévia desenha.
+    await bridge.js(`(() => { [...document.querySelectorAll('.construtor-mermaid__tipo')].find(t => t.textContent.trim() === 'Sequência').click(); return true; })()`);
+    await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__tipo--ativo')?.textContent.trim() === 'Sequência'", "o tipo trocar");
+    await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__previa-imagem')?.src.startsWith('data:image/svg+xml')", "a prévia desenhar", 10000);
+    await bridge.js(ABA_DO_CONSTRUTOR("Código"));
+    await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__codigo')?.value.startsWith('sequenceDiagram')", "o código do exemplo de sequência");
+    ctx.assertEq(await bridge.js("getComputedStyle(document.querySelector('.construtor-mermaid__codigo')).fontVariantLigatures"), "none", "o código do construtor tem ligaduras");
+    await bridge.js("document.querySelector('.construtor-mermaid__aplicar').click(), true");
+    await ctx.esperar(bridge, "!document.querySelector('.construtor-mermaid')", "o modal fechar");
+    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg pre.editor__bloco--mermaid-desenhado')", "o bloco inserido desenhar", 10000);
+    await bridge.js(SALVAR);
+    const ate = Date.now() + 5000;
+    while (Date.now() < ate && !(ctx.ler() || "").includes("sequenceDiagram")) await PAUSA(100);
+    const md = ctx.ler() || "";
+    ctx.assert(/```mermaid\nsequenceDiagram\n[\s\S]*\n```/.test(md), `o bloco não chegou no arquivo:\n${md}`);
+    ctx.assert(md.includes("Primeiro parágrafo.") && !/Primeiro parágrafo\. ?\//.test(md), `o parágrafo de onde veio o / mudou:\n${md}`);
+  },
+});
+
+cenarios.push({
+  nome: "construtor: editar troca só aquele bloco, e abrir e aplicar sem mexer não muda nada (488)",
+  async fn(bridge, ctx) {
+    const UM = "graph TD\n  A[Um] --> B";
+    const DOIS = "graph LR\n  C[Dois] --> D";
+    const ARQUIVO = `---\ntitle: __uitest\n---\n\n\`\`\`mermaid\n${UM}\n\`\`\`\n\n\`\`\`mermaid\n${DOIS}\n\`\`\`\n`;
+    ctx.escrever(ARQUIVO);
+    await recarregar(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelectorAll('.editor__wysiwyg pre.editor__bloco--mermaid-desenhado').length === 2", "os dois diagramas desenharem", 10000);
+
+    // O botão aparece com o bloco em edição, e abre o construtor DELE.
+    await bridge.js(`(() => { document.querySelectorAll('.editor__wysiwyg pre.editor__bloco--mermaid')[1].focus(); return true; })()`);
+    await ctx.esperar(bridge, "getComputedStyle(document.querySelector('.construtor-mermaid__abrir')).display !== 'none'", "o botão Editar no construtor aparecer");
+    ctx.assert(!(await bridge.js("!!document.querySelector('.editor__wysiwyg .construtor-mermaid__abrir')")), "o botão está dentro do editor: entraria no markdown");
+    await bridge.js("document.querySelector('.construtor-mermaid__abrir').click(), true");
+    await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid')", "o construtor abrir");
+    await bridge.js(ABA_DO_CONSTRUTOR("Código"));
+    await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__codigo')", "a aba código");
+    ctx.assertEq(await bridge.js("document.querySelector('.construtor-mermaid__codigo').value"), DOIS, "o construtor abriu com outro código");
+    // Aplicar sem mexer: nada muda, nem o "não salvo" (RF8).
+    await bridge.js("document.querySelector('.construtor-mermaid__aplicar').click(), true");
+    await ctx.esperar(bridge, "!document.querySelector('.construtor-mermaid')", "o modal fechar");
+    ctx.assert(!(await bridge.js("!!document.querySelector('.editor__dirty')")), "aplicar sem mexer marcou a página como não salva");
+
+    // Pelo teclado (Ctrl+Enter), muda o segundo; o primeiro fica.
+    await bridge.js(CTRL_ENTER_NO_BLOCO(1));
+    await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid')", "Ctrl+Enter abrir o construtor");
+    await bridge.js(ABA_DO_CONSTRUTOR("Código"));
+    await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__codigo')", "a aba código");
+    await bridge.js(CODIGO_DO_CONSTRUTOR("graph LR\n  C[Dois] --> E[Novo]"));
+    await bridge.js("document.querySelector('.construtor-mermaid__aplicar').click(), true");
+    await ctx.esperar(bridge, "!document.querySelector('.construtor-mermaid')", "o modal fechar");
+    await ctx.esperar(bridge, "decodeURIComponent(getComputedStyle(document.querySelectorAll('.editor__wysiwyg pre.editor__bloco--mermaid')[1], '::after').backgroundImage).includes('Novo')", "o segundo redesenhar", 10000);
+    await bridge.js(SALVAR);
+    const ate = Date.now() + 5000;
+    while (Date.now() < ate && !(ctx.ler() || "").includes("E[Novo]")) await PAUSA(100);
+    const md = ctx.ler() || "";
+    ctx.assert(md.includes("```mermaid\n" + UM + "\n```"), `o primeiro bloco mudou:\n${md}`);
+    ctx.assert(md.includes("```mermaid\ngraph LR\n  C[Dois] --> E[Novo]\n```"), `o segundo não foi trocado:\n${md}`);
+    ctx.assertEq((md.match(/```mermaid/g) || []).length, 2, `devia haver dois blocos:\n${md}`);
+  },
+});
+
+cenarios.push({
+  nome: "construtor: diagrama fora do modelo abre no código, com o motivo (488)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\n\n```mermaid\ngraph TD\n  subgraph S\n  A --> B\n  end\n```\n");
+    await recarregar(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg pre.editor__bloco--mermaid-desenhado')", "o diagrama desenhar", 10000);
+    await bridge.js(CTRL_ENTER_NO_BLOCO(0));
+    await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid')", "o construtor abrir");
+    ctx.assertEq(await bridge.js("document.querySelector('.construtor-mermaid__aba--ativa')?.textContent.trim()"), "Código", "devia abrir na aba Código");
+    ctx.assert(await bridge.js("[...document.querySelectorAll('.construtor-mermaid__aba')].find(a => a.textContent.trim() === 'Construtor').disabled"), "a aba Construtor devia estar indisponível");
+    const aviso = await bridge.js("document.querySelector('.construtor-mermaid__aviso')?.textContent || ''");
+    ctx.assert(aviso.includes("linha 2") && aviso.includes("subgraph"), `o aviso não diz o motivo: ${aviso}`);
+    await bridge.js("document.querySelector('.construtor-mermaid .btn--ghost[data-nav-item=construtor-mermaid-cancelar]').click(), true");
+    await ctx.esperar(bridge, "!document.querySelector('.construtor-mermaid')", "o modal fechar");
+  },
+});
+
 // ── ciclo 244: tirar a marca só do trecho selecionado ────────────────
 
 cenarios.push({

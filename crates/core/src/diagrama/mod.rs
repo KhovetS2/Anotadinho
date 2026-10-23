@@ -31,6 +31,51 @@ pub enum Diagrama {
     Gantt(Gantt),
 }
 
+/// Os tipos que o construtor monta, na ordem do seletor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tipo {
+    Fluxograma,
+    Sequencia,
+    Estados,
+    Gantt,
+}
+
+impl Tipo {
+    pub const TODOS: [Tipo; 4] = [Tipo::Fluxograma, Tipo::Sequencia, Tipo::Estados, Tipo::Gantt];
+
+    pub fn nome(self) -> &'static str {
+        match self {
+            Tipo::Fluxograma => "Fluxograma",
+            Tipo::Sequencia => "Sequência",
+            Tipo::Estados => "Estados",
+            Tipo::Gantt => "Gantt",
+        }
+    }
+}
+
+impl Diagrama {
+    pub fn tipo(&self) -> Tipo {
+        match self {
+            Diagrama::Fluxograma(_) => Tipo::Fluxograma,
+            Diagrama::Sequencia(_) => Tipo::Sequencia,
+            Diagrama::Estados(_) => Tipo::Estados,
+            Diagrama::Gantt(_) => Tipo::Gantt,
+        }
+    }
+
+    /// O ponto de partida de um diagrama novo: pequeno, mas com cada peça
+    /// do tipo, pra a pessoa ver o que dá pra fazer mexendo, e não lendo.
+    pub fn exemplo(tipo: Tipo) -> Diagrama {
+        let codigo = match tipo {
+            Tipo::Fluxograma => "graph TD\n  A[Começo]\n  B{Decide}\n  C(Faz)\n  D((Fim))\n  A --> B\n  B -->|sim| C\n  B -->|não| D\n  C --> D\n",
+            Tipo::Sequencia => "sequenceDiagram\n  actor P as Pessoa\n  participant S as Sistema\n  P->>S: pede\n  S-->>P: responde\n  Note right of S: pensa\n",
+            Tipo::Estados => "stateDiagram-v2\n  state \"Em andamento\" as Andamento\n  Feito\n  [*] --> Andamento\n  Andamento --> Feito : terminou\n  Feito --> [*]\n",
+            Tipo::Gantt => "gantt\n  dateFormat YYYY-MM-DD\n  section Primeira\n    Planejar :a1, 2026-11-02, 3d\n    Fazer :after a1, 5d\n",
+        };
+        ler(codigo).expect("o exemplo é do próprio construtor")
+    }
+}
+
 /// O código tem algo que o construtor não monta. `linha` é 1-based; 0 é o
 /// diagrama inteiro.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -262,6 +307,30 @@ mod tests {
     }
 
     #[test]
+    fn exemplo_de_cada_tipo_e_do_tipo_e_volta_igual() {
+        for t in Tipo::TODOS {
+            let d = Diagrama::exemplo(t);
+            assert_eq!(d.tipo(), t);
+            assert_eq!(ler(&escrever(&d)).unwrap(), d);
+        }
+    }
+
+    /// Amostras pro cenário de UI que as passa pelo `mermaid.parse` de
+    /// VERDADE (ciclo 488): os testes daqui só provam que o leitor
+    /// entende o escritor, não que o mermaid entende.
+    ///
+    /// `ANOTADINHO_AMOSTRAS=/caminho.json cargo test -p anotadinho-core
+    /// --lib diagrama::tests::amostras -- --ignored`
+    #[test]
+    #[ignore]
+    fn amostras_para_o_mermaid() {
+        let destino = std::env::var("ANOTADINHO_AMOSTRAS").expect("ANOTADINHO_AMOSTRAS");
+        let mut codigos: Vec<String> = Tipo::TODOS.iter().map(|t| escrever(&Diagrama::exemplo(*t))).collect();
+        codigos.extend(propriedade::amostras(40));
+        std::fs::write(destino, serde_json::to_string(&codigos).unwrap()).unwrap();
+    }
+
+    #[test]
     fn end_nao_e_id() {
         assert!(id_valido("A_1") && id_valido("Começo"));
         assert!(!id_valido("end") && !id_valido("a b") && !id_valido(""));
@@ -285,128 +354,146 @@ mod propriedade {
         }
         fn texto(&mut self) -> String {
             const PEDACOS: [&str; 14] = ["oi", "ação", " ", ";", "\"", ":", "(x)", "[y]", "{z}", "a|b", "#", "->", "é", "1"];
-            let mut s: String = (0..1 + self.n(5)).map(|_| PEDACOS[self.n(PEDACOS.len())]).collect();
+            let s: String = (0..1 + self.n(5)).map(|_| PEDACOS[self.n(PEDACOS.len())]).collect();
             // O construtor apara as bordas do texto; o leitor também.
-            s = s.trim().to_string();
+            let s = s.trim().to_string();
             if s.is_empty() { "t".into() } else { s }
         }
     }
 
-    fn ida_e_volta(d: Diagrama) {
-        let codigo = escrever(&d);
-        assert_eq!(ler(&codigo).as_ref(), Ok(&d), "\n{codigo}");
+    fn gerar_fluxograma(semente: u64) -> Diagrama {
+        use fluxograma::*;
+        let mut r = Lcg(semente);
+        let mut f = Fluxograma::novo();
+        f.direcao = Direcao::TODAS[r.n(5)];
+        let n = 1 + r.n(6);
+        for i in 0..n {
+            f.nos.push(No { id: format!("n{i}"), texto: r.texto(), forma: Forma::TODAS[r.n(4)] });
+        }
+        for _ in 0..r.n(8) {
+            let rotulo = if r.n(2) == 0 { String::new() } else { r.texto() };
+            f.ligacoes.push(Ligacao { de: format!("n{}", r.n(n)), para: format!("n{}", r.n(n)), tipo: TipoLigacao::TODAS[r.n(4)], rotulo });
+        }
+        if r.n(2) == 0 {
+            f.posicoes.insert("n0".into(), [r.n(500) as f64, r.n(500) as f64 + 0.5]);
+        }
+        Diagrama::Fluxograma(f)
+    }
+
+    fn gerar_sequencia(semente: u64) -> Diagrama {
+        use sequencia::*;
+        let mut r = Lcg(semente);
+        let mut s = Sequencia::default();
+        let n = 1 + r.n(4);
+        for i in 0..n {
+            let nome = if r.n(2) == 0 { format!("p{i}") } else { r.texto() };
+            s.participantes.push(Participante { id: format!("p{i}"), nome, ator: r.n(2) == 0 });
+        }
+        for _ in 0..r.n(8) {
+            let item = if r.n(3) == 0 {
+                let lado = [Lado::Direita, Lado::Esquerda, Lado::Sobre][r.n(3)];
+                let mut alvos = vec![format!("p{}", r.n(n))];
+                if lado == Lado::Sobre && r.n(2) == 0 {
+                    alvos.push(format!("p{}", r.n(n)));
+                }
+                Item::Nota { lado, alvos, texto: r.texto() }
+            } else {
+                Item::Mensagem { de: format!("p{}", r.n(n)), para: format!("p{}", r.n(n)), seta: Seta::TODAS[r.n(8)], texto: r.texto() }
+            };
+            s.itens.push(item);
+        }
+        Diagrama::Sequencia(s)
+    }
+
+    fn gerar_estados(semente: u64) -> Diagrama {
+        use estados::*;
+        let mut r = Lcg(semente);
+        let mut e = Estados::novo();
+        let n = 1 + r.n(5);
+        for i in 0..n {
+            let texto = if r.n(2) == 0 { format!("s{i}") } else { r.texto() };
+            e.estados.push(Estado { id: format!("s{i}"), texto });
+        }
+        for _ in 0..r.n(8) {
+            let de = if r.n(4) == 0 { Ponta::Inicio } else { Ponta::Estado(format!("s{}", r.n(n))) };
+            let para = if r.n(4) == 0 { Ponta::Fim } else { Ponta::Estado(format!("s{}", r.n(n))) };
+            // Início direto no fim não é transição que o construtor ofereça.
+            if de == Ponta::Inicio && para == Ponta::Fim {
+                continue;
+            }
+            let rotulo = if r.n(2) == 0 { String::new() } else { r.texto() };
+            e.transicoes.push(Transicao { de, para, rotulo });
+        }
+        Diagrama::Estados(e)
+    }
+
+    fn gerar_gantt(semente: u64) -> Diagrama {
+        use gantt::*;
+        let mut r = Lcg(semente);
+        let mut g = Gantt { titulo: (r.n(2) == 0).then(|| r.texto()), com_formato: r.n(2) == 0, secoes: Vec::new() };
+        let mut ids: Vec<String> = Vec::new();
+        for s in 0..1 + r.n(3) {
+            let nome = if s == 0 && r.n(2) == 0 { None } else { Some(r.texto()) };
+            let mut tarefas = Vec::new();
+            for _ in 0..r.n(4) {
+                let id = (r.n(2) == 0).then(|| format!("t{}", ids.len()));
+                let inicio = match r.n(3) {
+                    0 => Inicio::Anterior,
+                    1 => Inicio::Data(format!("2026-{:02}-{:02}", 1 + r.n(12), 1 + r.n(28))),
+                    _ if !ids.is_empty() => Inicio::Depois(vec![ids[r.n(ids.len())].clone()]),
+                    _ => Inicio::Anterior,
+                };
+                // Sem início escrito, o `id` sozinho seria lido como
+                // início: o construtor não gera essa combinação.
+                let id = if inicio == Inicio::Anterior { None } else { id };
+                let fim = if r.n(2) == 0 { Fim::Duracao(format!("{}d", 1 + r.n(9))) } else { Fim::Data("2026-12-31".into()) };
+                let marcas = Marca::TODAS.into_iter().filter(|_| r.n(3) == 0).collect();
+                if let Some(i) = &id {
+                    ids.push(i.clone());
+                }
+                tarefas.push(Tarefa { nome: r.texto(), marcas, id, inicio, fim });
+            }
+            // Uma primeira seção sem nome e sem tarefa não tem como ser
+            // escrita: o construtor não a cria.
+            if nome.is_some() || !tarefas.is_empty() {
+                g.secoes.push(Secao { nome, tarefas });
+            }
+        }
+        Diagrama::Gantt(g)
+    }
+
+    const GERADORES: [fn(u64) -> Diagrama; 4] = [gerar_fluxograma, gerar_sequencia, gerar_estados, gerar_gantt];
+
+    /// O código de `n` diagramas gerados de cada tipo.
+    pub(super) fn amostras(n: u64) -> Vec<String> {
+        GERADORES.iter().flat_map(|g| (0..n).map(move |s| escrever(&g(s)))).collect()
+    }
+
+    fn ida_e_volta(gerar: fn(u64) -> Diagrama) {
+        for semente in 0..300 {
+            let d = gerar(semente);
+            let codigo = escrever(&d);
+            assert_eq!(ler(&codigo).as_ref(), Ok(&d), "semente {semente}\n{codigo}");
+        }
     }
 
     #[test]
     fn fluxograma_gerado_volta_igual() {
-        use fluxograma::*;
-        for semente in 0..300 {
-            let mut r = Lcg(semente);
-            let mut f = Fluxograma::novo();
-            f.direcao = Direcao::TODAS[r.n(5)];
-            let n = 1 + r.n(6);
-            for i in 0..n {
-                f.nos.push(No { id: format!("n{i}"), texto: r.texto(), forma: Forma::TODAS[r.n(4)] });
-            }
-            for _ in 0..r.n(8) {
-                let rotulo = if r.n(2) == 0 { String::new() } else { r.texto() };
-                f.ligacoes.push(Ligacao { de: format!("n{}", r.n(n)), para: format!("n{}", r.n(n)), tipo: TipoLigacao::TODAS[r.n(4)], rotulo });
-            }
-            if r.n(2) == 0 {
-                f.posicoes.insert("n0".into(), [r.n(500) as f64, r.n(500) as f64 + 0.5]);
-            }
-            ida_e_volta(Diagrama::Fluxograma(f));
-        }
+        ida_e_volta(gerar_fluxograma);
     }
 
     #[test]
     fn sequencia_gerada_volta_igual() {
-        use sequencia::*;
-        for semente in 0..300 {
-            let mut r = Lcg(semente);
-            let mut s = Sequencia::default();
-            let n = 1 + r.n(4);
-            for i in 0..n {
-                let nome = if r.n(2) == 0 { format!("p{i}") } else { r.texto() };
-                s.participantes.push(Participante { id: format!("p{i}"), nome, ator: r.n(2) == 0 });
-            }
-            for _ in 0..r.n(8) {
-                let item = if r.n(3) == 0 {
-                    let lado = [Lado::Direita, Lado::Esquerda, Lado::Sobre][r.n(3)];
-                    let mut alvos = vec![format!("p{}", r.n(n))];
-                    if lado == Lado::Sobre && r.n(2) == 0 {
-                        alvos.push(format!("p{}", r.n(n)));
-                    }
-                    Item::Nota { lado, alvos, texto: r.texto() }
-                } else {
-                    Item::Mensagem { de: format!("p{}", r.n(n)), para: format!("p{}", r.n(n)), seta: Seta::TODAS[r.n(8)], texto: r.texto() }
-                };
-                s.itens.push(item);
-            }
-            ida_e_volta(Diagrama::Sequencia(s));
-        }
+        ida_e_volta(gerar_sequencia);
     }
 
     #[test]
     fn estados_gerado_volta_igual() {
-        use estados::*;
-        for semente in 0..300 {
-            let mut r = Lcg(semente);
-            let mut e = Estados::novo();
-            let n = 1 + r.n(5);
-            for i in 0..n {
-                let texto = if r.n(2) == 0 { format!("s{i}") } else { r.texto() };
-                e.estados.push(Estado { id: format!("s{i}"), texto });
-            }
-            for _ in 0..r.n(8) {
-                let de = if r.n(4) == 0 { Ponta::Inicio } else { Ponta::Estado(format!("s{}", r.n(n))) };
-                let para = if r.n(4) == 0 { Ponta::Fim } else { Ponta::Estado(format!("s{}", r.n(n))) };
-                // Início direto no fim não é transição que o construtor ofereça.
-                if de == Ponta::Inicio && para == Ponta::Fim {
-                    continue;
-                }
-                let rotulo = if r.n(2) == 0 { String::new() } else { r.texto() };
-                e.transicoes.push(Transicao { de, para, rotulo });
-            }
-            ida_e_volta(Diagrama::Estados(e));
-        }
+        ida_e_volta(gerar_estados);
     }
 
     #[test]
     fn gantt_gerado_volta_igual() {
-        use gantt::*;
-        for semente in 0..300 {
-            let mut r = Lcg(semente);
-            let mut g = Gantt { titulo: (r.n(2) == 0).then(|| r.texto()), com_formato: r.n(2) == 0, secoes: Vec::new() };
-            let mut ids: Vec<String> = Vec::new();
-            for s in 0..1 + r.n(3) {
-                let nome = if s == 0 && r.n(2) == 0 { None } else { Some(r.texto()) };
-                let mut tarefas = Vec::new();
-                for _ in 0..r.n(4) {
-                    let id = (r.n(2) == 0).then(|| format!("t{}", ids.len()));
-                    let inicio = match r.n(3) {
-                        0 => Inicio::Anterior,
-                        1 => Inicio::Data(format!("2026-{:02}-{:02}", 1 + r.n(12), 1 + r.n(28))),
-                        _ if !ids.is_empty() => Inicio::Depois(vec![ids[r.n(ids.len())].clone()]),
-                        _ => Inicio::Anterior,
-                    };
-                    // Sem início escrito, o `id` sozinho seria lido como
-                    // início: o construtor não gera essa combinação.
-                    let id = if inicio == Inicio::Anterior { None } else { id };
-                    let fim = if r.n(2) == 0 { Fim::Duracao(format!("{}d", 1 + r.n(9))) } else { Fim::Data("2026-12-31".into()) };
-                    let marcas = Marca::TODAS.into_iter().filter(|_| r.n(3) == 0).collect();
-                    if let Some(i) = &id {
-                        ids.push(i.clone());
-                    }
-                    tarefas.push(Tarefa { nome: r.texto(), marcas, id, inicio, fim });
-                }
-                // Uma primeira seção sem nome e sem tarefa não tem como ser
-                // escrita: o construtor não a cria.
-                if nome.is_some() || !tarefas.is_empty() {
-                    g.secoes.push(Secao { nome, tarefas });
-                }
-            }
-            ida_e_volta(Diagrama::Gantt(g));
-        }
+        ida_e_volta(gerar_gantt);
     }
 }

@@ -24,6 +24,10 @@ pub struct ModalProps {
     /// nascia sem foco nenhum, quebrando o que o ciclo 124 prometia).
     #[prop_or_default]
     pub focus_nonce: u32,
+    /// Classe a mais no `.modal`, pra quem precisa de outro tamanho (o
+    /// construtor mermaid põe código e prévia lado a lado, ciclo 488).
+    #[prop_or_default]
+    pub classe: Classes,
     #[prop_or_default]
     pub children: Children,
 }
@@ -104,7 +108,7 @@ pub fn modal(props: &ModalProps) -> Html {
     // sobrescreve um diálogo encadeado que o próprio botão acabou de abrir
     // (ex: nome → tipo → opções na configuração de coluna da tabela).
     let stop_propagation = Callback::from(|e: MouseEvent| e.stop_propagation());
-    let modal_class = if props.wide { "modal modal--wide" } else { "modal" };
+    let modal_class = classes!("modal", props.wide.then_some("modal--wide"), props.classe.clone());
 
     // Escape fecha; Tab/Shift+Tab ficam presos dentro do modal (trap
     // de foco, ciclo 124) — sem isso, Tab "escapa" pro resto da

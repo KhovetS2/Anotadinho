@@ -162,9 +162,12 @@ fn texto_de_no(t: &str) -> String {
     }
 }
 
+/// O rótulo da ligação precisa de aspas pelos mesmos caracteres que o nó:
+/// `-->|a(b)|` o mermaid lê como forma aberta (achado passando as amostras
+/// pelo `mermaid.parse` de verdade, ciclo 488).
 fn texto_de_rotulo(t: &str) -> String {
     let e = escapar(t);
-    if e.contains('|') {
+    if e.chars().any(|c| "[](){}|<>".contains(c)) {
         format!("\"{e}\"")
     } else {
         e

@@ -35,8 +35,16 @@ const ATTR_FONTE: &str = "data-mermaid-fonte";
 /// A mensagem do erro de sintaxe, mostrada pelo `::after`.
 const ATTR_ERRO: &str = "data-mermaid-erro";
 
+/// O evento que pede o construtor pra um bloco (ciclo 488). Disparado NO
+/// `<pre>`, borbulhando: o editor ouve no documento e acha o bloco pelo
+/// `target`.
+pub const EVENTO_CONSTRUTOR: &str = "anotadinho-construtor-mermaid";
+
 thread_local! {
     static OUVINTES: Cell<bool> = const { Cell::new(false) };
+    /// O botão "Editar no construtor" e o bloco a que ele está preso agora.
+    static BOTAO: std::cell::RefCell<Option<(web_sys::HtmlElement, Option<web_sys::HtmlElement>)>> =
+        const { std::cell::RefCell::new(None) };
     static PROXIMO_ID: Cell<u32> = const { Cell::new(0) };
 }
 
@@ -131,65 +139,96 @@ fn desenhar_bloco(pre: web_sys::HtmlElement) {
     }
     configurar(&mermaid);
 
-    let id = PROXIMO_ID.with(|c| {
-        c.set(c.get() + 1);
-        format!("mermaid-{}", c.get())
-    });
-    let Some(render) = js_sys::Reflect::get(&mermaid, &JsValue::from_str("render"))
-        .ok()
-        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
-    else {
-        return;
-    };
-    let promessa = match render.call2(&mermaid, &JsValue::from_str(&id), &JsValue::from_str(&fonte)) {
-        Ok(p) => js_sys::Promise::resolve(&p),
-        Err(e) => js_sys::Promise::reject(&e),
-    };
     wasm_bindgen_futures::spawn_local(async move {
-        let resultado = wasm_bindgen_futures::JsFuture::from(promessa).await;
-        // Com erro, o mermaid 10 deixa o rascunho do desenho (`#d<id>`)
-        // pendurado no `<body>` — um a cada tentativa.
-        if let Some(sobra) = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id(&format!("d{id}")))
-        {
-            sobra.remove();
-        }
+        let resultado = renderizar_com(&mermaid, &fonte).await;
         // A pessoa mudou o código enquanto desenhava: o próximo `focusout`
         // desenha a versão nova; esta já não vale.
         if codigo_de(&pre).and_then(|c| c.text_content()).as_deref() != Some(fonte.as_str()) {
             return;
         }
         match resultado {
-            Ok(v) => match js_sys::Reflect::get(&v, &JsValue::from_str("svg")).ok().and_then(|s| s.as_string()) {
-                Some(svg) => aplicar(&pre, &svg),
-                None => mostrar_erro(&pre, "o mermaid não devolveu desenho"),
-            },
-            Err(e) => {
-                let msg = js_sys::Reflect::get(&e, &JsValue::from_str("message"))
-                    .ok()
-                    .and_then(|m| m.as_string())
-                    .or_else(|| e.as_string())
-                    .unwrap_or_default();
-                mostrar_erro(&pre, &msg);
-            }
+            Ok(desenho) => aplicar(&pre, &desenho),
+            Err(msg) => mostrar_erro(&pre, &msg),
         }
     });
 }
 
-fn aplicar(pre: &web_sys::HtmlElement, svg: &str) {
-    let Some((w, h)) = medidas_do_svg(svg) else {
-        mostrar_erro(pre, "o desenho veio sem medidas");
-        return;
+/// Um diagrama desenhado: a imagem e o tamanho natural dela.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Desenho {
+    /// `url("data:image/svg+xml…")`, pronto pra CSS.
+    pub url_css: String,
+    /// O mesmo, sem o `url(…)`: pra `<img src>`.
+    pub data_url: String,
+    pub largura: f64,
+    pub altura: f64,
+}
+
+/// Desenha `fonte` com o mermaid (lendo a biblioteca se precisar). O erro
+/// é a mensagem do mermaid, crua: quem mostra resume.
+///
+/// O bloco (485) e a prévia do construtor (488) passam por aqui, pra que
+/// a prévia seja exatamente o que a página vai mostrar.
+pub async fn renderizar(fonte: &str) -> Result<Desenho, String> {
+    if !crate::biblioteca::carregar(crate::biblioteca::Biblioteca::Mermaid).await {
+        return Err("o mermaid não carregou".into());
+    }
+    let mermaid = web_sys::window()
+        .and_then(|w| js_sys::Reflect::get(&w, &JsValue::from_str("mermaid")).ok())
+        .filter(|m| m.is_object())
+        .ok_or_else(|| "o mermaid não carregou".to_string())?;
+    configurar(&mermaid);
+    renderizar_com(&mermaid, fonte).await
+}
+
+async fn renderizar_com(mermaid: &JsValue, fonte: &str) -> Result<Desenho, String> {
+    let id = PROXIMO_ID.with(|c| {
+        c.set(c.get() + 1);
+        format!("mermaid-{}", c.get())
+    });
+    let render = js_sys::Reflect::get(mermaid, &JsValue::from_str("render"))
+        .ok()
+        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+        .ok_or_else(|| "o mermaid não tem `render`".to_string())?;
+    let promessa = match render.call2(mermaid, &JsValue::from_str(&id), &JsValue::from_str(fonte)) {
+        Ok(p) => js_sys::Promise::resolve(&p),
+        Err(e) => js_sys::Promise::reject(&e),
     };
+    let resultado = wasm_bindgen_futures::JsFuture::from(promessa).await;
+    // Com erro, o mermaid 10 deixa o rascunho do desenho (`#d<id>`)
+    // pendurado no `<body>` — um a cada tentativa.
+    if let Some(sobra) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id(&format!("d{id}")))
+    {
+        sobra.remove();
+    }
+    match resultado {
+        Ok(v) => {
+            let svg = js_sys::Reflect::get(&v, &JsValue::from_str("svg"))
+                .ok()
+                .and_then(|s| s.as_string())
+                .ok_or_else(|| "o mermaid não devolveu desenho".to_string())?;
+            let (largura, altura) = medidas_do_svg(&svg).ok_or_else(|| "o desenho veio sem medidas".to_string())?;
+            let data_url = format!(
+                "data:image/svg+xml;charset=utf-8,{}",
+                String::from(js_sys::encode_uri_component(&svg))
+            );
+            Ok(Desenho { url_css: format!("url(\"{data_url}\")"), data_url, largura, altura })
+        }
+        Err(e) => Err(js_sys::Reflect::get(&e, &JsValue::from_str("message"))
+            .ok()
+            .and_then(|m| m.as_string())
+            .or_else(|| e.as_string())
+            .unwrap_or_default()),
+    }
+}
+
+fn aplicar(pre: &web_sys::HtmlElement, d: &Desenho) {
     let estilo = pre.style();
-    let url = format!(
-        "url(\"data:image/svg+xml;charset=utf-8,{}\")",
-        String::from(js_sys::encode_uri_component(svg))
-    );
-    let _ = estilo.set_property("--mermaid-previa", &url);
-    let _ = estilo.set_property("--mermaid-proporcao", &format!("{w} / {h}"));
-    let _ = estilo.set_property("--mermaid-largura", &format!("{w}px"));
+    let _ = estilo.set_property("--mermaid-previa", &d.url_css);
+    let _ = estilo.set_property("--mermaid-proporcao", &format!("{} / {}", d.largura, d.altura));
+    let _ = estilo.set_property("--mermaid-largura", &format!("{}px", d.largura));
     let _ = pre.remove_attribute(ATTR_ERRO);
     let _ = pre.class_list().add_1(CLASSE_DESENHADO);
 }
@@ -278,6 +317,7 @@ fn instalar_ouvintes() {
     let ao_sair = Closure::<dyn Fn(web_sys::Event)>::new(move |e: web_sys::Event| {
         if let Some(pre) = pre_mermaid(&e) {
             let _ = pre.class_list().remove_1(CLASSE_EDITANDO);
+            esconder_botao();
             desenhar_bloco(pre);
         }
     });
@@ -293,6 +333,7 @@ fn instalar_ouvintes() {
             return;
         };
         let _ = pre.class_list().add_1(CLASSE_EDITANDO);
+        mostrar_botao(&pre);
         let Some(code) = codigo_de(&pre) else {
             return;
         };
@@ -318,6 +359,108 @@ fn instalar_ouvintes() {
     });
     let _ = doc.add_event_listener_with_callback("focusin", ao_entrar.as_ref().unchecked_ref());
     ao_entrar.forget();
+
+    // `Ctrl+Enter` dentro do bloco: o construtor sem precisar do mouse.
+    let ao_teclar = Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
+        if e.key() != "Enter" || !(e.ctrl_key() || e.meta_key()) {
+            return;
+        }
+        if let Some(pre) = pre_mermaid(&e) {
+            e.prevent_default();
+            e.stop_propagation();
+            pedir_construtor(&pre);
+        }
+    });
+    let _ = doc.add_event_listener_with_callback_and_bool("keydown", ao_teclar.as_ref().unchecked_ref(), true);
+    ao_teclar.forget();
+
+    // O botão é `fixed`: acompanha o bloco quando a página rola.
+    if let Some(w) = web_sys::window() {
+        let reposicionar = Closure::<dyn Fn()>::new(posicionar_botao);
+        let _ = doc.add_event_listener_with_callback_and_bool("scroll", reposicionar.as_ref().unchecked_ref(), true);
+        let _ = w.add_event_listener_with_callback("resize", reposicionar.as_ref().unchecked_ref());
+        reposicionar.forget();
+    }
+}
+
+fn pedir_construtor(pre: &web_sys::HtmlElement) {
+    let init = web_sys::EventInit::new();
+    init.set_bubbles(true);
+    if let Ok(ev) = web_sys::Event::new_with_event_init_dict(EVENTO_CONSTRUTOR, &init) {
+        let _ = pre.dispatch_event(&ev);
+    }
+}
+
+/// O botão "Editar no construtor" vive no `<body>`, FORA de qualquer
+/// `contenteditable` e da fila de irmãos dos blocos: pelo mesmo motivo do
+/// `::after`, um botão dentro do bloco entraria no `text_content` e no
+/// `html_to_md` (ciclo 488).
+fn botao() -> Option<web_sys::HtmlElement> {
+    if let Some(b) = BOTAO.with(|b| b.borrow().as_ref().map(|(b, _)| b.clone())) {
+        return Some(b);
+    }
+    let doc = web_sys::window()?.document()?;
+    let b = doc.create_element("button").ok()?.dyn_into::<web_sys::HtmlElement>().ok()?;
+    b.set_class_name("btn btn--secondary btn--xs construtor-mermaid__abrir");
+    let _ = b.set_attribute("type", "button");
+    let _ = b.set_attribute("data-nav-item", "construtor-mermaid-abrir");
+    let _ = b.set_attribute("title", "Editar no construtor (Ctrl+Enter)");
+    b.set_text_content(Some("Editar no construtor"));
+    // `mousedown` sem default: o foco fica no bloco, e o `focusout` não
+    // esconde o botão antes do clique chegar.
+    let segurar = Closure::<dyn Fn(web_sys::Event)>::new(|e: web_sys::Event| e.prevent_default());
+    let _ = b.add_event_listener_with_callback("mousedown", segurar.as_ref().unchecked_ref());
+    segurar.forget();
+    let clicar = Closure::<dyn Fn()>::new(|| {
+        let alvo = BOTAO.with(|b| b.borrow().as_ref().and_then(|(_, p)| p.clone()));
+        if let Some(pre) = alvo {
+            pedir_construtor(&pre);
+        }
+    });
+    let _ = b.add_event_listener_with_callback("click", clicar.as_ref().unchecked_ref());
+    clicar.forget();
+    let _ = b.style().set_property("display", "none");
+    doc.body()?.append_child(&b).ok()?;
+    BOTAO.with(|slot| *slot.borrow_mut() = Some((b.clone(), None)));
+    Some(b)
+}
+
+fn mostrar_botao(pre: &web_sys::HtmlElement) {
+    let Some(b) = botao() else {
+        return;
+    };
+    BOTAO.with(|slot| {
+        if let Some((_, alvo)) = slot.borrow_mut().as_mut() {
+            *alvo = Some(pre.clone());
+        }
+    });
+    let _ = b.style().remove_property("display");
+    posicionar_botao();
+}
+
+fn esconder_botao() {
+    BOTAO.with(|slot| {
+        if let Some((b, alvo)) = slot.borrow_mut().as_mut() {
+            let _ = b.style().set_property("display", "none");
+            *alvo = None;
+        }
+    });
+}
+
+fn posicionar_botao() {
+    let Some((b, Some(pre))) = BOTAO.with(|s| s.borrow().clone()) else {
+        return;
+    };
+    // O bloco saiu da página (trocou de nota com ele em foco): o
+    // `focusout` não vem de um nó removido.
+    if !pre.is_connected() {
+        esconder_botao();
+        return;
+    }
+    let r = pre.get_bounding_client_rect();
+    let estilo = b.style();
+    let _ = estilo.set_property("top", &format!("{}px", r.top() + 6.0));
+    let _ = estilo.set_property("left", &format!("{}px", r.right() - 6.0));
 }
 
 #[cfg(test)]

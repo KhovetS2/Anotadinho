@@ -2452,3 +2452,44 @@
 .tarefa-detalhes__texto { margin: calc(var(--sp-1) / 2) 0 0; font-size: .82rem; white-space: pre-wrap; }
 .tarefa-detalhes__comentario-novo { resize: vertical; font-size: .82rem; }
 .tarefa-detalhes__comentar, .tarefa-detalhes__anexar { align-self: flex-start; }
+
+/* ── Construtor mermaid (ciclos 488–490) ─────────────────────────── */
+.modal.construtor-mermaid { max-width: min(72rem, 94vw); max-height: 90vh; }
+.construtor-mermaid__abas { display: flex; gap: var(--sp-1); border-bottom: 1px solid var(--border); margin-bottom: var(--sp-3); }
+.construtor-mermaid__aba {
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--text-muted); cursor: pointer; padding: var(--sp-2) var(--sp-3); font: inherit;
+}
+.construtor-mermaid__aba:hover:not(:disabled) { color: var(--text-primary); }
+.construtor-mermaid__aba:disabled { cursor: not-allowed; opacity: .5; }
+.construtor-mermaid__aba--ativa { color: var(--text-primary); border-bottom-color: var(--accent-blue); }
+.construtor-mermaid__aba:focus-visible, .construtor-mermaid__tipo:focus-visible { outline: 2px solid var(--accent-blue); }
+.construtor-mermaid__corpo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-4); min-height: 22rem; }
+@media (max-width: 52rem) { .construtor-mermaid__corpo { grid-template-columns: 1fr; } }
+.construtor-mermaid__edicao { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.construtor-mermaid__tipos { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.construtor-mermaid__tipo {
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--text-muted); cursor: pointer; padding: var(--sp-1) var(--sp-3); font: inherit; font-size: .8125rem;
+}
+.construtor-mermaid__tipo--ativo { color: var(--text-primary); border-color: var(--accent-blue); background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-elevated)); }
+.construtor-mermaid__codigo {
+  flex: 1; min-height: 20rem; resize: vertical; width: 100%;
+  background: var(--bg-base); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: var(--sp-3); font-family: var(--font-mono); font-size: .8125rem; line-height: 1.55;
+  /* RF9: `->>` aparece como digitado. */
+  font-variant-ligatures: none;
+}
+.construtor-mermaid__codigo:focus { outline: 2px solid var(--accent-blue); outline-offset: -1px; }
+.construtor-mermaid__aviso, .construtor-mermaid__resumo { margin: 0; font-size: .8125rem; line-height: 1.5; color: var(--text-muted); }
+.construtor-mermaid__aviso { color: var(--warning); }
+.construtor-mermaid__previa {
+  display: flex; align-items: center; justify-content: center; min-width: 0; overflow: auto;
+  background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--sp-4);
+}
+.construtor-mermaid__previa-imagem { width: min(100%, var(--mermaid-largura)); height: auto; }
+.construtor-mermaid__previa-estado { margin: 0; color: var(--text-muted); font-size: .8125rem; }
+.construtor-mermaid__previa-erro { margin: 0; color: var(--error); font-size: .8125rem; }
+/* O botão do bloco vive no <body> (ver ui/src/mermaid.rs) e acompanha o
+   canto de cima, à direita, do bloco em edição. */
+.construtor-mermaid__abrir { position: fixed; z-index: 50; transform: translateX(-100%); }
