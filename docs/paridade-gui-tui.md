@@ -48,6 +48,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | `type: projeto` (quadro por etapa, fila, repositório, conversa) | ✅ | 460 (janela), 461 e 468 (TUI) — quadro de colunas que desliza; `h j k l` por `core::espacial`; números movem pela transição; `d` detalha |
 | `type: tarefa` (barra de etapa sobre o editor) | 🟡 | 460 — na TUI, "Mover a tarefa aberta…" na barra de comandos |
 | Arrastar o cartão do projeto entre colunas | — | 465 — na TUI, os números |
+| Sprints do projeto (recorte do quadro, mover de sprint, criar/iniciar/encerrar, histórico) | ✅ | 472 (janela: seletor, aba Sprints, seletor no cartão), 473 (TUI: `s` filtro, `m` sprint da tarefa, `S` sprints — o encerramento pergunta como escolha) |
 | Cabeçalho de página tipada + propriedades | ✅ | 344, 360 — título da página e "Propriedades" (`=`) nas telas de tipo |
 
 ## Editor

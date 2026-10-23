@@ -968,12 +968,7 @@ fn carregar_especial(estado: &mut Estado, vault: &str, tipo: TipoEspecial) {
             let caminho = estado.paginas.get(estado.pagina).map(|p| p.path.clone()).unwrap_or_default();
             match anotadinho_core::projeto::projeto_do_caminho(&caminho) {
                 Some(slug) => anotadinho_ipc::handle_estado_do_projeto(vault.to_string(), slug.to_string()).map(|e| {
-                    especiais::Dados::Projeto(especiais::ProjetoNaTela {
-                        projeto: e.projeto,
-                        config: e.config,
-                        tarefas: e.tarefas,
-                        avisos: e.avisos,
-                    })
+                    especiais::Dados::Projeto(especiais::ProjetoNaTela::novo(e.projeto, e.config, e.tarefas, e.avisos, e.sprints))
                 }),
                 None => Err(format!("{caminho} não está dentro de {}", anotadinho_core::projeto::PASTA)),
             }
@@ -1086,6 +1081,38 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                                 abrir(estado, vault, &caminho);
                             }
                         }
+                        Err(e) => estado.aviso = Some(e),
+                    }
+                }
+                // ── Sprints (ciclo 473): pela pessoa, como na janela.
+                Pedido::CriarSprint { slug, nome } => {
+                    let hoje = agora_local().split(' ').next().unwrap_or("").to_string();
+                    match anotadinho_ipc::handle_criar_sprint(vault.to_string(), slug, nome, String::new(), None, None, hoje) {
+                        Ok(c) => {
+                            recarregar(estado);
+                            estado.aviso = Some(format!("sprint criada: {c}"));
+                            carregar_especial(estado, vault, TipoEspecial::Projeto);
+                        }
+                        Err(e) => estado.aviso = Some(e),
+                    }
+                }
+                Pedido::IniciarSprint(caminho) => match anotadinho_ipc::handle_iniciar_sprint(vault.to_string(), caminho) {
+                    Ok(()) => {
+                        estado.aviso = Some("sprint iniciada".into());
+                        carregar_especial(estado, vault, TipoEspecial::Projeto);
+                    }
+                    Err(e) => estado.aviso = Some(e),
+                },
+                Pedido::EncerrarSprint { caminho, destino } => match anotadinho_ipc::handle_encerrar_sprint(vault.to_string(), caminho, destino) {
+                    Ok(r) => {
+                        estado.aviso = Some(format!("sprint encerrada: {} feita(s) no histórico, {} pendente(s) movida(s)", r.feitas, r.mudancas.len()));
+                        carregar_especial(estado, vault, TipoEspecial::Projeto);
+                    }
+                    Err(e) => estado.aviso = Some(e),
+                },
+                Pedido::MudarSprintDaTarefa { caminho, sprint } => {
+                    match anotadinho_ipc::handle_mudar_sprint_da_tarefa(vault.to_string(), caminho, sprint) {
+                        Ok(()) => carregar_especial(estado, vault, TipoEspecial::Projeto),
                         Err(e) => estado.aviso = Some(e),
                     }
                 }

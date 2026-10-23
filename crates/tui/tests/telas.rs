@@ -250,25 +250,33 @@ fn dados_falsos(tipo: especiais::TipoEspecial) -> especiais::Dados {
                 let md = format!("---\ntitle: {titulo}\ntype: tarefa\nprojeto: saas\nstatus: {etapa}\n{extra}---\n");
                 anotadinho_core::projeto::Tarefa::ler(&caminho, &md).unwrap()
             };
-            especiais::Dados::Projeto(especiais::ProjetoNaTela {
-                projeto: anotadinho_core::projeto::Projeto {
+            // Uma sprint ativa com 2, 3 e 5 (ciclo 473): a foto mostra a
+            // linha do recorte, e 1 e 4 ficam fora do quadro.
+            let sprint = anotadinho_core::sprint::Sprint::ler(
+                "pages/projetos/saas/sprints/01-mvp.md",
+                "---\ntitle: MVP\ntype: sprint\nprojeto: saas\nestado: ativa\nobjetivo: entrar e agendar\nfim: 2026-11-05\n---\n",
+            )
+            .unwrap();
+            especiais::Dados::Projeto(especiais::ProjetoNaTela::novo(
+                anotadinho_core::projeto::Projeto {
                     slug: "saas".into(),
                     titulo: "SaaS de agendamento".into(),
                     caminho: "pages/projetos/saas/projeto.md".into(),
                 },
-                config: anotadinho_core::projeto::ConfigProjeto {
+                anotadinho_core::projeto::ConfigProjeto {
                     repositorio: Some("/home/ana/codigo/agenda".into()),
                     ..Default::default()
                 },
-                tarefas: vec![
+                vec![
                     tarefa(1, "feita", "Esqueleto do projeto", ""),
-                    tarefa(2, "executando", "Banco de dados", ""),
-                    tarefa(3, "pronta", "Tela de login", "depende:\n- 2\n"),
+                    tarefa(2, "executando", "Banco de dados", "sprint: 1\n"),
+                    tarefa(3, "pronta", "Tela de login", "sprint: 1\ndepende:\n- 2\n"),
                     tarefa(4, "ideia", "Notificações por e-mail", ""),
-                    tarefa(5, "bloqueada", "Integração com agenda", ""),
+                    tarefa(5, "bloqueada", "Integração com agenda", "sprint: 1\n"),
                 ],
-                avisos: vec!["pages/projetos/saas/tarefas/003-t.md: esperando 2".into()],
-            })
+                vec!["pages/projetos/saas/tarefas/003-t.md: esperando 2".into()],
+                vec![sprint],
+            ))
         }
         especiais::TipoEspecial::Grafo => {
             let pagina = |path: &str, title: &str, links: &[&str]| anotadinho_core::index::PageIndexEntry {

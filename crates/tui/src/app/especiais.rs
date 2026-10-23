@@ -118,8 +118,15 @@ pub enum Dados {
 pub struct ProjetoNaTela {
     pub projeto: anotadinho_core::projeto::Projeto,
     pub config: anotadinho_core::projeto::ConfigProjeto,
+    /// As do QUADRO: o recorte do `filtro` (ciclo 473). É sobre estas que
+    /// o cursor anda.
     pub tarefas: Vec<anotadinho_core::projeto::Tarefa>,
     pub avisos: Vec<String>,
+    /// Todas as tarefas do projeto: as dependências olham estas, porque
+    /// uma tarefa da sprint pode depender de uma do backlog.
+    pub todas: Vec<anotadinho_core::projeto::Tarefa>,
+    pub sprints: Vec<anotadinho_core::sprint::Sprint>,
+    pub filtro: anotadinho_core::sprint::Filtro,
 }
 
 /// Largura mínima de uma coluna do quadro do projeto, em caracteres: o
@@ -158,6 +165,26 @@ fn titulo_em_duas_linhas(titulo: &str, n: usize) -> (String, String) {
 }
 
 impl ProjetoNaTela {
+    /// A tela a partir do estado lido, com o filtro padrão (a sprint ativa).
+    pub fn novo(
+        projeto: anotadinho_core::projeto::Projeto,
+        config: anotadinho_core::projeto::ConfigProjeto,
+        todas: Vec<anotadinho_core::projeto::Tarefa>,
+        avisos: Vec<String>,
+        sprints: Vec<anotadinho_core::sprint::Sprint>,
+    ) -> Self {
+        Self { projeto, config, tarefas: Vec::new(), avisos, todas, sprints, filtro: Default::default() }
+            .com_filtro(Default::default())
+    }
+
+    /// Recorta o quadro pelo `filtro`. A regra é do núcleo, a mesma da
+    /// janela.
+    pub fn com_filtro(mut self, filtro: anotadinho_core::sprint::Filtro) -> Self {
+        self.filtro = filtro;
+        self.tarefas = anotadinho_core::sprint::tarefas_do_quadro(&self.todas, &self.sprints, filtro).into_iter().cloned().collect();
+        self
+    }
+
     /// As tarefas de uma etapa, por número: a ordem de cima pra baixo
     /// numa coluna, a mesma do quadro da janela.
     pub fn da_coluna(&self, etapa: anotadinho_core::projeto::EtapaTarefa) -> Vec<&anotadinho_core::projeto::Tarefa> {
@@ -412,10 +439,17 @@ pub fn assets_com_uso(lista: Vec<(String, u64)>, paginas: &str) -> Dados {
 /// Os dados chegaram.
 pub fn carregar(e: &mut Estado, dados: Dados) {
     let Some(t) = e.especial.as_mut() else { return };
+    // O filtro sobrevive à releitura (ciclo 473): a tela se relê de 3 em 3
+    // segundos, e voltar sozinha pra sprint ativa desfaria a escolha.
+    let dados = match (&t.dados, dados) {
+        (Some(Dados::Projeto(antes)), Dados::Projeto(depois)) => Dados::Projeto(depois.com_filtro(antes.filtro)),
+        (_, d) => d,
+    };
     // No projeto, o cursor segue a TAREFA, não a posição: a tela se
     // recarrega sozinha e a tarefa que a pessoa acabou de mover muda de
     // seção — pela posição, o cursor cairia noutra e o próximo número
-    // moveria a tarefa errada.
+    // moveria a tarefa errada. Calculado DEPOIS do recorte: o índice é
+    // no quadro filtrado.
     let seguir = match (&t.dados, &dados) {
         (Some(Dados::Projeto(antes)), Dados::Projeto(depois)) => antes
             .na_ordem()
@@ -574,6 +608,39 @@ fn tecla_no_kanban(e: &mut Estado, tecla: &str) -> bool {
     true
 }
 
+/// O filtro como chave de item (ciclo 473): a sprint pelo número.
+pub fn filtro_em_texto(f: anotadinho_core::sprint::Filtro) -> String {
+    use anotadinho_core::sprint::Filtro;
+    match f {
+        Filtro::SprintAtiva => "ativa".into(),
+        Filtro::Backlog => "backlog".into(),
+        Filtro::Todas => "todas".into(),
+        Filtro::Sprint(n) => format!("s{n}"),
+    }
+}
+
+/// O contrário de `filtro_em_texto`.
+pub fn filtro_do_texto(s: &str) -> anotadinho_core::sprint::Filtro {
+    use anotadinho_core::sprint::Filtro;
+    match s {
+        "backlog" => Filtro::Backlog,
+        "todas" => Filtro::Todas,
+        outro => outro.strip_prefix('s').and_then(|n| n.parse().ok()).map(Filtro::Sprint).unwrap_or(Filtro::SprintAtiva),
+    }
+}
+
+/// Troca o filtro do quadro do projeto aberto, sem IO (ciclo 473).
+pub fn trocar_filtro_do_projeto(e: &mut Estado, filtro: anotadinho_core::sprint::Filtro) {
+    let Some(t) = e.especial.as_mut() else { return };
+    let Some(Dados::Projeto(p)) = t.dados.take() else { return };
+    let sel = p.na_ordem().get(t.selecionado).map(|x| x.caminho.clone());
+    let novo = p.com_filtro(filtro);
+    // O cursor fica na mesma tarefa se ela continua no recorte; senão, no
+    // começo.
+    t.selecionado = sel.and_then(|c| novo.na_ordem().iter().position(|x| x.caminho == c)).unwrap_or(0);
+    t.dados = Some(Dados::Projeto(novo));
+}
+
 /// As teclas do projeto (ciclo 461). Os números movem a tarefa
 /// selecionada pela transição daquele número — as mesmas que a janela
 /// mostra como botão, e na mesma ordem.
@@ -597,6 +664,81 @@ fn tecla_no_projeto(e: &mut Estado, tecla: &str) -> bool {
             Some(s) => Pedido::DetalharTarefa(s.caminho),
             None => return false,
         },
+        // ── Sprints (ciclo 473) ──
+        "s" => {
+            let itens = anotadinho_core::sprint::Filtro::opcoes(&p.sprints)
+                .into_iter()
+                .map(|f| {
+                    let marca = if f == p.filtro { "●" } else { " " };
+                    crate::componentes::Item::novo(marca, f.rotulo(&p.sprints), filtro_em_texto(f))
+                })
+                .collect();
+            e.modal = Some(Modal::Escolha {
+                titulo: "O que o quadro mostra".into(),
+                lista: crate::componentes::Lista::menu(itens),
+                acao: super::modais::AcaoDaEscolha::FiltroDoProjeto,
+            });
+            return true;
+        }
+        "m" => {
+            let Some(x) = sel else { return false };
+            let mut itens = vec![crate::componentes::Item::novo(
+                if x.sprint.is_none() { "●" } else { " " },
+                "Backlog",
+                format!("{}\u{0}backlog", x.caminho),
+            )];
+            for s in p.sprints.iter().filter(|s| s.estado != anotadinho_core::sprint::EstadoSprint::Encerrada) {
+                itens.push(
+                    crate::componentes::Item::novo(
+                        if x.sprint == Some(s.numero) { "●" } else { " " },
+                        format!("{} · {}", s.nome, s.estado.label().to_lowercase()),
+                        format!("{}\u{0}{}", x.caminho, s.numero),
+                    ),
+                );
+            }
+            e.modal = Some(Modal::Escolha {
+                titulo: format!("Sprint de {:03} {}", x.numero, x.titulo),
+                lista: crate::componentes::Lista::menu(itens),
+                acao: super::modais::AcaoDaEscolha::SprintDaTarefa,
+            });
+            return true;
+        }
+        "S" => {
+            use anotadinho_core::sprint::EstadoSprint;
+            let mut itens = Vec::new();
+            let proxima = p.sprints.iter().filter(|s| s.estado == EstadoSprint::Planejada).min_by_key(|s| s.numero);
+            let mut ordem: Vec<&anotadinho_core::sprint::Sprint> = p.sprints.iter().collect();
+            ordem.sort_by_key(|s| (s.estado != EstadoSprint::Ativa, s.estado == EstadoSprint::Encerrada, s.numero));
+            for s in ordem {
+                let (feitas, total) = anotadinho_core::sprint::resumo(s, &p.todas);
+                let resumo = format!("{feitas}/{total} feitas");
+                match s.estado {
+                    EstadoSprint::Ativa => {
+                        // A pergunta do encerramento, feita como escolha:
+                        // cada destino é um item, e escolher É responder.
+                        let rotulo_proxima = match proxima {
+                            Some(n) => format!("Encerrar \"{}\" — pendentes → {}", s.nome, n.nome),
+                            None => format!("Encerrar \"{}\" — pendentes → próxima (não há planejada)", s.nome),
+                        };
+                        itens.push(crate::componentes::Item::novo("■", rotulo_proxima, format!("encerrar-proxima\u{0}{}", s.caminho)).com_detalhe(resumo.clone()));
+                        itens.push(crate::componentes::Item::novo("■", format!("Encerrar \"{}\" — pendentes → backlog", s.nome), format!("encerrar-backlog\u{0}{}", s.caminho)).com_detalhe(resumo));
+                    }
+                    EstadoSprint::Planejada => {
+                        itens.push(crate::componentes::Item::novo("▶", format!("Iniciar \"{}\"", s.nome), format!("iniciar\u{0}{}", s.caminho)).com_detalhe(resumo));
+                    }
+                    EstadoSprint::Encerrada => {
+                        itens.push(crate::componentes::Item::novo("✓", format!("{} (encerrada)", s.nome), format!("historico\u{0}{}", s.caminho)).com_detalhe(resumo));
+                    }
+                }
+            }
+            itens.push(crate::componentes::Item::novo("+", "Nova sprint…", format!("nova\u{0}{slug}")));
+            e.modal = Some(Modal::Escolha {
+                titulo: format!("Sprints — {}", p.projeto.titulo),
+                lista: crate::componentes::Lista::menu(itens),
+                acao: super::modais::AcaoDaEscolha::SprintsDoProjeto,
+            });
+            return true;
+        }
         "c" => Pedido::AbrirPagina(projeto::caminho_da_conversa_geral(&slug)),
         "a" => Pedido::AbrirPagina(projeto::caminho_da_arquitetura(&slug)),
         "p" => Pedido::GravarConfigDoProjeto { slug, config: projeto::ConfigProjeto { pausado: !config.pausado, ..config } },
@@ -838,7 +980,7 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
         TipoEspecial::Kanban => " h l coluna · j k cartão ",
         TipoEspecial::Tarefas => " j k · Enter abre · s ordena ",
         TipoEspecial::Grafo => " j k página · h l conexão · Enter abre ",
-        TipoEspecial::Projeto => " h j k l · 1-3 etapa · Enter abre · n nova · d detalha · c conversa · a arquitetura · p pausa · o repo ",
+        TipoEspecial::Projeto => " h j k l · 1-3 etapa · Enter · n nova · d detalha · s filtro · m sprint · S sprints · c conversa · p pausa ",
     };
     let mut borda = Block::default()
         .borders(Borders::ALL)
@@ -1493,10 +1635,25 @@ fn tela_do_projeto(
         linha_fila.push(Span::styled(format!(" · {executando} executando"), destaque));
     }
     fora.push(Line::from(linha_fila));
+    // A linha da sprint (ciclo 473): o que o quadro está mostrando.
+    let mut linha_sprint = vec![Span::styled(" quadro ", apagado), Span::styled(p.filtro.rotulo(&p.sprints), destaque)];
+    if p.filtro == anotadinho_core::sprint::Filtro::SprintAtiva {
+        if let Some(a) = anotadinho_core::sprint::ativa(&p.sprints) {
+            if !a.objetivo.is_empty() {
+                linha_sprint.push(Span::styled(format!(" · {}", a.objetivo), apagado));
+            }
+            if let Some(f) = &a.fim {
+                linha_sprint.push(Span::styled(format!(" · até {f}"), apagado));
+            }
+        }
+    }
+    linha_sprint.push(Span::styled(format!("  ({} de {} tarefas)", p.tarefas.len(), p.todas.len()), apagado));
+    fora.push(Line::from(linha_sprint));
     for a in &p.avisos {
         fora.push(Line::from(Span::styled(corta(format!(" ⚠ {a}"), w), tema.estilo(Realce::BadgeAtencao))));
     }
-    let indice = projeto::IndiceDeTarefas::novo(&p.tarefas);
+    // As dependências olham o projeto INTEIRO: a do backlog também segura.
+    let indice = projeto::IndiceDeTarefas::novo(&p.todas);
     let ordem = p.na_ordem();
     let etapas = EtapaTarefa::all();
     let selecionada = ordem.get(t.selecionado).copied();
@@ -1635,8 +1792,12 @@ fn tela_do_projeto(
             faixas.push((topo_do_quadro, topo_do_quadro + 1));
         }
     }
-    if p.tarefas.is_empty() {
+    if p.todas.is_empty() {
         fora.push(Line::from(Span::styled(" Nenhuma tarefa ainda. n cria uma; na conversa (c), \"virar tarefas\" propõe várias.", apagado)));
+    } else if p.tarefas.is_empty() {
+        // Vazio pelo RECORTE, não pelo projeto (ciclo 473): "nenhuma
+        // tarefa ainda" com quatro no disco mandava a pessoa criar de novo.
+        fora.push(Line::from(Span::styled(" Nada neste recorte. s troca o filtro; m põe uma tarefa numa sprint.", apagado)));
     }
     fora
 }

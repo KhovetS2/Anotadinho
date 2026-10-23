@@ -33,6 +33,14 @@ pub enum Pedido {
     MoverTarefa { caminho: String, destino: anotadinho_core::projeto::EtapaTarefa },
     /// Abrir a conversa da tarefa com o pedido de detalhar escrito.
     DetalharTarefa(String),
+    /// Criar uma sprint planejada (ciclo 473).
+    CriarSprint { slug: String, nome: String },
+    /// Iniciar a sprint deste caminho.
+    IniciarSprint(String),
+    /// Encerrar a sprint deste caminho, com as pendentes no destino.
+    EncerrarSprint { caminho: String, destino: anotadinho_core::sprint::DestinoDasPendentes },
+    /// Pôr a tarefa numa sprint, ou no backlog (`None`).
+    MudarSprintDaTarefa { caminho: String, sprint: Option<u32> },
     /// Gravar a config de um projeto (pausa, repositório).
     GravarConfigDoProjeto { slug: String, config: anotadinho_core::projeto::ConfigProjeto },
     /// "Virar tarefas" numa resposta: propõe um lote.
@@ -558,6 +566,8 @@ pub enum AcaoDaEntrada {
     NovoProjeto,
     /// O título de uma tarefa nova no projeto.
     NovaTarefa(String),
+    /// O nome de uma sprint nova no projeto (ciclo 473).
+    NovaSprint(String),
     /// A pasta do repositório do projeto.
     RepositorioDoProjeto(String),
     /// Título de uma página nova dentro de uma pasta (ciclo 345).
@@ -605,6 +615,12 @@ pub enum AcaoDaEscolha {
     /// A etapa nova da tarefa aberta (ciclo 461). A chave é
     /// `caminho\u{0}destino`: a escolha é `Copy` e não carrega o caminho.
     EtapaDaTarefa,
+    /// O filtro do quadro do projeto (ciclo 473). A chave é o filtro.
+    FiltroDoProjeto,
+    /// A sprint da tarefa: chave `caminho\u{0}n|backlog`.
+    SprintDaTarefa,
+    /// Uma ação de sprint: chave `ação\u{0}caminho` (ou `nova\u{0}slug`).
+    SprintsDoProjeto,
     /// Trocar o tema pela chave.
     Tema,
     /// Trocar o agente pelo índice do preset.
@@ -1088,6 +1104,32 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     _ => {}
                 },
                 AcaoDaEscolha::Tema => trocar_tema(e, &chave),
+                AcaoDaEscolha::FiltroDoProjeto => {
+                    super::especiais::trocar_filtro_do_projeto(e, super::especiais::filtro_do_texto(&chave));
+                }
+                AcaoDaEscolha::SprintDaTarefa => {
+                    if let Some((caminho, alvo)) = chave.split_once('\u{0}') {
+                        let sprint = if alvo == "backlog" { None } else { alvo.parse().ok() };
+                        e.pedidos.push(Pedido::MudarSprintDaTarefa { caminho: caminho.to_string(), sprint });
+                    }
+                }
+                AcaoDaEscolha::SprintsDoProjeto => {
+                    use anotadinho_core::sprint::DestinoDasPendentes;
+                    match chave.split_once('\u{0}') {
+                        Some(("iniciar", c)) => e.pedidos.push(Pedido::IniciarSprint(c.to_string())),
+                        Some(("encerrar-proxima", c)) => e.pedidos.push(Pedido::EncerrarSprint { caminho: c.to_string(), destino: DestinoDasPendentes::ProximaSprint }),
+                        Some(("encerrar-backlog", c)) => e.pedidos.push(Pedido::EncerrarSprint { caminho: c.to_string(), destino: DestinoDasPendentes::Backlog }),
+                        Some(("nova", slug)) => {
+                            e.modal = Some(Modal::Entrada {
+                                titulo: "Nome da sprint nova".into(),
+                                campo: Campo::default(),
+                                acao: AcaoDaEntrada::NovaSprint(slug.to_string()),
+                            });
+                        }
+                        // O histórico é leitura: escolher não faz nada.
+                        _ => {}
+                    }
+                }
                 AcaoDaEscolha::EtapaDaTarefa => {
                     let destino = chave
                         .split_once('\u{0}')
@@ -1296,6 +1338,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         AcaoDaEntrada::NovaPagina(tipo) => Pedido::CriarPaginaComTitulo { titulo: t, tipo },
                         AcaoDaEntrada::NovoProjeto => Pedido::CriarProjeto(t),
                         AcaoDaEntrada::NovaTarefa(slug) => Pedido::CriarTarefa { slug, titulo: t },
+                        AcaoDaEntrada::NovaSprint(slug) => Pedido::CriarSprint { slug, nome: t },
                         AcaoDaEntrada::RepositorioDoProjeto(slug) => {
                             // A config atual vem da tela aberta: só o
                             // repositório muda, a pausa fica como está.
@@ -1645,6 +1688,20 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+X", "interromper o agente"),
             ("p / Ctrl+P", "prompt padrão (Tab campos, Ctrl+V visualizar)"),
             (":", "anexar, tirar anexo, trocar agente"),
+        ],
+    ),
+    (
+        // O rodapé do quadro não cabe todas (ciclo 473): o que sai dele
+        // tem que estar aqui, senão some.
+        "Projeto",
+        &[
+            ("1-3", "mover a tarefa (as transições dela)"),
+            ("n d", "tarefa nova / detalhar com o agente"),
+            ("s", "o que o quadro mostra (sprint, backlog, todas)"),
+            ("m", "pôr a tarefa numa sprint ou no backlog"),
+            ("S", "sprints: iniciar, encerrar, criar, histórico"),
+            ("c a", "conversa / arquitetura do projeto"),
+            ("p o", "pausar a fila / escolher o repositório"),
         ],
     ),
 ];

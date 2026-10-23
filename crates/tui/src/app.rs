@@ -11694,16 +11694,184 @@ mod testes {
     }
 
     fn projeto_na_tela(tarefas: Vec<anotadinho_core::projeto::Tarefa>) -> especiais::Dados {
-        especiais::Dados::Projeto(especiais::ProjetoNaTela {
-            projeto: anotadinho_core::projeto::Projeto {
+        projeto_com_sprints(tarefas, Vec::new())
+    }
+
+    fn projeto_com_sprints(
+        tarefas: Vec<anotadinho_core::projeto::Tarefa>,
+        sprints: Vec<anotadinho_core::sprint::Sprint>,
+    ) -> especiais::Dados {
+        especiais::Dados::Projeto(especiais::ProjetoNaTela::novo(
+            anotadinho_core::projeto::Projeto {
                 slug: "saas".into(),
                 titulo: "SaaS".into(),
                 caminho: "pages/projetos/saas/projeto.md".into(),
             },
-            config: Default::default(),
+            Default::default(),
             tarefas,
-            avisos: vec!["saas: sem repositório configurado — escolha a pasta do código".into()],
-        })
+            vec!["saas: sem repositório configurado — escolha a pasta do código".into()],
+            sprints,
+        ))
+    }
+
+    // ── Sprints (ciclo 473) ───────────────────────────────────────────
+
+    fn sprint_de_teste(n: u32, nome: &str, estado: &str, objetivo: &str) -> anotadinho_core::sprint::Sprint {
+        let caminho = format!("pages/projetos/saas/sprints/{n:02}-{}.md", nome.to_lowercase());
+        let md = format!("---\ntitle: {nome}\ntype: sprint\nprojeto: saas\nestado: {estado}\nobjetivo: {objetivo}\nfim: 2026-11-05\n---\n# {nome}\n");
+        anotadinho_core::sprint::Sprint::ler(&caminho, &md).unwrap()
+    }
+
+    /// 001 feita na encerrada, 002 na ativa, 003 na planejada, 004 no
+    /// backlog — o mesmo desenho do cenário da janela (472).
+    fn projeto_em_sprints() -> especiais::Dados {
+        projeto_com_sprints(
+            vec![
+                tarefa_de_teste(1, "feita", "sprint: 1\n"),
+                tarefa_de_teste(2, "pronta", "sprint: 2\n"),
+                tarefa_de_teste(3, "ideia", "sprint: 3\n"),
+                tarefa_de_teste(4, "ideia", ""),
+            ],
+            vec![
+                sprint_de_teste(1, "Um", "encerrada", "a base"),
+                sprint_de_teste(2, "Dois", "ativa", "entrar no sistema"),
+                sprint_de_teste(3, "Tres", "planejada", "agendar"),
+            ],
+        )
+    }
+
+    fn numeros_no_quadro(e: &Estado) -> Vec<u32> {
+        match e.especial.as_ref().and_then(|t| t.dados.as_ref()) {
+            Some(especiais::Dados::Projeto(p)) => {
+                let mut v: Vec<u32> = p.tarefas.iter().map(|t| t.numero).collect();
+                v.sort();
+                v
+            }
+            _ => panic!("o projeto não está aberto"),
+        }
+    }
+
+    #[test]
+    fn quadro_abre_na_sprint_ativa_e_diz_o_que_mostra() {
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_em_sprints());
+        assert_eq!(numeros_no_quadro(&e), [2]);
+        let tudo = desenho(&mut e, 140, 40).join("\n");
+        for esperado in ["entrar no sistema", "até 2026-11-05", "(1 de 4 tarefas)", "002 Tarefa 2"] {
+            assert!(tudo.contains(esperado), "faltou {esperado}:\n{tudo}");
+        }
+        assert!(!tudo.contains("004 Tarefa 4"), "o backlog vazou pro quadro da sprint:\n{tudo}");
+    }
+
+    #[test]
+    fn s_troca_o_filtro_e_ele_sobrevive_a_releitura() {
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_em_sprints());
+        tecla(&mut e, "s");
+        // ativa, Tres, backlog, todas — a encerrada não é opção.
+        let rotulos = match &e.modal {
+            Some(Modal::Escolha { lista, .. }) => lista.itens.iter().map(|i| i.chave.clone()).collect::<Vec<_>>(),
+            outro => panic!("{outro:?}"),
+        };
+        assert_eq!(rotulos, ["ativa", "s3", "backlog", "todas"]);
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(numeros_no_quadro(&e), [4]);
+        // Recorte vazio não é projeto vazio.
+        especiais::trocar_filtro_do_projeto(&mut e, anotadinho_core::sprint::Filtro::Sprint(9));
+        let tela = desenho(&mut e, 140, 40).join("\n");
+        assert!(tela.contains("Nada neste recorte") && !tela.contains("Nenhuma tarefa ainda"), "{tela}");
+        especiais::trocar_filtro_do_projeto(&mut e, anotadinho_core::sprint::Filtro::Backlog);
+        // A releitura de 3 s chega com o filtro padrão, e não pode desfazer.
+        especiais::carregar(&mut e, projeto_em_sprints());
+        assert_eq!(numeros_no_quadro(&e), [4], "a releitura voltou pra sprint ativa");
+        // "Todas" não traz a feita da encerrada: ela é histórico.
+        tecla(&mut e, "s");
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(numeros_no_quadro(&e), [2, 3, 4]);
+    }
+
+    #[test]
+    fn m_move_a_tarefa_pra_outra_sprint() {
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_em_sprints());
+        e.pedidos.clear();
+        tecla(&mut e, "m");
+        let chaves = match &e.modal {
+            Some(Modal::Escolha { lista, .. }) => lista.itens.iter().map(|i| i.chave.rsplit('\u{0}').next().unwrap().to_string()).collect::<Vec<_>>(),
+            outro => panic!("{outro:?}"),
+        };
+        assert_eq!(chaves, ["backlog", "2", "3"], "a encerrada não recebe tarefa");
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(
+            e.pedidos,
+            [Pedido::MudarSprintDaTarefa { caminho: "pages/projetos/saas/tarefas/002-t.md".into(), sprint: Some(3) }]
+        );
+    }
+
+    #[test]
+    fn maiusculo_s_encerra_perguntando_inicia_e_cria() {
+        use anotadinho_core::sprint::DestinoDasPendentes;
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_em_sprints());
+        let dois = "pages/projetos/saas/sprints/02-dois.md".to_string();
+        let abrir = |e: &mut Estado, descer: usize| {
+            e.pedidos.clear();
+            tecla(e, "S");
+            for _ in 0..descer {
+                tecla(e, "j");
+            }
+            tecla(e, "Enter");
+        };
+        // A pergunta é a escolha: cada destino das pendentes é um item.
+        let tela = {
+            tecla(&mut e, "S");
+            let t = desenho(&mut e, 140, 40).join("\n");
+            tecla(&mut e, "Escape");
+            t
+        };
+        for esperado in ["pendentes → Tres", "pendentes → backlog", "Iniciar \"Tres\"", "Um (encerrada)", "1/1 feitas", "Nova sprint"] {
+            assert!(tela.contains(esperado), "faltou {esperado}:\n{tela}");
+        }
+        abrir(&mut e, 0);
+        assert_eq!(e.pedidos, [Pedido::EncerrarSprint { caminho: dois.clone(), destino: DestinoDasPendentes::ProximaSprint }]);
+        abrir(&mut e, 1);
+        assert_eq!(e.pedidos, [Pedido::EncerrarSprint { caminho: dois, destino: DestinoDasPendentes::Backlog }]);
+        abrir(&mut e, 2);
+        assert_eq!(e.pedidos, [Pedido::IniciarSprint("pages/projetos/saas/sprints/03-tres.md".into())]);
+        // O histórico é leitura.
+        abrir(&mut e, 3);
+        assert!(e.pedidos.is_empty() && e.modal.is_none());
+        abrir(&mut e, 4);
+        digitar(&mut e, "Quatro");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::CriarSprint { slug: "saas".into(), nome: "Quatro".into() }]);
+    }
+
+    #[test]
+    fn cursor_segue_a_tarefa_ao_trocar_o_filtro() {
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_em_sprints());
+        // Em "todas", vai até a 004; ao voltar pro backlog ela continua lá.
+        especiais::trocar_filtro_do_projeto(&mut e, anotadinho_core::sprint::Filtro::Todas);
+        while {
+            e.pedidos.clear();
+            tecla(&mut e, "Enter");
+            !matches!(e.pedidos.last(), Some(Pedido::AbrirPagina(c)) if c.ends_with("004-t.md"))
+        } {
+            tecla(&mut e, "j");
+            assert!(e.especial.as_ref().unwrap().selecionado < 4, "não achou a 004");
+        }
+        especiais::trocar_filtro_do_projeto(&mut e, anotadinho_core::sprint::Filtro::Backlog);
+        e.pedidos.clear();
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.pedidos.last(), Some(Pedido::AbrirPagina(c)) if c.ends_with("004-t.md")));
     }
 
     #[test]
