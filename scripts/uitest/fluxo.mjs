@@ -2981,6 +2981,14 @@ async function abrirPeloCaminho(bridge, caminho) {
   await clicar(bridge, ".command-palette__item", `${caminho} na paleta`);
 }
 
+/// Abre uma aba do projeto pelo NOME. Pela posição (`nth-child(2)`), a
+/// aba Sprints do ciclo 472 fez o cenário de "virar tarefas" cair nela em
+/// vez da Conversa.
+async function abrirAba(bridge, nome) {
+  await esperar(bridge, `[...document.querySelectorAll('.projeto__aba')].some(a => a.textContent.trim() === ${JSON.stringify(nome)})`, `a aba ${nome}`);
+  await bridge.js(`(() => { [...document.querySelectorAll('.projeto__aba')].find(a => a.textContent.trim() === ${JSON.stringify(nome)}).click(); return true; })()`);
+}
+
 const BOTOES_DO_CARTAO = (n) => `[...document.querySelectorAll('.projeto__cartao')]
   .filter(c => c.dataset.tarefa.endsWith('/${String(n).padStart(3, "0")}-t.md'))
   .flatMap(c => [...c.querySelectorAll('.projeto__mover')].map(b => b.dataset.destino))`;
@@ -3066,7 +3074,7 @@ fluxo.push({
     try {
       await recarregarEstavel(bridge);
       await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
-      await clicar(bridge, ".projeto__aba:nth-child(2)", "a aba Conversa");
+      await abrirAba(bridge, "Conversa");
       await clicar(bridge, ".conversa__virar-tarefas", "virar tarefas");
       await esperar(bridge, "!!document.querySelector('.conversa__nota')", "o recado de que propôs");
       const props = p.fs
@@ -3248,6 +3256,137 @@ fluxo.push({
       await bridge.js(`(() => { ${PASTA("")}.querySelector(':scope > .sidebar-folder__header button[title="Exportar pasta"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); return true; })()`);
       await PAUSA(300);
       ctx.assertEq(await bridge.js(ABERTA("")), antes, "o botão do cabeçalho abriu ou fechou a pasta");
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+// ── ciclo 472: sprints na janela ───────────────────────────────────────
+//
+// Projeto `uitest-*` no vault aberto, SEM repositório (a fila nunca
+// reserva). Quatro tarefas e três sprints cobrem o que o filtro decide:
+// 001 feita na encerrada (histórico), 002 na ativa, 003 na planejada,
+// 004 no backlog.
+
+async function projetoComSprints(ctx, slug) {
+  const p = await projetoNoVault(ctx, slug, [[1, "feita", "Base"], [2, "pronta", "Login"], [3, "ideia", "Agenda"], [4, "ideia", "Relatorio"]]);
+  const fs = p.fs;
+  fs.mkdirSync(`${p.pasta}/sprints`, { recursive: true });
+  const sprint = (n, nome, estado, objetivo = "") =>
+    fs.writeFileSync(
+      `${p.pasta}/sprints/0${n}-${nome.toLowerCase()}.md`,
+      `---\ntitle: ${nome}\ntype: sprint\nprojeto: ${slug}\nestado: ${estado}\n${objetivo ? `objetivo: ${objetivo}\n` : ""}---\n# ${nome}\n`,
+    );
+  sprint(1, "Um", "encerrada", "a base");
+  sprint(2, "Dois", "ativa", "entrar no sistema");
+  sprint(3, "Tres", "planejada");
+  const comSprint = (n, s) => {
+    const arq = `${p.pasta}/tarefas/00${n}-t.md`;
+    fs.writeFileSync(arq, fs.readFileSync(arq, "utf8").replace("status:", `sprint: ${s}\nstatus:`));
+  };
+  comSprint(1, 1);
+  comSprint(2, 2);
+  comSprint(3, 3);
+  const sprintDa = (n) => {
+    const m = fs.readFileSync(`${p.pasta}/tarefas/00${n}-t.md`, "utf8").match(/^sprint: (\d+)$/m);
+    return m ? Number(m[1]) : null;
+  };
+  const estadoDa = (arq) => fs.readFileSync(`${p.pasta}/sprints/${arq}`, "utf8").match(/^estado: (.*)$/m)[1].trim();
+  return { ...p, sprintDa, estadoDa };
+}
+
+const CARTOES = `[...document.querySelectorAll('.projeto__cartao')].map(c => c.dataset.tarefa.split('/').pop().slice(0, 3)).sort().join(',')`;
+const ESCOLHER = (seletor, valor) => `(() => {
+  const s = document.querySelector(${JSON.stringify(seletor)});
+  s.value = ${JSON.stringify(valor)};
+  s.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+})()`;
+
+fluxo.push({
+  nome: "sprints: o seletor recorta o quadro e esconde o histórico (472)",
+  async fn(bridge, ctx) {
+    const slug = `uitest-sprint-filtro-${Date.now()}`;
+    const p = await projetoComSprints(ctx, slug);
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      // Padrão: só a sprint ativa.
+      await esperar(bridge, `${CARTOES} === '002'`, "só a tarefa da sprint ativa no quadro");
+      ctx.assert(await bridge.js("document.querySelector('.projeto__sprint-info')?.textContent.includes('entrar no sistema')"), "o objetivo da ativa não aparece");
+      // O seletor não oferece a encerrada.
+      const opcoes = await bridge.js("[...document.querySelectorAll('.projeto__sprint-filtro option')].map(o => o.value)");
+      ctx.assertEq(JSON.stringify(opcoes), JSON.stringify(["ativa", "s3", "backlog", "todas"]));
+      await bridge.js(ESCOLHER(".projeto__sprint-filtro", "backlog"));
+      await esperar(bridge, `${CARTOES} === '004'`, "o backlog");
+      await bridge.js(ESCOLHER(".projeto__sprint-filtro", "todas"));
+      // "Todas" sem a feita da encerrada: ela é histórico.
+      await esperar(bridge, `${CARTOES} === '002,003,004'`, "todas, sem o histórico");
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+fluxo.push({
+  nome: "sprints: o seletor do cartão põe a tarefa noutra sprint (472)",
+  async fn(bridge, ctx) {
+    const slug = `uitest-sprint-mover-${Date.now()}`;
+    const p = await projetoComSprints(ctx, slug);
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      await esperar(bridge, `${CARTOES} === '002'`, "o quadro da sprint ativa");
+      await bridge.js(ESCOLHER(".projeto__sprint-filtro", "backlog"));
+      await esperar(bridge, `${CARTOES} === '004'`, "o backlog");
+      // Só as abertas no seletor do cartão: a encerrada não recebe tarefa.
+      const opcoes = await bridge.js("[...document.querySelectorAll('.projeto__cartao .projeto__cartao-sprint option')].map(o => o.value)");
+      ctx.assertEq(JSON.stringify(opcoes), JSON.stringify(["backlog", "2", "3"]));
+      await bridge.js(ESCOLHER(".projeto__cartao .projeto__cartao-sprint", "2"));
+      await esperar(bridge, `${CARTOES} === ''`, "a tarefa sair do backlog");
+      ctx.assertEq(p.sprintDa(4), 2);
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+fluxo.push({
+  nome: "sprints: a aba cria, encerra perguntando e inicia, e guarda o histórico (472)",
+  async fn(bridge, ctx) {
+    const slug = `uitest-sprint-aba-${Date.now()}`;
+    const p = await projetoComSprints(ctx, slug);
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      await abrirAba(bridge, "Sprints");
+      await esperar(bridge, "!!document.querySelector('.sprints__item--ativa')", "a lista de sprints");
+      // Histórico: a encerrada com a feita.
+      ctx.assert(
+        await bridge.js("[...document.querySelectorAll('.sprints__encerrada')].some(e => e.textContent.includes('Um') && e.textContent.includes('1/1 feitas') && e.textContent.includes('001 Base'))"),
+        "o histórico não mostra a sprint encerrada com o que foi feito",
+      );
+      // Iniciar com uma ativa é recusado, com o nome dela.
+      await clicar(bridge, ".sprints__item--planejada .sprints__iniciar", "Iniciar a planejada");
+      await esperar(bridge, "document.querySelector('.sprints__erro')?.textContent.includes('Dois')", "o erro de já haver ativa");
+      // Encerrar pergunta; "próxima" leva a pendente pra Tres.
+      await clicar(bridge, ".sprints__item--ativa .sprints__encerrar", "Encerrar");
+      await esperar(bridge, "document.querySelector('.sprints__pergunta-texto')?.textContent.includes('1 tarefa')", "a pergunta das pendentes");
+      await clicar(bridge, ".sprints__pendentes-proxima", "→ próxima sprint");
+      await esperar(bridge, "!document.querySelector('.sprints__item--ativa')", "a sprint encerrar");
+      ctx.assertEq(p.sprintDa(2), 3, "a pendente não foi pra próxima");
+      ctx.assertEq(p.estadoDa("02-dois.md"), "encerrada");
+      // Agora sim, Tres inicia.
+      await clicar(bridge, ".sprints__item--planejada .sprints__iniciar", "Iniciar Tres");
+      await esperar(bridge, "!!document.querySelector('.sprints__item--ativa')", "Tres ativa");
+      ctx.assertEq(p.estadoDa("03-tres.md"), "ativa");
+      // E criar uma nova pelo formulário.
+      await bridge.js(`(() => { const i = document.querySelector('.sprints__nova-nome'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'Quatro'); i.dispatchEvent(new InputEvent('input', { bubbles: true })); return true; })()`);
+      await esperar(bridge, "document.querySelector('.sprints__nova-nome').value === 'Quatro'", "o nome digitado");
+      await clicar(bridge, ".sprints__nova-criar", "Criar sprint");
+      await esperar(bridge, "[...document.querySelectorAll('.sprints__item--planejada')].some(e => e.textContent.includes('Quatro'))", "a sprint nova na lista");
+      ctx.assert(p.fs.existsSync(`${p.pasta}/sprints/04-quatro.md`), "não gravou a sprint nova");
     } finally {
       p.limpar();
     }

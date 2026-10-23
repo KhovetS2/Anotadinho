@@ -766,6 +766,10 @@ pub struct EstadoDoProjeto {
     pub tarefas: Vec<anotadinho_core::projeto::Tarefa>,
     /// O que segura a fila agora.
     pub avisos: Vec<String>,
+    /// As sprints do projeto (ciclo 472). `default`: um backend de antes
+    /// do 470 não manda o campo, e a tela tem que abrir mesmo assim.
+    #[serde(default)]
+    pub sprints: Vec<anotadinho_core::sprint::Sprint>,
 }
 
 pub async fn criar_projeto(vault_path: &str, titulo: &str, hoje: &str) -> Result<ProjetoCriado, String> {
@@ -824,6 +828,55 @@ pub async fn propor_arquitetura(vault_path: &str, slug: &str, texto: &str, quand
     chamar(
         "propor_arquitetura",
         Args::novo().texto("vaultPath", vault_path).texto("slug", slug).texto("texto", texto).texto("quando", quando),
+    )
+    .await
+}
+
+// ── Sprints (ciclo 472) ─────────────────────────────────────────────
+
+pub async fn criar_sprint(
+    vault_path: &str,
+    slug: &str,
+    nome: &str,
+    objetivo: &str,
+    inicio: Option<&str>,
+    fim: Option<&str>,
+    hoje: &str,
+) -> Result<String, String> {
+    chamar(
+        "criar_sprint",
+        Args::novo()
+            .texto("vaultPath", vault_path)
+            .texto("slug", slug)
+            .texto("nome", nome)
+            .texto("objetivo", objetivo)
+            .serde("inicio", &inicio)
+            .serde("fim", &fim)
+            .texto("hoje", hoje),
+    )
+    .await
+}
+
+pub async fn iniciar_sprint(vault_path: &str, caminho: &str) -> Result<(), String> {
+    chamar_sem_retorno("iniciar_sprint", Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho)).await
+}
+
+pub async fn encerrar_sprint(
+    vault_path: &str,
+    caminho: &str,
+    destino: anotadinho_core::sprint::DestinoDasPendentes,
+) -> Result<anotadinho_core::sprint::Encerramento, String> {
+    chamar(
+        "encerrar_sprint",
+        Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho).serde("destino", &destino),
+    )
+    .await
+}
+
+pub async fn mudar_sprint_da_tarefa(vault_path: &str, caminho: &str, sprint: Option<u32>) -> Result<(), String> {
+    chamar_sem_retorno(
+        "mudar_sprint_da_tarefa",
+        Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho).serde("sprint", &sprint),
     )
     .await
 }

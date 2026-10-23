@@ -714,6 +714,40 @@ fn criar_tarefa(vault_path: String, slug: String, titulo: String, hoje: String) 
     anotadinho_ipc::handle_criar_tarefa(vault_path, slug, titulo, hoje)
 }
 
+// ── Sprints (ciclo 472): pela pessoa, grava direto. ──────────────────
+
+#[tauri::command]
+fn criar_sprint(
+    vault_path: String,
+    slug: String,
+    nome: String,
+    objetivo: String,
+    inicio: Option<String>,
+    fim: Option<String>,
+    hoje: String,
+) -> Result<String, String> {
+    anotadinho_ipc::handle_criar_sprint(vault_path, slug, nome, objetivo, inicio, fim, hoje)
+}
+
+#[tauri::command]
+fn iniciar_sprint(vault_path: String, caminho: String) -> Result<(), String> {
+    anotadinho_ipc::handle_iniciar_sprint(vault_path, caminho)
+}
+
+#[tauri::command]
+fn encerrar_sprint(
+    vault_path: String,
+    caminho: String,
+    destino: anotadinho_core::sprint::DestinoDasPendentes,
+) -> Result<anotadinho_core::sprint::Encerramento, String> {
+    anotadinho_ipc::handle_encerrar_sprint(vault_path, caminho, destino)
+}
+
+#[tauri::command]
+fn mudar_sprint_da_tarefa(vault_path: String, caminho: String, sprint: Option<u32>) -> Result<(), String> {
+    anotadinho_ipc::handle_mudar_sprint_da_tarefa(vault_path, caminho, sprint)
+}
+
 #[tauri::command]
 fn conversa_da_tarefa(vault_path: String, caminho: String) -> Result<String, String> {
     anotadinho_ipc::handle_conversa_da_tarefa(vault_path, caminho)
@@ -1556,6 +1590,10 @@ fn main() {
             criar_tarefa,
             indice_do_projeto,
             conversa_da_tarefa,
+            criar_sprint,
+            iniciar_sprint,
+            encerrar_sprint,
+            mudar_sprint_da_tarefa,
             propor_tarefas,
             propor_arquitetura,
             mudar_etapa_tarefa,

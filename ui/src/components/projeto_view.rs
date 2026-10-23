@@ -7,6 +7,7 @@
 //! a pessoa PODE fazer, como o embed de fluxo.
 
 use anotadinho_core::projeto::{self, EtapaTarefa, Quem, Tarefa};
+use anotadinho_core::sprint::{self, EstadoSprint, Filtro, Sprint};
 use gloo_events::EventListener;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
@@ -33,8 +34,27 @@ pub struct ProjetoViewProps {
 #[derive(Clone, Copy, PartialEq)]
 enum Aba {
     Quadro,
+    Sprints,
     Conversa,
     Execucoes,
+}
+
+/// O filtro no `<select>`: a sprint pelo número, o resto por nome.
+fn filtro_em_texto(f: Filtro) -> String {
+    match f {
+        Filtro::SprintAtiva => "ativa".into(),
+        Filtro::Backlog => "backlog".into(),
+        Filtro::Todas => "todas".into(),
+        Filtro::Sprint(n) => format!("s{n}"),
+    }
+}
+
+fn filtro_do_texto(s: &str) -> Filtro {
+    match s {
+        "backlog" => Filtro::Backlog,
+        "todas" => Filtro::Todas,
+        outro => outro.strip_prefix('s').and_then(|n| n.parse().ok()).map(Filtro::Sprint).unwrap_or(Filtro::SprintAtiva),
+    }
 }
 
 fn pagina(path: &str, title: &str) -> api::PageMeta {
@@ -77,6 +97,9 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
         });
     }
     let recarga = use_state(|| 0u32);
+    // O que o quadro mostra (ciclo 472). A sprint ativa por padrão: é o
+    // que está sendo atacado agora, e o resto é recorte que se escolhe.
+    let filtro = use_state(|| Filtro::SprintAtiva);
     // A tarefa sendo arrastada (ciclo 465). Por mouse, como o
     // `inline_kanban`: o arrasto nativo do HTML5 é instável no WebKitGTK.
     let arrastando = use_state(|| None::<Tarefa>);
@@ -239,9 +262,30 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
         })
     };
 
+    let mudar_sprint = {
+        let (vault_path, erro, recarregar) = (props.vault_path.clone(), erro.clone(), recarregar.clone());
+        Callback::from(move |(caminho, sprint): (String, Option<u32>)| {
+            let (vault_path, erro, recarregar) = (vault_path.clone(), erro.clone(), recarregar.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                match api::mudar_sprint_da_tarefa(&vault_path, &caminho, sprint).await {
+                    Ok(()) => {
+                        erro.set(None);
+                        recarregar.emit(())
+                    }
+                    Err(e) => erro.set(Some(e)),
+                }
+            });
+        })
+    };
+
     let abrir = props.on_page_selected.clone();
     let titulo = estado.as_ref().map(|e| e.projeto.titulo.clone()).unwrap_or_else(|| props.page.title.clone());
     let tarefas: Vec<Tarefa> = estado.as_ref().map(|e| e.tarefas.clone()).unwrap_or_default();
+    let sprints: Vec<Sprint> = estado.as_ref().map(|e| e.sprints.clone()).unwrap_or_default();
+    let ativa = sprint::ativa(&sprints).cloned();
+    // As sprints em que dá pra pôr uma tarefa: a ativa e as planejadas.
+    // Encerrada é histórico.
+    let abertas: Vec<Sprint> = sprints.iter().filter(|s| s.estado != EstadoSprint::Encerrada).cloned().collect();
     let rodando = tarefas.iter().filter(|t| t.etapa == EtapaTarefa::Executando).count();
 
     let cabecalho = {
@@ -286,6 +330,27 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                         <Icon name="layout" />{ " Arquitetura" }
                     </button>
                 </div>
+                <div class="projeto__sprint" data-nav-group="projeto-sprint">
+                    <select class="input input--sm projeto__sprint-filtro" data-nav-item="true" data-nav-parent="projeto-sprint"
+                        title="O que o quadro mostra"
+                        onchange={{
+                            let filtro = filtro.clone();
+                            Callback::from(move |e: Event| {
+                                let alvo: web_sys::HtmlSelectElement = e.target_unchecked_into();
+                                filtro.set(filtro_do_texto(&alvo.value()));
+                            })
+                        }}>
+                        { for Filtro::opcoes(&sprints).into_iter().map(|f| html! {
+                            <option value={filtro_em_texto(f)} selected={f == *filtro}>{ f.rotulo(&sprints) }</option>
+                        }) }
+                    </select>
+                    if let Some(a) = ativa.as_ref().filter(|_| *filtro == Filtro::SprintAtiva) {
+                        <span class="projeto__sprint-info">
+                            if !a.objetivo.is_empty() { { &a.objetivo } }
+                            if let Some(f) = &a.fim { <span class="projeto__sprint-fim">{ format!(" · até {f}") }</span> }
+                        </span>
+                    }
+                </div>
                 if let Some(e) = estado.as_ref().filter(|e| !e.avisos.is_empty()) {
                     <ul class="projeto__avisos">
                         { for e.avisos.iter().map(|a| html! {
@@ -314,6 +379,7 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
         html! {
             <nav class="projeto__abas" data-nav-group="projeto-abas">
                 { botao(Aba::Quadro, "Quadro") }
+                { botao(Aba::Sprints, "Sprints") }
                 { botao(Aba::Conversa, "Conversa") }
                 { botao(Aba::Execucoes, "Execuções") }
             </nav>
@@ -323,6 +389,10 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
     // Um índice pro quadro inteiro (ciclo 462): perguntar
     // `dependencias_pendentes` por cartão era `O(n²)`.
     let indice = projeto::IndiceDeTarefas::novo(&tarefas);
+    // O quadro desenha o recorte; as dependências acima continuam olhando
+    // o projeto INTEIRO — uma tarefa da sprint pode depender de uma do
+    // backlog, e o aviso tem que aparecer.
+    let do_quadro: Vec<Tarefa> = sprint::tarefas_do_quadro(&tarefas, &sprints, *filtro).into_iter().cloned().collect();
     let quadro = {
         let oninput = {
             let nova = nova.clone();
@@ -357,7 +427,7 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                 </div>
                 <div class="projeto__quadro" data-nav-group="projeto-quadro">
                     { for EtapaTarefa::all().iter().map(|etapa| {
-                        let da_etapa: Vec<&Tarefa> = tarefas.iter().filter(|t| t.etapa == *etapa).collect();
+                        let da_etapa: Vec<&Tarefa> = do_quadro.iter().filter(|t| t.etapa == *etapa).collect();
                         // Quem decide se a coluna aceita é o núcleo, o mesmo
                         // dos botões: `executando` e `revisao` nunca acendem,
                         // porque nenhuma etapa leva a pessoa até elas.
@@ -388,7 +458,7 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                                     { etapa.label() }
                                     <span class="projeto__contagem">{ da_etapa.len() }</span>
                                 </h3>
-                                { for da_etapa.into_iter().map(|t| cartao(t, &indice, &abrir, &mover, &arrastando)) }
+                                { for da_etapa.into_iter().map(|t| cartao(t, &indice, &abrir, &mover, &arrastando, &abertas, &mudar_sprint)) }
                             </div>
                         }
                     }) }
@@ -399,6 +469,15 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
 
     let corpo = match *aba {
         Aba::Quadro => quadro,
+        Aba::Sprints => html! {
+            <crate::components::sprints_do_projeto::SprintsDoProjeto
+                vault_path={props.vault_path.clone()}
+                slug={slug.clone()}
+                sprints={sprints.clone()}
+                tarefas={tarefas.clone()}
+                on_mudou={recarregar.clone()}
+                on_page_selected={props.on_page_selected.clone()} />
+        },
         Aba::Conversa => {
             let geral = projeto::caminho_da_conversa_geral(&slug);
             html! {
@@ -453,6 +532,8 @@ fn cartao(
     abrir: &Callback<api::PageMeta>,
     mover: &Callback<(String, EtapaTarefa)>,
     arrastando: &UseStateHandle<Option<Tarefa>>,
+    sprints: &[Sprint],
+    mudar_sprint: &Callback<(String, Option<u32>)>,
 ) -> Html {
     let pegar = {
         let (arrastando, t) = (arrastando.clone(), t.clone());
@@ -465,7 +546,8 @@ fn cartao(
             let num_botao = e
                 .target()
                 .and_then(|alvo| alvo.dyn_into::<web_sys::Element>().ok())
-                .and_then(|el| el.closest(".projeto__mover").ok().flatten())
+                // O seletor de sprint também é gesto de clique (ciclo 472).
+                .and_then(|el| el.closest(".projeto__mover, .projeto__cartao-sprint").ok().flatten())
                 .is_some();
             if num_botao {
                 return;
@@ -496,6 +578,26 @@ fn cartao(
                 <p class={classes!("projeto__depende", (!pendentes.is_empty()).then_some("projeto__depende--pendente"))}>
                     { format!("depende de {}", t.depende.join(", ")) }
                 </p>
+            }
+            // A sprint da tarefa (ciclo 472). Só aparece com sprint aberta
+            // no projeto: sem nenhuma, o seletor seria uma opção só.
+            if !sprints.is_empty() {
+                <select class="input input--xs projeto__cartao-sprint" data-nav-item="true" data-nav-parent="projeto-quadro"
+                    title="A sprint desta tarefa"
+                    onchange={{
+                        let (mudar_sprint, c) = (mudar_sprint.clone(), t.caminho.clone());
+                        Callback::from(move |e: Event| {
+                            let alvo: web_sys::HtmlSelectElement = e.target_unchecked_into();
+                            mudar_sprint.emit((c.clone(), alvo.value().parse().ok()));
+                        })
+                    }}>
+                    <option value="backlog" selected={t.sprint.is_none()}>{ "Backlog" }</option>
+                    { for sprints.iter().map(|s| html! {
+                        <option value={s.numero.to_string()} selected={t.sprint == Some(s.numero)}>
+                            { format!("{} · {}", s.nome, s.estado.label().to_lowercase()) }
+                        </option>
+                    }) }
+                </select>
             }
             <div class="projeto__cartao-acoes">
                 { for t.etapa.proximas_para(Quem::Humano).into_iter().map(|destino| {

@@ -2357,3 +2357,45 @@
   background: color-mix(in srgb, var(--success) 10%, transparent);
   border-radius: var(--r-sm); padding: var(--sp-1) var(--sp-2);
 }
+
+/* Sprints (ciclo 472): o recorte do quadro e a aba. */
+.projeto__sprint { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: .82rem; }
+.projeto__sprint-filtro { max-width: 22rem; }
+.projeto__sprint-info { color: var(--text-muted); }
+.projeto__sprint-fim { color: var(--text-muted); }
+.projeto__cartao-sprint {
+  font-size: .72rem; padding: 0 var(--sp-1); max-width: 100%;
+  background: var(--bg-surface); color: var(--text-muted); border-radius: var(--r-sm);
+}
+.input--xs { font-size: .72rem; padding: 0 var(--sp-1); }
+.sprints { display: flex; flex-direction: column; gap: var(--sp-3); overflow-y: auto; min-height: 0; flex: 1; }
+.sprints__nova { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.sprints__nova-nome { flex: 1; min-width: 10rem; max-width: 18rem; }
+.sprints__nova-objetivo { flex: 2; min-width: 12rem; }
+.sprints__erro { margin: 0; font-size: .8rem; color: var(--error); }
+.sprints__lista, .sprints__historico, .sprints__feitas { list-style: none; margin: 0; padding: 0; }
+.sprints__lista, .sprints__historico { display: flex; flex-direction: column; gap: var(--sp-2); }
+.sprints__item, .sprints__encerrada {
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+}
+.sprints__item--ativa { border-color: var(--accent-blue); }
+.sprints__cabeca { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); font-size: .85rem; }
+.sprints__numero { color: var(--text-muted); font-family: var(--font-mono); font-size: .75rem; }
+.sprints__nome { font-weight: 600; }
+.sprints__estado {
+  font-size: .72rem; border-radius: var(--r-sm); padding: 0 var(--sp-2);
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+}
+.sprints__item--ativa .sprints__estado { color: var(--accent-blue); background: color-mix(in srgb, var(--accent-blue) 15%, transparent); }
+.sprints__datas, .sprints__resumo, .sprints__vazio { color: var(--text-muted); font-size: .78rem; }
+.sprints__resumo { margin-left: auto; }
+.sprints__objetivo { margin: var(--sp-1) 0 0; font-size: .8rem; color: var(--text-muted); }
+.sprints__pergunta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2);
+  padding: var(--sp-2); border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+.sprints__pergunta-texto { margin: 0; font-size: .8rem; flex-basis: 100%; }
+.sprints__titulo-historico { margin: var(--sp-3) 0 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.sprints__feitas { margin-top: var(--sp-1); display: flex; flex-direction: column; gap: 2px; font-size: .78rem; }

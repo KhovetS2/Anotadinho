@@ -27,6 +27,7 @@ pub mod page_view;
 pub mod projeto_view;
 pub mod properties_panel;
 pub mod sidebar;
+pub mod sprints_do_projeto;
 pub mod tab_bar;
 pub mod tags_page;
 pub mod tarefa_barra;
