@@ -123,8 +123,11 @@ pub fn sprints_do_projeto(props: &SprintsDoProjetoProps) -> Html {
         (None, None) => String::new(),
     };
 
+    // Um agrupamento pra lista toda (ciclo 474): `resumo` por sprint
+    // varria o projeto uma vez por sprint, e o histórico só cresce.
+    let por_sprint = sprint::PorSprint::novo(&props.tarefas);
     let linha = |s: &Sprint| {
-        let (feitas, total) = sprint::resumo(s, &props.tarefas);
+        let (feitas, total) = por_sprint.resumo(s.numero);
         let caminho = s.caminho.clone();
         let botao = match s.estado {
             EstadoSprint::Planejada => {
@@ -225,11 +228,12 @@ pub fn sprints_do_projeto(props: &SprintsDoProjetoProps) -> Html {
                 <h3 class="sprints__titulo-historico">{ "Histórico" }</h3>
                 <ul class="sprints__historico">
                     { for encerradas.into_iter().map(|s| {
-                        let (feitas, total) = sprint::resumo(s, &props.tarefas);
-                        let mut titulos: Vec<&Tarefa> = props
-                            .tarefas
+                        let (feitas, total) = por_sprint.resumo(s.numero);
+                        let mut titulos: Vec<&Tarefa> = por_sprint
+                            .tarefas(s.numero)
                             .iter()
-                            .filter(|t| t.sprint == Some(s.numero) && t.etapa == EtapaTarefa::Feita)
+                            .copied()
+                            .filter(|t| t.etapa == EtapaTarefa::Feita)
                             .collect();
                         titulos.sort_by_key(|t| t.numero);
                         html! {

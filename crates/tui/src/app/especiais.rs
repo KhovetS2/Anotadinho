@@ -709,8 +709,11 @@ fn tecla_no_projeto(e: &mut Estado, tecla: &str) -> bool {
             let proxima = p.sprints.iter().filter(|s| s.estado == EstadoSprint::Planejada).min_by_key(|s| s.numero);
             let mut ordem: Vec<&anotadinho_core::sprint::Sprint> = p.sprints.iter().collect();
             ordem.sort_by_key(|s| (s.estado != EstadoSprint::Ativa, s.estado == EstadoSprint::Encerrada, s.numero));
+            // Um agrupamento pro menu todo (ciclo 474), e não uma varredura
+            // do projeto por sprint.
+            let por_sprint = anotadinho_core::sprint::PorSprint::novo(&p.todas);
             for s in ordem {
-                let (feitas, total) = anotadinho_core::sprint::resumo(s, &p.todas);
+                let (feitas, total) = por_sprint.resumo(s.numero);
                 let resumo = format!("{feitas}/{total} feitas");
                 match s.estado {
                     EstadoSprint::Ativa => {

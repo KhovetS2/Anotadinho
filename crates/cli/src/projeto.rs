@@ -256,8 +256,9 @@ pub(crate) fn run_projeto(vault: &str, json: bool, action: ProjetoCommand) -> Re
             if e.sprints.is_empty() {
                 println!("  (nenhuma — o quadro mostra todas as tarefas)");
             }
+            let por_sprint = anotadinho_core::sprint::PorSprint::novo(&e.tarefas);
             for s in &e.sprints {
-                let (feitas, total) = anotadinho_core::sprint::resumo(s, &e.tarefas);
+                let (feitas, total) = por_sprint.resumo(s.numero);
                 println!("  {:02}  {:<10} {}  [{feitas}/{total} feitas]", s.numero, s.estado.slug(), s.nome);
             }
             println!("\ntarefas:");
@@ -365,11 +366,12 @@ pub(crate) fn run_sprint(vault: &str, json: bool, action: SprintCommand) -> Resu
         SprintCommand::Listar { slug } => {
             let sprints = anotadinho_ipc::handle_sprints_do_projeto(vault.to_string(), slug.clone())?;
             let tarefas = handle_tarefas_do_projeto(vault.to_string(), slug.clone())?;
+            let por_sprint = anotadinho_core::sprint::PorSprint::novo(&tarefas);
             if json {
                 let v: Vec<_> = sprints
                     .iter()
                     .map(|s| {
-                        let (feitas, total) = anotadinho_core::sprint::resumo(s, &tarefas);
+                        let (feitas, total) = por_sprint.resumo(s.numero);
                         serde_json::json!({ "sprint": s, "feitas": feitas, "total": total })
                     })
                     .collect();
@@ -379,7 +381,7 @@ pub(crate) fn run_sprint(vault: &str, json: bool, action: SprintCommand) -> Resu
                 println!("nenhuma sprint em {}", anotadinho_core::sprint::pasta_das_sprints(&slug));
             }
             for s in &sprints {
-                let (feitas, total) = anotadinho_core::sprint::resumo(s, &tarefas);
+                let (feitas, total) = por_sprint.resumo(s.numero);
                 let datas = match (&s.inicio, &s.fim) {
                     (Some(i), Some(f)) => format!("  {i} → {f}"),
                     _ => String::new(),

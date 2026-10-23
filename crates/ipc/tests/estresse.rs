@@ -368,3 +368,84 @@ fn fila_de_projeto_grande_e_linear() {
         );
     }
 }
+
+/// Um projeto que deu certo (ciclo 474): `n` tarefas em sprints de dez,
+/// todas encerradas e feitas, menos a última sprint, a ativa, com as
+/// dez dela por fazer.
+fn projeto_em_sprints(raiz: &Path, n: usize) -> String {
+    let vault = raiz.to_string_lossy().to_string();
+    anotadinho_ipc::handle_criar_projeto(vault.clone(), "Escala".into(), Some("escala".into()), "2026-10-22".into())
+        .unwrap();
+    let tarefas = raiz.join(anotadinho_core::projeto::pasta_das_tarefas("escala"));
+    let sprints = raiz.join(anotadinho_core::sprint::pasta_das_sprints("escala"));
+    std::fs::create_dir_all(&sprints).unwrap();
+    let total_de_sprints = n.div_ceil(10);
+    for s in 1..=total_de_sprints {
+        let estado = if s == total_de_sprints { "ativa" } else { "encerrada" };
+        let md = format!("---\ntitle: Sprint {s}\ntype: sprint\nprojeto: escala\nestado: {estado}\n---\n# Sprint {s}\n");
+        std::fs::write(sprints.join(format!("{s:03}-sprint-{s}.md")), md).unwrap();
+    }
+    for i in 1..=n {
+        let s = (i - 1) / 10 + 1;
+        let etapa = if s == total_de_sprints { "pronta" } else { "feita" };
+        let md = format!("---\ntitle: Tarefa {i}\ntype: tarefa\nprojeto: escala\nsprint: {s}\nstatus: {etapa}\n---\n# Tarefa {i}\n");
+        std::fs::write(tarefas.join(format!("{i:04}-t.md")), md).unwrap();
+    }
+    vault
+}
+
+#[test]
+#[ignore = "monta projetos de milhares de tarefas; roda com --ignored"]
+fn sprints_encerradas_nao_pesam_no_quadro() {
+    // RNF3 da spec de sprints: o projeto que cresce acumula feitas em
+    // sprints encerradas, e a tela relê tudo de 3 em 3 s. Sprint cresce
+    // JUNTO com o projeto — olhar "de qual sprint é esta tarefa" varrendo
+    // a lista de sprints é `O(tarefas × sprints)`, quadrático.
+    use anotadinho_core::sprint::{self, Filtro};
+    let mut estado_por_tarefa: Vec<(usize, f64)> = Vec::new();
+    let mut recorte_por_tarefa: Vec<(usize, f64)> = Vec::new();
+    for n in [300usize, 1500, 3000] {
+        let dir = tempfile::TempDir::new().unwrap();
+        let vault = projeto_em_sprints(dir.path(), n);
+        anotadinho_ipc::handle_estado_do_projeto(vault.clone(), "escala".into()).unwrap();
+        let (e, t_estado) = cronometrar(|| anotadinho_ipc::handle_estado_do_projeto(vault.clone(), "escala".into()).unwrap());
+        assert_eq!(e.tarefas.len(), n);
+        assert_eq!(e.sprints.len(), n.div_ceil(10));
+        assert!(e.avisos.iter().all(|a| !a.contains("não existe")), "{:?}", e.avisos);
+        // O EFEITO antes do tempo: medir um quadro que não recorta nada
+        // passaria com folga (ciclo 259).
+        let ativa = sprint::tarefas_do_quadro(&e.tarefas, &e.sprints, Filtro::SprintAtiva);
+        assert_eq!(ativa.len(), 10, "o quadro da ativa devia ter só as dez dela");
+        assert!(sprint::tarefas_do_quadro(&e.tarefas, &e.sprints, Filtro::Todas).len() == 10, "\"todas\" trouxe feitas de sprints encerradas");
+        // O recorte é puro e rápido: repetido, pra o relógio ver alguma coisa.
+        const VEZES: u32 = 20;
+        let (_, t_recorte) = cronometrar(|| {
+            for _ in 0..VEZES {
+                std::hint::black_box(sprint::tarefas_do_quadro(&e.tarefas, &e.sprints, Filtro::Todas));
+                std::hint::black_box(sprint::tarefas_do_quadro(&e.tarefas, &e.sprints, Filtro::Backlog));
+                std::hint::black_box(sprint::avisos(&e.sprints, &e.tarefas));
+                // O histórico: a lista de sprints com feitas/total, como a
+                // aba Sprints, o `S` da TUI e `sprint listar` desenham.
+                let por_sprint = sprint::PorSprint::novo(&e.tarefas);
+                std::hint::black_box(e.sprints.iter().map(|s| por_sprint.resumo(s.numero)).collect::<Vec<_>>());
+            }
+        });
+        let t_recorte = t_recorte / VEZES;
+        dentro_do_teto(&format!("estado do projeto com {n} tarefas"), t_estado, Duration::from_micros(1000) * n as u32);
+        dentro_do_teto(&format!("recorte com {n} tarefas"), t_recorte, Duration::from_micros(20) * n as u32);
+        estado_por_tarefa.push((n, t_estado.as_secs_f64() * 1e6 / n as f64));
+        recorte_por_tarefa.push((n, t_recorte.as_secs_f64() * 1e6 / n as f64));
+    }
+    for (rotulo, serie) in [("estado", &estado_por_tarefa), ("recorte", &recorte_por_tarefa)] {
+        for (n, us) in serie.iter() {
+            println!("  {rotulo}: custo por tarefa com n={n}: {us:.3}µs");
+        }
+        let (menor, maior) = (serie[0].1, serie[serie.len() - 1].1);
+        assert!(
+            maior <= menor * 2.0,
+            "{rotulo}: o custo por tarefa subiu de {menor:.3}µs (n={}) pra {maior:.3}µs (n={}) — alguma coisa ficou quadrática",
+            serie[0].0,
+            serie[serie.len() - 1].0,
+        );
+    }
+}

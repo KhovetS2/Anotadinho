@@ -187,9 +187,11 @@ pub fn avisos(sprints: &[Sprint], tarefas: &[Tarefa]) -> Vec<String> {
         let nomes: Vec<String> = ativas.iter().map(|s| format!("{} ({})", s.nome, s.numero)).collect();
         fora.push(format!("mais de uma sprint ativa: {} — o quadro mostra a mais recente", nomes.join(", ")));
     }
+    // O mesmo `O(tarefas × sprints)` do recorte (ciclo 474).
+    let existentes: std::collections::HashSet<(&str, u32)> = sprints.iter().map(|s| (s.projeto.as_str(), s.numero)).collect();
     for t in tarefas {
         if let Some(n) = t.sprint {
-            if !sprints.iter().any(|s| s.projeto == t.projeto && s.numero == n) {
+            if !existentes.contains(&(t.projeto.as_str(), n)) {
                 fora.push(format!("{} aponta pra sprint {n}, que não existe — está no backlog", t.caminho));
             }
         }
@@ -296,8 +298,13 @@ impl Filtro {
 /// Uma tarefa que aponta pra sprint inexistente conta como backlog: some
 /// do quadro da sprint, mas não da vida (e `avisos` diz por quê).
 pub fn tarefas_do_quadro<'a>(tarefas: &'a [Tarefa], sprints: &[Sprint], filtro: Filtro) -> Vec<&'a Tarefa> {
-    let existe = |n: u32| sprints.iter().any(|s| s.numero == n);
-    let encerrada = |n: u32| sprints.iter().any(|s| s.numero == n && s.estado == EstadoSprint::Encerrada);
+    // Um mapa por chamada, e não `sprints.iter().any` por tarefa: as
+    // sprints crescem JUNTO com o projeto, e a varredura por tarefa era
+    // `O(tarefas × sprints)` — 8× de custo por tarefa entre 300 e 3000
+    // no estresse do ciclo 474.
+    let estado_de: std::collections::HashMap<u32, EstadoSprint> = sprints.iter().map(|s| (s.numero, s.estado)).collect();
+    let existe = |n: u32| estado_de.contains_key(&n);
+    let encerrada = |n: u32| estado_de.get(&n) == Some(&EstadoSprint::Encerrada);
     let alvo = match filtro {
         Filtro::SprintAtiva => match ativa(sprints) {
             Some(s) => Filtro::Sprint(s.numero),
@@ -376,8 +383,39 @@ pub fn plano_de_encerramento(
 
 /// O resumo de uma sprint pro histórico: feitas e total.
 pub fn resumo(sprint: &Sprint, tarefas: &[Tarefa]) -> (usize, usize) {
-    let da: Vec<&Tarefa> = tarefas.iter().filter(|t| t.sprint == Some(sprint.numero)).collect();
-    (da.iter().filter(|t| t.etapa == EtapaTarefa::Feita).count(), da.len())
+    PorSprint::novo(tarefas).resumo(sprint.numero)
+}
+
+/// As tarefas agrupadas por sprint, numa passada (ciclo 474).
+///
+/// Listar as sprints com `resumo` cada uma varre o projeto uma vez POR
+/// SPRINT — e o histórico é justamente a lista que cresce. Quem mostra
+/// várias sprints monta isto uma vez e pergunta a cada uma.
+pub struct PorSprint<'a> {
+    grupos: std::collections::HashMap<u32, Vec<&'a Tarefa>>,
+}
+
+impl<'a> PorSprint<'a> {
+    pub fn novo(tarefas: &'a [Tarefa]) -> Self {
+        let mut grupos: std::collections::HashMap<u32, Vec<&'a Tarefa>> = std::collections::HashMap::new();
+        for t in tarefas {
+            if let Some(n) = t.sprint {
+                grupos.entry(n).or_default().push(t);
+            }
+        }
+        Self { grupos }
+    }
+
+    /// As tarefas da sprint `numero`, na ordem em que vieram.
+    pub fn tarefas(&self, numero: u32) -> &[&'a Tarefa] {
+        self.grupos.get(&numero).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// `(feitas, total)` da sprint `numero`.
+    pub fn resumo(&self, numero: u32) -> (usize, usize) {
+        let da = self.tarefas(numero);
+        (da.iter().filter(|t| t.etapa == EtapaTarefa::Feita).count(), da.len())
+    }
 }
 
 #[cfg(test)]
