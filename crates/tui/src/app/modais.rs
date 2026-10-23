@@ -41,6 +41,14 @@ pub enum Pedido {
     EncerrarSprint { caminho: String, destino: anotadinho_core::sprint::DestinoDasPendentes },
     /// Pôr a tarefa numa sprint, ou no backlog (`None`).
     MudarSprintDaTarefa { caminho: String, sprint: Option<u32> },
+    /// Os detalhes da tarefa (ciclo 478), pela pessoa.
+    AlternarItemDaTarefa { caminho: String, indice: usize },
+    TagsDaTarefa { caminho: String, tags: Vec<String> },
+    PrazoDaTarefa { caminho: String, prazo: Option<String> },
+    ComentarTarefa { caminho: String, texto: String },
+    AnexarNaTarefa { caminho: String, origem: String },
+    /// Abrir um anexo — só o que está em `assets/` (`ipc::anexo_no_vault`).
+    AbrirAnexo(String),
     /// Gravar a config de um projeto (pausa, repositório).
     GravarConfigDoProjeto { slug: String, config: anotadinho_core::projeto::ConfigProjeto },
     /// "Virar tarefas" numa resposta: propõe um lote.
@@ -568,6 +576,16 @@ pub enum AcaoDaEntrada {
     NovaTarefa(String),
     /// O nome de uma sprint nova no projeto (ciclo 473).
     NovaSprint(String),
+    /// As tags da tarefa, separadas por vírgula (ciclo 478). Vazio tira
+    /// todas.
+    TagsDaTarefa(String),
+    /// O prazo da tarefa. Vazio tira.
+    PrazoDaTarefa(String),
+    /// Um comentário na tarefa.
+    ComentarTarefa(String),
+    /// O caminho de um arquivo pra anexar na tarefa: a TUI não tem
+    /// diálogo nativo.
+    AnexarNaTarefa(String),
     /// A pasta do repositório do projeto.
     RepositorioDoProjeto(String),
     /// Título de uma página nova dentro de uma pasta (ciclo 345).
@@ -621,6 +639,8 @@ pub enum AcaoDaEscolha {
     SprintDaTarefa,
     /// Uma ação de sprint: chave `ação\u{0}caminho` (ou `nova\u{0}slug`).
     SprintsDoProjeto,
+    /// O modal de detalhes da tarefa (ciclo 478): chave `ação\u{0}…`.
+    DetalhesDaTarefa,
     /// Trocar o tema pela chave.
     Tema,
     /// Trocar o agente pelo índice do preset.
@@ -1113,6 +1133,44 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         e.pedidos.push(Pedido::MudarSprintDaTarefa { caminho: caminho.to_string(), sprint });
                     }
                 }
+                AcaoDaEscolha::DetalhesDaTarefa => {
+                    let mut partes = chave.split('\u{0}');
+                    let (qual, caminho, resto) = (partes.next().unwrap_or(""), partes.next().unwrap_or("").to_string(), partes.next());
+                    let entrada = |titulo: &str, texto: String, acao: AcaoDaEntrada| Modal::Entrada {
+                        titulo: titulo.into(),
+                        campo: Campo::com(texto),
+                        acao,
+                    };
+                    match qual {
+                        "item" => {
+                            if let Some(i) = resto.and_then(|r| r.parse().ok()) {
+                                e.pedidos.push(Pedido::AlternarItemDaTarefa { caminho: caminho.clone(), indice: i });
+                                // O modal FICA, com a marca já trocada: marcar
+                                // três critérios não pode custar três `v`. O
+                                // disco confirma na releitura que vem.
+                                super::especiais::alternar_item_na_tela(e, &caminho, i);
+                                if let Some(m) = super::especiais::menu_de_detalhes(e, &caminho) {
+                                    e.modal = Some(match m {
+                                        Modal::Escolha { titulo, mut lista, acao } => {
+                                            // O cursor volta pro MESMO item, pela chave.
+                                            lista.selecionado = lista.itens.iter().position(|it| it.chave == chave).unwrap_or(0);
+                                            Modal::Escolha { titulo, lista, acao }
+                                        }
+                                        outro => outro,
+                                    });
+                                }
+                            }
+                        }
+                        "tags" => e.modal = Some(entrada("Tags, separadas por vírgula (vazio tira todas)", resto.unwrap_or("").to_string(), AcaoDaEntrada::TagsDaTarefa(caminho))),
+                        "prazo" => e.modal = Some(entrada("Prazo, AAAA-MM-DD (vazio tira)", resto.unwrap_or("").to_string(), AcaoDaEntrada::PrazoDaTarefa(caminho))),
+                        "comentar" => e.modal = Some(entrada("Comentário", String::new(), AcaoDaEntrada::ComentarTarefa(caminho))),
+                        "anexar" => e.modal = Some(entrada("Caminho do arquivo pra anexar", String::new(), AcaoDaEntrada::AnexarNaTarefa(caminho))),
+                        "anexo" => e.pedidos.push(Pedido::AbrirAnexo(caminho)),
+                        "pagina" => e.pedidos.push(Pedido::AbrirPagina(caminho)),
+                        // Comentário é leitura.
+                        _ => {}
+                    }
+                }
                 AcaoDaEscolha::SprintsDoProjeto => {
                     use anotadinho_core::sprint::DestinoDasPendentes;
                     match chave.split_once('\u{0}') {
@@ -1331,6 +1389,19 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     super::markdown::inserir_trecho(e, &format!("```mermaid\n{t}\n```"));
                 }
             }
+            // Vazio TAMBÉM é resposta aqui (ciclo 478): tira o prazo, ou
+            // todas as tags. O ramo geral abaixo ignora o vazio.
+            "Enter" if matches!(acao, AcaoDaEntrada::TagsDaTarefa(_) | AcaoDaEntrada::PrazoDaTarefa(_)) => {
+                let t = campo.texto.trim().to_string();
+                e.pedidos.push(match acao {
+                    AcaoDaEntrada::TagsDaTarefa(caminho) => Pedido::TagsDaTarefa {
+                        caminho,
+                        tags: t.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect(),
+                    },
+                    AcaoDaEntrada::PrazoDaTarefa(caminho) => Pedido::PrazoDaTarefa { caminho, prazo: Some(t).filter(|t| !t.is_empty()) },
+                    _ => unreachable!("o guarda acima"),
+                });
+            }
             "Enter" => {
                 let t = campo.texto.trim().to_string();
                 if !t.is_empty() {
@@ -1339,6 +1410,8 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         AcaoDaEntrada::NovoProjeto => Pedido::CriarProjeto(t),
                         AcaoDaEntrada::NovaTarefa(slug) => Pedido::CriarTarefa { slug, titulo: t },
                         AcaoDaEntrada::NovaSprint(slug) => Pedido::CriarSprint { slug, nome: t },
+                        AcaoDaEntrada::ComentarTarefa(caminho) => Pedido::ComentarTarefa { caminho, texto: t },
+                        AcaoDaEntrada::AnexarNaTarefa(caminho) => Pedido::AnexarNaTarefa { caminho, origem: t },
                         AcaoDaEntrada::RepositorioDoProjeto(slug) => {
                             // A config atual vem da tela aberta: só o
                             // repositório muda, a pausa fica como está.
@@ -1366,6 +1439,9 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         | AcaoDaEntrada::MotivoDaRecusaVarias(_)
                         | AcaoDaEntrada::MotivoDaRecusaDoLote(_)
                         | AcaoDaEntrada::PaginaDeContexto
+                        // Tratadas no ramo de cima, que aceita o vazio.
+                        | AcaoDaEntrada::TagsDaTarefa(_)
+                        | AcaoDaEntrada::PrazoDaTarefa(_)
                         | AcaoDaEntrada::LimiteDeAgentes => return,
                     });
                 }
@@ -1696,6 +1772,7 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
         "Projeto",
         &[
             ("1-3", "mover a tarefa (as transições dela)"),
+            ("v", "detalhes: critérios, tags, prazo, comentários, anexos"),
             ("n d", "tarefa nova / detalhar com o agente"),
             ("s", "o que o quadro mostra (sprint, backlog, todas)"),
             ("m", "pôr a tarefa numa sprint ou no backlog"),

@@ -269,7 +269,8 @@ fn dados_falsos(tipo: especiais::TipoEspecial) -> especiais::Dados {
                 },
                 vec![
                     tarefa(1, "feita", "Esqueleto do projeto", ""),
-                    tarefa(2, "executando", "Banco de dados", "sprint: 1\n"),
+                    // Tags e prazo (ciclo 478): a linha de selos na foto.
+                    tarefa(2, "executando", "Banco de dados", "sprint: 1\ntags:\n- banco\nprazo: 2026-11-05\n"),
                     tarefa(3, "pronta", "Tela de login", "sprint: 1\ndepende:\n- 2\n"),
                     tarefa(4, "ideia", "Notificações por e-mail", ""),
                     tarefa(5, "bloqueada", "Integração com agenda", "sprint: 1\n"),

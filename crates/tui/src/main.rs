@@ -968,7 +968,9 @@ fn carregar_especial(estado: &mut Estado, vault: &str, tipo: TipoEspecial) {
             let caminho = estado.paginas.get(estado.pagina).map(|p| p.path.clone()).unwrap_or_default();
             match anotadinho_core::projeto::projeto_do_caminho(&caminho) {
                 Some(slug) => anotadinho_ipc::handle_estado_do_projeto(vault.to_string(), slug.to_string()).map(|e| {
-                    especiais::Dados::Projeto(especiais::ProjetoNaTela::novo(e.projeto, e.config, e.tarefas, e.avisos, e.sprints))
+                    let mut p = especiais::ProjetoNaTela::novo(e.projeto, e.config, e.tarefas, e.avisos, e.sprints);
+                    p.hoje = agora_local().split(' ').next().unwrap_or("").to_string();
+                    especiais::Dados::Projeto(p)
                 }),
                 None => Err(format!("{caminho} não está dentro de {}", anotadinho_core::projeto::PASTA)),
             }
@@ -1108,6 +1110,46 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                         estado.aviso = Some(format!("sprint encerrada: {} feita(s) no histórico, {} pendente(s) movida(s)", r.feitas, r.mudancas.len()));
                         carregar_especial(estado, vault, TipoEspecial::Projeto);
                     }
+                    Err(e) => estado.aviso = Some(e),
+                },
+                // ── Detalhes da tarefa (ciclo 478): os mesmos `handle_*` da janela.
+                Pedido::AlternarItemDaTarefa { caminho, indice } => {
+                    if let Err(e) = anotadinho_ipc::handle_alternar_item_da_tarefa(vault.to_string(), caminho, indice) {
+                        estado.aviso = Some(e);
+                    }
+                    carregar_especial(estado, vault, TipoEspecial::Projeto);
+                }
+                Pedido::TagsDaTarefa { caminho, tags } => match anotadinho_ipc::handle_tags_da_tarefa(vault.to_string(), caminho, tags) {
+                    Ok(()) => carregar_especial(estado, vault, TipoEspecial::Projeto),
+                    Err(e) => estado.aviso = Some(e),
+                },
+                Pedido::PrazoDaTarefa { caminho, prazo } => match anotadinho_ipc::handle_prazo_da_tarefa(vault.to_string(), caminho, prazo) {
+                    Ok(()) => carregar_especial(estado, vault, TipoEspecial::Projeto),
+                    Err(e) => estado.aviso = Some(e),
+                },
+                Pedido::ComentarTarefa { caminho, texto } => {
+                    match anotadinho_ipc::handle_comentar_tarefa(vault.to_string(), caminho, agora_local(), texto) {
+                        Ok(()) => {
+                            estado.aviso = Some("comentário gravado".into());
+                            carregar_especial(estado, vault, TipoEspecial::Projeto);
+                        }
+                        Err(e) => estado.aviso = Some(e),
+                    }
+                }
+                Pedido::AnexarNaTarefa { caminho, origem } => {
+                    // `~` e relativo ao diretório de onde a TUI foi aberta,
+                    // como a pessoa digita num terminal.
+                    let origem = sistema::expandir_til(&origem, sistema::ambiente, cfg!(windows));
+                    match anotadinho_ipc::handle_anexar_na_tarefa(vault.to_string(), caminho, origem) {
+                        Ok(c) => {
+                            estado.aviso = Some(format!("anexado: {c}"));
+                            carregar_especial(estado, vault, TipoEspecial::Projeto);
+                        }
+                        Err(e) => estado.aviso = Some(e),
+                    }
+                }
+                Pedido::AbrirAnexo(caminho) => match anotadinho_ipc::handle_abrir_anexo(vault.to_string(), caminho.clone()) {
+                    Ok(()) => estado.aviso = Some(format!("abrindo {caminho}")),
                     Err(e) => estado.aviso = Some(e),
                 },
                 Pedido::MudarSprintDaTarefa { caminho, sprint } => {

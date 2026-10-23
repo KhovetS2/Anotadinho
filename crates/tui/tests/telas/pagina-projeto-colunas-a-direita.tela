@@ -13,6 +13,7 @@
 │                              ││  EXECUTANDO            1   REVISÃO               0   FEITA                 0   BLOQUEADA             1   │
 │                              ││   002 Banco de dados                                                            005 Integração com       │
 │                              ││                                                                                     agenda               │
+│                              ││    ◷11-05 #banco                                                                                         │
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │
@@ -37,8 +38,7 @@
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │
-│                              ││                                                                                                          │
-└──────────────────────────────┘└ h j k l · 1-3 etapa · Enter · n nova · d detalha · s filtro · m sprint · S sprints · c conversa · p pausa┘
+└──────────────────────────────┘└ h j k l · 1-3 etapa · Enter · v detalhes · n nova · s filtro · m sprint · S sprints · c conversa · ? atal┘
 == estilos ==
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddabeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffffffffffffffffffb
@@ -54,7 +54,7 @@ addddddddddddddddddddddddddddddabfffffffffffffdddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddabdjjjjjjjjjjjkkkkkkkkkkkkkkdllllllllkkkkkkkkkkkkkkkkkdmmmmmmkkkkkkkkkkkkkkkkkkkdnnnnnnnnnnkkkkkkkkkkkkkkkddb
 addddddddddddddddddddddddddddddabdopppppqqqqqqqqqqqqqqqqqqodooooooooooooooooooooooooodooooooooooooooooooooooooodorrrrrrrrrrrrrrrrrrrrrrroddb
 addddddddddddddddddddddddddddddabdoqqqqqqqqqqqqqqqqqqqqqqqodooooooooooooooooooooooooodooooooooooooooooooooooooodorrrrrrrrrrrrrrrrrrrrrrroddb
-addddddddddddddddddddddddddddddabdopppppppppppppppppppppppodooooooooooooooooooooooooodooooooooooooooooooooooooodorrrrrrrrrrrrrrrrrrrrrrroddb
+addddddddddddddddddddddddddddddabdopppppppppssssssppppppppodooooooooooooooooooooooooodooooooooooooooooooooooooodorrrrrrrrrrrrrrrrrrrrrrroddb
 addddddddddddddddddddddddddddddabdooooooooooooooooooooooooodooooooooooooooooooooooooodooooooooooooooooooooooooodoooooooooooooooooooooooooddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -79,7 +79,7 @@ addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttb
 a = fg #45475a bg #1e1e2e
 b = fg #89b4fa bg #1e1e2e
 c = fg - bg #1e1e2e negrito apagado
@@ -98,4 +98,5 @@ o = fg - bg #313244
 p = fg #a6adc8 bg #45475a
 q = fg #cdd6f4 bg #45475a
 r = fg #1e1e2e bg #89b4fa
-s = fg #a6adc8 bg #1e1e2e itálico
+s = fg #89b4fa bg #45475a
+t = fg #a6adc8 bg #1e1e2e itálico

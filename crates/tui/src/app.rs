@@ -11714,6 +11714,117 @@ mod testes {
         ))
     }
 
+    // ── Tarefa rica (ciclo 478) ───────────────────────────────────────
+
+    fn tarefa_rica() -> anotadinho_core::projeto::Tarefa {
+        let caminho = "pages/projetos/saas/tarefas/001-t.md";
+        let md = concat!(
+            "---\ntitle: Login\ntags:\n- tarefa\n- auth\ntype: tarefa\nprojeto: saas\nprazo: 2020-01-01\nstatus: pronta\n---\n",
+            "## Critérios de aceite\n\n- [ ] entra\n- [x] sai\n\n",
+            "## Comentários\n\n- **2026-10-01 10:00** — olhei\n\n## Anexos\n\n- [tela.png](assets/tela.png)\n",
+        );
+        anotadinho_core::projeto::Tarefa::ler(caminho, md).unwrap()
+    }
+
+    fn projeto_rico() -> Estado {
+        let mut e = especial_aberto("projeto");
+        let mut dados = projeto_na_tela(vec![tarefa_rica()]);
+        if let especiais::Dados::Projeto(p) = &mut dados {
+            p.hoje = "2026-10-23".into();
+        }
+        especiais::carregar(&mut e, dados);
+        e
+    }
+
+    fn itens_do_modal(e: &Estado) -> Vec<(String, String)> {
+        match &e.modal {
+            Some(Modal::Escolha { lista, .. }) => lista.itens.iter().map(|i| (i.icone.to_string(), i.rotulo.clone())).collect(),
+            outro => panic!("{outro:?}"),
+        }
+    }
+
+    fn descer_ate(e: &mut Estado, rotulo: &str) {
+        let n = itens_do_modal(e).iter().position(|(_, r)| r.starts_with(rotulo)).unwrap_or_else(|| panic!("sem {rotulo}"));
+        for _ in 0..n {
+            tecla(e, "j");
+        }
+    }
+
+    #[test]
+    fn o_cartao_mostra_os_selos_do_kanban() {
+        let mut e = projeto_rico();
+        let tudo = desenho(&mut e, 140, 40).join("\n");
+        // As tags vêm por último porque são as primeiras a perder espaço:
+        // a coluna tem uns vinte caracteres, e o corte é na borda dela.
+        for esperado in ["✓1/2", "⚠01-01", "✎1", "⊕1", "#au"] {
+            assert!(tudo.contains(esperado), "faltou {esperado}:\n{tudo}");
+        }
+        // Em CARACTERES: `✓` e `⚠` têm mais de um byte.
+        let coluna = |l: &str, de: &str| l[..l.find(de).unwrap()].chars().count();
+        let linha = tudo.lines().find(|l| l.contains("✓1/2")).unwrap();
+        let cabecalho = tudo.lines().find(|l| l.contains("EXECUTAR")).unwrap();
+        assert!(coluna(linha, "#au") < coluna(cabecalho, "EXECUTAR"), "os selos invadiram a coluna vizinha:\n{tudo}");
+    }
+
+    #[test]
+    fn v_marca_criterios_sem_fechar_o_modal() {
+        let mut e = projeto_rico();
+        e.pedidos.clear();
+        tecla(&mut e, "v");
+        assert_eq!(itens_do_modal(&e)[0], ("□".to_string(), "entra".to_string()));
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AlternarItemDaTarefa { caminho: "pages/projetos/saas/tarefas/001-t.md".into(), indice: 0 }]);
+        // O modal fica, com a marca já trocada e o cursor no mesmo item.
+        assert_eq!(itens_do_modal(&e)[0].0, "■");
+        e.pedidos.clear();
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AlternarItemDaTarefa { caminho: "pages/projetos/saas/tarefas/001-t.md".into(), indice: 1 }]);
+        assert_eq!(itens_do_modal(&e)[1].0, "□", "o segundo, que estava feito, desmarca");
+    }
+
+    #[test]
+    fn v_edita_tags_prazo_comenta_anexa_e_abre_o_anexo() {
+        let c = "pages/projetos/saas/tarefas/001-t.md".to_string();
+        let mut e = projeto_rico();
+        let abrir = |e: &mut Estado, rotulo: &str| {
+            e.pedidos.clear();
+            e.modal = None;
+            tecla(e, "v");
+            descer_ate(e, rotulo);
+            tecla(e, "Enter");
+        };
+        // Tags vêm preenchidas; apagar tudo é tirar todas.
+        abrir(&mut e, "Tags");
+        assert!(matches!(&e.modal, Some(Modal::Entrada { campo, .. }) if campo.texto == "auth"));
+        for _ in 0..4 {
+            tecla(&mut e, "Backspace");
+        }
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::TagsDaTarefa { caminho: c.clone(), tags: vec![] }]);
+        // Prazo vencido aparece como tal, e troca.
+        abrir(&mut e, "Prazo: 2020-01-01 — vencido");
+        for _ in 0..10 {
+            tecla(&mut e, "Backspace");
+        }
+        digitar(&mut e, "2026-11-05");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::PrazoDaTarefa { caminho: c.clone(), prazo: Some("2026-11-05".into()) }]);
+        abrir(&mut e, "Comentar");
+        digitar(&mut e, "falta o reset");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::ComentarTarefa { caminho: c.clone(), texto: "falta o reset".into() }]);
+        abrir(&mut e, "Anexar");
+        digitar(&mut e, "~/tela2.png");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AnexarNaTarefa { caminho: c.clone(), origem: "~/tela2.png".into() }]);
+        abrir(&mut e, "tela.png");
+        assert_eq!(e.pedidos, [Pedido::AbrirAnexo("assets/tela.png".into())]);
+        // O comentário é leitura.
+        abrir(&mut e, "olhei");
+        assert!(e.pedidos.is_empty());
+    }
+
     // ── Sprints (ciclo 473) ───────────────────────────────────────────
 
     fn sprint_de_teste(n: u32, nome: &str, estado: &str, objetivo: &str) -> anotadinho_core::sprint::Sprint {

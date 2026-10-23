@@ -127,6 +127,9 @@ pub struct ProjetoNaTela {
     pub todas: Vec<anotadinho_core::projeto::Tarefa>,
     pub sprints: Vec<anotadinho_core::sprint::Sprint>,
     pub filtro: anotadinho_core::sprint::Filtro,
+    /// `AAAA-MM-DD` de quando foi lido (ciclo 478), pra o prazo vencido.
+    /// Vazio nunca vence: é o que os testes sem relógio veem.
+    pub hoje: String,
 }
 
 /// Largura mínima de uma coluna do quadro do projeto, em caracteres: o
@@ -173,7 +176,7 @@ impl ProjetoNaTela {
         avisos: Vec<String>,
         sprints: Vec<anotadinho_core::sprint::Sprint>,
     ) -> Self {
-        Self { projeto, config, tarefas: Vec::new(), avisos, todas, sprints, filtro: Default::default() }
+        Self { projeto, config, tarefas: Vec::new(), avisos, todas, sprints, filtro: Default::default(), hoje: String::new() }
             .com_filtro(Default::default())
     }
 
@@ -629,6 +632,110 @@ pub fn filtro_do_texto(s: &str) -> anotadinho_core::sprint::Filtro {
     }
 }
 
+/// O modal de detalhes da tarefa `caminho` (ciclo 478): o que o painel
+/// lateral da janela mostra, como uma lista de escolhas.
+pub fn menu_de_detalhes(e: &Estado, caminho: &str) -> Option<Modal> {
+    use crate::componentes::Item;
+    let Some(Dados::Projeto(p)) = e.especial.as_ref().and_then(|t| t.dados.as_ref()) else { return None };
+    let t = p.todas.iter().find(|t| t.caminho == caminho)?;
+    let c = &t.caminho;
+    let mut itens = Vec::new();
+    let (feitos, total) = t.progresso();
+    for (i, item) in t.checklist.iter().enumerate() {
+        let marca = if item.feito { "■" } else { "□" };
+        let mut it = Item::novo(marca, item.texto.clone(), format!("item\u{0}{c}\u{0}{i}"));
+        if i == 0 {
+            it = it.com_detalhe(format!("{feitos}/{total} critérios"));
+        }
+        itens.push(it);
+    }
+    if t.checklist.is_empty() {
+        itens.push(Item::novo(" ", "Nenhum critério: escreva-os na página", format!("pagina\u{0}{c}")));
+    }
+    let tags = t.tags.join(", ");
+    itens.push(Item::novo("#", if tags.is_empty() { "Tags…".to_string() } else { format!("Tags: {tags}") }, format!("tags\u{0}{c}\u{0}{tags}")));
+    let prazo = t.prazo.clone().unwrap_or_default();
+    let rotulo_prazo = match (&t.prazo, t.vencida(&p.hoje)) {
+        (Some(x), true) => format!("Prazo: {x} — vencido"),
+        (Some(x), false) => format!("Prazo: {x}"),
+        (None, _) => "Prazo…".to_string(),
+    };
+    itens.push(Item::novo(if t.vencida(&p.hoje) { "⚠" } else { "◷" }, rotulo_prazo, format!("prazo\u{0}{c}\u{0}{prazo}")));
+    for (i, com) in t.comentarios.iter().enumerate() {
+        let primeira = com.texto.lines().next().unwrap_or("").to_string();
+        itens.push(Item::novo("✎", primeira, format!("comentario\u{0}{c}\u{0}{i}")).com_detalhe(com.quando.clone()));
+    }
+    itens.push(Item::novo("+", "Comentar…", format!("comentar\u{0}{c}")));
+    for a in &t.anexos {
+        itens.push(Item::novo("⊕", a.nome.clone(), format!("anexo\u{0}{}", a.caminho)).com_detalhe("abrir"));
+    }
+    itens.push(Item::novo("+", "Anexar arquivo…", format!("anexar\u{0}{c}")));
+    itens.push(Item::novo("▸", "Abrir a página da tarefa", format!("pagina\u{0}{c}")));
+    Some(Modal::Escolha {
+        titulo: format!("{:03} {}", t.numero, t.titulo),
+        lista: crate::componentes::Lista::menu(itens),
+        acao: super::modais::AcaoDaEscolha::DetalhesDaTarefa,
+    })
+}
+
+/// Troca a marca do item na tela, antes do disco (ciclo 478): o modal
+/// fica aberto e mostra a marca nova na hora. A releitura que vem depois
+/// é a palavra final.
+pub fn alternar_item_na_tela(e: &mut Estado, caminho: &str, indice: usize) {
+    let Some(Dados::Projeto(p)) = e.especial.as_mut().and_then(|t| t.dados.as_mut()) else { return };
+    for lista in [&mut p.todas, &mut p.tarefas] {
+        if let Some(item) = lista.iter_mut().find(|t| t.caminho == caminho).and_then(|t| t.checklist.get_mut(indice)) {
+            item.feito = !item.feito;
+        }
+    }
+}
+
+/// A linha de selos do cartão (ciclo 478): dependência, critérios, prazo,
+/// comentários, anexos e tags — o que a janela mostra em `.projeto__selos`.
+/// Cada pedaço com o seu estilo: o prazo vencido e a dependência
+/// pendente acendem.
+fn selos_do_cartao(
+    x: &anotadinho_core::projeto::Tarefa,
+    hoje: &str,
+    dependencia_pendente: bool,
+    tema: &Tema,
+    base: Style,
+) -> Vec<(String, Style)> {
+    let mut fora: Vec<(String, Style)> = Vec::new();
+    let atencao = base.fg(tema.var("warning"));
+    let estilo_dep = if dependencia_pendente { atencao } else { base };
+    let (feitos, total) = x.progresso();
+    if total > 0 {
+        fora.push((format!("✓{feitos}/{total}"), if feitos == total { base.fg(tema.var("success")) } else { base }));
+    }
+    if let Some(p) = &x.prazo {
+        // Só mês e dia: a coluna tem uns vinte caracteres.
+        let curto = p.get(5..).unwrap_or(p).to_string();
+        let vencida = x.vencida(hoje);
+        fora.push((format!("{}{curto}", if vencida { "⚠" } else { "◷" }), if vencida { base.fg(tema.var("error")) } else { base }));
+    }
+    if !x.comentarios.is_empty() {
+        fora.push((format!("✎{}", x.comentarios.len()), base));
+    }
+    if !x.anexos.is_empty() {
+        fora.push((format!("⊕{}", x.anexos.len()), base));
+    }
+    for t in &x.tags {
+        fora.push((format!("#{t}"), base.fg(tema.var("accent-blue"))));
+    }
+    // A dependência na frente. Sozinha, por extenso, como antes do 478:
+    // `↳2` só se entende quando divide a linha com os selos.
+    if !x.depende.is_empty() {
+        let dep = if fora.is_empty() {
+            format!("↳ depende de {}", x.depende.join(", "))
+        } else {
+            format!("↳{}", x.depende.join(","))
+        };
+        fora.insert(0, (dep, estilo_dep));
+    }
+    fora
+}
+
 /// Troca o filtro do quadro do projeto aberto, sem IO (ciclo 473).
 pub fn trocar_filtro_do_projeto(e: &mut Estado, filtro: anotadinho_core::sprint::Filtro) {
     let Some(t) = e.especial.as_mut() else { return };
@@ -701,6 +808,13 @@ fn tecla_no_projeto(e: &mut Estado, tecla: &str) -> bool {
                 lista: crate::componentes::Lista::menu(itens),
                 acao: super::modais::AcaoDaEscolha::SprintDaTarefa,
             });
+            return true;
+        }
+        "v" => {
+            let Some(x) = sel else { return false };
+            if let Some(m) = menu_de_detalhes(e, &x.caminho) {
+                e.modal = Some(m);
+            }
             return true;
         }
         "S" => {
@@ -983,7 +1097,7 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
         TipoEspecial::Kanban => " h l coluna · j k cartão ",
         TipoEspecial::Tarefas => " j k · Enter abre · s ordena ",
         TipoEspecial::Grafo => " j k página · h l conexão · Enter abre ",
-        TipoEspecial::Projeto => " h j k l · 1-3 etapa · Enter · n nova · d detalha · s filtro · m sprint · S sprints · c conversa · p pausa ",
+        TipoEspecial::Projeto => " h j k l · 1-3 etapa · Enter · v detalhes · n nova · s filtro · m sprint · S sprints · c conversa · ? atalhos ",
     };
     let mut borda = Block::default()
         .borders(Borders::ALL)
@@ -1758,17 +1872,31 @@ fn tela_do_projeto(
                     linhas[base + 1].push(Span::styled(" ", Style::default().bg(superficie)));
                     linhas[base + 1].push(Span::styled(celula(&format!("     {l2}"), dentro), corpo));
                     linhas[base + 1].push(Span::styled(" ", Style::default().bg(superficie)));
-                    let dep = if x.depende.is_empty() { String::new() } else { format!("  ↳ depende de {}", x.depende.join(", ")) };
+                    // A terceira linha era só a dependência, e quase sempre
+                    // vazia: virou a dos selos (ciclo 478), com a
+                    // dependência na frente quando há.
                     let pendente = !indice.pendentes(x).is_empty();
-                    let estilo_dep = if aceso {
-                        corpo
-                    } else if pendente {
-                        Style::default().fg(tema.var("warning")).bg(elevado)
-                    } else {
-                        apagado.bg(elevado)
-                    };
+                    let base_selo = if aceso { corpo } else { apagado.bg(elevado) };
+                    let selos = selos_do_cartao(x, &p.hoje, pendente && !aceso, tema, base_selo);
                     linhas[base + 2].push(Span::styled(" ", Style::default().bg(superficie)));
-                    linhas[base + 2].push(Span::styled(celula(&dep, dentro), estilo_dep));
+                    let mut usado = 0usize;
+                    let mut pedacos = vec![("  ".to_string(), base_selo)];
+                    for (i, (s, st)) in selos.into_iter().enumerate() {
+                        if i > 0 {
+                            pedacos.push((" ".to_string(), base_selo));
+                        }
+                        pedacos.push((s, st));
+                    }
+                    for (s, st) in pedacos {
+                        let cabe = dentro.saturating_sub(usado);
+                        if cabe == 0 {
+                            break;
+                        }
+                        let s: String = s.chars().take(cabe).collect();
+                        usado += s.chars().count();
+                        linhas[base + 2].push(Span::styled(s, st));
+                    }
+                    linhas[base + 2].push(Span::styled(" ".repeat(dentro.saturating_sub(usado)), base_selo));
                     linhas[base + 2].push(Span::styled(" ", Style::default().bg(superficie)));
                 }
                 None => {
