@@ -935,6 +935,66 @@ cenarios.push({
   },
 });
 
+// ── ciclo 485: o bloco mermaid salvo é desenhado ─────────────────────
+
+cenarios.push({
+  nome: "mermaid: a fence salva vira desenho, e o arquivo não muda (485)",
+  async fn(bridge, ctx) {
+    // Até o 484 só `typeof window.mermaid` era conferido (cenário 243):
+    // a biblioteca carregava, e nenhum diagrama salvo era desenhado.
+    const FONTE = "graph TD\n  A[Começo] --> B[Fim]";
+    ctx.escrever(`---\ntitle: __uitest\n---\n\nAntes do diagrama.\n\n\`\`\`mermaid\n${FONTE}\n\`\`\`\n\nDepois do diagrama.\n`);
+    await recarregar(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
+    ctx.assertEq(await bridge.js("typeof mermaid.initialize"), "function", "mermaid.initialize foi sobrescrita");
+
+    const PRE = "document.querySelector('.editor__wysiwyg pre.editor__bloco--mermaid')";
+    const DESENHO = `getComputedStyle(${PRE}, '::after').backgroundImage`;
+    await esperar(bridge, `${PRE}?.classList.contains('editor__bloco--mermaid-desenhado')`, "o diagrama desenhar", 10000);
+    const desenho = await bridge.js(DESENHO);
+    ctx.assert(desenho.startsWith('url("data:image/svg+xml'), `o ::after não tem o desenho: ${desenho.slice(0, 80)}`);
+    // O SVG traz os rótulos: é a prova de que desenhou ESTE diagrama.
+    ctx.assert(decodeURIComponent(desenho).includes("Começo"), "o desenho não tem o rótulo do diagrama");
+    ctx.assert(await bridge.js(`${PRE}.getBoundingClientRect().height > 40`), "o bloco desenhado não tem altura");
+    // Fora de foco, só o desenho; o texto do bloco é só o código.
+    ctx.assertEq(await bridge.js(`getComputedStyle(${PRE}.querySelector('code')).display`), "none", "o código aparece com o bloco fora de foco");
+    // O `<code>` do markdown termina em `\n`; o que importa é que o bloco
+    // não tem NADA além dele (os rótulos do SVG não estão no texto).
+    ctx.assertEq(await bridge.js(`${PRE}.textContent`), FONTE + "\n", "o texto do bloco não é só o código");
+
+    // Salvar com outra edição na página: a fence volta igual.
+    await bridge.js(`(() => {
+      const p = [...document.querySelectorAll('.editor__wysiwyg p')].find(p => p.textContent.includes('Antes do diagrama'));
+      p.focus();
+      const r = document.createRange(); r.selectNodeContents(p); r.collapse(false);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      document.execCommand('insertText', false, ' Editado.');
+      return true;
+    })()`);
+    await bridge.js(SALVAR);
+    const ate = Date.now() + 5000;
+    while (Date.now() < ate && !(ctx.ler() || "").includes("Editado.")) await PAUSA(100);
+    const md = ctx.ler() || "";
+    ctx.assert(md.includes("Editado."), `o save não aconteceu:\n${md}`);
+    ctx.assert(md.includes("```mermaid\n" + FONTE + "\n```"), `a fence mudou no save:\n${md}`);
+    ctx.assert(!/mermaid-|editor__bloco|data:image|<svg/.test(md), `estado de tela vazou pro arquivo:\n${md}`);
+
+    // Editar o código e sair do bloco redesenha.
+    await bridge.js(`(() => { ${PRE}.focus(); return true; })()`);
+    await esperar(bridge, `getComputedStyle(${PRE}.querySelector('code')).display !== 'none'`, "o código aparecer com foco");
+    await bridge.js(`(() => { ${PRE}.querySelector('code').textContent = "graph TD\\n  A[Começo] --> C[Novo]"; ${PRE}.blur(); return true; })()`);
+    await esperar(bridge, `decodeURIComponent(${DESENHO}).includes('Novo')`, "o diagrama redesenhar com o código novo", 10000);
+
+    // Erro de sintaxe: a mensagem aparece, e o código fica à vista.
+    await bridge.js(`(() => { ${PRE}.focus(); ${PRE}.querySelector('code').textContent = "graph TD\\n  A -->"; ${PRE}.blur(); return true; })()`);
+    await esperar(bridge, `${PRE}.hasAttribute('data-mermaid-erro')`, "o erro aparecer", 10000);
+    ctx.assert(await bridge.js(`${PRE}.getAttribute('data-mermaid-erro').startsWith('Diagrama com erro')`), "a mensagem de erro não é a do bloco");
+    ctx.assert(await bridge.js(`getComputedStyle(${PRE}.querySelector('code')).display !== 'none'`), "com erro, o código sumiu");
+    // O mermaid 10 pendura um rascunho no <body> a cada erro.
+    ctx.assertEq(await bridge.js("document.querySelectorAll('body > [id^=dmermaid-]').length"), 0, "sobrou rascunho do mermaid no body");
+  },
+});
+
 // ── ciclo 244: tirar a marca só do trecho selecionado ────────────────
 
 cenarios.push({

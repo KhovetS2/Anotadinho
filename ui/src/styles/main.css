@@ -1891,6 +1891,36 @@ body {
     background: color-mix(in srgb, var(--nav-mode-depth-color, var(--accent-blue)) 8%, transparent);
 }
 
+/* Bloco mermaid (ciclo 485): o diagrama é uma imagem no ::after do
+   <pre>, não um nó — ver ui/src/mermaid.rs. Fora de foco, só o desenho;
+   com foco, o código e o desenho embaixo. O foco é a classe --editando,
+   não :focus (ver CLASSE_EDITANDO). */
+.editor__bloco--mermaid-desenhado:not(.editor__bloco--mermaid-editando) > code {
+    display: none;
+}
+
+.editor__bloco--mermaid-desenhado::after {
+    content: "";
+    display: block;
+    width: min(100%, var(--mermaid-largura));
+    aspect-ratio: var(--mermaid-proporcao);
+    margin: 0 auto;
+    background: var(--mermaid-previa) center / contain no-repeat;
+}
+
+.editor__bloco--mermaid-editando::after {
+    margin-top: var(--sp-3);
+}
+
+.editor__bloco--mermaid[data-mermaid-erro]::after {
+    content: attr(data-mermaid-erro);
+    display: block;
+    margin-top: var(--sp-2);
+    color: var(--error);
+    font-family: var(--font-sans);
+    white-space: normal;
+}
+
 /* Mermaid diagrams */
 .editor__wysiwyg .mermaid {
     background: var(--bg-surface);

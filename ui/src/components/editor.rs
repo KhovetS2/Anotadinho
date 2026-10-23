@@ -666,13 +666,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         estampar_caminhos();
                         for r in segment_refs_eff.iter() {
                             if let Some(el) = r.cast::<web_sys::Element>() {
-                                wasm_bindgen_futures::spawn_local(async move {
-                                    gloo_timers::future::sleep(std::time::Duration::from_millis(
-                                        200,
-                                    ))
-                                    .await;
-                                    init_mermaid_at(&el);
-                                });
+                                crate::mermaid::desenhar_em(&el);
                             }
                         }
                     } else if let Some(div) = editor_ref.cast::<web_sys::Element>() {
@@ -686,11 +680,7 @@ pub fn editor(props: &EditorProps) -> Html {
                         );
                         marcar_blocos(&div);
                         estampar_caminhos();
-                        let _div = div.clone();
-                        wasm_bindgen_futures::spawn_local(async move {
-                            gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
-                            init_mermaid_at(&_div);
-                        });
+                        crate::mermaid::desenhar_em(&div);
                     }
                     init_highlight();
 
@@ -1270,9 +1260,12 @@ pub fn editor(props: &EditorProps) -> Html {
                             title: "Código Mermaid (ex: graph TD; A-->B)".to_string(),
                             default: String::new(),
                             on_submit: Callback::from(move |code: String| {
+                                // O mesmo `<pre>` que uma fence salva vira
+                                // (ciclo 485): um caminho só de desenho, e
+                                // o save não precisa de caso à parte.
                                 let html = format!(
-                                    "<div class=\"mermaid\">{}</div>",
-                                    code.replace('<', "&lt;").replace('>', "&gt;")
+                                    "<pre><code class=\"language-mermaid\">{}</code></pre>",
+                                    escape_html(&code)
                                 );
                                 if let Some(el) = parse_single_element(&html) {
                                     if insert_element_at_cursor(&el, true) {
@@ -1283,25 +1276,11 @@ pub fn editor(props: &EditorProps) -> Html {
                                         );
                                         content_md.set(new_md.clone());
                                         mark_edited_estrutural(new_md);
-                                    }
-                                }
-                                wasm_bindgen_futures::spawn_local(async {
-                                    gloo_timers::future::sleep(std::time::Duration::from_millis(
-                                        100,
-                                    ))
-                                    .await;
-                                    if let Some(window) = web_sys::window() {
-                                        if let Some(doc) = window.document() {
-                                            if let Some(el) =
-                                                doc.query_selector(".mermaid").ok().flatten()
-                                            {
-                                                if let Ok(el) = el.dyn_into::<web_sys::Element>() {
-                                                    init_mermaid_at(&el);
-                                                }
-                                            }
+                                        if let Some(pai) = el.parent_element() {
+                                            crate::mermaid::desenhar_em(&pai);
                                         }
                                     }
-                                });
+                                }
                             }),
                         });
                     }
@@ -1500,22 +1479,6 @@ pub fn editor(props: &EditorProps) -> Html {
             slash_open.set(false);
             slash_text.set(String::new());
             slash_idx.set(0);
-            wasm_bindgen_futures::spawn_local(async {
-                gloo_timers::future::sleep(std::time::Duration::from_millis(100)).await;
-                if let Some(window) = web_sys::window() {
-                    if let Some(doc) = window.document() {
-                        if let Some(el) = doc
-                            .query_selector(".editor__wysiwyg .mermaid")
-                            .ok()
-                            .flatten()
-                        {
-                            if let Ok(el) = el.dyn_into::<web_sys::Element>() {
-                                init_mermaid_at(&el);
-                            }
-                        }
-                    }
-                }
-            });
         })
     };
 
@@ -5235,43 +5198,6 @@ fn upgrade_embedded_assets_at(el: &web_sys::Element, vault_path: String) {
     }
 }
 
-fn init_mermaid_at(el: &web_sys::Element) {
-    if let Some(window) = web_sys::window() {
-        if let Some(mermaid) =
-            js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("mermaid"))
-                .ok()
-                .and_then(|v| v.dyn_into::<js_sys::Object>().ok())
-        {
-            let config = js_sys::Object::new();
-            js_sys::Reflect::set(
-                &config,
-                &wasm_bindgen::JsValue::from_str("theme"),
-                &wasm_bindgen::JsValue::from_str("dark"),
-            )
-            .ok();
-            js_sys::Reflect::set(
-                &config,
-                &wasm_bindgen::JsValue::from_str("startOnLoad"),
-                &wasm_bindgen::JsValue::from_bool(false),
-            )
-            .ok();
-            js_sys::Reflect::set(
-                &mermaid,
-                &wasm_bindgen::JsValue::from_str("initialize"),
-                &config,
-            )
-            .ok();
-            let run = js_sys::Reflect::get(&mermaid, &wasm_bindgen::JsValue::from_str("run"))
-                .ok()
-                .and_then(|v| v.dyn_into::<js_sys::Function>().ok());
-            if let Some(run_fn) = run {
-                let opts = js_sys::Object::new();
-                js_sys::Reflect::set(&opts, &wasm_bindgen::JsValue::from_str("nodes"), el).ok();
-                let _ = run_fn.call1(&wasm_bindgen::JsValue::null(), &opts);
-            }
-        }
-    }
-}
 
 /// Marca cada filho de primeiro nível do contenteditable como um item de
 /// navegação (ciclo 174): é o que dá ao nav-mode algo pra destacar e
@@ -5419,11 +5345,7 @@ pub fn preparar_leitura(div: &web_sys::Element, markdown: &str, vault_path: Stri
     upgrade_embedded_assets_at(div, vault_path.clone());
     upgrade_transclusions_at(div, vault_path, pagina);
     marcar_blocos_leitura(div);
-    let el = div.clone();
-    wasm_bindgen_futures::spawn_local(async move {
-        gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
-        init_mermaid_at(&el);
-    });
+    crate::mermaid::desenhar_em(div);
     init_highlight();
 }
 

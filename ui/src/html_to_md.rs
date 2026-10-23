@@ -463,4 +463,11 @@ fn classes_de_conteudo(classes: &str) -> String {
 /// Classes que existem só enquanto a página está aberta. Lista curta e
 /// explícita: uma faxina por prefixo arriscaria comer classe de
 /// conteúdo que ainda vai ser inventada.
-const CLASSES_DE_RUNTIME: &[&str] = &["editor__bloco", "editor__bloco--convite", "hljs"];
+const CLASSES_DE_RUNTIME: &[&str] = &[
+    "editor__bloco",
+    "editor__bloco--convite",
+    "hljs",
+    "editor__bloco--mermaid",
+    "editor__bloco--mermaid-desenhado",
+    "editor__bloco--mermaid-editando",
+];
