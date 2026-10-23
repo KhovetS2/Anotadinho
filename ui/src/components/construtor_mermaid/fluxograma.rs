@@ -220,7 +220,7 @@ pub fn editor_fluxograma(props: &EditorFluxogramaProps) -> Html {
         }
         None => html! {
             <p class="construtor-mermaid__dica">
-                { "Arraste os nós; puxe pela bolinha à direita para ligar. Pelo teclado: Tab chega no nó, setas movem, L num nó e L noutro liga, Delete apaga." }
+                { "Arraste os nós; puxe pela bolinha à direita para ligar; arraste o fundo para andar pelo canvas, e Ctrl+roda aproxima. Pelo teclado: Tab chega no nó, setas movem, L num nó e L noutro liga, Delete apaga." }
             </p>
         },
     };

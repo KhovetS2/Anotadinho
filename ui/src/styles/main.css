@@ -1892,9 +1892,9 @@ body {
 }
 
 /* Bloco mermaid (ciclo 485): o diagrama é uma imagem no ::after do
-   <pre>, não um nó — ver ui/src/mermaid.rs. Fora de foco, só o desenho;
-   com foco, o código e o desenho embaixo. O foco é a classe --editando,
-   não :focus (ver CLASSE_EDITANDO). */
+   <pre>, não um nó — ver ui/src/mermaid.rs. Desenhado, só o desenho, com
+   ou sem foco (ciclo 491); com foco, ele aparece selecionado. O foco é a
+   classe --editando, não :focus (ver CLASSE_EDITANDO). */
 /* RF9 (ciclo 487): a fonte do código junta `->>` e `-->` em ligaduras, e
    quem edita via `—»` no lugar do que digitou. Pela classe do <code>, que
    existe antes do desenho, e não pela do <pre>, que só vem depois. */
@@ -1902,8 +1902,18 @@ body {
     font-variant-ligatures: none;
 }
 
-.editor__bloco--mermaid-desenhado:not(.editor__bloco--mermaid-editando) > code {
+.editor__bloco--mermaid-desenhado > code {
     display: none;
+}
+
+.editor__bloco--mermaid-desenhado {
+    caret-color: transparent;
+    cursor: default;
+}
+
+.editor__bloco--mermaid-desenhado.editor__bloco--mermaid-editando {
+    outline: 2px solid color-mix(in srgb, var(--accent-blue) 60%, transparent);
+    outline-offset: 2px;
 }
 
 .editor__bloco--mermaid-desenhado::after {
@@ -1913,10 +1923,6 @@ body {
     aspect-ratio: var(--mermaid-proporcao);
     margin: 0 auto;
     background: var(--mermaid-previa) center / contain no-repeat;
-}
-
-.editor__bloco--mermaid-editando::after {
-    margin-top: var(--sp-3);
 }
 
 .editor__bloco--mermaid[data-mermaid-erro]::after {

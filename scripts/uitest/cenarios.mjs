@@ -987,10 +987,24 @@ cenarios.push({
     ctx.assert(md.includes("```mermaid\n" + FONTE + "\n```"), `a fence mudou no save:\n${md}`);
     ctx.assert(!/mermaid-|editor__bloco|data:image|<svg/.test(md), `estado de tela vazou pro arquivo:\n${md}`);
 
-    // Editar o código e sair do bloco redesenha.
+    // Selecionar o desenho não mostra o código (491): ele fica desenhado,
+    // marcado, com o botão do construtor ao lado — e o que se digitasse
+    // iria pro código escondido, então nada entra.
     await bridge.js(`(() => { ${PRE}.focus(); return true; })()`);
-    await esperar(bridge, `getComputedStyle(${PRE}.querySelector('code')).display !== 'none'`, "o código aparecer com foco");
-    await bridge.js(`(() => { ${PRE}.querySelector('code').textContent = "graph TD\\n  A[Começo] --> C[Novo]"; ${PRE}.blur(); return true; })()`);
+    await esperar(bridge, `${PRE}.classList.contains('editor__bloco--mermaid-editando')`, "o bloco ficar selecionado");
+    ctx.assertEq(await bridge.js(`getComputedStyle(${PRE}.querySelector('code')).display`), "none", "selecionar o desenho mostrou o código");
+    ctx.assert(await bridge.js(`getComputedStyle(${PRE}, '::after').backgroundImage.startsWith('url(')`), "selecionar o desenho escondeu o desenho");
+    await esperar(bridge, "getComputedStyle(document.querySelector('.construtor-mermaid__abrir')).display !== 'none'", "o botão do construtor aparecer");
+    await bridge.js(`(() => { document.execCommand('insertText', false, 'XYZ'); return true; })()`);
+    ctx.assertEq(await bridge.js(`${PRE}.textContent`), FONTE + "\n", "digitar no desenho selecionado mudou o código escondido");
+    // Enter no desenho abre o construtor.
+    await bridge.js(`(() => { ${PRE}.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
+    await esperar(bridge, "document.querySelector('.construtor-mermaid [data-nav-item=construtor-mermaid-cancelar]')", "o Enter abrir o construtor");
+    await bridge.js("document.querySelector('[data-nav-item=construtor-mermaid-cancelar]').click(), true");
+    await esperar(bridge, "!document.querySelector('.modal.construtor-mermaid')", "o construtor fechar");
+
+    // Mudar o código e sair do bloco redesenha.
+    await bridge.js(`(() => { ${PRE}.focus(); ${PRE}.querySelector('code').textContent = "graph TD\\n  A[Começo] --> C[Novo]"; ${PRE}.blur(); return true; })()`);
     await esperar(bridge, `decodeURIComponent(${DESENHO}).includes('Novo')`, "o diagrama redesenhar com o código novo", 10000);
 
     // Erro de sintaxe: a mensagem aparece, e o código fica à vista.
@@ -1414,6 +1428,88 @@ cenarios.push({
     await ctx.esperar(bridge, "document.querySelector('.construtor-canvas [data-chave=\"A\"]')", "o canvas reabrir");
     const x = await bridge.js(`+document.querySelector('.construtor-canvas [data-chave="A"] rect').getAttribute('x')`);
     ctx.assertEq(x, a[0] - 66, "A não voltou pra onde foi arrastado");
+    await bridge.js("document.querySelector('[data-nav-item=construtor-mermaid-cancelar]').click(), true");
+  },
+});
+
+// ── ciclo 491: o canvas é uma vista sobre um plano sem borda ─────────
+
+/// O viewBox do canvas como [x, y, largura, altura].
+const VIEWBOX = "document.querySelector('.construtor-canvas').getAttribute('viewBox').split(' ').map(Number)";
+
+cenarios.push({
+  nome: "construtor: fluxograma comprido cabe no canvas, e o fundo arrasta a vista (491)",
+  async fn(bridge, ctx) {
+    // O diagrama do print: oito passos, com volta. Até o 490 as camadas
+    // além de 400 unidades eram presas na borda e se empilhavam.
+    const FONTE = [
+      "flowchart TD",
+      "  A[Ideia] --> B[Detalhando]", "  B --> C[Pronta]", "  C --> D{Executar?}",
+      "  D -->|não| C", "  D -->|sim| E[Executando]", "  E --> F[Revisão]",
+      "  E -->|parou| G[Bloqueada]", "  F --> H[Feita]", "  F -->|voltou| B",
+    ].join("\n");
+    ctx.escrever(`---\ntitle: __uitest\n---\n\n\`\`\`mermaid\n${FONTE}\n\`\`\`\n`);
+    await recarregar(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
+    await esperar(bridge, "document.querySelector('.editor__wysiwyg pre.editor__bloco--mermaid-desenhado')", "o diagrama desenhar", 10000);
+    await bridge.js(CTRL_ENTER_NO_BLOCO(0));
+    await esperar(bridge, "document.querySelectorAll('.construtor-canvas [data-chave]').length === 8", "os 8 nós no canvas");
+
+    // Todos dentro da área visível do canvas, e nenhum em cima do outro.
+    const caixas = await bridge.js(`(() => {
+      const svg = document.querySelector('.construtor-canvas').getBoundingClientRect();
+      return [...document.querySelectorAll('.construtor-canvas [data-chave]')].map(g => {
+        const r = g.firstElementChild.getBoundingClientRect();
+        return { chave: g.dataset.chave, dentro: r.left >= svg.left - 1 && r.right <= svg.right + 1 && r.top >= svg.top - 1 && r.bottom <= svg.bottom + 1, r: [r.left, r.top, r.right, r.bottom] };
+      });
+    })()`);
+    const fora = caixas.filter((c) => !c.dentro).map((c) => c.chave);
+    ctx.assert(fora.length === 0, `nós fora do canvas: ${fora.join(", ")}`);
+    const cruza = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+    for (let i = 0; i < caixas.length; i++)
+      for (let j = i + 1; j < caixas.length; j++)
+        ctx.assert(!cruza(caixas[i].r, caixas[j].r), `${caixas[i].chave} e ${caixas[j].chave} um em cima do outro`);
+
+    // Arrastar o fundo anda a vista, sem selecionar nada nem mexer no código.
+    const antes = await bridge.js(VIEWBOX);
+    const codigo = await codigoDoConstrutor(bridge, ctx);
+    await bridge.js(`(() => {
+      const svg = document.querySelector('.construtor-canvas');
+      const r = svg.getBoundingClientRect();
+      const ev = (tipo, x, y) => svg.dispatchEvent(new PointerEvent(tipo, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0, isPrimary: true, pointerType: 'mouse' }));
+      const [x0, y0] = [r.left + 8, r.top + 8];
+      ev('pointerdown', x0, y0);
+      for (let k = 1; k <= 5; k++) ev('pointermove', x0 + 12 * k, y0 + 10 * k);
+      ev('pointerup', x0 + 60, y0 + 50);
+      svg.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x0 + 60, clientY: y0 + 50 }));
+      return true;
+    })()`);
+    const depois = await bridge.js(VIEWBOX);
+    ctx.assert(depois[0] < antes[0] && depois[1] < antes[1], `o fundo arrastado não andou a vista: ${antes} → ${depois}`);
+    ctx.assertEq(depois[2], antes[2], "arrastar o fundo mudou o zoom");
+    ctx.assertEq(await codigoDoConstrutor(bridge, ctx), codigo, "arrastar o fundo mudou o código");
+
+    // Ctrl+roda aproxima; + e − também; Ajustar volta a enquadrar tudo.
+    await bridge.js(`(() => {
+      const svg = document.querySelector('.construtor-canvas');
+      const r = svg.getBoundingClientRect();
+      svg.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true, deltaY: -100, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
+      return true;
+    })()`);
+    const perto = await bridge.js(VIEWBOX);
+    ctx.assert(perto[2] < depois[2], `Ctrl+roda não aproximou: ${depois} → ${perto}`);
+    await bridge.js("document.querySelector('[data-nav-item=construtor-canvas-afastar]').click(), true");
+    ctx.assert((await bridge.js(VIEWBOX))[2] > perto[2], "o − não afastou");
+    await bridge.js("document.querySelector('[data-nav-item=construtor-canvas-ajustar]').click(), true");
+    ctx.assertEq(JSON.stringify(await bridge.js(VIEWBOX)), JSON.stringify(antes), "Ajustar não voltou ao enquadramento");
+
+    // A prévia rola em vez de cortar: a caixa não passa da altura dela.
+    await previaSemErro(bridge, ctx, "Bloqueada");
+    ctx.assert(await bridge.js(`(() => {
+      const p = document.querySelector('.construtor-mermaid__previa');
+      const img = p.querySelector('img');
+      return img.getBoundingClientRect().top >= p.getBoundingClientRect().top - 1;
+    })()`), "a prévia corta o topo do diagrama");
     await bridge.js("document.querySelector('[data-nav-item=construtor-mermaid-cancelar]').click(), true");
   },
 });

@@ -5,19 +5,28 @@
 //! traduz nós e ligações para cá e recebe de volta o que a pessoa fez.
 //!
 //! A posição aqui é só arrumação (RNF2): o mermaid recalcula o desenho.
+//!
+//! O canvas é uma VISTA sobre um plano sem borda (ciclo 491): os nós ficam
+//! onde a arrumação ou a pessoa os põe, e a vista enquadra todos, anda
+//! arrastando o fundo e aproxima com Ctrl+roda. Até o 490 o plano era o
+//! próprio retângulo de 640×400, e tudo que passava dele era preso na
+//! borda — um fluxograma de oito passos empilhava a última camada inteira
+//! em cima da penúltima.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use anotadinho_core::diagrama::Posicoes;
+use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
-/// O tamanho lógico do canvas. O SVG escala para caber; as posições são
-/// guardadas nesta unidade.
+use crate::components::icon::Icon;
+
+/// O tamanho da vista sem zoom, em unidades do canvas (as das posições).
 /// 640 e não 900: o canvas aparece com ~560 px de largura, e a 900 o texto
 /// dos nós ficava com ~8 px na tela (visto no ciclo 490).
 pub const LARGURA: f64 = 640.0;
-pub const ALTURA: f64 = 400.0;
+pub const ALTURA: f64 = 480.0;
 const NO_L: f64 = 132.0;
 const NO_A: f64 = 44.0;
 const PONTO_R: f64 = 11.0;
@@ -25,6 +34,76 @@ const PONTO_R: f64 = 11.0;
 const PASSO: f64 = 20.0;
 /// Menos que isto entre apertar e soltar é clique, não arraste.
 const LIMIAR_DE_ARRASTE: f64 = 4.0;
+/// A escala da vista é unidades do canvas por unidade da vista sem zoom:
+/// maior é mais afastado. Afastar além de 3× deixa o texto ilegível, e
+/// enquadrar não passa disso — o resto se alcança arrastando.
+const ESCALA_MIN: f64 = 0.4;
+const ESCALA_MAX: f64 = 3.0;
+/// Folga em volta dos nós ao enquadrar: cabe o laço por cima de um nó e o
+/// rótulo do início e do fim, embaixo.
+const MARGEM: f64 = 60.0;
+/// Quanto cada clique em + ou − (e cada passo do Ctrl+roda) aproxima.
+const FATOR_ZOOM: f64 = 1.25;
+
+/// O pedaço do plano que o canvas mostra.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Vista {
+    pub x: f64,
+    pub y: f64,
+    pub escala: f64,
+}
+
+impl Vista {
+    pub const INICIAL: Vista = Vista { x: 0.0, y: 0.0, escala: 1.0 };
+
+    pub fn largura(&self) -> f64 {
+        LARGURA * self.escala
+    }
+
+    pub fn altura(&self) -> f64 {
+        ALTURA * self.escala
+    }
+
+    /// Aproxima (`fator` > 1) ou afasta mantendo `ancora` parada na tela:
+    /// o ponto sob o ponteiro continua sob o ponteiro.
+    pub fn com_zoom(&self, fator: f64, ancora: [f64; 2]) -> Vista {
+        let escala = (self.escala / fator).clamp(ESCALA_MIN, ESCALA_MAX);
+        let k = escala / self.escala;
+        Vista { x: ancora[0] - (ancora[0] - self.x) * k, y: ancora[1] - (ancora[1] - self.y) * k, escala }
+    }
+
+    fn centro(&self) -> [f64; 2] {
+        [self.x + self.largura() / 2.0, self.y + self.altura() / 2.0]
+    }
+}
+
+/// A vista que mostra todos os nós. Se eles cabem na vista inicial, é ela:
+/// o canvas não pula de lugar a cada nó acrescentado. Senão, centra neles e
+/// afasta o quanto precisar (até `ESCALA_MAX`), sem nunca aproximar além do
+/// tamanho natural.
+pub fn enquadrar(nos: &[NoCanvas], posicoes: &Posicoes) -> Vista {
+    if nos.is_empty() {
+        return Vista::INICIAL;
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for i in 0..nos.len() {
+        let c = posicao(nos, posicoes, i);
+        let (mx, my) = meia_caixa(nos[i].forma);
+        x0 = x0.min(c[0] - mx);
+        x1 = x1.max(c[0] + mx);
+        y0 = y0.min(c[1] - my);
+        y1 = y1.max(c[1] + my);
+    }
+    // Sem a margem nessa conta: a arrumação e a grade põem a primeira linha
+    // de nós rente ao topo da vista inicial, e ela já mostra o que precisa.
+    if x0 >= 0.0 && y0 >= 0.0 && x1 <= LARGURA && y1 <= ALTURA {
+        return Vista::INICIAL;
+    }
+    let (x0, y0, x1, y1) = (x0 - MARGEM, y0 - MARGEM, x1 + MARGEM, y1 + MARGEM);
+    let escala = ((x1 - x0) / LARGURA).max((y1 - y0) / ALTURA).clamp(1.0, ESCALA_MAX);
+    let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    Vista { x: cx - LARGURA * escala / 2.0, y: cy - ALTURA * escala / 2.0, escala }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FormaNo {
@@ -143,7 +222,7 @@ pub fn completar(nos: &[NoCanvas], ligacoes: &[LigacaoCanvas], guardadas: &Posic
             } else {
                 [LARGURA / 2.0 + desvio * 160.0, 40.0 + camada as f64 * 85.0]
             };
-            todas.insert(nos[i].chave.clone(), presa(p));
+            todas.insert(nos[i].chave.clone(), p);
         }
     }
     todas
@@ -161,10 +240,6 @@ pub fn posicao_livre(ocupadas: &[[f64; 2]]) -> [f64; 2] {
         }
     }
     [LARGURA / 2.0, ALTURA / 2.0]
-}
-
-fn presa(p: [f64; 2]) -> [f64; 2] {
-    [p[0].clamp(NO_L / 2.0, LARGURA - NO_L / 2.0), p[1].clamp(NO_A / 2.0, ALTURA - NO_A / 2.0)]
 }
 
 fn meia_caixa(f: FormaNo) -> (f64, f64) {
@@ -213,19 +288,26 @@ fn controle_da_volta(todas: &[LigacaoCanvas], l: &LigacaoCanvas, pa: [f64; 2], p
 enum Gesto {
     Arrasto { i: usize, desvio: [f64; 2], inicio: [f64; 2], agora: [f64; 2] },
     Ligando { i: usize, ponta: [f64; 2] },
+    /// Arrastando o fundo: a vista anda. Em pixels da tela, porque a
+    /// conversão pra unidades muda enquanto a vista anda.
+    Panorama { cliente: [f64; 2], vista: Vista, andou: bool },
 }
 
-/// Ponteiro → unidades do canvas.
-fn no_canvas(svg: &NodeRef, e: &PointerEvent) -> Option<[f64; 2]> {
+/// Ponto da tela → unidades do canvas, pela vista atual.
+fn no_plano(svg: &NodeRef, vista: Vista, cliente: [f64; 2]) -> Option<[f64; 2]> {
     let el = svg.cast::<web_sys::Element>()?;
     let r = el.get_bounding_client_rect();
     if r.width() <= 0.0 || r.height() <= 0.0 {
         return None;
     }
     Some([
-        (e.client_x() as f64 - r.left()) * LARGURA / r.width(),
-        (e.client_y() as f64 - r.top()) * ALTURA / r.height(),
+        vista.x + (cliente[0] - r.left()) * vista.largura() / r.width(),
+        vista.y + (cliente[1] - r.top()) * vista.altura() / r.height(),
     ])
+}
+
+fn cliente(e: &web_sys::MouseEvent) -> [f64; 2] {
+    [e.client_x() as f64, e.client_y() as f64]
 }
 
 #[function_component(CanvasGrafo)]
@@ -237,8 +319,36 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
     // A ligação começada pelo teclado (`L` num nó, `L` noutro).
     let ligar_de: Rc<RefCell<Option<usize>>> = use_mut_ref(|| None);
     let redesenhar = use_force_update();
+    // A vista escolhida pela pessoa (arrastou o fundo, deu zoom). `None` =
+    // enquadrar sozinho a cada render, que é o que segue o diagrama
+    // crescendo enquanto ninguém mexeu na vista.
+    let vista_escolhida: Rc<RefCell<Option<Vista>>> = use_mut_ref(|| None);
+    // A vista deste render, lida pelos ouvintes entre um render e outro.
+    let vista_atual: Rc<RefCell<Vista>> = use_mut_ref(|| Vista::INICIAL);
+    // Depois de arrastar o fundo, o `click` que vem junto não desseleciona.
+    let engolir_clique: Rc<RefCell<bool>> = use_mut_ref(|| false);
+    let qtd_de_nos: Rc<RefCell<usize>> = use_mut_ref(|| props.nos.len());
 
     let nos = &props.nos;
+    // Nó novo: volta a enquadrar, senão ele pode nascer fora da vista que a
+    // pessoa tinha arrastado pra outro canto.
+    if nos.len() > *qtd_de_nos.borrow() {
+        *vista_escolhida.borrow_mut() = None;
+    }
+    *qtd_de_nos.borrow_mut() = nos.len();
+    let vista = vista_escolhida.borrow().unwrap_or_else(|| enquadrar(nos, &props.posicoes));
+    *vista_atual.borrow_mut() = vista;
+    // Começou um gesto: a vista para de se enquadrar sozinha. Sem isso, o
+    // nó arrastado pra fora mudaria o enquadramento a cada movimento, e o
+    // canvas fugiria debaixo do ponteiro.
+    let fixar_vista = {
+        let escolhida = vista_escolhida.clone();
+        let atual = vista_atual.clone();
+        move || {
+            let v = *atual.borrow();
+            escolhida.borrow_mut().get_or_insert(v);
+        }
+    };
     let pos_atual = |i: usize| -> [f64; 2] {
         match &*gesto.borrow() {
             Some(Gesto::Arrasto { i: j, agora, .. }) if *j == i => *agora,
@@ -250,13 +360,30 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
         let gesto = gesto.clone();
         let svg = svg.clone();
         let redesenhar = redesenhar.clone();
+        let escolhida = vista_escolhida.clone();
+        let atual = vista_atual.clone();
         Callback::from(move |e: PointerEvent| {
-            let Some(p) = no_canvas(&svg, &e) else { return };
+            let c = cliente(&e);
             let mut g = gesto.borrow_mut();
+            if let Some(Gesto::Panorama { cliente: c0, vista: v0, andou }) = g.as_mut() {
+                let Some(el) = svg.cast::<web_sys::Element>() else { return };
+                let largura = el.get_bounding_client_rect().width();
+                if largura <= 0.0 {
+                    return;
+                }
+                let (dx, dy) = (c[0] - c0[0], c[1] - c0[1]);
+                *andou |= dx.hypot(dy) >= LIMIAR_DE_ARRASTE;
+                let k = v0.largura() / largura;
+                *escolhida.borrow_mut() = Some(Vista { x: v0.x - dx * k, y: v0.y - dy * k, ..*v0 });
+                drop(g);
+                redesenhar.force_update();
+                return;
+            }
+            let Some(p) = no_plano(&svg, *atual.borrow(), c) else { return };
             match g.as_mut() {
-                Some(Gesto::Arrasto { desvio, agora, .. }) => *agora = presa([p[0] - desvio[0], p[1] - desvio[1]]),
+                Some(Gesto::Arrasto { desvio, agora, .. }) => *agora = [p[0] - desvio[0], p[1] - desvio[1]],
                 Some(Gesto::Ligando { ponta, .. }) => *ponta = p,
-                None => return,
+                _ => return,
             }
             drop(g);
             redesenhar.force_update();
@@ -271,9 +398,12 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
         let on_ligar = props.on_ligar.clone();
         let on_selecionar = props.on_selecionar.clone();
         let redesenhar = redesenhar.clone();
+        let atual = vista_atual.clone();
+        let engolir = engolir_clique.clone();
         Callback::from(move |e: PointerEvent| {
             let Some(feito) = gesto.borrow_mut().take() else { return };
             match feito {
+                Gesto::Panorama { andou, .. } => *engolir.borrow_mut() = andou,
                 Gesto::Arrasto { i, inicio, agora, .. } => {
                     let andou = ((agora[0] - inicio[0]).powi(2) + (agora[1] - inicio[1]).powi(2)).sqrt();
                     if andou >= LIMIAR_DE_ARRASTE {
@@ -284,7 +414,7 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
                     on_selecionar.emit(Some(Selecao::No(i)));
                 }
                 Gesto::Ligando { i, .. } => {
-                    if let Some(j) = no_canvas(&svg, &e).and_then(|p| no_sob(&nos, &posicoes, p)) {
+                    if let Some(j) = no_plano(&svg, *atual.borrow(), cliente(&e)).and_then(|p| no_sob(&nos, &posicoes, p)) {
                         if j != i && nos[j].entra {
                             on_ligar.emit((nos[i].chave.clone(), nos[j].chave.clone()));
                         }
@@ -304,7 +434,89 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
     };
     let fundo = {
         let on = props.on_selecionar.clone();
-        Callback::from(move |_: MouseEvent| on.emit(None))
+        let engolir = engolir_clique.clone();
+        Callback::from(move |_: MouseEvent| {
+            if std::mem::take(&mut *engolir.borrow_mut()) {
+                return;
+            }
+            on.emit(None)
+        })
+    };
+    // Apertar no fundo (os nós param a propagação) começa a arrastar a vista.
+    let apertar_fundo = {
+        let gesto = gesto.clone();
+        let svg = svg.clone();
+        let atual = vista_atual.clone();
+        Callback::from(move |e: PointerEvent| {
+            if e.button() != 0 {
+                return;
+            }
+            if let Some(el) = svg.cast::<web_sys::Element>() {
+                let _ = el.set_pointer_capture(e.pointer_id());
+            }
+            *gesto.borrow_mut() = Some(Gesto::Panorama { cliente: cliente(&e), vista: *atual.borrow(), andou: false });
+        })
+    };
+    // A roda anda pela vista; com Ctrl (e a pinça do touchpad, que chega
+    // como Ctrl+roda), aproxima no ponteiro. Ouvinte à mão, e não
+    // `onwheel`: o do Yew é passivo, e sem `prevent_default` a roda rolaria
+    // o modal junto.
+    {
+        let svg = svg.clone();
+        let escolhida = vista_escolhida.clone();
+        let atual = vista_atual.clone();
+        let redesenhar = redesenhar.clone();
+        use_effect_with((), move |_| {
+            let el = svg.cast::<web_sys::Element>();
+            let ouvinte = wasm_bindgen::closure::Closure::<dyn Fn(web_sys::WheelEvent)>::new(move |e: web_sys::WheelEvent| {
+                e.prevent_default();
+                let v = *atual.borrow();
+                let nova = if e.ctrl_key() || e.meta_key() {
+                    let Some(p) = no_plano(&svg, v, cliente(&e)) else { return };
+                    v.com_zoom(if e.delta_y() < 0.0 { FATOR_ZOOM } else { 1.0 / FATOR_ZOOM }, p)
+                } else {
+                    let Some(r) = svg.cast::<web_sys::Element>().map(|el| el.get_bounding_client_rect()) else { return };
+                    if r.width() <= 0.0 {
+                        return;
+                    }
+                    // Linhas (modo 1) viram uns 16 px; pixels passam direto.
+                    let por = if e.delta_mode() == 1 { 16.0 } else { 1.0 };
+                    let k = v.largura() / r.width() * por;
+                    Vista { x: v.x + e.delta_x() * k, y: v.y + e.delta_y() * k, ..v }
+                };
+                *escolhida.borrow_mut() = Some(nova);
+                redesenhar.force_update();
+            });
+            if let Some(el) = &el {
+                let opcoes = web_sys::AddEventListenerOptions::new();
+                opcoes.set_passive(false);
+                let _ = el.add_event_listener_with_callback_and_add_event_listener_options("wheel", ouvinte.as_ref().unchecked_ref(), &opcoes);
+            }
+            move || {
+                if let Some(el) = &el {
+                    let _ = el.remove_event_listener_with_callback("wheel", ouvinte.as_ref().unchecked_ref());
+                }
+                drop(ouvinte);
+            }
+        });
+    }
+    let zoom = |fator: f64| {
+        let escolhida = vista_escolhida.clone();
+        let atual = vista_atual.clone();
+        let redesenhar = redesenhar.clone();
+        Callback::from(move |_: MouseEvent| {
+            let v = *atual.borrow();
+            *escolhida.borrow_mut() = Some(v.com_zoom(fator, v.centro()));
+            redesenhar.force_update();
+        })
+    };
+    let ajustar = {
+        let escolhida = vista_escolhida.clone();
+        let redesenhar = redesenhar.clone();
+        Callback::from(move |_: MouseEvent| {
+            *escolhida.borrow_mut() = None;
+            redesenhar.force_update();
+        })
     };
 
     let ligacoes = props.ligacoes.iter().enumerate().map(|(k, l)| {
@@ -403,13 +615,15 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
         let apertar = {
             let gesto = gesto.clone();
             let svg = svg.clone();
+            let fixar = fixar_vista.clone();
             let base = c;
             Callback::from(move |e: PointerEvent| {
                 if e.button() != 0 {
                     return;
                 }
                 e.stop_propagation();
-                let Some(p) = no_canvas(&svg, &e) else { return };
+                fixar();
+                let Some(p) = no_plano(&svg, vista, cliente(&e)) else { return };
                 // A captura mantém o arraste mesmo com o ponteiro saindo do
                 // nó (ou do canvas) no meio do gesto.
                 if let Some(el) = svg.cast::<web_sys::Element>() {
@@ -421,12 +635,14 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
         let puxar = {
             let gesto = gesto.clone();
             let svg = svg.clone();
+            let fixar = fixar_vista.clone();
             Callback::from(move |e: PointerEvent| {
                 if e.button() != 0 {
                     return;
                 }
                 e.stop_propagation();
-                let Some(p) = no_canvas(&svg, &e) else { return };
+                fixar();
+                let Some(p) = no_plano(&svg, vista, cliente(&e)) else { return };
                 if let Some(el) = svg.cast::<web_sys::Element>() {
                     let _ = el.set_pointer_capture(e.pointer_id());
                 }
@@ -452,7 +668,7 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
                 if let Some([dx, dy]) = passo {
                     e.prevent_default();
                     e.stop_propagation();
-                    on_mover.emit((nos[i].chave.clone(), presa([c[0] + dx, c[1] + dy])));
+                    on_mover.emit((nos[i].chave.clone(), [c[0] + dx, c[1] + dy]));
                     return;
                 }
                 match e.key().as_str() {
@@ -514,10 +730,13 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
         _ => html! {},
     };
 
+    let arrastando_fundo = matches!(&*gesto.borrow(), Some(Gesto::Panorama { .. }));
     html! {
-        <svg class="construtor-canvas" ref={svg.clone()} viewBox={format!("0 0 {LARGURA} {ALTURA}")}
+        <div class="construtor-canvas__moldura">
+        <svg class={classes!("construtor-canvas", arrastando_fundo.then_some("construtor-canvas--arrastando"))} ref={svg.clone()}
+            viewBox={format!("{} {} {} {}", vista.x, vista.y, vista.largura(), vista.altura())}
             role="group" aria-label="Canvas do diagrama" data-nav-group="construtor-canvas"
-            onpointermove={ao_mover} onpointerup={ao_soltar} onpointercancel={ao_cancelar} onclick={fundo}>
+            onpointerdown={apertar_fundo} onpointermove={ao_mover} onpointerup={ao_soltar} onpointercancel={ao_cancelar} onclick={fundo}>
             <defs>
                 <marker id="construtor-canvas-ponta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                     <path class="construtor-canvas__ponta" d="M 0 0 L 10 5 L 0 10 z" />
@@ -527,6 +746,21 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
             { for nos_html }
             { rascunho }
         </svg>
+        <div class="construtor-canvas__zoom" data-nav-group="construtor-canvas-zoom">
+            <button type="button" class="btn btn--ghost btn--xs" aria-label="Afastar" title="Afastar (Ctrl+roda)"
+                onclick={zoom(1.0 / FATOR_ZOOM)} data-nav-item="construtor-canvas-afastar" data-nav-parent="construtor-canvas-zoom">
+                <Icon name="minus" />
+            </button>
+            <button type="button" class="btn btn--ghost btn--xs" aria-label="Aproximar" title="Aproximar (Ctrl+roda)"
+                onclick={zoom(FATOR_ZOOM)} data-nav-item="construtor-canvas-aproximar" data-nav-parent="construtor-canvas-zoom">
+                <Icon name="plus" />
+            </button>
+            <button type="button" class="btn btn--ghost btn--xs" title="Mostrar o diagrama inteiro"
+                onclick={ajustar} data-nav-item="construtor-canvas-ajustar" data-nav-parent="construtor-canvas-zoom">
+                { "Ajustar" }
+            </button>
+        </div>
+        </div>
     }
 }
 
@@ -581,6 +815,46 @@ mod tests {
         let volta = controle_da_volta(&todas, &todas[1], pb, pa).unwrap();
         assert!(ida[1] * volta[1] < 0.0, "as duas curvas do mesmo lado: {ida:?} {volta:?}");
         assert_eq!(controle_da_volta(&todas, &todas[2], pa, pb), None);
+    }
+
+    #[test]
+    fn camadas_nao_param_na_borda_e_a_vista_enquadra_todas() {
+        // O fluxograma do print do ciclo 491: oito passos numa fila. Até o
+        // 490 as camadas além da borda eram presas nela e se empilhavam.
+        let chaves = ["a", "b", "c", "d", "e", "f", "g", "h"];
+        let nos: Vec<NoCanvas> = chaves.iter().map(|c| no(c)).collect();
+        let lig = |de: &str, para: &str| LigacaoCanvas { de: de.into(), para: para.into(), rotulo: String::new(), estilo: EstiloLigacao::Seta };
+        let ligacoes: Vec<_> = chaves.windows(2).map(|w| lig(w[0], w[1])).collect();
+        let p = completar(&nos, &ligacoes, &Posicoes::new(), false);
+        let ys: Vec<f64> = chaves.iter().map(|c| p[*c][1]).collect();
+        assert!(ys.windows(2).all(|w| w[1] - w[0] >= NO_A), "camadas sobrepostas: {ys:?}");
+        let v = enquadrar(&nos, &p);
+        assert!(v.escala > 1.0, "{v:?}");
+        for c in chaves {
+            let [x, y] = p[c];
+            assert!(x - NO_L / 2.0 >= v.x && x + NO_L / 2.0 <= v.x + v.largura(), "{c} fora em x: {v:?}");
+            assert!(y - NO_A / 2.0 >= v.y && y + NO_A / 2.0 <= v.y + v.altura(), "{c} fora em y: {v:?}");
+        }
+    }
+
+    #[test]
+    fn o_que_cabe_fica_na_vista_inicial() {
+        let nos = vec![no("a"), no("b")];
+        assert_eq!(enquadrar(&nos, &Posicoes::new()), Vista::INICIAL);
+        assert_eq!(enquadrar(&[], &Posicoes::new()), Vista::INICIAL);
+    }
+
+    #[test]
+    fn zoom_mantem_a_ancora_e_respeita_os_limites() {
+        let v = Vista::INICIAL;
+        let ancora = [100.0, 200.0];
+        let perto = v.com_zoom(2.0, ancora);
+        assert_eq!(perto.escala, 0.5);
+        // A âncora fica na mesma fração da vista.
+        let fracao = |v: Vista| ((ancora[0] - v.x) / v.largura(), (ancora[1] - v.y) / v.altura());
+        assert_eq!(fracao(perto), fracao(v));
+        assert_eq!(v.com_zoom(100.0, ancora).escala, ESCALA_MIN);
+        assert_eq!(v.com_zoom(0.001, ancora).escala, ESCALA_MAX);
     }
 
     #[test]

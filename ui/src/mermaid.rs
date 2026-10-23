@@ -23,9 +23,13 @@ use wasm_bindgen::{JsCast, JsValue};
 
 /// O `<pre>` tem um diagrama (desenhado ou com erro).
 pub const CLASSE: &str = "editor__bloco--mermaid";
-/// O diagrama saiu: o CSS esconde o código quando o bloco não tem foco.
+/// O diagrama saiu: o CSS esconde o código, com ou sem foco. Até o 490 o
+/// foco mostrava o código por cima do desenho; clicar num diagrama pra
+/// selecioná-lo despejava a sintaxe na página (ciclo 491). O código se
+/// edita no construtor (aba Código); inline, só quando o desenho falhou.
 pub const CLASSE_DESENHADO: &str = "editor__bloco--mermaid-desenhado";
-/// O bloco está com foco. É classe, e não `:focus` no CSS, porque o
+/// O bloco está com foco: o desenho aparece selecionado, e o botão do
+/// construtor, ao lado. É classe, e não `:focus` no CSS, porque o
 /// WebKitGTK só aplica `:focus` com a janela focada pelo sistema: o
 /// harness (calço do ciclo 455) dispara os eventos, mas não a pseudo-classe.
 /// Os eventos existem nos dois casos.
@@ -386,12 +390,17 @@ fn instalar_ouvintes() {
     let _ = doc.add_event_listener_with_callback("focusin", ao_entrar.as_ref().unchecked_ref());
     ao_entrar.forget();
 
-    // `Ctrl+Enter` dentro do bloco: o construtor sem precisar do mouse.
+    // `Ctrl+Enter` dentro do bloco: o construtor sem precisar do mouse. No
+    // desenho selecionado, o Enter sozinho também — não há texto à vista
+    // em que ele quebrasse linha.
     let ao_teclar = Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
-        if e.key() != "Enter" || !(e.ctrl_key() || e.meta_key()) {
+        if e.key() != "Enter" || e.shift_key() || e.alt_key() {
             return;
         }
-        if let Some(pre) = pre_mermaid(&e) {
+        let Some(pre) = pre_mermaid(&e) else {
+            return;
+        };
+        if e.ctrl_key() || e.meta_key() || pre.class_list().contains(CLASSE_DESENHADO) {
             e.prevent_default();
             e.stop_propagation();
             pedir_construtor(&pre);
@@ -399,6 +408,18 @@ fn instalar_ouvintes() {
     });
     let _ = doc.add_event_listener_with_callback_and_bool("keydown", ao_teclar.as_ref().unchecked_ref(), true);
     ao_teclar.forget();
+
+    // Com o desenho à vista, o cursor está no código ESCONDIDO: o que se
+    // digitasse, colasse ou apagasse mudaria um texto que ninguém vê. O
+    // `beforeinput` cobre teclado, colar, arrastar e IME de uma vez.
+    let ao_editar = Closure::<dyn Fn(web_sys::Event)>::new(move |e: web_sys::Event| {
+        if pre_mermaid(&e).is_some_and(|pre| pre.class_list().contains(CLASSE_DESENHADO)) {
+            e.prevent_default();
+            e.stop_propagation();
+        }
+    });
+    let _ = doc.add_event_listener_with_callback_and_bool("beforeinput", ao_editar.as_ref().unchecked_ref(), true);
+    ao_editar.forget();
 
     // O botão é `fixed`: acompanha o bloco quando a página rola.
     if let Some(w) = web_sys::window() {

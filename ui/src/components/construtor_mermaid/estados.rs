@@ -163,7 +163,7 @@ pub fn editor_estados(props: &EditorEstadosProps) -> Html {
         }
         None => html! {
             <p class="construtor-mermaid__dica">
-                { "Arraste os estados; puxe pela bolinha à direita para criar a transição. Pelo teclado: Tab chega no estado, setas movem, L num e L noutro liga, Delete apaga." }
+                { "Arraste os estados; puxe pela bolinha à direita para criar a transição; arraste o fundo para andar pelo canvas, e Ctrl+roda aproxima. Pelo teclado: Tab chega no estado, setas movem, L num e L noutro liga, Delete apaga." }
             </p>
         },
     };

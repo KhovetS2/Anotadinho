@@ -2483,13 +2483,17 @@
 .construtor-mermaid__codigo:focus { outline: 2px solid var(--accent-blue); outline-offset: -1px; }
 .construtor-mermaid__aviso, .construtor-mermaid__resumo { margin: 0; font-size: .8125rem; line-height: 1.5; color: var(--text-muted); }
 .construtor-mermaid__aviso { color: var(--warning); }
+/* A imagem centra por margem automática, e não por align/justify: com um
+   diagrama maior que a caixa, o centro por flex corta o topo, que a rolagem
+   não alcança (ciclo 491). */
 .construtor-mermaid__previa {
-  display: flex; align-items: center; justify-content: center; min-width: 0; overflow: auto;
+  display: flex; min-width: 0; overflow: auto; max-height: 70vh;
   background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--sp-4);
 }
-.construtor-mermaid__previa-imagem { width: min(100%, var(--mermaid-largura)); height: auto; }
-.construtor-mermaid__previa-estado { margin: 0; color: var(--text-muted); font-size: .8125rem; }
-.construtor-mermaid__previa-erro { margin: 0; color: var(--error); font-size: .8125rem; }
+.construtor-mermaid__previa-imagem { width: min(100%, var(--mermaid-largura)); height: auto; margin: auto; }
+.construtor-mermaid__previa-estado, .construtor-mermaid__previa-erro { margin: auto; }
+.construtor-mermaid__previa-estado { color: var(--text-muted); font-size: .8125rem; }
+.construtor-mermaid__previa-erro { color: var(--error); font-size: .8125rem; }
 /* O botão do bloco vive no <body> (ver ui/src/mermaid.rs) e acompanha o
    canto de cima, à direita, do bloco em edição. */
 .construtor-mermaid__abrir { position: fixed; z-index: 50; transform: translateX(-100%); }
@@ -2520,12 +2524,21 @@
 .construtor-mermaid__grafo { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .construtor-mermaid__painel { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-base); }
 .construtor-mermaid__dica { margin: 0; font-size: .75rem; line-height: 1.5; color: var(--text-muted); }
+/* O canvas é uma vista sobre um plano sem borda (ciclo 491): o fundo
+   arrasta, e o zoom fica no canto. */
+.construtor-canvas__moldura { position: relative; }
+.construtor-canvas__zoom {
+  position: absolute; top: var(--sp-2); right: var(--sp-2); display: flex; gap: var(--sp-1);
+  padding: var(--sp-1); border: 1px solid var(--border); border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg-surface) 85%, transparent);
+}
 .construtor-canvas {
-  width: 100%; height: auto; aspect-ratio: 640 / 400; touch-action: none; user-select: none;
+  display: block; width: 100%; height: auto; aspect-ratio: 640 / 480; touch-action: none; user-select: none; cursor: grab;
   background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--r-md);
   background-image: radial-gradient(color-mix(in srgb, var(--text-muted) 22%, transparent) 1px, transparent 1px);
   background-size: var(--sp-6) var(--sp-6);
 }
+.construtor-canvas--arrastando { cursor: grabbing; }
 .construtor-canvas__no { cursor: grab; outline: none; }
 .construtor-canvas__no:active { cursor: grabbing; }
 .construtor-canvas__no rect, .construtor-canvas__no polygon, .construtor-canvas__no circle:not(.construtor-canvas__alca) {
