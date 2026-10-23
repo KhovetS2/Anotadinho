@@ -100,6 +100,10 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
     // O que o quadro mostra (ciclo 472). A sprint ativa por padrão: é o
     // que está sendo atacado agora, e o resto é recorte que se escolhe.
     let filtro = use_state(|| Filtro::SprintAtiva);
+    // A tarefa cujo painel de detalhes está aberto (ciclo 477), pelo
+    // CAMINHO: a tarefa em si vem da leitura mais recente, e o painel
+    // mostra o que acabou de ser gravado.
+    let detalhe = use_state(|| None::<String>);
     // A tarefa sendo arrastada (ciclo 465). Por mouse, como o
     // `inline_kanban`: o arrasto nativo do HTML5 é instável no WebKitGTK.
     let arrastando = use_state(|| None::<Tarefa>);
@@ -393,6 +397,33 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
     // o projeto INTEIRO — uma tarefa da sprint pode depender de uma do
     // backlog, e o aviso tem que aparecer.
     let do_quadro: Vec<Tarefa> = sprint::tarefas_do_quadro(&tarefas, &sprints, *filtro).into_iter().cloned().collect();
+    let hoje = {
+        let agora = crate::state::agora_legivel();
+        agora.split(' ').next().unwrap_or("").to_string()
+    };
+    let abrir_detalhe = {
+        let detalhe = detalhe.clone();
+        Callback::from(move |c: String| detalhe.set(Some(c)))
+    };
+    let painel = (*detalhe).as_ref().and_then(|c| tarefas.iter().find(|t| &t.caminho == c)).map(|t| {
+        let fechar = {
+            let detalhe = detalhe.clone();
+            Callback::from(move |_: ()| detalhe.set(None))
+        };
+        let abrir_pagina = {
+            let (abrir, c, titulo) = (abrir.clone(), t.caminho.clone(), t.titulo.clone());
+            Callback::from(move |_: ()| abrir.emit(pagina(&c, &titulo)))
+        };
+        html! {
+            <crate::components::tarefa_detalhes::TarefaDetalhes
+                vault_path={props.vault_path.clone()}
+                tarefa={t.clone()}
+                hoje={hoje.clone()}
+                on_mudou={recarregar.clone()}
+                on_fechar={fechar}
+                on_abrir_pagina={abrir_pagina} />
+        }
+    });
     let quadro = {
         let oninput = {
             let nova = nova.clone();
@@ -458,7 +489,11 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                                     { etapa.label() }
                                     <span class="projeto__contagem">{ da_etapa.len() }</span>
                                 </h3>
-                                { for da_etapa.into_iter().map(|t| cartao(t, &indice, &abrir, &mover, &arrastando, &abertas, &mudar_sprint)) }
+                                { for da_etapa.into_iter().map(|t| cartao(t, &Cartao {
+                                    indice: &indice, abrir: &abrir, mover: &mover, arrastando: &arrastando,
+                                    sprints: &abertas, mudar_sprint: &mudar_sprint, hoje: &hoje,
+                                    abrir_detalhe: &abrir_detalhe, detalhe_aberto: detalhe.as_deref(),
+                                })) }
                             </div>
                         }
                     }) }
@@ -468,7 +503,14 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
     };
 
     let corpo = match *aba {
-        Aba::Quadro => quadro,
+        // O painel fica AO LADO do quadro, e não por cima: dá pra marcar
+        // um critério olhando as outras colunas.
+        Aba::Quadro => html! {
+            <div class={classes!("projeto__com-painel", painel.is_some().then_some("projeto__com-painel--aberto"))}>
+                { quadro }
+                { painel.unwrap_or_default() }
+            </div>
+        },
         Aba::Sprints => html! {
             <crate::components::sprints_do_projeto::SprintsDoProjeto
                 vault_path={props.vault_path.clone()}
@@ -526,15 +568,22 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
 
 /// Um cartão do quadro: abre a tarefa, e mostra só as transições que a
 /// pessoa pode fazer daqui.
-fn cartao(
-    t: &Tarefa,
-    indice: &projeto::IndiceDeTarefas,
-    abrir: &Callback<api::PageMeta>,
-    mover: &Callback<(String, EtapaTarefa)>,
-    arrastando: &UseStateHandle<Option<Tarefa>>,
-    sprints: &[Sprint],
-    mudar_sprint: &Callback<(String, Option<u32>)>,
-) -> Html {
+/// O que o cartão precisa da tela, num lugar só: a lista de argumentos
+/// já tinha passado de sete.
+struct Cartao<'a> {
+    indice: &'a projeto::IndiceDeTarefas,
+    abrir: &'a Callback<api::PageMeta>,
+    mover: &'a Callback<(String, EtapaTarefa)>,
+    arrastando: &'a UseStateHandle<Option<Tarefa>>,
+    sprints: &'a [Sprint],
+    mudar_sprint: &'a Callback<(String, Option<u32>)>,
+    hoje: &'a str,
+    abrir_detalhe: &'a Callback<String>,
+    detalhe_aberto: Option<&'a str>,
+}
+
+fn cartao(t: &Tarefa, c: &Cartao) -> Html {
+    let Cartao { indice, abrir, mover, arrastando, sprints, mudar_sprint, .. } = *c;
     let pegar = {
         let (arrastando, t) = (arrastando.clone(), t.clone());
         Callback::from(move |e: MouseEvent| {
@@ -547,7 +596,7 @@ fn cartao(
                 .target()
                 .and_then(|alvo| alvo.dyn_into::<web_sys::Element>().ok())
                 // O seletor de sprint também é gesto de clique (ciclo 472).
-                .and_then(|el| el.closest(".projeto__mover, .projeto__cartao-sprint").ok().flatten())
+                .and_then(|el| el.closest(".projeto__mover, .projeto__cartao-sprint, .projeto__detalhes-abrir").ok().flatten())
                 .is_some();
             if num_botao {
                 return;
@@ -566,14 +615,60 @@ fn cartao(
         let (c, titulo) = (t.caminho.clone(), t.titulo.clone());
         Callback::from(move |_: MouseEvent| abrir.emit(pagina(&c, &titulo)))
     };
+    let (feitos, total) = t.progresso();
+    let vencida = t.vencida(c.hoje);
+    let tem_selos = total > 0 || t.prazo.is_some() || !t.comentarios.is_empty() || !t.anexos.is_empty();
+    let detalhar = {
+        let (abrir_detalhe, caminho) = (c.abrir_detalhe.clone(), t.caminho.clone());
+        Callback::from(move |_: MouseEvent| abrir_detalhe.emit(caminho.clone()))
+    };
+    let aberto = c.detalhe_aberto == Some(t.caminho.as_str());
     html! {
-        <article class={classes!("projeto__cartao", sendo_arrastado.then_some("projeto__cartao--arrastando"))}
+        <article class={classes!(
+            "projeto__cartao",
+            sendo_arrastado.then_some("projeto__cartao--arrastando"),
+            aberto.then_some("projeto__cartao--detalhado"),
+        )}
             data-tarefa={t.caminho.clone()} onmousedown={pegar}>
-            <button class="projeto__cartao-titulo" data-nav-item="true" data-nav-parent="projeto-quadro"
-                onclick={abrir_tarefa}>
-                <span class="projeto__numero">{ format!("{:03}", t.numero) }</span>
-                { " " }{ &t.titulo }
-            </button>
+            <div class="projeto__cartao-cabeca">
+                <button class="projeto__cartao-titulo" data-nav-item="true" data-nav-parent="projeto-quadro"
+                    onclick={abrir_tarefa}>
+                    <span class="projeto__numero">{ format!("{:03}", t.numero) }</span>
+                    { " " }{ &t.titulo }
+                </button>
+                <button class="btn btn--ghost btn--xs projeto__detalhes-abrir" data-nav-item="true" data-nav-parent="projeto-quadro"
+                    title="Detalhes: tags, prazo, critérios, comentários e anexos" onclick={detalhar}>
+                    <Icon name="more-horizontal" />
+                </button>
+            </div>
+            // Os selos do card do kanban (ciclo 477): o que só se via
+            // abrindo a página.
+            if tem_selos {
+                <div class="projeto__selos">
+                    if total > 0 {
+                        <span class={classes!("projeto__selo", "projeto__selo--checklist", (feitos == total).then_some("projeto__selo--completo"))}>
+                            <Icon name="check-square" />{ format!(" {feitos}/{total}") }
+                        </span>
+                    }
+                    if let Some(p) = &t.prazo {
+                        <span class={classes!("projeto__selo", "projeto__selo--prazo", vencida.then_some("projeto__selo--vencido"))}
+                            title={if vencida { "Prazo vencido" } else { "Prazo" }}>
+                            <Icon name="calendar" />{ format!(" {p}") }
+                        </span>
+                    }
+                    if !t.comentarios.is_empty() {
+                        <span class="projeto__selo projeto__selo--comentarios"><Icon name="message-circle" />{ format!(" {}", t.comentarios.len()) }</span>
+                    }
+                    if !t.anexos.is_empty() {
+                        <span class="projeto__selo projeto__selo--anexos"><Icon name="paperclip" />{ format!(" {}", t.anexos.len()) }</span>
+                    }
+                </div>
+            }
+            if !t.tags.is_empty() {
+                <div class="projeto__tags">
+                    { for t.tags.iter().map(|tag| html! { <span class="badge badge--info projeto__tag">{ tag }</span> }) }
+                </div>
+            }
             if !t.depende.is_empty() {
                 <p class={classes!("projeto__depende", (!pendentes.is_empty()).then_some("projeto__depende--pendente"))}>
                     { format!("depende de {}", t.depende.join(", ")) }

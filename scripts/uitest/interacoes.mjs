@@ -566,7 +566,10 @@ caso("consulta: o mesmo valor tem sempre a mesma cor", PAGINA_CONSULTA, async (b
   const r = await bridge.js(`(() => {
     const cores = new Map();
     const conflitos = [];
-    for (const td of document.querySelectorAll('.query-embed__table tbody td')) {
+    // Sem a coluna do título: ela é o link da página, não um valor com
+    // cor. Uma página com título igual a um valor ("sprint", com
+    // \`type: sprint\`) acusava conflito sem haver nenhum (ciclo 477).
+    for (const td of document.querySelectorAll('.query-embed__table tbody td:not(.query-embed__title)')) {
       const txt = td.textContent.trim();
       if (!txt) continue;
       const alvo = td.firstElementChild || td;

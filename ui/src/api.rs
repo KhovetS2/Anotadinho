@@ -832,6 +832,57 @@ pub async fn propor_arquitetura(vault_path: &str, slug: &str, texto: &str, quand
     .await
 }
 
+// ── Detalhes da tarefa (ciclo 477) ──────────────────────────────────
+
+pub async fn tags_da_tarefa(vault_path: &str, caminho: &str, tags: &[String]) -> Result<(), String> {
+    chamar_sem_retorno(
+        "tags_da_tarefa",
+        Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho).serde("tags", &tags),
+    )
+    .await
+}
+
+pub async fn prazo_da_tarefa(vault_path: &str, caminho: &str, prazo: Option<&str>) -> Result<(), String> {
+    chamar_sem_retorno(
+        "prazo_da_tarefa",
+        Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho).serde("prazo", &prazo),
+    )
+    .await
+}
+
+pub async fn alternar_item_da_tarefa(vault_path: &str, caminho: &str, indice: usize) -> Result<(), String> {
+    chamar_sem_retorno(
+        "alternar_item_da_tarefa",
+        Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho).serde("indice", &indice),
+    )
+    .await
+}
+
+pub async fn comentar_tarefa(vault_path: &str, caminho: &str, quando: &str, texto: &str) -> Result<(), String> {
+    chamar_sem_retorno(
+        "comentar_tarefa",
+        Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho).texto("quando", quando).texto("texto", texto),
+    )
+    .await
+}
+
+pub async fn anexar_na_tarefa(vault_path: &str, caminho: &str, origem: &str) -> Result<String, String> {
+    chamar(
+        "anexar_na_tarefa",
+        Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho).texto("origem", origem),
+    )
+    .await
+}
+
+pub async fn abrir_anexo(vault_path: &str, caminho: &str) -> Result<(), String> {
+    chamar_sem_retorno("abrir_anexo", Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho)).await
+}
+
+/// O seletor de arquivo nativo; `None` se a pessoa cancelou.
+pub async fn escolher_arquivo() -> Result<Option<String>, String> {
+    chamar_opcional("escolher_arquivo", Args::novo()).await
+}
+
 // ── Sprints (ciclo 472) ─────────────────────────────────────────────
 
 pub async fn criar_sprint(

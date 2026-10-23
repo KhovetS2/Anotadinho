@@ -31,6 +31,7 @@ pub mod sprints_do_projeto;
 pub mod tab_bar;
 pub mod tags_page;
 pub mod tarefa_barra;
+pub mod tarefa_detalhes;
 pub mod task_table;
 pub mod time_picker;
 pub mod typed_page_header;

@@ -2398,4 +2398,57 @@
 }
 .sprints__pergunta-texto { margin: 0; font-size: .8rem; flex-basis: 100%; }
 .sprints__titulo-historico { margin: var(--sp-3) 0 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
-.sprints__feitas { margin-top: var(--sp-1); display: flex; flex-direction: column; gap: 2px; font-size: .78rem; }
+.sprints__feitas { margin-top: var(--sp-1); display: flex; flex-direction: column; gap: calc(var(--sp-1) / 2); font-size: .78rem; }
+
+/* Tarefa rica (ciclo 477): os selos do card do kanban e o painel. */
+.projeto__com-painel { display: flex; gap: var(--sp-3); flex: 1; min-height: 0; }
+.projeto__com-painel > .projeto__quadro-area { min-width: 0; }
+.projeto__cartao-cabeca { display: flex; align-items: flex-start; gap: var(--sp-1); }
+.projeto__cartao-cabeca .projeto__cartao-titulo { flex: 1; min-width: 0; }
+.projeto__detalhes-abrir { flex: none; opacity: .55; }
+.projeto__cartao:hover .projeto__detalhes-abrir, .projeto__detalhes-abrir:focus-visible { opacity: 1; }
+.projeto__cartao--detalhado { border-color: var(--accent-blue); }
+.projeto__selos, .projeto__tags { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.projeto__selo {
+  font-size: .6875rem; color: var(--text-muted); background: var(--bg-base);
+  border-radius: var(--r-sm); padding: 0 var(--sp-1);
+}
+.projeto__selo--completo { color: var(--success); }
+.projeto__selo--vencido { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
+.projeto__tag { font-size: .6875rem; }
+
+.tarefa-detalhes {
+  flex: 0 0 20rem; max-width: 40%; display: flex; flex-direction: column; gap: var(--sp-3);
+  overflow-y: auto; min-height: 0; padding: var(--sp-3);
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r-md);
+}
+.tarefa-detalhes__topo { display: flex; align-items: center; gap: var(--sp-2); }
+.tarefa-detalhes__numero { color: var(--text-muted); font-family: var(--font-mono); font-size: .75rem; }
+.tarefa-detalhes__titulo { flex: 1; margin: 0; font-size: .95rem; }
+.tarefa-detalhes__erro { margin: 0; font-size: .8rem; color: var(--error); }
+.tarefa-detalhes__secao { display: flex; flex-direction: column; gap: var(--sp-1); }
+.tarefa-detalhes__rotulo {
+  margin: 0; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted);
+}
+.tarefa-detalhes__tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
+.tarefa-detalhes__tag { display: inline-flex; align-items: center; gap: calc(var(--sp-1) / 2); }
+.tarefa-detalhes__tag-tirar {
+  border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0; display: inline-flex; opacity: .7;
+}
+.tarefa-detalhes__tag-nova { width: 7rem; }
+.tarefa-detalhes__prazo { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.tarefa-detalhes__vencido { color: var(--error); font-size: .78rem; }
+.tarefa-detalhes__prazo--vencido .tarefa-detalhes__prazo-data { border-color: var(--error); }
+.tarefa-detalhes__checklist, .tarefa-detalhes__comentarios, .tarefa-detalhes__anexos {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1);
+}
+.tarefa-detalhes__item { display: flex; align-items: flex-start; gap: var(--sp-2); font-size: .82rem; cursor: pointer; }
+.tarefa-detalhes__item--feito { color: var(--text-muted); text-decoration: line-through; }
+.tarefa-detalhes__vazio { margin: 0; font-size: .78rem; color: var(--text-muted); }
+.tarefa-detalhes__comentario {
+  padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); background: var(--bg-elevated);
+}
+.tarefa-detalhes__quando { font-size: .7rem; color: var(--text-muted); }
+.tarefa-detalhes__texto { margin: calc(var(--sp-1) / 2) 0 0; font-size: .82rem; white-space: pre-wrap; }
+.tarefa-detalhes__comentario-novo { resize: vertical; font-size: .82rem; }
+.tarefa-detalhes__comentar, .tarefa-detalhes__anexar { align-self: flex-start; }

@@ -718,6 +718,48 @@ fn criar_tarefa(vault_path: String, slug: String, titulo: String, hoje: String) 
     anotadinho_ipc::handle_criar_tarefa(vault_path, slug, titulo, hoje)
 }
 
+// ── Detalhes da tarefa (ciclo 477): pela pessoa, grava direto. ────────
+
+#[tauri::command]
+fn tags_da_tarefa(vault_path: String, caminho: String, tags: Vec<String>) -> Result<(), String> {
+    anotadinho_ipc::handle_tags_da_tarefa(vault_path, caminho, tags)
+}
+
+#[tauri::command]
+fn prazo_da_tarefa(vault_path: String, caminho: String, prazo: Option<String>) -> Result<(), String> {
+    anotadinho_ipc::handle_prazo_da_tarefa(vault_path, caminho, prazo)
+}
+
+#[tauri::command]
+fn alternar_item_da_tarefa(vault_path: String, caminho: String, indice: usize) -> Result<(), String> {
+    anotadinho_ipc::handle_alternar_item_da_tarefa(vault_path, caminho, indice)
+}
+
+#[tauri::command]
+fn comentar_tarefa(vault_path: String, caminho: String, quando: String, texto: String) -> Result<(), String> {
+    anotadinho_ipc::handle_comentar_tarefa(vault_path, caminho, quando, texto)
+}
+
+#[tauri::command]
+fn anexar_na_tarefa(vault_path: String, caminho: String, origem: String) -> Result<String, String> {
+    anotadinho_ipc::handle_anexar_na_tarefa(vault_path, caminho, origem)
+}
+
+#[tauri::command]
+fn abrir_anexo(vault_path: String, caminho: String) -> Result<(), String> {
+    anotadinho_ipc::handle_abrir_anexo(vault_path, caminho)
+}
+
+/// O seletor de ARQUIVO (o de pasta é `escolher_pasta`).
+#[tauri::command]
+async fn escolher_arquivo(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().pick_file(move |file_path| {
+        let _ = tx.send(file_path.map(|p| p.to_string()));
+    });
+    rx.await.map_err(|e| e.to_string())
+}
+
 // ── Sprints (ciclo 472): pela pessoa, grava direto. ──────────────────
 
 #[tauri::command]
@@ -1595,6 +1637,13 @@ fn main() {
             indice_do_projeto,
             conversa_da_tarefa,
             criar_sprint,
+            tags_da_tarefa,
+            prazo_da_tarefa,
+            alternar_item_da_tarefa,
+            comentar_tarefa,
+            anexar_na_tarefa,
+            abrir_anexo,
+            escolher_arquivo,
             iniciar_sprint,
             encerrar_sprint,
             mudar_sprint_da_tarefa,

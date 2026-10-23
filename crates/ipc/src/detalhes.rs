@@ -68,6 +68,52 @@ pub fn handle_anexar_na_tarefa(vault_path: String, caminho: String, origem: Stri
     }
 }
 
+/// O programa que abre um arquivo com o app padrão do sistema. O sistema
+/// entra por PARÂMETRO: com `cfg!` aqui dentro, o teste só exerceria o
+/// ramo da máquina de quem roda.
+pub fn programa_que_abre(macos: bool, windows: bool) -> &'static str {
+    if macos {
+        "open"
+    } else if windows {
+        "explorer"
+    } else {
+        "xdg-open"
+    }
+}
+
+/// O caminho absoluto de um anexo, SE ele é um arquivo dentro de
+/// `assets/` do vault.
+///
+/// A trava existe porque o caminho vem do texto de uma página: sem ela,
+/// um link `../../usr/bin/x` escrito à mão (ou colado) faria o app mandar
+/// o sistema abrir qualquer coisa. `canonicalize` resolve `..` e links
+/// simbólicos antes da comparação.
+pub fn anexo_no_vault(vault_path: &str, caminho: &str) -> Result<std::path::PathBuf, String> {
+    let raiz = std::path::Path::new(vault_path);
+    let assets = raiz.join("assets").canonicalize().map_err(|_| "o vault não tem a pasta assets/".to_string())?;
+    let alvo = raiz
+        .join(caminho.trim().trim_start_matches("./"))
+        .canonicalize()
+        .map_err(|_| format!("não achei {caminho}"))?;
+    if !alvo.starts_with(&assets) || !alvo.is_file() {
+        return Err(format!("{caminho} não é um arquivo de assets/ do vault"));
+    }
+    Ok(alvo)
+}
+
+/// Abre um anexo com o app padrão do sistema.
+pub fn handle_abrir_anexo(vault_path: String, caminho: String) -> Result<(), String> {
+    let alvo = anexo_no_vault(&vault_path, &caminho)?;
+    std::process::Command::new(programa_que_abre(cfg!(target_os = "macos"), cfg!(windows)))
+        .arg(&alvo)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("não abriu {caminho}: {e}"))
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -117,6 +163,28 @@ mod testes {
         let t = Tarefa::ler(&c, &handle_read_page(v.clone(), c.clone()).unwrap()).unwrap();
         assert_eq!(t.progresso(), (1, 2));
         assert!(t.checklist[1].feito && !t.checklist[0].feito);
+    }
+
+    #[test]
+    fn so_abre_o_que_esta_em_assets() {
+        let (d, v, _c) = vault_com_tarefa();
+        std::fs::create_dir_all(d.path().join("assets")).unwrap();
+        std::fs::write(d.path().join("assets/a.pdf"), b"x").unwrap();
+        std::fs::write(d.path().join("pages/fora.md"), b"x").unwrap();
+        assert!(anexo_no_vault(&v, "assets/a.pdf").is_ok());
+        assert!(anexo_no_vault(&v, "./assets/a.pdf").is_ok());
+        assert!(anexo_no_vault(&v, "assets/../pages/fora.md").is_err(), "o `..` escapa de assets/");
+        assert!(anexo_no_vault(&v, "pages/fora.md").is_err());
+        assert!(anexo_no_vault(&v, "/etc/hostname").is_err());
+        assert!(anexo_no_vault(&v, "assets").is_err(), "pasta não é anexo");
+        assert!(anexo_no_vault(&v, "assets/nao-existe.pdf").is_err());
+    }
+
+    #[test]
+    fn o_programa_de_cada_sistema() {
+        assert_eq!(programa_que_abre(true, false), "open");
+        assert_eq!(programa_que_abre(false, true), "explorer");
+        assert_eq!(programa_que_abre(false, false), "xdg-open");
     }
 
     #[test]

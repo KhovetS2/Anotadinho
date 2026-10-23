@@ -3440,3 +3440,138 @@ fluxo.push({
     }
   },
 });
+
+// ── ciclo 477: a tarefa com os detalhes do card do kanban ────────────
+
+const TAREFA_RICA = (slug) =>
+  `---\ntitle: Login\ntags:\n- tarefa\n- auth\ntype: tarefa\nprojeto: ${slug}\nprazo: 2020-01-01\nstatus: pronta\n---\n# Login\n\n` +
+  "## Critérios de aceite\n\n- [ ] entra com e-mail\n- [x] sai\n\n## Abordagem\n\n- [ ] não é critério\n\n" +
+  "## Comentários\n\n- **2026-10-01 10:00** — olhei o fluxo\n\n## Anexos\n\n- [tela.png](assets/tela.png)\n";
+
+async function projetoComTarefaRica(ctx, slug) {
+  const p = await projetoNoVault(ctx, slug, [[1, "pronta", "Login"]]);
+  const arq = `${p.pasta}/tarefas/001-t.md`;
+  p.fs.writeFileSync(arq, TAREFA_RICA(slug));
+  return { ...p, arq, ler: () => p.fs.readFileSync(arq, "utf8") };
+}
+
+const SELOS = `(() => {
+  const c = document.querySelector('.projeto__cartao');
+  if (!c) return null;
+  const t = (s) => c.querySelector(s)?.textContent.trim() ?? null;
+  return {
+    checklist: t('.projeto__selo--checklist'), prazo: t('.projeto__selo--prazo'),
+    vencido: !!c.querySelector('.projeto__selo--vencido'), comentarios: t('.projeto__selo--comentarios'),
+    anexos: t('.projeto__selo--anexos'), tags: [...c.querySelectorAll('.projeto__tag')].map(x => x.textContent.trim()),
+  };
+})()`;
+
+/// Escreve num campo como a pessoa: pelo setter nativo e o `input`, que
+/// é o que o Yew escuta. Só `value =` deixaria o estado do componente
+/// pra trás.
+const DIGITAR = (seletor, texto) => `(() => {
+  const el = document.querySelector(${JSON.stringify(seletor)});
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(texto)});
+  el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  return true;
+})()`;
+
+fluxo.push({
+  nome: "tarefa rica: o cartão mostra os selos do card do kanban (477)",
+  async fn(bridge, ctx) {
+    const slug = `uitest-rica-selos-${Date.now()}`;
+    const p = await projetoComTarefaRica(ctx, slug);
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      await esperar(bridge, `${SELOS}?.checklist === '1/2'`, "o selo da checklist");
+      const s = await bridge.js(SELOS);
+      // O `[ ]` da Abordagem NÃO é critério: 1/2, e não 1/3.
+      const esperado = { checklist: "1/2", prazo: "2020-01-01", vencido: true, comentarios: "1", anexos: "1", tags: ["auth"] };
+      for (const [k, v] of Object.entries(esperado)) ctx.assertEq(JSON.stringify(s[k]), JSON.stringify(v), `o selo ${k}`);
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+fluxo.push({
+  nome: "tarefa rica: o painel marca critério, comenta, mexe em tag e prazo (477)",
+  async fn(bridge, ctx) {
+    const slug = `uitest-rica-painel-${Date.now()}`;
+    const p = await projetoComTarefaRica(ctx, slug);
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      await clicar(bridge, ".projeto__cartao .projeto__detalhes-abrir", "o botão de detalhes");
+      await esperar(bridge, "!!document.querySelector('.tarefa-detalhes .tarefa-detalhes__marca')", "o painel");
+
+      // Critério: só aquele `[ ]` muda.
+      const antes = p.ler();
+      await bridge.js(`(() => { document.querySelector('.tarefa-detalhes__marca[data-indice="0"]').click(); return true; })()`);
+      await esperar(bridge, `${SELOS}?.checklist === '2/2'`, "o selo virar 2/2");
+      ctx.assertEq(p.ler(), antes.replace("- [ ] entra com e-mail", "- [x] entra com e-mail"), "mexeu em mais que a marca");
+
+      // Comentário.
+      await bridge.js(DIGITAR(".tarefa-detalhes__comentario-novo", "falta o reset"));
+      await esperar(bridge, "document.querySelector('.tarefa-detalhes__comentario-novo').value === 'falta o reset'", "o texto no campo");
+      await clicar(bridge, ".tarefa-detalhes__comentar", "Comentar");
+      await esperar(bridge, `${SELOS}?.comentarios === '2'`, "a contagem de comentários subir");
+      ctx.assert(/— olhei o fluxo\n- \*\*\d{4}-\d\d-\d\d \d\d:\d\d\*\* — falta o reset\n/.test(p.ler()), `o comentário não entrou logo depois do outro:\n${p.ler()}`);
+      ctx.assert(p.ler().indexOf("falta o reset") < p.ler().indexOf("## Anexos"), "o comentário caiu fora da seção");
+
+      // Tag: acrescentar com Enter, tirar com o x.
+      await bridge.js(DIGITAR(".tarefa-detalhes__tag-nova", "front"));
+      await esperar(bridge, "document.querySelector('.tarefa-detalhes__tag-nova').value === 'front'", "a tag no campo");
+      await bridge.js(`(() => { document.querySelector('.tarefa-detalhes__tag-nova').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
+      await esperar(bridge, `JSON.stringify(${SELOS}?.tags) === '["auth","front"]'`, "a tag nova no cartão");
+      await clicar(bridge, ".tarefa-detalhes__tag-tirar", "tirar a primeira tag");
+      await esperar(bridge, `JSON.stringify(${SELOS}?.tags) === '["front"]'`, "a tag sair");
+      ctx.assert(/tags:\n- tarefa\n- front\n/.test(p.ler()), `a tag \`tarefa\` tem que ficar:\n${p.ler()}`);
+
+      // Prazo: no futuro deixa de estar vencido; tirar remove o campo.
+      await bridge.js(`(() => { const i = document.querySelector('.tarefa-detalhes__prazo-data'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '2099-12-31'); i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+      await esperar(bridge, `${SELOS}?.prazo === '2099-12-31' && !${SELOS}.vencido`, "o prazo novo, sem vencer");
+      await clicar(bridge, ".tarefa-detalhes__prazo-tirar", "tirar o prazo");
+      await esperar(bridge, `${SELOS}?.prazo === null`, "o selo do prazo sumir");
+      ctx.assert(!/^prazo:/m.test(p.ler()), "o prazo ficou no frontmatter");
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
+fluxo.push({
+  nome: "tarefa rica: anexar copia sem sobrescrever, e abrir recusa fora de assets (477)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const slug = `uitest-rica-anexo-${Date.now()}`;
+    const p = await projetoComTarefaRica(ctx, slug);
+    const nome = `uitest-477-${Date.now()}.txt`;
+    const origem = `${os.tmpdir()}/${nome}`;
+    fs.writeFileSync(origem, "conteúdo");
+    const criados = [];
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      await esperar(bridge, `${SELOS}?.anexos === '1'`, "o cartão");
+      // O diálogo nativo é a fronteira do sistema: o harness não o
+      // dirige. Daqui pra dentro, o caminho é o mesmo do botão.
+      const anexar = () => bridge.js(`window.__TAURI_INTERNALS__.invoke('anexar_na_tarefa', {
+        vaultPath: ${JSON.stringify(VAULT_ABS)}, caminho: 'pages/projetos/${slug}/tarefas/001-t.md', origem: ${JSON.stringify(origem)} })`);
+      criados.push(await anexar());
+      criados.push(await anexar());
+      ctx.assertEq(JSON.stringify(criados), JSON.stringify([`assets/${nome}`, `assets/${nome.replace(".txt", "-2.txt")}`]));
+      await esperar(bridge, `${SELOS}?.anexos === '3'`, "os anexos no cartão");
+      // Abrir o que não é de assets/ é recusado, e nada é aberto.
+      const erro = await bridge.js(`window.__TAURI_INTERNALS__.invoke('abrir_anexo', { vaultPath: ${JSON.stringify(VAULT_ABS)}, caminho: 'assets/../pages/projetos/${slug}/projeto.md' }).then(() => 'abriu', e => String(e))`);
+      ctx.assert(erro.includes("não é um arquivo de assets/"), `devia recusar, veio: ${erro}`);
+    } finally {
+      for (const c of criados) fs.rmSync(`${ctx.vault}/${c}`, { force: true });
+      fs.rmSync(origem, { force: true });
+      p.limpar();
+    }
+  },
+});
