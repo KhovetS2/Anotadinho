@@ -3611,3 +3611,49 @@ fluxo.push({
     }
   },
 });
+
+// ── ciclo 482: o grafo é destruído ao sair da página ────────────────
+//
+// A sonda de memória mediu +24 MiB por visita ao grafo: o renderizador
+// WebGL e o laço de animação ficavam vivos depois que a página saía. O
+// EFEITO que prova a destruição, sem medir memória (que serrilha com o
+// coletor): todo contexto WebGL que o grafo cria é perdido ao sair — é o
+// `forceContextLoss` do `Grafo::destruir`.
+
+fluxo.push({
+  nome: "grafo: sair da página solta o contexto WebGL que ele criou (482)",
+  async fn(bridge, ctx) {
+    ctx.escrever("---\ntitle: __uitest\n---\n# leve\n\ntexto\n");
+    try {
+      await recarregarEstavel(bridge);
+      // Conta os contextos WebGL criados e os perdidos, a partir daqui.
+      await bridge.js(`(() => {
+        window.__gl = { criados: 0, perdidos: 0 };
+        const vistos = new WeakSet();
+        const orig = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function (tipo, ...resto) {
+          const c = orig.call(this, tipo, ...resto);
+          if (c && /webgl/.test(tipo) && !vistos.has(this)) {
+            vistos.add(this);
+            window.__gl.criados++;
+            this.addEventListener('webglcontextlost', () => window.__gl.perdidos++);
+          }
+          return c;
+        };
+        return true;
+      })()`);
+      for (let i = 1; i <= 3; i++) {
+        await abrirPeloCaminho(bridge, "pages/produto/grafo");
+        await esperar(bridge, `window.__gl.criados >= ${i}`, `o grafo criar o contexto (visita ${i})`, 20000);
+        await abrirPeloCaminho(bridge, `pages/${ctx.nomePagina}`);
+        await esperar(bridge, `window.__gl.perdidos >= ${i}`, `o contexto da visita ${i} ser solto ao sair`, 10000);
+      }
+      const gl = await bridge.js("window.__gl");
+      ctx.assertEq(gl.perdidos, gl.criados, "sobrou contexto WebGL vivo depois de sair do grafo");
+    } finally {
+      // A instrumentação do getContext não pode vazar pros próximos
+      // cenários; a página de rascunho, o harness restaura sozinho.
+      await bridge.js("location.reload(), true").catch(() => {});
+    }
+  },
+});

@@ -27,6 +27,14 @@
 //! Montar o grafo (nós e arestas a partir dos wikilinks) e entregar. O
 //! layout, o desenho e a câmera são dela. O clique num nó volta pra cá,
 //! que é o que liga o grafo à navegação do app.
+//!
+//! ## Destruir ao sair (ciclo 482)
+//!
+//! O grafo tem um renderizador WebGL e um laço de `requestAnimationFrame`
+//! que NÃO param sozinhos quando o elemento sai do DOM. Sem destruir, cada
+//! visita deixava um grafo inteiro rodando em segundo plano: +24 MiB por
+//! visita na página web, medidos pela `scripts/memoria/sonda-pagina.mjs`,
+//! e CPU gasta desenhando o que ninguém via.
 
 use std::collections::{HashMap, HashSet};
 
@@ -56,20 +64,39 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
         let carregando = carregando.clone();
         let on_page_selected = props.on_page_selected.clone();
         use_effect_with(vault_path.clone(), move |_| {
-            wasm_bindgen_futures::spawn_local(async move {
-                // Uma varredura só traz título e wikilinks de todas as
-                // páginas — a alternativa seria N+1 travessias
-                // WASM↔Tauri lendo arquivo por arquivo (ciclo 120).
-                let paginas = api::scan_vault(&vault_path).await.unwrap_or_default();
-                let Some(el) = container.cast::<web_sys::Element>() else {
-                    return;
-                };
+            // O grafo vivo, pra o cleanup destruir. `Rc<RefCell>` e não
+            // `use_state`: quem escreve é a tarefa assíncrona, e quem lê é
+            // o cleanup, depois — o handle de estado ficaria congelado no
+            // valor da montagem (ciclos 155, 157, 201, 213).
+            let vivo: std::rc::Rc<std::cell::RefCell<Option<Grafo>>> = Default::default();
+            // Saiu antes da varredura terminar: não desenha. Criado num
+            // elemento já solto, o grafo nasceria sem ninguém pra destruí-lo.
+            let montado = std::rc::Rc::new(std::cell::Cell::new(true));
+            {
+                let (vivo, montado) = (vivo.clone(), montado.clone());
+                wasm_bindgen_futures::spawn_local(async move {
+                    // Uma varredura só traz título e wikilinks de todas as
+                    // páginas — a alternativa seria N+1 travessias
+                    // WASM↔Tauri lendo arquivo por arquivo (ciclo 120).
+                    let paginas = api::scan_vault(&vault_path).await.unwrap_or_default();
+                    if !montado.get() {
+                        return;
+                    }
+                    let Some(el) = container.cast::<web_sys::Element>() else {
+                        return;
+                    };
 
-                let (nos, arestas) = montar(&paginas);
-                desenhar(&el, &paginas, &nos, &arestas, on_page_selected);
-                carregando.set(false);
-            });
-            || {}
+                    let (nos, arestas) = montar(&paginas);
+                    *vivo.borrow_mut() = desenhar(&el, &paginas, &nos, &arestas, on_page_selected);
+                    carregando.set(false);
+                });
+            }
+            move || {
+                montado.set(false);
+                if let Some(g) = vivo.borrow_mut().take() {
+                    g.destruir();
+                }
+            }
         });
     }
 
@@ -112,6 +139,40 @@ fn montar(paginas: &[api::PageIndexEntry]) -> (Vec<usize>, Vec<(usize, usize)>) 
     ((0..paginas.len()).collect(), arestas)
 }
 
+/// Um grafo desenhado, e o callback de clique que ele chama.
+///
+/// O callback mora AQUI, e não num `forget`: esquecido, cada visita
+/// deixava no JS uma closure com a lista inteira de páginas. Ele cai junto
+/// com o grafo, DEPOIS do `_destructor` — antes disso o JS ainda pode
+/// chamá-lo.
+struct Grafo {
+    js: JsValue,
+    _ao_clicar: Closure<dyn Fn(JsValue)>,
+}
+
+impl Grafo {
+    /// Para a animação, solta a cena e o contexto WebGL.
+    fn destruir(self) {
+        // `_destructor` é da 3d-force-graph (pausa o laço e limpa os
+        // dados). O contexto WebGL o navegador só devolve no
+        // `forceContextLoss`: há um número máximo de contextos vivos, e
+        // os soltos contam até o coletor passar.
+        chamar0(&self.js, "_destructor");
+        if let Ok(f) = js_sys::Reflect::get(&self.js, &JsValue::from_str("renderer")).and_then(|f| f.dyn_into::<js_sys::Function>()) {
+            if let Ok(r) = f.call0(&self.js) {
+                chamar0(&r, "dispose");
+                chamar0(&r, "forceContextLoss");
+            }
+        }
+    }
+}
+
+fn chamar0(alvo: &JsValue, metodo: &str) {
+    if let Ok(f) = js_sys::Reflect::get(alvo, &JsValue::from_str(metodo)).and_then(|f| f.dyn_into::<js_sys::Function>()) {
+        let _ = f.call0(alvo);
+    }
+}
+
 /// Entrega o grafo pra biblioteca e liga o clique de volta no app.
 fn desenhar(
     el: &web_sys::Element,
@@ -119,8 +180,8 @@ fn desenhar(
     nos: &[usize],
     arestas: &[(usize, usize)],
     ao_escolher: Callback<PageMeta>,
-) {
-    let Some(window) = web_sys::window() else { return };
+) -> Option<Grafo> {
+    let window = web_sys::window()?;
     let Some(fabrica) = js_sys::Reflect::get(&window, &JsValue::from_str("ForceGraph3D"))
         .ok()
         .and_then(|v| v.dyn_into::<js_sys::Function>().ok())
@@ -131,7 +192,7 @@ fn desenhar(
         el.set_text_content(Some(
             "3d-force-graph não carregou — o grafo precisa dele pra desenhar.",
         ));
-        return;
+        return None;
     };
 
     let dados = js_sys::Object::new();
@@ -156,13 +217,13 @@ fn desenhar(
 
     // `ForceGraph3D()(elemento)` devolve o grafo; daí pra frente é
     // encadeamento de configuração, no estilo do d3.
-    let Ok(grafo) = fabrica.call0(&JsValue::NULL) else { return };
+    let grafo = fabrica.call0(&JsValue::NULL).ok()?;
     let Ok(grafo) = js_sys::Reflect::apply(
         &grafo.dyn_into::<js_sys::Function>().unwrap_or_else(|_| js_sys::Function::new_no_args("")),
         &JsValue::NULL,
         &js_sys::Array::of1(el),
     ) else {
-        return;
+        return None;
     };
 
     chamar(&grafo, "graphData", &dados);
@@ -208,10 +269,7 @@ fn desenhar(
         }
     });
     chamar(&grafo, "onNodeClick", ao_clicar.as_ref());
-    // O `Closure` morre com esta função e o callback vira ponteiro
-    // solto; `forget` entrega a posse pro JS, que é dono do grafo
-    // enquanto a página existir.
-    ao_clicar.forget();
+    Some(Grafo { js: grafo, _ao_clicar: ao_clicar })
 }
 
 /// Chama um método encadeável do grafo, ignorando o retorno.

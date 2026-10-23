@@ -1065,7 +1065,10 @@ cenarios.push({
       ctx.assertEq(e.barrado, true, `${e.tipo} fora do editor não foi barrado`);
     }
     // E o app continua no ar, que é o ponto.
-    ctx.assert(await bridge.js("location.href.startsWith('http')"), "o webview saiu do app");
+    // `file:` é o sintoma (a janela navegou pro arquivo solto). Exigir
+    // `http` só valia no dev: o app INSTALADO serve de `tauri://localhost`
+    // e reprovava sem o defeito (ciclo 482).
+    ctx.assert(await bridge.js("!location.href.startsWith('file:')"), "o webview saiu do app");
     ctx.assert(await bridge.js("!!document.querySelector('.editor__bloco')"), "o editor sumiu");
   },
 });
