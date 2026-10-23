@@ -13,6 +13,9 @@ pub use projeto::*;
 mod sprint;
 pub use sprint::*;
 
+mod detalhes;
+pub use detalhes::*;
+
 use anotadinho_core::PageIndexEntry;
 use anotadinho_search::SearchIndex;
 use anotadinho_vault::{GitFileEntry, GitLogEntry, VaultIo};

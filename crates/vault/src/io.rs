@@ -543,6 +543,38 @@ impl VaultIo {
         Ok(relative)
     }
 
+    /// Copia pra `assets/` SEM sobrescrever (ciclo 476): com o nome já
+    /// tomado, vira `nome-2.ext`, `nome-3.ext`…
+    ///
+    /// O `copy_to_assets` de cima sobrescreve, e anexar dois
+    /// `relatorio.pdf` diferentes apagava o primeiro — inclusive o de
+    /// OUTRA página, que continuava apontando pro nome.
+    pub fn copiar_para_assets_sem_sobrescrever(&self, source_path: &str) -> Result<String> {
+        let src = std::path::Path::new(source_path);
+        if !src.is_file() {
+            anyhow::bail!("arquivo não existe: {}", source_path);
+        }
+        let dest_dir = self.root.join("assets");
+        std::fs::create_dir_all(&dest_dir).map_err(|e| anyhow::anyhow!("erro ao criar assets/: {}", e))?;
+        let base = src.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "anexo".into());
+        let ext = src.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+        let mut n = 1;
+        let dest = loop {
+            let nome = if n == 1 { format!("{base}{ext}") } else { format!("{base}-{n}{ext}") };
+            let candidato = dest_dir.join(&nome);
+            // `create_new` reserva o nome no mesmo passo em que confere:
+            // conferir com `exists` e copiar depois deixaria duas cópias
+            // ao mesmo tempo escolherem o mesmo nome.
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&candidato) {
+                Ok(_) => break candidato,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+                Err(e) => anyhow::bail!("erro ao criar {}: {}", nome, e),
+            }
+        };
+        std::fs::copy(src, &dest).map_err(|e| anyhow::anyhow!("erro ao copiar {}: {}", source_path, e))?;
+        Ok(crate::caminho::relativo(&self.root, &dest))
+    }
+
     /// Escreve conteúdo UTF-8 numa página pelo path relativo ao vault.
     ///
     /// Cria diretórios pais se necessário. Rejeita path traversal.
@@ -862,6 +894,20 @@ mod tests {
     fn list_assets_info_empty_without_dir() {
         let (_dir, io) = setup_vault();
         assert!(io.list_assets_info().unwrap().is_empty());
+    }
+
+    #[test]
+    fn copiar_sem_sobrescrever_numera_o_nome_tomado() {
+        let dir = TempDir::new().unwrap();
+        let v = VaultIo::open(dir.path());
+        let fora = TempDir::new().unwrap();
+        let a = fora.path().join("relatorio.pdf");
+        std::fs::write(&a, b"um").unwrap();
+        assert_eq!(v.copiar_para_assets_sem_sobrescrever(a.to_str().unwrap()).unwrap(), "assets/relatorio.pdf");
+        std::fs::write(&a, b"dois").unwrap();
+        assert_eq!(v.copiar_para_assets_sem_sobrescrever(a.to_str().unwrap()).unwrap(), "assets/relatorio-2.pdf");
+        assert_eq!(std::fs::read(dir.path().join("assets/relatorio.pdf")).unwrap(), b"um", "o primeiro foi sobrescrito");
+        assert!(v.copiar_para_assets_sem_sobrescrever("/nao/existe.pdf").is_err());
     }
 
     #[test]

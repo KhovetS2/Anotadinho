@@ -281,6 +281,8 @@ pub const CONTRATO: &[Ferramenta] = &[
                 obrigatorio: false,
             },
             Parametro { nome: "sprint", tipo: Tipo::Texto, descricao: "Nome ou número da sprint. Omitido: backlog", obrigatorio: false },
+            Parametro { nome: "tags", tipo: Tipo::ListaDeTexto, descricao: "Tags da tarefa", obrigatorio: false },
+            Parametro { nome: "prazo", tipo: Tipo::Texto, descricao: "Prazo, AAAA-MM-DD", obrigatorio: false },
             Parametro {
                 nome: "lote",
                 tipo: Tipo::Texto,

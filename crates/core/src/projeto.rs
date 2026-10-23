@@ -368,6 +368,23 @@ pub struct Tarefa {
     /// o caminho: renomear a sprint não pode soltar as tarefas dela.
     #[serde(default)]
     pub sprint: Option<u32>,
+    /// As tags da pessoa (ciclo 476). A tag `tarefa`, que toda tarefa
+    /// nasce com, fica de fora: num selo do cartão ela só repetiria o
+    /// óbvio.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// O prazo, `AAAA-MM-DD`.
+    #[serde(default)]
+    pub prazo: Option<String>,
+    /// Os itens de **Critérios de aceite** (`core::detalhes`).
+    #[serde(default)]
+    pub checklist: Vec<crate::detalhes::ItemDaChecklist>,
+    /// A seção **Comentários**.
+    #[serde(default)]
+    pub comentarios: Vec<crate::detalhes::Comentario>,
+    /// A seção **Anexos**.
+    #[serde(default)]
+    pub anexos: Vec<crate::detalhes::Anexo>,
 }
 
 pub(crate) fn texto_do_valor(v: &serde_yaml::Value) -> Option<String> {
@@ -411,7 +428,28 @@ impl Tarefa {
             proposta: campo("proposta"),
             // `sprint: 3` ou `sprint: "3"`: a mão escreve dos dois jeitos.
             sprint: campo("sprint").and_then(|s| s.trim().parse().ok()),
+            tags: fm.tags.iter().filter(|t| t.as_str() != TIPO_TAREFA).cloned().collect(),
+            prazo: campo("prazo"),
+            checklist: crate::detalhes::checklist(texto),
+            comentarios: crate::detalhes::comentarios(texto),
+            anexos: crate::detalhes::anexos(texto),
         })
+    }
+
+    /// Passou do prazo sem estar feita (ciclo 476). `hoje` em
+    /// `AAAA-MM-DD`: a data é comparável como texto, e o prazo que não é
+    /// data válida nunca vence — um aviso errado é pior que nenhum.
+    pub fn vencida(&self, hoje: &str) -> bool {
+        self.etapa != EtapaTarefa::Feita
+            && self
+                .prazo
+                .as_deref()
+                .is_some_and(|p| crate::detalhes::data_valida(p) && crate::detalhes::data_valida(hoje) && p < hoje)
+    }
+
+    /// `(feitos, total)` da checklist.
+    pub fn progresso(&self) -> (usize, usize) {
+        (self.checklist.iter().filter(|i| i.feito).count(), self.checklist.len())
     }
 
     /// Esta tarefa é a que `referencia` aponta?
@@ -433,6 +471,45 @@ impl Tarefa {
             || r == nome.trim_end_matches(".md")
             || r.eq_ignore_ascii_case(&self.titulo)
     }
+}
+
+/// Troca as tags da tarefa (ciclo 476), mantendo a `tarefa`.
+///
+/// Tags repetidas ou vazias caem; `#` na frente também, porque a mão
+/// escreve `#login`.
+pub fn com_tags(texto: &str, tags: &[String]) -> Result<String, String> {
+    let (mut fm, _) = MarkdownCodec::split_frontmatter(texto).map_err(|e| format!("frontmatter ilegível: {e}"))?;
+    if fm.page_type.as_deref() != Some(TIPO_TAREFA) {
+        return Err("a página não é uma tarefa (type: tarefa)".to_string());
+    }
+    let mut novas = vec![TIPO_TAREFA.to_string()];
+    for t in tags {
+        let t = t.trim().trim_start_matches('#').trim().to_string();
+        if !t.is_empty() && !novas.contains(&t) {
+            novas.push(t);
+        }
+    }
+    fm.tags = novas;
+    MarkdownCodec::substituir_frontmatter(texto, &fm).map_err(|e| e.to_string())
+}
+
+/// Põe ou tira o prazo (ciclo 476). Recusa o que não é `AAAA-MM-DD`: o
+/// prazo é comparado como texto, e "5/11" nunca venceria.
+pub fn com_prazo(texto: &str, prazo: Option<&str>) -> Result<String, String> {
+    let (mut fm, _) = MarkdownCodec::split_frontmatter(texto).map_err(|e| format!("frontmatter ilegível: {e}"))?;
+    if fm.page_type.as_deref() != Some(TIPO_TAREFA) {
+        return Err("a página não é uma tarefa (type: tarefa)".to_string());
+    }
+    match prazo.map(str::trim).filter(|p| !p.is_empty()) {
+        Some(p) if crate::detalhes::data_valida(p) => {
+            fm.extra.insert("prazo".into(), valor(p));
+        }
+        Some(p) => return Err(format!("prazo \"{p}\" não é uma data AAAA-MM-DD")),
+        None => {
+            fm.extra.remove("prazo");
+        }
+    }
+    MarkdownCodec::substituir_frontmatter(texto, &fm).map_err(|e| e.to_string())
 }
 
 pub(crate) fn frontmatter_em_texto(fm: &Frontmatter, corpo: &str) -> String {

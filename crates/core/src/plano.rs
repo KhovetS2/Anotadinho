@@ -108,6 +108,12 @@ pub struct PlanoTarefa {
     /// O que a tarefa NÃO cobre.
     #[serde(default)]
     pub fora_de_escopo: Vec<String>,
+    /// Tags (ciclo 476).
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Prazo, `AAAA-MM-DD` (ciclo 476).
+    #[serde(default)]
+    pub prazo: Option<String>,
 }
 
 /// O modelo que a LLM pede (`anotadinho-cli projeto modelo-de-plano`).
@@ -145,6 +151,8 @@ tarefas:
   - titulo: Banco de dados e migrações
     sprint: Fundação           # nome de uma sprint acima; omitido = backlog
     prioridade: alta           # alta | media | baixa
+    tags: [banco]              # opcional
+    prazo: 2026-11-03          # opcional, AAAA-MM-DD
     objetivo: As tabelas existem e migram do zero.
     criterios:
       - "`cargo sqlx migrate run` num banco vazio cria as 4 tabelas"
@@ -332,7 +340,13 @@ pub fn montar_plano(plano: &PlanoDeProjeto, ja: &JaExiste, hoje: &str) -> Result
         if !depende.is_empty() {
             fm.extra.insert("depende".into(), serde_yaml::Value::Sequence(depende));
         }
-        let md = MarkdownCodec::substituir_frontmatter(&md, &fm).map_err(|e| e.to_string())?;
+        let mut md = MarkdownCodec::substituir_frontmatter(&md, &fm).map_err(|e| e.to_string())?;
+        if !t.tags.is_empty() {
+            md = projeto::com_tags(&md, &t.tags)?;
+        }
+        if let Some(p) = t.prazo.as_deref().filter(|p| !p.trim().is_empty()) {
+            md = projeto::com_prazo(&md, Some(p)).map_err(|e| format!("\"{titulo_t}\": {e}"))?;
+        }
         paginas.push((projeto::caminho_da_tarefa(&slug, n, titulo_t), md));
     }
 
@@ -347,6 +361,13 @@ mod testes {
 
     fn novo() -> JaExiste {
         JaExiste { projeto: false, proxima_tarefa: 1, proxima_sprint: 1, sprints: vec![] }
+    }
+
+    #[test]
+    fn prazo_invalido_no_plano_e_recusado_dizendo_qual_tarefa() {
+        let plano = ler_plano("projeto:\n  titulo: A\ntarefas:\n  - titulo: T\n    prazo: 5/11\n").unwrap();
+        let erro = montar_plano(&plano, &novo(), "2026-10-22").unwrap_err();
+        assert!(erro.contains("\"T\"") && erro.contains("5/11"), "{erro}");
     }
 
     #[test]
@@ -370,6 +391,11 @@ mod testes {
         assert_eq!(login.etapa, EtapaTarefa::Ideia);
         let banco = tarefa("pages/projetos/agenda/tarefas/001-banco-de-dados-e-migracoes.md");
         assert_eq!(banco.prioridade.as_deref(), Some("alta"));
+        // Tags e prazo do modelo chegam na página (ciclo 476), e a
+        // checklist é a dos critérios.
+        assert_eq!(banco.tags, ["banco"]);
+        assert_eq!(banco.prazo.as_deref(), Some("2026-11-03"));
+        assert_eq!(banco.progresso(), (0, 1));
         let (_, md) = r.paginas.iter().find(|(c, _)| c.ends_with("01-fundacao.md")).unwrap();
         let s = Sprint::ler("pages/projetos/agenda/sprints/01-fundacao.md", md).unwrap();
         assert_eq!((s.estado, s.inicio.as_deref()), (EstadoSprint::Planejada, Some("2026-10-27")));

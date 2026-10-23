@@ -130,6 +130,12 @@ pub(crate) enum TarefaCommand {
         /// A sprint (número ou nome). Omitido: backlog.
         #[arg(long)]
         sprint: Option<String>,
+        /// Uma tag; repita pra mais de uma.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+        /// Prazo, AAAA-MM-DD.
+        #[arg(long)]
+        prazo: Option<String>,
     },
     /// Propõe pôr a tarefa numa sprint, ou no backlog.
     Sprint {
@@ -288,7 +294,7 @@ pub(crate) fn run_projeto(vault: &str, json: bool, action: ProjetoCommand) -> Re
 
 pub(crate) fn run_tarefa(vault: &str, action: TarefaCommand) -> Result<(), String> {
     match action {
-        TarefaCommand::Nova { slug, titulo, file, motivo, autor, lote, sprint } => {
+        TarefaCommand::Nova { slug, titulo, file, motivo, autor, lote, sprint, tags, prazo } => {
             if !std::path::Path::new(vault).join(projeto::caminho_do_projeto(&slug)).exists() {
                 return Err(format!("não existe o projeto {slug} (crie com `projeto novo`)"));
             }
@@ -301,6 +307,12 @@ pub(crate) fn run_tarefa(vault: &str, action: TarefaCommand) -> Result<(), Strin
             if let Some(r) = sprint.as_deref() {
                 let s = sprint_do_projeto(vault, &slug, r)?;
                 conteudo = anotadinho_core::sprint::mudar_sprint_da_tarefa(&conteudo, Some(s.numero))?;
+            }
+            if !tags.is_empty() {
+                conteudo = projeto::com_tags(&conteudo, &tags)?;
+            }
+            if prazo.is_some() {
+                conteudo = projeto::com_prazo(&conteudo, prazo.as_deref())?;
             }
             let motivo = if motivo.trim().is_empty() { format!("tarefa nova: {}", titulo.trim()) } else { motivo };
             let id = crate::propor_conteudo(vault, caminho, conteudo, motivo, autor, lote)?;

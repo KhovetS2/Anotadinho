@@ -396,6 +396,7 @@ pub struct PorSprint<'a> {
 }
 
 impl<'a> PorSprint<'a> {
+    /// Agrupa numa passada; tarefa sem sprint fica de fora.
     pub fn novo(tarefas: &'a [Tarefa]) -> Self {
         let mut grupos: std::collections::HashMap<u32, Vec<&'a Tarefa>> = std::collections::HashMap::new();
         for t in tarefas {

@@ -223,6 +223,8 @@ pub fn handle_propor_tarefa(
     titulo: String,
     corpo: String,
     sprint_ref: Option<String>,
+    tags: Vec<String>,
+    prazo: Option<String>,
     quando: String,
     lote: Option<String>,
     autor: String,
@@ -239,6 +241,15 @@ pub fn handle_propor_tarefa(
             format!("não existe a sprint \"{r}\" em {slug}. Existem: {}", if nomes.is_empty() { "nenhuma".into() } else { nomes.join(", ") })
         })?;
         md = sprint::mudar_sprint_da_tarefa(&md, Some(s.numero))?;
+    }
+    // Tags e prazo (ciclo 476): o prazo inválido é recusado AQUI, antes de
+    // virar proposta — aplicar uma proposta com "5/11" gravaria um prazo
+    // que nunca vence.
+    if !tags.is_empty() {
+        md = projeto::com_tags(&md, &tags)?;
+    }
+    if let Some(p) = prazo.as_deref().filter(|p| !p.trim().is_empty()) {
+        md = projeto::com_prazo(&md, Some(p))?;
     }
     let p = proposta_nova(&vault_path, &autor, caminho, md, format!("tarefa nova: {}", titulo.trim()), quando, lote);
     handle_propor(vault_path, p)
@@ -376,10 +387,12 @@ mod testes {
     fn propor_tarefa_acha_a_sprint_pelo_nome_ou_diz_quais_existem() {
         let (_d, v) = vault_com_projeto();
         handle_criar_sprint(v.clone(), "saas".into(), "Fundação".into(), String::new(), None, None, "hoje".into()).unwrap();
-        handle_propor_tarefa(v.clone(), "saas".into(), "Login".into(), String::new(), Some("fundação".into()), AGORA.into(), None, "teste".into()).unwrap();
+        handle_propor_tarefa(v.clone(), "saas".into(), "Login".into(), String::new(), Some("fundação".into()), vec!["auth".into()], Some("2026-11-05".into()), AGORA.into(), None, "teste".into()).unwrap();
         let p = crate::handle_listar_propostas(v.clone()).unwrap().remove(0);
         assert_eq!(Tarefa::ler(&p.alvo, &p.conteudo).unwrap().sprint, Some(1));
-        let erro = handle_propor_tarefa(v, "saas".into(), "X".into(), String::new(), Some("Nada".into()), AGORA.into(), None, "teste".into()).unwrap_err();
+        let erro = handle_propor_tarefa(v.clone(), "saas".into(), "X".into(), String::new(), Some("Nada".into()), vec![], None, AGORA.into(), None, "teste".into()).unwrap_err();
+        // Prazo que não é data é recusado antes de virar proposta.
+        assert!(handle_propor_tarefa(v, "saas".into(), "Y".into(), String::new(), None, vec![], Some("5/11".into()), AGORA.into(), None, "teste".into()).is_err());
         assert!(erro.contains("Fundação (1)"), "{erro}");
     }
 

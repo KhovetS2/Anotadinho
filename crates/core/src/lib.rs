@@ -35,6 +35,7 @@ pub mod calendario;
 pub mod agente;
 pub mod conversa;
 pub mod decisao;
+pub mod detalhes;
 pub mod diff;
 pub mod envio;
 pub mod execucao;

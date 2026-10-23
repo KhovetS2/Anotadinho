@@ -378,6 +378,14 @@ fn chamar(vault: &str, id: Value, params: Option<&Value>) -> Value {
                 arg_str("titulo"),
                 arg_str("corpo"),
                 opcional("sprint"),
+                // Lista de verdade, ou texto separado por vírgula: o
+                // modelo manda dos dois jeitos.
+                match args.get("tags") {
+                    Some(serde_json::Value::Array(v)) => v.iter().filter_map(|x| x.as_str().map(str::to_string)).collect(),
+                    Some(serde_json::Value::String(s)) => s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect(),
+                    _ => Vec::new(),
+                },
+                opcional("prazo"),
                 crate::agora_legivel(),
                 opcional("lote"),
                 "mcp".into(),
