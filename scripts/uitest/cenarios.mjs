@@ -967,6 +967,8 @@ cenarios.push({
     // O `<code>` do markdown termina em `\n`; o que importa é que o bloco
     // não tem NADA além dele (os rótulos do SVG não estão no texto).
     ctx.assertEq(await bridge.js(`${PRE}.textContent`), FONTE + "\n", "o texto do bloco não é só o código");
+    // RF9 do construtor (487): sem ligadura, `-->` aparece como digitado.
+    ctx.assertEq(await bridge.js(`getComputedStyle(${PRE}.querySelector('code')).fontVariantLigatures`), "none", "o código mermaid aparece com ligaduras");
 
     // Salvar com outra edição na página: a fence volta igual.
     await bridge.js(`(() => {

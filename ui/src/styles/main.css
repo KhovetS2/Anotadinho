@@ -1895,6 +1895,13 @@ body {
    <pre>, não um nó — ver ui/src/mermaid.rs. Fora de foco, só o desenho;
    com foco, o código e o desenho embaixo. O foco é a classe --editando,
    não :focus (ver CLASSE_EDITANDO). */
+/* RF9 (ciclo 487): a fonte do código junta `->>` e `-->` em ligaduras, e
+   quem edita via `—»` no lugar do que digitou. Pela classe do <code>, que
+   existe antes do desenho, e não pela do <pre>, que só vem depois. */
+.editor__wysiwyg code.language-mermaid {
+    font-variant-ligatures: none;
+}
+
 .editor__bloco--mermaid-desenhado:not(.editor__bloco--mermaid-editando) > code {
     display: none;
 }
