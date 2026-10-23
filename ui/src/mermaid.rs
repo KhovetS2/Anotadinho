@@ -71,20 +71,31 @@ pub fn resumo_do_erro(mensagem: &str) -> String {
 }
 
 /// Desenha todo bloco mermaid dentro de `container`.
+///
+/// Sem bloco nenhum, a biblioteca nem é lida (ciclo 486): é o caso de
+/// quase toda página, e são 60 MiB.
 pub fn desenhar_em(container: &web_sys::Element) {
-    instalar_ouvintes();
     let Ok(codigos) = container.query_selector_all("pre > code.language-mermaid") else {
         return;
     };
-    for i in 0..codigos.length() {
-        if let Some(pre) = codigos
-            .item(i)
-            .and_then(|c| c.parent_element())
-            .and_then(|p| p.dyn_into::<web_sys::HtmlElement>().ok())
-        {
+    let pres: Vec<web_sys::HtmlElement> = (0..codigos.length())
+        .filter_map(|i| codigos.item(i))
+        .filter_map(|c| c.parent_element())
+        .filter_map(|p| p.dyn_into::<web_sys::HtmlElement>().ok())
+        .collect();
+    if pres.is_empty() {
+        return;
+    }
+    instalar_ouvintes();
+    wasm_bindgen_futures::spawn_local(async move {
+        if !crate::biblioteca::carregar(crate::biblioteca::Biblioteca::Mermaid).await {
+            // Sem a biblioteca, o bloco fica como código: é o que ele é.
+            return;
+        }
+        for pre in pres {
             desenhar_bloco(pre);
         }
-    }
+    });
 }
 
 fn codigo_de(pre: &web_sys::Element) -> Option<web_sys::Element> {
@@ -99,6 +110,17 @@ fn desenhar_bloco(pre: web_sys::HtmlElement) {
     if pre.get_attribute(ATTR_FONTE).as_deref() == Some(fonte.as_str()) {
         return;
     }
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    // Antes de marcar a fonte: sem a biblioteca, marcar faria a próxima
+    // tentativa achar que já desenhou.
+    let Some(mermaid) = js_sys::Reflect::get(&window, &JsValue::from_str("mermaid"))
+        .ok()
+        .filter(|m| m.is_object())
+    else {
+        return;
+    };
     let _ = pre.class_list().add_1(CLASSE);
     // Marca ANTES de desenhar: um segundo `focusout` durante o render não
     // dispara outro com a mesma fonte.
@@ -107,16 +129,6 @@ fn desenhar_bloco(pre: web_sys::HtmlElement) {
         limpar(&pre);
         return;
     }
-    let Some(window) = web_sys::window() else {
-        return;
-    };
-    let Some(mermaid) = js_sys::Reflect::get(&window, &JsValue::from_str("mermaid"))
-        .ok()
-        .filter(|m| m.is_object())
-    else {
-        // Sem a biblioteca, o bloco fica como código: é o que ele é.
-        return;
-    };
     configurar(&mermaid);
 
     let id = PROXIMO_ID.with(|c| {

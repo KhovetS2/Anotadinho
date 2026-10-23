@@ -4728,23 +4728,32 @@ fn exec_cmd_global(cmd: &str) {
     }
 }
 
+/// Realça os blocos de código da tela. A biblioteca só é lida quando há
+/// um (ciclo 486); o bloco mermaid não conta, porque quem o desenha é o
+/// mermaid.
 fn init_highlight() {
-    if let Some(window) = web_sys::window() {
-        if let Some(hljs) =
-            js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("hljs")).ok()
-        {
-            if let Some(obj) = hljs.dyn_into::<js_sys::Object>().ok() {
-                let _ = js_sys::Reflect::apply(
-                    &js_sys::Reflect::get(&obj, &wasm_bindgen::JsValue::from_str("highlightAll"))
-                        .ok()
-                        .and_then(|v| v.dyn_into::<js_sys::Function>().ok())
-                        .unwrap_or_else(|| js_sys::Function::new_no_args("")),
-                    &wasm_bindgen::JsValue::null(),
-                    &js_sys::Array::new(),
-                );
-            }
-        }
+    let tem_codigo = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.query_selector("pre code:not(.language-mermaid)").ok().flatten())
+        .is_some();
+    if !tem_codigo {
+        return;
     }
+    wasm_bindgen_futures::spawn_local(async {
+        if !crate::biblioteca::carregar(crate::biblioteca::Biblioteca::Realce).await {
+            return;
+        }
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        if let Some(f) = js_sys::Reflect::get(&window, &wasm_bindgen::JsValue::from_str("hljs"))
+            .ok()
+            .and_then(|h| js_sys::Reflect::get(&h, &wasm_bindgen::JsValue::from_str("highlightAll")).ok())
+            .and_then(|v| v.dyn_into::<js_sys::Function>().ok())
+        {
+            let _ = f.call0(&wasm_bindgen::JsValue::null());
+        }
+    });
 }
 
 fn exec_cmd(doc: &web_sys::Document, cmd: &str, val: &str) {

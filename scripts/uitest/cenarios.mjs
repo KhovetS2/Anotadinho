@@ -929,9 +929,15 @@ cenarios.push({
     })()`);
     ctx.assertEq(externos.length, 0, `veio de fora: ${externos.join(", ")}`);
 
-    // E continuam funcionando vindo de casa.
-    ctx.assertEq(await bridge.js("typeof window.mermaid"), "object", "mermaid não carregou");
-    ctx.assertEq(await bridge.js("typeof window.hljs"), "object", "highlight.js não carregou");
+    // E continuam funcionando vindo de casa. Desde o 486 elas só são
+    // lidas quando a página precisa: abre uma que precisa das duas, e
+    // confere de novo, agora com os scripts injetados na conta.
+    ctx.escrever("---\ntitle: __uitest\n---\n\n```rust\nfn main() {}\n```\n\n```mermaid\ngraph TD\n  A --> B\n```\n");
+    await recarregar(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "typeof window.mermaid === 'object' && typeof window.hljs === 'object'", "mermaid e highlight.js carregarem", 10000);
+    const injetados = await bridge.js(`[...document.querySelectorAll('script[data-biblioteca]')].map(s => s.getAttribute('src'))`);
+    ctx.assert(injetados.length >= 2 && injetados.every(u => u.startsWith("/")), `scripts injetados fora de casa: ${injetados.join(", ")}`);
   },
 });
 
@@ -946,11 +952,11 @@ cenarios.push({
     ctx.escrever(`---\ntitle: __uitest\n---\n\nAntes do diagrama.\n\n\`\`\`mermaid\n${FONTE}\n\`\`\`\n\nDepois do diagrama.\n`);
     await recarregar(bridge);
     await abrirPaginaEstavel(bridge, ctx.nomePagina);
-    ctx.assertEq(await bridge.js("typeof mermaid.initialize"), "function", "mermaid.initialize foi sobrescrita");
 
     const PRE = "document.querySelector('.editor__wysiwyg pre.editor__bloco--mermaid')";
     const DESENHO = `getComputedStyle(${PRE}, '::after').backgroundImage`;
     await esperar(bridge, `${PRE}?.classList.contains('editor__bloco--mermaid-desenhado')`, "o diagrama desenhar", 10000);
+    ctx.assertEq(await bridge.js("typeof mermaid.initialize"), "function", "mermaid.initialize foi sobrescrita");
     const desenho = await bridge.js(DESENHO);
     ctx.assert(desenho.startsWith('url("data:image/svg+xml'), `o ::after não tem o desenho: ${desenho.slice(0, 80)}`);
     // O SVG traz os rótulos: é a prova de que desenhou ESTE diagrama.
@@ -992,6 +998,31 @@ cenarios.push({
     ctx.assert(await bridge.js(`getComputedStyle(${PRE}.querySelector('code')).display !== 'none'`), "com erro, o código sumiu");
     // O mermaid 10 pendura um rascunho no <body> a cada erro.
     ctx.assertEq(await bridge.js("document.querySelectorAll('body > [id^=dmermaid-]').length"), 0, "sobrou rascunho do mermaid no body");
+  },
+});
+
+// ── ciclo 486: as bibliotecas pesadas só carregam quando precisam ─────
+
+cenarios.push({
+  nome: "bibliotecas: uma nota sem código, diagrama nem grafo não lê nenhuma (486)",
+  async fn(bridge, ctx) {
+    // O 484 mediu ~79 MiB só por as três estarem carregadas. O reload dá
+    // um documento novo: o que estiver aqui depois dele foi lido AGORA.
+    ctx.escrever("---\ntitle: __uitest\n---\n\nSó texto.\n\n- e uma lista\n");
+    await recarregar(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
+    const globais = `JSON.stringify(['mermaid', 'ForceGraph3D', 'hljs'].filter(g => typeof window[g] !== 'undefined'))`;
+    ctx.assertEq(await bridge.js(globais), "[]", "biblioteca lida numa nota que não precisa dela");
+    ctx.assertEq(await bridge.js("document.querySelectorAll('script[src*=\"mermaid\"], script[src*=\"force-graph\"], script[src*=\"highlight\"]').length"), 0, "o <script> de uma biblioteca está na página");
+
+    // Um bloco de código lê só o highlight; e ele realça.
+    ctx.escrever("---\ntitle: __uitest\n---\n\n```rust\nfn main() {}\n```\n");
+    await recarregar(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('pre code')?.classList.contains('hljs')", "o bloco ser realçado", 10000);
+    ctx.assertEq(await bridge.js(globais), '["hljs"]', "um bloco de código leu outra biblioteca além do highlight");
+    // Uma vez só, mesmo com o render chamando o realce várias vezes.
+    ctx.assertEq(await bridge.js("document.querySelectorAll('script[data-biblioteca=\"hljs\"]').length"), 1, "o highlight foi injetado mais de uma vez");
   },
 });
 
@@ -2403,9 +2434,10 @@ cenarios.push({
     await recarregar(bridge);
     await ctx.abrirPagina(bridge, ctx.nomePagina);
     await ctx.esperar(bridge, "document.querySelector('pre code')", "o bloco de código existir");
-    // O hljs roda depois do render; sem essa folga o teste passaria por
-    // ele não ter mexido no DOM ainda, não por o conserto funcionar.
-    await PAUSA(1200);
+    // O hljs roda depois do render (e, desde o 486, depois de a biblioteca
+    // ser lida): sem esperar por ELE o teste passaria por ele não ter
+    // mexido no DOM ainda, não por o conserto funcionar.
+    await ctx.esperar(bridge, "document.querySelector('pre code')?.classList.contains('hljs')", "o highlight.js realçar o bloco", 10000);
 
     const classe = await bridge.js(
       `(document.querySelector('pre code') || {}).className || ''`,

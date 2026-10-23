@@ -86,6 +86,13 @@ pub fn graph_view(props: &GraphViewProps) -> Html {
                         return;
                     };
 
+                    // A biblioteca só é lida aqui (ciclo 486). Se não
+                    // carregar, `desenhar` mostra a mensagem de falta.
+                    crate::biblioteca::carregar(crate::biblioteca::Biblioteca::Grafo).await;
+                    if !montado.get() {
+                        return;
+                    }
+
                     let (nos, arestas) = montar(&paginas);
                     *vivo.borrow_mut() = desenhar(&el, &paginas, &nos, &arestas, on_page_selected);
                     carregando.set(false);
