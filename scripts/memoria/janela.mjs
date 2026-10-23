@@ -241,6 +241,13 @@ if (fs.existsSync(path.join(vault, PASTA)) || fs.existsSync(path.join(vault, "pa
 }
 console.log(`app ${app} · ${build}\nvault ${vault}`);
 
+// A parte do Rust no começo e no fim (ciclo 483): diz se o crescimento
+// por rodada é do nosso código ou do GTK e do WebKit. Build anterior ao
+// 483 não tem o comando, e aí a linha só não sai.
+const RUST = "window.__TAURI_INTERNALS__.invoke('memoria_do_rust').catch(() => null)";
+const rustAntes = await bridge.js(RUST);
+let rustDepois = null;
+
 const amostras = [];
 let fase = "repouso", rodada = 0, acaoAtual = "repouso";
 const marcos = {};
@@ -284,6 +291,7 @@ try {
   rodada = RODADAS;
   fase = "fim";
   await PAUSA(1500);
+  rustDepois = rustAntes && (await bridge.js(RUST));
 } catch (e) {
   limpar();
   console.error(`\n✗ o dia parou: ${e.message}`);
@@ -295,6 +303,10 @@ try {
 
 const { texto, resumo } = relatorio(amostras, marcos, build);
 console.log(texto);
+if (rustDepois) {
+  const m = (b) => (b / 1048576).toFixed(1);
+  console.log(`\nRust (alocador do app): ${m(rustAntes.vivos)} → ${m(rustDepois.vivos)} MiB vivos, pico ${m(rustDepois.pico)} MiB`);
+}
 fs.writeFileSync(SAIDA, JSON.stringify({ build, app, vault, rodadas: RODADAS, intervalo_ms: INTERVALO_MS, resumo, marcos, amostras }, null, 1));
 console.log(`\namostras em ${SAIDA}`);
 process.exit(0);

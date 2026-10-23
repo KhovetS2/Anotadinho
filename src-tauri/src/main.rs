@@ -24,6 +24,12 @@ use anotadinho_ipc::{
 use anotadinho_vault::{GitFileEntry, GitLogEntry, VaultIo, VaultWatcher};
 use tauri_plugin_dialog::DialogExt;
 
+/// O alocador do Rust com contador (ciclo 483): é o que separa, no
+/// processo do app, o que é nosso do que é GTK, WebKit e driver.
+#[global_allocator]
+static ALOCADOR: anotadinho_core::memoria::AlocadorContado =
+    anotadinho_core::memoria::AlocadorContado::novo();
+
 struct AppWatchers(Mutex<HashMap<String, VaultWatcher>>);
 
 /// Execuções do agente em andamento ou recém-terminadas, por conversa.
@@ -151,6 +157,13 @@ fn window_is_maximized(window: tauri::Window) -> Result<bool, String> {
 #[tauri::command]
 fn ping(args: PingArgs) -> PingResult {
     handle_ping(args)
+}
+
+/// Os bytes que o código Rust tem vivos agora, e o pico. Lido pelas
+/// medidas de `scripts/memoria/`.
+#[tauri::command]
+fn memoria_do_rust() -> anotadinho_core::memoria::MemoriaDoRust {
+    ALOCADOR.foto()
 }
 
 #[tauri::command]
@@ -1575,6 +1588,7 @@ fn main() {
         .manage(AppWatchers(Mutex::new(HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             ping,
+            memoria_do_rust,
             window_minimize,
             window_toggle_maximize,
             window_close,

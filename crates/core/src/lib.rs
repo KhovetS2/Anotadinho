@@ -50,6 +50,7 @@ pub mod semente;
 pub mod history;
 pub mod index;
 pub mod inserted_image;
+pub mod memoria;
 pub mod links;
 pub mod proposta;
 pub mod prompt_padrao;
