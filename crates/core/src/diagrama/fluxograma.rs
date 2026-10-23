@@ -152,13 +152,23 @@ impl Fluxograma {
     }
 }
 
-/// Texto que precisa de aspas: o que fecharia a forma ou é sintaxe.
-fn texto_de_no(t: &str) -> String {
-    let e = escapar(t);
-    if e.chars().any(|c| "[](){}|<>".contains(c)) || e.trim() != e || e.is_empty() {
-        format!("\"{e}\"")
+/// O texto do nó como ele vai no código.
+///
+/// Com `htmlLabels: false` (a configuração do app, necessária pra o
+/// desenho virar imagem), o mermaid NÃO troca entidade no texto do nó, nem
+/// entre aspas: `#59;` aparecia escrito no desenho (visto no ciclo 490; no
+/// rótulo da ligação a troca acontece). Então o texto vai CRU entre aspas,
+/// que aceitam `;`, `:` e colchetes. Só `"` não tem como entrar: vira `'`,
+/// a mesma regra do nome de estado.
+pub fn texto_de_no(t: &str) -> String {
+    let cru = t.replace('"', "'");
+    let simples = !cru.is_empty()
+        && cru.trim() == cru
+        && !cru.chars().any(|c| "[](){}|<>;#'".contains(c));
+    if simples {
+        cru
     } else {
-        e
+        format!("\"{cru}\"")
     }
 }
 
@@ -167,7 +177,7 @@ fn texto_de_no(t: &str) -> String {
 /// pelo `mermaid.parse` de verdade, ciclo 488).
 fn texto_de_rotulo(t: &str) -> String {
     let e = escapar(t);
-    if e.chars().any(|c| "[](){}|<>".contains(c)) {
+    if e != t || e.chars().any(|c| "[](){}|<>".contains(c)) {
         format!("\"{e}\"")
     } else {
         e
@@ -369,14 +379,16 @@ mod tests {
     }
 
     #[test]
-    fn texto_com_sintaxe_vai_entre_aspas_e_volta() {
+    fn texto_com_sintaxe_vai_cru_entre_aspas_e_aspas_viram_apostrofo() {
         let mut f = Fluxograma::novo();
         f.nos.push(No { id: "A".into(), texto: "pergunta (sim; não) \"x\"".into(), forma: Forma::Caixa });
         f.nos.push(No { id: "B".into(), texto: "B".into(), forma: Forma::Caixa });
         f.ligacoes.push(Ligacao { de: "A".into(), para: "B".into(), tipo: TipoLigacao::Seta, rotulo: "a|b; c".into() });
-        let d = Diagrama::Fluxograma(f);
-        let codigo = escrever(&d);
-        assert_eq!(ler(&codigo).unwrap(), d, "{codigo}");
+        let codigo = escrever(&Diagrama::Fluxograma(f.clone()));
+        // Cru: o mermaid não troca entidade no texto do nó (ver `texto_de_no`).
+        assert!(codigo.contains("A[\"pergunta (sim; não) 'x'\"]"), "{codigo}");
+        f.nos[0].texto = "pergunta (sim; não) 'x'".into();
+        assert_eq!(ler(&codigo).unwrap(), Diagrama::Fluxograma(f), "{codigo}");
     }
 
     #[test]

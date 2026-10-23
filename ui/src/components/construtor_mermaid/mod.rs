@@ -7,6 +7,9 @@
 //! aplicar sem mexer devolve o código exatamente como veio (RF8): ninguém
 //! o regenerou.
 
+mod canvas;
+mod estados;
+mod fluxograma;
 mod gantt;
 mod linhas;
 mod sequencia;
@@ -14,6 +17,8 @@ mod sequencia;
 use anotadinho_core::diagrama::{self, Diagrama, Tipo};
 use yew::prelude::*;
 
+use estados::EditorEstados;
+use fluxograma::EditorFluxograma;
 use gantt::EditorGantt;
 use sequencia::EditorSequencia;
 
@@ -209,8 +214,7 @@ pub fn construtor_mermaid(props: &ConstrutorMermaidProps) -> Html {
 }
 
 /// A edição visual de cada tipo. O editor recebe o modelo e devolve o
-/// modelo novo; daqui ele vira código, que é o que o modal guarda. O
-/// fluxograma e os estados ganham o canvas no 490.
+/// modelo novo; daqui ele vira código, que é o que o modal guarda.
 fn editor_do_tipo(d: &Diagrama, mudar: Callback<String>) -> Html {
     match d {
         Diagrama::Sequencia(s) => {
@@ -221,15 +225,13 @@ fn editor_do_tipo(d: &Diagrama, mudar: Callback<String>) -> Html {
             let on = mudar.reform(|novo| diagrama::escrever(&Diagrama::Gantt(novo)));
             html! { <EditorGantt modelo={g.clone()} on_mudar={on} /> }
         }
-        Diagrama::Fluxograma(f) => html! {
-            <p class="construtor-mermaid__resumo">
-                { format!("Fluxograma: {} nós, {} ligações. O canvas deste tipo ainda não chegou — use a aba Código.", f.nos.len(), f.ligacoes.len()) }
-            </p>
-        },
-        Diagrama::Estados(e) => html! {
-            <p class="construtor-mermaid__resumo">
-                { format!("Estados: {} estados, {} transições. O canvas deste tipo ainda não chegou — use a aba Código.", e.estados.len(), e.transicoes.len()) }
-            </p>
-        },
+        Diagrama::Fluxograma(f) => {
+            let on = mudar.reform(|novo| diagrama::escrever(&Diagrama::Fluxograma(novo)));
+            html! { <EditorFluxograma modelo={f.clone()} on_mudar={on} /> }
+        }
+        Diagrama::Estados(e) => {
+            let on = mudar.reform(|novo| diagrama::escrever(&Diagrama::Estados(novo)));
+            html! { <EditorEstados modelo={e.clone()} on_mudar={on} /> }
+        }
     }
 }

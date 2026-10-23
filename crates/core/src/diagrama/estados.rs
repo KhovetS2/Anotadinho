@@ -2,11 +2,20 @@
 
 use super::{desescapar, id_valido, linha_de_posicoes, tomar_id, ForaDoModelo, Instrucao, Posicoes};
 
-/// O mermaid não aceita `:` no rótulo da transição (ele já separa o rótulo
-/// por `:`): achado passando as amostras pelo `mermaid.parse` de verdade
-/// (ciclo 488). No nome entre aspas, o escape vai junto, pela mesma regra.
+/// O rótulo da transição: o mermaid não aceita `:` cru ali (ele separa o
+/// rótulo por `:`), mas troca as entidades na hora de desenhar. Achado
+/// passando as amostras pelo `mermaid.parse` de verdade (ciclo 488).
 fn escapar(t: &str) -> String {
     super::escapar(t).replace(':', "#58;")
+}
+
+/// O nome entre aspas (`state "…" as id`) é o contrário do rótulo: o
+/// mermaid NÃO troca entidade ali (`#58;` aparecia escrito no desenho,
+/// visto no ciclo 490), e aceita `:` e `;` crus. Só `"` não tem como
+/// entrar: vira `'`. É a única troca com perda do construtor, e é do
+/// mermaid, que não oferece outra forma.
+pub fn nome_no_codigo(t: &str) -> String {
+    t.replace('"', "'")
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -71,7 +80,7 @@ impl Estados {
         // propriedade, como no fluxograma).
         for e in &self.estados {
             if e.texto != e.id {
-                s.push_str(&format!("  state \"{}\" as {}\n", escapar(&e.texto), e.id));
+                s.push_str(&format!("  state \"{}\" as {}\n", nome_no_codigo(&e.texto), e.id));
             } else {
                 s.push_str(&format!("  {}\n", e.id));
             }

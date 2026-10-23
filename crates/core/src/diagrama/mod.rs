@@ -327,7 +327,61 @@ mod tests {
         let destino = std::env::var("ANOTADINHO_AMOSTRAS").expect("ANOTADINHO_AMOSTRAS");
         let mut codigos: Vec<String> = Tipo::TODOS.iter().map(|t| escrever(&Diagrama::exemplo(*t))).collect();
         codigos.extend(propriedade::amostras(40));
-        std::fs::write(destino, serde_json::to_string(&codigos).unwrap()).unwrap();
+        let saida = serde_json::json!({ "codigos": codigos, "rotulos": rotulos_para_o_desenho() });
+        std::fs::write(destino, saida.to_string()).unwrap();
+    }
+
+    /// Um diagrama por LUGAR onde o construtor escreve texto, com um texto
+    /// difícil, e o texto que o desenho tem que mostrar. Passar no
+    /// `mermaid.parse` não basta: no nome de estado entre aspas, `#58;`
+    /// passava no parse e aparecia escrito no desenho (ciclo 490).
+    fn rotulos_para_o_desenho() -> Vec<serde_json::Value> {
+        use estados::{Estado, Estados, Ponta, Transicao};
+        use fluxograma::{Fluxograma, Forma, Ligacao, No, TipoLigacao};
+        use gantt::{Fim, Gantt, Inicio, Secao, Tarefa};
+        use sequencia::{Item, Lado, Participante, Seta, Sequencia};
+        const T: &str = "a: b; (c) [d] {e} é";
+        const T_ASPAS: &str = "a: b; \"c\" é";
+        let mut casos: Vec<(Diagrama, &str)> = Vec::new();
+        for forma in Forma::TODAS {
+            let mut f = Fluxograma::novo();
+            f.nos.push(No { id: "A".into(), texto: T_ASPAS.into(), forma });
+            f.nos.push(No { id: "B".into(), texto: "B".into(), forma: Forma::Caixa });
+            f.ligacoes.push(Ligacao { de: "A".into(), para: "B".into(), tipo: TipoLigacao::Seta, rotulo: T.into() });
+            // No nó, `"` vira `'` (ver `fluxograma::texto_de_no`).
+            casos.push((Diagrama::Fluxograma(f.clone()), "a: b; 'c' é"));
+            casos.push((Diagrama::Fluxograma(f), T));
+        }
+        let seq = Sequencia {
+            participantes: vec![
+                Participante { id: "P1".into(), nome: T_ASPAS.into(), ator: false },
+                Participante { id: "P2".into(), nome: "Outro".into(), ator: true },
+            ],
+            itens: vec![
+                Item::Mensagem { de: "P1".into(), para: "P2".into(), seta: Seta::Sincrona, texto: "m: x; \"y\"".into() },
+                Item::Nota { lado: Lado::Sobre, alvos: vec!["P1".into(), "P2".into()], texto: "n: x; \"y\"".into() },
+            ],
+        };
+        for t in [T_ASPAS, "m: x; \"y\"", "n: x; \"y\""] {
+            casos.push((Diagrama::Sequencia(seq.clone()), t));
+        }
+        let mut est = Estados::novo();
+        est.estados.push(Estado { id: "E1".into(), texto: estados::nome_no_codigo(T) });
+        est.transicoes.push(Transicao { de: Ponta::Inicio, para: Ponta::Estado("E1".into()), rotulo: T_ASPAS.into() });
+        casos.push((Diagrama::Estados(est.clone()), T));
+        casos.push((Diagrama::Estados(est), T_ASPAS));
+        let g = Gantt {
+            titulo: Some("t: x; \"y\"".into()),
+            com_formato: true,
+            secoes: vec![Secao {
+                nome: Some("s: x; \"y\"".into()),
+                tarefas: vec![Tarefa { nome: T_ASPAS.into(), marcas: vec![], id: None, inicio: Inicio::Data("2026-01-05".into()), fim: Fim::Duracao("3d".into()) }],
+            }],
+        };
+        for t in ["t: x; \"y\"", "s: x; \"y\"", T_ASPAS] {
+            casos.push((Diagrama::Gantt(g.clone()), t));
+        }
+        casos.into_iter().map(|(d, t)| serde_json::json!({ "codigo": escrever(&d), "texto": t })).collect()
     }
 
     #[test]
@@ -368,7 +422,9 @@ mod propriedade {
         f.direcao = Direcao::TODAS[r.n(5)];
         let n = 1 + r.n(6);
         for i in 0..n {
-            f.nos.push(No { id: format!("n{i}"), texto: r.texto(), forma: Forma::TODAS[r.n(4)] });
+            // `"` não entra no texto do nó (vira `'`, ver
+            // `fluxograma::texto_de_no`): o gerador não o produz.
+            f.nos.push(No { id: format!("n{i}"), texto: r.texto().replace('"', "'"), forma: Forma::TODAS[r.n(4)] });
         }
         for _ in 0..r.n(8) {
             let rotulo = if r.n(2) == 0 { String::new() } else { r.texto() };
@@ -411,7 +467,9 @@ mod propriedade {
         let mut e = Estados::novo();
         let n = 1 + r.n(5);
         for i in 0..n {
-            let texto = if r.n(2) == 0 { format!("s{i}") } else { r.texto() };
+            // `"` não entra no nome de estado (vira `'`, ver
+            // `estados::nome_no_codigo`): o gerador não o produz.
+            let texto = if r.n(2) == 0 { format!("s{i}") } else { estados::nome_no_codigo(&r.texto()) };
             e.estados.push(Estado { id: format!("s{i}"), texto });
         }
         for _ in 0..r.n(8) {

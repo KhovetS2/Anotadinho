@@ -66,6 +66,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Painel de propriedades (frontmatter) | ✅ | 344 — "Propriedades da página…" |
 | Inserir imagem (texto alternativo, legenda, tamanho, alinhamento) | ✅ | 388 — menu `/` → Imagem; a figura aparece como ▨ legenda e Enter abre o arquivo |
 | Imagem colada/arrastada, Mermaid, PDF | — | terminal |
+| Construtor de diagramas mermaid (canvas, formulários, prévia) | — | 487–490 — terminal não desenha diagrama; na TUI o bloco continua editável como código (390) |
 | Desfazer/refazer | ✅ | 322 |
 | Salvar (Ctrl+S) e salvamento automático liga/desliga | ✅ | 375 — desligado, a página ganha ● e grava no Ctrl+S (ou ao sair dela) |
 | Definir como início (abre primeiro, aba fixa) | ✅ | 362 |

@@ -1064,7 +1064,7 @@ cenarios.push({
         env: { ...process.env, ANOTADINHO_AMOSTRAS: destino },
         stdio: "ignore",
       });
-      const codigos = JSON.parse(readFileSync(destino, "utf8"));
+      const { codigos, rotulos } = JSON.parse(readFileSync(destino, "utf8"));
       ctx.assert(codigos.length > 100, `poucas amostras: ${codigos.length}`);
       await bridge.js(`(() => { if (!window.mermaid && !document.querySelector('script[data-biblioteca=mermaid]')) { const s = document.createElement('script'); s.src = '/mermaid.min.js'; s.dataset.biblioteca = 'mermaid'; document.head.append(s); } return true; })()`);
       await ctx.esperar(bridge, "typeof window.mermaid === 'object'", "o mermaid carregar", 15000);
@@ -1076,6 +1076,26 @@ cenarios.push({
         return falhas;
       })()`);
       ctx.assertEq(falhas.length, 0, `o mermaid recusou ${falhas.length} de ${codigos.length}:\n${falhas.slice(0, 3).join("\n---\n")}`);
+      // E o DESENHO mostra o texto como digitado: passar no parse não
+      // basta (no nome de estado, `#58;` passava e aparecia escrito).
+      // Com a configuração do app, que é a da prévia e do bloco.
+      const errados = await bridge.js(`(async () => {
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'base', flowchart: { htmlLabels: false } });
+        const errados = [];
+        for (const [n, { codigo, texto }] of ${JSON.stringify(rotulos)}.entries()) {
+          const r = await mermaid.render('rot' + n + '-' + Date.now(), codigo);
+          const d = new DOMParser().parseFromString(r.svg, 'image/svg+xml');
+          const w = d.createTreeWalker(d.documentElement, NodeFilter.SHOW_TEXT);
+          let visto = '';
+          while (w.nextNode()) if (w.currentNode.parentElement?.tagName !== 'style') visto += w.currentNode.textContent + '\\n';
+          // O mermaid quebra o rótulo em um <tspan> por palavra: compara
+          // sem os espaços, dos dois lados.
+          const sem = (t) => t.replace(/\\s+/g, '');
+          if (!sem(visto).includes(sem(texto))) errados.push(texto + '  ←  ' + codigo.split('\\n').slice(0, 4).join(' / '));
+        }
+        return errados;
+      })()`);
+      ctx.assertEq(errados.length, 0, `o desenho não mostra o texto como digitado (${errados.length} de ${rotulos.length}):\n${errados.slice(0, 4).join("\n")}`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1188,7 +1208,7 @@ async function construtorNovo(bridge, ctx, tipo) {
   await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid')", "o construtor abrir");
   await bridge.js(`(() => { [...document.querySelectorAll('.construtor-mermaid__tipo')].find(t => t.textContent.trim() === ${JSON.stringify(tipo)}).click(); return true; })()`);
   await ctx.esperar(bridge, `document.querySelector('.construtor-mermaid__tipo--ativo')?.textContent.trim() === ${JSON.stringify(tipo)}`, "o tipo trocar");
-  await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__form')", "o formulário aparecer");
+  await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__form, .construtor-mermaid__grafo')", "o editor do tipo aparecer");
 }
 
 /// O código que o construtor tem agora, pela aba Código e de volta.
@@ -1197,7 +1217,7 @@ async function codigoDoConstrutor(bridge, ctx) {
   await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__codigo')", "a aba código");
   const c = await bridge.js("document.querySelector('.construtor-mermaid__codigo').value");
   await bridge.js(ABA_DO_CONSTRUTOR("Construtor"));
-  await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__form')", "o formulário voltar");
+  await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__form, .construtor-mermaid__grafo')", "o editor do tipo voltar");
   return c;
 }
 
@@ -1216,7 +1236,21 @@ const ESCOLHER_NO_SELECT = (seletor, valor) => `(() => {
 
 /// Espera a prévia desenhar SEM erro e devolve o texto do desenho.
 async function previaSemErro(bridge, ctx, contem) {
-  await ctx.esperar(bridge, `(() => { const i = document.querySelector('.construtor-mermaid__previa-imagem'); return !!i && decodeURIComponent(i.src).includes(${JSON.stringify(contem)}); })()`, `a prévia desenhar com "${contem}"`, 10000);
+  try {
+    await ctx.esperar(bridge, `(() => { const i = document.querySelector('.construtor-mermaid__previa-imagem'); return !!i && decodeURIComponent(i.src).includes(${JSON.stringify(contem)}); })()`, `a prévia desenhar com "${contem}"`, 10000);
+  } catch (e) {
+    // O que a prévia TINHA: sem isto, a falha não diz se foi erro do
+    // mermaid ou texto diferente do esperado.
+    const visto = await bridge.js(`(() => {
+      const erro = document.querySelector('.construtor-mermaid__previa-erro');
+      if (erro) return 'erro: ' + erro.textContent;
+      const i = document.querySelector('.construtor-mermaid__previa-imagem');
+      if (!i) return 'sem imagem';
+      const d = new DOMParser().parseFromString(decodeURIComponent(i.src.split(',').slice(1).join(',')), 'image/svg+xml');
+      return 'rótulos: ' + [...d.querySelectorAll('text, tspan')].map(t => t.textContent.trim()).filter(Boolean).join(' | ');
+    })()`);
+    throw new Error(`${e.message}\n      prévia: ${visto}`);
+  }
   ctx.assert(!(await bridge.js("!!document.querySelector('.construtor-mermaid__previa-erro')")), "a prévia mostrou erro");
 }
 
@@ -1301,6 +1335,111 @@ cenarios.push({
     })()`);
     await ctx.esperar(bridge, "!document.querySelector('.construtor-mermaid')", "o modal fechar");
     ctx.assertEq(await bridge.js("document.querySelector('.editor__wysiwyg pre.editor__bloco--mermaid code').textContent"), "graph TD\n  A --> Ultima\n", "o Aplicar levou o código de antes da última edição");
+  },
+});
+
+// ── ciclo 490: o canvas de fluxograma e estados ─────────────────────
+//
+// Os eventos de ponteiro aqui são SINTÉTICOS: provam a lógica depois do
+// gesto (o que vira modelo e código), não o arraste de verdade no WebKitGTK
+// (padrão "fronteira-do-sistema"). O arraste real fica pra conferência à mão.
+
+/// Centro, na tela, da forma do nó `chave` no canvas.
+const CENTRO_DO_NO = (chave) => `(() => {
+  const g = document.querySelector('.construtor-canvas [data-chave="${chave}"]');
+  const r = g.firstElementChild.getBoundingClientRect();
+  return [r.left + r.width / 2, r.top + r.height / 2];
+})()`;
+/// Um gesto: apertar em `alvo` (seletor), mover e soltar em [x, y] da tela.
+const GESTO = (seletorDoAlvo, ate) => `(() => {
+  const alvo = document.querySelector(${JSON.stringify(seletorDoAlvo)});
+  const r = alvo.getBoundingClientRect();
+  const svg = document.querySelector('.construtor-canvas');
+  const ev = (tipo, x, y, el) => el.dispatchEvent(new PointerEvent(tipo, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0, isPrimary: true, pointerType: 'mouse' }));
+  const [x0, y0] = [r.left + r.width / 2, r.top + r.height / 2];
+  const [x1, y1] = ${JSON.stringify("__ATE__")};
+  ev('pointerdown', x0, y0, alvo);
+  for (let k = 1; k <= 5; k++) ev('pointermove', x0 + (x1 - x0) * k / 5, y0 + (y1 - y0) * k / 5, svg);
+  ev('pointerup', x1, y1, svg);
+  return true;
+})()`.replace('"__ATE__"', ate);
+const TECLA_NO_CANVAS = (seletor, tecla) => `(() => {
+  const el = document.querySelector(${JSON.stringify(seletor)});
+  el.focus();
+  el.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(tecla)}, bubbles: true, cancelable: true }));
+  return true;
+})()`;
+
+cenarios.push({
+  nome: "construtor: no canvas do fluxograma, arrastar guarda a posição e puxar pela alça liga (490)",
+  async fn(bridge, ctx) {
+    await construtorNovo(bridge, ctx, "Fluxograma");
+    await ctx.esperar(bridge, "document.querySelectorAll('.construtor-canvas [data-chave]').length === 4", "os 4 nós do exemplo no canvas");
+
+    // Arrastar A uns 150 px pra direita e 120 pra baixo.
+    const [ax, ay] = await bridge.js(CENTRO_DO_NO("A"));
+    await bridge.js(GESTO('.construtor-canvas [data-chave="A"] rect', `[${ax + 150}, ${ay + 120}]`));
+    let codigo = await codigoDoConstrutor(bridge, ctx);
+    const pos = codigo.match(/%% anotadinho-posicoes: (\{.*\})/);
+    ctx.assert(pos, `o arraste não guardou posição:\n${codigo}`);
+    const a = JSON.parse(pos[1]).A;
+    ctx.assert(a && a[0] > 200 && a[1] > 80, `a posição de A não andou: ${pos[1]}`);
+
+    // Puxar da alça de D até C: ligação D --> C, já selecionada.
+    const [cx, cy] = await bridge.js(CENTRO_DO_NO("C"));
+    await bridge.js(GESTO('.construtor-canvas [data-chave="D"] .construtor-canvas__alca', `[${cx}, ${cy}]`));
+    await ctx.esperar(bridge, "document.querySelector('[data-nav-item=construtor-painel-rotulo]')", "a ligação nova ficar selecionada");
+    await bridge.js(ESCREVER_NO_CAMPO("document.querySelector('[data-nav-item=construtor-painel-rotulo]')", "de novo (talvez)"));
+
+    // Pelo teclado: L em B, L em D liga B --> D.
+    await bridge.js(TECLA_NO_CANVAS('.construtor-canvas [data-chave="B"]', "l"));
+    await bridge.js(TECLA_NO_CANVAS('.construtor-canvas [data-chave="D"]', "l"));
+
+    // Um nó novo, apagado pelo Delete.
+    await bridge.js("document.querySelector('[data-nav-item=construtor-fluxo-novo-no]').click(), true");
+    await ctx.esperar(bridge, "!!document.querySelector('.construtor-canvas [data-chave=\"N1\"]')", "o nó novo aparecer");
+    await bridge.js(TECLA_NO_CANVAS('.construtor-canvas [data-chave="N1"]', "Delete"));
+    await ctx.esperar(bridge, "!document.querySelector('.construtor-canvas [data-chave=\"N1\"]')", "o Delete apagar o nó");
+
+    codigo = await codigoDoConstrutor(bridge, ctx);
+    ctx.assert(codigo.includes('D -->|"de novo (talvez)"| C'), `a ligação puxada não saiu com o rótulo:\n${codigo}`);
+    ctx.assert(codigo.includes("B --> D"), `a ligação pelo teclado não saiu:\n${codigo}`);
+    ctx.assert(!codigo.includes("N1"), `o nó apagado ficou no código:\n${codigo}`);
+    await previaSemErro(bridge, ctx, "talvez");
+
+    // Inserir e reabrir: o canvas volta com A onde foi deixado.
+    await bridge.js("document.querySelector('.construtor-mermaid__aplicar').click(), true");
+    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg pre.editor__bloco--mermaid-desenhado')", "o bloco desenhar", 10000);
+    await bridge.js(CTRL_ENTER_NO_BLOCO(0));
+    await ctx.esperar(bridge, "document.querySelector('.construtor-canvas [data-chave=\"A\"]')", "o canvas reabrir");
+    const x = await bridge.js(`+document.querySelector('.construtor-canvas [data-chave="A"] rect').getAttribute('x')`);
+    ctx.assertEq(x, a[0] - 66, "A não voltou pra onde foi arrastado");
+    await bridge.js("document.querySelector('[data-nav-item=construtor-mermaid-cancelar]').click(), true");
+  },
+});
+
+cenarios.push({
+  nome: "construtor: no canvas dos estados, o início só sai e o fim só chega (490)",
+  async fn(bridge, ctx) {
+    await construtorNovo(bridge, ctx, "Estados");
+    await ctx.esperar(bridge, "!!document.querySelector('.construtor-canvas [data-chave=\"[*]inicio\"]')", "o início no canvas");
+    ctx.assert(!(await bridge.js("!!document.querySelector('.construtor-canvas [data-chave=\"[*]fim\"] .construtor-canvas__alca')")), "o fim tem alça: daria pra sair dele");
+    // Do início direto pro fim não é transição: nada acontece.
+    const [fx, fy] = await bridge.js(CENTRO_DO_NO("[*]fim"));
+    const antes = await codigoDoConstrutor(bridge, ctx);
+    await bridge.js(GESTO('.construtor-canvas [data-chave="[*]inicio"] .construtor-canvas__alca', `[${fx}, ${fy}]`));
+    ctx.assertEq(await codigoDoConstrutor(bridge, ctx), antes, "início → fim virou transição");
+    // Um estado novo, renomeado, ligado do início.
+    await bridge.js("document.querySelector('[data-nav-item=construtor-estados-novo]').click(), true");
+    await ctx.esperar(bridge, "document.querySelector('[data-nav-item=construtor-painel-texto]')", "o estado novo selecionado");
+    await bridge.js(ESCREVER_NO_CAMPO("document.querySelector('[data-nav-item=construtor-painel-texto]')", "Em revisão: final"));
+    const [ex, ey] = await bridge.js(CENTRO_DO_NO("E1"));
+    await bridge.js(GESTO('.construtor-canvas [data-chave="[*]inicio"] .construtor-canvas__alca', `[${ex}, ${ey}]`));
+    const codigo = await codigoDoConstrutor(bridge, ctx);
+    ctx.assert(codigo.includes('state "Em revisão: final" as E1'), `o estado novo não saiu:\n${codigo}`);
+    ctx.assert(codigo.includes("[*] --> E1"), `a transição do início não saiu:\n${codigo}`);
+    await previaSemErro(bridge, ctx, "Em revisão: final");
+    await bridge.js("document.querySelector('[data-nav-item=construtor-mermaid-cancelar]').click(), true");
   },
 });
 

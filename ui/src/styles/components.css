@@ -2516,3 +2516,40 @@
 .construtor-mermaid__linha-acoes { display: inline-flex; gap: var(--sp-1); margin-left: auto; }
 .construtor-mermaid__adicionar { display: flex; gap: var(--sp-2); }
 .construtor-mermaid__data { position: relative; display: inline-flex; }
+/* Canvas do construtor (ciclo 490): fluxograma e estados. */
+.construtor-mermaid__grafo { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.construtor-mermaid__painel { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-base); }
+.construtor-mermaid__dica { margin: 0; font-size: .75rem; line-height: 1.5; color: var(--text-muted); }
+.construtor-canvas {
+  width: 100%; height: auto; aspect-ratio: 640 / 400; touch-action: none; user-select: none;
+  background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--r-md);
+  background-image: radial-gradient(color-mix(in srgb, var(--text-muted) 22%, transparent) 1px, transparent 1px);
+  background-size: var(--sp-6) var(--sp-6);
+}
+.construtor-canvas__no { cursor: grab; outline: none; }
+.construtor-canvas__no:active { cursor: grabbing; }
+.construtor-canvas__no rect, .construtor-canvas__no polygon, .construtor-canvas__no circle:not(.construtor-canvas__alca) {
+  fill: var(--bg-elevated); stroke: var(--border); stroke-width: 1.5;
+}
+.construtor-canvas__no .construtor-canvas__ponto { fill: var(--text-primary); stroke: none; }
+.construtor-canvas__no--selecionado rect, .construtor-canvas__no--selecionado polygon,
+.construtor-canvas__no--selecionado circle:not(.construtor-canvas__alca),
+.construtor-canvas__no:focus-visible rect, .construtor-canvas__no:focus-visible polygon,
+.construtor-canvas__no:focus-visible circle:not(.construtor-canvas__alca) { stroke: var(--accent-blue); stroke-width: 2.5; }
+.construtor-canvas__no--ligando rect, .construtor-canvas__no--ligando polygon,
+.construtor-canvas__no--ligando circle:not(.construtor-canvas__alca) { stroke: var(--warning); stroke-dasharray: 4 3; }
+.construtor-canvas__no-rotulo { fill: var(--text-primary); font-family: var(--font-sans); font-size: .8125rem; pointer-events: none; }
+.construtor-canvas__alca { fill: var(--accent-blue); stroke: var(--bg-base); stroke-width: 2; cursor: crosshair; opacity: .55; }
+.construtor-canvas__no:hover .construtor-canvas__alca, .construtor-canvas__no--selecionado .construtor-canvas__alca { opacity: 1; }
+.construtor-canvas__ligacao-linha { fill: none; stroke: var(--text-muted); stroke-width: 1.6; pointer-events: none; }
+.construtor-canvas__ligacao--pontilhada .construtor-canvas__ligacao-linha { stroke-dasharray: 5 4; }
+.construtor-canvas__ligacao--grossa .construtor-canvas__ligacao-linha { stroke-width: 3.2; }
+.construtor-canvas__ligacao--selecionada .construtor-canvas__ligacao-linha { stroke: var(--accent-blue); }
+.construtor-canvas__ligacao-alvo { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; outline: none; }
+.construtor-canvas__ligacao-alvo:focus-visible { stroke: color-mix(in srgb, var(--accent-blue) 30%, transparent); }
+.construtor-canvas__ligacao-rotulo {
+  fill: var(--text-primary); font-family: var(--font-sans); font-size: .75rem; pointer-events: none;
+  paint-order: stroke; stroke: var(--bg-base); stroke-width: 4;
+}
+.construtor-canvas__ponta { fill: var(--text-muted); }
+.construtor-canvas__rascunho { stroke: var(--accent-blue); stroke-width: 1.6; stroke-dasharray: 4 3; pointer-events: none; }

@@ -67,6 +67,31 @@ pub fn medidas_do_svg(svg: &str) -> Option<(f64, f64)> {
     }
 }
 
+/// O `<svg>` raiz com tamanho explícito: `width` e `height` do `viewBox`,
+/// sem o `width="100%"` e o `max-width` do mermaid. Como imagem (`<img>` da
+/// prévia), aquilo dava um tamanho natural de 46×150 a um diagrama de
+/// 400×500 — a prévia saía espremida e cortada (visto no ciclo 490).
+pub fn com_tamanho(svg: &str, largura: f64, altura: f64) -> String {
+    let Some(ini) = svg.find("<svg") else {
+        return svg.to_string();
+    };
+    let Some(fim) = svg[ini..].find('>').map(|f| ini + f) else {
+        return svg.to_string();
+    };
+    let mut raiz = svg[ini..fim].to_string();
+    for attr in ["width", "height", "style"] {
+        // ` attr="…"` — com o espaço, pra não pegar `stroke-width`.
+        let chave = format!(" {attr}=\"");
+        if let Some(i) = raiz.find(&chave) {
+            if let Some(f) = raiz[i + chave.len()..].find('"') {
+                raiz.replace_range(i..i + chave.len() + f + 1, "");
+            }
+        }
+    }
+    raiz.push_str(&format!(" width=\"{largura}\" height=\"{altura}\""));
+    format!("{}{}{}", &svg[..ini], raiz, &svg[fim..])
+}
+
 /// A primeira linha da mensagem, curta: o `::after` mostra numa linha só,
 /// e o mermaid devolve o trecho do código com setas por baixo.
 pub fn resumo_do_erro(mensagem: &str) -> String {
@@ -210,6 +235,7 @@ async fn renderizar_com(mermaid: &JsValue, fonte: &str) -> Result<Desenho, Strin
                 .and_then(|s| s.as_string())
                 .ok_or_else(|| "o mermaid não devolveu desenho".to_string())?;
             let (largura, altura) = medidas_do_svg(&svg).ok_or_else(|| "o desenho veio sem medidas".to_string())?;
+            let svg = com_tamanho(&svg, largura, altura);
             let data_url = format!(
                 "data:image/svg+xml;charset=utf-8,{}",
                 String::from(js_sys::encode_uri_component(&svg))
@@ -478,6 +504,17 @@ mod tests {
         assert_eq!(medidas_do_svg(r#"<svg width="100%"><g viewBox="0 0 5 5"/></svg>"#), None);
         assert_eq!(medidas_do_svg(r#"<svg viewBox="0 0 0 10"></svg>"#), None);
         assert_eq!(medidas_do_svg(r#"<svg viewBox="0 0 x 10"></svg>"#), None);
+    }
+
+    #[test]
+    fn raiz_ganha_tamanho_e_perde_o_cem_por_cento() {
+        let svg = r#"<svg id="m" width="100%" xmlns="http://www.w3.org/2000/svg" style="max-width: 316.5px;" viewBox="0 0 316.5 174"><rect stroke-width="2" width="10"/></svg>"#;
+        let novo = com_tamanho(svg, 316.5, 174.0);
+        let raiz = &novo[..novo.find('>').unwrap()];
+        assert!(!raiz.contains("100%") && !raiz.contains("max-width"), "{raiz}");
+        assert!(raiz.contains(r#"width="316.5" height="174""#), "{raiz}");
+        // Só a raiz: o resto do desenho fica intocado.
+        assert!(novo.contains(r#"<rect stroke-width="2" width="10"/>"#), "{novo}");
     }
 
     #[test]
