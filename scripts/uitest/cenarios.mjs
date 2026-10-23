@@ -1498,6 +1498,21 @@ cenarios.push({
     })()`);
     const perto = await bridge.js(VIEWBOX);
     ctx.assert(perto[2] < depois[2], `Ctrl+roda não aproximou: ${depois} → ${perto}`);
+    // A roda sozinha é da rolagem do painel (492): o canvas não a segura,
+    // e a vista não anda.
+    const rodaLivre = await bridge.js(`(() => {
+      const svg = document.querySelector('.construtor-canvas');
+      const r = svg.getBoundingClientRect();
+      return svg.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 120, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
+    })()`);
+    ctx.assert(rodaLivre, "o canvas segurou a roda sem Ctrl: a rolagem do modal trava em cima dele");
+    ctx.assertEq(JSON.stringify(await bridge.js(VIEWBOX)), JSON.stringify(perto), "a roda sem Ctrl andou a vista");
+    // Uma rolagem por painel: o modal não rola, e Aplicar fica à vista.
+    ctx.assert(await bridge.js(`(() => {
+      const m = document.querySelector('.modal.construtor-mermaid');
+      const b = document.querySelector('.construtor-mermaid__aplicar').getBoundingClientRect();
+      return m.scrollHeight <= m.clientHeight + 1 && b.bottom <= m.getBoundingClientRect().bottom && b.bottom <= innerHeight;
+    })()`), "o modal rola por inteiro, ou o Aplicar ficou fora da tela");
     await bridge.js("document.querySelector('[data-nav-item=construtor-canvas-afastar]').click(), true");
     ctx.assert((await bridge.js(VIEWBOX))[2] > perto[2], "o − não afastou");
     await bridge.js("document.querySelector('[data-nav-item=construtor-canvas-ajustar]').click(), true");

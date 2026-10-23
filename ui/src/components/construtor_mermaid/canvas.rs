@@ -457,10 +457,12 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
             *gesto.borrow_mut() = Some(Gesto::Panorama { cliente: cliente(&e), vista: *atual.borrow(), andou: false });
         })
     };
-    // A roda anda pela vista; com Ctrl (e a pinça do touchpad, que chega
-    // como Ctrl+roda), aproxima no ponteiro. Ouvinte à mão, e não
-    // `onwheel`: o do Yew é passivo, e sem `prevent_default` a roda rolaria
-    // o modal junto.
+    // Ctrl+roda (e a pinça do touchpad, que chega como Ctrl+roda) aproxima
+    // no ponteiro. A roda sozinha é da rolagem do painel: no 491 ela andava
+    // a vista, e rolar o modal travava toda vez que o ponteiro passava por
+    // cima do canvas, que ocupa quase a coluna inteira. Ouvinte à mão, e não
+    // `onwheel`: o do Yew é passivo, e o `prevent_default` do zoom não
+    // seguraria a rolagem.
     {
         let svg = svg.clone();
         let escolhida = vista_escolhida.clone();
@@ -469,22 +471,13 @@ pub fn canvas_grafo(props: &CanvasProps) -> Html {
         use_effect_with((), move |_| {
             let el = svg.cast::<web_sys::Element>();
             let ouvinte = wasm_bindgen::closure::Closure::<dyn Fn(web_sys::WheelEvent)>::new(move |e: web_sys::WheelEvent| {
+                if !(e.ctrl_key() || e.meta_key()) {
+                    return;
+                }
                 e.prevent_default();
                 let v = *atual.borrow();
-                let nova = if e.ctrl_key() || e.meta_key() {
-                    let Some(p) = no_plano(&svg, v, cliente(&e)) else { return };
-                    v.com_zoom(if e.delta_y() < 0.0 { FATOR_ZOOM } else { 1.0 / FATOR_ZOOM }, p)
-                } else {
-                    let Some(r) = svg.cast::<web_sys::Element>().map(|el| el.get_bounding_client_rect()) else { return };
-                    if r.width() <= 0.0 {
-                        return;
-                    }
-                    // Linhas (modo 1) viram uns 16 px; pixels passam direto.
-                    let por = if e.delta_mode() == 1 { 16.0 } else { 1.0 };
-                    let k = v.largura() / r.width() * por;
-                    Vista { x: v.x + e.delta_x() * k, y: v.y + e.delta_y() * k, ..v }
-                };
-                *escolhida.borrow_mut() = Some(nova);
+                let Some(p) = no_plano(&svg, v, cliente(&e)) else { return };
+                *escolhida.borrow_mut() = Some(v.com_zoom(if e.delta_y() < 0.0 { FATOR_ZOOM } else { 1.0 / FATOR_ZOOM }, p));
                 redesenhar.force_update();
             });
             if let Some(el) = &el {

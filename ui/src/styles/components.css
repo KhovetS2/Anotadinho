@@ -2454,7 +2454,13 @@
 .tarefa-detalhes__comentar, .tarefa-detalhes__anexar { align-self: flex-start; }
 
 /* ── Construtor mermaid (ciclos 488–490) ─────────────────────────── */
-.modal.construtor-mermaid { max-width: min(72rem, 94vw); max-height: 90vh; }
+/* Altura fixa e uma rolagem por painel (ciclo 492): o modal não rola, a
+   edição e a prévia rolam cada uma no seu lugar, e Cancelar/Aplicar ficam
+   sempre à vista. Com o modal, a prévia e o formulário rolando um dentro
+   do outro, a roda ia pra um e pra outro conforme o ponteiro, e a rolagem
+   parecia travar. */
+.modal.construtor-mermaid { max-width: min(72rem, 94vw); height: 90vh; max-height: 90vh; overflow: hidden; }
+.modal.construtor-mermaid > .modal__body { flex: 1; min-height: 0; }
 .construtor-mermaid__abas { display: flex; gap: var(--sp-1); border-bottom: 1px solid var(--border); margin-bottom: var(--sp-3); }
 .construtor-mermaid__aba {
   background: none; border: 0; border-bottom: 2px solid transparent;
@@ -2464,9 +2470,12 @@
 .construtor-mermaid__aba:disabled { cursor: not-allowed; opacity: .5; }
 .construtor-mermaid__aba--ativa { color: var(--text-primary); border-bottom-color: var(--accent-blue); }
 .construtor-mermaid__aba:focus-visible, .construtor-mermaid__tipo:focus-visible { outline: 2px solid var(--accent-blue); }
-.construtor-mermaid__corpo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-4); min-height: 22rem; }
-@media (max-width: 52rem) { .construtor-mermaid__corpo { grid-template-columns: 1fr; } }
-.construtor-mermaid__edicao { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.construtor-mermaid__corpo {
+  flex: 1; min-height: 0; display: grid; gap: var(--sp-4);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+}
+@media (max-width: 52rem) { .construtor-mermaid__corpo { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); } }
+.construtor-mermaid__edicao { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; min-height: 0; overflow-y: auto; padding-right: var(--sp-1); }
 .construtor-mermaid__tipos { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
 .construtor-mermaid__tipo {
   background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--r-sm);
@@ -2487,7 +2496,7 @@
    diagrama maior que a caixa, o centro por flex corta o topo, que a rolagem
    não alcança (ciclo 491). */
 .construtor-mermaid__previa {
-  display: flex; min-width: 0; overflow: auto; max-height: 70vh;
+  display: flex; min-width: 0; min-height: 0; overflow: auto;
   background: var(--bg-base); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--sp-4);
 }
 .construtor-mermaid__previa-imagem { width: min(100%, var(--mermaid-largura)); height: auto; margin: auto; }
@@ -2498,7 +2507,7 @@
    canto de cima, à direita, do bloco em edição. */
 .construtor-mermaid__abrir { position: fixed; z-index: 50; transform: translateX(-100%); }
 /* Formulários do construtor (ciclo 489): sequência e gantt. */
-.construtor-mermaid__form { display: flex; flex-direction: column; gap: var(--sp-4); overflow: auto; max-height: 60vh; padding-right: var(--sp-1); }
+.construtor-mermaid__form { display: flex; flex-direction: column; gap: var(--sp-4); }
 .construtor-mermaid__secao { display: flex; flex-direction: column; gap: var(--sp-2); }
 .construtor-mermaid__titulo { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
 .construtor-mermaid__lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
