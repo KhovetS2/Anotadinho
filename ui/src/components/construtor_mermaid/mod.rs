@@ -7,8 +7,15 @@
 //! aplicar sem mexer devolve o código exatamente como veio (RF8): ninguém
 //! o regenerou.
 
+mod gantt;
+mod linhas;
+mod sequencia;
+
 use anotadinho_core::diagrama::{self, Diagrama, Tipo};
 use yew::prelude::*;
+
+use gantt::EditorGantt;
+use sequencia::EditorSequencia;
 
 use crate::components::modal::Modal;
 use crate::mermaid::Desenho;
@@ -44,6 +51,14 @@ pub fn construtor_mermaid(props: &ConstrutorMermaidProps) -> Html {
         let inicial = props.inicial.clone();
         use_state(move || if novo { diagrama::escrever(&Diagrama::exemplo(Tipo::Fluxograma)) } else { inicial })
     };
+    // O que o "Aplicar" lê. Um `use_state` capturado no closure fica
+    // congelado no render em que o closure nasceu (AGENTS.md: 155, 157,
+    // 201, 213): a última tecla antes do clique se perderia.
+    let codigo_atual = {
+        let c = (*codigo).clone();
+        use_mut_ref(move || c)
+    };
+    *codigo_atual.borrow_mut() = (*codigo).clone();
     let lido = diagrama::ler(&codigo);
     // Fora do modelo, abre no código (RF7). Dentro, no construtor.
     let aba = {
@@ -86,7 +101,11 @@ pub fn construtor_mermaid(props: &ConstrutorMermaidProps) -> Html {
 
     let mudar_codigo = {
         let codigo = codigo.clone();
-        Callback::from(move |novo: String| codigo.set(novo))
+        let atual = codigo_atual.clone();
+        Callback::from(move |novo: String| {
+            *atual.borrow_mut() = novo.clone();
+            codigo.set(novo);
+        })
     };
     let ao_digitar = {
         let mudar = mudar_codigo.clone();
@@ -101,9 +120,9 @@ pub fn construtor_mermaid(props: &ConstrutorMermaidProps) -> Html {
         Callback::from(move |_: MouseEvent| aba.set(destino))
     };
     let aplicar = {
-        let codigo = codigo.clone();
+        let atual = codigo_atual.clone();
         let on_aplicar = props.on_aplicar.clone();
-        Callback::from(move |_: MouseEvent| on_aplicar.emit((*codigo).clone()))
+        Callback::from(move |_: MouseEvent| on_aplicar.emit(atual.borrow().clone()))
     };
     let fechar = props.on_fechar.clone();
 
@@ -189,19 +208,28 @@ pub fn construtor_mermaid(props: &ConstrutorMermaidProps) -> Html {
     }
 }
 
-/// A edição visual de cada tipo. Até ela existir (489: sequência e gantt;
-/// 490: fluxograma e estados), o construtor mostra o que leu e manda para
-/// o código.
-fn editor_do_tipo(d: &Diagrama, _mudar: Callback<String>) -> Html {
-    let resumo = match d {
-        Diagrama::Fluxograma(f) => format!("{} nós, {} ligações", f.nos.len(), f.ligacoes.len()),
-        Diagrama::Sequencia(s) => format!("{} participantes, {} mensagens e notas", s.participantes.len(), s.itens.len()),
-        Diagrama::Estados(e) => format!("{} estados, {} transições", e.estados.len(), e.transicoes.len()),
-        Diagrama::Gantt(g) => format!("{} seções, {} tarefas", g.secoes.len(), g.secoes.iter().map(|s| s.tarefas.len()).sum::<usize>()),
-    };
-    html! {
-        <p class="construtor-mermaid__resumo">
-            { format!("{}: {resumo}. A edição visual deste tipo ainda não chegou — use a aba Código.", d.tipo().nome()) }
-        </p>
+/// A edição visual de cada tipo. O editor recebe o modelo e devolve o
+/// modelo novo; daqui ele vira código, que é o que o modal guarda. O
+/// fluxograma e os estados ganham o canvas no 490.
+fn editor_do_tipo(d: &Diagrama, mudar: Callback<String>) -> Html {
+    match d {
+        Diagrama::Sequencia(s) => {
+            let on = mudar.reform(|novo| diagrama::escrever(&Diagrama::Sequencia(novo)));
+            html! { <EditorSequencia modelo={s.clone()} on_mudar={on} /> }
+        }
+        Diagrama::Gantt(g) => {
+            let on = mudar.reform(|novo| diagrama::escrever(&Diagrama::Gantt(novo)));
+            html! { <EditorGantt modelo={g.clone()} on_mudar={on} /> }
+        }
+        Diagrama::Fluxograma(f) => html! {
+            <p class="construtor-mermaid__resumo">
+                { format!("Fluxograma: {} nós, {} ligações. O canvas deste tipo ainda não chegou — use a aba Código.", f.nos.len(), f.ligacoes.len()) }
+            </p>
+        },
+        Diagrama::Estados(e) => html! {
+            <p class="construtor-mermaid__resumo">
+                { format!("Estados: {} estados, {} transições. O canvas deste tipo ainda não chegou — use a aba Código.", e.estados.len(), e.transicoes.len()) }
+            </p>
+        },
     }
 }

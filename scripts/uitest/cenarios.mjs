@@ -1175,6 +1175,135 @@ cenarios.push({
   },
 });
 
+// ── ciclo 489: formulários de sequência e gantt ─────────────────────
+
+/// Abre o construtor de um diagrama novo pelo `/mermaid` e escolhe o tipo.
+async function construtorNovo(bridge, ctx, tipo) {
+  ctx.escrever("---\ntitle: __uitest\n---\n\nAntes.\n");
+  await recarregar(bridge);
+  await abrirPaginaEstavel(bridge, ctx.nomePagina);
+  await bridge.js(DIGITAR(" /"));
+  await ctx.esperar(bridge, "document.querySelectorAll('.slash-menu__item').length > 0", "o menu / abrir");
+  await bridge.js(`(() => { [...document.querySelectorAll('.slash-menu__item')].find(i => i.querySelector('.slash-menu__item-label')?.textContent === 'Diagrama').click(); return true; })()`);
+  await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid')", "o construtor abrir");
+  await bridge.js(`(() => { [...document.querySelectorAll('.construtor-mermaid__tipo')].find(t => t.textContent.trim() === ${JSON.stringify(tipo)}).click(); return true; })()`);
+  await ctx.esperar(bridge, `document.querySelector('.construtor-mermaid__tipo--ativo')?.textContent.trim() === ${JSON.stringify(tipo)}`, "o tipo trocar");
+  await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__form')", "o formulário aparecer");
+}
+
+/// O código que o construtor tem agora, pela aba Código e de volta.
+async function codigoDoConstrutor(bridge, ctx) {
+  await bridge.js(ABA_DO_CONSTRUTOR("Código"));
+  await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__codigo')", "a aba código");
+  const c = await bridge.js("document.querySelector('.construtor-mermaid__codigo').value");
+  await bridge.js(ABA_DO_CONSTRUTOR("Construtor"));
+  await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__form')", "o formulário voltar");
+  return c;
+}
+
+const ESCREVER_NO_CAMPO = (seletor, texto) => `(() => {
+  const i = ${seletor};
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(texto)});
+  i.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  return true;
+})()`;
+const ESCOLHER_NO_SELECT = (seletor, valor) => `(() => {
+  const s = ${seletor};
+  s.value = ${JSON.stringify(valor)};
+  s.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+})()`;
+
+/// Espera a prévia desenhar SEM erro e devolve o texto do desenho.
+async function previaSemErro(bridge, ctx, contem) {
+  await ctx.esperar(bridge, `(() => { const i = document.querySelector('.construtor-mermaid__previa-imagem'); return !!i && decodeURIComponent(i.src).includes(${JSON.stringify(contem)}); })()`, `a prévia desenhar com "${contem}"`, 10000);
+  ctx.assert(!(await bridge.js("!!document.querySelector('.construtor-mermaid__previa-erro')")), "a prévia mostrou erro");
+}
+
+cenarios.push({
+  nome: "construtor: o formulário de sequência monta o diagrama (489)",
+  async fn(bridge, ctx) {
+    await construtorNovo(bridge, ctx, "Sequência");
+    const NOME = "[data-nav-item='construtor-seq-part-0-nome']";
+    await bridge.js(ESCREVER_NO_CAMPO(`document.querySelector("${NOME}")`, "Cliente; chefe"));
+    await previaSemErro(bridge, ctx, "Cliente; chefe");
+    const itens = () => bridge.js("document.querySelectorAll('[data-nav-group=construtor-seq-itens] > li').length");
+    const antes = await itens();
+    await bridge.js("document.querySelector('[data-nav-item=construtor-seq-nova-msg]').click(), true");
+    await ctx.esperar(bridge, `document.querySelectorAll('[data-nav-group=construtor-seq-itens] > li').length === ${antes + 1}`, "a mensagem nova entrar");
+    // A mensagem nova é a última: vira resposta e sobe uma posição.
+    const ultima = antes;
+    await bridge.js(ESCOLHER_NO_SELECT(`document.querySelector("[data-nav-item='construtor-seq-item-${ultima}-seta']")`, "-->>"));
+    await bridge.js(ESCREVER_NO_CAMPO(`document.querySelector("[data-nav-item='construtor-seq-item-${ultima}-texto']")`, "obrigado: até"));
+    await bridge.js(`document.querySelector("[data-nav-item='construtor-seq-itens-${ultima}-subir']").click(), true`);
+    await previaSemErro(bridge, ctx, "obrigado: até");
+    // O participante citado não se apaga: a mensagem apontaria pro nada.
+    ctx.assert(await bridge.js("document.querySelector(\"[data-nav-item='construtor-seq-part-0-apagar']\").disabled"), "deu pra apagar um participante citado");
+    const codigo = await codigoDoConstrutor(bridge, ctx);
+    ctx.assert(codigo.includes("as Cliente#59; chefe"), `o nome não foi escapado:\n${codigo}`);
+    const linhas = codigo.split("\n");
+    const resposta = linhas.findIndex(l => l.includes("-->>") && l.includes("obrigado: até"));
+    ctx.assert(resposta > 0, `a resposta não está no código:\n${codigo}`);
+    ctx.assert(resposta < linhas.length - 2, `a resposta devia ter subido uma posição:\n${codigo}`);
+    await bridge.js("document.querySelector('.construtor-mermaid__aplicar').click(), true");
+    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg pre.editor__bloco--mermaid-desenhado')", "o bloco desenhar", 10000);
+    await bridge.js(SALVAR);
+    const ate = Date.now() + 5000;
+    while (Date.now() < ate && !(ctx.ler() || "").includes("obrigado")) await PAUSA(100);
+    ctx.assert((ctx.ler() || "").includes(codigo.trimEnd()), `o arquivo não tem o código do construtor:\n${ctx.ler()}`);
+  },
+});
+
+cenarios.push({
+  nome: "construtor: o formulário de gantt monta dependência pelo nome e ignora duração inválida (489)",
+  async fn(bridge, ctx) {
+    await construtorNovo(bridge, ctx, "Gantt");
+    await bridge.js("document.querySelector('[data-nav-item=construtor-gantt-s0-nova]').click(), true");
+    await ctx.esperar(bridge, "document.querySelectorAll('[data-nav-group=construtor-gantt-s0] > li').length === 3", "a tarefa nova entrar");
+    const T = (campo) => `document.querySelector("[data-nav-item='construtor-gantt-s0-t2-${campo}']")`;
+    await bridge.js(ESCREVER_NO_CAMPO(T("nome"), "Revisar"));
+    // Depender de "Fazer", que não tem id: ganha um sozinho.
+    await bridge.js(ESCOLHER_NO_SELECT(T("inicio"), "depois"));
+    await ctx.esperar(bridge, `!!${T("dep")}`, "a escolha da dependência");
+    await bridge.js(ESCOLHER_NO_SELECT(T("dep"), "0:1"));
+    // Duração no meio da digitação não entra; a completa, sim.
+    await bridge.js(ESCREVER_NO_CAMPO(T("duracao"), "2"));
+    await PAUSA(400);
+    ctx.assert(await bridge.js("!document.querySelector('.construtor-mermaid__aba:disabled')"), "uma duração incompleta tornou o diagrama ilegível");
+    await bridge.js(ESCREVER_NO_CAMPO(T("duracao"), "2w"));
+    await bridge.js(`(() => { const c = ${T("crit")}; c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await previaSemErro(bridge, ctx, "Revisar");
+    const codigo = await codigoDoConstrutor(bridge, ctx);
+    ctx.assert(/Fazer :t1, after a1, 5d/.test(codigo), `"Fazer" devia ganhar o id t1:\n${codigo}`);
+    ctx.assert(/Revisar :crit, after t1, 2w/.test(codigo), `a tarefa nova não saiu como montada:\n${codigo}`);
+  },
+});
+
+cenarios.push({
+  nome: "construtor: Aplicar logo depois de digitar leva a última edição (489)",
+  async fn(bridge, ctx) {
+    // O `use_state` capturado no closure fica congelado (AGENTS.md): sem
+    // render entre o input e o clique, o "Aplicar" levaria o código velho.
+    ctx.escrever("---\ntitle: __uitest\n---\n\n```mermaid\ngraph TD\n  A --> B\n```\n");
+    await recarregar(bridge);
+    await abrirPaginaEstavel(bridge, ctx.nomePagina);
+    await ctx.esperar(bridge, "document.querySelector('.editor__wysiwyg pre.editor__bloco--mermaid-desenhado')", "o diagrama desenhar", 10000);
+    await bridge.js(CTRL_ENTER_NO_BLOCO(0));
+    await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid')", "o construtor abrir");
+    await bridge.js(ABA_DO_CONSTRUTOR("Código"));
+    await ctx.esperar(bridge, "document.querySelector('.construtor-mermaid__codigo')", "a aba código");
+    await bridge.js(`(() => {
+      const t = document.querySelector('.construtor-mermaid__codigo');
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, "graph TD\\n  A --> Ultima");
+      t.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      document.querySelector('.construtor-mermaid__aplicar').click();
+      return true;
+    })()`);
+    await ctx.esperar(bridge, "!document.querySelector('.construtor-mermaid')", "o modal fechar");
+    ctx.assertEq(await bridge.js("document.querySelector('.editor__wysiwyg pre.editor__bloco--mermaid code').textContent"), "graph TD\n  A --> Ultima\n", "o Aplicar levou o código de antes da última edição");
+  },
+});
+
 // ── ciclo 244: tirar a marca só do trecho selecionado ────────────────
 
 cenarios.push({

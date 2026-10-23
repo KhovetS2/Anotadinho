@@ -2493,3 +2493,26 @@
 /* O botão do bloco vive no <body> (ver ui/src/mermaid.rs) e acompanha o
    canto de cima, à direita, do bloco em edição. */
 .construtor-mermaid__abrir { position: fixed; z-index: 50; transform: translateX(-100%); }
+/* Formulários do construtor (ciclo 489): sequência e gantt. */
+.construtor-mermaid__form { display: flex; flex-direction: column; gap: var(--sp-4); overflow: auto; max-height: 60vh; padding-right: var(--sp-1); }
+.construtor-mermaid__secao { display: flex; flex-direction: column; gap: var(--sp-2); }
+.construtor-mermaid__titulo { margin: 0; font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.construtor-mermaid__lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.construtor-mermaid__linha { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.construtor-mermaid__linha--tarefa { padding: var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-base); }
+.construtor-mermaid__bloco-secao { display: flex; flex-direction: column; gap: var(--sp-2); padding-bottom: var(--sp-3); border-bottom: 1px dashed var(--border); }
+.construtor-mermaid__campo {
+  background: var(--bg-base); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: var(--sp-1) var(--sp-2); font: inherit; font-size: .8125rem; min-width: 0;
+}
+.construtor-mermaid__campo:focus { outline: 2px solid var(--accent-blue); outline-offset: -1px; }
+.construtor-mermaid__campo:disabled { opacity: .5; }
+.construtor-mermaid__campo--largo { flex: 1 1 10rem; }
+.construtor-mermaid__campo--curto { width: 5.5rem; flex: 0 0 auto; }
+.construtor-mermaid__id, .construtor-mermaid__rotulo { font-size: .75rem; color: var(--text-muted); }
+.construtor-mermaid__id { font-family: var(--font-mono); font-variant-ligatures: none; min-width: 2rem; }
+.construtor-mermaid__marca { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: .75rem; color: var(--text-muted); cursor: pointer; }
+.construtor-mermaid__marcas { display: inline-flex; flex-wrap: wrap; gap: var(--sp-2); }
+.construtor-mermaid__linha-acoes { display: inline-flex; gap: var(--sp-1); margin-left: auto; }
+.construtor-mermaid__adicionar { display: flex; gap: var(--sp-2); }
+.construtor-mermaid__data { position: relative; display: inline-flex; }
