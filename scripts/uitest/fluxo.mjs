@@ -3392,3 +3392,51 @@ fluxo.push({
     }
   },
 });
+
+// ── ciclo 475: o aviso acende com proposta feita POR FORA ────────────
+//
+// O 210 recarregava a janela antes de olhar, e a recarga recontava a
+// fila: o defeito (o watcher só olhava `.md`) passava. Aqui, nada de
+// recarregar — a proposta chega pelo CLI, como chega a do agente.
+
+fluxo.push({
+  nome: "aviso: proposta pelo CLI acende o cabeçalho sem recarregar (475)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const { execFileSync } = await import("node:child_process");
+    const cli = `${RAIZ}/target/debug/anotadinho-cli`;
+    if (!fs.existsSync(cli)) {
+      throw new Error("compile o CLI antes: cargo build -p anotadinho-cli");
+    }
+    const fila = `${ctx.vault}/.anotadinho/propostas`;
+    const antes = fs.existsSync(fila) ? fs.readdirSync(fila) : [];
+    const CONTAGEM = `(() => { const b = document.querySelector('.header-bar__propostas'); return b ? Number(b.textContent.trim()) : 0; })()`;
+    // O conteúdo FORA do vault: um `.md` lá dentro acordaria o watcher
+    // pelo caminho antigo, e o cenário passaria sem medir nada (passou,
+    // na primeira versão, contra o backend com o defeito).
+    const os = await import("node:os");
+    const arquivo = `${os.tmpdir()}/uitest-475-${Date.now()}.md`;
+    try {
+      // A janela tem que estar estável ANTES, e a contagem lida dela: o
+      // usuário pode ter propostas de verdade na fila.
+      await esperar(bridge, "!!document.querySelector('.header-bar')", "o cabeçalho");
+      const inicial = await bridge.js(CONTAGEM);
+      fs.writeFileSync(arquivo, "---\ntitle: __uitest 475\n---\ncorpo\n");
+      execFileSync(cli, ["--vault", ctx.vault, "propor", "pages/__uitest_475.md", "--file", arquivo, "--motivo", "uitest 475"], { encoding: "utf8" });
+      await esperar(bridge, `${CONTAGEM} === ${inicial + 1}`, "o aviso contar a proposta nova", 10000);
+      // Resolver por fora também (o agente não recusa, mas o arquivo
+      // some quando outra janela aplica).
+      for (const f of fs.readdirSync(fila).filter((x) => !antes.includes(x))) {
+        fs.rmSync(`${fila}/${f}`, { force: true });
+      }
+      await esperar(bridge, `${CONTAGEM} === ${inicial}`, "o aviso voltar", 10000);
+    } finally {
+      fs.rmSync(arquivo, { force: true });
+      if (fs.existsSync(fila)) {
+        for (const f of fs.readdirSync(fila).filter((x) => !antes.includes(x))) {
+          fs.rmSync(`${fila}/${f}`, { force: true });
+        }
+      }
+    }
+  },
+});

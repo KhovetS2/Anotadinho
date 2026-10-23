@@ -82,9 +82,13 @@ fn check_changes(vault_path: String, state: tauri::State<'_, AppWatchers>) -> Re
         return Ok(watcher.has_changes());
     }
     let watcher = VaultWatcher::start(vault_path.clone().into()).map_err(|e| e.to_string())?;
-    let changed = watcher.has_changes();
     let _ = map.insert(vault_path, watcher);
-    Ok(changed)
+    // "Mudou", e não o que o watcher recém-nascido diz (ciclo 475): ele
+    // nasce na PRIMEIRA consulta, até 3 s depois de a janela montar, e o
+    // que mudou nesse meio — uma proposta do agente, uma página escrita
+    // pelo CLI — não foi visto por ninguém. Uma releitura a mais na
+    // abertura fecha o buraco.
+    Ok(true)
 }
 
 /// Controles da janela (ciclo 180). Com `decorations: false` a barra do

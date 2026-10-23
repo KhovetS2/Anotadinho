@@ -1,7 +1,8 @@
 //! File watcher: detecta mudanças no vault via `notify`.
 //!
 //! Mantém um `modified` flag que é setado quando qualquer arquivo `.md`
-//! é criado, modificado ou deletado dentro do vault.
+//! é criado, modificado ou deletado dentro do vault — ou a fila de
+//! propostas muda (ciclo 475, `acorda_o_app`).
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,6 +19,24 @@ pub struct VaultEvent {
     pub path: String,
     /// `created` | `modified` | `deleted`.
     pub kind: String,
+}
+
+/// O que, mudando, faz o app reler (ciclo 475): as páginas, e a fila de
+/// propostas.
+///
+/// A fila mora em `.anotadinho/propostas/*.json`, fora das páginas. Sem
+/// ela aqui, uma proposta feita pelo CLI ou pelo MCP não acendia o aviso
+/// do cabeçalho até alguma `.md` mudar por outro motivo — e o cenário do
+/// ciclo 210 não via, porque recarregava a janela antes de olhar.
+///
+/// SÓ a pasta das propostas, e não todo `.json`: o app regrava o
+/// `.anotadinho/index.json` ao reindexar, e acordar com ele seria um laço
+/// (mudou → relê → reindexa → grava → mudou).
+pub fn acorda_o_app(relativo: &str) -> bool {
+    let r = crate::caminho::normalizar(relativo);
+    r.ends_with(".md")
+        || (r.ends_with(".json")
+            && r.strip_prefix(anotadinho_core::proposta::PASTA).is_some_and(|resto| resto.starts_with('/')))
 }
 
 /// Wrapper thread-safe para monitorar mudanças no vault.
@@ -49,12 +68,18 @@ impl VaultWatcher {
                         EventKind::Create(_)
                         | EventKind::Modify(_)
                         | EventKind::Remove(_) => {
+                            let acordar = event
+                                .paths
+                                .iter()
+                                .any(|p| acorda_o_app(&crate::caminho::relativo(&raiz_para_evento, p)));
+                            if acordar {
+                                modified_clone.store(true, Ordering::SeqCst);
+                            }
                             let has_md = event
                                 .paths
                                 .iter()
                                 .any(|p| p.extension().map_or(false, |e| e == "md"));
                             if has_md {
-                                modified_clone.store(true, Ordering::SeqCst);
                                 let tipo = match event.kind {
                                     EventKind::Create(_) => "created",
                                     EventKind::Remove(_) => "deleted",
@@ -172,6 +197,42 @@ mod tests {
         std::fs::write(dir.path().join("pages/x.md"), "a\n").unwrap();
         let _ = esperar(&watcher, 3000);
         assert!(watcher.drain_events().is_empty(), "a fila devia ter sido esvaziada");
+    }
+
+    #[test]
+    fn a_fila_de_propostas_acorda_o_app_e_o_indice_nao() {
+        assert!(acorda_o_app("pages/a.md"));
+        assert!(acorda_o_app(".anotadinho/propostas/p1.json"));
+        assert!(acorda_o_app(".anotadinho\\propostas\\p1.json"), "o separador do Windows");
+        assert!(!acorda_o_app(".anotadinho/index.json"), "o índice acordando o app é um laço");
+        assert!(!acorda_o_app(".anotadinho/propostas-velhas/p.json"));
+        assert!(!acorda_o_app(".anotadinho/execucoes.jsonl"));
+        assert!(!acorda_o_app("assets/x.png"));
+    }
+
+    #[test]
+    fn proposta_nova_acorda_o_app_sem_virar_evento_de_pagina() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join(".anotadinho/propostas")).unwrap();
+        let watcher = VaultWatcher::start(dir.path().to_path_buf()).unwrap();
+        std::fs::write(dir.path().join(".anotadinho/propostas/p1.json"), "{}").unwrap();
+        let inicio = std::time::Instant::now();
+        while !watcher.has_changes() {
+            assert!(inicio.elapsed().as_millis() < 3000, "a proposta nova não acordou o app");
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        // O `cli watch` continua emitindo só páginas.
+        assert!(watcher.drain_events().is_empty());
+    }
+
+    #[test]
+    fn o_indice_nao_acorda_o_app() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(dir.path().join(".anotadinho")).unwrap();
+        let watcher = VaultWatcher::start(dir.path().to_path_buf()).unwrap();
+        std::fs::write(dir.path().join(".anotadinho/index.json"), "{}").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        assert!(!watcher.has_changes());
     }
 
     #[test]
