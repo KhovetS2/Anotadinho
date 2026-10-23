@@ -1286,7 +1286,7 @@ fluxo.push({
     const novo = fs.mkdtempSync(`${os.tmpdir()}/uitest-vault-`);
     try {
       const criados = await bridge.js(`(async () =>
-        await window.__TAURI_INTERNALS__.invoke('criar_vault', { vaultPath: ${JSON.stringify(novo)} })
+        await window.__TAURI_INTERNALS__.invoke('criar_vault', { vaultPath: ${JSON.stringify(novo)}, hoje: '2026-10-23' })
       )()`);
       ctx.assert(criados.includes("pages/inicio.md"), "não criou a página inicial");
 
@@ -1303,16 +1303,21 @@ fluxo.push({
       ctx.assert(fs.readdirSync(`${novo}/pages/padroes`).length >= 7, "faltaram padrões");
       ctx.assert(fs.readdirSync(`${novo}/pages/prompts-default`).length >= 3, "faltaram prompts");
 
-      // O guia tem que dizer o que dá pra fazer, não só existir.
-      const guia = fs.readFileSync(`${novo}/pages/inicio.md`, "utf8");
-      for (const tipo of ["conversa", "spec", "proposta", "kanban"]) {
+      // O guia tem que dizer o que dá pra fazer, não só existir. Desde o
+      // ciclo 479 ele mora em `pages/guias/`, e o Início é o painel.
+      const guia = fs.readFileSync(`${novo}/pages/guias/guia-do-vault.md`, "utf8");
+      for (const tipo of ["conversa", "spec", "proposta", "kanban", "sprint"]) {
         ctx.assert(guia.includes(tipo), `o guia não explica o tipo ${tipo}`);
       }
+      const painel = fs.readFileSync(`${novo}/pages/inicio.md`, "utf8");
+      ctx.assert(painel.includes('type: "query"') && painel.includes("[[Guia do vault]]"), "o Início não é o painel com link pro guia");
+      ctx.assert(fs.existsSync(`${novo}/pages/projetos/meu-primeiro-projeto/sprints/01-o-basico.md`), "faltou o projeto de exemplo");
+      ctx.assert(!fs.readFileSync(`${novo}/pages/projetos/meu-primeiro-projeto/sprints/01-o-basico.md`, "utf8").includes("@DIA"), "sobrou marcador de data");
 
       // Semear de novo não pode destruir nada.
       fs.writeFileSync(`${novo}/pages/inicio.md`, "---\ntitle: Meu\n---\nmeu texto\n");
       const denovo = await bridge.js(`(async () =>
-        await window.__TAURI_INTERNALS__.invoke('criar_vault', { vaultPath: ${JSON.stringify(novo)} })
+        await window.__TAURI_INTERNALS__.invoke('criar_vault', { vaultPath: ${JSON.stringify(novo)}, hoje: '2026-10-23' })
       )()`);
       ctx.assertEq(denovo.length, 0, "recriou arquivo que já existia");
       ctx.assert(
@@ -3571,6 +3576,37 @@ fluxo.push({
     } finally {
       for (const c of criados) fs.rmSync(`${ctx.vault}/${c}`, { force: true });
       fs.rmSync(origem, { force: true });
+      p.limpar();
+    }
+  },
+});
+
+// ── ciclo 479: o painel inicial do vault novo ────────────────────────
+//
+// O conteúdo É o da semente (lido de `crates/core/seeds/inicio.md`), numa
+// página de teste: o que se confere é o painel desenhado pelo app, não
+// uma cópia dele.
+
+fluxo.push({
+  nome: "painel: as consultas da semente desenham a sprint ativa (479)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const slug = `uitest-painel-${Date.now()}`;
+    const p = await projetoComSprints(ctx, slug);
+    const pagina = `${ctx.vault}/pages/__uitest_painel.md`;
+    try {
+      const semente = fs.readFileSync(`${RAIZ}/crates/core/seeds/inicio.md`, "utf8").replace("title: Início", "title: __uitest painel");
+      fs.writeFileSync(pagina, semente);
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, "pages/__uitest_painel");
+      await esperar(bridge, "document.querySelectorAll('.query-embed').length === 7", "as sete consultas do painel", 15000);
+      // A sprint ativa do projeto de teste ("Dois") aparece, com o projeto.
+      await esperar(bridge, `[...document.querySelectorAll('.query-embed')].some(q => q.textContent.includes('Dois') && q.textContent.includes(${JSON.stringify(slug)}))`, "a sprint ativa no painel", 15000);
+      // E a encerrada ("Um") NÃO: é o filtro de estado que a consulta faz.
+      const encerrada = await bridge.js(`[...document.querySelectorAll('.query-embed')].some(q => [...q.querySelectorAll('tr')].some(tr => tr.textContent.includes(${JSON.stringify(slug)}) && tr.querySelector('.query-embed__title')?.textContent.trim() === 'Um'))`);
+      ctx.assertEq(encerrada, false, "a sprint encerrada apareceu entre as ativas");
+    } finally {
+      fs.rmSync(pagina, { force: true });
       p.limpar();
     }
   },

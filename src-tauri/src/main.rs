@@ -1492,8 +1492,8 @@ async fn open_vault_dialog(app: tauri::AppHandle) -> Result<Option<String>, Stri
 
 /// Prepara uma pasta pra ser um vault (ciclo 233).
 #[tauri::command]
-fn criar_vault(vault_path: String) -> Result<Vec<String>, String> {
-    anotadinho_ipc::handle_criar_vault(vault_path)
+fn criar_vault(vault_path: String, hoje: String) -> Result<Vec<String>, String> {
+    anotadinho_ipc::handle_criar_vault(vault_path, hoje)
 }
 
 /// A pasta aberta ainda não tem página nenhuma? (ciclo 233)

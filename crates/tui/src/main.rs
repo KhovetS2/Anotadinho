@@ -1286,7 +1286,7 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                     let pasta = sistema::expandir_til(&pasta, sistema::ambiente, cfg!(windows));
                     let tem_paginas = handle_list_pages(pasta.clone()).is_ok_and(|p| !p.is_empty());
                     if criar {
-                        match anotadinho_ipc::handle_criar_vault(pasta.clone()) {
+                        match anotadinho_ipc::handle_criar_vault(pasta.clone(), agora_local().split(' ').next().unwrap_or("").to_string()) {
                             Ok(_) => estado.trocar_de_vault = Some((pasta, !tem_paginas)),
                             Err(e) => estado.aviso = Some(format!("não preparou o vault: {e}")),
                         }
@@ -1980,7 +1980,7 @@ fn main() -> Result<(), String> {
         if !criar {
             return Err(format!("o vault {vault} não tem páginas"));
         }
-        let criados = anotadinho_ipc::handle_criar_vault(vault.clone())?;
+        let criados = anotadinho_ipc::handle_criar_vault(vault.clone(), agora_local().split(' ').next().unwrap_or("").to_string())?;
         eprintln!("vault preparado: {} arquivo(s) criado(s)", criados.len());
     }
     if let Some(tema) = &cli.tema {

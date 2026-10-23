@@ -162,7 +162,7 @@ pub(crate) enum TarefaCommand {
     },
 }
 
-fn hoje() -> String {
+pub(crate) fn hoje() -> String {
     crate::agora_legivel().split_whitespace().next().unwrap_or("").to_string()
 }
 

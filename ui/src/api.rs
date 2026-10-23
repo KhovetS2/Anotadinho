@@ -1027,7 +1027,10 @@ async fn chamar_proposta(cmd: &str, vault_path: &str, id: &str) -> Result<String
 /// Prepara uma pasta pra ser um vault (ciclo 233). Devolve os caminhos
 /// criados; o que já existia é deixado em paz.
 pub async fn criar_vault(vault_path: &str) -> Result<Vec<String>, String> {
-    chamar("criar_vault", Args::novo().texto("vaultPath", vault_path)).await
+    // O dia do frontend, como todo relógio da janela (ciclo 479).
+    let agora = crate::state::agora_legivel();
+    let hoje = agora.split(' ').next().unwrap_or("");
+    chamar("criar_vault", Args::novo().texto("vaultPath", vault_path).texto("hoje", hoje)).await
 }
 
 /// A pasta aberta ainda não tem página nenhuma? (ciclo 233)

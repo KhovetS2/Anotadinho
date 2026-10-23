@@ -691,7 +691,7 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("{id}");
         }
         Command::Init => {
-            let criados = anotadinho_ipc::handle_criar_vault(cli.vault.clone())?;
+            let criados = anotadinho_ipc::handle_criar_vault(cli.vault.clone(), crate::projeto::hoje())?;
             if criados.is_empty() {
                 println!("nada a fazer: já estava tudo lá");
             } else {

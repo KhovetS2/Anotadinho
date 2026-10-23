@@ -318,7 +318,9 @@ pub fn handle_delete_page(vault_path: String, page_path: String) -> Result<(), S
 /// tem coisa dentro é seguro — completa o que falta sem tocar no resto.
 ///
 /// Devolve os caminhos criados.
-pub fn handle_criar_vault(vault_path: String) -> Result<Vec<String>, String> {
+/// `hoje` (`AAAA-MM-DD`) entra nas datas relativas da semente (ciclo 479):
+/// a sprint ativa do projeto de exemplo começa e termina em volta dele.
+pub fn handle_criar_vault(vault_path: String, hoje: String) -> Result<Vec<String>, String> {
     let raiz = std::path::Path::new(&vault_path);
     if raiz.exists() && !raiz.is_dir() {
         return Err(format!("{vault_path} existe e não é uma pasta"));
@@ -340,7 +342,8 @@ pub fn handle_criar_vault(vault_path: String) -> Result<Vec<String>, String> {
             std::fs::create_dir_all(pai)
                 .map_err(|e| format!("não consegui criar {}: {e}", pai.display()))?;
         }
-        std::fs::write(&destino, arquivo.conteudo)
+        let conteudo = anotadinho_core::semente::no_dia(arquivo.conteudo, &hoje)?;
+        std::fs::write(&destino, conteudo)
             .map_err(|e| format!("não consegui escrever {}: {e}", arquivo.caminho))?;
         criados.push(arquivo.caminho.to_string());
     }
@@ -1963,7 +1966,7 @@ mod testes_semente {
     fn vault_novo_nasce_navegavel() {
         let dir = TempDir::new().unwrap();
         let raiz = dir.path().to_string_lossy().to_string();
-        let criados = handle_criar_vault(raiz.clone()).expect("criar");
+        let criados = handle_criar_vault(raiz.clone(), "2026-10-23".into()).expect("criar");
 
         assert!(criados.contains(&anotadinho_core::semente::PAGINA_INICIAL.to_string()));
         // As pastas que o código espera existir têm que existir mesmo
@@ -1982,15 +1985,52 @@ mod testes_semente {
     }
 
     #[test]
+    fn o_painel_inicial_mostra_o_que_o_vault_novo_tem() {
+        use anotadinho_core::embed::{segment, DocSegment, EmbedData};
+        let dir = TempDir::new().unwrap();
+        let raiz = dir.path().to_string_lossy().to_string();
+        handle_criar_vault(raiz.clone(), "2026-10-23".into()).unwrap();
+        let paginas = handle_scan_vault(raiz.clone()).unwrap();
+        let painel = std::fs::read_to_string(dir.path().join(anotadinho_core::semente::PAGINA_INICIAL)).unwrap();
+        let (_, corpo) = anotadinho_core::MarkdownCodec::split_frontmatter_text(&painel);
+        // Cada consulta pelo título da seção em que está.
+        let mut secao = String::new();
+        let mut resultados: Vec<(String, Vec<String>)> = Vec::new();
+        for seg in segment(corpo) {
+            match seg {
+                DocSegment::Markdown(md) => {
+                    if let Some(t) = md.lines().rev().find_map(|l| l.strip_prefix("## ")) {
+                        secao = t.trim().to_string();
+                    }
+                }
+                DocSegment::Embed(EmbedData::Query(q)) => {
+                    resultados.push((secao.clone(), q.run(&paginas).iter().map(|p| p.path.rsplit('/').next().unwrap().to_string()).collect()));
+                }
+                _ => {}
+            }
+        }
+        let de = |nome: &str| resultados.iter().find(|(s, _)| s == nome).map(|(_, r)| r.clone()).unwrap_or_else(|| panic!("sem a seção {nome}: {resultados:?}"));
+        assert_eq!(de("Projetos"), ["projeto.md"]);
+        assert_eq!(de("Sprints ativas"), ["01-o-basico.md"]);
+        assert!(de("Esperando você").is_empty());
+        // As abertas com prazo, a mais urgente primeiro; a feita fica fora.
+        assert_eq!(de("Com prazo"), ["002-cadastrar-um-livro.md", "003-listar-os-livros.md"]);
+        assert!(de("Specs").is_empty() && de("Propostas").is_empty() && de("Execuções recentes").is_empty());
+        // E o guia que o Início era continua existindo, com link no painel.
+        assert!(painel.contains("[[Guia do vault]]"));
+        assert!(paginas.iter().any(|p| p.path == anotadinho_core::semente::GUIA && p.title == "Guia do vault"));
+    }
+
+    #[test]
     fn preparar_de_novo_nao_sobrescreve_nada() {
         let dir = TempDir::new().unwrap();
         let raiz = dir.path().to_string_lossy().to_string();
-        handle_criar_vault(raiz.clone()).unwrap();
+        handle_criar_vault(raiz.clone(), "2026-10-23".into()).unwrap();
 
         let inicial = dir.path().join(anotadinho_core::semente::PAGINA_INICIAL);
         std::fs::write(&inicial, "---\ntitle: Meu\n---\nescrevi por cima\n").unwrap();
 
-        let criados = handle_criar_vault(raiz).expect("preparar de novo");
+        let criados = handle_criar_vault(raiz, "2026-10-23".into()).expect("preparar de novo");
         assert!(criados.is_empty(), "recriou arquivo que já existia: {criados:?}");
         assert!(
             std::fs::read_to_string(&inicial).unwrap().contains("escrevi por cima"),
