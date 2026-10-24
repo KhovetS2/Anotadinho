@@ -690,6 +690,84 @@ pub fn alternar_item_na_tela(e: &mut Estado, caminho: &str, indice: usize) {
     }
 }
 
+/// A tarefa aberta no editor, se a página é `type: tarefa` (ciclo 502).
+///
+/// Lida do texto do disco a cada pedido, e não guardada na abertura: a
+/// etapa muda por fora (o agente, a outra janela, o quadro), e a releitura
+/// de 3 s troca o `texto_da_pagina` — a barra acompanha sem ninguém
+/// lembrar de atualizá-la.
+pub fn tarefa_aberta(e: &Estado) -> Option<anotadinho_core::projeto::Tarefa> {
+    if e.conversa.is_some() || e.especial.is_some() {
+        return None;
+    }
+    let caminho = &e.paginas.get(e.pagina)?.path;
+    anotadinho_core::projeto::Tarefa::ler(caminho, e.texto_da_pagina.as_deref()?)
+}
+
+/// Detalhar com o agente só onde a janela oferece (`tarefa_barra.rs`): a
+/// tarefa que ainda está sendo pensada, ou a que travou. Pronta pra frente,
+/// o pedido de detalhar reabriria o que já foi combinado.
+pub fn detalhavel(etapa: anotadinho_core::projeto::EtapaTarefa) -> bool {
+    use anotadinho_core::projeto::EtapaTarefa;
+    matches!(etapa, EtapaTarefa::Ideia | EtapaTarefa::Detalhando | EtapaTarefa::Bloqueada)
+}
+
+/// A faixa da tarefa sobre o editor (ciclo 502), como a `TarefaBarra` da
+/// janela: projeto, etapa e as transições da pessoa; embaixo, as teclas.
+/// Vazia fora de uma tarefa.
+pub fn barra_da_tarefa(e: &Estado, w: usize) -> Vec<Line<'static>> {
+    use anotadinho_core::projeto::{EtapaTarefa, Quem};
+    let Some(t) = tarefa_aberta(e) else { return Vec::new() };
+    let tema = &e.tema;
+    let apagado = Style::default().fg(tema.var("text-muted"));
+    let texto = Style::default().fg(tema.var("text-primary"));
+    let destaque = Style::default().fg(tema.var("accent-blue"));
+    // A cor da etapa, a mesma do cabeçalho da coluna no quadro.
+    let cor = match t.etapa {
+        EtapaTarefa::Executando | EtapaTarefa::Executar => tema.var("accent-blue"),
+        EtapaTarefa::Revisao => tema.var("accent-purple"),
+        EtapaTarefa::Feita => tema.var("success"),
+        EtapaTarefa::Bloqueada => tema.var("error"),
+        _ => tema.var("text-muted"),
+    };
+    let mut l1 = vec![
+        Span::styled(format!(" ▤ {} ", t.projeto), destaque),
+        Span::styled(format!("› {:03} {}  ", t.numero, t.titulo), texto.add_modifier(Modifier::BOLD)),
+        Span::styled(format!(" {} ", t.etapa.label()), Style::default().fg(tema.var("bg-base")).bg(cor).add_modifier(Modifier::BOLD)),
+    ];
+    for d in t.etapa.proximas_para(Quem::Humano) {
+        l1.push(Span::styled(format!("   → {}", d.label()), destaque));
+    }
+    let mut dicas = vec!["Alt+e mover"];
+    if detalhavel(t.etapa) {
+        dicas.push("Alt+a detalhar com o agente");
+    }
+    dicas.extend(["Alt+c conversa da tarefa", "Alt+p projeto", ": Tarefa…"]);
+    let l2 = Line::from(Span::styled(format!(" {}", dicas.join(" · ")), apagado));
+    vec![
+        cortar_linha(Line::from(l1), w),
+        cortar_linha(l2, w),
+        Line::from(Span::styled("─".repeat(w), Style::default().fg(tema.var("border")))),
+    ]
+}
+
+/// Corta a linha na largura, pedaço a pedaço: a faixa nunca quebra em
+/// duas, senão empurraria o editor uma linha a mais do que a rolagem
+/// contou.
+fn cortar_linha(l: Line<'static>, w: usize) -> Line<'static> {
+    let mut sobra = w;
+    let mut fora = Vec::new();
+    for s in l.spans {
+        if sobra == 0 {
+            break;
+        }
+        let pedaco: String = s.content.chars().take(sobra).collect();
+        sobra -= pedaco.chars().count();
+        fora.push(Span::styled(pedaco, s.style));
+    }
+    Line::from(fora)
+}
+
 /// A linha de selos do cartão (ciclo 478): dependência, critérios, prazo,
 /// comentários, anexos e tags — o que a janela mostra em `.projeto__selos`.
 /// Cada pedaço com o seu estilo: o prazo vencido e a dependência

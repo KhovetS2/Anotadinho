@@ -1059,6 +1059,14 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                 }
                 Pedido::MoverTarefa { caminho, destino } => {
                     use anotadinho_core::projeto::{self, EtapaTarefa, Tarefa};
+                    // Da barra da tarefa (ciclo 502), a página está aberta
+                    // e pode ter edição pendente (sem salvamento
+                    // automático). Grava ANTES: a etapa muda sobre o texto
+                    // do disco, e a página reaberta logo abaixo jogaria a
+                    // edição fora.
+                    if estado.nao_salvo.as_ref().is_some_and(|(c, _)| *c == caminho) {
+                        salvar_pendente(estado, vault);
+                    }
                     let antes = anotadinho_ipc::handle_read_page(vault.to_string(), caminho.clone())
                         .ok()
                         .and_then(|t| Tarefa::ler(&caminho, &t));
@@ -1174,6 +1182,16 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                         (None, _) => estado.aviso = Some(format!("{caminho} não é uma tarefa")),
                     }
                 }
+                // A conversa da tarefa sem pergunta (ciclo 502): a mesma
+                // página do detalhar, criada pelo `ipc` se ainda não existe.
+                Pedido::ConversaDaTarefa(caminho) => match anotadinho_ipc::handle_conversa_da_tarefa(vault.to_string(), caminho) {
+                    Ok(conversa) => {
+                        recarregar(estado);
+                        abrir(estado, vault, &conversa);
+                        estado.foco = app::Foco::Conteudo;
+                    }
+                    Err(e) => estado.aviso = Some(e),
+                },
                 Pedido::GravarConfigDoProjeto { slug, config } => {
                     let repositorio = config.repositorio.clone().map(|r| sistema::expandir_til(&r, sistema::ambiente, cfg!(windows)));
                     if repositorio.as_ref().is_some_and(|r| !std::path::Path::new(r).is_dir()) {

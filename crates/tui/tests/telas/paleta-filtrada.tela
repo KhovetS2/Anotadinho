@@ -3,18 +3,18 @@
 │cena                          ││Antes.                                                                                                    │
 │                              ││▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖│
 │                              ││▌  ⚠ Cuidado com a gravação                                                                          z ⌄ ▌│
-│                              ││▌  Editar uma página aberta em duas janelas sobrescreve a mais antiga.                                   ▌│
 │                              ││▌ ╭────────────────────────────────────────────────────────────────────╮                                 ▌│
 │                              ││▌ │ tema                                                               │                                 ▌│
-│                              ││▝▀│────────────────────────────────────────────────────────────────────│▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
-│                              ││De│ ϟ Alternar tema                                                    │                                  │
-│                              ││  │ ϟ Escolher tema…                                                   │                                  │
+│                              ││▌ │────────────────────────────────────────────────────────────────────│                                 ▌│
+│                              ││▝▀│ ϟ Alternar tema                                                    │▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▘│
+│                              ││De│ ϟ Escolher tema…                                                   │                                  │
 │                              ││  │ ϟ Alternar salvamento automático                                   │                                  │
 │                              ││  │ ϟ Nova página a partir de template…                                │                                  │
+│                              ││  │ ϟ Tarefa: mover de etapa…                                          │                                  │
+│                              ││  │ ϟ Tarefa: detalhar com o agente                                    │                                  │
 │                              ││  │ ϟ Agentes em andamento…                                            │                                  │
 │                              ││  │ ϟ Limite de agentes em paralelo…                                   │                                  │
 │                              ││  ╰ ↑↓ escolher · Enter · Ctrl+F buscar no conteúdo · Esc ─────────────╯                                  │
-│                              ││                                                                                                          │
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │
@@ -40,18 +40,18 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddabeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddabghhghiiiiiiiiiiiiiiiiiiiiiihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhjjjhfb
-addddddddddddddddddddddddddddddabghhkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddabghllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddabghlmmmmmnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
-addddddddddddddddddddddddddddddabffllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllffffffffffffffffffffffffffffffffffb
-addddddddddddddddddddddddddddddabeeloooppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppplddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddlqqqmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmlddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddlqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqllllllllllllllddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabghkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddabghklllllmllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddabghkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhfb
+addddddddddddddddddddddddddddddabffknnnoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooookffffffffffffffffffffffffffffffffffb
+addddddddddddddddddddddddddddddabeekppplllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddkppplllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddkppplllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddkppplllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddkppplllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddkppplllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddkppplllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddkpppppppppppppppppppppppppppppppppppppppppppppppppppppppkkkkkkkkkkkkkkddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -82,10 +82,9 @@ g = fg #fab387 bg #413c49
 h = fg - bg #413c49
 i = fg #cdd6f4 bg #413c49 negrito
 j = fg #a6adc8 bg #413c49
-k = fg #cdd6f4 bg #413c49
-l = fg #45475a bg #313244
-m = fg #cdd6f4 bg #313244
-n = fg #1e1e2e bg #cdd6f4
-o = fg #89b4fa bg #45475a
-p = fg #cdd6f4 bg #45475a
-q = fg #a6adc8 bg #313244
+k = fg #45475a bg #313244
+l = fg #cdd6f4 bg #313244
+m = fg #1e1e2e bg #cdd6f4
+n = fg #89b4fa bg #45475a
+o = fg #cdd6f4 bg #45475a
+p = fg #a6adc8 bg #313244

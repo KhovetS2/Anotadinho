@@ -33,6 +33,9 @@ pub enum Pedido {
     MoverTarefa { caminho: String, destino: anotadinho_core::projeto::EtapaTarefa },
     /// Abrir a conversa da tarefa com o pedido de detalhar escrito.
     DetalharTarefa(String),
+    /// Abrir a conversa da tarefa, sem pergunta (ciclo 502): onde o
+    /// detalhe e as execuções dela ficam.
+    ConversaDaTarefa(String),
     /// Criar uma sprint planejada (ciclo 473).
     CriarSprint { slug: String, nome: String },
     /// Iniciar a sprint deste caminho.
@@ -725,7 +728,12 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Configurar agente…", "configurar-agente"),
     ("Nova página a partir de template…", "nova-pagina"),
     ("Propriedades da página…", "propriedades"),
-    ("Mover a tarefa aberta…", "etapa-tarefa"),
+    // A barra da tarefa (ciclo 502): o que a `TarefaBarra` da janela
+    // oferece, com o mesmo prefixo pra a busca juntar as quatro.
+    ("Tarefa: mover de etapa…", "etapa-tarefa"),
+    ("Tarefa: detalhar com o agente", "detalhar-tarefa"),
+    ("Tarefa: conversa da tarefa", "conversa-tarefa"),
+    ("Tarefa: abrir o quadro do projeto", "projeto-da-tarefa"),
     ("Ver atalhos", "atalhos"),
     ("Nova pasta…", "nova-pasta"),
     ("Mover página pra pasta…", "mover-pagina"),
@@ -887,16 +895,31 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         // Na página de uma tarefa, as transições da pessoa (ciclo 461):
         // o mesmo que a barra de etapa da janela, sem mexer no desenho do
         // documento.
-        "etapa-tarefa" => {
-            let caminho = e.paginas.get(e.pagina).map(|p| p.path.clone()).unwrap_or_default();
-            let tarefa = e
-                .texto_da_pagina
-                .as_deref()
-                .and_then(|t| anotadinho_core::projeto::Tarefa::ler(&caminho, t));
-            let Some(tarefa) = tarefa else {
+        "etapa-tarefa" | "detalhar-tarefa" | "conversa-tarefa" | "projeto-da-tarefa" => {
+            let Some(tarefa) = super::especiais::tarefa_aberta(e) else {
                 e.aviso = Some("a página aberta não é uma tarefa de projeto".into());
                 return;
             };
+            let caminho = tarefa.caminho.clone();
+            match chave {
+                "detalhar-tarefa" if !super::especiais::detalhavel(tarefa.etapa) => {
+                    e.aviso = Some(format!("detalhar é pra tarefa em ideia, detalhando ou bloqueada — esta está em {}", tarefa.etapa.label()));
+                    return;
+                }
+                "detalhar-tarefa" => {
+                    e.pedidos.push(Pedido::DetalharTarefa(caminho));
+                    return;
+                }
+                "conversa-tarefa" => {
+                    e.pedidos.push(Pedido::ConversaDaTarefa(caminho));
+                    return;
+                }
+                "projeto-da-tarefa" => {
+                    e.pedidos.push(Pedido::AbrirPagina(anotadinho_core::projeto::caminho_do_projeto(&tarefa.projeto)));
+                    return;
+                }
+                _ => {}
+            }
             let itens: Vec<Item> = tarefa
                 .etapa
                 .proximas_para(anotadinho_core::projeto::Quem::Humano)
@@ -1797,6 +1820,16 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("c a", "conversa / arquitetura do projeto"),
             ("p o", "pausar a fila / escolher o repositório"),
             ("x", "execuções do agente neste projeto (Enter abre, r roda de novo)"),
+        ],
+    ),
+    (
+        // A barra em cima da página de uma tarefa (ciclo 502).
+        "Tarefa (a página)",
+        &[
+            ("Alt+e", "mover de etapa (as transições da barra)"),
+            ("Alt+a", "detalhar com o agente (ideia, detalhando, bloqueada)"),
+            ("Alt+c", "conversa da tarefa"),
+            ("Alt+p", "abrir o quadro do projeto"),
         ],
     ),
 ];

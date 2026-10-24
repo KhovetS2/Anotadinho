@@ -53,6 +53,13 @@ pub const GLOBAIS: &[(&str, &str, &str)] = &[
     ("aba-proxima", "Próxima aba", "Ctrl+w"),
     ("aba-anterior", "Aba anterior", "Alt+h"),
     ("aba-fechar", "Fechar aba", "Alt+q"),
+    // A barra da tarefa (ciclo 502). `Alt`, porque no editor toda letra
+    // solta já é do vim, e `Ctrl+letra` o terminal come ou já é da TUI.
+    // Fora de uma tarefa elas só avisam.
+    ("etapa-tarefa", "Tarefa: mover de etapa", "Alt+e"),
+    ("detalhar-tarefa", "Tarefa: detalhar com o agente", "Alt+a"),
+    ("conversa-tarefa", "Tarefa: conversa da tarefa", "Alt+c"),
+    ("projeto-da-tarefa", "Tarefa: abrir o projeto", "Alt+p"),
 ];
 
 /// A tecla de uma ação, com o remapeamento.

@@ -1733,8 +1733,11 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
         .constraints(divisao)
         .split(f.area());
 
+    // A faixa da tarefa (ciclo 502) fica em cima do editor e come linhas
+    // dele: a altura útil desconta, senão o cursor descia pra trás dela.
+    let barra_da_tarefa = especiais::barra_da_tarefa(e, colunas[1].width.saturating_sub(2) as usize);
     // A altura útil exclui a borda de cima e a de baixo.
-    e.altura = colunas[1].height.saturating_sub(2) as usize;
+    e.altura = (colunas[1].height.saturating_sub(2) as usize).saturating_sub(barra_da_tarefa.len());
     e.largura_da_sidebar = colunas[1].x;
     e.seguir_cursor();
 
@@ -2375,7 +2378,18 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             .right_aligned(),
         );
     }
-    f.render_widget(Paragraph::new(visiveis).block(bloco), colunas[1]);
+    if barra_da_tarefa.is_empty() {
+        f.render_widget(Paragraph::new(visiveis).block(bloco), colunas[1]);
+    } else {
+        let dentro = bloco.inner(colunas[1]);
+        f.render_widget(bloco, colunas[1]);
+        let n = (barra_da_tarefa.len() as u16).min(dentro.height);
+        f.render_widget(Paragraph::new(barra_da_tarefa), ratatui::layout::Rect { height: n, ..dentro });
+        f.render_widget(
+            Paragraph::new(visiveis),
+            ratatui::layout::Rect { y: dentro.y + n, height: dentro.height - n, ..dentro },
+        );
+    }
     desenhar_abas(f, e, colunas[1]);
     wikilink::desenhar(f, e, colunas[1]);
     // Os modais por cima de tudo (ciclo 339).
@@ -12468,6 +12482,87 @@ mod testes {
         especiais::carregar(&mut e, projeto_na_tela(vec![]));
         let vazio = desenho(&mut e, 240, 30).join("\n");
         assert!(!vazio.contains("etapa ·"), "{vazio}");
+    }
+
+    // ── A barra da tarefa (ciclo 502) ─────────────────────────────────
+
+    /// A página de uma tarefa aberta no editor, com `linhas` parágrafos
+    /// no corpo.
+    fn tarefa_no_editor(etapa: &str, linhas: usize) -> Estado {
+        let caminho = "pages/projetos/saas/tarefas/001-login.md";
+        let mut e = Estado::novo(vec![PageMeta { path: caminho.into(), title: "001-login".into(), section: "pages".into() }], analisar(""));
+        let corpo: String = (1..=linhas).map(|i| format!("linha {i}\n\n")).collect();
+        e.abrir_texto(&format!("---\ntitle: Login\ntype: tarefa\nprojeto: saas\nstatus: {etapa}\n---\n# Login\n\n{corpo}"), None);
+        e.foco = Foco::Conteudo;
+        e
+    }
+
+    #[test]
+    fn a_pagina_da_tarefa_mostra_a_barra_com_etapa_e_transicoes() {
+        let mut e = tarefa_no_editor("bloqueada", 2);
+        let tela = desenho(&mut e, 200, 20).join("\n");
+        for esperado in ["▤ saas", "001 Login", "Bloqueada", "→ Feita", "→ Detalhando", "→ Pronta", "→ Executar", "Alt+e mover", "Alt+a detalhar com o agente", "Alt+c conversa da tarefa"] {
+            assert!(tela.contains(esperado), "faltou {esperado}:\n{tela}");
+        }
+        // A barra vem ANTES do conteúdo.
+        let pos = |s: &str| tela.find(s).unwrap_or_else(|| panic!("sem {s}"));
+        assert!(pos("Alt+e mover") < pos("# Login"), "{tela}");
+        // Pronta não se detalha (a janela também não oferece).
+        let mut e = tarefa_no_editor("pronta", 2);
+        let tela = desenho(&mut e, 200, 20).join("\n");
+        assert!(tela.contains("→ Executar") && !tela.contains("Alt+a"), "{tela}");
+        // Executando: a pessoa só bloqueia.
+        let mut e = tarefa_no_editor("executando", 2);
+        let tela = desenho(&mut e, 200, 20).join("\n");
+        assert!(tela.contains("Executando") && tela.contains("→ Bloqueada") && !tela.contains("→ Revisão"), "{tela}");
+        // Fora de tarefa, o editor de sempre.
+        let mut e = Estado::novo(paginas(), analisar(""));
+        e.abrir_texto("---\ntitle: alfa\n---\n# Alfa\n", None);
+        let tela = desenho(&mut e, 200, 20).join("\n");
+        assert!(!tela.contains("Alt+e") && !tela.contains("▤"), "{tela}");
+    }
+
+    #[test]
+    fn as_acoes_da_barra_pela_barra_de_comandos_e_pelas_teclas() {
+        let caminho = "pages/projetos/saas/tarefas/001-login.md".to_string();
+        let mut e = tarefa_no_editor("ideia", 2);
+        // As quatro estão na barra de comandos, com o mesmo prefixo.
+        modais::abrir_paleta(&mut e);
+        let Some(Modal::Paleta(lista)) = &e.modal else { panic!("{:?}", e.modal) };
+        let rotulos: Vec<String> = lista.itens.iter().map(|i| i.rotulo.clone()).filter(|r| r.starts_with("Tarefa:")).collect();
+        assert_eq!(rotulos.len(), 4, "{rotulos:?}");
+        e.modal = None;
+        tecla(&mut e, "Alt+a");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::DetalharTarefa(caminho.clone())));
+        tecla(&mut e, "Alt+c");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::ConversaDaTarefa(caminho.clone())));
+        tecla(&mut e, "Alt+p");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::AbrirPagina("pages/projetos/saas/projeto.md".into())));
+        // Alt+e abre a escolha das transições, e escolher move.
+        tecla(&mut e, "Alt+e");
+        assert!(matches!(e.modal, Some(Modal::Escolha { acao: modais::AcaoDaEscolha::EtapaDaTarefa, .. })), "{:?}", e.modal);
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.pedidos.pop(), Some(Pedido::MoverTarefa { caminho: c, .. }) if c == caminho));
+        // Em pronta, detalhar só avisa.
+        let mut e = tarefa_no_editor("pronta", 2);
+        tecla(&mut e, "Alt+a");
+        assert!(e.pedidos.is_empty());
+        assert!(e.aviso.as_deref().unwrap_or("").contains("Pronta"), "{:?}", e.aviso);
+        // Fora de uma tarefa, as teclas avisam e não pedem nada.
+        let mut e = Estado::novo(paginas(), analisar("# a\n"));
+        tecla(&mut e, "Alt+c");
+        assert!(e.pedidos.is_empty() && e.aviso.as_deref().unwrap_or("").contains("não é uma tarefa"), "{:?}", e.aviso);
+    }
+
+    #[test]
+    fn com_a_barra_o_cursor_no_fim_da_pagina_continua_na_tela() {
+        // 30 parágrafos numa tela de 16 linhas: sem descontar as três da
+        // barra, a última linha (a do cursor) ficava escondida embaixo.
+        let mut e = tarefa_no_editor("ideia", 30);
+        tecla(&mut e, "G");
+        let tela = desenho(&mut e, 120, 16).join("\n");
+        assert!(tela.contains("linha 30"), "o cursor sumiu atrás da barra:\n{tela}");
+        assert!(tela.contains("Alt+e mover"), "{tela}");
     }
 
     // ── sidebar que rola, clica e entra/sai (ciclo 467) ──────────────
