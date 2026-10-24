@@ -15,6 +15,9 @@ pulldown-cmark = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+# Largura em células de terminal, pro diagrama desenhado em caracteres
+# (ciclo 496): um caractere CJK ocupa duas.
+unicode-width = "0.2"
 
 [dev-dependencies]
 walkdir = "2"

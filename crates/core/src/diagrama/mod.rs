@@ -14,6 +14,7 @@ pub mod estados;
 pub mod fluxograma;
 pub mod gantt;
 pub mod sequencia;
+pub mod texto;
 
 use std::collections::BTreeMap;
 

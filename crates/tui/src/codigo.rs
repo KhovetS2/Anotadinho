@@ -15,6 +15,8 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthChar;
 
+use anotadinho_core::diagrama::{self, texto, texto::Papel};
+
 use crate::realce_codigo::{self, Categoria, Trecho};
 use crate::tema::{Realce, Tema};
 
@@ -110,7 +112,9 @@ pub fn rotulo(lingua: Option<&str>) -> String {
     }
 }
 
-/// O bloco inteiro, pronto pra tela:
+/// A caixa de um bloco: topo com `rotulo`, um `aviso` opcional logo
+/// abaixo, o miolo (cortado em `max_linhas`, contando a linha do "… mais
+/// N") e o fundo:
 ///
 /// ```text
 /// ┌ rust ──────────
@@ -119,11 +123,10 @@ pub fn rotulo(lingua: Option<&str>) -> String {
 /// │ }
 /// └────────────────
 /// ```
-///
-/// `max_linhas` é o teto já combinado com a altura do painel.
-pub fn desenhar(
-    codigo: &str,
-    lingua: Option<&str>,
+fn caixa(
+    rotulo: &str,
+    aviso: Option<&str>,
+    miolo: Vec<Vec<Span<'static>>>,
     nivel: usize,
     largura: usize,
     max_linhas: usize,
@@ -132,52 +135,116 @@ pub fn desenhar(
     let recuo = "  ".repeat(nivel);
     let util = largura.saturating_sub(recuo.chars().count()).max(8);
     let moldura = tema.estilo(Realce::Marca);
-    let texto = tema.estilo(Realce::Codigo);
-    let linhas = linhas_de(codigo);
-    // Com linguagem conhecida, a cor por trecho; sem, a cor única do
-    // código (RF3).
-    let realcadas = lingua.and_then(|l| realce_codigo::realcar_guardado(&linhas, l));
-
-    let topo = format!("┌ {} ", rotulo(lingua));
+    let topo = format!("┌ {rotulo} ");
     let topo_w: usize = topo.chars().count();
     let mut fora = vec![Line::from(vec![
         Span::raw(recuo.clone()),
         Span::styled(format!("{topo}{}", "─".repeat(util.saturating_sub(topo_w))), moldura),
     ])];
-
+    let linha = |spans: Vec<Span<'static>>| {
+        let mut v = vec![Span::raw(recuo.clone()), Span::styled("│ ", moldura)];
+        v.extend(spans);
+        Line::from(v)
+    };
+    if let Some(a) = aviso {
+        fora.push(linha(vec![Span::styled(cortar(&format!("⚠ {a}"), util.saturating_sub(2)), tema.estilo(Realce::Dica))]));
+    }
     // A linha do "… mais N" conta no teto: o bloco nunca passa dele.
     let max_linhas = max_linhas.max(2);
-    let mostra = if linhas.len() > max_linhas { max_linhas - 1 } else { linhas.len() };
-    for (i, l) in linhas[..mostra].iter().enumerate() {
-        let mut spans = vec![Span::raw(recuo.clone()), Span::styled("│ ", moldura)];
-        match realcadas.as_ref().and_then(|r| r.get(i)) {
-            Some(trechos) => spans.extend(cortar_trechos(trechos, util.saturating_sub(2), tema)),
-            None => spans.push(Span::styled(cortar(l, util.saturating_sub(2)), texto)),
-        }
-        fora.push(Line::from(spans));
+    let total = miolo.len();
+    let mostra = if total > max_linhas { max_linhas - 1 } else { total };
+    for spans in miolo.into_iter().take(mostra) {
+        fora.push(linha(spans));
     }
-    if linhas.len() > mostra {
-        fora.push(Line::from(vec![
-            Span::raw(recuo.clone()),
-            Span::styled("│ ", moldura),
-            Span::styled(
-                format!("… mais {} linha(s) — Enter abre", linhas.len() - mostra),
-                tema.estilo(Realce::Dica),
-            ),
-        ]));
+    if total > mostra {
+        fora.push(linha(vec![Span::styled(
+            format!("… mais {} linha(s) — Enter abre", total - mostra),
+            tema.estilo(Realce::Dica),
+        )]));
     }
-    if linhas.is_empty() {
-        fora.push(Line::from(vec![
-            Span::raw(recuo.clone()),
-            Span::styled("│ ", moldura),
-            Span::styled("(vazio)", tema.estilo(Realce::Dica)),
-        ]));
+    if total == 0 {
+        fora.push(linha(vec![Span::styled("(vazio)", tema.estilo(Realce::Dica))]));
     }
     fora.push(Line::from(vec![
         Span::raw(recuo),
         Span::styled(format!("└{}", "─".repeat(util.saturating_sub(1))), moldura),
     ]));
     fora
+}
+
+/// A largura do miolo da caixa: a do painel menos o recuo e o `│ `.
+fn largura_do_miolo(nivel: usize, largura: usize) -> usize {
+    largura.saturating_sub(2 * nivel).max(8).saturating_sub(2)
+}
+
+/// As linhas do código, com cor quando a linguagem é conhecida (RF2) e na
+/// cor única do código quando não é (RF3), já cortadas na largura.
+fn miolo_de_codigo(codigo: &str, lingua: Option<&str>, cabe: usize, tema: &Tema) -> Vec<Vec<Span<'static>>> {
+    let linhas = linhas_de(codigo);
+    let realcadas = lingua.and_then(|l| realce_codigo::realcar_guardado(&linhas, l));
+    linhas
+        .iter()
+        .enumerate()
+        .map(|(i, l)| match realcadas.as_ref().and_then(|r| r.get(i)) {
+            Some(trechos) => cortar_trechos(trechos, cabe, tema),
+            None => vec![Span::styled(cortar(l, cabe), tema.estilo(Realce::Codigo))],
+        })
+        .collect()
+}
+
+/// O bloco de código inteiro, pronto pra tela. `max_linhas` é o teto já
+/// combinado com a altura do painel.
+pub fn desenhar(
+    codigo: &str,
+    lingua: Option<&str>,
+    nivel: usize,
+    largura: usize,
+    max_linhas: usize,
+    tema: &Tema,
+) -> Vec<Line<'static>> {
+    let miolo = miolo_de_codigo(codigo, lingua, largura_do_miolo(nivel, largura), tema);
+    caixa(&rotulo(lingua), None, miolo, nivel, largura, max_linhas, tema)
+}
+
+/// O papel de cada pedaço do diagrama, em cor do tema (ciclo 496).
+fn papel_do_desenho(p: Papel, tema: &Tema) -> Style {
+    let r = match p {
+        Papel::Fundo | Papel::Nome => Realce::CodigoTexto,
+        Papel::Caixa => Realce::CodigoTipo,
+        Papel::Vida | Papel::Eixo | Papel::BarraFeita => Realce::Marca,
+        Papel::Seta => Realce::CodigoPalavra,
+        Papel::Rotulo => Realce::CodigoCadeia,
+        Papel::Nota | Papel::Marco => Realce::Parte,
+        Papel::Secao => Realce::CodigoPalavra,
+        Papel::Titulo => Realce::Titulo(3),
+        Papel::Barra => Realce::Barra,
+        Papel::BarraAtiva => Realce::CodigoTipo,
+        Papel::BarraCritica => Realce::BadgeErro,
+    };
+    tema.estilo(r)
+}
+
+/// Um bloco ` ```mermaid ` (ciclo 496, RF6–RF8): desenhado em caracteres
+/// quando o construtor entende o diagrama e ele cabe na largura. Senão, o
+/// código, com uma linha dizendo por quê.
+pub fn desenhar_mermaid(fonte: &str, nivel: usize, largura: usize, max_linhas: usize, tema: &Tema) -> Vec<Line<'static>> {
+    let cabe = largura_do_miolo(nivel, largura);
+    let motivo = match diagrama::ler(fonte) {
+        Ok(d) => match texto::desenhar(&d, cabe) {
+            Ok(linhas) => {
+                let miolo = linhas
+                    .into_iter()
+                    .map(|l| l.into_iter().map(|(p, t)| Span::styled(t, papel_do_desenho(p, tema))).collect())
+                    .collect();
+                let rotulo = format!("mermaid · {}", d.tipo().nome().to_lowercase());
+                return caixa(&rotulo, None, miolo, nivel, largura, max_linhas, tema);
+            }
+            Err(nao) => nao.mensagem(),
+        },
+        Err(fora) => format!("o construtor não monta este diagrama — {}", fora.mensagem()),
+    };
+    let miolo = miolo_de_codigo(fonte, Some("mermaid"), cabe, tema);
+    caixa("mermaid", Some(&motivo), miolo, nivel, largura, max_linhas, tema)
 }
 
 /// O bloco dobrado: uma linha, com a linguagem e o tamanho.
@@ -258,6 +325,28 @@ mod testes {
         assert_eq!(t[1].chars().count(), 20, "{:?}", t[1]);
         assert!(t[1].ends_with('…'), "{:?}", t[1]);
         assert!(t[1].starts_with("│ let x = \"aaa"), "{:?}", t[1]);
+    }
+
+    #[test]
+    fn mermaid_dentro_do_modelo_sai_desenhado() {
+        let fonte = "sequenceDiagram\n  A->>B: oi\n";
+        let t = texto(&desenhar_mermaid(fonte, 0, 60, 30, &Tema::novo("mocha")));
+        assert!(t[0].starts_with("┌ mermaid · sequência "), "{t:?}");
+        assert!(t.iter().any(|l| l.contains("│ A │")), "{t:?}");
+        assert!(t.iter().any(|l| l.contains("▶│")), "{t:?}");
+        assert!(!t.iter().any(|l| l.contains("A->>B")), "o código apareceu junto:\n{}", t.join("\n"));
+    }
+
+    #[test]
+    fn mermaid_fora_do_modelo_ou_largo_demais_mostra_o_codigo_e_o_motivo() {
+        let tema = Tema::novo("mocha");
+        let t = texto(&desenhar_mermaid("pie\n  \"a\" : 1\n", 0, 60, 30, &tema));
+        assert!(t[1].starts_with("│ ⚠ o construtor não monta este diagrama"), "{t:?}");
+        assert_eq!(t[2], "│ pie");
+        let largo = "sequenceDiagram\n  A->>B: uma mensagem que não cabe em vinte colunas\n";
+        let t = texto(&desenhar_mermaid(largo, 0, 24, 30, &tema));
+        assert!(t[1].contains("não cabe"), "{t:?}");
+        assert!(t.iter().all(|l| l.chars().count() <= 24), "passou da largura:\n{}", t.join("\n"));
     }
 
     #[test]

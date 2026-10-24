@@ -2172,7 +2172,12 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                     // nunca caberia. Topo e fundo da caixa, e uma folga
                     // pra moldura do foco, ficam fora do teto.
                     let teto = crate::codigo::LINHAS_DO_CODIGO.min(e.altura.saturating_sub(4));
-                    vec![crate::codigo::desenhar(fonte, lingua.as_deref(), l.nivel, largura_conteudo, teto, &e.tema)]
+                    if lingua.as_deref().is_some_and(|l| l.eq_ignore_ascii_case("mermaid")) {
+                        // O diagrama desenhado em caracteres (ciclo 496).
+                        vec![crate::codigo::desenhar_mermaid(fonte, l.nivel, largura_conteudo, teto, &e.tema)]
+                    } else {
+                        vec![crate::codigo::desenhar(fonte, lingua.as_deref(), l.nivel, largura_conteudo, teto, &e.tema)]
+                    }
                 }
             } else if let Some(modo) = e.arvore.em(&l.caminho).and_then(caixa_avulsa) {
                 vec![linha_de_caixa(l, &e.tema, largura_conteudo, Some(&e.cursor), modo)]
