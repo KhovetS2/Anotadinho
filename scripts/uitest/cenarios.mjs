@@ -1529,6 +1529,59 @@ cenarios.push({
   },
 });
 
+// ── ciclo 493: o Ctrl+S global não salva de novo a aba que abre ───────
+
+cenarios.push({
+  nome: "editor: um Ctrl+S antigo não grava a página da aba que acabou de abrir (493)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const outra = `${ctx.vault}/pages/__uitest_outra_aba.md`;
+    try {
+      ctx.escrever("---\ntitle: __uitest\n---\n\nUma página com corpo.\n");
+      fs.writeFileSync(outra, "---\ntitle: __uitest_outra_aba\n---\n\nA outra aba.\n");
+      await recarregar(bridge);
+      // Abrir a partir da aba fixa (a 1) cria aba nova; de outra aba,
+      // troca a página nela. Assim ficam as duas páginas em duas abas.
+      const ABA_FIXA = "(document.querySelector('.tab-bar__tab--fixed .tab-bar__tab-title') || document.querySelector('.tab-bar__tab--fixed')).click(), true";
+      await abrirPaginaEstavel(bridge, ctx.nomePagina);
+      await bridge.js(ABA_FIXA);
+      await abrirPaginaEstavel(bridge, "__uitest_outra_aba");
+      // O título da aba vem com o número dela na frente ("2__uitest").
+      const ABAS = "[...document.querySelectorAll('.tab-bar__tab-title')].map(t => t.textContent.trim().replace(/^\\d+/, ''))";
+      try {
+        await esperar(bridge, `${ABAS}.filter(t => t.startsWith('__uitest')).length === 2`, "as duas abas");
+      } catch (e) {
+        throw new Error(`${e.message} — abas: ${JSON.stringify(await bridge.js(ABAS))}`);
+      }
+      const antes = ctx.ler();
+
+      // Ctrl+S com o foco fora do texto vai pro atalho global do app.
+      await bridge.js(`(() => {
+        const p = document.querySelector('.app-main-panel');
+        p.focus();
+        p.dispatchEvent(new KeyboardEvent('keydown', { key: 's', code: 'KeyS', ctrlKey: true, bubbles: true, cancelable: true }));
+        return true;
+      })()`);
+      // Voltar pra outra aba remonta o editor. Até o 492, a montagem via o
+      // Ctrl+S antigo e salvava com o DOM ainda vazio.
+      await bridge.js(`(() => {
+        const t = [...document.querySelectorAll('.tab-bar__tab')].find(t => t.querySelector('.tab-bar__tab-title')?.textContent.trim().replace(/^\\d+/, '') === ${JSON.stringify(ctx.nomePagina)});
+        t.querySelector('.tab-bar__tab-title').click();
+        return true;
+      })()`);
+      await esperar(bridge, `document.querySelector('.editor__title')?.textContent === ${JSON.stringify(ctx.nomePagina)}`, "a primeira aba voltar");
+      await esperar(bridge, "document.querySelector('.editor__wysiwyg')?.textContent.includes('Uma página com corpo')", "o conteúdo carregar");
+      // O save espúrio saía logo na montagem; a página já carregou depois dele.
+      await PAUSA(800);
+      const recusa = await bridge.js("[...document.querySelectorAll('*')].some(e => e.children.length === 0 && /gravação recusada/.test(e.textContent))");
+      ctx.assert(!recusa, "a aba que abriu tentou se gravar (gravação recusada na tela)");
+      ctx.assertEq(ctx.ler(), antes, "a página da aba que abriu foi regravada");
+    } finally {
+      fs.rmSync(outra, { force: true });
+    }
+  },
+});
+
 cenarios.push({
   nome: "construtor: no canvas dos estados, o início só sai e o fim só chega (490)",
   async fn(bridge, ctx) {

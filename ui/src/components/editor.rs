@@ -1208,12 +1208,21 @@ pub fn editor(props: &EditorProps) -> Html {
     // (onde Ctrl+S/Ctrl+Z já funcionam direto), reage aqui. O nonce no
     // prop garante que o efeito dispara de novo mesmo pra ações
     // repetidas em sequência (`Option` sozinho não mudaria de valor).
+    //
+    // Só reage a uma ação NOVA (ciclo 493). O prop guarda a última ação
+    // pra sempre, e o editor é remontado a cada troca de aba: o efeito de
+    // montagem via o Ctrl+S antigo e salvava a página que acabava de
+    // abrir, com o DOM ainda vazio — "gravação recusada: isso apagaria as
+    // 4471 letras". Quem segurou foi a trava do backend.
+    let acao_vista = use_mut_ref(|| props.global_action.map(|(_, nonce)| nonce));
     {
         let do_save = do_save.clone();
         let do_undo = do_undo.clone();
         let do_redo = do_redo.clone();
         use_effect_with(props.global_action, move |action| {
-            if let Some((action, _nonce)) = action {
+            let nova = action.filter(|(_, nonce)| *acao_vista.borrow() != Some(*nonce));
+            *acao_vista.borrow_mut() = action.map(|(_, nonce)| nonce);
+            if let Some((action, _nonce)) = nova {
                 match action {
                     crate::state::GlobalEditorAction::Save => do_save.emit(()),
                     crate::state::GlobalEditorAction::Undo => do_undo.emit(()),
