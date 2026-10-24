@@ -91,6 +91,22 @@ pub fn desenhar(d: &Diagrama, largura: usize) -> Result<Vec<Linha>, NaoDesenha> 
     }
 }
 
+/// O diagrama na largura dele quando não cabe em `largura` (ciclo 498):
+/// quem recorta é quem mostra, numa vista que desliza. Recusar continua
+/// valendo pra quem só tem a largura do painel; quem pode rolar quer o
+/// desenho inteiro. Cada desenho mede `precisa` na própria arrumação, então
+/// uma segunda passada com ela basta — a terceira é só cinto.
+pub fn desenhar_inteiro(d: &Diagrama, largura: usize) -> Result<Vec<Linha>, NaoDesenha> {
+    let mut largura = largura;
+    for _ in 0..3 {
+        match desenhar(d, largura) {
+            Err(NaoDesenha::NaoCabe { precisa }) if precisa > largura => largura = precisa,
+            r => return r,
+        }
+    }
+    desenhar(d, largura)
+}
+
 /// Largura de `s` em células.
 pub fn largura_de(s: &str) -> usize {
     s.chars().map(|c| c.width().unwrap_or(0)).sum()
@@ -1244,6 +1260,30 @@ mod tests {
     fn grafo_largo_demais_nao_cabe() {
         let d = ler("graph LR\n  A[um nó com nome comprido] --> B[outro nó com nome comprido]\n").unwrap();
         assert!(matches!(desenhar(&d, 40), Err(NaoDesenha::NaoCabe { precisa }) if precisa > 40));
+    }
+
+    #[test]
+    fn inteiro_desenha_o_que_nao_cabe_na_largura_dele() {
+        // Os quatro tipos, cada um largo demais pra 20 colunas.
+        for fonte in [
+            "graph LR\n  A[um nó com nome comprido] --> B[outro nó com nome comprido]\n",
+            "sequenceDiagram\n  A->>B: uma mensagem que não cabe em vinte colunas\n",
+            "stateDiagram-v2\n  s1 : Um estado de nome comprido\n  [*] --> s1\n  s1 --> s2\n  s2 : Outro estado também comprido\n",
+            GANTT,
+        ] {
+            let d = ler(fonte).unwrap();
+            let t = desenhar_inteiro(&d, 20).unwrap_or_else(|e| panic!("{fonte}: {e:?}"));
+            let larg = t.iter().map(|l| l.iter().map(|(_, s)| largura_de(s)).sum::<usize>()).max().unwrap();
+            assert!(larg > 20, "{fonte}: deveria ser mais largo que 20, tem {larg}");
+            // Na largura que pede, é o mesmo desenho que `desenhar` daria.
+            // O gantt fica de fora: ele estica as barras até a largura dada.
+            if fonte != GANTT {
+                assert_eq!(desenhar(&d, larg).unwrap(), t, "{fonte}");
+            }
+        }
+        // O que cabe sai igual.
+        let d = ler("graph TD\n  A --> B\n").unwrap();
+        assert_eq!(desenhar_inteiro(&d, 80), desenhar(&d, 80));
     }
 
     #[test]

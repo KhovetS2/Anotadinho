@@ -23,6 +23,7 @@ mod wikilink;
 mod formatar;
 pub mod teclas;
 pub mod modais;
+mod vista;
 pub use edicao::{AcaoDaPergunta, Pergunta, Registro};
 pub use modais::{Modal, Pedido, Preferencias};
 pub use markdown::{EdicaoDeBloco, Hospedeiro};
@@ -214,6 +215,21 @@ pub struct Estado {
     /// não tinha como se exprimir: o `j` seguinte virava texto do termo
     /// em vez de andar pelo resultado. O teste pegou.
     pub barra_aberta: bool,
+    /// Dentro de um bloco de código ou diagrama (ciclo 498): a página, o
+    /// bloco, onde a vista está e o tamanho medido no último quadro.
+    pub vista_bloco: Option<VistaDoBloco>,
+}
+
+/// A vista de dentro de um bloco (ciclo 498). A página e o caminho dizem de
+/// QUAL bloco: trocar de página, recarregar ou o bloco sumir tira da vista,
+/// em vez de deixar as teclas presas rolando um bloco que não está na tela.
+#[derive(Debug, Clone, Default)]
+pub struct VistaDoBloco {
+    pub pagina: String,
+    pub caminho: Caminho,
+    pub vista: crate::codigo::Vista,
+    /// Medida no quadro anterior: é o que diz até onde a tecla rola.
+    pub medida: std::cell::Cell<crate::codigo::Medida>,
 }
 
 impl Estado {
@@ -238,6 +254,7 @@ impl Estado {
             busca: String::new(),
             busca_em: Foco::Paginas,
             barra_aberta: false,
+            vista_bloco: None,
             d_na_sidebar: false,
             paginas,
             pagina: 0,
@@ -1011,6 +1028,12 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
         conversa::tecla(e, tecla);
         return None;
     }
+    // Dentro de um bloco (ciclo 498), as teclas de andar movem a vista.
+    // Vem antes do remapeamento: `j` aqui é rolar, seja lá o que a pessoa
+    // pôs no lugar de `j` pra andar entre blocos.
+    if e.vista_bloco.is_some() && e.foco == Foco::Conteudo && vista::tecla(e, tecla) {
+        return None;
+    }
     // As teclas remapeadas (ciclo 359) valem daqui pra baixo: o que vem
     // antes é onde se digita texto.
     let traduzida;
@@ -1107,6 +1130,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) -> Option<String> {
                     || edicao::acao_do_fluxo(e)
                     || edicao::agendar_sem_data(e)
                     || edicao::abrir_detalhe_da_barra(e)
+                    || vista::entrar(e)
                     || markdown::enter_na_tabela_md(e)
                     || edicao::abrir_pagina_da_celula(e)
                     || edicao::cartao_na_coluna_vazia(e)
@@ -2165,7 +2189,15 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 // O bloco de código em várias linhas (ciclo 494). Dobrado,
                 // uma linha com a linguagem e o tamanho.
                 let fonte = e.arvore.em(&l.caminho).map(|u| u.texto.as_str()).unwrap_or("");
-                if e.dobrados.contains(&l.caminho) {
+                let na_vista = e.vista_bloco.as_ref().filter(|v| v.caminho == l.caminho && vista::valida(e));
+                if let Some(v) = na_vista {
+                    // Dentro do bloco (ciclo 498): a altura toda do painel,
+                    // menos topo, fundo e a folga da moldura do foco.
+                    let alto = e.altura.saturating_sub(4);
+                    let medida = crate::codigo::medir(fonte, lingua.as_deref(), l.nivel, largura_conteudo, alto, &e.tema);
+                    v.medida.set(medida);
+                    vec![crate::codigo::desenhar_na_vista(fonte, lingua.as_deref(), l.nivel, largura_conteudo, alto, &v.vista, &e.tema)]
+                } else if e.dobrados.contains(&l.caminho) {
                     vec![vec![crate::codigo::dobrado(fonte, lingua.as_deref(), l.nivel, &e.tema)]]
                 } else {
                     // O grupo é indivisível: mais alto que o painel, ele
@@ -5419,6 +5451,129 @@ mod testes {
         assert!(tela.contains("mermaid · fluxograma"), "{tela}");
         assert!(tela.contains("│ Começo │") && tela.contains("│ Fim │") && tela.contains("▼"), "{tela}");
         assert!(!tela.contains("A[Começo]"), "o código apareceu no lugar do desenho:\n{tela}");
+    }
+
+    // --- Ciclo 498: navegar dentro do bloco ------------------------------------------
+
+    /// Um fluxograma de `n` passos em linha, alto o bastante pra não caber.
+    fn fluxo_alto(n: usize) -> String {
+        let mut m = String::from("Antes.\n\n```mermaid\ngraph TD\n");
+        for i in 0..n {
+            m.push_str(&format!("  P{i}[Passo {i}] --> P{}[Passo {}]\n", i + 1, i + 1));
+        }
+        m.push_str("```\n\nDepois.\n");
+        m
+    }
+
+    #[test]
+    fn enter_entra_no_diagrama_e_as_teclas_rolam_a_vista() {
+        let mut e = Estado::novo(paginas(), analisar(&fluxo_alto(12)));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "j");
+        assert_eq!(e.cursor, vec![1]);
+        let tela = desenho(&mut e, 120, 24).join("\n");
+        assert!(tela.contains("Enter navega"), "o corte não diz como ver o resto:\n{tela}");
+        tecla(&mut e, "Enter");
+        assert!(e.vista_bloco.is_some(), "Enter não entrou no bloco");
+        let tela = desenho(&mut e, 120, 24).join("\n");
+        assert!(tela.contains("· ↕ 1–") && tela.contains("navegando: hjkl"), "{tela}");
+        assert!(tela.contains("Passo 0") && !tela.contains("Passo 12"), "{tela}");
+        // `G` vai ao fim do desenho; o cursor não sai do bloco.
+        tecla(&mut e, "G");
+        let tela = desenho(&mut e, 120, 24).join("\n");
+        assert!(tela.contains("Passo 12") && !tela.contains("Passo 0 "), "{tela}");
+        assert_eq!(e.cursor, vec![1], "a tecla moveu o cursor em vez da vista");
+        // Não passa do fim: `j` no fim fica no fim.
+        let y = e.vista_bloco.as_ref().unwrap().vista.y;
+        tecla(&mut e, "j");
+        desenho(&mut e, 120, 24);
+        assert_eq!(e.vista_bloco.as_ref().unwrap().vista.y, y, "rolou além do fim");
+        assert!(y > 0);
+        // `g` volta, `k` no começo fica no começo.
+        tecla(&mut e, "g");
+        tecla(&mut e, "k");
+        assert_eq!(e.vista_bloco.as_ref().unwrap().vista.y, 0);
+        // Esc sai, e `j` volta a andar entre blocos.
+        tecla(&mut e, "Escape");
+        assert!(e.vista_bloco.is_none());
+        tecla(&mut e, "j");
+        assert_eq!(e.cursor, vec![2]);
+    }
+
+    #[test]
+    fn diagrama_largo_aparece_desenhado_e_desliza_de_lado() {
+        let md = "```mermaid\ngraph LR\n  A[um nó com nome comprido] --> B[outro nó com nome comprido] --> C[e um terceiro nó comprido]\n```\n";
+        let mut e = Estado::novo(paginas(), analisar(md));
+        e.foco = Foco::Conteudo;
+        let tela = desenho(&mut e, 90, 20).join("\n");
+        // Antes do 498 era o código com "não cabe".
+        assert!(tela.contains("mermaid · fluxograma") && tela.contains("um nó com nome comprido"), "{tela}");
+        assert!(!tela.contains("A[um nó"), "saiu o código:\n{tela}");
+        assert!(tela.contains("colunas · Enter navega"), "{tela}");
+        assert!(!tela.contains("terceiro"), "o fim do desenho não deveria caber:\n{tela}");
+        tecla(&mut e, "Enter");
+        desenho(&mut e, 90, 20);
+        tecla(&mut e, "$");
+        let tela = desenho(&mut e, 90, 20).join("\n");
+        assert!(tela.contains("terceiro"), "o `$` não levou ao fim da linha:\n{tela}");
+        assert!(tela.contains("· ↔ "), "{tela}");
+        let m = e.vista_bloco.as_ref().unwrap().medida.get();
+        assert_eq!(e.vista_bloco.as_ref().unwrap().vista.x, m.max_x());
+        // `l` no fim não passa; `0` volta ao começo.
+        tecla(&mut e, "l");
+        desenho(&mut e, 90, 20);
+        assert_eq!(e.vista_bloco.as_ref().unwrap().vista.x, m.max_x());
+        tecla(&mut e, "0");
+        assert_eq!(e.vista_bloco.as_ref().unwrap().vista.x, 0);
+        // Nenhuma linha da tela passa da largura.
+        for l in desenho(&mut e, 90, 20) {
+            assert!(unicode_width::UnicodeWidthStr::width(l.as_str()) <= 90, "{l}");
+        }
+    }
+
+    #[test]
+    fn na_vista_o_codigo_nao_corta_com_reticencias() {
+        let md = format!("```rust\nlet x = \"{}FIM\";\n```\n", "a".repeat(120));
+        let mut e = pagina_com(&md);
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0];
+        let tela = desenho(&mut e, 110, 12).join("\n");
+        assert!(tela.contains('…') && !tela.contains("FIM"), "{tela}");
+        tecla(&mut e, "Enter");
+        desenho(&mut e, 110, 12);
+        tecla(&mut e, "$");
+        let tela = desenho(&mut e, 110, 12).join("\n");
+        assert!(tela.contains("FIM\";"), "{tela}");
+        assert!(!tela.contains("a…"), "{tela}");
+        // Enter dentro edita.
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::EditorDeTexto { .. })), "{:?}", e.modal);
+        assert!(e.vista_bloco.is_none());
+    }
+
+    #[test]
+    fn trocar_de_pagina_ou_o_bloco_sumir_tira_da_vista() {
+        let mut e = Estado::novo(paginas(), analisar(&fluxo_alto(3)));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert!(e.vista_bloco.is_some());
+        // O arquivo mudou por fora e o bloco virou parágrafo.
+        e.arvore = analisar("Antes.\n\nSó texto.\n\nDepois.\n");
+        e.linhas = crate::tela::linhas(&e.arvore);
+        desenho(&mut e, 120, 24);
+        tecla(&mut e, "j");
+        assert!(e.vista_bloco.is_none(), "a vista ficou presa num bloco que não existe");
+        assert_eq!(e.cursor, vec![2], "o `j` foi engolido");
+    }
+
+    #[test]
+    fn i_fora_da_vista_continua_editando_direto() {
+        let mut e = pagina_com("```sh\necho oi\n```\n");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0];
+        tecla(&mut e, "i");
+        assert!(matches!(e.modal, Some(Modal::EditorDeTexto { .. })), "{:?}", e.modal);
     }
 
     #[test]
@@ -10667,6 +10822,8 @@ mod testes {
         let mut e = pagina_com("# T\n\n```rust\nfn a() {}\n```\n\nFim.\n");
         e.foco = Foco::Conteudo;
         e.cursor = vec![1];
+        // Desde o 498 o primeiro Enter entra no bloco; o segundo edita.
+        tecla(&mut e, "Enter");
         tecla(&mut e, "Enter");
         let Some(Modal::EditorDeTexto { campo, titulo, .. }) = &e.modal else { panic!("{:?} {:?}", e.modal, e.aviso) };
         assert_eq!((campo.texto.as_str(), titulo.as_str()), ("fn a() {}", "Código rust"));
@@ -10685,7 +10842,7 @@ mod testes {
         assert!(texto.contains("```rust\npub fn a() {}\nfn b() {} // fim\n```\n\nFim."), "{texto}");
         // Ctrl+C desiste.
         e.gravacao = None;
-        tecla(&mut e, "Enter");
+        tecla(&mut e, "i");
         digitar(&mut e, "lixo");
         tecla(&mut e, "Ctrl+c");
         assert!(e.gravacao.is_none() && e.modal.is_none());

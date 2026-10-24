@@ -1734,6 +1734,17 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "Dentro de um bloco de código ou diagrama (Enter)",
+        &[
+            ("j k h l, setas", "rolar a vista"),
+            ("Ctrl+D Ctrl+U", "meia tela pra baixo / pra cima"),
+            ("H L", "meia tela pros lados"),
+            ("g G 0 $", "topo / fim / começo / fim da linha"),
+            ("i ou Enter", "editar o código"),
+            ("Esc ou q", "sair do bloco"),
+        ],
+    ),
+    (
         "Editar (modo vim)",
         &[
             ("i a I A", "editar o texto"),

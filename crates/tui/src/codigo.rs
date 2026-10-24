@@ -132,11 +132,28 @@ fn caixa(
     max_linhas: usize,
     tema: &Tema,
 ) -> Vec<Line<'static>> {
+    caixa_com(rotulo, aviso, miolo, nivel, largura, max_linhas, Realce::Marca, None, tema)
+}
+
+/// A [`caixa`] com a cor da moldura e um texto no fundo: a vista de dentro
+/// do bloco (ciclo 498) acende a moldura e diz no fundo como se sai.
+#[allow(clippy::too_many_arguments)]
+fn caixa_com(
+    rotulo: &str,
+    aviso: Option<&str>,
+    miolo: Vec<Vec<Span<'static>>>,
+    nivel: usize,
+    largura: usize,
+    max_linhas: usize,
+    cor: Realce,
+    fundo: Option<&str>,
+    tema: &Tema,
+) -> Vec<Line<'static>> {
     let recuo = "  ".repeat(nivel);
     let util = largura.saturating_sub(recuo.chars().count()).max(8);
-    let moldura = tema.estilo(Realce::Marca);
-    let topo = format!("┌ {rotulo} ");
-    let topo_w: usize = topo.chars().count();
+    let moldura = tema.estilo(cor);
+    let topo = cortar(&format!("┌ {rotulo} "), util);
+    let topo_w: usize = topo.chars().map(|c| c.width().unwrap_or(0)).sum();
     let mut fora = vec![Line::from(vec![
         Span::raw(recuo.clone()),
         Span::styled(format!("{topo}{}", "─".repeat(util.saturating_sub(topo_w))), moldura),
@@ -158,17 +175,22 @@ fn caixa(
     }
     if total > mostra {
         fora.push(linha(vec![Span::styled(
-            format!("… mais {} linha(s) — Enter abre", total - mostra),
+            format!("… mais {} linha(s) — Enter navega", total - mostra),
             tema.estilo(Realce::Dica),
         )]));
     }
     if total == 0 {
         fora.push(linha(vec![Span::styled("(vazio)", tema.estilo(Realce::Dica))]));
     }
-    fora.push(Line::from(vec![
-        Span::raw(recuo),
-        Span::styled(format!("└{}", "─".repeat(util.saturating_sub(1))), moldura),
-    ]));
+    let fundo = match fundo {
+        Some(t) => {
+            let t = cortar(&format!("└─ {t} "), util);
+            let w: usize = t.chars().map(|c| c.width().unwrap_or(0)).sum();
+            format!("{t}{}", "─".repeat(util.saturating_sub(w)))
+        }
+        None => format!("└{}", "─".repeat(util.saturating_sub(1))),
+    };
+    fora.push(Line::from(vec![Span::raw(recuo), Span::styled(fundo, moldura)]));
     fora
 }
 
@@ -229,22 +251,191 @@ fn papel_do_desenho(p: Papel, tema: &Tema) -> Style {
 /// código, com uma linha dizendo por quê.
 pub fn desenhar_mermaid(fonte: &str, nivel: usize, largura: usize, max_linhas: usize, tema: &Tema) -> Vec<Line<'static>> {
     let cabe = largura_do_miolo(nivel, largura);
+    let c = conteudo_mermaid(fonte, cabe, tema);
+    if c.desenho {
+        // Largo demais (498): o desenho inteiro, recortado na borda, e o
+        // aviso de que dá pra entrar e deslizar. Antes virava código, e o
+        // diagrama que mais precisava ser visto era o que não aparecia.
+        let aviso = (c.largura > cabe)
+            .then(|| format!("desenho de {} colunas · Enter navega", c.largura));
+        let miolo = c.linhas.iter().map(|l| recortar(l, 0, cabe)).collect();
+        return caixa(&c.rotulo, aviso.as_deref(), miolo, nivel, largura, max_linhas, tema);
+    }
+    let miolo = miolo_de_codigo(fonte, Some("mermaid"), cabe, tema);
+    caixa(&c.rotulo, c.aviso.as_deref(), miolo, nivel, largura, max_linhas, tema)
+}
+
+/// O que um bloco tem pra mostrar, sem corte nenhum (ciclo 498): a vista
+/// de dentro do bloco recorta daqui.
+struct Conteudo {
+    rotulo: String,
+    aviso: Option<String>,
+    linhas: Vec<Vec<Span<'static>>>,
+    /// A linha mais larga, em células.
+    largura: usize,
+    /// Saiu desenhado (e não como código).
+    desenho: bool,
+}
+
+fn largura_dos(spans: &[Span]) -> usize {
+    spans.iter().flat_map(|s| s.content.chars()).map(|c| c.width().unwrap_or(0)).sum()
+}
+
+fn conteudo(linhas: Vec<Vec<Span<'static>>>, rotulo: String, aviso: Option<String>, desenho: bool) -> Conteudo {
+    let largura = linhas.iter().map(|l| largura_dos(l)).max().unwrap_or(0);
+    Conteudo { rotulo, aviso, linhas, largura, desenho }
+}
+
+/// O diagrama na largura dele, ou o código com o motivo de não ter saído.
+fn conteudo_mermaid(fonte: &str, cabe: usize, tema: &Tema) -> Conteudo {
     let motivo = match diagrama::ler(fonte) {
-        Ok(d) => match texto::desenhar(&d, cabe) {
+        Ok(d) => match texto::desenhar_inteiro(&d, cabe) {
             Ok(linhas) => {
-                let miolo = linhas
+                let linhas = linhas
                     .into_iter()
                     .map(|l| l.into_iter().map(|(p, t)| Span::styled(t, papel_do_desenho(p, tema))).collect())
                     .collect();
-                let rotulo = format!("mermaid · {}", d.tipo().nome().to_lowercase());
-                return caixa(&rotulo, None, miolo, nivel, largura, max_linhas, tema);
+                return conteudo(linhas, format!("mermaid · {}", d.tipo().nome().to_lowercase()), None, true);
             }
             Err(nao) => nao.mensagem(),
         },
         Err(fora) => format!("o construtor não monta este diagrama — {}", fora.mensagem()),
     };
-    let miolo = miolo_de_codigo(fonte, Some("mermaid"), cabe, tema);
-    caixa("mermaid", Some(&motivo), miolo, nivel, largura, max_linhas, tema)
+    conteudo(codigo_inteiro(fonte, Some("mermaid"), tema), "mermaid".into(), Some(motivo), false)
+}
+
+/// As linhas do código sem o corte por largura.
+fn codigo_inteiro(codigo: &str, lingua: Option<&str>, tema: &Tema) -> Vec<Vec<Span<'static>>> {
+    let linhas = linhas_de(codigo);
+    let realcadas = lingua.and_then(|l| realce_codigo::realcar_guardado(&linhas, l));
+    linhas
+        .iter()
+        .enumerate()
+        .map(|(i, l)| match realcadas.as_ref().and_then(|r| r.get(i)) {
+            Some(trechos) => trechos.iter().map(|(c, t)| Span::styled(t.clone(), tema.estilo(papel(*c)))).collect(),
+            None => vec![Span::styled(l.clone(), tema.estilo(Realce::Codigo))],
+        })
+        .collect()
+}
+
+/// As células `x..x+largura` de uma linha, com as cores. Um caractere
+/// largo partido pela borda vira espaço: meio caractere CJK o terminal
+/// desenha inteiro, e a linha passaria da largura.
+pub fn recortar(spans: &[Span<'static>], x: usize, largura: usize) -> Vec<Span<'static>> {
+    let mut fora = Vec::new();
+    let mut col = 0;
+    let fim = x + largura;
+    for s in spans {
+        let mut pedaco = String::new();
+        for ch in s.content.chars() {
+            let w = ch.width().unwrap_or(0);
+            if col >= fim {
+                break;
+            }
+            if col >= x && col + w <= fim {
+                pedaco.push(ch);
+            } else if col + w > x && w > 0 {
+                // Partido na borda (de um lado ou do outro).
+                for _ in col.max(x)..(col + w).min(fim) {
+                    pedaco.push(' ');
+                }
+            }
+            col += w;
+        }
+        if !pedaco.is_empty() {
+            fora.push(Span::styled(pedaco, s.style));
+        }
+        if col >= fim {
+            break;
+        }
+    }
+    fora
+}
+
+/// Onde a vista de dentro de um bloco está (ciclo 498): a primeira linha e
+/// a primeira coluna à vista.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Vista {
+    pub x: usize,
+    pub y: usize,
+}
+
+/// O tamanho do que o bloco tem e do que cabe dele, medido no último
+/// quadro: é com isto que a tecla sabe onde a vista para.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Medida {
+    pub linhas: usize,
+    pub colunas: usize,
+    pub alto: usize,
+    pub largo: usize,
+}
+
+impl Medida {
+    pub fn max_y(&self) -> usize {
+        self.linhas.saturating_sub(self.alto)
+    }
+    pub fn max_x(&self) -> usize {
+        self.colunas.saturating_sub(self.largo)
+    }
+}
+
+/// As medidas do bloco na vista, sem desenhar.
+pub fn medir(fonte: &str, lingua: Option<&str>, nivel: usize, largura: usize, alto: usize, tema: &Tema) -> Medida {
+    let cabe = largura_do_miolo(nivel, largura);
+    let c = conteudo_do_bloco(fonte, lingua, cabe, tema);
+    // O aviso, quando há, toma uma linha do miolo.
+    let alto = alto.saturating_sub(usize::from(c.aviso.is_some())).max(1);
+    Medida { linhas: c.linhas.len(), colunas: c.largura, alto, largo: cabe }
+}
+
+fn conteudo_do_bloco(fonte: &str, lingua: Option<&str>, cabe: usize, tema: &Tema) -> Conteudo {
+    if lingua.is_some_and(|l| l.eq_ignore_ascii_case("mermaid")) {
+        conteudo_mermaid(fonte, cabe, tema)
+    } else {
+        conteudo(codigo_inteiro(fonte, lingua, tema), rotulo(lingua), None, false)
+    }
+}
+
+/// O bloco visto de dentro (ciclo 498): `alto` linhas do miolo a partir de
+/// `vista.y`, recortadas a partir da coluna `vista.x`, numa moldura acesa
+/// que diz onde se está. A vista já vem dentro dos limites ([`Medida`]).
+pub fn desenhar_na_vista(
+    fonte: &str,
+    lingua: Option<&str>,
+    nivel: usize,
+    largura: usize,
+    alto: usize,
+    vista: &Vista,
+    tema: &Tema,
+) -> Vec<Line<'static>> {
+    let cabe = largura_do_miolo(nivel, largura);
+    let c = conteudo_do_bloco(fonte, lingua, cabe, tema);
+    let alto = alto.saturating_sub(usize::from(c.aviso.is_some())).max(1);
+    let total = c.linhas.len();
+    let y = vista.y.min(total.saturating_sub(alto));
+    let x = vista.x.min(c.largura.saturating_sub(cabe));
+    let miolo: Vec<Vec<Span<'static>>> = c.linhas.iter().skip(y).take(alto).map(|l| recortar(l, x, cabe)).collect();
+    // Onde se está vai no topo, curto (`↕` linhas, `↔` colunas): num painel
+    // estreito o rótulo é cortado, e o que não pode sumir é a posição.
+    let mut rotulo = c.rotulo.clone();
+    if total > alto {
+        rotulo.push_str(&format!(" · ↕ {}–{}/{total}", y + 1, (y + alto).min(total)));
+    }
+    if c.largura > cabe {
+        rotulo.push_str(&format!(" · ↔ {}–{}/{}", x + 1, (x + cabe).min(c.largura), c.largura));
+    }
+    let n = miolo.len();
+    caixa_com(
+        &rotulo,
+        c.aviso.as_deref(),
+        miolo,
+        nivel,
+        largura,
+        n.max(2),
+        Realce::BordaFoco,
+        Some("navegando: hjkl rola · i edita · Esc sai"),
+        tema,
+    )
 }
 
 /// O bloco dobrado: uma linha, com a linguagem e o tamanho.
@@ -288,7 +479,7 @@ mod testes {
         // Topo + 9 linhas + "… mais" + fundo: 10 linhas de miolo, no teto.
         assert_eq!(t.len(), 12);
         assert_eq!(t[9], "│ linha 8");
-        assert_eq!(t[10], "│ … mais 41 linha(s) — Enter abre");
+        assert_eq!(t[10], "│ … mais 41 linha(s) — Enter navega");
     }
 
     #[test]
@@ -338,15 +529,17 @@ mod testes {
     }
 
     #[test]
-    fn mermaid_fora_do_modelo_ou_largo_demais_mostra_o_codigo_e_o_motivo() {
+    fn mermaid_fora_do_modelo_mostra_o_codigo_e_o_largo_sai_recortado() {
         let tema = Tema::novo("mocha");
         let t = texto(&desenhar_mermaid("pie\n  \"a\" : 1\n", 0, 60, 30, &tema));
         assert!(t[1].starts_with("│ ⚠ o construtor não monta este diagrama"), "{t:?}");
         assert_eq!(t[2], "│ pie");
         let largo = "sequenceDiagram\n  A->>B: uma mensagem que não cabe em vinte colunas\n";
-        let t = texto(&desenhar_mermaid(largo, 0, 24, 30, &tema));
-        assert!(t[1].contains("não cabe"), "{t:?}");
-        assert!(t.iter().all(|l| l.chars().count() <= 24), "passou da largura:\n{}", t.join("\n"));
+        // Largo demais, desde o 498, sai desenhado e recortado na borda.
+        let t = texto(&desenhar_mermaid(largo, 0, 40, 30, &tema));
+        assert!(t[1].starts_with("│ ⚠ desenho de 51 colunas · Enter navega"), "{t:?}");
+        assert!(t.iter().any(|l| l.contains("│ A │")), "{t:?}");
+        assert!(t.iter().all(|l| l.chars().count() <= 40), "passou da largura:\n{}", t.join("\n"));
     }
 
     #[test]

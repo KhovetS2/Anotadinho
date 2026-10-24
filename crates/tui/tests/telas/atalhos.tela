@@ -25,11 +25,11 @@
 │                              ││ │  z ou espaço     dobrar                                              │                                 │
 │                              ││ │  [ ] t m         período, hoje e visão (calendário, cronograma)      │                                 │
 │                              ││ │                                                                      │                                 │
-│                              ││ │Editar (modo vim)                                                     │                                 │
-│                              ││ │  i a I A         editar o texto                                      │                                 │
-│                              ││ │  cc S            reescrever do zero                                  │                                 │
-│                              ││ │  Ctrl+B Ctrl+T   negrito / formatar a palavra (inserindo)            │                                 │
-│                              ││ │  o O             criar depois / antes                                │                                 │
+│                              ││ │Dentro de um bloco de código ou diagrama (Enter)                      │                                 │
+│                              ││ │  j k h l, setas  rolar a vista                                       │                                 │
+│                              ││ │  Ctrl+D Ctrl+U   meia tela pra baixo / pra cima                      │                                 │
+│                              ││ │  H L             meia tela pros lados                                │                                 │
+│                              ││ │  g G 0 $         topo / fim / começo / fim da linha                  │                                 │
 │                              ││ ╰ j k rolar · Esc ─────────────────────────────────────────────────────╯                                 │
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │
@@ -66,11 +66,11 @@ addddddddddddddddddddddddddddddabdghhhhhhhhhhhhhhhhhhnnnnnnnnnnnnkkkkkkkkkkkkkkk
 addddddddddddddddddddddddddddddabdghhhhhhhhhhhhhhhhhhnnnnnnkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgdddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabdghhhhhhhhhhhhhhhhhhnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnkkkkkkgdddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabdgkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgdddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdgjjjjjjjjjjjjjjjjjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgdddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdghhhhhhhhhhhhhhhhhhnnnnnnnnnnnnnnkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgdddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdghhhhhhhhhhhhhhhhhhnnnnnnnnnnnnnnnnnnkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgdddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdghhhhhhhhhhhhhhhhhhnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnkkkkkkkkkkkkgdddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdgjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjkkkkkkkkkkkkkkkkkkkkkkgdddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdghhhhhhhhhhhhhhhhhhnnnnnnnnnnnnnkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgdddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdghhhhhhhhhhhhhhhhhhnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnkkkkkkkkkkkkkkkkkkkkkkgdddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabdghhhhhhhhhhhhhhhhhhnnnnnnnnnnnnnnnnnnnnkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgdddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdghhhhhhhhhhhhhhhhhhnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnkkkkkkkkkkkkkkkkkkgdddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabdgnnnnnnnnnnnnnnnnnggggggggggggggggggggggggggggggggggggggggggggggggggggggdddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
