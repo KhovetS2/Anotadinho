@@ -1376,6 +1376,10 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                         Err(e) => estado.aviso = Some(format!("não abriu: {e}")),
                     }
                 }
+                Pedido::ListarExecucoesDoProjeto { slug, titulo } => match anotadinho_ipc::handle_listar_execucoes(vault.to_string()) {
+                    Ok(x) => app::modais::mostrar_execucoes_do_projeto(estado, &x, &slug, &titulo),
+                    Err(e) => estado.aviso = Some(e),
+                },
                 Pedido::ListarExecucoes => match anotadinho_ipc::handle_listar_execucoes(vault.to_string()) {
                     Ok(x) => app::modais::mostrar_execucoes(estado, &x),
                     Err(e) => estado.aviso = Some(format!("não leu as execuções: {e}")),

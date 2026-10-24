@@ -17,6 +17,16 @@ e sem isso o da pessoa passaria a abrir o vault de teste.
 A página é aberta pela barra de comandos (`:` + o nome), e as teclas de
 `--teclas` vão separadas por espaço, no formato do `tmux send-keys`
 (`j`, `Enter`, `Escape`, `C-d`).
+
+Sem página, `--abrir` diz o que digitar na barra — o `init` já semeia um
+projeto, então o quadro dele abre sem montar nada (ciclo 501):
+
+    python3 scripts/tui/tela.py --abrir "Meu primeiro projeto" --teclas "x"
+    python3 scripts/tui/tela.py --abrir "Meu primeiro" --execucoes reg.jsonl
+
+`--execucoes` copia um registro pro `.anotadinho/execucoes.jsonl` do vault
+temporário; `--cada` mostra a tela depois de CADA tecla; `--manter` não
+apaga o vault no fim e diz onde ele ficou, pra conferir o disco.
 """
 
 import argparse
@@ -62,7 +72,11 @@ def estavel(sessao, limite=5.0, cores=False):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("pagina", help="arquivo .md a abrir")
+    ap.add_argument("pagina", nargs="?", help="arquivo .md a abrir")
+    ap.add_argument("--abrir", help="o que digitar na barra de comandos (padrão: o nome da página)")
+    ap.add_argument("--execucoes", help="registro de execuções (.jsonl) pro vault temporário")
+    ap.add_argument("--cada", action="store_true", help="mostra a tela depois de cada tecla")
+    ap.add_argument("--manter", action="store_true", help="não apaga o vault temporário")
     ap.add_argument("--teclas", default="", help="teclas depois de abrir, separadas por espaço")
     ap.add_argument("--largura", type=int, default=100)
     ap.add_argument("--altura", type=int, default=40)
@@ -84,8 +98,15 @@ def main():
     sessao = f"anotadinho-tela-{os.getpid()}"
     try:
         subprocess.run([cli, "--vault", vault, "init"], check=True, capture_output=True)
-        nome = os.path.splitext(os.path.basename(a.pagina))[0]
-        shutil.copy(a.pagina, os.path.join(vault, "pages", f"{nome}.md"))
+        if a.pagina:
+            nome = os.path.splitext(os.path.basename(a.pagina))[0]
+            shutil.copy(a.pagina, os.path.join(vault, "pages", f"{nome}.md"))
+        elif not a.abrir:
+            raise SystemExit("dê uma página ou --abrir")
+        nome = a.abrir or nome
+        if a.execucoes:
+            os.makedirs(os.path.join(vault, ".anotadinho"), exist_ok=True)
+            shutil.copy(a.execucoes, os.path.join(vault, ".anotadinho", "execucoes.jsonl"))
         env = f"XDG_CONFIG_HOME={cfg} TERM=xterm-256color"
         tmux("new-session", "-d", "-s", sessao, "-x", str(a.largura), "-y", str(a.altura),
              f"env {env} {a.binario} --vault {vault}")
@@ -99,11 +120,16 @@ def main():
         estavel(sessao)
         for t in a.teclas.split():
             tmux("send-keys", "-t", sessao, t)
-            estavel(sessao)
+            tela = estavel(sessao)
+            if a.cada:
+                sys.stdout.write(f"──── depois de {t} ────\n{tela}")
         sys.stdout.write(estavel(sessao, cores=a.cores))
     finally:
         tmux("kill-session", "-t", sessao, check=False)
-        shutil.rmtree(tmp, ignore_errors=True)
+        if a.manter:
+            print(f"\nvault mantido em {vault}")
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -12396,6 +12396,80 @@ mod testes {
         );
     }
 
+    // ── Execuções do projeto (ciclo 501) ──────────────────────────────
+
+    fn execucao_em(conversa: &str, quando: &str) -> anotadinho_core::execucao::Execucao {
+        anotadinho_core::execucao::Execucao {
+            quando: quando.into(),
+            conversa: conversa.into(),
+            agente: "falso".into(),
+            binario: "/bin/agente".into(),
+            anexos: 0,
+            prompt: 10,
+            segundos: 3,
+            fim: anotadinho_core::execucao::Fim::Respondeu,
+            uso: None,
+        }
+    }
+
+    #[test]
+    fn x_lista_so_as_execucoes_do_projeto_e_enter_abre_a_conversa() {
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_na_tela(vec![tarefa_de_teste(1, "ideia", "")]));
+        e.pedidos.clear();
+        tecla(&mut e, "x");
+        assert_eq!(e.pedidos, [Pedido::ListarExecucoesDoProjeto { slug: "saas".into(), titulo: "SaaS".into() }]);
+        e.pedidos.clear();
+        let registro = [
+            execucao_em("pages/conversas/solta.md", "2026-10-24 09:00"),
+            execucao_em("pages/projetos/saas/conversas/tarefa-001.md", "2026-10-24 10:00"),
+            // `saas-novo` começa com `saas`: só a barra separa.
+            execucao_em("pages/projetos/saas-novo/conversas/geral.md", "2026-10-24 11:00"),
+            execucao_em("pages/projetos/saas/conversas/geral.md", "2026-10-24 12:00"),
+        ];
+        modais::mostrar_execucoes_do_projeto(&mut e, &registro, "saas", "SaaS");
+        let chaves = match &e.modal {
+            Some(Modal::Escolha { titulo, lista, acao: modais::AcaoDaEscolha::Execucoes }) => {
+                assert_eq!(titulo, "Execuções — SaaS");
+                lista.itens.iter().map(|i| i.chave.clone()).collect::<Vec<_>>()
+            }
+            outro => panic!("{outro:?}"),
+        };
+        assert_eq!(chaves, ["pages/projetos/saas/conversas/tarefa-001.md", "pages/projetos/saas/conversas/geral.md"]);
+        // De qual tarefa foi: todas moram na mesma pasta.
+        let tela = desenho(&mut e, 160, 30).join("\n");
+        assert!(tela.contains("tarefa-001") && tela.contains("respondeu"), "{tela}");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/projetos/saas/conversas/tarefa-001.md".into())]);
+        // Sem execução no projeto, avisa em vez de abrir lista vazia.
+        e.pedidos.clear();
+        modais::mostrar_execucoes_do_projeto(&mut e, &registro[..1], "saas", "SaaS");
+        assert!(e.modal.is_none());
+        assert!(e.aviso.as_deref().unwrap_or("").contains("nenhuma tarefa executada ainda"), "{:?}", e.aviso);
+    }
+
+    #[test]
+    fn a_dica_do_rodape_diz_quantas_transicoes_a_tarefa_tem() {
+        let rodape = |etapa: &str| {
+            let mut e = especial_aberto("projeto");
+            especiais::carregar(&mut e, projeto_na_tela(vec![tarefa_de_teste(1, etapa, "")]));
+            e.foco = Foco::Conteudo;
+            // Larga: o rodapé inteiro cabe.
+            desenho(&mut e, 240, 30).join("\n")
+        };
+        let bloqueada = rodape("bloqueada");
+        assert!(bloqueada.contains("1-4 etapa"), "bloqueada tem 4 saídas:\n{bloqueada}");
+        assert!(rodape("ideia").contains("1-2 etapa"));
+        let executando = rodape("executando");
+        assert!(executando.contains(" 1 etapa") && !executando.contains("1-"), "{executando}");
+        assert!(rodape("ideia").contains("x execuções"));
+        // Sem tarefa, não há número que mova.
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_na_tela(vec![]));
+        let vazio = desenho(&mut e, 240, 30).join("\n");
+        assert!(!vazio.contains("etapa ·"), "{vazio}");
+    }
+
     // ── sidebar que rola, clica e entra/sai (ciclo 467) ──────────────
 
     /// Um vault com `n` páginas soltas e um projeto aninhado em três

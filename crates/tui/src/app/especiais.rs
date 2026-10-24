@@ -857,6 +857,8 @@ fn tecla_no_projeto(e: &mut Estado, tecla: &str) -> bool {
             return true;
         }
         "c" => Pedido::AbrirPagina(projeto::caminho_da_conversa_geral(&slug)),
+        // A aba Execuções da janela (ciclo 501): só as deste projeto.
+        "x" => Pedido::ListarExecucoesDoProjeto { slug, titulo: p.projeto.titulo.clone() },
         "a" => Pedido::AbrirPagina(projeto::caminho_da_arquitetura(&slug)),
         "p" => Pedido::GravarConfigDoProjeto { slug, config: projeto::ConfigProjeto { pausado: !config.pausado, ..config } },
         "n" => {
@@ -1091,13 +1093,18 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
     let tema = &e.tema;
     let no_foco = e.foco == Foco::Conteudo;
     let dica = match t.tipo {
-        TipoEspecial::Tags => " j k tag · h l página · Enter abre · R recarrega ",
-        TipoEspecial::Assets => " j k · x exclui · R recarrega ",
-        TipoEspecial::Propostas => " j k proposta · h l trecho · espaço tira · a aplica · r recusa · v visualização ",
-        TipoEspecial::Kanban => " h l coluna · j k cartão ",
-        TipoEspecial::Tarefas => " j k · Enter abre · s ordena ",
-        TipoEspecial::Grafo => " j k página · h l conexão · Enter abre ",
-        TipoEspecial::Projeto => " h j k l · 1-3 etapa · Enter · v detalhes · n nova · s filtro · m sprint · S sprints · c conversa · ? atalhos ",
+        TipoEspecial::Tags => " j k tag · h l página · Enter abre · R recarrega ".to_string(),
+        TipoEspecial::Assets => " j k · x exclui · R recarrega ".to_string(),
+        TipoEspecial::Propostas => " j k proposta · h l trecho · espaço tira · a aplica · r recusa · v visualização ".to_string(),
+        TipoEspecial::Kanban => " h l coluna · j k cartão ".to_string(),
+        TipoEspecial::Tarefas => " j k · Enter abre · s ordena ".to_string(),
+        TipoEspecial::Grafo => " j k página · h l conexão · Enter abre ".to_string(),
+        TipoEspecial::Projeto => format!(
+            // `s m S` juntos (ciclo 501): com o `x`, o "? atalhos" do fim
+            // já não cabia em 140 colunas — e ele é quem leva ao resto.
+            " h j k l ·{} Enter · v detalhes · n nova · s m S sprints · c conversa · x execuções · ? atalhos ",
+            faixa_das_transicoes(t)
+        ),
     };
     let mut borda = Block::default()
         .borders(Borders::ALL)
@@ -1127,6 +1134,23 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
     .min(linhas.len().saturating_sub(altura));
     let visiveis: Vec<Line<'static>> = linhas.into_iter().skip(topo).take(altura).collect();
     f.render_widget(Paragraph::new(visiveis), dentro);
+}
+
+/// Os números que movem a tarefa selecionada, pro rodapé (ciclo 501):
+/// " 1-4 etapa ·" na bloqueada, " 1 etapa ·" na executando, nada sem
+/// tarefa ou sem transição. O "1-3" fixo mentia em metade das etapas — e
+/// é justamente na bloqueada, a de 4, que se procura a saída.
+fn faixa_das_transicoes(t: &TelaEspecial) -> String {
+    let Some(Dados::Projeto(p)) = &t.dados else { return String::new() };
+    let n = p
+        .na_ordem()
+        .get(t.selecionado)
+        .map_or(0, |x| x.etapa.proximas_para(anotadinho_core::projeto::Quem::Humano).len());
+    match n {
+        0 => String::new(),
+        1 => " 1 etapa ·".into(),
+        n => format!(" 1-{n} etapa ·"),
+    }
 }
 
 /// Um passo da roda do mouse numa tela especial (ciclo 454): rola o item

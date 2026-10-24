@@ -45,7 +45,8 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | `type: assets` (arquivos, uso, excluir) | ✅ | 346 — "Ver assets"; `x`/`dd` exclui |
 | `type: kanban` / `calendar` / `table` de página inteira | ✅ | 353 — quadro com `column::`, calendário do vault, tarefas com `status::` |
 | `type: graph` | ✅ | 361 — grafo 3D vira lista de conexões por wikilink; Enter abre |
-| `type: projeto` (quadro por etapa, fila, repositório, conversa) | ✅ | 460 (janela), 461 e 468 (TUI) — quadro de colunas que desliza; `h j k l` por `core::espacial`; números movem pela transição; `d` detalha |
+| `type: projeto` (quadro por etapa, fila, repositório, conversa) | ✅ | 460 (janela), 461 e 468 (TUI) — quadro de colunas que desliza; `h j k l` por `core::espacial`; números movem pela transição (o rodapé diz quantas a selecionada tem, 501); `d` detalha |
+| Execuções do projeto (aba Execuções) | ✅ | 460 (janela), 501 (TUI: `x` no quadro — o registro de execuções recortado pela pasta do projeto; Enter abre a conversa, `r` roda de novo) |
 | `type: tarefa` (barra de etapa sobre o editor) | 🟡 | 460 — na TUI, "Mover a tarefa aberta…" na barra de comandos |
 | Arrastar o cartão do projeto entre colunas | — | 465 — na TUI, os números |
 | Sprints do projeto (recorte do quadro, mover de sprint, criar/iniciar/encerrar, histórico) | ✅ | 472 (janela: seletor, aba Sprints, seletor no cartão), 473 (TUI: `s` filtro, `m` sprint da tarefa, `S` sprints — o encerramento pergunta como escolha) |

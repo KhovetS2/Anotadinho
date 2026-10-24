@@ -119,6 +119,12 @@ pub enum Pedido {
     },
     /// Ver o registro de execuções do agente (ciclo 406).
     ListarExecucoes,
+    /// Só as execuções do projeto deste slug (ciclo 501), como a aba
+    /// Execuções da janela.
+    ListarExecucoesDoProjeto {
+        slug: String,
+        titulo: String,
+    },
     /// Abrir a conversa e pôr a última pergunta no campo (ciclo 437).
     Reexecutar(String),
     /// Aumentar o timeout do agente depois de um estouro (ciclo 437).
@@ -1782,7 +1788,7 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
         // tem que estar aqui, senão some.
         "Projeto",
         &[
-            ("1-3", "mover a tarefa (as transições dela)"),
+            ("1-4", "mover a tarefa (as transições dela; o rodapé diz quantas)"),
             ("v", "detalhes: critérios, tags, prazo, comentários, anexos"),
             ("n d", "tarefa nova / detalhar com o agente"),
             ("s", "o que o quadro mostra (sprint, backlog, todas)"),
@@ -1790,6 +1796,7 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("S", "sprints: iniciar, encerrar, criar, histórico"),
             ("c a", "conversa / arquitetura do projeto"),
             ("p o", "pausar a fila / escolher o repositório"),
+            ("x", "execuções do agente neste projeto (Enter abre, r roda de novo)"),
         ],
     ),
 ];
@@ -2324,34 +2331,11 @@ pub fn abrir_permissoes(e: &mut Estado, p: &anotadinho_core::permissoes::Permiss
 /// O registro de execuções (ciclo 406): quando rodou, quanto durou e como
 /// terminou. Enter abre a conversa.
 pub fn mostrar_execucoes(e: &mut Estado, execucoes: &[anotadinho_core::execucao::Execucao]) {
-    use anotadinho_core::execucao::Fim;
     if execucoes.is_empty() {
         e.aviso = Some("nenhuma execução registrada ainda".into());
         return;
     }
-    let itens = execucoes
-        .iter()
-        .map(|x| {
-            let glifo = match x.fim {
-                Fim::Respondeu => "✓",
-                Fim::Falhou(_) => "✗",
-                Fim::Interrompida => "■",
-            };
-            // A linha é curta de propósito: o detalhe à direita só aparece
-            // se couber. Como terminou e quanto durou no rótulo, quando e
-            // com quem no detalhe; o resto fica no `execucoes.jsonl`.
-            let rotulo = format!("{} · {} · {}s", x.quando, x.fim.rotulo(), x.segundos);
-            // O que consumiu à direita (ciclo 422); sem medida, o
-            // agente. Compacto porque a linha do modal é estreita: aqui
-            // basta saber QUAL rodada foi cara — a conta detalhada está
-            // no título do dia e no `execucoes.jsonl`.
-            let detalhe = match &x.uso {
-                Some(u) => format!("~{}", anotadinho_core::orcamento::humano((u.entrada + u.saida) as usize)),
-                None => x.agente.clone(),
-            };
-            Item::novo(glifo, rotulo, x.conversa.clone()).com_detalhe(detalhe)
-        })
-        .collect();
+    let itens = itens_de_execucoes(execucoes, false);
     // O total do dia no título (ciclo 422): é a pergunta que se faz
     // olhando essa tela — "quanto isso me custou hoje?".
     let hoje = e.agora.clone().unwrap_or_default();
@@ -2368,6 +2352,61 @@ pub fn mostrar_execucoes(e: &mut Estado, execucoes: &[anotadinho_core::execucao:
         None => "Execuções do agente".to_string(),
     };
     e.modal = Some(Modal::Escolha { titulo, lista: Lista::filtravel(itens), acao: AcaoDaEscolha::Execucoes });
+}
+
+/// As linhas do registro de execuções: como terminou, quanto durou e o
+/// que consumiu. A chave é a conversa — é o que o Enter abre.
+fn itens_de_execucoes(execucoes: &[anotadinho_core::execucao::Execucao], com_conversa: bool) -> Vec<Item> {
+    use anotadinho_core::execucao::Fim;
+    execucoes
+        .iter()
+        .map(|x| {
+            let glifo = match x.fim {
+                Fim::Respondeu => "✓",
+                Fim::Falhou(_) => "✗",
+                Fim::Interrompida => "■",
+            };
+            // A linha é curta de propósito: o detalhe à direita só aparece
+            // se couber. Como terminou e quanto durou no rótulo, quando e
+            // com quem no detalhe; o resto fica no `execucoes.jsonl`.
+            let rotulo = if com_conversa {
+                // No projeto, QUAL conversa (ciclo 501): todas moram na
+                // mesma pasta, e "tarefa-003" é o que diz de qual tarefa.
+                format!("{} · {} · {} · {}s", x.quando, nome_de_arquivo(&x.conversa), x.fim.rotulo(), x.segundos)
+            } else {
+                format!("{} · {} · {}s", x.quando, x.fim.rotulo(), x.segundos)
+            };
+            // O que consumiu à direita (ciclo 422); sem medida, o
+            // agente. Compacto porque a linha do modal é estreita: aqui
+            // basta saber QUAL rodada foi cara — a conta detalhada está
+            // no título do dia e no `execucoes.jsonl`.
+            let detalhe = match &x.uso {
+                Some(u) => format!("~{}", anotadinho_core::orcamento::humano((u.entrada + u.saida) as usize)),
+                None => x.agente.clone(),
+            };
+            Item::novo(glifo, rotulo, x.conversa.clone()).com_detalhe(detalhe)
+        })
+        .collect()
+}
+
+/// As execuções de UM projeto (ciclo 501): as que rodaram numa conversa
+/// dentro da pasta dele — a conversa geral e as das tarefas. É o mesmo
+/// recorte da aba Execuções da janela (`projeto_view.rs`), sobre o mesmo
+/// `execucoes.jsonl`.
+pub fn mostrar_execucoes_do_projeto(e: &mut Estado, execucoes: &[anotadinho_core::execucao::Execucao], slug: &str, titulo: &str) {
+    // A barra no fim: sem ela, o projeto `saas` levaria as execuções de
+    // um `saas-novo`.
+    let pasta = format!("{}/", anotadinho_core::projeto::pasta_do_projeto(slug));
+    let do_projeto: Vec<_> = execucoes.iter().filter(|x| x.conversa.starts_with(&pasta)).cloned().collect();
+    if do_projeto.is_empty() {
+        e.aviso = Some(format!("nenhuma tarefa executada ainda em {titulo}"));
+        return;
+    }
+    e.modal = Some(Modal::Escolha {
+        titulo: format!("Execuções — {titulo}"),
+        lista: Lista::filtravel(itens_de_execucoes(&do_projeto, true)),
+        acao: AcaoDaEscolha::Execucoes,
+    });
 }
 
 fn nome_de_arquivo(path: &str) -> String {
