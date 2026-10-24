@@ -2005,7 +2005,8 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             if fora.len() >= e.altura {
                 break;
             }
-            if !l.enfeite && l.mostra(&e.cursor) {
+            let cursor_aqui = !l.enfeite && l.mostra(&e.cursor);
+            if cursor_aqui {
                 achou = true;
             }
             let largura_conteudo = if atual.is_some() {
@@ -2280,8 +2281,16 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             // que eu tinha feito antes, e num painel estreito a trilha
             // do fluxo sumia por completo — inclusive a etapa atual,
             // que é a única que precisa estar na tela.
-            for grupo in desenhadas {
+            for (g, grupo) in desenhadas.into_iter().enumerate() {
                 if fora.len() + grupo.len() > e.altura {
+                    // O cursor só está NA TELA se o primeiro grupo da linha
+                    // dele coube (ciclo 504). Contado antes, um bloco de
+                    // código recém-inserido na borda de baixo saía como
+                    // moldura vazia: a linha "achada" não pedia a rolagem,
+                    // e o grupo dela não cabia.
+                    if cursor_aqui && g == 0 {
+                        achou = false;
+                    }
                     break 'linhas;
                 }
                 for linha in grupo {
@@ -5580,6 +5589,22 @@ mod testes {
         tecla(&mut e, "j");
         assert!(e.vista_bloco.is_none(), "a vista ficou presa num bloco que não existe");
         assert_eq!(e.cursor, vec![2], "o `j` foi engolido");
+    }
+
+    // --- Ciclo 504: bloco na borda de baixo ------------------------------------------
+
+    #[test]
+    fn bloco_alto_na_borda_de_baixo_rola_em_vez_de_sair_vazio() {
+        // Achado pelo agente do 500: um bloco de código inserido no fim da
+        // tela saía como moldura vazia até a próxima tecla.
+        let mut md: String = (0..14).map(|i| format!("Parágrafo {i}.\n\n")).collect();
+        md.push_str("```sh\necho um\necho dois\necho três\n```\n");
+        let mut e = Estado::novo(paginas(), analisar(&md));
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![14];
+        let tela = desenho(&mut e, 110, 20).join("\n");
+        assert!(tela.contains("echo três"), "o bloco do cursor não apareceu:\n{tela}");
+        assert!(tela.contains("┌ sh "), "{tela}");
     }
 
     // --- Ciclo 499: os outros tipos de diagrama ------------------------------------
