@@ -15,7 +15,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthChar;
 
-use anotadinho_core::diagrama::{self, texto, texto::Papel};
+use anotadinho_core::diagrama::{self, so_ver, texto, texto::Papel};
 
 use crate::realce_codigo::{self, Categoria, Trecho};
 use crate::tema::{Realce, Tema};
@@ -288,18 +288,36 @@ fn conteudo(linhas: Vec<Vec<Span<'static>>>, rotulo: String, aviso: Option<Strin
 
 /// O diagrama na largura dele, ou o código com o motivo de não ter saído.
 fn conteudo_mermaid(fonte: &str, cabe: usize, tema: &Tema) -> Conteudo {
-    let motivo = match diagrama::ler(fonte) {
+    // Pra ver, comentário e cabeçalho `---` não fazem falta (499): o leitor
+    // do construtor recusa os dois, pra não apagá-los ao reescrever.
+    let (limpo, titulo) = so_ver::limpar(fonte);
+    let pintar = |linhas: Vec<texto::Linha>| -> Vec<Vec<Span<'static>>> {
+        let mut fora: Vec<Vec<Span<'static>>> = titulo
+            .iter()
+            .map(|t| vec![Span::styled(t.clone(), papel_do_desenho(Papel::Titulo, tema))])
+            .collect();
+        fora.extend(linhas.into_iter().map(|l| l.into_iter().map(|(p, t)| Span::styled(t, papel_do_desenho(p, tema))).collect()));
+        fora
+    };
+    let motivo = match diagrama::ler(&limpo) {
         Ok(d) => match texto::desenhar_inteiro(&d, cabe) {
-            Ok(linhas) => {
-                let linhas = linhas
-                    .into_iter()
-                    .map(|l| l.into_iter().map(|(p, t)| Span::styled(t, papel_do_desenho(p, tema))).collect())
-                    .collect();
-                return conteudo(linhas, format!("mermaid · {}", d.tipo().nome().to_lowercase()), None, true);
-            }
+            Ok(linhas) => return conteudo(pintar(linhas), format!("mermaid · {}", d.tipo().nome().to_lowercase()), None, true),
             Err(nao) => nao.mensagem(),
         },
-        Err(fora) => format!("o construtor não monta este diagrama — {}", fora.mensagem()),
+        // Os tipos que o construtor não monta, mas que a janela desenha
+        // (499): pizza, mapa mental, linha do tempo, jornada, classes, ER.
+        Err(fora) => match (so_ver::tipo(&limpo), so_ver::desenhar_inteiro(&limpo, cabe)) {
+            (Some(nome), Some(Ok(linhas))) => return conteudo(pintar(linhas), format!("mermaid · {nome}"), None, true),
+            (_, Some(Err(nao))) => nao.mensagem(),
+            _ => {
+                let palavra = limpo.split_whitespace().next().unwrap_or("");
+                if ["graph", "flowchart", "sequenceDiagram", "stateDiagram", "stateDiagram-v2", "gantt"].contains(&palavra) {
+                    format!("o construtor não monta este diagrama — {}", fora.mensagem())
+                } else {
+                    format!("o tipo `{palavra}` ainda não tem desenho no terminal")
+                }
+            }
+        },
     };
     conteudo(codigo_inteiro(fonte, Some("mermaid"), tema), "mermaid".into(), Some(motivo), false)
 }
@@ -531,9 +549,11 @@ mod testes {
     #[test]
     fn mermaid_fora_do_modelo_mostra_o_codigo_e_o_largo_sai_recortado() {
         let tema = Tema::novo("mocha");
-        let t = texto(&desenhar_mermaid("pie\n  \"a\" : 1\n", 0, 60, 30, &tema));
-        assert!(t[1].starts_with("│ ⚠ o construtor não monta este diagrama"), "{t:?}");
-        assert_eq!(t[2], "│ pie");
+        let t = texto(&desenhar_mermaid("gitGraph\n  commit\n", 0, 60, 30, &tema));
+        assert_eq!(t[1], "│ ⚠ o tipo `gitGraph` ainda não tem desenho no terminal");
+        assert_eq!(t[2], "│ gitGraph");
+        let t = texto(&desenhar_mermaid("graph TD\n  A --> B\n  click A callback\n", 0, 60, 30, &tema));
+        assert!(t[1].starts_with("│ ⚠ o construtor não monta este diagrama — linha 3"), "{t:?}");
         let largo = "sequenceDiagram\n  A->>B: uma mensagem que não cabe em vinte colunas\n";
         // Largo demais, desde o 498, sai desenhado e recortado na borda.
         let t = texto(&desenhar_mermaid(largo, 0, 40, 30, &tema));

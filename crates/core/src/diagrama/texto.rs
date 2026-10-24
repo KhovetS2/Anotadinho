@@ -113,7 +113,7 @@ pub fn largura_de(s: &str) -> usize {
 }
 
 /// `s` cortado em `max` células, com `…` quando cortou.
-fn cortar(s: &str, max: usize) -> String {
+pub(super) fn cortar(s: &str, max: usize) -> String {
     if largura_de(s) <= max {
         return s.to_string();
     }
@@ -598,7 +598,7 @@ fn gantt(g: &Gantt, largura: usize) -> Result<Vec<Linha>, NaoDesenha> {
 // depois do espelho pra não sair de trás pra frente.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FormaG {
+pub(super) enum FormaG {
     Caixa,
     Arredondado,
     Decisao,
@@ -607,29 +607,33 @@ enum FormaG {
     Fim,
 }
 
-struct NoG {
-    rotulo: String,
-    forma: FormaG,
+pub(super) struct NoG {
+    pub(super) rotulo: String,
+    pub(super) forma: FormaG,
+    /// Linhas debaixo do nome, depois de um separador: os membros de uma
+    /// classe, os atributos de uma entidade (ciclo 499). Vazio é a caixa
+    /// de uma linha só do fluxograma.
+    pub(super) corpo: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Traco {
+pub(super) enum Traco {
     Cheio,
     Pontilhado,
     Grosso,
 }
 
-struct LigG {
-    de: usize,
-    para: usize,
-    rotulo: String,
-    traco: Traco,
-    ponta: bool,
+pub(super) struct LigG {
+    pub(super) de: usize,
+    pub(super) para: usize,
+    pub(super) rotulo: String,
+    pub(super) traco: Traco,
+    pub(super) ponta: bool,
 }
 
 /// Rótulo de nó mais comprido que isto é cortado: uma caixa de 60
 /// colunas come a tela sozinha.
-const ROTULO_MAX: usize = 28;
+pub(super) const ROTULO_MAX: usize = 28;
 
 const CIMA: u8 = 1;
 const BAIXO: u8 = 2;
@@ -771,7 +775,10 @@ fn espelhar(c: char, vertical: bool) -> char {
 fn tamanho(no: &NoG) -> (usize, usize) {
     match no.forma {
         FormaG::Inicio | FormaG::Fim => (1, 1),
-        _ => (largura_de(&no.rotulo) + 4, 3),
+        _ => {
+            let w = no.corpo.iter().map(|l| largura_de(l)).chain([largura_de(&no.rotulo)]).max().unwrap_or(0);
+            (w + 4, if no.corpo.is_empty() { 3 } else { 4 + no.corpo.len() })
+        }
     }
 }
 
@@ -783,7 +790,7 @@ enum Rota {
     Lateral,
 }
 
-fn grafo(nos: &[NoG], ligs: &[LigG], horizontal: bool, invertido: bool, largura: usize) -> Result<Vec<Linha>, NaoDesenha> {
+pub(super) fn grafo(nos: &[NoG], ligs: &[LigG], horizontal: bool, invertido: bool, largura: usize) -> Result<Vec<Linha>, NaoDesenha> {
     let n = nos.len();
     if n == 0 {
         return Ok(Vec::new());
@@ -886,7 +893,11 @@ fn grafo(nos: &[NoG], ligs: &[LigG], horizontal: bool, invertido: bool, largura:
             m += grossura[c];
         }
     }
-    let ini_maior = |i: usize| ini_camada[niv[i]] + (grossura[niv[i]] - tam[i].0) / 2;
+    // Em LR a caixa estreita centra na faixa da camada. Em TD as caixas de
+    // alturas diferentes (classes e entidades, 499) alinham pelo topo: pelo
+    // centro, as setas que descem pra mesma camada chegavam em alturas
+    // diferentes, e a caixa baixa parecia de outra camada.
+    let ini_maior = |i: usize| ini_camada[niv[i]] + if horizontal { (grossura[niv[i]] - tam[i].0) / 2 } else { 0 };
     let fim_maior = |i: usize| ini_maior(i) + tam[i].0 - 1;
     let pista = |c: usize, k: usize, saida: bool| -> usize {
         ini_canal[c] + usize::from(sai[c]) + pistas[c].iter().position(|p| *p == (k, saida)).unwrap_or(0)
@@ -905,25 +916,42 @@ fn grafo(nos: &[NoG], ligs: &[LigG], horizontal: bool, invertido: bool, largura:
             FormaG::Inicio => geo.letra(x0, y0, '●', Papel::Caixa),
             FormaG::Fim => geo.letra(x0, y0, '◉', Papel::Caixa),
             forma => {
-                let (w, _) = tamanho(no);
+                let (w, h) = tamanho(no);
                 let (ce, cd, be, bd, le, ld) = match forma {
                     FormaG::Arredondado => ('╭', '╮', '╰', '╯', '│', '│'),
                     FormaG::Decisao => ('╱', '╲', '╲', '╱', '<', '>'),
                     FormaG::Circulo => ('╭', '╮', '╰', '╯', '(', ')'),
                     _ => ('┌', '┐', '└', '┘', '│', '│'),
                 };
+                let fundo = y0 + h - 1;
                 geo.letra(x0, y0, ce, Papel::Caixa);
                 geo.letra(x0 + w - 1, y0, cd, Papel::Caixa);
-                geo.letra(x0, y0 + 2, be, Papel::Caixa);
-                geo.letra(x0 + w - 1, y0 + 2, bd, Papel::Caixa);
+                geo.letra(x0, fundo, be, Papel::Caixa);
+                geo.letra(x0 + w - 1, fundo, bd, Papel::Caixa);
                 for x in x0 + 1..x0 + w - 1 {
                     geo.letra(x, y0, '─', Papel::Caixa);
-                    geo.letra(x, y0 + 2, '─', Papel::Caixa);
-                    geo.letra(x, y0 + 1, ' ', Papel::Nome);
+                    geo.letra(x, fundo, '─', Papel::Caixa);
+                    for y in y0 + 1..fundo {
+                        geo.letra(x, y, ' ', Papel::Nome);
+                    }
                 }
-                geo.letra(x0, y0 + 1, le, Papel::Caixa);
-                geo.letra(x0 + w - 1, y0 + 1, ld, Papel::Caixa);
+                for y in y0 + 1..fundo {
+                    geo.letra(x0, y, le, Papel::Caixa);
+                    geo.letra(x0 + w - 1, y, ld, Papel::Caixa);
+                }
                 textos.push((x0 + 2, y0 + 1, no.rotulo.clone(), Papel::Nome));
+                if !no.corpo.is_empty() {
+                    // O separador entre o nome e o corpo, como a classe da
+                    // UML: `├───┤`.
+                    geo.letra(x0, y0 + 2, '├', Papel::Caixa);
+                    geo.letra(x0 + w - 1, y0 + 2, '┤', Papel::Caixa);
+                    for x in x0 + 1..x0 + w - 1 {
+                        geo.letra(x, y0 + 2, '─', Papel::Caixa);
+                    }
+                    for (k, l) in no.corpo.iter().enumerate() {
+                        textos.push((x0 + 2, y0 + 3 + k, l.clone(), Papel::Rotulo));
+                    }
+                }
             }
         }
     }
@@ -1043,6 +1071,7 @@ fn fluxograma(f: &Fluxograma, largura: usize) -> Result<Vec<Linha>, NaoDesenha> 
                 Forma::Decisao => FormaG::Decisao,
                 Forma::Circulo => FormaG::Circulo,
             },
+            corpo: Vec::new(),
         })
         .collect();
     let ligs: Vec<LigG> = f
@@ -1078,15 +1107,15 @@ fn estados(e: &Estados, largura: usize) -> Result<Vec<Linha>, NaoDesenha> {
     let mut nos: Vec<NoG> = Vec::new();
     let mut chaves: Vec<Ponta> = Vec::new();
     if usa(&Ponta::Inicio) {
-        nos.push(NoG { rotulo: String::new(), forma: FormaG::Inicio });
+        nos.push(NoG { rotulo: String::new(), forma: FormaG::Inicio, corpo: Vec::new() });
         chaves.push(Ponta::Inicio);
     }
     for s in &e.estados {
-        nos.push(NoG { rotulo: cortar(&s.texto, ROTULO_MAX), forma: FormaG::Arredondado });
+        nos.push(NoG { rotulo: cortar(&s.texto, ROTULO_MAX), forma: FormaG::Arredondado, corpo: Vec::new() });
         chaves.push(Ponta::Estado(s.id.clone()));
     }
     if usa(&Ponta::Fim) {
-        nos.push(NoG { rotulo: String::new(), forma: FormaG::Fim });
+        nos.push(NoG { rotulo: String::new(), forma: FormaG::Fim, corpo: Vec::new() });
         chaves.push(Ponta::Fim);
     }
     let idx = |p: &Ponta| chaves.iter().position(|c| c == p);

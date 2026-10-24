@@ -61,6 +61,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Editar bloco de código (e Mermaid) | ✅ | 390 — Enter ou `i`/`A` abre o editor de várias linhas; Esc grava |
 | Ver bloco de código: linhas, indentação, cor por linguagem | ✅ | 494, 495 — caixa com a linguagem no topo, corte com "… mais N" e `…`; dobra |
 | Ver diagrama mermaid desenhado | ✅ | 496, 497 — em caracteres, pelo modelo do construtor (fluxograma, sequência, estados, gantt); fora do modelo, o código com o motivo |
+| Ver os outros tipos de mermaid (pizza, mapa mental, linha do tempo, jornada, classes, ER) | ✅ | 499 — leitor tolerante só pra ver (`diagrama::so_ver`); comentário e cabeçalho `---` não impedem mais o desenho; gitGraph, quadrant, xychart e afins continuam como código com o motivo |
 | Diagrama ou código maior que o painel: ver o resto | ✅ | 498 — a janela rola o SVG; na TUI, Enter entra no bloco e `hjkl`/`g G 0 $` deslizam a vista; largo demais sai desenhado e recortado, não mais como código |
 | Lista dentro de lista | ✅ | 393, 402, 403 — nível de verdade na árvore (TUI e janela): Enter entra, Esc sai, `Ctrl+A`/`Ctrl+X` aninham |
 | Vim mode liga/desliga (sem vim: digitar edita direto) | ✅ | 376 — Enter cria o seguinte, Backspace apaga, Delete apaga o bloco, Ctrl+Z/Y |

@@ -5567,6 +5567,29 @@ mod testes {
         assert_eq!(e.cursor, vec![2], "o `j` foi engolido");
     }
 
+    // --- Ciclo 499: os outros tipos de diagrama ------------------------------------
+
+    #[test]
+    fn os_tipos_que_o_construtor_nao_monta_aparecem_desenhados() {
+        let md = concat!(
+            "```mermaid\n---\ntitle: Bichos\n---\npie\n  \"Cães\" : 3\n  \"Gatos\" : 1\n```\n\n",
+            "```mermaid\nclassDiagram\n  Animal <|-- Pato\n  Pato : +nadar()\n```\n\n",
+            "```mermaid\ngraph TD\n  %% comentário não impede o desenho\n  A[Começo] --> B[Fim]\n```\n",
+        );
+        let mut e = Estado::novo(paginas(), analisar(md));
+        e.foco = Foco::Conteudo;
+        let tela = desenho(&mut e, 120, 50).join("\n");
+        assert!(tela.contains("mermaid · pizza") && tela.contains("Bichos") && tela.contains(" 75%"), "{tela}");
+        assert!(tela.contains("mermaid · classes") && tela.contains("│ +nadar()") && tela.contains("herda"), "{tela}");
+        assert!(tela.contains("mermaid · fluxograma") && tela.contains("│ Começo │"), "{tela}");
+        assert!(!tela.contains("⚠"), "algum caiu no código:\n{tela}");
+        // A vista do 498 vale pros tipos novos.
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert!(e.vista_bloco.is_some());
+        assert!(desenho(&mut e, 120, 50).join("\n").contains("navegando:"));
+    }
+
     #[test]
     fn i_fora_da_vista_continua_editando_direto() {
         let mut e = pagina_com("```sh\necho oi\n```\n");
