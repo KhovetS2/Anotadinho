@@ -18,3 +18,6 @@ serde_yaml = { workspace = true }
 # O relógio no fuso da pessoa (ciclo 448), nos três sistemas. Já vinha
 # pela árvore do `vault`; aqui só fica declarado quem usa.
 chrono = { workspace = true, features = ["clock"] }
+# A largura de cada caractere na tela, pra cortar a linha de código sem
+# passar da borda (ciclo 494). Já vinha pela árvore do ratatui.
+unicode-width = "0.2"

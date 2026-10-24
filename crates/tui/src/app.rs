@@ -927,7 +927,10 @@ impl Estado {
 
     /// Dobra ou desdobra o nível sob o cursor.
     pub fn dobrar(&mut self) {
-        if !self.cursor_e_nivel() {
+        // O bloco de código também dobra (ciclo 494): não tem filhos, mas
+        // desde que aparece em linhas é ele quem mais ocupa a tela.
+        let codigo = self.arvore.em(&self.cursor).is_some_and(|u| matches!(u.tipo, Tipo::Codigo(_)));
+        if !self.cursor_e_nivel() && !codigo {
             return;
         }
         if !self.dobrados.remove(&self.cursor) {
@@ -2158,6 +2161,19 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                 linhas_da_tabela_md(&cab, &corpo, 2 * l.nivel, largura_conteudo, &e.tema).into_iter().map(|x| vec![x]).collect()
             } else if !l.segmentos.is_empty() {
                 linhas_de_fileira(l, &e.arvore, &e.tema, largura_conteudo, Some(&e.cursor))
+            } else if let (Tipo::Codigo(lingua), false) = (&l.tipo, l.enfeite) {
+                // O bloco de código em várias linhas (ciclo 494). Dobrado,
+                // uma linha com a linguagem e o tamanho.
+                let fonte = e.arvore.em(&l.caminho).map(|u| u.texto.as_str()).unwrap_or("");
+                if e.dobrados.contains(&l.caminho) {
+                    vec![vec![crate::codigo::dobrado(fonte, lingua.as_deref(), l.nivel, &e.tema)]]
+                } else {
+                    // O grupo é indivisível: mais alto que o painel, ele
+                    // nunca caberia. Topo e fundo da caixa, e uma folga
+                    // pra moldura do foco, ficam fora do teto.
+                    let teto = crate::codigo::LINHAS_DO_CODIGO.min(e.altura.saturating_sub(4));
+                    vec![crate::codigo::desenhar(fonte, lingua.as_deref(), l.nivel, largura_conteudo, teto, &e.tema)]
+                }
             } else if let Some(modo) = e.arvore.em(&l.caminho).and_then(caixa_avulsa) {
                 vec![linha_de_caixa(l, &e.tema, largura_conteudo, Some(&e.cursor), modo)]
             } else {
@@ -5335,6 +5351,30 @@ mod testes {
                     .to_string()
             })
             .collect()
+    }
+
+    #[test]
+    fn bloco_de_codigo_aparece_em_linhas_e_e_uma_parada_so() {
+        // Até o 494, "```" seguido do código emendado numa linha só.
+        let md = "Antes.\n\n```rust\nfn main() {\n    let x = 1;\n}\n```\n\nDepois.\n";
+        let mut e = Estado::novo(paginas(), analisar(md));
+        e.foco = Foco::Conteudo;
+        let tela = desenho(&mut e, 80, 16).join("\n");
+        assert!(tela.contains("┌ rust ─"), "{tela}");
+        assert!(tela.contains("│ fn main() {"), "{tela}");
+        assert!(tela.contains("│     let x = 1;"), "a indentação sumiu:\n{tela}");
+        assert!(!tela.contains("fn main() { let x"), "o código saiu emendado:\n{tela}");
+        // Uma parada por bloco: de "Antes" um j cai no código, outro j sai dele.
+        tecla(&mut e, "j");
+        assert_eq!(e.cursor, vec![1]);
+        tecla(&mut e, "j");
+        assert_eq!(e.cursor, vec![2]);
+        // Dobrado, uma linha com a linguagem e o tamanho.
+        tecla(&mut e, "k");
+        e.dobrar();
+        let tela = desenho(&mut e, 80, 16).join("\n");
+        assert!(tela.contains("rust · 3 linha(s)"), "{tela}");
+        assert!(!tela.contains("│ fn main() {"), "{tela}");
     }
 
     #[test]
