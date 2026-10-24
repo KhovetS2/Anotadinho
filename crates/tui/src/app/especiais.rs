@@ -662,7 +662,12 @@ pub fn menu_de_detalhes(e: &Estado, caminho: &str) -> Option<Modal> {
     };
     itens.push(Item::novo(if t.vencida(&p.hoje) { "⚠" } else { "◷" }, rotulo_prazo, format!("prazo\u{0}{c}\u{0}{prazo}")));
     for (i, com) in t.comentarios.iter().enumerate() {
-        let primeira = com.texto.lines().next().unwrap_or("").to_string();
+        let mut primeira = com.texto.lines().next().unwrap_or("").to_string();
+        // Mais de uma linha: o "…" diz que tem mais, e o Enter lê inteiro
+        // (ciclo 503). A linha longa a lista já corta sozinha.
+        if com.texto.trim().lines().count() > 1 {
+            primeira.push_str(" …");
+        }
         itens.push(Item::novo("✎", primeira, format!("comentario\u{0}{c}\u{0}{i}")).com_detalhe(com.quando.clone()));
     }
     itens.push(Item::novo("+", "Comentar…", format!("comentar\u{0}{c}")));
@@ -676,6 +681,112 @@ pub fn menu_de_detalhes(e: &Estado, caminho: &str) -> Option<Modal> {
         lista: crate::componentes::Lista::menu(itens),
         acao: super::modais::AcaoDaEscolha::DetalhesDaTarefa,
     })
+}
+
+/// Quando e o texto inteiro do comentário `i` da tarefa (ciclo 503).
+pub fn comentario_da_tarefa(e: &Estado, caminho: &str, i: usize) -> Option<(String, String)> {
+    let Some(Dados::Projeto(p)) = e.especial.as_ref().and_then(|t| t.dados.as_ref()) else { return None };
+    let c = p.todas.iter().find(|t| t.caminho == caminho)?.comentarios.get(i)?;
+    Some((c.quando.clone(), c.texto.clone()))
+}
+
+/// As datas de uma sprint como a aba Sprints da janela as escreve.
+pub fn datas_da_sprint(s: &anotadinho_core::sprint::Sprint) -> String {
+    match (&s.inicio, &s.fim) {
+        (Some(i), Some(f)) => format!("{i} → {f}"),
+        (Some(i), None) => format!("desde {i}"),
+        (None, Some(f)) => format!("até {f}"),
+        (None, None) => String::new(),
+    }
+}
+
+/// O cabeçalho de uma sprint no menu `S` (ciclo 503): nome, estado, datas
+/// e objetivo, o que a linha da janela mostra.
+fn rotulo_da_sprint(s: &anotadinho_core::sprint::Sprint) -> String {
+    let mut r = format!("{} · {}", s.nome, s.estado.label().to_lowercase());
+    let datas = datas_da_sprint(s);
+    if !datas.is_empty() {
+        r.push_str(&format!(" · {datas}"));
+    }
+    if !s.objetivo.is_empty() {
+        r.push_str(&format!(" — {}", s.objetivo));
+    }
+    r
+}
+
+/// O menu `S` do projeto (ciclos 473 e 503): cada sprint com o cabeçalho
+/// (datas e objetivo) e, embaixo, o que dá pra fazer com ela.
+fn menu_de_sprints(p: &ProjetoNaTela) -> Modal {
+    use crate::componentes::Item;
+    use anotadinho_core::sprint::EstadoSprint;
+    let mut itens = Vec::new();
+    let proxima = p.sprints.iter().filter(|s| s.estado == EstadoSprint::Planejada).min_by_key(|s| s.numero);
+    let mut ordem: Vec<&anotadinho_core::sprint::Sprint> = p.sprints.iter().collect();
+    ordem.sort_by_key(|s| (s.estado != EstadoSprint::Ativa, s.estado == EstadoSprint::Encerrada, s.numero));
+    // Um agrupamento pro menu todo (ciclo 474), e não uma varredura do
+    // projeto por sprint.
+    let por_sprint = anotadinho_core::sprint::PorSprint::novo(&p.todas);
+    for s in ordem {
+        let (feitas, total) = por_sprint.resumo(s.numero);
+        let resumo = format!("{feitas}/{total} feitas");
+        let icone = match s.estado {
+            EstadoSprint::Ativa => "●",
+            EstadoSprint::Planejada => "○",
+            EstadoSprint::Encerrada => "✓",
+        };
+        // A aberta abre a página dela; a encerrada, as feitas nela.
+        let chave = if s.estado == EstadoSprint::Encerrada { "historico" } else { "sprint" };
+        itens.push(Item::novo(icone, rotulo_da_sprint(s), format!("{chave}\u{0}{}", s.caminho)).com_detalhe(resumo));
+        match s.estado {
+            EstadoSprint::Ativa => {
+                // A pergunta do encerramento, feita como escolha: cada
+                // destino é um item, e escolher É responder.
+                let rotulo_proxima = match proxima {
+                    Some(n) => format!("  Encerrar \"{}\" — pendentes → {}", s.nome, n.nome),
+                    None => format!("  Encerrar \"{}\" — pendentes → próxima (não há planejada)", s.nome),
+                };
+                itens.push(Item::novo("■", rotulo_proxima, format!("encerrar-proxima\u{0}{}", s.caminho)));
+                itens.push(Item::novo("■", format!("  Encerrar \"{}\" — pendentes → backlog", s.nome), format!("encerrar-backlog\u{0}{}", s.caminho)));
+            }
+            EstadoSprint::Planejada => {
+                itens.push(Item::novo("▶", format!("  Iniciar \"{}\"", s.nome), format!("iniciar\u{0}{}", s.caminho)));
+            }
+            EstadoSprint::Encerrada => {}
+        }
+    }
+    itens.push(Item::novo("+", "Nova sprint…", format!("nova\u{0}{}", p.projeto.slug)));
+    Modal::Escolha {
+        titulo: format!("Sprints — {}", p.projeto.titulo),
+        lista: crate::componentes::Lista::menu(itens),
+        acao: super::modais::AcaoDaEscolha::SprintsDoProjeto,
+    }
+}
+
+/// As tarefas FEITAS na sprint encerrada deste caminho (ciclo 503), como o
+/// histórico da janela: o que a sprint entregou. Enter abre a tarefa.
+pub fn feitas_da_sprint(e: &Estado, caminho: &str) -> Option<Modal> {
+    use crate::componentes::Item;
+    let Some(Dados::Projeto(p)) = e.especial.as_ref().and_then(|t| t.dados.as_ref()) else { return None };
+    let s = p.sprints.iter().find(|s| s.caminho == caminho)?;
+    let por_sprint = anotadinho_core::sprint::PorSprint::novo(&p.todas);
+    let mut feitas: Vec<&anotadinho_core::projeto::Tarefa> = por_sprint
+        .tarefas(s.numero)
+        .iter()
+        .copied()
+        .filter(|t| t.etapa == anotadinho_core::projeto::EtapaTarefa::Feita)
+        .collect();
+    feitas.sort_by_key(|t| t.numero);
+    let mut itens: Vec<Item> = feitas.iter().map(|t| Item::novo("✓", format!("{:03} {}", t.numero, t.titulo), t.caminho.clone())).collect();
+    if itens.is_empty() {
+        // Sem feita, a página da sprint: é onde está o porquê.
+        itens.push(Item::novo(" ", "Nenhuma tarefa feita nesta sprint — Enter abre a sprint", s.caminho.clone()));
+    }
+    let datas = datas_da_sprint(s);
+    let mut titulo = format!("{} (encerrada)", s.nome);
+    if !datas.is_empty() {
+        titulo.push_str(&format!(" · {datas}"));
+    }
+    Some(Modal::Escolha { titulo, lista: crate::componentes::Lista::menu(itens), acao: super::modais::AcaoDaEscolha::AbrirPagina })
 }
 
 /// Troca a marca do item na tela, antes do disco (ciclo 478): o modal
@@ -896,42 +1007,8 @@ fn tecla_no_projeto(e: &mut Estado, tecla: &str) -> bool {
             return true;
         }
         "S" => {
-            use anotadinho_core::sprint::EstadoSprint;
-            let mut itens = Vec::new();
-            let proxima = p.sprints.iter().filter(|s| s.estado == EstadoSprint::Planejada).min_by_key(|s| s.numero);
-            let mut ordem: Vec<&anotadinho_core::sprint::Sprint> = p.sprints.iter().collect();
-            ordem.sort_by_key(|s| (s.estado != EstadoSprint::Ativa, s.estado == EstadoSprint::Encerrada, s.numero));
-            // Um agrupamento pro menu todo (ciclo 474), e não uma varredura
-            // do projeto por sprint.
-            let por_sprint = anotadinho_core::sprint::PorSprint::novo(&p.todas);
-            for s in ordem {
-                let (feitas, total) = por_sprint.resumo(s.numero);
-                let resumo = format!("{feitas}/{total} feitas");
-                match s.estado {
-                    EstadoSprint::Ativa => {
-                        // A pergunta do encerramento, feita como escolha:
-                        // cada destino é um item, e escolher É responder.
-                        let rotulo_proxima = match proxima {
-                            Some(n) => format!("Encerrar \"{}\" — pendentes → {}", s.nome, n.nome),
-                            None => format!("Encerrar \"{}\" — pendentes → próxima (não há planejada)", s.nome),
-                        };
-                        itens.push(crate::componentes::Item::novo("■", rotulo_proxima, format!("encerrar-proxima\u{0}{}", s.caminho)).com_detalhe(resumo.clone()));
-                        itens.push(crate::componentes::Item::novo("■", format!("Encerrar \"{}\" — pendentes → backlog", s.nome), format!("encerrar-backlog\u{0}{}", s.caminho)).com_detalhe(resumo));
-                    }
-                    EstadoSprint::Planejada => {
-                        itens.push(crate::componentes::Item::novo("▶", format!("Iniciar \"{}\"", s.nome), format!("iniciar\u{0}{}", s.caminho)).com_detalhe(resumo));
-                    }
-                    EstadoSprint::Encerrada => {
-                        itens.push(crate::componentes::Item::novo("✓", format!("{} (encerrada)", s.nome), format!("historico\u{0}{}", s.caminho)).com_detalhe(resumo));
-                    }
-                }
-            }
-            itens.push(crate::componentes::Item::novo("+", "Nova sprint…", format!("nova\u{0}{slug}")));
-            e.modal = Some(Modal::Escolha {
-                titulo: format!("Sprints — {}", p.projeto.titulo),
-                lista: crate::componentes::Lista::menu(itens),
-                acao: super::modais::AcaoDaEscolha::SprintsDoProjeto,
-            });
+            let m = menu_de_sprints(p);
+            e.modal = Some(m);
             return true;
         }
         "c" => Pedido::AbrirPagina(projeto::caminho_da_conversa_geral(&slug)),

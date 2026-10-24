@@ -1095,9 +1095,9 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                     }
                 }
                 // ── Sprints (ciclo 473): pela pessoa, como na janela.
-                Pedido::CriarSprint { slug, nome } => {
+                Pedido::CriarSprint { slug, nome, objetivo, inicio, fim } => {
                     let hoje = agora_local().split(' ').next().unwrap_or("").to_string();
-                    match anotadinho_ipc::handle_criar_sprint(vault.to_string(), slug, nome, String::new(), None, None, hoje) {
+                    match anotadinho_ipc::handle_criar_sprint(vault.to_string(), slug, nome, objetivo, inicio, fim, hoje) {
                         Ok(c) => {
                             recarregar(estado);
                             estado.aviso = Some(format!("sprint criada: {c}"));

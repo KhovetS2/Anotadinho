@@ -1573,7 +1573,7 @@ pub fn rolar(e: &mut Estado, desce: bool, coluna: u16) {
     if let Some(m) = &e.modal {
         // Só nos modais em que a seta ANDA numa lista ou numa leitura. No
         // conflito ela troca a opção, e num formulário é do campo.
-        if matches!(m, Modal::Paleta(_) | Modal::Escolha { .. } | Modal::Atalhos(_) | Modal::Visualizar(..) | Modal::TextoCru { .. }) {
+        if matches!(m, Modal::Paleta(_) | Modal::Escolha { .. } | Modal::Atalhos(_) | Modal::Visualizar(..) | Modal::TextoCru { .. } | Modal::Leitura { .. }) {
             modais::tecla(e, seta);
         }
         return;
@@ -12225,22 +12225,179 @@ mod testes {
             tecla(&mut e, "Escape");
             t
         };
-        for esperado in ["pendentes → Tres", "pendentes → backlog", "Iniciar \"Tres\"", "Um (encerrada)", "1/1 feitas", "Nova sprint"] {
+        // Cada sprint com as datas e o objetivo (ciclo 503), e as ações
+        // embaixo dela.
+        for esperado in [
+            "Dois · ativa · até 2026-11-05 — entrar no sistema",
+            "pendentes → Tres",
+            "pendentes → backlog",
+            "Tres · planejada · até 2026-11-05 — agendar",
+            "Iniciar \"Tres\"",
+            "Um · encerrada · até 2026-11-05 — a base",
+            "1/1 feitas",
+            "Nova sprint",
+        ] {
             assert!(tela.contains(esperado), "faltou {esperado}:\n{tela}");
         }
-        abrir(&mut e, 0);
-        assert_eq!(e.pedidos, [Pedido::EncerrarSprint { caminho: dois.clone(), destino: DestinoDasPendentes::ProximaSprint }]);
+        // 0 Dois · 1-2 encerrar · 3 Tres · 4 iniciar · 5 Um · 6 nova
         abrir(&mut e, 1);
-        assert_eq!(e.pedidos, [Pedido::EncerrarSprint { caminho: dois, destino: DestinoDasPendentes::Backlog }]);
+        assert_eq!(e.pedidos, [Pedido::EncerrarSprint { caminho: dois.clone(), destino: DestinoDasPendentes::ProximaSprint }]);
         abrir(&mut e, 2);
-        assert_eq!(e.pedidos, [Pedido::IniciarSprint("pages/projetos/saas/sprints/03-tres.md".into())]);
-        // O histórico é leitura.
-        abrir(&mut e, 3);
-        assert!(e.pedidos.is_empty() && e.modal.is_none());
+        assert_eq!(e.pedidos, [Pedido::EncerrarSprint { caminho: dois.clone(), destino: DestinoDasPendentes::Backlog }]);
         abrir(&mut e, 4);
+        assert_eq!(e.pedidos, [Pedido::IniciarSprint("pages/projetos/saas/sprints/03-tres.md".into())]);
+        // O cabeçalho da aberta abre a página da sprint.
+        abrir(&mut e, 0);
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina(dois)]);
+        abrir(&mut e, 6);
+        assert!(matches!(e.modal, Some(Modal::Detalhe { alvo: modais::AlvoDoDetalhe::NovaSprint { .. }, .. })), "{:?}", e.modal);
+    }
+
+    #[test]
+    fn a_sprint_encerrada_lista_as_feitas_e_enter_abre_a_tarefa() {
+        let mut e = especial_aberto("projeto");
+        // Na encerrada "Um": a 001 feita e uma 005 que voltou pro backlog
+        // sem terminar — esta não é do histórico.
+        let mut dados = projeto_em_sprints();
+        if let especiais::Dados::Projeto(p) = &mut dados {
+            p.todas.push(tarefa_de_teste(5, "pronta", "sprint: 1\n"));
+        }
+        especiais::carregar(&mut e, dados);
+        tecla(&mut e, "S");
+        for _ in 0..5 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        let tela = desenho(&mut e, 140, 40).join("\n");
+        assert!(tela.contains("Um (encerrada) · até 2026-11-05") && tela.contains("001 Tarefa 1"), "{tela}");
+        assert!(!tela.contains("005 Tarefa 5"), "pendente não é entrega:\n{tela}");
+        e.pedidos.clear();
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/projetos/saas/tarefas/001-t.md".into())]);
+    }
+
+    /// Abre o formulário da sprint nova pelo `S`.
+    fn formulario_da_sprint() -> Estado {
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_em_sprints());
+        e.agora = Some("2026-10-24 10:00".into());
+        tecla(&mut e, "S");
+        for _ in 0..6 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "Enter");
+        e.pedidos.clear();
+        e
+    }
+
+    #[test]
+    fn a_sprint_nova_pede_nome_objetivo_e_datas_pelo_calendario() {
+        let mut e = formulario_da_sprint();
+        let tela = desenho(&mut e, 140, 40).join("\n");
+        for esperado in ["Sprint nova", "Nome", "Objetivo", "Início", "Fim", "Criar sprint"] {
+            assert!(tela.contains(esperado), "faltou {esperado}:\n{tela}");
+        }
+        // Nome e objetivo digitados.
+        tecla(&mut e, "Enter");
         digitar(&mut e, "Quatro");
         tecla(&mut e, "Enter");
-        assert_eq!(e.pedidos, [Pedido::CriarSprint { slug: "saas".into(), nome: "Quatro".into() }]);
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "pagar");
+        tecla(&mut e, "Enter");
+        // O início pelo seletor: abre em hoje, `l` anda um dia.
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "l");
+        tecla(&mut e, "Enter");
+        // O fim digitado (`c`).
+        tecla(&mut e, "j");
+        tecla(&mut e, "c");
+        digitar(&mut e, "2026-11-20");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(
+            e.pedidos,
+            [Pedido::CriarSprint {
+                slug: "saas".into(),
+                nome: "Quatro".into(),
+                objetivo: "pagar".into(),
+                inicio: Some("2026-10-25".into()),
+                fim: Some("2026-11-20".into()),
+            }]
+        );
+        assert!(e.modal.is_none());
+    }
+
+    #[test]
+    fn a_sprint_nova_recusa_sem_nome_data_torta_e_fim_antes_do_inicio() {
+        let criar = |e: &mut Estado| {
+            // Até o botão, que é a última parada.
+            for _ in 0..4 {
+                tecla(e, "j");
+            }
+            tecla(e, "Enter");
+        };
+        let campo = |e: &mut Estado, abaixo: usize, texto: &str| {
+            for _ in 0..abaixo {
+                tecla(e, "j");
+            }
+            tecla(e, "c");
+            digitar(e, texto);
+            tecla(e, "Enter");
+            for _ in 0..abaixo {
+                tecla(e, "k");
+            }
+        };
+        let aviso = |e: &Estado| e.aviso.clone().unwrap_or_default();
+        // Sem nome.
+        let mut e = formulario_da_sprint();
+        criar(&mut e);
+        assert!(e.pedidos.is_empty() && aviso(&e).contains("nome"), "{:?}", e.aviso);
+        assert!(matches!(e.modal, Some(Modal::Detalhe { .. })), "o formulário fecha e perde o que foi escrito");
+        // Data torta.
+        let mut e = formulario_da_sprint();
+        campo(&mut e, 0, "Quatro");
+        campo(&mut e, 2, "amanhã");
+        criar(&mut e);
+        assert!(e.pedidos.is_empty() && aviso(&e).contains("não é data"), "{:?}", e.aviso);
+        // Fim antes do início.
+        let mut e = formulario_da_sprint();
+        campo(&mut e, 0, "Quatro");
+        campo(&mut e, 2, "2026-11-10");
+        campo(&mut e, 3, "2026-11-01");
+        criar(&mut e);
+        assert!(e.pedidos.is_empty() && aviso(&e).contains("antes do início"), "{:?}", e.aviso);
+        // Só o nome basta: objetivo e datas são opcionais, como na janela.
+        let mut e = formulario_da_sprint();
+        campo(&mut e, 0, "Quatro");
+        criar(&mut e);
+        assert_eq!(e.pedidos, [Pedido::CriarSprint { slug: "saas".into(), nome: "Quatro".into(), objetivo: String::new(), inicio: None, fim: None }]);
+    }
+
+    #[test]
+    fn enter_no_comentario_le_inteiro_e_esc_volta_pros_detalhes() {
+        let mut e = especial_aberto("projeto");
+        let caminho = "pages/projetos/saas/tarefas/001-t.md";
+        let md = concat!(
+            "---\ntitle: Login\ntype: tarefa\nprojeto: saas\nstatus: pronta\n---\n",
+            "## Comentários\n\n- **2026-10-01 10:00** — primeira linha\n  segunda linha com o fim FIMDOCOMENTARIO\n",
+        );
+        let t = anotadinho_core::projeto::Tarefa::ler(caminho, md).unwrap();
+        assert!(t.comentarios[0].texto.contains("FIMDOCOMENTARIO"), "o núcleo leu {:?}", t.comentarios);
+        especiais::carregar(&mut e, projeto_na_tela(vec![t]));
+        tecla(&mut e, "v");
+        descer_ate(&mut e, "primeira linha");
+        let antes = desenho(&mut e, 140, 40).join("\n");
+        assert!(antes.contains("primeira linha …") && !antes.contains("FIMDOCOMENTARIO"), "{antes}");
+        tecla(&mut e, "Enter");
+        let tela = desenho(&mut e, 140, 40).join("\n");
+        assert!(tela.contains("Comentário — 2026-10-01 10:00") && tela.contains("FIMDOCOMENTARIO"), "{tela}");
+        tecla(&mut e, "Escape");
+        // De volta aos detalhes, no mesmo item.
+        let Some(Modal::Escolha { lista, acao: modais::AcaoDaEscolha::DetalhesDaTarefa, .. }) = &e.modal else { panic!("{:?}", e.modal) };
+        assert!(lista.atual().is_some_and(|i| i.chave.starts_with("comentario")), "{:?}", lista.atual());
     }
 
     #[test]

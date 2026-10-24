@@ -49,8 +49,8 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Execuções do projeto (aba Execuções) | ✅ | 460 (janela), 501 (TUI: `x` no quadro — o registro de execuções recortado pela pasta do projeto; Enter abre a conversa, `r` roda de novo) |
 | `type: tarefa` (barra de etapa sobre o editor) | ✅ | 460 (janela), 502 (TUI: faixa sobre o editor com projeto, etapa e transições; `Alt+e` move, `Alt+a` detalha com o agente, `Alt+c` conversa da tarefa, `Alt+p` projeto — e "Tarefa: …" na barra de comandos) |
 | Arrastar o cartão do projeto entre colunas | — | 465 — na TUI, os números |
-| Sprints do projeto (recorte do quadro, mover de sprint, criar/iniciar/encerrar, histórico) | ✅ | 472 (janela: seletor, aba Sprints, seletor no cartão), 473 (TUI: `s` filtro, `m` sprint da tarefa, `S` sprints — o encerramento pergunta como escolha) |
-| Detalhes da tarefa (tags, prazo, critérios, comentários, anexos) | ✅ | 477 (janela: selos e painel ao lado do quadro; anexo pelo diálogo nativo), 478 (TUI: selos na 3ª linha do cartão e `v`; anexo pelo caminho digitado) |
+| Sprints do projeto (recorte do quadro, mover de sprint, criar/iniciar/encerrar, histórico) | ✅ | 472 (janela: seletor, aba Sprints, seletor no cartão), 473 (TUI: `s` filtro, `m` sprint da tarefa, `S` sprints — o encerramento pergunta como escolha), 503 (TUI: sprint nova com objetivo e datas no formulário, com o seletor de data; `S` mostra datas e objetivo; a encerrada lista as feitas e Enter abre a tarefa) |
+| Detalhes da tarefa (tags, prazo, critérios, comentários, anexos) | ✅ | 477 (janela: selos e painel ao lado do quadro; anexo pelo diálogo nativo), 478 (TUI: selos na 3ª linha do cartão e `v`; anexo pelo caminho digitado), 503 (TUI: Enter no comentário lê o texto inteiro) |
 | Cabeçalho de página tipada + propriedades | ✅ | 344, 360 — título da página e "Propriedades" (`=`) nas telas de tipo |
 
 ## Editor

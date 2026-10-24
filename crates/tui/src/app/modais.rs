@@ -37,7 +37,8 @@ pub enum Pedido {
     /// detalhe e as execuções dela ficam.
     ConversaDaTarefa(String),
     /// Criar uma sprint planejada (ciclo 473).
-    CriarSprint { slug: String, nome: String },
+    /// Com objetivo e datas (ciclo 503), como o formulário da janela.
+    CriarSprint { slug: String, nome: String, objetivo: String, inicio: Option<String>, fim: Option<String> },
     /// Iniciar a sprint deste caminho.
     IniciarSprint(String),
     /// Encerrar a sprint deste caminho, com as pendentes no destino.
@@ -411,6 +412,15 @@ pub enum Modal {
     Prompt(SeletorDePrompt),
     /// Um texto longo pra ler, com a rolagem (o "Visualizar").
     Visualizar(String, usize),
+    /// Um texto pra LER, com título, quebrado na largura e rolando
+    /// (ciclo 503) — o comentário inteiro da tarefa. Fechar devolve o
+    /// modal de onde veio (`volta`), com o cursor onde estava.
+    Leitura {
+        titulo: String,
+        texto: String,
+        rolagem: usize,
+        volta: Option<Box<Modal>>,
+    },
     /// Texto CRU com rolagem (ciclo 417): linha por linha, sem render de
     /// markdown. É o que a prévia do prompt precisa — desenhar o prompt
     /// como página juntaria linhas e mostraria algo que o agente não
@@ -478,6 +488,11 @@ pub enum AlvoDoDetalhe {
     },
     /// O agente das conversas (ciclo 350).
     Agente,
+    /// Uma sprint nova no projeto deste slug (ciclo 503): nome, objetivo
+    /// e datas, como o formulário da aba Sprints da janela.
+    NovaSprint {
+        slug: String,
+    },
     /// As pastas onde o agente pode propor (ciclo 405).
     Permissoes,
     /// As guardas do trabalho automático (ciclo 434).
@@ -583,8 +598,6 @@ pub enum AcaoDaEntrada {
     NovoProjeto,
     /// O título de uma tarefa nova no projeto.
     NovaTarefa(String),
-    /// O nome de uma sprint nova no projeto (ciclo 473).
-    NovaSprint(String),
     /// As tags da tarefa, separadas por vírgula (ciclo 478). Vazio tira
     /// todas.
     TagsDaTarefa(String),
@@ -1196,7 +1209,23 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         "anexar" => e.modal = Some(entrada("Caminho do arquivo pra anexar", String::new(), AcaoDaEntrada::AnexarNaTarefa(caminho))),
                         "anexo" => e.pedidos.push(Pedido::AbrirAnexo(caminho)),
                         "pagina" => e.pedidos.push(Pedido::AbrirPagina(caminho)),
-                        // Comentário é leitura.
+                        // O comentário INTEIRO (ciclo 503): a lista só cabe a
+                        // primeira linha, e a janela mostra o texto todo. Esc
+                        // volta pros detalhes, no mesmo item.
+                        "comentario" => {
+                            let i: usize = resto.and_then(|r| r.parse().ok()).unwrap_or(0);
+                            match super::especiais::comentario_da_tarefa(e, &caminho, i) {
+                                Some((quando, texto)) => {
+                                    e.modal = Some(Modal::Leitura {
+                                        titulo: format!("Comentário — {quando}"),
+                                        texto,
+                                        rolagem: 0,
+                                        volta: Some(Box::new(Modal::Escolha { titulo, lista, acao })),
+                                    });
+                                }
+                                None => e.modal = Some(Modal::Escolha { titulo, lista, acao }),
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -1206,14 +1235,16 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         Some(("iniciar", c)) => e.pedidos.push(Pedido::IniciarSprint(c.to_string())),
                         Some(("encerrar-proxima", c)) => e.pedidos.push(Pedido::EncerrarSprint { caminho: c.to_string(), destino: DestinoDasPendentes::ProximaSprint }),
                         Some(("encerrar-backlog", c)) => e.pedidos.push(Pedido::EncerrarSprint { caminho: c.to_string(), destino: DestinoDasPendentes::Backlog }),
-                        Some(("nova", slug)) => {
-                            e.modal = Some(Modal::Entrada {
-                                titulo: "Nome da sprint nova".into(),
-                                campo: Campo::default(),
-                                acao: AcaoDaEntrada::NovaSprint(slug.to_string()),
-                            });
+                        Some(("nova", slug)) => abrir_nova_sprint(e, slug),
+                        // A sprint aberta é a página dela; a encerrada, as
+                        // tarefas feitas nela (ciclo 503), como o histórico da
+                        // janela.
+                        Some(("sprint", c)) => e.pedidos.push(Pedido::AbrirPagina(c.to_string())),
+                        Some(("historico", c)) => {
+                            if let Some(m) = super::especiais::feitas_da_sprint(e, c) {
+                                e.modal = Some(m);
+                            }
                         }
-                        // O histórico é leitura: escolher não faz nada.
                         _ => {}
                     }
                 }
@@ -1438,7 +1469,6 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         AcaoDaEntrada::NovaPagina(tipo) => Pedido::CriarPaginaComTitulo { titulo: t, tipo },
                         AcaoDaEntrada::NovoProjeto => Pedido::CriarProjeto(t),
                         AcaoDaEntrada::NovaTarefa(slug) => Pedido::CriarTarefa { slug, titulo: t },
-                        AcaoDaEntrada::NovaSprint(slug) => Pedido::CriarSprint { slug, nome: t },
                         AcaoDaEntrada::ComentarTarefa(caminho) => Pedido::ComentarTarefa { caminho, texto: t },
                         AcaoDaEntrada::AnexarNaTarefa(caminho) => Pedido::AnexarNaTarefa { caminho, origem: t },
                         AcaoDaEntrada::RepositorioDoProjeto(slug) => {
@@ -1510,6 +1540,19 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     return;
                 }
                 R::Mudou if alvo == AlvoDoDetalhe::Permissoes => {}
+                R::Botao("criar") if matches!(alvo, AlvoDoDetalhe::NovaSprint { .. }) => {
+                    let AlvoDoDetalhe::NovaSprint { slug } = &alvo else { unreachable!() };
+                    match pedido_da_nova_sprint(slug, &form) {
+                        Ok(p) => {
+                            e.pedidos.push(p);
+                            return;
+                        }
+                        // O formulário fica, com o que foi escrito: o erro
+                        // é de um campo, não motivo pra perder os outros.
+                        Err(motivo) => e.aviso = Some(motivo),
+                    }
+                }
+                R::Mudou if matches!(alvo, AlvoDoDetalhe::NovaSprint { .. }) => {}
                 // Aplicar o conteúdo editado (ciclo 411): não é mais o
                 // que o agente escreveu, e o registro vai dizer isso.
                 R::Botao("aplicar") if matches!(alvo, AlvoDoDetalhe::PropostaEditada { .. }) => {
@@ -1664,6 +1707,25 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             };
             e.modal = Some(Modal::TextoCru { titulo, texto, rolagem: novo.min(ultima) });
         }
+        Modal::Leitura { titulo, texto, rolagem, volta } => {
+            let rolagem = match tecla {
+                "Escape" | "q" | "Enter" => {
+                    e.modal = volta.map(|m| *m);
+                    return;
+                }
+                "j" | "ArrowDown" => rolagem + 1,
+                "k" | "ArrowUp" => rolagem.saturating_sub(1),
+                "Ctrl+d" | "PageDown" => rolagem + 10,
+                "Ctrl+u" | "PageUp" => rolagem.saturating_sub(10),
+                "g" | "Home" => 0,
+                _ => rolagem,
+            };
+            // Quem para no fim do texto é o desenho, que sabe a largura e
+            // quantas linhas a quebra deu. Este teto folgado só evita que um
+            // `j` segurado acumule tanto que o `k` pareça não responder.
+            let rolagem = rolagem.min(texto.chars().count() / 20 + texto.lines().count());
+            e.modal = Some(Modal::Leitura { titulo, texto, rolagem, volta });
+        }
         Modal::Visualizar(texto, rolagem) => match tecla {
             "Escape" | "q" | "Enter" => {}
             "j" | "ArrowDown" => e.modal = Some(Modal::Visualizar(texto, rolagem + 1)),
@@ -1812,11 +1874,11 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
         "Projeto",
         &[
             ("1-4", "mover a tarefa (as transições dela; o rodapé diz quantas)"),
-            ("v", "detalhes: critérios, tags, prazo, comentários, anexos"),
+            ("v", "detalhes: critérios, tags, prazo, comentários (Enter lê inteiro), anexos"),
             ("n d", "tarefa nova / detalhar com o agente"),
             ("s", "o que o quadro mostra (sprint, backlog, todas)"),
             ("m", "pôr a tarefa numa sprint ou no backlog"),
-            ("S", "sprints: iniciar, encerrar, criar, histórico"),
+            ("S", "sprints com datas e objetivo: iniciar, encerrar, criar, e o histórico com as feitas"),
             ("c a", "conversa / arquitetura do projeto"),
             ("p o", "pausar a fila / escolher o repositório"),
             ("x", "execuções do agente neste projeto (Enter abre, r roda de novo)"),
@@ -2013,6 +2075,17 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
                 })
                 .collect();
             f.render_widget(Paragraph::new(linhas), dentro);
+        }
+        Modal::Leitura { titulo, texto, rolagem, .. } => {
+            let area = componentes::area_do_modal(tela, 80, tela.height.saturating_sub(6));
+            let dentro = componentes::desenhar_modal(f, area, titulo, "j k rolar · Esc volta", t);
+            // Desenhado como página: o comentário é markdown, e uma linha
+            // longa QUEBRA em vez de sumir na borda — é o que o texto
+            // inteiro veio fazer aqui.
+            let linhas = super::especiais::pagina_renderizada(texto, t, dentro.width.saturating_sub(1) as usize);
+            let teto = linhas.len().saturating_sub(dentro.height as usize);
+            let p = Paragraph::new(linhas).scroll(((*rolagem).min(teto) as u16, 0));
+            f.render_widget(p, dentro);
         }
         Modal::Visualizar(texto, rolagem) => {
             let area = componentes::area_do_modal(tela, 90, tela.height.saturating_sub(6));
@@ -2347,6 +2420,50 @@ pub fn mostrar_decisoes(e: &mut Estado, decisoes: &[anotadinho_core::decisao::De
         })
         .collect();
     e.modal = Some(Modal::Escolha { titulo: "Decisões sobre as propostas".into(), lista: Lista::filtravel(itens), acao: AcaoDaEscolha::AbrirPagina });
+}
+
+/// O formulário da sprint nova (ciclo 503). As datas são campos de data:
+/// Enter abre o seletor dos formulários (ciclo 364), `c` digita.
+pub fn abrir_nova_sprint(e: &mut Estado, slug: &str) {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    let mut form = Formulario::novo(vec![
+        C::novo("nome", "Nome", Valor::Texto(String::new())).com_dica("Fundação"),
+        C::novo("objetivo", "Objetivo", Valor::Texto(String::new())).com_dica("o que a sprint entrega"),
+        C::novo("inicio", "Início", Valor::Texto(String::new())).como_data().com_dica("AAAA-MM-DD · Enter abre o calendário"),
+        C::novo("fim", "Fim", Valor::Texto(String::new())).como_data().com_dica("AAAA-MM-DD · Enter abre o calendário"),
+    ]);
+    // O `t` do seletor vai pra hoje.
+    form.hoje = e.agora.as_deref().and_then(|a| a.split_whitespace().next()).map(str::to_string);
+    form.botoes.push(("criar", "Criar sprint".into()));
+    e.modal = Some(Modal::Detalhe { titulo: "Sprint nova".into(), form, alvo: AlvoDoDetalhe::NovaSprint { slug: slug.to_string() } });
+}
+
+/// O pedido de criar a sprint do formulário, ou o que está errado nele.
+///
+/// A data DIGITADA (`c`) passa por aqui: o seletor só produz data válida,
+/// mas o texto livre não, e uma sprint gravada com `fim: amanhã` não
+/// entra em nenhuma conta de prazo. O `<input type="date">` da janela
+/// garante o mesmo do lado de lá.
+fn pedido_da_nova_sprint(slug: &str, form: &crate::componentes::Formulario) -> Result<Pedido, String> {
+    use anotadinho_core::date_util::parse_date;
+    let nome = form.texto("nome").trim().to_string();
+    if nome.is_empty() {
+        return Err("a sprint precisa de um nome".into());
+    }
+    let data = |chave: &str, rotulo: &str| -> Result<Option<String>, String> {
+        let v = form.texto(chave).trim().to_string();
+        if v.is_empty() {
+            return Ok(None);
+        }
+        parse_date(&v).map(|_| Some(v.clone())).ok_or_else(|| format!("{rotulo}: \"{v}\" não é data (AAAA-MM-DD)"))
+    };
+    let (inicio, fim) = (data("inicio", "início")?, data("fim", "fim")?);    // `AAAA-MM-DD` compara na ordem do calendário.
+    if let (Some(i), Some(f)) = (&inicio, &fim) {
+        if f < i {
+            return Err(format!("o fim ({f}) vem antes do início ({i})"));
+        }
+    }
+    Ok(Pedido::CriarSprint { slug: slug.to_string(), nome, objetivo: form.texto("objetivo").trim().to_string(), inicio, fim })
 }
 
 /// O formulário das permissões do agente (ciclo 405): onde ele pode
