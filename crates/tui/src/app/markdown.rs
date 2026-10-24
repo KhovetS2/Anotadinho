@@ -678,7 +678,7 @@ pub(super) fn inserir_pela_barra(e: &mut Estado) {
 
 /// O item escolhido no menu.
 pub(super) fn escolher(e: &mut Estado, chave: &str) {
-    use super::modais::{AcaoDaEntrada, Modal, Pedido};
+    use super::modais::{Modal, Pedido};
     let Some(mut b) = e.bloco_a_inserir.clone() else { return };
     // Um bloco de texto continua em inserção, com a marca dele.
     let marca = match chave {
@@ -706,12 +706,10 @@ pub(super) fn escolher(e: &mut Estado, chave: &str) {
             abrir_formulario_de_imagem(e, String::new());
             return;
         }
+        // O construtor (ciclo 500), como o "Novo diagrama" da janela: o
+        // campo de uma linha pedia a sintaxe do mermaid de cor.
         "diagrama" => {
-            e.modal = Some(Modal::Entrada {
-                titulo: "Código Mermaid (ex: graph TD; A-->B)".into(),
-                campo: crate::componentes::Campo::default(),
-                acao: AcaoDaEntrada::Mermaid,
-            });
+            super::construtor::abrir_novo(e);
             return;
         }
         "assets" => {

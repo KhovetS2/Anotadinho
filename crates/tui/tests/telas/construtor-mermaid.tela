@@ -1,0 +1,78 @@
+# cena construtor-mermaid · 120x30 · teclas: Tab j Enter c j
+┌p╭ Editar diagrama · Fluxograma · Ctrl+S aplica ────────────────────────────────────────────────────────────────────╮─┐
+│c│  Construtor   Código                                                                                             │ │
+│ │                                                                                                                  │┐│
+│ │Direção: de cima pra baixo (TD)               ╭ Prévia ──────────────────────────────────────────────────────────╮│││
+│ │                                              │┌────────┐                                                        ││││
+│ │Nós                                           ││ Começo │                                                        ││││
+│ │  A · Começo · caixa                          │└───┬────┘                                                        ││││
+│ │  B · Decide · decisão                        │    │                                                             ││││
+│ │  C · Faz · arredondado                       │    ▼                                                             ││││
+│ │  + nó                                        │╱────────╲                                                        ││││
+│ │                                              │< Decide >                                                        ││││
+│ │Ligações                                      │╲───┬────╱                                                        ││││
+│ │  A --> B                                     │    │                                                             ││││
+│ │  B --> C |sim|                               │    ▼ sim                                                         ││││
+│ │  + ligação                                   │ ╭─────╮                                                          ││││
+│ │                                              │ │ Faz │                                                          ││││
+│ │                                              │ ╰─────╯                                                          ││││
+│ │                                              │                                                                  ││││
+│ │                                              │                                                                  ││┘│
+│ │                                              │                                                                  ││ │
+│ │                                              │                                                                  ││ │
+│ │                                              │                                                                  ││ │
+│ │                                              │                                                                  ││ │
+│ │                                              │                                                                  ││ │
+│ │                                              │                                                                  ││ │
+│ │                                              │                                                                  ││ │
+│ │                                              ╰──────────────────────────────────────────────────────────────────╯│ │
+│ ╰ j k · Enter edita · o novo · dd apaga · J K move · p prévia · Tab código · Ctrl+S aplica · Esc ──────────────────╯ │
+│                              ││                                                                                      │
+└──────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────────┘
+== estilos ==
+aabccccccccccccccccccccccccccccccccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbdd
+aebfggggggggggggfhhhhhhhhffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbid
+ajbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbkkkkkkkkkkffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajblllfffffffffffffffffffffffffffffffffffffffffffbkffffffffkffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbmmmmmmmmmmmmmmmmmmmmffffffffffffffffffffffffffbkkkkkkkkkkffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffnfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffnfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbooooooffffffffffffffffffffffffffffffffffffffffbkkkkkkkkkkffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbkffffffffkffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbllllllllffffffffffffffffffffffffffffffffffffffbkkkkkkkkkkffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffnfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffnfpppfffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbooooooooooofffffffffffffffffffffffffffffffffffbfkkkkkkkffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbfkfffffkffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbfkkkkkkkffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbdd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbjd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbjd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbjd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbjd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbjd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbjd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbbjd
+ajbffffffffffffffffffffffffffffffffffffffffffffffbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbjd
+ajboooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooobbbbbbbbbbbbbbbbbbbjd
+ajjjjjjjjjjjjjjjjjjjjjjjjjjjjjjadjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjd
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+a = fg #45475a bg #1e1e2e
+b = fg #45475a bg #313244
+c = fg #cdd6f4 bg #313244 negrito
+d = fg #89b4fa bg #1e1e2e
+e = fg - bg #1e1e2e negrito apagado
+f = fg #cdd6f4 bg #313244
+g = fg #1e1e2e bg #89b4fa negrito
+h = fg #cdd6f4 bg #45475a
+i = fg #89b4fa bg #45475a negrito
+j = fg - bg #1e1e2e
+k = fg #89b4fa bg #313244
+l = fg #89b4fa bg #313244 negrito
+m = fg #1e1e2e bg #89b4fa
+n = fg #cba6f7 bg #313244
+o = fg #a6adc8 bg #313244
+p = fg #a6e3a1 bg #313244

@@ -24,6 +24,7 @@ mod formatar;
 pub mod teclas;
 pub mod modais;
 mod vista;
+pub mod construtor;
 pub use edicao::{AcaoDaPergunta, Pergunta, Registro};
 pub use modais::{Modal, Pedido, Preferencias};
 pub use markdown::{EdicaoDeBloco, Hospedeiro};
@@ -688,7 +689,7 @@ impl Estado {
     /// Com uma edição aberta (inserção, formulário) não mexe: devolve
     /// `false` e quem vigia tenta de novo depois.
     pub fn recarregar_do_disco(&mut self, texto: &str, versao: Option<String>) -> bool {
-        if self.pergunta.is_some() || matches!(self.modal, Some(Modal::Detalhe { .. } | Modal::Opcoes(_) | Modal::Conflito(_))) {
+        if self.pergunta.is_some() || matches!(self.modal, Some(Modal::Detalhe { .. } | Modal::Opcoes(_) | Modal::Conflito(_) | Modal::Construtor(_))) {
             return false;
         }
         let (frontmatter, _) = anotadinho_core::MarkdownCodec::split_frontmatter_text(texto);
@@ -9739,16 +9740,17 @@ mod testes {
         digitar(&mut e, "linha");
         tecla(&mut e, "Enter");
         assert!(corpo_gravado(&e).starts_with("# Título\n\n---\n\n{{ type"), "{}", corpo_gravado(&e));
-        // Diagrama pede o código; Esc desiste sem gravar.
+        // Diagrama abre o construtor (ciclo 500): escolhe o tipo, Ctrl+S
+        // insere o exemplo dele.
         e.gravacao = None;
         tecla(&mut e, "o");
         tecla(&mut e, "/");
         digitar(&mut e, "diagrama");
         tecla(&mut e, "Enter");
-        assert!(matches!(e.modal, Some(Modal::Entrada { .. })));
-        digitar(&mut e, "graph TD; A-->B");
+        assert!(matches!(e.modal, Some(Modal::Construtor(_))), "{:?}", e.modal);
         tecla(&mut e, "Enter");
-        assert!(corpo_gravado(&e).contains("```mermaid\ngraph TD; A-->B\n```"), "{}", corpo_gravado(&e));
+        tecla(&mut e, "Ctrl+s");
+        assert!(corpo_gravado(&e).contains("```mermaid\ngraph TD\n  A[Começo]\n"), "{}", corpo_gravado(&e));
         assert!(e.bloco_a_inserir.is_none());
     }
 

@@ -322,6 +322,16 @@ fn conteudo_mermaid(fonte: &str, cabe: usize, tema: &Tema) -> Conteudo {
     conteudo(codigo_inteiro(fonte, Some("mermaid"), tema), "mermaid".into(), Some(motivo), false)
 }
 
+/// A prévia do construtor (ciclo 500): o MESMO conteúdo que o bloco mostra
+/// na página — desenho inteiro, ou o código com o motivo —, pra quem vai
+/// recortar numa janela própria. Uma prévia com regra própria divergiria
+/// da página, e o construtor mostraria um desenho que o bloco não mostra.
+/// Devolve as linhas, a mais larga em células e o aviso.
+pub fn previa_mermaid(fonte: &str, largura: usize, tema: &Tema) -> (Vec<Vec<Span<'static>>>, usize, Option<String>) {
+    let c = conteudo_mermaid(fonte, largura, tema);
+    (c.linhas, c.largura, c.aviso)
+}
+
 /// As linhas do código sem o corte por largura.
 fn codigo_inteiro(codigo: &str, lingua: Option<&str>, tema: &Tema) -> Vec<Vec<Span<'static>>> {
     let linhas = linhas_de(codigo);

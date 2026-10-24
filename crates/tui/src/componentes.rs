@@ -435,6 +435,43 @@ pub fn cursor_na_linha(campo: &mut Campo, fim: bool) {
     };
 }
 
+/// O texto de várias linhas com o número de cada linha apagado na frente e
+/// o cursor em vídeo inverso: o editor de código (ciclo 390) e a aba Código
+/// do construtor (ciclo 500). Devolve também a linha do cursor, pra quem
+/// rola mantê-lo à vista.
+pub fn linhas_numeradas(campo: &Campo, tema: &Tema) -> (Vec<Line<'static>>, usize) {
+    let texto = Style::default().fg(tema.var("text-primary"));
+    let numero = Style::default().fg(tema.var("text-muted"));
+    let invertido = Style::default().fg(tema.var("bg-base")).bg(tema.var("text-primary"));
+    let chars: Vec<char> = campo.texto.chars().collect();
+    let mut linhas: Vec<Line<'static>> = Vec::new();
+    let mut atual: Vec<Span<'static>> = vec![Span::styled("  1 ", numero)];
+    let mut n: usize = 1;
+    let mut linha_do_cursor: usize = 0;
+    for (i, ch) in chars.iter().enumerate() {
+        if i == campo.cursor {
+            linha_do_cursor = n - 1;
+            atual.push(Span::styled(if *ch == '\n' { " ".to_string() } else { ch.to_string() }, invertido));
+            if *ch != '\n' {
+                continue;
+            }
+        }
+        if *ch == '\n' {
+            linhas.push(Line::from(std::mem::take(&mut atual)));
+            n += 1;
+            atual = vec![Span::styled(format!("{n:>3} "), numero)];
+        } else if i != campo.cursor {
+            atual.push(Span::styled(ch.to_string(), texto));
+        }
+    }
+    if campo.cursor >= chars.len() {
+        linha_do_cursor = n - 1;
+        atual.push(Span::styled(" ", invertido));
+    }
+    linhas.push(Line::from(atual));
+    (linhas, linha_do_cursor)
+}
+
 /// As linhas de um texto de várias linhas com o cursor em vídeo inverso,
 /// cada uma com `recuo` na frente.
 pub fn linhas_com_cursor(campo: &Campo, recuo: &str, estilo: Style, tema: &Tema) -> Vec<Line<'static>> {

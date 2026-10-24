@@ -71,7 +71,7 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Painel de propriedades (frontmatter) | ✅ | 344 — "Propriedades da página…" |
 | Inserir imagem (texto alternativo, legenda, tamanho, alinhamento) | ✅ | 388 — menu `/` → Imagem; a figura aparece como ▨ legenda e Enter abre o arquivo |
 | Imagem colada/arrastada, PDF | — | terminal |
-| Construtor de diagramas mermaid (canvas, formulários, prévia) | — | 487–490 — na TUI o diagrama aparece desenhado (496–497) e se edita como código (390) |
+| Construtor de diagramas mermaid (canvas, formulários, prévia) | ✅ | 487–490; TUI 500 — modal de tela inteira: `c` dentro do bloco (ou "Construtor do diagrama…" na barra), e o `/` "Diagrama" abre com o seletor de tipo. Listas no lugar do canvas (`o` cria, `dd` apaga, `J`/`K` movem, Enter edita no formulário), aba Código (Tab), prévia desenhada ao vivo e rolável, Ctrl+S aplica |
 | Desfazer/refazer | ✅ | 322 |
 | Salvar (Ctrl+S) e salvamento automático liga/desliga | ✅ | 375 — desligado, a página ganha ● e grava no Ctrl+S (ou ao sair dela) |
 | Definir como início (abre primeiro, aba fixa) | ✅ | 362 |

@@ -72,6 +72,14 @@ pub(super) fn tecla(e: &mut Estado, tecla: &str) -> bool {
             e.vista_bloco = None;
             return true;
         }
+        // O construtor (ciclo 500): `c` porque `i`/Enter já são o código.
+        "c" => {
+            e.vista_bloco = None;
+            if !super::construtor::abrir_do_cursor(e) {
+                e.aviso = Some("o construtor é de diagramas: este bloco não é ```mermaid".into());
+            }
+            return true;
+        }
         "Enter" | "i" | "A" => {
             // Editar sai da vista: o editor de várias linhas é o modal de
             // 390, e ao voltar dele o bloco é outro texto.

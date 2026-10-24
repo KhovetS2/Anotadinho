@@ -187,6 +187,11 @@ fn cenas() -> Vec<Cena> {
     let notas = "# Notas\n\nUm parágrafo.\n\n- item\n".to_string();
     v.push(cena("lista-aninhada", "# Notas\n\n- primeiro\n  - dentro um\n  - dentro dois\n    - mais fundo\n- segundo\n".to_string(), &["Tab", "j", "Enter", "Enter", "j"], 120, 16));
     v.push(cena("menu-inserir", notas.clone(), &["Tab", "o", "/"], 140, 40));
+    // O construtor de diagramas (ciclo 500): a lista com a prévia, e o
+    // formulário de um nó.
+    let diagrama = "# Diagrama\n\n```mermaid\ngraph TD\n  A[Começo]\n  B{Decide}\n  C(Faz)\n  A --> B\n  B -->|sim| C\n```\n".to_string();
+    v.push(cena("construtor-mermaid", diagrama.clone(), &["Tab", "j", "Enter", "c", "j"], 120, 30));
+    v.push(cena("construtor-mermaid-no", diagrama, &["Tab", "j", "Enter", "c", "j", "Enter", "j"], 120, 30));
     v.push(cena("wikilink-sugestoes", notas.clone(), &com(&[&["Tab", "o"], &digitado("ver [[ce")]), 140, 30));
     v.push(cena("menu-inserir-filtrado", notas, &com(&[&["Tab", "o", "/"], &digitado("tab")]), 140, 40));
     v.push(cena("conversa-no-fim", CONVERSA.to_string(), &["Tab"], 160, 50));

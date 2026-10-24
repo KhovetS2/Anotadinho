@@ -453,6 +453,8 @@ pub enum Modal {
         /// O que o formulário edita.
         alvo: AlvoDoDetalhe,
     },
+    /// O construtor de diagramas mermaid (ciclo 500), a tela inteira.
+    Construtor(super::construtor::Construtor),
 }
 
 /// O que um [`Modal::Detalhe`] edita.
@@ -782,6 +784,7 @@ const COMANDOS: &[(&str, &str)] = &[
 pub fn abrir_paleta(e: &mut Estado) {
     // Numa conversa, os comandos dela vêm primeiro.
     let mut itens: Vec<Item> = super::conversa::comandos(e);
+    itens.extend(super::construtor::comandos(e));
     itens.extend(COMANDOS.iter().map(|(r, c)| Item::novo("ϟ", *r, *c)));
     itens.extend(
         e.paginas
@@ -871,7 +874,7 @@ pub fn trocar_tema(e: &mut Estado, tema: &str) {
 
 pub(super) fn executar(e: &mut Estado, chave: &str) {
     e.modal = None;
-    if super::conversa::executar(e, chave) {
+    if super::conversa::executar(e, chave) || super::construtor::executar(e, chave) {
         return;
     }
     // Um resultado no conteúdo: abre no trecho (ciclos 371 e 379).
@@ -1637,6 +1640,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             }
             e.modal = Some(Modal::Detalhe { titulo, form, alvo });
         }
+        Modal::Construtor(c) => super::construtor::tecla(e, c, tecla),
         Modal::EditorDeTexto { titulo, mut campo, alvo } => {
             match tecla {
                 "Escape" => {
@@ -1832,7 +1836,24 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("H L", "meia tela pros lados"),
             ("g G 0 $", "topo / fim / começo / fim da linha"),
             ("i ou Enter", "editar o código"),
+            ("c", "construtor do diagrama (mermaid)"),
             ("Esc ou q", "sair do bloco"),
+        ],
+    ),
+    (
+        // Ciclo 500: também pela barra ("Construtor do diagrama…") e, pra
+        // um bloco novo, pelo `/` "Diagrama".
+        "Construtor de diagramas mermaid",
+        &[
+            ("j k g G", "andar na lista"),
+            ("Enter", "editar o item, ou acionar o \"+\""),
+            ("o n", "novo item logo depois / nota (sequência)"),
+            ("dd x", "apagar (o nó leva as ligações)"),
+            ("J K", "descer / subir na ordem"),
+            ("Tab", "aba Construtor / Código"),
+            ("p Ctrl+P", "rolar a prévia (hjkl g G 0 $)"),
+            ("Ctrl+S", "aplicar no bloco (ou inserir)"),
+            ("Esc", "sair (pergunta se mudou)"),
         ],
     ),
     (
@@ -1979,39 +2000,11 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
             let rolagem = cursor.saturating_sub(dentro.height.saturating_sub(2) as usize);
             f.render_widget(Paragraph::new(linhas).scroll((rolagem as u16, 0)), dentro);
         }
+        Modal::Construtor(c) => super::construtor::desenhar(f, e, c),
         Modal::EditorDeTexto { titulo, campo, .. } => {
             let area = componentes::area_do_modal(tela, 100, tela.height.saturating_sub(4));
             let dentro = componentes::desenhar_modal(f, area, titulo, "Enter quebra linha · Esc grava · Ctrl+C desiste", t);
-            let texto = Style::default().fg(t.var("text-primary"));
-            // Uma linha da tela por linha do texto, com o número apagado e
-            // o cursor em vídeo inverso.
-            let invertido = Style::default().fg(t.var("bg-base")).bg(t.var("text-primary"));
-            let chars: Vec<char> = campo.texto.chars().collect();
-            let mut linhas: Vec<Line<'static>> = Vec::new();
-            let mut atual: Vec<Span<'static>> = vec![Span::styled("  1 ", Style::default().fg(t.var("text-muted")))];
-            let mut n: usize = 1;
-            let mut linha_do_cursor: usize = 0;
-            for (i, ch) in chars.iter().enumerate() {
-                if i == campo.cursor {
-                    linha_do_cursor = n - 1;
-                    atual.push(Span::styled(if *ch == '\n' { " ".to_string() } else { ch.to_string() }, invertido));
-                    if *ch != '\n' {
-                        continue;
-                    }
-                }
-                if *ch == '\n' {
-                    linhas.push(Line::from(std::mem::take(&mut atual)));
-                    n += 1;
-                    atual = vec![Span::styled(format!("{n:>3} "), Style::default().fg(t.var("text-muted")))];
-                } else if i != campo.cursor {
-                    atual.push(Span::styled(ch.to_string(), texto));
-                }
-            }
-            if campo.cursor >= chars.len() {
-                linha_do_cursor = n - 1;
-                atual.push(Span::styled(" ", invertido));
-            }
-            linhas.push(Line::from(atual));
+            let (linhas, linha_do_cursor) = componentes::linhas_numeradas(campo, t);
             let rolagem = linha_do_cursor.saturating_sub(dentro.height.saturating_sub(1) as usize);
             f.render_widget(Paragraph::new(linhas).scroll((rolagem as u16, 0)), dentro);
         }
