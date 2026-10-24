@@ -10,6 +10,7 @@
 //! leitor tolerante ignoraria a linha, e o "Aplicar" seguinte a apagaria
 //! do arquivo sem ninguém ver.
 
+pub mod camadas;
 pub mod estados;
 pub mod fluxograma;
 pub mod gantt;

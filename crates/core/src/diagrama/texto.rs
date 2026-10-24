@@ -12,6 +12,9 @@
 
 use unicode_width::UnicodeWidthChar;
 
+use super::camadas;
+use super::estados::{Estados, Ponta};
+use super::fluxograma::{Direcao, Fluxograma, Forma, TipoLigacao};
 use super::gantt::{Fim, Gantt, Inicio, Marca};
 use super::sequencia::{Item, Lado, Seta, Sequencia};
 use super::Diagrama;
@@ -83,7 +86,8 @@ pub fn desenhar(d: &Diagrama, largura: usize) -> Result<Vec<Linha>, NaoDesenha> 
     match d {
         Diagrama::Sequencia(s) => sequencia(s, largura),
         Diagrama::Gantt(g) => gantt(g, largura),
-        Diagrama::Fluxograma(_) | Diagrama::Estados(_) => Err(NaoDesenha::SemDesenho),
+        Diagrama::Fluxograma(f) => fluxograma(f, largura),
+        Diagrama::Estados(e) => estados(e, largura),
     }
 }
 
@@ -559,6 +563,533 @@ fn gantt(g: &Gantt, largura: usize) -> Result<Vec<Linha>, NaoDesenha> {
     Ok(grade.linhas())
 }
 
+// ── Grafo: fluxograma e estados (ciclo 497) ──────────────────────────
+//
+// As camadas vêm de `camadas` (a mesma arrumação do canvas). Entre duas
+// camadas há um CANAL: uma faixa de linhas (ou colunas, na horizontal) por
+// onde as ligações passam. Cada ligação que precisa andar de lado ganha a
+// sua PISTA no canal, e nenhuma divide trilho com outra. Ligação que volta,
+// que pula camada ou que fica na mesma camada sai pelo canal de baixo da
+// origem, corre por uma pista LATERAL por fora de todas as caixas e entra
+// pelo canal de cima do destino: nunca atravessa uma caixa.
+//
+// As linhas são desenhadas como conexões por célula (cima, baixo,
+// esquerda, direita), e o caractere sai do conjunto: dois traços que se
+// cruzam viram `┼`, um que encontra outro de lado vira `├`.
+//
+// Desenha-se sempre de cima pra baixo (TD) ou da esquerda pra direita
+// (LR); BT e RL são o mesmo desenho espelhado no fim, com o texto posto
+// depois do espelho pra não sair de trás pra frente.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FormaG {
+    Caixa,
+    Arredondado,
+    Decisao,
+    Circulo,
+    Inicio,
+    Fim,
+}
+
+struct NoG {
+    rotulo: String,
+    forma: FormaG,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Traco {
+    Cheio,
+    Pontilhado,
+    Grosso,
+}
+
+struct LigG {
+    de: usize,
+    para: usize,
+    rotulo: String,
+    traco: Traco,
+    ponta: bool,
+}
+
+/// Rótulo de nó mais comprido que isto é cortado: uma caixa de 60
+/// colunas come a tela sozinha.
+const ROTULO_MAX: usize = 28;
+
+const CIMA: u8 = 1;
+const BAIXO: u8 = 2;
+const ESQ: u8 = 4;
+const DIR: u8 = 8;
+
+#[derive(Clone, Copy, PartialEq)]
+enum Geo {
+    Vazia,
+    Letra(char, Papel),
+    Traco { lados: u8, traco: Traco },
+}
+
+/// A grade da geometria: caixas, traços e pontas. O texto vem depois.
+struct GradeGeo {
+    celulas: Vec<Vec<Geo>>,
+}
+
+impl GradeGeo {
+    fn em(&mut self, x: usize, y: usize) -> &mut Geo {
+        while self.celulas.len() <= y {
+            self.celulas.push(Vec::new());
+        }
+        let l = &mut self.celulas[y];
+        while l.len() <= x {
+            l.push(Geo::Vazia);
+        }
+        &mut l[x]
+    }
+
+    fn letra(&mut self, x: usize, y: usize, c: char, p: Papel) {
+        *self.em(x, y) = Geo::Letra(c, p);
+    }
+
+    fn lado(&mut self, x: usize, y: usize, lados: u8, traco: Traco) {
+        let c = self.em(x, y);
+        match c {
+            Geo::Traco { lados: l, traco: t } => {
+                *l |= lados;
+                // Cruzamento de cheio com pontilhado vira cheio: o
+                // pontilhado não tem junção.
+                if *t != traco {
+                    *t = Traco::Cheio;
+                }
+            }
+            Geo::Vazia => *c = Geo::Traco { lados, traco },
+            // Traço não passa por cima de caixa.
+            Geo::Letra(..) => {}
+        }
+    }
+
+    /// Um segmento reto de (x0, y0) a (x1, y1).
+    fn segmento(&mut self, (x0, y0): (usize, usize), (x1, y1): (usize, usize), traco: Traco) {
+        if (x0, y0) == (x1, y1) {
+            return;
+        }
+        if x0 == x1 {
+            let (a, b) = (y0.min(y1), y0.max(y1));
+            for y in a..=b {
+                let mut l = 0;
+                if y > a {
+                    l |= CIMA;
+                }
+                if y < b {
+                    l |= BAIXO;
+                }
+                self.lado(x0, y, l, traco);
+            }
+        } else {
+            let (a, b) = (x0.min(x1), x0.max(x1));
+            for x in a..=b {
+                let mut l = 0;
+                if x > a {
+                    l |= ESQ;
+                }
+                if x < b {
+                    l |= DIR;
+                }
+                self.lado(x, y0, l, traco);
+            }
+        }
+    }
+
+    fn altura(&self) -> usize {
+        self.celulas.len()
+    }
+
+    fn largura(&self) -> usize {
+        self.celulas.iter().map(|l| l.len()).max().unwrap_or(0)
+    }
+}
+
+fn caractere_do_traco(lados: u8, traco: Traco) -> char {
+    let vertical = lados & !(CIMA | BAIXO) == 0;
+    let horizontal = lados & !(ESQ | DIR) == 0;
+    match traco {
+        Traco::Pontilhado if vertical => return '╎',
+        Traco::Pontilhado if horizontal => return '╌',
+        Traco::Grosso if vertical => return '┃',
+        Traco::Grosso if horizontal => return '━',
+        _ => {}
+    }
+    match lados {
+        0 => ' ',
+        l if l == CIMA || l == BAIXO || l == CIMA | BAIXO => '│',
+        l if l == ESQ || l == DIR || l == ESQ | DIR => '─',
+        l if l == BAIXO | DIR => '┌',
+        l if l == BAIXO | ESQ => '┐',
+        l if l == CIMA | DIR => '└',
+        l if l == CIMA | ESQ => '┘',
+        l if l == CIMA | BAIXO | DIR => '├',
+        l if l == CIMA | BAIXO | ESQ => '┤',
+        l if l == BAIXO | ESQ | DIR => '┬',
+        l if l == CIMA | ESQ | DIR => '┴',
+        _ => '┼',
+    }
+}
+
+/// O caractere visto no espelho de cima pra baixo (`vertical`) ou da
+/// esquerda pra direita.
+fn espelhar(c: char, vertical: bool) -> char {
+    let pares: &[(char, char)] = if vertical {
+        &[('▼', '▲'), ('┬', '┴'), ('┌', '└'), ('┐', '┘'), ('╭', '╰'), ('╮', '╯'), ('╱', '╲')]
+    } else {
+        &[('▶', '◀'), ('├', '┤'), ('┌', '┐'), ('└', '┘'), ('╭', '╮'), ('╰', '╯'), ('╱', '╲'), ('<', '>'), ('(', ')')]
+    };
+    for (a, b) in pares {
+        if c == *a {
+            return *b;
+        }
+        if c == *b {
+            return *a;
+        }
+    }
+    c
+}
+
+/// Tamanho de um nó: (largura, altura) na tela.
+fn tamanho(no: &NoG) -> (usize, usize) {
+    match no.forma {
+        FormaG::Inicio | FormaG::Fim => (1, 1),
+        _ => (largura_de(&no.rotulo) + 4, 3),
+    }
+}
+
+/// Onde cada ligação passa. `Normal`: da camada k pra k+1, pelo canal entre
+/// elas. `Lateral`: por fora.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Rota {
+    Normal,
+    Lateral,
+}
+
+fn grafo(nos: &[NoG], ligs: &[LigG], horizontal: bool, invertido: bool, largura: usize) -> Result<Vec<Linha>, NaoDesenha> {
+    let n = nos.len();
+    if n == 0 {
+        return Ok(Vec::new());
+    }
+    let arestas: Vec<(usize, usize)> = ligs.iter().map(|l| (l.de, l.para)).collect();
+    let niv = camadas::niveis(n, &arestas);
+    let lista = camadas::camadas(n, &arestas, &niv);
+    let nl = lista.len();
+    let rota: Vec<Rota> = ligs
+        .iter()
+        .map(|l| if l.de != l.para && niv[l.para] == niv[l.de] + 1 { Rota::Normal } else { Rota::Lateral })
+        .collect();
+
+    // Eixo "maior" é o das camadas (y em TD, x em LR); "menor", o de lado.
+    let tam: Vec<(usize, usize)> = nos
+        .iter()
+        .map(|no| {
+            let (w, h) = tamanho(no);
+            if horizontal { (w, h) } else { (h, w) }
+        })
+        .collect(); // (maior, menor)
+    let vao_menor = if horizontal { 1 } else { 3 };
+
+    // Posição no eixo menor: camada por camada, centradas.
+    let comprimento: Vec<usize> = lista
+        .iter()
+        .map(|c| c.iter().map(|i| tam[*i].1).sum::<usize>() + vao_menor * c.len().saturating_sub(1))
+        .collect();
+    let menor_max = comprimento.iter().copied().max().unwrap_or(0);
+    // Toda camada centra na MESMA coluna: centrar cada uma pela sobra dava
+    // centros a uma coluna de distância entre caixas de larguras pares e
+    // ímpares, e a seta entre elas fazia um degrau (`┌┘`) à toa.
+    let eixo = menor_max.saturating_sub(1) / 2;
+    let mut ini_menor = vec![0usize; n];
+    for (k, c) in lista.iter().enumerate() {
+        let mut m = eixo.saturating_sub(comprimento[k].saturating_sub(1) / 2);
+        for &i in c {
+            ini_menor[i] = m;
+            m += tam[i].1 + vao_menor;
+        }
+    }
+    let centro_menor = |i: usize| ini_menor[i] + (tam[i].1.saturating_sub(1)) / 2;
+    // Em TD os rótulos ficam à direita da ponta, na linha dela: as pistas
+    // laterais começam depois do mais comprido, senão o rótulo escreve por
+    // cima da pista.
+    let mut rotulos_por_destino: std::collections::BTreeMap<usize, Vec<String>> = Default::default();
+    if !horizontal {
+        for l in ligs.iter().filter(|l| !l.rotulo.is_empty()) {
+            rotulos_por_destino.entry(l.para).or_default().push(l.rotulo.clone());
+        }
+    }
+    let alcance_dos_rotulos = rotulos_por_destino
+        .iter()
+        .map(|(i, r)| centro_menor(*i) + 2 + largura_de(&r.join(" / ")))
+        .max()
+        .unwrap_or(0);
+    let base_lateral = menor_max.max(ini_menor.iter().zip(&tam).map(|(m, t)| m + t.1).max().unwrap_or(0)).max(alcance_dos_rotulos);
+    let laterais: Vec<usize> = (0..ligs.len()).filter(|k| rota[*k] == Rota::Lateral).collect();
+    let pista_lateral = |k: usize| base_lateral + 1 + 2 * laterais.iter().position(|x| *x == k).unwrap_or(0);
+
+    // Os canais: o canal c fica antes da camada c (c = nl: depois da
+    // última). Quem sai da camada k usa o canal k+1; quem entra na k, o k.
+    let mut sai = vec![false; nl + 1];
+    let mut entra = vec![false; nl + 1];
+    let mut pistas: Vec<Vec<(usize, bool)>> = vec![Vec::new(); nl + 1]; // (ligação, é a de saída)
+    let mut espaco_rotulo = vec![0usize; nl + 1];
+    for (k, l) in ligs.iter().enumerate() {
+        let (cs, ce) = (niv[l.de] + 1, niv[l.para]);
+        sai[cs] = true;
+        entra[ce] = true;
+        if horizontal && !l.rotulo.is_empty() {
+            espaco_rotulo[ce] = espaco_rotulo[ce].max(largura_de(&l.rotulo) + 2);
+        }
+        match rota[k] {
+            Rota::Normal => {
+                if centro_menor(l.de) != centro_menor(l.para) {
+                    pistas[cs].push((k, true));
+                }
+            }
+            Rota::Lateral => {
+                pistas[cs].push((k, true));
+                pistas[ce].push((k, false));
+            }
+        }
+    }
+    // Posição no eixo maior: canal, camada, canal, camada...
+    let mut ini_canal = vec![0usize; nl + 1];
+    let mut ini_camada = vec![0usize; nl];
+    let mut grossura = vec![0usize; nl];
+    let mut m = 0;
+    for c in 0..=nl {
+        ini_canal[c] = m;
+        let tamanho_canal = usize::from(sai[c]) + pistas[c].len() + espaco_rotulo[c] + usize::from(entra[c]);
+        // Entre duas camadas sempre há ao menos uma de folga.
+        let minimo = if c > 0 && c < nl { 1 } else { 0 };
+        m += tamanho_canal.max(minimo);
+        if c < nl {
+            ini_camada[c] = m;
+            grossura[c] = lista[c].iter().map(|i| tam[*i].0).max().unwrap_or(1);
+            m += grossura[c];
+        }
+    }
+    let ini_maior = |i: usize| ini_camada[niv[i]] + (grossura[niv[i]] - tam[i].0) / 2;
+    let fim_maior = |i: usize| ini_maior(i) + tam[i].0 - 1;
+    let pista = |c: usize, k: usize, saida: bool| -> usize {
+        ini_canal[c] + usize::from(sai[c]) + pistas[c].iter().position(|p| *p == (k, saida)).unwrap_or(0)
+    };
+
+    // (maior, menor) → (x, y)
+    let tela = |maior: usize, menor: usize| if horizontal { (maior, menor) } else { (menor, maior) };
+
+    let mut geo = GradeGeo { celulas: Vec::new() };
+    let mut textos: Vec<(usize, usize, String, Papel)> = Vec::new();
+
+    // As caixas.
+    for (i, no) in nos.iter().enumerate() {
+        let (x0, y0) = tela(ini_maior(i), ini_menor[i]);
+        match no.forma {
+            FormaG::Inicio => geo.letra(x0, y0, '●', Papel::Caixa),
+            FormaG::Fim => geo.letra(x0, y0, '◉', Papel::Caixa),
+            forma => {
+                let (w, _) = tamanho(no);
+                let (ce, cd, be, bd, le, ld) = match forma {
+                    FormaG::Arredondado => ('╭', '╮', '╰', '╯', '│', '│'),
+                    FormaG::Decisao => ('╱', '╲', '╲', '╱', '<', '>'),
+                    FormaG::Circulo => ('╭', '╮', '╰', '╯', '(', ')'),
+                    _ => ('┌', '┐', '└', '┘', '│', '│'),
+                };
+                geo.letra(x0, y0, ce, Papel::Caixa);
+                geo.letra(x0 + w - 1, y0, cd, Papel::Caixa);
+                geo.letra(x0, y0 + 2, be, Papel::Caixa);
+                geo.letra(x0 + w - 1, y0 + 2, bd, Papel::Caixa);
+                for x in x0 + 1..x0 + w - 1 {
+                    geo.letra(x, y0, '─', Papel::Caixa);
+                    geo.letra(x, y0 + 2, '─', Papel::Caixa);
+                    geo.letra(x, y0 + 1, ' ', Papel::Nome);
+                }
+                geo.letra(x0, y0 + 1, le, Papel::Caixa);
+                geo.letra(x0 + w - 1, y0 + 1, ld, Papel::Caixa);
+                textos.push((x0 + 2, y0 + 1, no.rotulo.clone(), Papel::Nome));
+            }
+        }
+    }
+
+    // As ligações: o caminho em (maior, menor), depois na tela.
+    for (k, l) in ligs.iter().enumerate() {
+        let (cs, ce) = (niv[l.de] + 1, niv[l.para]);
+        let (ms, mt) = (centro_menor(l.de), centro_menor(l.para));
+        // Sai da borda de baixo (de trás, em LR) da origem e chega na
+        // célula antes da borda de cima do destino.
+        let borda_origem = fim_maior(l.de);
+        let antes_do_destino = ini_maior(l.para) - 1;
+        let mut pontos: Vec<(usize, usize)> = vec![(borda_origem, ms)];
+        match rota[k] {
+            Rota::Normal => {
+                if ms != mt {
+                    let p = pista(cs, k, true);
+                    pontos.push((p, ms));
+                    pontos.push((p, mt));
+                }
+            }
+            Rota::Lateral => {
+                let (a, b) = (pista(cs, k, true), pista(ce, k, false));
+                let lat = pista_lateral(k);
+                pontos.extend([(a, ms), (a, lat), (b, lat), (b, mt)]);
+            }
+        }
+        pontos.push((antes_do_destino, mt));
+        let na_tela: Vec<(usize, usize)> = pontos.iter().map(|(a, b)| tela(*a, *b)).collect();
+        for par in na_tela.windows(2) {
+            geo.segmento(par[0], par[1], l.traco);
+        }
+        // A saída marca a borda; a chegada, a ponta.
+        let origem_ponto = matches!(nos[l.de].forma, FormaG::Inicio | FormaG::Fim);
+        let (bx, by) = na_tela[0];
+        if !origem_ponto {
+            geo.letra(bx, by, if horizontal { '├' } else { '┬' }, Papel::Caixa);
+        } else {
+            let ch = if nos[l.de].forma == FormaG::Inicio { '●' } else { '◉' };
+            geo.letra(bx, by, ch, Papel::Caixa);
+        }
+        let (ax, ay) = *na_tela.last().unwrap();
+        if l.ponta {
+            geo.letra(ax, ay, if horizontal { '▶' } else { '▼' }, Papel::Seta);
+        }
+        if !l.rotulo.is_empty() {
+            if horizontal {
+                // Em LR o rótulo vai em cima do trecho que entra no destino,
+                // no espaço que o canal reservou.
+                let m0 = ini_canal[ce] + usize::from(sai[ce]) + pistas[ce].len() + 1;
+                let (x, y) = tela(m0, mt);
+                textos.push((x, y, l.rotulo.clone(), Papel::Rotulo));
+            }
+        }
+    }
+    // Em TD, os rótulos ao lado da ponta, juntos quando várias chegam no
+    // mesmo destino.
+    for (i, rots) in rotulos_por_destino {
+        let (x, y) = tela(ini_maior(i) - 1, centro_menor(i));
+        textos.push((x + 2, y, rots.join(" / "), Papel::Rotulo));
+    }
+
+    // Espelho, pra BT e RL: a geometria vira, o texto é posto depois.
+    let (w_geo, h_geo) = (geo.largura(), geo.altura());
+    let mut final_ = Grade::nova();
+    for (y, linha) in geo.celulas.iter().enumerate() {
+        for (x, c) in linha.iter().enumerate() {
+            let (xx, yy) = match (invertido, horizontal) {
+                (false, _) => (x, y),
+                (true, false) => (x, h_geo - 1 - y),
+                (true, true) => (w_geo - 1 - x, y),
+            };
+            let virar = |ch: char| if invertido { espelhar(ch, !horizontal) } else { ch };
+            match *c {
+                Geo::Vazia => {}
+                Geo::Letra(ch, p) => final_.letra(xx, yy, virar(ch), p),
+                Geo::Traco { lados, traco } => {
+                    let lados = if !invertido {
+                        lados
+                    } else if horizontal {
+                        (lados & (CIMA | BAIXO)) | if lados & ESQ != 0 { DIR } else { 0 } | if lados & DIR != 0 { ESQ } else { 0 }
+                    } else {
+                        (lados & (ESQ | DIR)) | if lados & CIMA != 0 { BAIXO } else { 0 } | if lados & BAIXO != 0 { CIMA } else { 0 }
+                    };
+                    final_.letra(xx, yy, caractere_do_traco(lados, traco), Papel::Seta);
+                }
+            }
+        }
+    }
+    for (x, y, t, p) in textos {
+        let w = largura_de(&t);
+        let (xx, yy) = match (invertido, horizontal) {
+            (false, _) => (x, y),
+            (true, false) => (x, h_geo - 1 - y),
+            (true, true) => (w_geo.saturating_sub(x + w), y),
+        };
+        final_.texto(xx, yy, &t, p);
+    }
+    let linhas = final_.linhas();
+    let precisa = linhas.iter().map(|l| l.iter().map(|(_, s)| largura_de(s)).sum::<usize>()).max().unwrap_or(0);
+    if precisa > largura {
+        return Err(NaoDesenha::NaoCabe { precisa });
+    }
+    Ok(linhas)
+}
+
+fn fluxograma(f: &Fluxograma, largura: usize) -> Result<Vec<Linha>, NaoDesenha> {
+    let idx = |id: &str| f.nos.iter().position(|n| n.id == id);
+    let nos: Vec<NoG> = f
+        .nos
+        .iter()
+        .map(|n| NoG {
+            rotulo: cortar(&n.texto, ROTULO_MAX),
+            forma: match n.forma {
+                Forma::Caixa => FormaG::Caixa,
+                Forma::Arredondado => FormaG::Arredondado,
+                Forma::Decisao => FormaG::Decisao,
+                Forma::Circulo => FormaG::Circulo,
+            },
+        })
+        .collect();
+    let ligs: Vec<LigG> = f
+        .ligacoes
+        .iter()
+        .filter_map(|l| {
+            Some(LigG {
+                de: idx(&l.de)?,
+                para: idx(&l.para)?,
+                rotulo: cortar(&l.rotulo, ROTULO_MAX),
+                traco: match l.tipo {
+                    TipoLigacao::Pontilhada => Traco::Pontilhado,
+                    TipoLigacao::Grossa => Traco::Grosso,
+                    _ => Traco::Cheio,
+                },
+                ponta: l.tipo != TipoLigacao::Linha,
+            })
+        })
+        .collect();
+    let (horizontal, invertido) = match f.direcao {
+        Direcao::TD | Direcao::TB => (false, false),
+        Direcao::BT => (false, true),
+        Direcao::LR => (true, false),
+        Direcao::RL => (true, true),
+    };
+    grafo(&nos, &ligs, horizontal, invertido, largura)
+}
+
+fn estados(e: &Estados, largura: usize) -> Result<Vec<Linha>, NaoDesenha> {
+    // Início e fim só entram se alguma transição os usa: um `[*]` solto
+    // seria um ponto sem sentido no desenho.
+    let usa = |p: &Ponta| e.transicoes.iter().any(|t| &t.de == p || &t.para == p);
+    let mut nos: Vec<NoG> = Vec::new();
+    let mut chaves: Vec<Ponta> = Vec::new();
+    if usa(&Ponta::Inicio) {
+        nos.push(NoG { rotulo: String::new(), forma: FormaG::Inicio });
+        chaves.push(Ponta::Inicio);
+    }
+    for s in &e.estados {
+        nos.push(NoG { rotulo: cortar(&s.texto, ROTULO_MAX), forma: FormaG::Arredondado });
+        chaves.push(Ponta::Estado(s.id.clone()));
+    }
+    if usa(&Ponta::Fim) {
+        nos.push(NoG { rotulo: String::new(), forma: FormaG::Fim });
+        chaves.push(Ponta::Fim);
+    }
+    let idx = |p: &Ponta| chaves.iter().position(|c| c == p);
+    let ligs: Vec<LigG> = e
+        .transicoes
+        .iter()
+        .filter_map(|t| {
+            Some(LigG {
+                de: idx(&t.de)?,
+                para: idx(&t.para)?,
+                rotulo: cortar(&t.rotulo, ROTULO_MAX),
+                traco: Traco::Cheio,
+                ponta: true,
+            })
+        })
+        .collect();
+    grafo(&nos, &ligs, false, false, largura)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -665,9 +1196,106 @@ mod tests {
         assert!(matches!(desenhar(&ler(GANTT).unwrap(), 20), Err(NaoDesenha::NaoCabe { .. })));
     }
 
+    /// O fluxograma do print do ciclo 491: oito passos, uma volta que pula
+    /// três camadas e uma decisão que volta pra camada de cima.
+    const FLUXO_DO_PRINT: &str = "graph TD\n  A[Ideia] --> B[Detalhando]\n  B --> C[Pronta]\n  C --> D{Executar?}\n  D -->|não| C\n  D -->|sim| E[Executando]\n  E --> F[Revisão]\n  E -->|parou| G[Bloqueada]\n  F --> H[Feita]\n  F -->|voltou| B\n";
+
     #[test]
-    fn fluxograma_e_estados_ainda_sem_desenho() {
-        let f = ler("graph TD\n  A --> B\n").unwrap();
-        assert_eq!(desenhar(&f, 80), Err(NaoDesenha::SemDesenho));
+    fn as_voltas_correm_por_fora_e_nenhuma_caixa_e_cortada() {
+        let t = desenho(FLUXO_DO_PRINT, 80);
+        let tudo = t.join("\n");
+        for caixa in ["│ Ideia │", "│ Detalhando │", "│ Pronta │", "< Executar? >", "│ Executando │", "│ Revisão │", "│ Bloqueada │", "│ Feita │"] {
+            assert!(tudo.contains(caixa), "{caixa} cortada ou sumida:\n{tudo}");
+        }
+        for rotulo in ["▼ voltou", "▼ não", "▼ sim", "▼ parou"] {
+            assert!(tudo.contains(rotulo), "{rotulo}:\n{tudo}");
+        }
+        // Nós sozinhos na camada ficam na mesma coluna: a seta desce reta,
+        // sem degrau.
+        assert!(!tudo.contains("┌┘") && !tudo.contains("└┐"), "degrau na seta:\n{tudo}");
+        assert!(t.iter().all(|l| largura_de(l) <= 80));
+    }
+
+    #[test]
+    fn estados_com_inicio_fim_e_volta() {
+        let t = desenho("stateDiagram-v2\n  [*] --> Rascunho\n  Rascunho --> Revisao: envia\n  Revisao --> Rascunho: pede mudança\n  Revisao --> Aprovada: aprova\n  Aprovada --> [*]\n", 80);
+        let tudo = t.join("\n");
+        assert!(t[0].trim() == "●", "o início no topo:\n{tudo}");
+        assert!(t.last().unwrap().trim() == "◉", "o fim embaixo:\n{tudo}");
+        // O rótulo da volta não é atravessado pela pista lateral.
+        assert!(tudo.contains("▼ pede mudança "), "{tudo}");
+        assert!(tudo.contains("╭──────────╮") && tudo.contains("│ Aprovada │"), "{tudo}");
+    }
+
+    #[test]
+    fn da_esquerda_pra_direita_e_espelhados() {
+        let lr = desenho("graph LR\n  A[Começo] --> B[Fim]\n", 80);
+        let linha = lr.iter().find(|l| l.contains("Começo")).unwrap();
+        assert!(linha.find("Começo") < linha.find("Fim") && linha.contains("─▶"), "{lr:?}");
+        let rl = desenho("graph RL\n  A[Começo] --> B[Fim]\n", 80);
+        let linha = rl.iter().find(|l| l.contains("Começo")).unwrap();
+        assert!(linha.find("Fim") < linha.find("Começo") && linha.contains("◀─"), "o texto saiu espelhado ou a seta não virou: {rl:?}");
+        let bt = desenho("graph BT\n  A[Base] --> B[Topo]\n", 80);
+        let (base, topo) = (bt.iter().position(|l| l.contains("Base")).unwrap(), bt.iter().position(|l| l.contains("Topo")).unwrap());
+        assert!(topo < base && bt.join("").contains('▲'), "{bt:?}");
+    }
+
+    #[test]
+    fn grafo_largo_demais_nao_cabe() {
+        let d = ler("graph LR\n  A[um nó com nome comprido] --> B[outro nó com nome comprido]\n").unwrap();
+        assert!(matches!(desenhar(&d, 40), Err(NaoDesenha::NaoCabe { precisa }) if precisa > 40));
+    }
+
+    #[test]
+    fn grafos_quaisquer_desenham_sem_estourar() {
+        // Grafos de até 7 nós com ligações ao acaso (voltas, laços, saltos,
+        // mesma camada), nas quatro direções: nunca entra em pânico, todo
+        // nó aparece e nenhuma linha passa da largura.
+        let mut semente: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut acaso = |n: u64| {
+            semente ^= semente << 13;
+            semente ^= semente >> 7;
+            semente ^= semente << 17;
+            semente % n
+        };
+        for _ in 0..300 {
+            let n = 1 + acaso(7) as usize;
+            let dir = ["TD", "LR", "BT", "RL"][acaso(4) as usize];
+            let mut codigo = format!("graph {dir}\n");
+            for i in 0..n {
+                codigo.push_str(&format!("  N{i}[nó {i}]\n"));
+            }
+            for _ in 0..acaso(10) {
+                let (a, b) = (acaso(n as u64), acaso(n as u64));
+                let rot = if acaso(2) == 0 { String::new() } else { format!("|r{a}{b}|") };
+                codigo.push_str(&format!("  N{a} -->{rot} N{b}\n"));
+            }
+            let d = ler(&codigo).unwrap_or_else(|e| panic!("{e:?}\n{codigo}"));
+            match desenhar(&d, 200) {
+                Ok(linhas) => {
+                    let t = texto(&linhas);
+                    let tudo = t.join("\n");
+                    for i in 0..n {
+                        assert!(tudo.contains(&format!("nó {i}")), "nó {i} sumiu:\n{codigo}\n{tudo}");
+                    }
+                    assert!(t.iter().all(|l| largura_de(l) <= 200), "{codigo}\n{tudo}");
+                }
+                Err(NaoDesenha::NaoCabe { .. }) => {}
+                Err(e) => panic!("{e:?}\n{codigo}"),
+            }
+        }
+    }
+
+    #[test]
+    fn fluxograma_simples_de_cima_pra_baixo() {
+        let t = desenho("graph TD\n  A[Começo] --> B{Decide}\n  B -->|sim| C(Faz)\n  B -->|não| D((Fim))\n", 80);
+        let tudo = t.join("\n");
+        for nome in ["Começo", "Decide", "Faz", "Fim"] {
+            assert!(tudo.contains(nome), "{nome} sumiu:\n{tudo}");
+        }
+        assert!(tudo.contains("▼ sim") && tudo.contains("▼ não"), "rótulos:\n{tudo}");
+        assert!(tudo.contains("< Decide >"), "decisão:\n{tudo}");
+        assert!(tudo.contains("( Fim )"), "círculo:\n{tudo}");
+        assert!(tudo.contains("╭─────╮"), "arredondado:\n{tudo}");
     }
 }

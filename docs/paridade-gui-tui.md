@@ -59,14 +59,16 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Editar texto dos blocos | ✅ | 334 (modo vim) |
 | Tabela markdown comum (`\| a \| b \|`): ver em grade e editar | ✅ | 389 — Enter ou `A` abre colunas e linhas |
 | Editar bloco de código (e Mermaid) | ✅ | 390 — Enter ou `i`/`A` abre o editor de várias linhas; Esc grava |
+| Ver bloco de código: linhas, indentação, cor por linguagem | ✅ | 494, 495 — caixa com a linguagem no topo, corte com "… mais N" e `…`; dobra |
+| Ver diagrama mermaid desenhado | ✅ | 496, 497 — em caracteres, pelo modelo do construtor (fluxograma, sequência, estados, gantt); fora do modelo, o código com o motivo |
 | Lista dentro de lista | ✅ | 393, 402, 403 — nível de verdade na árvore (TUI e janela): Enter entra, Esc sai, `Ctrl+A`/`Ctrl+X` aninham |
 | Vim mode liga/desliga (sem vim: digitar edita direto) | ✅ | 376 — Enter cria o seguinte, Backspace apaga, Delete apaga o bloco, Ctrl+Z/Y |
 | Menu `/` (inserir bloco e embed) | ✅ | 347 — `/` num bloco novo vazio, ou "Inserir bloco ou embed…" |
 | Barra de seleção (negrito, itálico, link, cor) | ✅ | 357 — na inserção: `Ctrl+B` negrito, `Ctrl+T` menu Formatar (itálico, riscado, código, link, cor, fundo); 394 — cor personalizada `#hex` e tirar a cor; 395 — `Shift+setas` seleciona o trecho a formatar |
 | Painel de propriedades (frontmatter) | ✅ | 344 — "Propriedades da página…" |
 | Inserir imagem (texto alternativo, legenda, tamanho, alinhamento) | ✅ | 388 — menu `/` → Imagem; a figura aparece como ▨ legenda e Enter abre o arquivo |
-| Imagem colada/arrastada, Mermaid, PDF | — | terminal |
-| Construtor de diagramas mermaid (canvas, formulários, prévia) | — | 487–490 — terminal não desenha diagrama; na TUI o bloco continua editável como código (390) |
+| Imagem colada/arrastada, PDF | — | terminal |
+| Construtor de diagramas mermaid (canvas, formulários, prévia) | — | 487–490 — na TUI o diagrama aparece desenhado (496–497) e se edita como código (390) |
 | Desfazer/refazer | ✅ | 322 |
 | Salvar (Ctrl+S) e salvamento automático liga/desliga | ✅ | 375 — desligado, a página ganha ● e grava no Ctrl+S (ou ao sair dela) |
 | Definir como início (abre primeiro, aba fixa) | ✅ | 362 |

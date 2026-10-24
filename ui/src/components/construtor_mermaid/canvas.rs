@@ -172,42 +172,21 @@ pub fn posicao(nos: &[NoCanvas], posicoes: &Posicoes, i: usize) -> [f64; 2] {
 }
 
 /// As posições de todos os nós: as guardadas e, pros que não têm, uma
-/// arrumação em camadas pela ligação (busca em largura a partir de quem não
-/// tem entrada), na direção do diagrama. A grade pela ordem deixava um
-/// fluxograma de quatro passos numa linha só, com as setas espremidas
-/// (visto no ciclo 490). O resultado não vai pro modelo: só o que a pessoa
-/// arrasta vira posição guardada.
+/// arrumação em camadas pela ligação, na direção do diagrama. A grade pela
+/// ordem deixava um fluxograma de quatro passos numa linha só, com as setas
+/// espremidas (visto no ciclo 490). O resultado não vai pro modelo: só o
+/// que a pessoa arrasta vira posição guardada.
+///
+/// As camadas vêm do núcleo (`diagrama::camadas`, ciclo 497): o desenho da
+/// TUI usa a mesma arrumação.
 pub fn completar(nos: &[NoCanvas], ligacoes: &[LigacaoCanvas], guardadas: &Posicoes, horizontal: bool) -> Posicoes {
     let n = nos.len();
     let idx = |chave: &str| nos.iter().position(|x| x.chave == chave);
-    let arestas: Vec<(usize, usize)> = ligacoes
-        .iter()
-        .filter_map(|l| Some((idx(&l.de)?, idx(&l.para)?)))
-        .filter(|(a, b)| a != b)
-        .collect();
-    let mut nivel: Vec<Option<usize>> = vec![None; n];
-    let tem_entrada: Vec<bool> = (0..n).map(|i| arestas.iter().any(|(_, b)| *b == i)).collect();
-    // Raízes primeiro (sem entrada); depois, quem sobrou (ciclos, soltos).
-    let ordem: Vec<usize> = (0..n).filter(|i| !tem_entrada[*i]).chain((0..n).filter(|i| tem_entrada[*i])).collect();
-    for &raiz in &ordem {
-        if nivel[raiz].is_some() {
-            continue;
-        }
-        nivel[raiz] = Some(0);
-        let mut fila = std::collections::VecDeque::from([raiz]);
-        while let Some(u) = fila.pop_front() {
-            let nu = nivel[u].unwrap_or(0);
-            for &(a, b) in &arestas {
-                if a == u && nivel[b].is_none() {
-                    nivel[b] = Some(nu + 1);
-                    fila.push_back(b);
-                }
-            }
-        }
-    }
+    let arestas: Vec<(usize, usize)> = ligacoes.iter().filter_map(|l| Some((idx(&l.de)?, idx(&l.para)?))).collect();
+    let nivel = anotadinho_core::diagrama::camadas::niveis(n, &arestas);
     let mut por_nivel: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
     for i in 0..n {
-        por_nivel.entry(nivel[i].unwrap_or(0)).or_default().push(i);
+        por_nivel.entry(nivel[i]).or_default().push(i);
     }
     let mut todas = guardadas.clone();
     for (camada, membros) in por_nivel {

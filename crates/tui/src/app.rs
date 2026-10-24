@@ -2173,7 +2173,10 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                     // pra moldura do foco, ficam fora do teto.
                     let teto = crate::codigo::LINHAS_DO_CODIGO.min(e.altura.saturating_sub(4));
                     if lingua.as_deref().is_some_and(|l| l.eq_ignore_ascii_case("mermaid")) {
-                        // O diagrama desenhado em caracteres (ciclo 496).
+                        // O diagrama desenhado em caracteres (ciclo 496). O
+                        // teto é o do painel, não o de 30 linhas do código:
+                        // um desenho cortado no meio perde a leitura (497).
+                        let teto = e.altura.saturating_sub(4);
                         vec![crate::codigo::desenhar_mermaid(fonte, l.nivel, largura_conteudo, teto, &e.tema)]
                     } else {
                         vec![crate::codigo::desenhar(fonte, lingua.as_deref(), l.nivel, largura_conteudo, teto, &e.tema)]
@@ -5405,6 +5408,17 @@ mod testes {
         let vinte = inicio.elapsed();
         assert_eq!(crate::realce_codigo::realcados() - antes, no_primeiro, "redesenhar realçou de novo");
         eprintln!("400 blocos: primeiro quadro {primeiro:?} (com as gramáticas), 20 quadros {vinte:?}");
+    }
+
+    #[test]
+    fn fluxograma_mermaid_aparece_desenhado_na_tela() {
+        let md = "```mermaid\ngraph TD\n  A[Começo] --> B[Fim]\n```\n";
+        let mut e = Estado::novo(paginas(), analisar(md));
+        e.foco = Foco::Conteudo;
+        let tela = desenho(&mut e, 80, 20).join("\n");
+        assert!(tela.contains("mermaid · fluxograma"), "{tela}");
+        assert!(tela.contains("│ Começo │") && tela.contains("│ Fim │") && tela.contains("▼"), "{tela}");
+        assert!(!tela.contains("A[Começo]"), "o código apareceu no lugar do desenho:\n{tela}");
     }
 
     #[test]
