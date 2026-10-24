@@ -15,6 +15,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthChar;
 
+use crate::realce_codigo::{self, Categoria, Trecho};
 use crate::tema::{Realce, Tema};
 
 /// Quantas linhas de código o bloco mostra antes de cortar (RF4). O grupo
@@ -58,6 +59,49 @@ pub fn cortar(texto: &str, largura: usize) -> String {
     fora
 }
 
+/// O realce de cada categoria (ciclo 495).
+fn papel(c: Categoria) -> Realce {
+    match c {
+        Categoria::Texto => Realce::CodigoTexto,
+        Categoria::Palavra => Realce::CodigoPalavra,
+        Categoria::Cadeia => Realce::CodigoCadeia,
+        Categoria::Comentario => Realce::CodigoComentario,
+        Categoria::Numero => Realce::CodigoNumero,
+        Categoria::Tipo => Realce::CodigoTipo,
+    }
+}
+
+/// Os trechos de uma linha cortados em `largura` células, com `…` no fim
+/// quando cortou, na cor do último trecho que coube.
+fn cortar_trechos(trechos: &[Trecho], largura: usize, tema: &Tema) -> Vec<Span<'static>> {
+    let total: usize = trechos.iter().flat_map(|(_, t)| t.chars()).map(|c| c.width().unwrap_or(0)).sum();
+    if total <= largura {
+        return trechos.iter().map(|(c, t)| Span::styled(t.clone(), tema.estilo(papel(*c)))).collect();
+    }
+    let mut fora = Vec::new();
+    let mut usado = 0;
+    let mut ultima = Categoria::Texto;
+    'trechos: for (c, t) in trechos {
+        let mut pedaco = String::new();
+        for ch in t.chars() {
+            let w = ch.width().unwrap_or(0);
+            if usado + w + 1 > largura {
+                if !pedaco.is_empty() {
+                    fora.push(Span::styled(pedaco, tema.estilo(papel(*c))));
+                }
+                ultima = *c;
+                break 'trechos;
+            }
+            pedaco.push(ch);
+            usado += w;
+        }
+        ultima = *c;
+        fora.push(Span::styled(pedaco, tema.estilo(papel(*c))));
+    }
+    fora.push(Span::styled("…", tema.estilo(papel(ultima))));
+    fora
+}
+
 /// O rótulo do topo: a linguagem, ou "código" quando a cerca não diz.
 pub fn rotulo(lingua: Option<&str>) -> String {
     match lingua.map(str::trim).filter(|l| !l.is_empty()) {
@@ -90,6 +134,9 @@ pub fn desenhar(
     let moldura = tema.estilo(Realce::Marca);
     let texto = tema.estilo(Realce::Codigo);
     let linhas = linhas_de(codigo);
+    // Com linguagem conhecida, a cor por trecho; sem, a cor única do
+    // código (RF3).
+    let realcadas = lingua.and_then(|l| realce_codigo::realcar_guardado(&linhas, l));
 
     let topo = format!("┌ {} ", rotulo(lingua));
     let topo_w: usize = topo.chars().count();
@@ -101,12 +148,13 @@ pub fn desenhar(
     // A linha do "… mais N" conta no teto: o bloco nunca passa dele.
     let max_linhas = max_linhas.max(2);
     let mostra = if linhas.len() > max_linhas { max_linhas - 1 } else { linhas.len() };
-    for l in &linhas[..mostra] {
-        fora.push(Line::from(vec![
-            Span::raw(recuo.clone()),
-            Span::styled("│ ", moldura),
-            Span::styled(cortar(l, util.saturating_sub(2)), texto),
-        ]));
+    for (i, l) in linhas[..mostra].iter().enumerate() {
+        let mut spans = vec![Span::raw(recuo.clone()), Span::styled("│ ", moldura)];
+        match realcadas.as_ref().and_then(|r| r.get(i)) {
+            Some(trechos) => spans.extend(cortar_trechos(trechos, util.saturating_sub(2), tema)),
+            None => spans.push(Span::styled(cortar(l, util.saturating_sub(2)), texto)),
+        }
+        fora.push(Line::from(spans));
     }
     if linhas.len() > mostra {
         fora.push(Line::from(vec![
@@ -184,6 +232,32 @@ mod testes {
         assert_eq!(cortar("ação", 4), "ação");
         // Largura dupla (CJK) conta duas células.
         assert_eq!(cortar("日本語です", 5), "日本…");
+    }
+
+    #[test]
+    fn com_linguagem_cada_trecho_tem_a_sua_cor() {
+        let tema = Tema::novo("mocha");
+        let l = desenhar("let s = \"oi\"; // c\n", Some("rust"), 0, 40, 30, &tema);
+        let cor = |pedaco: &str| l[1].spans.iter().find(|s| s.content.contains(pedaco)).map(|s| s.style).unwrap();
+        assert_eq!(cor("let"), tema.estilo(Realce::CodigoPalavra));
+        assert_eq!(cor("\"oi\""), tema.estilo(Realce::CodigoCadeia));
+        assert_eq!(cor("// c"), tema.estilo(Realce::CodigoComentario));
+        assert_ne!(cor("let"), cor("\"oi\""));
+        // Sem linguagem (ou desconhecida): uma cor só, a do código.
+        for lingua in [None, Some("nao-existe")] {
+            let l = desenhar("let s = 1;", lingua, 0, 40, 30, &tema);
+            assert_eq!(l[1].spans.len(), 3, "{:?}", l[1]);
+            assert_eq!(l[1].spans[2].style, tema.estilo(Realce::Codigo));
+        }
+    }
+
+    #[test]
+    fn com_cor_o_corte_por_largura_continua() {
+        let tema = Tema::novo("mocha");
+        let t = texto(&desenhar(&format!("let x = \"{}\";", "a".repeat(80)), Some("rust"), 0, 20, 30, &tema));
+        assert_eq!(t[1].chars().count(), 20, "{:?}", t[1]);
+        assert!(t[1].ends_with('…'), "{:?}", t[1]);
+        assert!(t[1].starts_with("│ let x = \"aaa"), "{:?}", t[1]);
     }
 
     #[test]

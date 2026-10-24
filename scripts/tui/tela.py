@@ -46,12 +46,13 @@ def esperar_tela(sessao, contem, limite=10.0):
     raise SystemExit(f"a tela não mostrou {contem!r} em {limite}s:\n{tela}")
 
 
-def estavel(sessao, limite=5.0):
-    """A tela depois de parar de mudar (duas leituras iguais seguidas)."""
+def estavel(sessao, limite=5.0, cores=False):
+    """A tela depois de parar de mudar (duas leituras iguais seguidas).
+    Com `cores`, vêm junto os códigos de cor do terminal (`capture-pane -e`)."""
     ate = time.time() + limite
     antes = None
     while time.time() < ate:
-        agora = tmux("capture-pane", "-p", "-t", sessao)
+        agora = tmux("capture-pane", "-p", *(["-e"] if cores else []), "-t", sessao)
         if agora == antes:
             return agora
         antes = agora
@@ -65,6 +66,7 @@ def main():
     ap.add_argument("--teclas", default="", help="teclas depois de abrir, separadas por espaço")
     ap.add_argument("--largura", type=int, default=100)
     ap.add_argument("--altura", type=int, default=40)
+    ap.add_argument("--cores", action="store_true", help="mostra com as cores (códigos ANSI)")
     ap.add_argument("--binario", default=os.path.join(RAIZ, "target/debug/anotadinho-tui"))
     a = ap.parse_args()
 
@@ -98,7 +100,7 @@ def main():
         for t in a.teclas.split():
             tmux("send-keys", "-t", sessao, t)
             estavel(sessao)
-        sys.stdout.write(estavel(sessao))
+        sys.stdout.write(estavel(sessao, cores=a.cores))
     finally:
         tmux("kill-session", "-t", sessao, check=False)
         shutil.rmtree(tmp, ignore_errors=True)

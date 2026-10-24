@@ -21,3 +21,7 @@ chrono = { workspace = true, features = ["clock"] }
 # A largura de cada caractere na tela, pra cortar a linha de código sem
 # passar da borda (ciclo 494). Já vinha pela árvore do ratatui.
 unicode-width = "0.2"
+# A cor do código por linguagem (ciclo 495). Sem `onig`: o regex é o
+# `fancy-regex`, Rust puro, e a TUI segue compilando no Windows sem C.
+# Sem os temas do syntect: a cor vem do tema da TUI (`tema.rs`).
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "parsing", "regex-fancy"] }

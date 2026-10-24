@@ -18,6 +18,7 @@
 pub mod app;
 pub mod agente;
 pub mod codigo;
+pub mod realce_codigo;
 pub mod componentes;
 pub mod sidebar;
 pub mod sistema;

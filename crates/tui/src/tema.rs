@@ -38,6 +38,14 @@ pub enum Realce {
     Citacao,
     /// Código, em bloco ou inline.
     Codigo,
+    /// O código com cor por linguagem (ciclo 495): o texto comum dele e as
+    /// cinco categorias de `realce_codigo::Categoria`.
+    CodigoTexto,
+    CodigoPalavra,
+    CodigoCadeia,
+    CodigoComentario,
+    CodigoNumero,
+    CodigoTipo,
     /// O rótulo de um embed.
     Embed,
     /// Uma parte de dentro de um embed.
@@ -249,6 +257,14 @@ impl Tema {
             Realce::Texto => Style::default().fg(texto),
             Realce::Citacao => Style::default().fg(apagado).add_modifier(Modifier::ITALIC),
             Realce::Codigo => Style::default().fg(self.cor("cor-verde", Color::Green)),
+            // Com linguagem, o texto comum do código é texto: verde vira
+            // a cor da string, como num editor.
+            Realce::CodigoTexto => Style::default().fg(texto),
+            Realce::CodigoPalavra => Style::default().fg(self.cor("accent-purple", Color::Magenta)),
+            Realce::CodigoCadeia => Style::default().fg(self.cor("cor-verde", Color::Green)),
+            Realce::CodigoComentario => Style::default().fg(apagado).add_modifier(Modifier::ITALIC),
+            Realce::CodigoNumero => Style::default().fg(self.cor("cor-ambar", Color::Yellow)),
+            Realce::CodigoTipo => Style::default().fg(self.cor("cor-azul", Color::Blue)),
             Realce::Embed => Style::default()
                 .fg(self.cor("accent-purple", Color::Magenta))
                 .add_modifier(Modifier::BOLD),
@@ -669,6 +685,12 @@ mod testes {
             Realce::CalloutErro,
             Realce::CalloutDica,
             Realce::Grade,
+            Realce::CodigoTexto,
+            Realce::CodigoPalavra,
+            Realce::CodigoCadeia,
+            Realce::CodigoComentario,
+            Realce::CodigoNumero,
+            Realce::CodigoTipo,
         ] {
             let e = t.estilo(r);
             let cor = e.fg.or(e.bg).unwrap_or(Color::Reset);

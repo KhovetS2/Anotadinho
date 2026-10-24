@@ -5378,6 +5378,31 @@ mod testes {
     }
 
     #[test]
+    fn pagina_com_400_blocos_so_realca_os_da_tela_e_uma_vez() {
+        // RNF4 da spec tui-codigo-e-diagramas (ciclo 495). O realce custa
+        // por bloco; o que não pode é custar pela PÁGINA (todo bloco a cada
+        // quadro) nem a cada quadro (o mesmo bloco de novo a cada tecla).
+        let bloco = |i: usize| format!("```rust\nfn f{i}() {{\n    let x = {i};\n}}\n```\n\n");
+        let md: String = (0..400).map(bloco).collect();
+        let mut e = Estado::novo(paginas(), analisar(&md));
+        e.foco = Foco::Conteudo;
+        let antes = crate::realce_codigo::realcados();
+        let inicio = std::time::Instant::now();
+        desenho(&mut e, 80, 40);
+        let primeiro = inicio.elapsed();
+        let no_primeiro = crate::realce_codigo::realcados() - antes;
+        // Cada bloco ocupa 5 linhas + 1 em branco: uns 7 cabem em 40.
+        assert!(no_primeiro > 0 && no_primeiro <= 10, "realçou {no_primeiro} blocos pra uma tela");
+        let inicio = std::time::Instant::now();
+        for _ in 0..20 {
+            desenho(&mut e, 80, 40);
+        }
+        let vinte = inicio.elapsed();
+        assert_eq!(crate::realce_codigo::realcados() - antes, no_primeiro, "redesenhar realçou de novo");
+        eprintln!("400 blocos: primeiro quadro {primeiro:?} (com as gramáticas), 20 quadros {vinte:?}");
+    }
+
+    #[test]
     fn a_tela_mostra_as_paginas_e_o_conteudo() {
         let mut e = estado();
         let linhas = desenho(&mut e, 60, 12);
