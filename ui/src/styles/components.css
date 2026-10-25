@@ -2256,6 +2256,45 @@
 .projeto__titulo { margin: 0; font-size: 1.3rem; }
 .projeto__rodando { font-size: .8rem; color: var(--accent-blue); }
 .projeto__config { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: .82rem; }
+/* O que o app faz no repositório (ciclo 518): à vista, discreto. */
+.projeto__regras { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: 0; font-size: .78rem; color: var(--text-muted); }
+.projeto__regra { display: inline-flex; align-items: center; gap: calc(var(--sp-1) / 2); }
+.projeto__regra code { color: var(--text-primary); }
+.projeto__regra--sem { color: var(--warning); }
+.projeto__configurar--aberto { color: var(--accent-blue); }
+.projeto__config-painel {
+  display: grid; grid-template-columns: 1fr 12rem; gap: var(--sp-2) var(--sp-4); padding: var(--sp-3);
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--r-sm); font-size: .82rem;
+}
+.projeto__campo { display: flex; flex-direction: column; gap: calc(var(--sp-1) / 2); }
+.projeto__campo-rotulo { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.projeto__campo-dica { font-size: .72rem; color: var(--text-muted); }
+.projeto__marca { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--sp-1); cursor: pointer; }
+.projeto__config-acoes { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: var(--sp-2); }
+.projeto__selo--passou { color: var(--success); }
+.projeto__selo--falhou { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
+
+/* As mudanças da tarefa no repositório (ciclo 518), como o diff das
+   propostas: rola dentro da caixa e quebra a linha longa. */
+.modal.mudancas { width: min(90vw, 70rem); max-width: none; }
+.mudancas__cabeca { margin: 0 0 var(--sp-2); font-size: .82rem; color: var(--text-muted); }
+.mudancas__aviso { margin: 0 0 var(--sp-2); font-size: .8rem; color: var(--warning); }
+.mudancas__estado { color: var(--text-muted); font-size: .85rem; }
+.mudancas__erro { color: var(--error); font-size: .85rem; }
+.mudancas__arquivos { list-style: none; margin: 0 0 var(--sp-2); padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: .8rem; }
+.mudancas__arquivo { display: flex; align-items: center; gap: var(--sp-2); }
+.mudancas__selo { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); min-width: 5.5rem; }
+.mudancas__selo--a, .mudancas__selo--novo { color: var(--success); }
+.mudancas__selo--d { color: var(--error); }
+.mudancas__diff {
+  margin: 0; max-height: 60vh; overflow: auto; background: var(--bg-base);
+  border: 1px solid var(--border); border-radius: var(--r-sm); font-family: var(--font-mono); font-size: .75rem;
+}
+.mudancas__l { padding: 0 .5rem; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); }
+.mudancas__l--entra { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--text-primary); }
+.mudancas__l--sai { background: color-mix(in srgb, var(--error) 16%, transparent); color: var(--text-primary); }
+.mudancas__l--trecho { color: var(--accent-blue); }
+.mudancas__l--arquivo { color: var(--text-primary); font-weight: 600; background: var(--bg-elevated); }
 .projeto__repo { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--text-muted); }
 .projeto__repo code { color: var(--text-primary); }
 .projeto__avisos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -2446,6 +2485,9 @@
   background: color-mix(in srgb, var(--text-muted) 15%, transparent); color: var(--text-primary);
 }
 .tarefa-detalhes__dep-nova { max-width: 14rem; }
+.tarefa-detalhes__repo { margin: 0; font-size: .8rem; display: flex; align-items: center; gap: var(--sp-1); }
+.tarefa-detalhes__repo--passou { color: var(--success); }
+.tarefa-detalhes__repo--falhou { color: var(--error); }
 .tarefa-detalhes__prazo { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .tarefa-detalhes__vencido { color: var(--error); font-size: .78rem; }
 .tarefa-detalhes__prazo--vencido .tarefa-detalhes__prazo-data { border-color: var(--error); }

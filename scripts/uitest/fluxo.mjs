@@ -3587,6 +3587,98 @@ fluxo.push({
   },
 });
 
+// ── ciclo 518: o repositório na tela do projeto ──────────────────────
+
+fluxo.push({
+  nome: "projeto: configurar a verificação e ver o que a tarefa mudou no repositório (518)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const { execFileSync } = await import("node:child_process");
+    const slug = `uitest-repo-${Date.now()}`;
+    const repo = fs.mkdtempSync(`${os.tmpdir()}/uitest-518-`);
+    const git = (...a) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8" }).trim();
+    git("init", "-q", "-b", "main");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    fs.writeFileSync(`${repo}/app.txt`, "v1\n");
+    git("add", "-A");
+    git("commit", "-qm", "início");
+    const base = git("rev-parse", "HEAD");
+    // O "agente" mudou um arquivo e criou outro.
+    fs.writeFileSync(`${repo}/app.txt`, "v2\n");
+    fs.writeFileSync(`${repo}/novo.js`, "export const x = 1;\n");
+
+    const p = await projetoNoVault(ctx, slug, [[1, "revisao", "Login"], [2, "bloqueada", "Cadastro"]]);
+    const t1 = `${p.pasta}/tarefas/001-t.md`;
+    const t2 = `${p.pasta}/tarefas/002-t.md`;
+    fs.writeFileSync(t1, fs.readFileSync(t1, "utf8").replace("status: revisao", `status: revisao\nbase_git: ${base}\nverificacao: passou`));
+    fs.writeFileSync(t2, fs.readFileSync(t2, "utf8").replace("status: bloqueada", "status: bloqueada\nverificacao: falhou"));
+    // A config: a do projeto de teste ENTRA no arquivo da pessoa, e o
+    // arquivo volta inteiro no fim.
+    const cfgArq = `${ctx.vault}/.anotadinho/projetos.json`;
+    const cfgAntes = fs.existsSync(cfgArq) ? fs.readFileSync(cfgArq, "utf8") : null;
+    const cfg = cfgAntes ? JSON.parse(cfgAntes) : {};
+    cfg[slug] = { repositorio: repo, pausado: true, concorrencia: 1, verificar: "true" };
+    fs.mkdirSync(`${ctx.vault}/.anotadinho`, { recursive: true });
+    fs.writeFileSync(cfgArq, JSON.stringify(cfg, null, 2));
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      await esperar(bridge, "document.querySelector('.projeto__regra--verificar code')?.textContent === 'true'", "a regra da verificação no cabeçalho");
+
+      // Os selos do resultado.
+      await esperar(bridge, `!!document.querySelector('.projeto__cartao[data-tarefa$="001-t.md"] .projeto__selo--passou')`, "o selo de verificação que passou");
+      ctx.assert(await bridge.js(`!!document.querySelector('.projeto__cartao[data-tarefa$="002-t.md"] .projeto__selo--falhou')`), "o selo de verificação que falhou");
+      // Só quem rodou pelo app (tem base) mostra o botão das mudanças.
+      ctx.assert(!(await bridge.js(`!!document.querySelector('.projeto__cartao[data-tarefa$="002-t.md"] .projeto__mudancas-abrir')`)), "a 002 não tem base e mostrou o botão");
+
+      // O diff da 001.
+      await clicar(bridge, `.projeto__cartao[data-tarefa$="001-t.md"] .projeto__mudancas-abrir`, "o botão das mudanças");
+      await esperar(bridge, "!!document.querySelector('.mudancas__diff')", "o diff");
+      const m = await bridge.js(`({
+        arquivos: [...document.querySelectorAll('.mudancas__arquivo code')].map(c => c.textContent),
+        entra: [...document.querySelectorAll('.mudancas__l--entra')].map(l => l.textContent),
+        sai: [...document.querySelectorAll('.mudancas__l--sai')].map(l => l.textContent),
+        cabeca: document.querySelector('.mudancas__cabeca')?.textContent,
+      })`);
+      ctx.assertEq(JSON.stringify(m.arquivos), JSON.stringify(["app.txt", "novo.js"]), "os arquivos mudados");
+      ctx.assert(m.entra.includes("+v2") && m.sai.includes("-v1") && m.entra.includes("+export const x = 1;"), `o diff: ${JSON.stringify(m)}`);
+      ctx.assert(m.cabeca.includes(base.slice(0, 10)) && m.cabeca.includes("main"), `o cabeçalho: ${m.cabeca}`);
+      await clicar(bridge, ".mudancas .modal__actions .btn", "Fechar");
+      await esperar(bridge, "!document.querySelector('.mudancas__diff')", "o modal fechar");
+
+      // Configurar: o comando novo e o commit ao aceitar vão pro arquivo.
+      await clicar(bridge, ".projeto__configurar", "Configurar");
+      await esperar(bridge, "!!document.querySelector('.projeto__config-painel .projeto__verificar')", "o painel");
+      // O painel abre com a config de AGORA (visto errado na primeira
+      // versão: o campo vinha vazio).
+      ctx.assertEq(await bridge.js("document.querySelector('.projeto__verificar').value"), "true", "o painel não abriu com o comando atual");
+      await bridge.js(`(() => {
+        const i = document.querySelector('.projeto__verificar');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'npm test');
+        i.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`);
+      await esperar(bridge, "document.querySelector('.projeto__verificar').value === 'npm test'", "o comando no campo");
+      await bridge.js(`(() => { const c = document.querySelector('.projeto__commitar'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+      await esperar(bridge, "document.querySelector('.projeto__commitar').checked", "a marca do commit");
+      await clicar(bridge, ".projeto__config-gravar", "Gravar");
+      await esperar(bridge, "document.querySelector('.projeto__regra--verificar code')?.textContent === 'npm test'", "a regra nova no cabeçalho");
+      const gravado = JSON.parse(fs.readFileSync(cfgArq, "utf8"))[slug];
+      ctx.assertEq(gravado.verificar, "npm test", "o comando no projetos.json");
+      ctx.assertEq(gravado.commitar_ao_aceitar, true, "o commit ao aceitar no projetos.json");
+      ctx.assertEq(gravado.repositorio, repo, "o repositório ficou");
+      ctx.assertEq(gravado.pausado, true, "a pausa ficou");
+    } finally {
+      if (cfgAntes === null) fs.rmSync(cfgArq, { force: true });
+      else fs.writeFileSync(cfgArq, cfgAntes);
+      p.limpar();
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  },
+});
+
 fluxo.push({
   nome: "tarefa rica: anexar copia sem sobrescrever, e abrir recusa fora de assets (477)",
   async fn(bridge, ctx) {

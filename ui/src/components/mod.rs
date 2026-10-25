@@ -24,6 +24,7 @@ pub mod icon;
 pub mod kanban;
 pub mod keymap_capture_modal;
 pub mod modal;
+pub mod mudancas_da_tarefa;
 pub mod page_view;
 pub mod projeto_view;
 pub mod properties_panel;

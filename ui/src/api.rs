@@ -780,6 +780,36 @@ pub async fn criar_projeto(vault_path: &str, titulo: &str, hoje: &str) -> Result
     .await
 }
 
+/// Um arquivo que a tarefa mudou (espelho de `ipc::repositorio::ArquivoMudado`).
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+pub struct ArquivoMudado {
+    /// `M`, `A`, `D`, `R` ou `?`.
+    pub estado: String,
+    /// Relativo à raiz do repositório.
+    pub caminho: String,
+}
+
+/// O que a tarefa mudou no repositório (espelho de
+/// `ipc::repositorio::Mudancas`, ciclo 518).
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+pub struct Mudancas {
+    /// O commit de onde a comparação parte.
+    pub base: Option<String>,
+    /// O branch de agora.
+    pub branch: Option<String>,
+    /// Os arquivos mudados.
+    pub arquivos: Vec<ArquivoMudado>,
+    /// O diff unificado.
+    pub diff: String,
+    /// Por que a comparação não é a de sempre (fora de git, base sumida).
+    pub aviso: Option<String>,
+}
+
+/// O que a tarefa mudou no repositório do projeto (ciclo 518).
+pub async fn mudancas_da_tarefa(vault_path: &str, caminho: &str) -> Result<Mudancas, String> {
+    chamar("mudancas_da_tarefa", Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho)).await
+}
+
 pub async fn estado_do_projeto(vault_path: &str, slug: &str) -> Result<EstadoDoProjeto, String> {
     chamar("estado_do_projeto", Args::novo().texto("vaultPath", vault_path).texto("slug", slug)).await
 }
@@ -850,6 +880,7 @@ pub async fn prazo_da_tarefa(vault_path: &str, caminho: &str, prazo: Option<&str
     .await
 }
 
+/// Põe ou tira a prioridade da tarefa (ciclo 513).
 pub async fn prioridade_da_tarefa(vault_path: &str, caminho: &str, prioridade: Option<&str>) -> Result<(), String> {
     chamar_sem_retorno(
         "prioridade_da_tarefa",
@@ -858,6 +889,7 @@ pub async fn prioridade_da_tarefa(vault_path: &str, caminho: &str, prioridade: O
     .await
 }
 
+/// Troca as dependências da tarefa (ciclo 513).
 pub async fn dependencias_da_tarefa(vault_path: &str, caminho: &str, depende: &[String]) -> Result<(), String> {
     chamar_sem_retorno(
         "dependencias_da_tarefa",

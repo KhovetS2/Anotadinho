@@ -744,6 +744,11 @@ fn prazo_da_tarefa(vault_path: String, caminho: String, prazo: Option<String>) -
 }
 
 #[tauri::command]
+fn mudancas_da_tarefa(vault_path: String, caminho: String) -> Result<anotadinho_ipc::repositorio::Mudancas, String> {
+    anotadinho_ipc::handle_mudancas_da_tarefa(vault_path, caminho)
+}
+
+#[tauri::command]
 fn prioridade_da_tarefa(vault_path: String, caminho: String, prioridade: Option<String>) -> Result<(), String> {
     anotadinho_ipc::handle_prioridade_da_tarefa(vault_path, caminho, prioridade)
 }
@@ -1665,6 +1670,7 @@ fn main() {
             prazo_da_tarefa,
             prioridade_da_tarefa,
             dependencias_da_tarefa,
+            mudancas_da_tarefa,
             alternar_item_da_tarefa,
             comentar_tarefa,
             anexar_na_tarefa,

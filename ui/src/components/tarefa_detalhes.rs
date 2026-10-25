@@ -24,6 +24,9 @@ pub struct TarefaDetalhesProps {
     /// depender (ciclo 513).
     #[prop_or_default]
     pub outras: Vec<(u32, String)>,
+    /// Abrir as mudanças da tarefa no repositório (ciclo 518).
+    #[prop_or_default]
+    pub on_mudancas: Option<Callback<()>>,
     /// Gravou: a tela relê o projeto.
     pub on_mudou: Callback<()>,
     pub on_fechar: Callback<()>,
@@ -207,6 +210,28 @@ pub fn tarefa_detalhes(props: &TarefaDetalhesProps) -> Html {
                         }} />
                 </div>
             </section>
+
+            // O repositório (ciclo 518): onde a tarefa roda e se passou.
+            if t.base_git.is_some() || t.verificacao.is_some() || t.branch_git.is_some() {
+                <section class="tarefa-detalhes__secao">
+                    <h4 class="tarefa-detalhes__rotulo">{ "Repositório" }</h4>
+                    if let Some(b) = &t.branch_git {
+                        <p class="tarefa-detalhes__repo">{ "branch " }<code>{ b }</code></p>
+                    }
+                    if let Some(v) = &t.verificacao {
+                        <p class={classes!("tarefa-detalhes__repo", if v == "passou" { "tarefa-detalhes__repo--passou" } else { "tarefa-detalhes__repo--falhou" })}>
+                            <Icon name={if v == "passou" { "check" } else { "x" }} />
+                            { if v == "passou" { " a verificação passou" } else { " a verificação falhou — a saída está na seção Verificação da página" } }
+                        </p>
+                    }
+                    if let (Some(abrir), true) = (props.on_mudancas.clone(), t.base_git.is_some()) {
+                        <button class="btn btn--ghost btn--sm tarefa-detalhes__mudancas" data-nav-item="true" data-nav-parent="tarefa-detalhes"
+                            onclick={abrir.reform(|_: MouseEvent| ())}>
+                            <Icon name="git-branch" />{ " Ver mudanças" }
+                        </button>
+                    }
+                </section>
+            }
 
             <section class="tarefa-detalhes__secao">
                 <h4 class="tarefa-detalhes__rotulo">{ "Prioridade" }</h4>

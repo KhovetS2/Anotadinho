@@ -104,6 +104,11 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
     // CAMINHO: a tarefa em si vem da leitura mais recente, e o painel
     // mostra o que acabou de ser gravado.
     let detalhe = use_state(|| None::<String>);
+    // As mudanças no repositório de uma tarefa (ciclo 518): caminho e título.
+    let mudancas_de = use_state(|| None::<(String, String)>);
+    // O painel de configuração do projeto (518), e o rascunho dele.
+    let configurando = use_state(|| false);
+    let rascunho = use_state(|| None::<projeto::ConfigProjeto>);
     // A tarefa sendo arrastada (ciclo 465). Por mouse, como o
     // `inline_kanban`: o arrasto nativo do HTML5 é instável no WebKitGTK.
     let arrastando = use_state(|| None::<Tarefa>);
@@ -232,6 +237,20 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
         })
     };
 
+    let ver_mudancas = {
+        let mudancas_de = mudancas_de.clone();
+        Callback::from(move |par: (String, String)| mudancas_de.set(Some(par)))
+    };
+    // O rascunho só existe depois da primeira mudança: copiado na
+    // abertura, ele pegava a config PADRÃO se o clique vinha antes da tela
+    // terminar de carregar (visto no 518: o comando aparecia vazio).
+    let abrir_config = {
+        let (configurando, rascunho) = (configurando.clone(), rascunho.clone());
+        Callback::from(move |_: MouseEvent| {
+            configurando.set(!*configurando);
+            rascunho.set(None);
+        })
+    };
     let alternar_pausa = {
         let (gravar_config, config) = (gravar_config.clone(), config_atual.clone());
         Callback::from(move |_: MouseEvent| {
@@ -333,7 +352,29 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                         data-nav-parent="projeto-topo" onclick={abrir_arq}>
                         <Icon name="layout" />{ " Arquitetura" }
                     </button>
+                    <button class={classes!("btn", "btn--ghost", "btn--sm", "projeto__configurar", configurando.then_some("projeto__configurar--aberto"))}
+                        data-nav-item="true" data-nav-parent="projeto-topo" onclick={abrir_config}
+                        title="Verificação, branch por tarefa e commit ao aceitar">
+                        <Icon name="settings" />{ " Configurar" }
+                    </button>
                 </div>
+                // O que o app faz no repositório, à vista (518): sem isto,
+                // "concluída" é a palavra do agente e ninguém sabia.
+                <p class="projeto__regras">
+                    { match config_atual.comando_de_verificacao() {
+                        Some(cmd) => html! { <span class="projeto__regra projeto__regra--verificar"><Icon name="check-square" />{ " verificação " }<code>{ cmd }</code></span> },
+                        None => html! { <span class="projeto__regra projeto__regra--sem">{ "sem verificação — vale o que o agente disser" }</span> },
+                    } }
+                    if config_atual.branch_por_tarefa {
+                        <span class="projeto__regra"><Icon name="git-branch" />{ " branch por tarefa" }</span>
+                    }
+                    if config_atual.commitar_ao_aceitar {
+                        <span class="projeto__regra"><Icon name="check" />{ " commit ao aceitar" }</span>
+                    }
+                </p>
+                if *configurando && estado.is_some() {
+                    { painel_de_config((*rascunho).clone().unwrap_or_else(|| config_atual.clone()), rascunho.clone(), configurando.clone(), gravar_config.clone()) }
+                }
                 <div class="projeto__sprint" data-nav-group="projeto-sprint">
                     <select class="input input--sm projeto__sprint-filtro" data-nav-item="true" data-nav-parent="projeto-sprint"
                         title="O que o quadro mostra"
@@ -420,6 +461,10 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                 tarefa={t.clone()}
                 hoje={hoje.clone()}
                 outras={tarefas.iter().filter(|o| o.caminho != t.caminho).map(|o| (o.numero, o.titulo.clone())).collect::<Vec<_>>()}
+                on_mudancas={{
+                    let (ver, par) = (ver_mudancas.clone(), (t.caminho.clone(), format!("{:03} {}", t.numero, t.titulo)));
+                    Callback::from(move |_: ()| ver.emit(par.clone()))
+                }}
                 on_mudou={recarregar.clone()}
                 on_fechar={fechar}
                 on_abrir_pagina={abrir_pagina} />
@@ -494,6 +539,7 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                                     indice: &indice, abrir: &abrir, mover: &mover, arrastando: &arrastando,
                                     sprints: &abertas, mudar_sprint: &mudar_sprint, hoje: &hoje,
                                     abrir_detalhe: &abrir_detalhe, detalhe_aberto: detalhe.as_deref(),
+                                    ver_mudancas: &ver_mudancas,
                                 })) }
                             </div>
                         }
@@ -563,7 +609,75 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
             { cabecalho }
             { abas }
             { corpo }
+            if let Some((caminho, titulo)) = (*mudancas_de).clone() {
+                <crate::components::mudancas_da_tarefa::MudancasDaTarefa
+                    vault_path={props.vault_path.clone()} caminho={caminho} titulo={titulo}
+                    on_fechar={{ let m = mudancas_de.clone(); Callback::from(move |_| m.set(None)) }} />
+            }
         </main>
+    }
+}
+
+/// O painel "Configurar" do projeto (ciclo 518): o que o app faz no
+/// repositório. Um rascunho, gravado só no botão — mexer num campo não
+/// pode disparar uma gravação por letra no `projetos.json`.
+fn painel_de_config(
+    r: projeto::ConfigProjeto,
+    rascunho: UseStateHandle<Option<projeto::ConfigProjeto>>,
+    configurando: UseStateHandle<bool>,
+    gravar: Callback<projeto::ConfigProjeto>,
+) -> Html {
+    let mudar = |f: fn(&mut projeto::ConfigProjeto, String)| {
+        let (rascunho, r) = (rascunho.clone(), r.clone());
+        Callback::from(move |e: Event| {
+            let alvo: web_sys::HtmlInputElement = e.target_unchecked_into();
+            let valor = if alvo.type_() == "checkbox" { alvo.checked().to_string() } else { alvo.value() };
+            let mut novo = r.clone();
+            f(&mut novo, valor);
+            rascunho.set(Some(novo));
+        })
+    };
+    let salvar = {
+        let (r, gravar, configurando) = (r.clone(), gravar.clone(), configurando.clone());
+        Callback::from(move |_: MouseEvent| {
+            gravar.emit(r.clone());
+            configurando.set(false);
+        })
+    };
+    let cancelar = {
+        let configurando = configurando.clone();
+        Callback::from(move |_: MouseEvent| configurando.set(false))
+    };
+    html! {
+        <section class="projeto__config-painel" data-nav-group="projeto-config">
+            <label class="projeto__campo">
+                <span class="projeto__campo-rotulo">{ "Comando de verificação" }</span>
+                <input class="input input--sm projeto__verificar" type="text" placeholder="npm test, cargo test… (vazio: sem verificação)"
+                    data-nav-item="true" data-nav-parent="projeto-config" value={r.verificar.clone().unwrap_or_default()}
+                    onchange={mudar(|c, v| c.verificar = Some(v).filter(|v| !v.trim().is_empty()))} />
+                <span class="projeto__campo-dica">{ "Roda no repositório depois do agente; se falhar, a tarefa vai pra bloqueada com a saída." }</span>
+            </label>
+            <label class="projeto__campo">
+                <span class="projeto__campo-rotulo">{ "Prazo da verificação (minutos)" }</span>
+                <input class="input input--sm projeto__prazo-verificacao" type="number" min="1"
+                    data-nav-item="true" data-nav-parent="projeto-config" value={(r.prazo_da_verificacao / 60).max(1).to_string()}
+                    onchange={mudar(|c, v| if let Ok(m) = v.trim().parse::<u64>() { c.prazo_da_verificacao = m.max(1) * 60 })} />
+            </label>
+            <label class="projeto__marca">
+                <input type="checkbox" class="projeto__branch" checked={r.branch_por_tarefa} data-nav-item="true" data-nav-parent="projeto-config"
+                    onchange={mudar(|c, v| c.branch_por_tarefa = v == "true")} />
+                { " Cada tarefa no branch dela (tarefa/003-…)" }
+            </label>
+            <label class="projeto__marca">
+                <input type="checkbox" class="projeto__commitar" checked={r.commitar_ao_aceitar} data-nav-item="true" data-nav-parent="projeto-config"
+                    onchange={mudar(|c, v| c.commitar_ao_aceitar = v == "true")} />
+                { " Aceitar (revisão → feita) commita o que a tarefa deixou" }
+            </label>
+            <div class="projeto__config-acoes">
+                <button class="btn btn--ghost btn--sm" data-nav-item="true" data-nav-parent="projeto-config" onclick={cancelar}>{ "Cancelar" }</button>
+                <button class="btn btn--primary btn--sm projeto__config-gravar" data-nav-item="true" data-nav-parent="projeto-config" onclick={salvar}>{ "Gravar" }</button>
+            </div>
+        </section>
     }
 }
 
@@ -581,6 +695,7 @@ struct Cartao<'a> {
     hoje: &'a str,
     abrir_detalhe: &'a Callback<String>,
     detalhe_aberto: Option<&'a str>,
+    ver_mudancas: &'a Callback<(String, String)>,
 }
 
 fn cartao(t: &Tarefa, c: &Cartao) -> Html {
@@ -597,7 +712,7 @@ fn cartao(t: &Tarefa, c: &Cartao) -> Html {
                 .target()
                 .and_then(|alvo| alvo.dyn_into::<web_sys::Element>().ok())
                 // O seletor de sprint também é gesto de clique (ciclo 472).
-                .and_then(|el| el.closest(".projeto__mover, .projeto__cartao-sprint, .projeto__detalhes-abrir").ok().flatten())
+                .and_then(|el| el.closest(".projeto__mover, .projeto__cartao-sprint, .projeto__detalhes-abrir, .projeto__mudancas-abrir").ok().flatten())
                 .is_some();
             if num_botao {
                 return;
@@ -621,7 +736,7 @@ fn cartao(t: &Tarefa, c: &Cartao) -> Html {
     // A prioridade só aparece quando foge da média (ciclo 513): o selo em
     // toda tarefa diria "média" mil vezes e esconderia as que importam.
     let prioridade = t.prioridade.as_deref().map(str::to_lowercase).filter(|p| p == "alta" || p == "baixa");
-    let tem_selos = total > 0 || t.prazo.is_some() || !t.comentarios.is_empty() || !t.anexos.is_empty() || prioridade.is_some();
+    let tem_selos = total > 0 || t.prazo.is_some() || !t.comentarios.is_empty() || !t.anexos.is_empty() || prioridade.is_some() || t.verificacao.is_some();
     let detalhar = {
         let (abrir_detalhe, caminho) = (c.abrir_detalhe.clone(), t.caminho.clone());
         Callback::from(move |_: MouseEvent| abrir_detalhe.emit(caminho.clone()))
@@ -640,6 +755,18 @@ fn cartao(t: &Tarefa, c: &Cartao) -> Html {
                     <span class="projeto__numero">{ format!("{:03}", t.numero) }</span>
                     { " " }{ &t.titulo }
                 </button>
+                // O que a tarefa mudou no código (518): só depois de ela ter
+                // rodado pelo app, que é quando há de onde comparar.
+                if t.base_git.is_some() {
+                    <button class="btn btn--ghost btn--xs projeto__mudancas-abrir" data-nav-item="true" data-nav-parent="projeto-quadro"
+                        title="O que esta tarefa mudou no repositório"
+                        onclick={{
+                            let (ver, par) = (c.ver_mudancas.clone(), (t.caminho.clone(), format!("{:03} {}", t.numero, t.titulo)));
+                            Callback::from(move |_: MouseEvent| ver.emit(par.clone()))
+                        }}>
+                        <Icon name="git-branch" />
+                    </button>
+                }
                 <button class="btn btn--ghost btn--xs projeto__detalhes-abrir" data-nav-item="true" data-nav-parent="projeto-quadro"
                     title="Detalhes: tags, prazo, critérios, comentários e anexos" onclick={detalhar}>
                     <Icon name="more-horizontal" />
@@ -649,6 +776,13 @@ fn cartao(t: &Tarefa, c: &Cartao) -> Html {
             // abrindo a página.
             if tem_selos {
                 <div class="projeto__selos">
+                    // O resultado da verificação do projeto (517).
+                    if let Some(v) = &t.verificacao {
+                        <span class={classes!("projeto__selo", "projeto__selo--verificacao", if v == "passou" { "projeto__selo--passou" } else { "projeto__selo--falhou" })}
+                            title={if v == "passou" { "A verificação do projeto passou" } else { "A verificação do projeto falhou: veja a seção Verificação da tarefa" }}>
+                            <Icon name={if v == "passou" { "check" } else { "x" }} />{ " teste" }
+                        </span>
+                    }
                     if let Some(p) = &prioridade {
                         <span class={classes!("projeto__selo", "projeto__selo--prioridade", format!("projeto__selo--{p}"))}
                             title={format!("Prioridade {p}")}>
