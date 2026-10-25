@@ -346,6 +346,11 @@ pub fn caminho_da_arquitetura(slug: &str) -> String {
     format!("{PASTA}/{slug}/arquitetura.md")
 }
 
+/// A base de problemas do projeto (ciclo 523).
+pub fn caminho_dos_problemas(slug: &str) -> String {
+    format!("{PASTA}/{slug}/problemas.md")
+}
+
 /// Pasta das tarefas.
 pub fn pasta_das_tarefas(slug: &str) -> String {
     format!("{PASTA}/{slug}/tarefas")
@@ -1034,6 +1039,14 @@ pub fn pergunta_de_detalhar(tarefa: &Tarefa) -> String {
          diga isso e sugira como dividir, em vez de detalhar tudo numa só. Se algo \
          estiver ambíguo, aponte em vez de decidir por conta."
             .to_string(),
+        String::new(),
+        // A base de problemas (ciclo 523): o erro que já aconteceu vira
+        // critério, antes de o executor repeti-lo.
+        format!(
+            "Se a base de problemas do projeto ({}) estiver anexada, escreva critérios de aceite que \
+             cubram os problemas que se aplicam a esta tarefa.",
+            caminho_dos_problemas(&tarefa.projeto)
+        ),
     ]
     .join("\n")
 }

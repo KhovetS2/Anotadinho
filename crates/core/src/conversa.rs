@@ -470,6 +470,16 @@ mod tests {
     }
 
     #[test]
+    fn com_no_contexto_acrescenta_uma_vez_e_mantem_o_resto() {
+        let md = montar_pagina("T", None, &["pages/a.md".to_string()]);
+        let com = com_no_contexto(&md, "pages/b.md");
+        let (fm, _) = crate::markdown::MarkdownCodec::split_frontmatter_text(&com);
+        assert_eq!(contexto_do_frontmatter(fm), vec!["pages/a.md", "pages/b.md"]);
+        assert!(com.contains("type: conversa"));
+        assert_eq!(com_no_contexto(&com, "pages/b.md"), com, "não repete");
+    }
+
+    #[test]
     fn nome_de_arquivo_e_ordenavel_e_seguro() {
         let n = nome_de_arquivo("2026-08-22 15:04");
         assert_eq!(n, "conversa-2026-08-22-15-04");
@@ -621,6 +631,25 @@ pub fn reescrever_sessao(conteudo: &str, sessao: Option<&str>) -> String {
         linhas.insert(fim, format!("sessao: {id}"));
     }
     format!("{}\n{corpo}", linhas.join("\n"))
+}
+
+/// A conversa com mais uma página no `contexto:` (ciclo 523), se ainda
+/// não está lá. Frontmatter ilegível devolve a página como estava: um
+/// anexo a menos é melhor que uma conversa estragada.
+pub fn com_no_contexto(pagina: &str, caminho: &str) -> String {
+    let Ok((mut fm, _)) = crate::markdown::MarkdownCodec::split_frontmatter(pagina) else {
+        return pagina.to_string();
+    };
+    let mut lista = contexto_do_frontmatter(crate::markdown::MarkdownCodec::split_frontmatter_text(pagina).0);
+    if lista.iter().any(|c| c == caminho) {
+        return pagina.to_string();
+    }
+    lista.push(caminho.to_string());
+    fm.extra.insert(
+        "contexto".into(),
+        serde_yaml::Value::Sequence(lista.into_iter().map(serde_yaml::Value::String).collect()),
+    );
+    crate::markdown::MarkdownCodec::substituir_frontmatter(pagina, &fm).unwrap_or_else(|_| pagina.to_string())
 }
 
 /// Lê a lista de `contexto:` do frontmatter.

@@ -715,6 +715,12 @@ pub(crate) fn contextos_da_execucao(
             v.push(Contexto { nome: caminho.to_string(), conteudo });
         }
     }
+    // A base de problemas (ciclo 523), quando existe: o executor lê o erro
+    // que já aconteceu antes de repeti-lo, e o revisor não o anota de novo.
+    let problemas = projeto::caminho_dos_problemas(&p.slug);
+    if let Some(conteudo) = ler(&problemas) {
+        v.push(Contexto { nome: problemas, conteudo });
+    }
     v
 }
 
@@ -727,13 +733,24 @@ pub fn handle_conversa_da_tarefa(vault_path: String, caminho: String) -> Result<
     let texto = handle_read_page(vault_path.clone(), caminho.clone())?;
     let tarefa = Tarefa::ler(&caminho, &texto).ok_or_else(|| format!("{caminho} não é uma tarefa"))?;
     let conversa = projeto::caminho_da_conversa_da_tarefa(&tarefa.projeto, tarefa.numero);
-    if Path::new(&vault_path).join(&conversa).exists() {
-        return Ok(conversa);
+    let pagina = match handle_read_page(vault_path.clone(), conversa.clone()) {
+        Ok(atual) => atual,
+        Err(_) => {
+            let p_caminho = projeto::caminho_do_projeto(&tarefa.projeto);
+            let p_texto = handle_read_page(vault_path.clone(), p_caminho.clone())?;
+            let p = Projeto::ler(&p_caminho, &p_texto).ok_or_else(|| format!("{p_caminho} não é um projeto"))?;
+            pagina_da_conversa(&p, &tarefa)
+        }
+    };
+    // A base de problemas no detalhe (ciclo 523): a conversa da tarefa a
+    // anexa quando ela existe — também a conversa de antes da base, que
+    // nasceu sem. Anexo que não abre vira aviso na tela, então só entra o
+    // que existe.
+    let problemas = projeto::caminho_dos_problemas(&tarefa.projeto);
+    let com = if Path::new(&vault_path).join(&problemas).exists() { conversa::com_no_contexto(&pagina, &problemas) } else { pagina.clone() };
+    if com != pagina || !Path::new(&vault_path).join(&conversa).exists() {
+        handle_write_page(vault_path, conversa.clone(), com)?;
     }
-    let p_caminho = projeto::caminho_do_projeto(&tarefa.projeto);
-    let p_texto = handle_read_page(vault_path.clone(), p_caminho.clone())?;
-    let p = Projeto::ler(&p_caminho, &p_texto).ok_or_else(|| format!("{p_caminho} não é um projeto"))?;
-    handle_write_page(vault_path, conversa.clone(), pagina_da_conversa(&p, &tarefa))?;
     Ok(conversa)
 }
 
@@ -1087,6 +1104,65 @@ mod testes {
         let t = tarefa(&v2, &c2[0]);
         assert_eq!((t.rodada, t.revisao_ia.as_deref()), (1, None), "a rodada fica de histórico");
         assert_ne!(t.revisao_ia.as_deref(), Some(estado::AJUSTES));
+    }
+
+    // ── A base de problemas (ciclo 523) ──────────────────────────────
+
+    #[test]
+    fn o_problema_que_o_revisor_anota_vira_proposta_e_depois_contexto() {
+        let (_g, _r, v, _repo, c) = montar_com_git(2, |cfg| {
+            com_revisor(cfg);
+            cfg.concorrencia = 2;
+        });
+        let alvo = projeto::caminho_dos_problemas("saas");
+        let revisar = |i: usize, resposta: &str| {
+            pedir_execucao(&v, &c[i]);
+            let exe = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+            responder(&v, &exe.conversa, "RESULTADO: concluida");
+            let rev = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+            responder(&v, &rev.conversa, resposta);
+        };
+        revisar(0, "## Ajustes\n- x\n\n## Problemas\n\n- **Validar a entrada**: somou texto — converta antes\n\nVEREDITO: ajustes");
+        let pendentes = |v: &str| crate::handle_listar_propostas(v.into()).unwrap().into_iter().filter(|p| p.alvo == alvo).collect::<Vec<_>>();
+        let ps = pendentes(&v);
+        assert_eq!(ps.len(), 1);
+        assert_eq!(ps[0].autor, "revisor");
+        assert!(ps[0].conteudo.contains("type: problemas") && ps[0].conteudo.contains("## Validar a entrada"), "{}", ps[0].conteudo);
+        assert!(ps[0].conteudo.contains(&format!("_Visto em {}, 2026-10-21 10:05._", c[0])));
+        assert!(!Path::new(&v).join(&alvo).exists(), "proposta, nunca gravado direto");
+        assert!(tarefa(&v, &c[0]).comentarios.last().unwrap().texto.contains("Propôs 1 problema(s)"));
+
+        // A segunda proposta parte da pendente: aplicar só ela não perde a primeira.
+        revisar(1, "## Problemas\n- **validar a entrada.**: repetido\n- **Teste do vazio**: faltou\nVEREDITO: aprovada");
+        let ultima = pendentes(&v).into_iter().max_by(|a, b| a.quando.cmp(&b.quando).then(a.id.cmp(&b.id))).unwrap();
+        assert_eq!(anotadinho_core::problemas::titulos(&ultima.conteudo), ["Validar a entrada", "Teste do vazio"]);
+        crate::handle_aplicar_proposta(v.clone(), ultima.id.clone()).unwrap();
+
+        // Com a base no disco: entra na execução e no detalhe.
+        let conversa = handle_conversa_da_tarefa(v.clone(), c[0].clone()).unwrap();
+        let pagina = handle_read_page(v.clone(), conversa).unwrap();
+        let (fm, _) = MarkdownCodec::split_frontmatter_text(&pagina);
+        assert!(conversa::contexto_do_frontmatter(fm).contains(&alvo), "a conversa da tarefa (o detalhe) anexa a base: {fm}");
+        let t = tarefa(&v, &c[1]);
+        let p = handle_estado_do_projeto(v.clone(), "saas".into()).unwrap().projeto;
+        let ctx = contextos_da_execucao(&v, &p, &t, "", &[]);
+        assert!(ctx.iter().any(|x| x.nome == alvo && x.conteudo.contains("Teste do vazio")), "a execução anexa a base");
+    }
+
+    #[test]
+    fn propor_recusado_nao_derruba_o_fechamento() {
+        let (_g, _r, v, _repo, c) = montar_com_git(1, com_revisor);
+        let mut perm = crate::handle_ler_permissoes(v.clone()).unwrap();
+        perm.nunca.push(projeto::caminho_dos_problemas("saas"));
+        crate::handle_gravar_permissoes(v.clone(), perm).unwrap();
+        pedir_execucao(&v, &c[0]);
+        let exe = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        responder(&v, &exe.conversa, "RESULTADO: concluida");
+        let rev = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        let fim = responder(&v, &rev.conversa, "## Problemas\n- **X**: y\nVEREDITO: aprovada");
+        assert_eq!(fim, Some(EtapaTarefa::Revisao));
+        let ultimo = tarefa(&v, &c[0]).comentarios.last().unwrap().texto.clone();
+        assert!(ultimo.contains("aprovada") && ultimo.contains("Não consegui propor"), "{ultimo}");
     }
 
     #[test]

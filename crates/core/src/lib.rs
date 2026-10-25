@@ -59,6 +59,8 @@ pub mod prompt_padrao;
 pub mod projeto;
 /// O revisor automático das tarefas (ciclo 522).
 pub mod revisor;
+/// A base de problemas de um projeto (ciclo 523).
+pub mod problemas;
 // Sprints e o plano de projeto (ciclo 469).
 pub mod sprint;
 pub mod plano;

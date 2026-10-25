@@ -142,6 +142,14 @@ def main():
             conversa = os.path.join(vault, "pages/projetos/meu-primeiro-projeto/conversas/revisao-001.md")
             conferir(os.path.exists(conversa) and open(conversa).read().count("VEREDITO:") >= 4,
                      "a conversa do revisor tem as duas revisões")
+            # A base de problemas (523): proposta, nunca gravada direto.
+            pasta = os.path.join(vault, ".anotadinho", "propostas")
+            props = [json.load(open(os.path.join(pasta, x))) for x in os.listdir(pasta)] if os.path.isdir(pasta) else []
+            base = [x for x in props if x.get("alvo", "").endswith("meu-primeiro-projeto/problemas.md")]
+            conferir(len(base) == 1 and "## Caso vazio sem teste" in base[0]["conteudo"] and base[0]["autor"] == "revisor",
+                     "o problema que o revisor anotou virou proposta pra base")
+            conferir(not os.path.exists(os.path.join(vault, "pages/projetos/meu-primeiro-projeto/problemas.md")),
+                     "a base não foi gravada sem a pessoa aprovar")
         else:
             esperar_status("revisao")
         tela = esperar_tela(s, "001-esqueleto-do-app → Revisão")

@@ -277,6 +277,13 @@ pub(crate) fn run_projeto(vault: &str, json: bool, action: ProjetoCommand) -> Re
                     None => "(nenhum — vai direto pra pessoa)".to_string(),
                 }
             );
+            // A base de problemas (ciclo 523): o agente que lê isto sabe que
+            // ela existe e que vale ler antes de detalhar ou executar.
+            let base = anotadinho_core::projeto::caminho_dos_problemas(&slug);
+            match anotadinho_ipc::handle_read_page(vault.to_string(), base.clone()) {
+                Ok(t) => println!("problemas: {} na base ({base})", anotadinho_core::problemas::titulos(&t).len()),
+                Err(_) => println!("problemas: a base ainda não existe ({base})"),
+            }
             println!("\nsprints:");
             if e.sprints.is_empty() {
                 println!("  (nenhuma — o quadro mostra todas as tarefas)");

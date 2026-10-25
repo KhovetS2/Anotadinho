@@ -189,6 +189,14 @@ pub fn pergunta_de_revisar(tarefa: &Tarefa, m: &Material) -> String {
             "2. Se precisa de ajuste, uma seção `{SECAO_AJUSTES}` com uma lista: cada item diz ONDE (arquivo, função) \
              e O QUE mudar, concreto o bastante pra um modelo menor seguir sem adivinhar."
         ),
+        // A base de problemas (ciclo 523): só o que generaliza, senão a
+        // base vira o diário das tarefas e ninguém mais a lê.
+        format!(
+            "3. Opcional: se o executor cometeu um erro que tende a se REPETIR em outras tarefas deste projeto, \
+             uma seção `{}` com uma lista `- **título curto**: o que aconteceu — como evitar`. Só o que generaliza; \
+             nada específico desta tarefa, e nada que a base de problemas anexada já tenha.",
+            crate::problemas::SECAO
+        ),
         String::new(),
         format!(
             "A ÚLTIMA linha da resposta tem que ser `{MARCA_DE_VEREDITO} aprovada` ou `{MARCA_DE_VEREDITO} ajustes`. \
@@ -264,7 +272,7 @@ mod testes {
         .unwrap();
         let m = Material { rodada: 2, teto: 3, verificacao: Some("npm test"), arquivos: vec!["M  login.js".into()], diff: "+x", aviso: None };
         let p = pergunta_de_revisar(&t, &m);
-        for esperado in ["revisão 2 de no máximo 3", "não edite", "npm test", "M  login.js", "```diff\n+x\n```", SECAO_AJUSTES, "VEREDITO: aprovada"] {
+        for esperado in ["revisão 2 de no máximo 3", "não edite", "npm test", "M  login.js", "```diff\n+x\n```", SECAO_AJUSTES, crate::problemas::SECAO, "VEREDITO: aprovada"] {
             assert!(p.contains(esperado), "falta {esperado:?} em:\n{p}");
         }
     }

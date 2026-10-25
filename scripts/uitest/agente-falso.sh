@@ -83,7 +83,7 @@ case "$1" in
         printf 'Os critérios estão cumpridos.\n\nVEREDITO: aprovada\n'
         ;;
       *)
-        printf 'Falta tratar a entrada vazia.\n\n## Ajustes\n\n- `soma.js`: soma() sem argumentos deve dar 0\n\nVEREDITO: ajustes\n'
+        printf 'Falta tratar a entrada vazia.\n\n## Ajustes\n\n- `soma.js`: soma() sem argumentos deve dar 0\n\n## Problemas\n\n- **Caso vazio sem teste**: o executor não testa a entrada vazia — ponha o caso vazio nos critérios\n\nVEREDITO: ajustes\n'
         ;;
     esac
     exit 0

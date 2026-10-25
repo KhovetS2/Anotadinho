@@ -113,7 +113,20 @@ pub(crate) fn fechar_revisao(vault_path: &str, caminho: &str, fim: FimDaTarefa, 
     let teto = cfg.rodadas_de_revisao.max(1);
     let quem = cfg.nome_do_revisor().unwrap_or("revisor");
     let cabeca = format!("Revisão {rodada}/{teto} do agente ({quem})");
-    let comentario = |t: &str| anotadinho_core::detalhes::acrescentar_comentario(&texto, quando, t);
+    // Os problemas que o revisor anotou viram proposta pra base (ciclo
+    // 523), seja qual for o veredito: um erro corrigido na rodada seguinte
+    // ainda é um erro que o executor tende a repetir.
+    let nota = match &fim {
+        FimDaTarefa::Respondeu(r) => propor_problemas(vault_path, &tarefa, r, quando),
+        _ => None,
+    };
+    let comentario = |t: &str| {
+        let t = match &nota {
+            Some(n) => format!("{t}\n{n}"),
+            None => t.to_string(),
+        };
+        anotadinho_core::detalhes::acrescentar_comentario(&texto, quando, &t)
+    };
 
     match fim {
         FimDaTarefa::Respondeu(resposta) => match revisor::ler_veredito(&resposta) {
@@ -155,6 +168,49 @@ pub(crate) fn fechar_revisao(vault_path: &str, caminho: &str, fim: FimDaTarefa, 
             fechar_no_humano(vault_path, &tarefa, &c, estado::FALHOU, "", Some(tarefa.rodada))
         }
     }
+}
+
+/// Propõe os problemas que o revisor anotou na base do projeto (ciclo
+/// 523). Devolve o que dizer no comentário: quantos foram propostos, ou
+/// por que não deu — nunca derruba o fechamento.
+fn propor_problemas(vault_path: &str, tarefa: &Tarefa, resposta: &str, quando: &str) -> Option<String> {
+    use anotadinho_core::problemas;
+    let novos = problemas::ler(resposta);
+    if novos.is_empty() {
+        return None;
+    }
+    let alvo = projeto::caminho_dos_problemas(&tarefa.projeto);
+    // A proposta PENDENTE pra mesma página é a base desta: aplicar a nova
+    // por cima de uma página que ainda não tem a anterior apagaria o que
+    // a anterior trouxe.
+    let pendente = crate::handle_listar_propostas(vault_path.to_string())
+        .ok()
+        .and_then(|ps| ps.into_iter().filter(|p| p.alvo == alvo).max_by(|a, b| a.quando.cmp(&b.quando).then(a.id.cmp(&b.id))))
+        .map(|p| p.conteudo);
+    let base = pendente.or_else(|| handle_read_page(vault_path.to_string(), alvo.clone()).ok()).unwrap_or_else(|| {
+        let caminho = projeto::caminho_do_projeto(&tarefa.projeto);
+        let titulo = handle_read_page(vault_path.to_string(), caminho.clone())
+            .ok()
+            .and_then(|t| Projeto::ler(&caminho, &t))
+            .map(|p| p.titulo)
+            .unwrap_or_else(|| tarefa.projeto.clone());
+        problemas::pagina_nova(&tarefa.projeto, &titulo)
+    });
+    let novo = problemas::acrescentar(&base, &novos, &tarefa.caminho, quando)?;
+    let n = problemas::titulos(&novo).len().saturating_sub(problemas::titulos(&base).len());
+    let p = crate::projeto::proposta_nova(
+        vault_path,
+        "revisor",
+        alvo.clone(),
+        novo,
+        format!("problemas vistos na revisão de {}", tarefa.caminho),
+        quando.to_string(),
+        None,
+    );
+    Some(match crate::handle_propor(vault_path.to_string(), p) {
+        Ok(_) => format!("Propôs {n} problema(s) pra base do projeto ({alvo}): aprove na fila de propostas."),
+        Err(e) => format!("Não consegui propor os problemas pra base ({alvo}): {e}"),
+    })
 }
 
 /// Fim do laço: a tarefa vai pra `revisao`, a da pessoa. `aviso`, quando
