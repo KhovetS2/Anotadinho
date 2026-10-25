@@ -504,9 +504,9 @@ pub enum AlvoDoDetalhe {
     NovaSprint {
         slug: String,
     },
-    /// O repositório e a verificação do projeto (ciclo 519). A `base` é a
-    /// config de quando abriu: a pausa e a concorrência não estão no
-    /// formulário e voltam como estavam.
+    /// O repositório, a verificação e os papéis do projeto (ciclos 519 e
+    /// 525). A `base` é a config de quando abriu: a pausa e a concorrência
+    /// não estão no formulário e voltam como estavam.
     ConfigDoProjeto {
         slug: String,
         base: anotadinho_core::projeto::ConfigProjeto,
@@ -1265,6 +1265,9 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         "mudancas" => e.pedidos.push(Pedido::MudancasDaTarefa(caminho)),
                         "verificacao" => e.pedidos.push(Pedido::VerificacaoDaTarefa(caminho)),
                         "pagina" => e.pedidos.push(Pedido::AbrirPagina(caminho)),
+                        // A linha do estado da revisão (ciclo 525) só informa:
+                        // Enter nela não pode fechar os detalhes.
+                        "info" => e.modal = Some(Modal::Escolha { titulo, lista, acao }),
                         // O comentário INTEIRO (ciclo 503): a lista só cabe a
                         // primeira linha, e a janela mostra o texto todo. Esc
                         // volta pros detalhes, no mesmo item.
@@ -1361,6 +1364,8 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 },
                 AcaoDaEscolha::Mostrar => {}
                 AcaoDaEscolha::Agentes => e.pedidos.push(Pedido::AbrirPagina(chave)),
+                // O resumo do topo (ciclo 525) não abre nada: o modal fica.
+                AcaoDaEscolha::Execucoes if chave.is_empty() => e.modal = Some(Modal::Escolha { titulo, lista, acao }),
                 AcaoDaEscolha::Execucoes => e.pedidos.push(Pedido::AbrirPagina(chave)),
                 AcaoDaEscolha::Transcluir => super::markdown::inserir_trecho(e, &format!("![[{chave}]]")),
                 // Enter liga/desliga o gatilho; a linha de "nenhum" cria.
@@ -1627,7 +1632,8 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                 R::Mudou if matches!(alvo, AlvoDoDetalhe::NovaSprint { .. }) => {}
                 R::Botao("salvar") if matches!(alvo, AlvoDoDetalhe::ConfigDoProjeto { .. }) => {
                     let AlvoDoDetalhe::ConfigDoProjeto { slug, base } = &alvo else { unreachable!() };
-                    match config_do_formulario(base, &form) {
+                    let padrao = e.preferencias.agente.clone().unwrap_or_default().migrado();
+                    match config_do_formulario(base, &form, &e.preferencias.agentes, &padrao) {
                         Ok(config) => {
                             e.pedidos.push(Pedido::GravarConfigDoProjeto { slug: slug.clone(), config });
                             return;
@@ -2103,10 +2109,17 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
             let max = linhas.len().saturating_sub(dentro.height as usize);
             f.render_widget(Paragraph::new(linhas).scroll(((*rolagem).min(max) as u16, 0)), dentro);
         }
-        Modal::Detalhe { titulo, form, .. } => {
-            let linhas = form.linhas(62, t);
+        Modal::Detalhe { titulo, form, alvo } => {
+            // A config do projeto cresce com a tela (ciclo 525): a dica do
+            // executor e do revisor é a lista dos nomes que valem, e em 66
+            // colunas ela cortava no segundo nome.
+            let largura = match alvo {
+                AlvoDoDetalhe::ConfigDoProjeto { .. } => tela.width.saturating_sub(4).clamp(66, 120),
+                _ => 66,
+            };
+            let linhas = form.linhas(largura as usize - 4, t);
             let altura = (linhas.len() as u16 + 2).min(tela.height.saturating_sub(2));
-            let area = componentes::area_do_modal(tela, 66, altura);
+            let area = componentes::area_do_modal(tela, largura, altura);
             let rodape = if form.editando.is_some() { "Enter/Esc confirmar" } else { "j k · Enter editar · o item · dd · ~ marcar · Esc fechar" };
             let dentro = componentes::desenhar_modal(f, area, titulo, rodape, t);
             let cursor = form.linha_do_cursor();
@@ -2588,13 +2601,71 @@ pub fn abrir_config_do_projeto(e: &mut Estado, slug: &str, config: &anotadinho_c
         C::novo("prazo", "Prazo (seg.)", Valor::Texto(config.prazo_da_verificacao.to_string())),
         C::novo("branch", "Branch por tarefa", Valor::Booleano(config.branch_por_tarefa)),
         C::novo("commit", "Commitar ao aceitar (revisão → feita)", Valor::Booleano(config.commitar_ao_aceitar)),
+        // Os papéis (ciclo 525): o NOME do agente, como a config guarda. A
+        // dica diz quais existem — errar uma letra é o erro provável, e o
+        // laço só o acusaria na hora de rodar.
+        C::novo("executor", "Executor", Valor::Texto(config.executor.clone().unwrap_or_default()))
+            .com_dica(format!("vazio: o agente das conversas · {}", nomes_dos_agentes(e, false).join(", "))),
+        C::novo("revisor", "Revisor", Valor::Texto(config.revisor.clone().unwrap_or_default()))
+            .com_dica(format!("vazio: nenhum · {}", nomes_dos_agentes(e, true).join(", "))),
+        C::novo("rodadas", "Rodadas", Valor::Texto(config.rodadas_de_revisao.to_string()))
+            .com_dica(format!("quantas vezes o revisor devolve (vazio: {})", anotadinho_core::projeto::RODADAS_PADRAO)),
     ]);
     form.botoes.push(("salvar", "Salvar".into()));
     e.modal = Some(Modal::Detalhe {
-        titulo: "Repositório e verificação".into(),
+        titulo: "Repositório, verificação e papéis".into(),
         form,
         alvo: AlvoDoDetalhe::ConfigDoProjeto { slug: slug.to_string(), base: config.clone() },
     });
+}
+
+/// Os nomes que o executor e o revisor aceitam (ciclo 525): os agentes
+/// que a pessoa criou e os presets, sem repetir — a mesma lista que o
+/// `agente::escolher` procura. Os dela primeiro (é o júnior que ela
+/// montou); pro revisor, os que só leem: a dica corta no fim quando a
+/// tela é estreita, e o que corta é o menos provável.
+fn nomes_dos_agentes(e: &Estado, revisor: bool) -> Vec<String> {
+    let mut todos: Vec<&anotadinho_core::agente::Adaptador> = e.preferencias.agentes.iter().collect();
+    let presets = anotadinho_core::agente::Adaptador::presets();
+    todos.extend(presets.iter());
+    if revisor {
+        todos.sort_by_key(|a| !a.so_le());
+    }
+    let mut nomes: Vec<String> = Vec::new();
+    for a in todos {
+        if !nomes.contains(&a.nome) {
+            nomes.push(a.nome.clone());
+        }
+    }
+    nomes
+}
+
+/// O nome de um papel, conferido pela regra do laço (`agente::escolher`):
+/// um nome que ele não acharia é recusado AQUI, com o formulário aberto, e
+/// não quando a tarefa já está reservada esperando um agente que não há.
+fn papel_do_formulario(
+    form: &crate::componentes::Formulario,
+    chave: &str,
+    rotulo: &str,
+    opcoes: &[anotadinho_core::agente::Adaptador],
+    padrao: &anotadinho_core::agente::Adaptador,
+) -> Result<Option<String>, String> {
+    let nome = form.texto(chave).trim().to_string();
+    if nome.is_empty() {
+        return Ok(None);
+    }
+    match anotadinho_core::agente::escolher(Some(&nome), opcoes, padrao) {
+        Ok(_) => Ok(Some(nome)),
+        Err(_) => {
+            let mut existem: Vec<String> = anotadinho_core::agente::Adaptador::presets().into_iter().map(|a| a.nome).collect();
+            for a in opcoes {
+                if !existem.contains(&a.nome) {
+                    existem.push(a.nome.clone());
+                }
+            }
+            Err(format!("{rotulo}: não há agente \"{nome}\" — há {}", existem.join(", ")))
+        }
+    }
 }
 
 /// A config do formulário, ou o que está errado nele. A pasta existir é o
@@ -2602,6 +2673,8 @@ pub fn abrir_config_do_projeto(e: &mut Estado, slug: &str, config: &anotadinho_c
 fn config_do_formulario(
     base: &anotadinho_core::projeto::ConfigProjeto,
     form: &crate::componentes::Formulario,
+    agentes: &[anotadinho_core::agente::Adaptador],
+    padrao: &anotadinho_core::agente::Adaptador,
 ) -> Result<anotadinho_core::projeto::ConfigProjeto, String> {
     let texto = |chave: &str| Some(form.texto(chave).trim().to_string()).filter(|t| !t.is_empty());
     let prazo = form.texto("prazo").trim().to_string();
@@ -2612,7 +2685,20 @@ fn config_do_formulario(
         _ if prazo.is_empty() => anotadinho_core::projeto::PRAZO_PADRAO_DA_VERIFICACAO,
         _ => return Err(format!("prazo: \"{prazo}\" não é um número de segundos maior que zero")),
     };
+    let executor = papel_do_formulario(form, "executor", "executor", agentes, padrao)?;
+    let revisor = papel_do_formulario(form, "revisor", "revisor", agentes, padrao)?;
+    // Zero rodadas seria um revisor que nunca pode devolver: o primeiro
+    // "ajustes" já esgotaria. Quem não quer revisão deixa o revisor vazio.
+    let rodadas = form.texto("rodadas").trim().to_string();
+    let rodadas_de_revisao = match rodadas.parse::<u32>() {
+        Ok(n) if n >= 1 => n,
+        _ if rodadas.is_empty() => anotadinho_core::projeto::RODADAS_PADRAO,
+        _ => return Err(format!("rodadas: \"{rodadas}\" não é um número maior que zero (sem revisão: revisor vazio)")),
+    };
     Ok(anotadinho_core::projeto::ConfigProjeto {
+        executor,
+        revisor,
+        rodadas_de_revisao,
         repositorio: texto("repositorio"),
         verificar: texto("verificar"),
         prazo_da_verificacao,
@@ -2699,7 +2785,17 @@ fn itens_de_execucoes(execucoes: &[anotadinho_core::execucao::Execucao], com_con
 /// dentro da pasta dele — a conversa geral e as das tarefas. É o mesmo
 /// recorte da aba Execuções da janela (`projeto_view.rs`), sobre o mesmo
 /// `execucoes.jsonl`.
-pub fn mostrar_execucoes_do_projeto(e: &mut Estado, execucoes: &[anotadinho_core::execucao::Execucao], slug: &str, titulo: &str) {
+///
+/// Com os `numeros` (ciclo 525), o topo resume por papel — executor,
+/// revisor, conversas — e a revisão: é a tela onde se pergunta se o
+/// júnior grátis com o revisor caro compensa.
+pub fn mostrar_execucoes_do_projeto(
+    e: &mut Estado,
+    execucoes: &[anotadinho_core::execucao::Execucao],
+    slug: &str,
+    titulo: &str,
+    numeros: Option<&anotadinho_core::numeros::DoProjeto>,
+) {
     // A barra no fim: sem ela, o projeto `saas` levaria as execuções de
     // um `saas-novo`.
     let pasta = format!("{}/", anotadinho_core::projeto::pasta_do_projeto(slug));
@@ -2708,11 +2804,60 @@ pub fn mostrar_execucoes_do_projeto(e: &mut Estado, execucoes: &[anotadinho_core
         e.aviso = Some(format!("nenhuma tarefa executada ainda em {titulo}"));
         return;
     }
-    e.modal = Some(Modal::Escolha {
-        titulo: format!("Execuções — {titulo}"),
-        lista: Lista::filtravel(itens_de_execucoes(&do_projeto, true)),
-        acao: AcaoDaEscolha::Execucoes,
-    });
+    let mut itens = numeros.map(itens_dos_numeros).unwrap_or_default();
+    let resumo = itens.len();
+    itens.extend(itens_de_execucoes(&do_projeto, true));
+    let mut lista = Lista::filtravel(itens);
+    // O cursor na primeira execução: o resumo se lê, não se abre.
+    lista.selecionado = resumo.min(lista.itens.len().saturating_sub(1));
+    e.modal = Some(Modal::Escolha { titulo: format!("Execuções — {titulo}"), lista, acao: AcaoDaEscolha::Execucoes });
+}
+
+/// O custo de um papel, honesto (ciclo 525, como o `projeto numeros` do
+/// CLI): só soma o que disse custo. Um modelo local não diz preço, e
+/// somar zero por ele fingiria que se sabe.
+pub fn custo_do_papel(p: &anotadinho_core::numeros::DoPapel) -> String {
+    match (p.uso.custo_usd, p.com_custo) {
+        (Some(c), k) if k == p.execucoes => format!("US$ {c:.2}"),
+        (Some(c), k) => format!("US$ {c:.2} em {k}/{}", p.execucoes),
+        (None, _) => "sem custo informado".to_string(),
+    }
+}
+
+/// As linhas do resumo no topo das execuções do projeto (ciclo 525). A
+/// chave vazia é o que o Enter ignora.
+fn itens_dos_numeros(n: &anotadinho_core::numeros::DoProjeto) -> Vec<Item> {
+    let mut itens = Vec::new();
+    for (nome, p) in [("executor", &n.executor), ("revisor", &n.revisor), ("conversas", &n.conversas)] {
+        if p.execucoes == 0 {
+            // O revisor que nunca rodou também é um número: diz que ninguém
+            // revisa. As conversas vazias não dizem nada.
+            if nome != "conversas" {
+                itens.push(Item::novo("Σ", format!("{nome}: nenhuma execução"), String::new()));
+            }
+            continue;
+        }
+        let falhas = if p.falhas == 0 { String::new() } else { format!(", {} falha(s)", p.falhas) };
+        let tokens = anotadinho_core::orcamento::humano((p.uso.entrada + p.uso.saida) as usize);
+        let rotulo = format!(
+            "{nome}: {} exec.{falhas} · {} · ~{tokens} tokens · {}",
+            p.execucoes,
+            anotadinho_core::conversa::duracao_legivel(p.segundos),
+            custo_do_papel(p)
+        );
+        itens.push(Item::novo("Σ", rotulo, String::new()).com_detalhe(p.agentes.join(", ")));
+    }
+    let r = &n.revisao;
+    let rotulo = if r.revisadas == 0 {
+        "revisão: nenhuma tarefa revisada pelo agente ainda".to_string()
+    } else {
+        format!(
+            "revisão: {} tarefa(s) · {} de primeira · {} depois de ajuste · {} no teto · {} sem veredito · {:.1} revisões/tarefa",
+            r.revisadas, r.de_primeira, r.depois_de_ajuste, r.esgotaram, r.falharam, r.media_de_revisoes
+        )
+    };
+    itens.push(Item::novo("Σ", rotulo, String::new()));
+    itens
 }
 
 fn nome_de_arquivo(path: &str) -> String {

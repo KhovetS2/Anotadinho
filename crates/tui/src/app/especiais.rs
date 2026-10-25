@@ -130,6 +130,12 @@ pub struct ProjetoNaTela {
     /// `AAAA-MM-DD` de quando foi lido (ciclo 478), pra o prazo vencido.
     /// Vazio nunca vence: é o que os testes sem relógio veem.
     pub hoje: String,
+    /// Quantos problemas a base do projeto tem (ciclo 525), ou `None`
+    /// quando a página ainda não existe — o `main` lê.
+    pub problemas: Option<usize>,
+    /// As conversas do revisor que existem no disco (ciclo 525): o item
+    /// "Abrir a conversa do revisor" só aparece quando há o que abrir.
+    pub conversas_do_revisor: Vec<String>,
 }
 
 /// Largura mínima de uma coluna do quadro do projeto, em caracteres: o
@@ -176,7 +182,18 @@ impl ProjetoNaTela {
         avisos: Vec<String>,
         sprints: Vec<anotadinho_core::sprint::Sprint>,
     ) -> Self {
-        Self { projeto, config, tarefas: Vec::new(), avisos, todas, sprints, filtro: Default::default(), hoje: String::new() }
+        Self {
+            projeto,
+            config,
+            tarefas: Vec::new(),
+            avisos,
+            todas,
+            sprints,
+            filtro: Default::default(),
+            hoje: String::new(),
+            problemas: None,
+            conversas_do_revisor: Vec::new(),
+        }
             .com_filtro(Default::default())
     }
 
@@ -708,6 +725,21 @@ pub fn menu_de_detalhes(e: &Estado, caminho: &str) -> Option<Modal> {
         _ => ("·", "não rodou"),
     };
     itens.push(Item::novo(marca, "Ver a última verificação", format!("verificacao\u{0}{c}")).com_detalhe(estado));
+    // A revisão pelo agente (ciclo 525): onde o laço está, e a conversa
+    // onde o revisor explicou — o comentário traz só os ajustes.
+    if let Some((marca, rotulo)) = revisao_legivel(t, p.config.rodadas_de_revisao) {
+        itens.push(Item::novo(marca, rotulo, format!("info\u{0}{c}")));
+    }
+    let conversa = anotadinho_core::projeto::caminho_da_conversa_da_revisao(&t.projeto, t.numero);
+    if p.conversas_do_revisor.contains(&conversa) {
+        itens.push(Item::novo("⌕", "Abrir a conversa do revisor", format!("pagina\u{0}{conversa}")));
+    }
+    // A base de problemas (ciclo 523) é do projeto, mas é aqui que se
+    // decide a tarefa: o erro que se repete está a um Enter.
+    if let Some(n) = p.problemas {
+        let base = anotadinho_core::projeto::caminho_dos_problemas(&t.projeto);
+        itens.push(Item::novo("⚑", format!("Base de problemas ({n})"), format!("pagina\u{0}{base}")));
+    }
     itens.push(Item::novo("▸", "Abrir a página da tarefa", format!("pagina\u{0}{c}")));
     Some(Modal::Escolha {
         titulo: format!("{:03} {}", t.numero, t.titulo),
@@ -937,6 +969,9 @@ pub fn barra_da_tarefa(e: &Estado, w: usize) -> Vec<Line<'static>> {
         Some("falhou") => l1.push(Span::styled(" ✗teste", Style::default().fg(tema.var("error")))),
         _ => {}
     }
+    if let Some((selo, cor)) = selo_da_revisao(&t, teto_do_projeto(e, &t.projeto), tema) {
+        l1.push(Span::styled(format!(" {selo}"), Style::default().fg(cor)));
+    }
     for d in t.etapa.proximas_para(Quem::Humano) {
         l1.push(Span::styled(format!("   → {}", d.label()), destaque));
     }
@@ -970,6 +1005,62 @@ fn cortar_linha(l: Line<'static>, w: usize) -> Line<'static> {
     Line::from(fora)
 }
 
+/// O selo do laço de revisão (ciclo 525), o mesmo no cartão e na faixa
+/// da tarefa. Durante o laço a tarefa fica em `executando` — sem o selo,
+/// "revisando" e "executando" eram o mesmo cartão azul, e a pessoa não
+/// via que o revisor tinha devolvido. Na revisão, como o revisor saiu: é
+/// o que a pessoa lê antes de decidir.
+///
+/// `teto` é o `rodadas_de_revisao` do projeto. A `rodada` da tarefa conta
+/// as revisões que já PEDIRAM ajuste, então a que roda agora é a próxima.
+pub fn selo_da_revisao(x: &anotadinho_core::projeto::Tarefa, teto: u32, tema: &Tema) -> Option<(String, Color)> {
+    use anotadinho_core::projeto::EtapaTarefa;
+    use anotadinho_core::revisor::estado;
+    let e = x.revisao_ia.as_deref()?;
+    match (x.etapa, e) {
+        (EtapaTarefa::Executando, estado::PENDENTE | estado::RODANDO) => {
+            Some((format!("⟳ revisão {}/{}", x.rodada + 1, teto.max(1)), tema.var("accent-purple")))
+        }
+        (EtapaTarefa::Executando, estado::AJUSTES | estado::REFAZENDO) => Some(("↺ ajustes".into(), tema.var("warning"))),
+        (EtapaTarefa::Revisao, estado::APROVADA) => Some(("✓rev".into(), tema.var("success"))),
+        (EtapaTarefa::Revisao, estado::ESGOTOU) => Some(("⚠teto".into(), tema.var("warning"))),
+        (EtapaTarefa::Revisao, estado::FALHOU) => Some(("?rev".into(), tema.var("error"))),
+        _ => None,
+    }
+}
+
+/// O estado da revisão pelo agente como se fala (ciclo 525), pros
+/// detalhes da tarefa. `None` quando o revisor nunca passou por ela.
+pub fn revisao_legivel(x: &anotadinho_core::projeto::Tarefa, teto: u32) -> Option<(&'static str, String)> {
+    use anotadinho_core::revisor::estado;
+    let teto = teto.max(1);
+    let ajustes = match x.rodada {
+        0 => String::new(),
+        1 => " · 1 ajuste pedido".to_string(),
+        n => format!(" · {n} ajustes pedidos"),
+    };
+    let (marca, o_que) = match x.revisao_ia.as_deref() {
+        Some(estado::PENDENTE) => ("⟳", format!("esperando a vez (revisão {}/{teto})", x.rodada + 1)),
+        Some(estado::RODANDO) => ("⟳", format!("revisando (revisão {}/{teto})", x.rodada + 1)),
+        Some(estado::AJUSTES) => ("↺", format!("pediu ajustes — o executor refaz (rodada {}/{teto})", x.rodada)),
+        Some(estado::REFAZENDO) => ("↺", format!("o executor está refazendo (rodada {}/{teto})", x.rodada)),
+        Some(estado::APROVADA) => ("✓", format!("aprovada{ajustes}")),
+        Some(estado::ESGOTOU) => ("⚠", format!("ainda pede ajustes, e as {teto} rodadas acabaram")),
+        Some(estado::FALHOU) => ("?", format!("sem veredito — o revisor não rodou ou não disse{ajustes}")),
+        Some(outro) => ("·", format!("{outro}{ajustes}")),
+        // A pessoa já moveu (o estado sai, a rodada fica de histórico).
+        None if x.rodada > 0 => ("·", ajustes.trim_start_matches(" · ").to_string()),
+        None => return None,
+    };
+    Some((marca, format!("Revisão pelo agente: {o_que}")))
+}
+
+/// O teto de rodadas do projeto da tarefa. Sem config gravada, o padrão:
+/// é o que o laço usa nesse caso.
+pub fn teto_do_projeto(e: &Estado, projeto: &str) -> u32 {
+    e.configs_dos_projetos.get(projeto).map(|c| c.rodadas_de_revisao).unwrap_or(anotadinho_core::projeto::RODADAS_PADRAO)
+}
+
 /// A linha de selos do cartão (ciclo 478): dependência, critérios, prazo,
 /// comentários, anexos e tags — o que a janela mostra em `.projeto__selos`.
 /// Cada pedaço com o seu estilo: o prazo vencido e a dependência
@@ -978,10 +1069,16 @@ fn selos_do_cartao(
     x: &anotadinho_core::projeto::Tarefa,
     hoje: &str,
     dependencia_pendente: bool,
+    teto: u32,
     tema: &Tema,
     base: Style,
 ) -> Vec<(String, Style)> {
     let mut fora: Vec<(String, Style)> = Vec::new();
+    // O laço de revisão primeiro (ciclo 525): é o que muda enquanto se
+    // olha, e a coluna corta os últimos selos.
+    if let Some((selo, cor)) = selo_da_revisao(x, teto, tema) {
+        fora.push((selo, base.fg(cor)));
+    }
     let atencao = base.fg(tema.var("warning"));
     let estilo_dep = if dependencia_pendente { atencao } else { base };
     let (feitos, total) = x.progresso();
@@ -2145,6 +2242,34 @@ fn linha_da_verificacao(c: &anotadinho_core::projeto::ConfigProjeto, tema: &Tema
     l
 }
 
+/// A linha dos papéis no cabeçalho do projeto (ciclo 525): quem executa
+/// e quem revisa. Nada quando é tudo padrão e sem revisor — é o projeto de
+/// sempre, e uma linha a mais empurraria o quadro sem dizer nada.
+fn linha_dos_papeis(c: &anotadinho_core::projeto::ConfigProjeto, tema: &Tema) -> Option<Vec<Span<'static>>> {
+    let apagado = Style::default().fg(tema.var("text-muted"));
+    let texto = Style::default().fg(tema.var("text-primary"));
+    let (executor, revisor) = (c.nome_do_executor(), c.nome_do_revisor());
+    if executor.is_none() && revisor.is_none() {
+        return None;
+    }
+    let mut l = vec![Span::styled(" executor ", apagado)];
+    match executor {
+        Some(n) => l.push(Span::styled(n.to_string(), texto)),
+        None => l.push(Span::styled("o padrão", apagado)),
+    }
+    match revisor {
+        Some(n) => {
+            l.push(Span::styled(" · revisor ", apagado));
+            l.push(Span::styled(n.to_string(), Style::default().fg(tema.var("accent-purple"))));
+            l.push(Span::styled(format!(" (até {} rodadas)", c.rodadas_de_revisao.max(1)), apagado));
+        }
+        // Sem revisor o trabalho vai direto pra pessoa: dito, pra não
+        // parecer que alguém revisa.
+        None => l.push(Span::styled(" · sem revisor — vai direto pra você", apagado)),
+    }
+    Some(l)
+}
+
 /// O relato da última verificação: o miolo da seção **Verificação** da
 /// página da tarefa (ciclo 517), sem o título. `None` quando ainda não
 /// rodou nenhuma.
@@ -2200,6 +2325,9 @@ fn tela_do_projeto(
         ])),
     }
     fora.push(caber(linha_da_verificacao(&p.config, tema), w));
+    if let Some(l) = linha_dos_papeis(&p.config, tema) {
+        fora.push(caber(l, w));
+    }
     let executando = p.tarefas.iter().filter(|x| x.etapa == EtapaTarefa::Executando).count();
     let fila = if p.config.pausado { "pausada" } else { "ativa" };
     let mut linha_fila = vec![Span::styled(" fila ", apagado), Span::styled(fila, if p.config.pausado { tema.estilo(Realce::BadgeAtencao) } else { texto })];
@@ -2381,7 +2509,7 @@ fn tela_do_projeto(
                     // dependência na frente quando há.
                     let pendente = !indice.pendentes(x).is_empty();
                     let base_selo = if aceso { corpo } else { apagado.bg(elevado) };
-                    let selos = selos_do_cartao(x, &p.hoje, pendente && !aceso, tema, base_selo);
+                    let selos = selos_do_cartao(x, &p.hoje, pendente && !aceso, p.config.rodadas_de_revisao, tema, base_selo);
                     linhas[base + 2].push(Span::styled(" ", Style::default().bg(superficie)));
                     let mut usado = 0usize;
                     let mut pedacos = vec![("  ".to_string(), base_selo)];

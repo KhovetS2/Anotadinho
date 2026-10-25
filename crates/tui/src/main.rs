@@ -216,6 +216,12 @@ fn gravar_preferencias(p: &Preferencias) -> Result<(), String> {
 /// disco.
 fn abrir(estado: &mut Estado, vault: &str, caminho: &str) {
     salvar_pendente(estado, vault);
+    // A faixa da tarefa precisa do teto de rodadas do projeto (ciclo 525).
+    if anotadinho_core::projeto::projeto_do_caminho(caminho).is_some() {
+        if let Ok(c) = anotadinho_ipc::handle_ler_projetos_cfg(vault.to_string()) {
+            estado.configs_dos_projetos = c;
+        }
+    }
     if let Some(i) = estado.paginas.iter().position(|p| p.path == caminho) {
         estado.pagina = i;
     }
@@ -1094,8 +1100,20 @@ fn carregar_especial(estado: &mut Estado, vault: &str, tipo: TipoEspecial) {
             let caminho = estado.paginas.get(estado.pagina).map(|p| p.path.clone()).unwrap_or_default();
             match anotadinho_core::projeto::projeto_do_caminho(&caminho) {
                 Some(slug) => anotadinho_ipc::handle_estado_do_projeto(vault.to_string(), slug.to_string()).map(|e| {
+                    estado.configs_dos_projetos.insert(slug.to_string(), e.config.clone());
                     let mut p = especiais::ProjetoNaTela::novo(e.projeto, e.config, e.tarefas, e.avisos, e.sprints);
                     p.hoje = agora_local().split(' ').next().unwrap_or("").to_string();
+                    // O que os detalhes oferecem abrir (ciclo 525): a base de
+                    // problemas e as conversas do revisor, só as que existem.
+                    p.problemas = anotadinho_ipc::handle_read_page(vault.to_string(), anotadinho_core::projeto::caminho_dos_problemas(slug))
+                        .ok()
+                        .map(|t| anotadinho_core::problemas::titulos(&t).len());
+                    p.conversas_do_revisor = p
+                        .todas
+                        .iter()
+                        .map(|t| anotadinho_core::projeto::caminho_da_conversa_da_revisao(slug, t.numero))
+                        .filter(|c| std::path::Path::new(vault).join(c).is_file())
+                        .collect();
                     especiais::Dados::Projeto(p)
                 }),
                 None => Err(format!("{caminho} não está dentro de {}", anotadinho_core::projeto::PASTA)),
@@ -1575,7 +1593,13 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                     }
                 }
                 Pedido::ListarExecucoesDoProjeto { slug, titulo } => match anotadinho_ipc::handle_listar_execucoes(vault.to_string()) {
-                    Ok(x) => app::modais::mostrar_execucoes_do_projeto(estado, &x, &slug, &titulo),
+                    // Os números por papel (ciclo 524) no topo: sem eles não
+                    // se sabe se o júnior grátis compensa o revisor caro. Se
+                    // não der pra montá-los, a lista vem assim mesmo.
+                    Ok(x) => {
+                        let numeros = anotadinho_ipc::handle_numeros_do_projeto(vault.to_string(), slug.clone()).ok();
+                        app::modais::mostrar_execucoes_do_projeto(estado, &x, &slug, &titulo, numeros.as_ref());
+                    }
                     Err(e) => estado.aviso = Some(e),
                 },
                 Pedido::ListarExecucoes => match anotadinho_ipc::handle_listar_execucoes(vault.to_string()) {

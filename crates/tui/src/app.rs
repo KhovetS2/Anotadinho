@@ -200,6 +200,10 @@ pub struct Estado {
     pub preferencias: Preferencias,
     /// Agora, `AAAA-MM-DD HH:MM`, quando o `main` diz.
     pub agora: Option<String>,
+    /// A config dos projetos (ciclo 525), lida pelo `main` ao abrir uma
+    /// página de projeto: a faixa da tarefa precisa do teto de rodadas pra
+    /// dizer "revisão 2/3", e ela é desenhada a cada quadro, sem IO.
+    pub configs_dos_projetos: anotadinho_core::projeto::ConfigProjetos,
     /// O que `yy`/`dd` guardaram pra `p` colar (ciclo 322).
     pub registro: Option<Registro>,
     /// Texto e cursor de antes de cada edição, pro `u` (ciclo 322).
@@ -310,6 +314,7 @@ impl Estado {
             pedidos: Vec::new(),
             preferencias: Preferencias::default(),
             agora: None,
+            configs_dos_projetos: Default::default(),
             desfazer: Vec::new(),
             refazer: Vec::new(),
         }
@@ -12979,7 +12984,7 @@ mod testes {
             execucao_em("pages/projetos/saas-novo/conversas/geral.md", "2026-10-24 11:00"),
             execucao_em("pages/projetos/saas/conversas/geral.md", "2026-10-24 12:00"),
         ];
-        modais::mostrar_execucoes_do_projeto(&mut e, &registro, "saas", "SaaS");
+        modais::mostrar_execucoes_do_projeto(&mut e, &registro, "saas", "SaaS", None);
         let chaves = match &e.modal {
             Some(Modal::Escolha { titulo, lista, acao: modais::AcaoDaEscolha::Execucoes }) => {
                 assert_eq!(titulo, "Execuções — SaaS");
@@ -12995,7 +13000,7 @@ mod testes {
         assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/projetos/saas/conversas/tarefa-001.md".into())]);
         // Sem execução no projeto, avisa em vez de abrir lista vazia.
         e.pedidos.clear();
-        modais::mostrar_execucoes_do_projeto(&mut e, &registro[..1], "saas", "SaaS");
+        modais::mostrar_execucoes_do_projeto(&mut e, &registro[..1], "saas", "SaaS", None);
         assert!(e.modal.is_none());
         assert!(e.aviso.as_deref().unwrap_or("").contains("nenhuma tarefa executada ainda"), "{:?}", e.aviso);
     }
@@ -13250,6 +13255,9 @@ mod testes {
         panic!("sem {trecho} na tela");
     }
 
+    /// Quantos campos o formulário do `o` tem antes do botão (ciclo 525).
+    const CAMPOS_DA_CONFIG: usize = 8;
+
     #[test]
     fn o_abre_o_formulario_do_repositorio_e_salvar_manda_a_config_inteira() {
         let base = anotadinho_core::projeto::ConfigProjeto { repositorio: Some("/repo".into()), pausado: true, concorrencia: 3, ..Default::default() };
@@ -13258,7 +13266,7 @@ mod testes {
         let tela = desenho(&mut e, 80, 30).join("\n");
         // O rótulo SEPARADO do valor: com rótulo maior que a coluna, saía
         // "Comando de verificaçãonpm test".
-        for esperado in ["Repositório e verificação", "Repositório   /repo", "Verificação   o comando, ex. npm test", "Prazo (seg.)  900", "Branch por tarefa", "Commitar ao aceitar", "Salvar"] {
+        for esperado in ["Repositório, verificação e papéis", "Repositório   /repo", "Verificação   o comando, ex. npm test", "Prazo (seg.)  900", "Branch por tarefa", "Commitar ao aceitar", "Salvar"] {
             assert!(tela.contains(esperado), "faltou {esperado}:\n{tela}");
         }
         // O comando, o prazo e os dois liga/desliga; o repositório fica.
@@ -13274,7 +13282,10 @@ mod testes {
         tecla(&mut e, " ");
         tecla(&mut e, "j");
         tecla(&mut e, " ");
-        tecla(&mut e, "j");
+        // Executor, revisor e rodadas (ciclo 525) ficam como vieram.
+        for _ in 0..4 {
+            tecla(&mut e, "j");
+        }
         tecla(&mut e, "Enter");
         assert_eq!(
             e.pedidos,
@@ -13305,13 +13316,13 @@ mod testes {
         // Salva e devolve o aviso, ANTES de outra tecla apagá-lo; o cursor
         // volta pro topo.
         let salvar = |e: &mut Estado| -> Option<String> {
-            for _ in 0..5 {
+            for _ in 0..CAMPOS_DA_CONFIG {
                 tecla(e, "j");
             }
             tecla(e, "Enter");
             let aviso = e.aviso.clone();
             if e.modal.is_some() {
-                for _ in 0..5 {
+                for _ in 0..CAMPOS_DA_CONFIG {
                     tecla(e, "k");
                 }
             }
@@ -13546,5 +13557,269 @@ mod testes {
         use anotadinho_core::projeto::EtapaTarefa;
         let a = especiais::aviso_de_mover(EtapaTarefa::Feita, "o commit falhou: git commit: \nhusky - pre-commit hook exited with code 1\n");
         assert_eq!(a, "não foi pra feita: o commit falhou: git commit: · husky - pre-commit hook exited with code 1");
+    }
+
+    // ── Os papéis e o laço de revisão na tela do projeto (ciclo 525) ──
+
+    /// Escreve `texto` no campo `i` do formulário aberto (o cursor no topo)
+    /// e volta pro topo.
+    fn escrever_no_campo(e: &mut Estado, i: usize, texto: &str) {
+        for _ in 0..i {
+            tecla(e, "j");
+        }
+        tecla(e, "c");
+        digitar(e, texto);
+        tecla(e, "Enter");
+        for _ in 0..i {
+            tecla(e, "k");
+        }
+    }
+
+    /// Do topo até o botão, Enter; devolve o aviso antes de outra tecla.
+    fn salvar_config(e: &mut Estado) -> Option<String> {
+        for _ in 0..CAMPOS_DA_CONFIG {
+            tecla(e, "j");
+        }
+        tecla(e, "Enter");
+        let aviso = e.aviso.clone();
+        if e.modal.is_some() {
+            for _ in 0..CAMPOS_DA_CONFIG {
+                tecla(e, "k");
+            }
+        }
+        aviso
+    }
+
+    fn mexer_no_projeto(e: &mut Estado, f: impl FnOnce(&mut especiais::ProjetoNaTela)) {
+        if let Some(especiais::Dados::Projeto(p)) = e.especial.as_mut().and_then(|t| t.dados.as_mut()) {
+            f(p);
+        }
+    }
+
+    #[test]
+    fn o_formulario_grava_executor_revisor_e_rodadas() {
+        let base = anotadinho_core::projeto::ConfigProjeto { repositorio: Some("/repo".into()), pausado: true, concorrencia: 3, ..Default::default() };
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "ideia", "")], base);
+        e.preferencias.agentes.push(anotadinho_core::agente::Adaptador { nome: "meu júnior".into(), ..Default::default() });
+        tecla(&mut e, "o");
+        let tela = desenho(&mut e, 150, 30).join("\n");
+        for esperado in ["Executor      vazio: o agente das conversas · meu júnior, Claude Code, Codex", "Revisor       vazio: nenhum · Claude Code (revisor), meu júnior", "Rodadas       3"] {
+            assert!(tela.contains(esperado), "faltou {esperado}:\n{tela}");
+        }
+        // O agente que a pessoa criou também vale, e não só os presets.
+        escrever_no_campo(&mut e, 5, "meu júnior");
+        escrever_no_campo(&mut e, 6, "Claude Code (revisor)");
+        escrever_no_campo(&mut e, 7, "5");
+        salvar_config(&mut e);
+        let gravada = match e.pedidos.as_slice() {
+            [Pedido::GravarConfigDoProjeto { slug, config }] => {
+                assert_eq!(slug, "saas");
+                assert_eq!((config.executor.as_deref(), config.revisor.as_deref(), config.rodadas_de_revisao), (Some("meu júnior"), Some("Claude Code (revisor)"), 5));
+                // O resto volta como estava.
+                assert_eq!((config.pausado, config.concorrencia, config.repositorio.as_deref()), (true, 3, Some("/repo")));
+                config.clone()
+            }
+            outro => panic!("{outro:?}"),
+        };
+        // Reaberto, o formulário mostra o que está gravado.
+        modais::abrir_config_do_projeto(&mut e, "saas", &gravada);
+        let tela = desenho(&mut e, 150, 30).join("\n");
+        assert!(tela.contains("Executor      meu júnior") && tela.contains("Revisor       Claude Code (revisor)") && tela.contains("Rodadas       5"), "{tela}");
+    }
+
+    #[test]
+    fn o_formulario_recusa_agente_que_nao_existe_e_rodada_zero() {
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "ideia", "")], Default::default());
+        tecla(&mut e, "o");
+        escrever_no_campo(&mut e, 6, "Claude Cod");
+        let aviso = salvar_config(&mut e);
+        assert!(e.pedidos.is_empty(), "{:?}", e.pedidos);
+        assert!(matches!(e.modal, Some(Modal::Detalhe { .. })), "o formulário fechou e perdeu o que foi escrito");
+        let aviso = aviso.unwrap_or_default();
+        assert!(aviso.contains("revisor: não há agente \"Claude Cod\"") && aviso.contains("aider + Ollama (local)"), "{aviso}");
+        // O executor também é conferido.
+        escrever_no_campo(&mut e, 6, "");
+        escrever_no_campo(&mut e, 5, "aidr");
+        let aviso = salvar_config(&mut e).unwrap_or_default();
+        assert!(e.pedidos.is_empty() && aviso.contains("executor: não há agente \"aidr\""), "{aviso}");
+        escrever_no_campo(&mut e, 5, "");
+        // Zero rodadas: um revisor que não pode devolver nunca.
+        for errado in ["0", "três"] {
+            escrever_no_campo(&mut e, 7, errado);
+            let aviso = salvar_config(&mut e).unwrap_or_default();
+            assert!(e.pedidos.is_empty() && aviso.contains(&format!("rodadas: \"{errado}\"")), "{errado}: {aviso}");
+        }
+        // Vazio é o padrão, e sem papéis a config fica como a de antes.
+        escrever_no_campo(&mut e, 7, "");
+        salvar_config(&mut e);
+        match e.pedidos.as_slice() {
+            [Pedido::GravarConfigDoProjeto { config, .. }] => assert_eq!(*config, anotadinho_core::projeto::ConfigProjeto::default()),
+            outro => panic!("{outro:?}"),
+        }
+    }
+
+    #[test]
+    fn o_cabecalho_diz_os_papeis_e_cabe_em_80_e_150_colunas() {
+        let com = anotadinho_core::projeto::ConfigProjeto {
+            executor: Some("aider + Ollama (local)".into()),
+            revisor: Some("Claude Code (revisor)".into()),
+            ..Default::default()
+        };
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "ideia", "")], com.clone());
+        e.preferencias.sidebar = false;
+        let tela = desenho(&mut e, 150, 40);
+        let l = linha_com(&tela, "executor");
+        assert!(l.contains("executor aider + Ollama (local) · revisor Claude Code (revisor) (até 3 rodadas)"), "{l}");
+        assert_eq!(cor_de(&mut e, 150, 40, "Claude Code (revisor)"), e.tema.var("accent-purple"));
+        let tela = desenho(&mut e, 80, 40);
+        let l = linha_com(&tela, "executor");
+        assert!(l.chars().count() <= 80, "{l}");
+        assert!(l.contains("executor aider + Ollama (local) · revisor"), "{l}");
+        assert!(l.contains("rodadas)") || l.contains('…'), "cortou sem marca: {l}");
+        // Só o executor: diz que ninguém revisa.
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "ideia", "")], anotadinho_core::projeto::ConfigProjeto { revisor: None, ..com });
+        let tela = desenho(&mut e, 150, 40);
+        assert!(linha_com(&tela, "executor").contains("executor aider + Ollama (local) · sem revisor"), "{tela:?}");
+        // Tudo padrão: nenhuma linha a mais.
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "ideia", "")], Default::default());
+        let tela = desenho(&mut e, 150, 40).join("\n");
+        assert!(!tela.contains("executor") && !tela.contains("revisor"), "{tela}");
+    }
+
+    #[test]
+    fn o_cartao_mostra_o_ponto_do_laco_de_revisao_na_cor_certa() {
+        let config = anotadinho_core::projeto::ConfigProjeto { revisor: Some("Claude Code (revisor)".into()), rodadas_de_revisao: 4, ..Default::default() };
+        let mut e = projeto_com_config(
+            vec![
+                tarefa_de_teste(1, "executando", "revisao_ia: rodando\nrodada: 1\n"),
+                tarefa_de_teste(2, "executando", "revisao_ia: refazendo\nrodada: 1\n"),
+                tarefa_de_teste(3, "revisao", "revisao_ia: aprovada\n"),
+                tarefa_de_teste(4, "revisao", "revisao_ia: esgotou\nrodada: 4\n"),
+                tarefa_de_teste(5, "revisao", "revisao_ia: falhou\n"),
+                // Sem revisão nenhuma: sem selo.
+                tarefa_de_teste(6, "revisao", ""),
+            ],
+            config,
+        );
+        e.preferencias.sidebar = false;
+        e.foco = Foco::Paginas;
+        let tela = desenho(&mut e, 220, 60).join("\n");
+        for esperado in ["⟳ revisão 2/4", "↺ ajustes", "✓rev", "⚠teto", "?rev"] {
+            assert_eq!(tela.matches(esperado).count(), 1, "{esperado} não está em um cartão só:\n{tela}");
+        }
+        assert_eq!(cor_de(&mut e, 220, 60, "⟳ revisão"), e.tema.var("accent-purple"));
+        assert_eq!(cor_de(&mut e, 220, 60, "↺ ajustes"), e.tema.var("warning"));
+        assert_eq!(cor_de(&mut e, 220, 60, "✓rev"), e.tema.var("success"));
+        assert_eq!(cor_de(&mut e, 220, 60, "⚠teto"), e.tema.var("warning"));
+        assert_eq!(cor_de(&mut e, 220, 60, "?rev"), e.tema.var("error"));
+    }
+
+    #[test]
+    fn o_selo_da_revisao_so_vale_na_etapa_do_laco() {
+        let e = Estado::novo(paginas(), analisar(""));
+        let selo = |etapa: &str, extra: &str| especiais::selo_da_revisao(&tarefa_de_teste(1, etapa, extra), 3, &e.tema).map(|(s, _)| s);
+        assert_eq!(selo("executando", "revisao_ia: pendente\n").as_deref(), Some("⟳ revisão 1/3"));
+        assert_eq!(selo("executando", "revisao_ia: ajustes\nrodada: 2\n").as_deref(), Some("↺ ajustes"));
+        // Um estado que sobrou fora da etapa do laço não vira selo: "✓rev"
+        // num cartão que voltou pra executar falaria de um código que vai
+        // mudar.
+        assert_eq!(selo("executar", "revisao_ia: aprovada\n"), None);
+        assert_eq!(selo("executando", "revisao_ia: aprovada\n"), None);
+        assert_eq!(selo("revisao", "rodada: 2\n"), None);
+    }
+
+    #[test]
+    fn a_faixa_da_tarefa_mostra_a_revisao_com_o_teto_do_projeto() {
+        let caminho = "pages/projetos/saas/tarefas/001-login.md";
+        let mut e = Estado::novo(vec![PageMeta { path: caminho.into(), title: "001-login".into(), section: "pages".into() }], analisar(""));
+        e.abrir_texto("---\ntitle: Login\ntype: tarefa\nprojeto: saas\nstatus: executando\nrevisao_ia: rodando\nrodada: 1\n---\n# Login\n", None);
+        // Sem config gravada, o padrão (o que o laço usa).
+        let tela = desenho(&mut e, 200, 20).join("\n");
+        assert!(tela.contains("⟳ revisão 2/3"), "{tela}");
+        e.configs_dos_projetos.insert("saas".into(), anotadinho_core::projeto::ConfigProjeto { rodadas_de_revisao: 5, ..Default::default() });
+        let tela = desenho(&mut e, 200, 20).join("\n");
+        assert!(tela.contains("⟳ revisão 2/5"), "{tela}");
+        assert_eq!(cor_de(&mut e, 200, 20, "⟳ revisão"), e.tema.var("accent-purple"));
+        e.abrir_texto("---\ntitle: Login\ntype: tarefa\nprojeto: saas\nstatus: revisao\nrevisao_ia: esgotou\nrodada: 5\n---\n# Login\n", None);
+        let tela = desenho(&mut e, 200, 20).join("\n");
+        assert!(tela.contains("⚠teto"), "{tela}");
+    }
+
+    #[test]
+    fn v_mostra_a_revisao_a_conversa_do_revisor_e_a_base_de_problemas() {
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "revisao", "revisao_ia: aprovada\nrodada: 1\n")], Default::default());
+        let conversa = anotadinho_core::projeto::caminho_da_conversa_da_revisao("saas", 1);
+        mexer_no_projeto(&mut e, |p| {
+            p.conversas_do_revisor = vec![conversa.clone()];
+            p.problemas = Some(2);
+        });
+        tecla(&mut e, "v");
+        let itens = itens_do_modal(&e);
+        assert!(itens.iter().any(|(i, r)| i == "✓" && r == "Revisão pelo agente: aprovada · 1 ajuste pedido"), "{itens:?}");
+        assert!(itens.iter().any(|(_, r)| r == "Base de problemas (2)"), "{itens:?}");
+        // A linha do estado só informa: Enter nela não fecha os detalhes.
+        descer_ate(&mut e, "Revisão pelo agente");
+        tecla(&mut e, "Enter");
+        assert!(e.pedidos.is_empty() && matches!(e.modal, Some(Modal::Escolha { .. })), "{:?}", e.pedidos);
+        e.modal = None;
+        tecla(&mut e, "v");
+        descer_ate(&mut e, "Abrir a conversa do revisor");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::AbrirPagina(conversa)));
+        tecla(&mut e, "v");
+        descer_ate(&mut e, "Base de problemas");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::AbrirPagina(anotadinho_core::projeto::caminho_dos_problemas("saas"))));
+        // Rodando, diz a rodada contra o teto.
+        let config = anotadinho_core::projeto::ConfigProjeto { rodadas_de_revisao: 4, ..Default::default() };
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "executando", "revisao_ia: rodando\nrodada: 2\n")], config);
+        tecla(&mut e, "v");
+        assert!(itens_do_modal(&e).iter().any(|(_, r)| r == "Revisão pelo agente: revisando (revisão 3/4)"), "{:?}", itens_do_modal(&e));
+    }
+
+    #[test]
+    fn sem_revisor_nem_base_os_detalhes_nao_oferecem_o_que_nao_existe() {
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "revisao", "")], Default::default());
+        tecla(&mut e, "v");
+        let itens = itens_do_modal(&e);
+        for ausente in ["Revisão pelo agente", "Abrir a conversa do revisor", "Base de problemas"] {
+            assert!(!itens.iter().any(|(_, r)| r.starts_with(ausente)), "{ausente}: {itens:?}");
+        }
+    }
+
+    #[test]
+    fn as_execucoes_do_projeto_resumem_os_papeis_no_topo() {
+        use anotadinho_core::numeros::{DaRevisao, DoPapel, DoProjeto};
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "ideia", "")], Default::default());
+        let registro = [execucao_em("pages/projetos/saas/conversas/tarefa-001.md", "2026-10-24 10:00")];
+        let uso = |entrada, saida, custo| anotadinho_core::agente::Uso { entrada, saida, custo_usd: custo };
+        let numeros = DoProjeto {
+            executor: DoPapel { execucoes: 4, falhas: 1, segundos: 300, uso: uso(10_000, 2_000, None), com_custo: 0, agentes: vec!["aider + Ollama (local)".into()] },
+            revisor: DoPapel { execucoes: 2, falhas: 0, segundos: 90, uso: uso(3_000, 500, Some(0.12)), com_custo: 1, agentes: vec!["Claude Code (revisor)".into()] },
+            conversas: DoPapel::default(),
+            revisao: DaRevisao { revisadas: 2, de_primeira: 1, depois_de_ajuste: 1, esgotaram: 0, falharam: 0, media_de_revisoes: 1.5 },
+        };
+        modais::mostrar_execucoes_do_projeto(&mut e, &registro, "saas", "SaaS", Some(&numeros));
+        let itens = itens_do_modal(&e);
+        assert_eq!(itens.len(), 4, "executor, revisor, revisão e a execução: {itens:?}");
+        assert_eq!(itens[0].1, "executor: 4 exec., 1 falha(s) · 5 min · ~12k tokens · sem custo informado");
+        // Só o que contou custo, e dito que é parcial.
+        assert_eq!(itens[1].1, "revisor: 2 exec. · 1 min · ~3,5k tokens · US$ 0.12 em 1/2");
+        assert!(itens[2].1.starts_with("revisão: 2 tarefa(s) · 1 de primeira · 1 depois de ajuste · 0 no teto · 0 sem veredito · 1.5 revisões/tarefa"), "{itens:?}");
+        let tela = desenho(&mut e, 200, 30).join("\n");
+        assert!(tela.contains("aider + Ollama (local)") && tela.contains("revisor: 2 exec."), "{tela}");
+        // O cursor começa na execução, e Enter abre a conversa dela.
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::AbrirPagina("pages/projetos/saas/conversas/tarefa-001.md".into())));
+        // No resumo, Enter não faz nada e a lista fica.
+        modais::mostrar_execucoes_do_projeto(&mut e, &registro, "saas", "SaaS", Some(&numeros));
+        tecla(&mut e, "ArrowUp");
+        tecla(&mut e, "Enter");
+        assert!(e.pedidos.is_empty() && matches!(e.modal, Some(Modal::Escolha { .. })), "{:?}", e.pedidos);
+        // O revisor que nunca rodou também aparece: ninguém revisa.
+        let sem = DoProjeto { revisor: DoPapel::default(), revisao: DaRevisao::default(), ..numeros };
+        modais::mostrar_execucoes_do_projeto(&mut e, &registro, "saas", "SaaS", Some(&sem));
+        let itens = itens_do_modal(&e);
+        assert!(itens.iter().any(|(_, r)| r == "revisor: nenhuma execução") && itens.iter().any(|(_, r)| r == "revisão: nenhuma tarefa revisada pelo agente ainda"), "{itens:?}");
     }
 }
