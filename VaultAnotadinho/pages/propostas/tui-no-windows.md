@@ -5,13 +5,13 @@ tags:
 - portabilidade
 type: proposta
 date: 2026-10-06
-status: em-revisao
+status: aprovada
 ---
 # Proposta de implementação — TUI no Windows
 
 {{ type: "fluxo" }}
 artefato: proposta
-etapa: em-revisao
+etapa: aprovada
 origem: pages/specs/tui-no-windows.md
 {{ /fluxo }}
 

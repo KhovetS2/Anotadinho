@@ -141,6 +141,7 @@ pela revisão.
 
 ## Relacionado
 
+- [[Como usar projetos]] — tarefas, fila e execução no repositório do código
 - [[Capacidades de agente]] — o que existe e os limites
 - [[Uso agêntico do Anotadinho no dia a dia]] — o que ainda falta
 - [[Guia do Agent OS]]

@@ -5,13 +5,13 @@ tags:
 - portabilidade
 type: proposta
 date: 2026-10-06
-status: em-revisao
+status: aprovada
 ---
 # Proposta de implementação — CLI junto do app instalado
 
 {{ type: "fluxo" }}
 artefato: proposta
-etapa: em-revisao
+etapa: aprovada
 origem: pages/specs/cli-junto-do-app.md
 {{ /fluxo }}
 

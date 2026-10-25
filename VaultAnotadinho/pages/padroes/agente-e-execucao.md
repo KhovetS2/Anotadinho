@@ -38,6 +38,25 @@ prompt, acompanhamento, ou o que ele pode alcançar.
    autoriza a escrita ali.
 10. **Timeout generoso (30 min) com botão de interromper.** Limite curto
    mata trabalho legítimo no meio.
+11. **A fila de tarefas é por nível, com reserva antes de iniciar.** O
+   que está em `executar` É a fila. A tarefa vira `executando` ANTES do
+   processo subir, e só se reserva o que cabe iniciar agora: tarefa
+   reservada sem processo segura o projeto inteiro. O app só grava etapa
+   que registra o que uma decisão humana causou (`executando`, `revisao`,
+   `bloqueada`). O agente não grava etapa nenhuma.
+12. **O repositório de um projeto é config, não página.** Ele fica em
+   `.anotadinho/projetos.json` e entra pelo `cwd` do adaptador, como
+   parâmetro. Uma nota que decidisse onde um agente com `acceptEdits`
+   escreve seria uma porta aberta.
+13. **Passo automático novo não ganha transição nova.** O que o app faz
+   sozinho entre o gatilho da pessoa e a decisão dela (verificar, revisar
+   pelo agente, devolver pro executor) acontece DENTRO de `executando`,
+   com o ponto num campo próprio (`revisao_ia`, `rodada`). Mover a tarefa
+   pra `executar` por conta seria o app puxar o gatilho que é da pessoa.
+14. **Quem roda cada papel é config, pelo nome.** Executor e revisor são
+   nomes de agentes das preferências, em `projetos.json`; nome que não
+   existe é erro que fecha a tarefa com o motivo, nunca outro agente no
+   lugar. O revisor é um perfil que só lê: quem conserta é o executor.
 
 ## Por que existe
 
@@ -52,3 +71,14 @@ prompt, acompanhamento, ou o que ele pode alcançar.
   de linha, e o shim `.cmd` do npm não a aceita como argumento.
 - **219** — a conta bateu o limite e a tela mostrou "Reading additional
   input from stdin...".
+- **457** — a fila por borda ("o que já vi") perdia o pedido feito com a
+  fila pausada. Por nível com reserva, o pedido espera e roda ao
+  retomar.
+- **459** — reservar sem vaga deixaria a tarefa em `executando` sem
+  agente nenhum. Por isso o frontend diz quantas vagas tem.
+- **462** — conferir as dependências comparando cada uma com todas as
+  tarefas era `O(n²)`: 76 → 143 µs por tarefa de 250 pra 2000.
+- **522** — o laço de revisão devolvia a tarefa pra `executar` com uma
+  transição nova do sistema, e o teste que guarda "só humano avança
+  etapa" reprovou. Ficar em `executando` manteve a regra sem exceção e
+  ainda segurou o branch da tarefa entre as rodadas.

@@ -10,12 +10,12 @@ tags:
 - ciclo
 ---
 
-# Ciclo 001 — Bootstrap do projeto Tauri + Yew com tema dark
-
 {{ type: "fluxo" }}
 artefato: execucao
 etapa: concluida
 {{ /fluxo }}
+
+# Ciclo 001 — Bootstrap do projeto Tauri + Yew com tema dark
 
 # Bootstrap do projeto Tauri + Yew com tema dark
 
