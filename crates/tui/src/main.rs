@@ -552,6 +552,39 @@ fn subir_agente(
     subiu
 }
 
+/// As tarefas que a thread de fechamento já fechou (ciclo 520): vault,
+/// conversa e o resultado. Sem isto o aviso "fechando a tarefa…" ficava
+/// na tela pra sempre, o erro do fechamento (um commit, a escrita da
+/// etapa) sumia calado, e o quadro só mudava na releitura de 3 s — que
+/// não roda enquanto a pessoa aperta tecla.
+type Fechada = (String, String, Result<Option<anotadinho_core::projeto::EtapaTarefa>, String>);
+static FECHADAS: std::sync::Mutex<Vec<Fechada>> = std::sync::Mutex::new(Vec::new());
+
+/// Colhe o que a thread de fechamento terminou: diz no aviso pra onde a
+/// tarefa foi (ou o erro) e relê a tela do projeto, se for ela a aberta.
+fn colher_fechadas(estado: &mut Estado, vault: &str) {
+    let prontas: Vec<Fechada> = match FECHADAS.lock() {
+        Ok(mut f) => std::mem::take(&mut *f),
+        Err(_) => return,
+    };
+    let mut deste = false;
+    for (v, conversa, r) in prontas {
+        deste |= v == vault;
+        // O nome do arquivo da tarefa (`001-login`) e não o caminho da
+        // conversa: o aviso divide a linha do rodapé com as dicas.
+        let tarefa = anotadinho_ipc::handle_tarefa_da_conversa(v.clone(), conversa.clone()).unwrap_or(conversa);
+        let nome = std::path::Path::new(&tarefa).file_stem().and_then(|n| n.to_str()).unwrap_or(&tarefa).to_string();
+        match r {
+            Ok(Some(etapa)) => estado.aviso = Some(format!("tarefa {nome} → {}", etapa.label())),
+            Ok(None) => {}
+            Err(e) => estado.aviso = Some(format!("não fechou a tarefa {nome}: {}", e.lines().next().unwrap_or_default())),
+        }
+    }
+    if deste && estado.especial.as_ref().is_some_and(|x| x.tipo == TipoEspecial::Projeto) {
+        carregar_especial(estado, vault, TipoEspecial::Projeto);
+    }
+}
+
 /// A fila dos projetos nesta TUI (ciclo 459): o que foi avisado por
 /// último, pra só repetir quando mudar.
 #[derive(Default)]
@@ -674,15 +707,18 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila:
         // Numa thread (ciclo 517): com `verificar` no projeto, fechar a
         // tarefa roda a suíte do SaaS, que leva minutos — no laço, a TUI
         // congelava junto. A tarefa fica em `executando` até a thread
-        // acabar, então a vaga do projeto continua ocupada, e a releitura
-        // de 3 s da tela do projeto mostra a etapa nova quando ela chegar.
+        // acabar, então a vaga do projeto continua ocupada; quando ela
+        // acaba, `colher_fechadas` avisa e relê o quadro.
         if anotadinho_ipc::handle_tarefa_da_conversa(vault.to_string(), path.clone()).is_some() {
             estado.aviso = Some(format!("fechando a tarefa de {path} (verificação no repositório, se houver)…"));
         }
         {
             let (v, p) = (vault.to_string(), path.clone());
             std::thread::spawn(move || {
-                let _ = anotadinho_ipc::handle_fechar_tarefa_da_conversa(v, p, fim_da_tarefa);
+                let r = anotadinho_ipc::handle_fechar_tarefa_da_conversa(v.clone(), p.clone(), fim_da_tarefa);
+                if let Ok(mut f) = FECHADAS.lock() {
+                    f.push((v, p, r));
+                }
             });
         }
         let aberta = deste_vault && estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path);
@@ -2235,6 +2271,7 @@ fn laco<B: ratatui::backend::Backend>(
                 carregar_especial(estado, vault, TipoEspecial::Projeto);
             }
             acompanhar(estado, vault, trabalhos, fila);
+            colher_fechadas(estado, vault);
             atender(estado, vault, trabalhos, fila);
             buscar_na_paleta(estado, vault);
             continue;

@@ -629,6 +629,44 @@ pub(crate) fn valor(s: &str) -> serde_yaml::Value {
     serde_yaml::Value::String(s.to_string())
 }
 
+/// A abertura da seção Ambiente de um projeto (ciclo 520): o projeto
+/// novo e o montado por plano dizem o mesmo.
+pub const INTRO_DO_AMBIENTE: &str = "Como rodar localmente e como testar. As variáveis de ambiente pelo NOME (os valores ficam no `.env`, fora do git).";
+
+/// Os itens da seção Ambiente quando ninguém disse nada.
+pub const AMBIENTE_PADRAO: &[&str] = &["Rodar: ", "Testar: ", "Variáveis: "];
+
+/// Os combinados com que um projeto nasce (ciclo 520): o mínimo de um
+/// SaaS feito com agente — testes antes de "concluída", segredo fora do
+/// git, arquitetura por proposta. São o ponto de partida, e a pessoa
+/// edita: valem pra toda tarefa porque a página do projeto vai anexada em
+/// cada execução.
+pub const COMBINADOS_PADRAO: &[&str] = &[
+    "Rode os testes do projeto antes de dizer que concluiu; se não passam, diga bloqueada e por quê.",
+    "Nunca commite segredo: `.env`, chave, token, senha. Mantenha um `.env.example` só com os nomes.",
+    "Commits pequenos, com a mensagem dizendo o que mudou.",
+    "Dependência nova, banco, serviço externo ou mudança de estrutura: pare e proponha na arquitetura antes de fazer.",
+    "Respeite o Fora de escopo da tarefa.",
+];
+
+/// As seções Ambiente e Combinados, prontas pro corpo do `projeto.md`.
+/// Lista vazia cai no padrão.
+pub fn ambiente_e_combinados(ambiente: &[String], combinados: &[String]) -> String {
+    fn itens(dados: &[String], padrao: &[&str]) -> String {
+        let usados: Vec<&str> = if dados.iter().any(|d| !d.trim().is_empty()) {
+            dados.iter().map(|d| d.trim()).filter(|d| !d.is_empty()).collect()
+        } else {
+            padrao.to_vec()
+        };
+        usados.iter().map(|i| format!("- {i}\n")).collect()
+    }
+    format!(
+        "## Ambiente\n\n{INTRO_DO_AMBIENTE}\n\n{}\n## Combinados com o agente\n\nO que vale pra TODA tarefa:\n\n{}",
+        itens(ambiente, AMBIENTE_PADRAO),
+        itens(combinados, COMBINADOS_PADRAO),
+    )
+}
+
 /// O esqueleto do corpo de uma tarefa.
 ///
 /// As duas primeiras seções são a metade "spec" (o que, e como saber que
@@ -671,7 +709,8 @@ pub fn montar_projeto(slug: &str, titulo: &str, hoje: &str) -> Vec<(String, Stri
     let projeto = frontmatter_em_texto(
         &fm,
         &format!(
-            "# {titulo}\n\n## Visão\n\nO que é, pra quem, e que problema resolve.\n\n## Objetivo\n\nO que precisa estar no ar pra este projeto ter valido a pena.\n\n## Stack\n\n- \n\n## Combinados com o agente\n\nO que vale pra TODA tarefa: commitar ou não, como testar, o que nunca mexer.\n"
+            "# {titulo}\n\n## Visão\n\nO que é, pra quem, e que problema resolve.\n\n## Objetivo\n\nO que precisa estar no ar pra este projeto ter valido a pena.\n\n## Stack\n\n- \n\n{}",
+            ambiente_e_combinados(&[], &[])
         ),
     );
 

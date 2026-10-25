@@ -62,6 +62,16 @@ case "$1" in
     printf 'Fiz a tarefa em %s.\n\nRESULTADO: concluida\n' "$(pwd)"
     exit 0
     ;;
+  # Trabalha num SaaS de mentira (ciclo 520): muda um arquivo, cria
+  # outro e commita UMA parte — é o que dá à revisão o que mostrar (o
+  # commit e a árvore desde a base) e à verificação o que conferir.
+  --tarefa-saas)
+    printf 'export function soma(a, b) {\n  return Number(a) + Number(b);\n}\n' > soma.js
+    git add soma.js >/dev/null 2>&1 && git commit -qm "soma converte a entrada" >/dev/null 2>&1
+    printf 'import { soma } from "./soma.js";\nif (soma("1", 2) !== 3) process.exit(1);\n' > soma.test.mjs
+    printf 'Somei com conversão e escrevi o teste.\n\nRESULTADO: concluida\n'
+    exit 0
+    ;;
   # Lê o prompt da ENTRADA PADRÃO (ciclo 449) e diz quanto chegou e como
   # começa e termina: é o que prova que um prompt grande e com quebras
   # chegou inteiro, sem passar pela linha de comando. Sem EOF no stdin,

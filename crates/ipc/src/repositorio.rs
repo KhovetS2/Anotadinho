@@ -324,12 +324,21 @@ pub fn commitar(repo: &str, mensagem: &str) -> Result<Option<String>, String> {
     if !e_git(repo) {
         return Err(format!("{repo} não é um repositório git"));
     }
+    // O índice de antes, pra voltar a ele se o commit falhar (ciclo 520):
+    // sem isto, um hook que recusa deixava TUDO no `add -A` — a tarefa
+    // ficava em revisão, mas o índice da pessoa tinha mudado por baixo.
+    let indice_antes = git(repo, &["write-tree"]).ok().map(|t| t.trim().to_string());
     git(repo, &["add", "-A"])?;
     let nada = git(repo, &["diff", "--cached", "--quiet"]).is_ok();
     if nada {
         return Ok(None);
     }
-    git(repo, &["commit", "-m", mensagem]).map_err(|e| format!("o commit falhou: {e}"))?;
+    if let Err(e) = git(repo, &["commit", "-m", mensagem]) {
+        if let Some(t) = &indice_antes {
+            let _ = git(repo, &["read-tree", t]);
+        }
+        return Err(format!("o commit falhou: {e}"));
+    }
     Ok(base_atual(repo))
 }
 
@@ -397,6 +406,28 @@ mod testes {
         // Base que não existe mais: compara com o HEAD e diz por quê.
         let m = mudancas_desde(&r, Some("0123456789abcdef0123456789abcdef01234567"));
         assert!(m.aviso.as_deref().is_some_and(|a| a.contains("não existe mais")), "{:?}", m.aviso);
+    }
+
+    #[test]
+    fn commit_recusado_devolve_o_indice_como_estava() {
+        let (_d, r) = repo();
+        std::fs::write(Path::new(&r).join("a.txt"), "um\n").unwrap();
+        commitar(&r, "início").unwrap();
+        // A pessoa deixou um arquivo no índice e outro só na árvore.
+        std::fs::write(Path::new(&r).join("preparado.txt"), "p\n").unwrap();
+        git(&r, &["add", "preparado.txt"]).unwrap();
+        std::fs::write(Path::new(&r).join("a.txt"), "dois\n").unwrap();
+        // Um hook que recusa todo commit.
+        let hook = Path::new(&r).join(".git/hooks/pre-commit");
+        std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert!(commitar(&r, "tarefa").is_err());
+        let no_indice = git(&r, &["diff", "--cached", "--name-only"]).unwrap();
+        assert_eq!(no_indice.trim(), "preparado.txt", "o índice da pessoa mudou: {no_indice}");
     }
 
     #[test]

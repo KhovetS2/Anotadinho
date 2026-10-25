@@ -57,9 +57,13 @@ pub struct PlanoProjeto {
     /// Tecnologias.
     #[serde(default)]
     pub stack: Vec<String>,
-    /// O que vale pra toda tarefa (commitar, testar, nunca mexer).
+    /// O que vale pra toda tarefa (commitar, testar, nunca mexer). Vazio
+    /// = os combinados padrão (`projeto::COMBINADOS_PADRAO`).
     #[serde(default)]
     pub combinados: Vec<String>,
+    /// Como rodar, como testar e as variáveis pelo nome (ciclo 520).
+    #[serde(default)]
+    pub ambiente: Vec<String>,
 }
 
 /// Uma sprint no plano.
@@ -132,6 +136,10 @@ projeto:
   combinados:
     - Commit por tarefa, com a mensagem dizendo o critério atendido.
     - Testes passam antes de dizer que terminou.
+  ambiente:                    # opcional: como rodar, testar, as variáveis pelo NOME
+    - "Rodar: cargo run"
+    - "Testar: cargo test"
+    - "Variáveis: DATABASE_URL, SESSION_SECRET"
 
 arquitetura: |
   ## Componentes
@@ -259,11 +267,11 @@ pub fn montar_plano(plano: &PlanoDeProjeto, ja: &JaExiste, hoje: &str) -> Result
                 com_corpo(
                     &conteudo,
                     &format!(
-                        "# {titulo}\n\n## Visão\n\n{}\n\n## Objetivo\n\n{}\n\n## Stack\n\n{}\n## Combinados com o agente\n\n{}",
+                        "# {titulo}\n\n## Visão\n\n{}\n\n## Objetivo\n\n{}\n\n## Stack\n\n{}\n{}",
                         if p.visao.trim().is_empty() { "O que é, pra quem, e que problema resolve." } else { p.visao.trim() },
                         if p.objetivo.trim().is_empty() { "O que precisa estar no ar pra este projeto ter valido a pena." } else { p.objetivo.trim() },
                         lista(&p.stack, "- "),
-                        lista(&p.combinados, "- "),
+                        projeto::ambiente_e_combinados(&p.ambiente, &p.combinados),
                     ),
                 )
             } else if caminho == projeto::caminho_da_arquitetura(&slug) {
@@ -404,6 +412,24 @@ mod testes {
         let (_, arq) = r.paginas.iter().find(|(c, _)| c.ends_with("arquitetura.md")).unwrap();
         assert!(arq.contains("Postgres: salao"), "{arq}");
         assert!(r.avisos.is_empty(), "{:?}", r.avisos);
+    }
+
+    #[test]
+    fn o_projeto_do_plano_tem_ambiente_e_combinados_padrao_quando_faltam() {
+        // O `projeto.md` vai anexado em toda execução: um plano que não
+        // fala de combinados não pode gerar um projeto sem eles, senão o
+        // "testes antes de concluída" some justo no caminho que monta o
+        // SaaS inteiro de uma vez (ciclo 520).
+        let corpo = |yaml: &str| {
+            let r = montar_plano(&ler_plano(yaml).unwrap(), &novo(), "2026-10-22").unwrap();
+            r.paginas.iter().find(|(c, _)| c.ends_with("/projeto.md")).unwrap().1.clone()
+        };
+        let sem = corpo("projeto:\n  titulo: Loja\n");
+        assert!(sem.contains("## Ambiente\n") && sem.contains("- Testar: \n"), "{sem}");
+        assert!(sem.contains(&format!("- {}\n", projeto::COMBINADOS_PADRAO[1])), "{sem}");
+        let com = corpo("projeto:\n  titulo: Loja\n  ambiente: [\"Testar: npm test\"]\n  combinados: [Um commit por tarefa]\n");
+        assert!(com.contains("- Testar: npm test\n") && !com.contains("- Rodar: "), "{com}");
+        assert!(com.contains("- Um commit por tarefa\n") && !com.contains(projeto::COMBINADOS_PADRAO[1]), "{com}");
     }
 
     #[test]
