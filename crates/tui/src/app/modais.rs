@@ -1914,6 +1914,7 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+Z Ctrl+Y", "desfazer / refazer"),
             ("Ctrl+K", "apagar a linha"),
             ("Ctrl+F Ctrl+G", "buscar / próximo achado"),
+            ("Tab Alt+R Alt+A", "na busca: trocar por / trocar este / todos"),
             ("Shift+setas", "selecionar (Tab indenta as linhas)"),
             ("Ctrl+X Alt+C Ctrl+V", "recortar / copiar / colar"),
             ("Ctrl+L", "trocar a linguagem"),

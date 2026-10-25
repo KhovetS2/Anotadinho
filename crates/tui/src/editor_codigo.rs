@@ -87,6 +87,11 @@ pub struct EditorDeCodigo {
     pub seletor: Option<usize>,
     /// A busca (ciclo 509): o termo e se ele ainda está sendo digitado.
     pub busca: Option<(String, bool)>,
+    /// O "trocar por" da busca (ciclo 515), e se é ele que se digita.
+    pub troca: Option<String>,
+    pub editando_troca: bool,
+    /// Quantas a última troca trocou, pro topo dizer.
+    trocadas: Option<usize>,
     /// Onde a seleção começou (ciclo 512): o trecho vai dela ao cursor.
     pub ancora: Option<usize>,
     /// O que Ctrl+X e Alt+C guardaram, pro Ctrl+V.
@@ -298,6 +303,52 @@ impl EditorDeCodigo {
         self.campo.cursor = primeira + novo.chars().count();
     }
 
+    /// As faixas (em caracteres) onde o termo aparece, sem diferença de
+    /// maiúscula.
+    fn achados(&self) -> Vec<std::ops::Range<usize>> {
+        let Some((termo, _)) = &self.busca else { return Vec::new() };
+        let termo: Vec<char> = termo.chars().flat_map(char::to_lowercase).collect();
+        if termo.is_empty() {
+            return Vec::new();
+        }
+        let texto: Vec<char> = self.campo.texto.chars().collect();
+        let baixo: Vec<char> = texto.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+        let mut fora = Vec::new();
+        let mut i = 0;
+        while i + termo.len() <= baixo.len() {
+            if baixo[i..i + termo.len()] == termo[..] {
+                fora.push(i..i + termo.len());
+                i += termo.len();
+            } else {
+                i += 1;
+            }
+        }
+        fora
+    }
+
+    /// O achado que começa no cursor (onde o Enter e o Ctrl+G param).
+    fn achado_no_cursor(&self) -> Option<std::ops::Range<usize>> {
+        self.achados().into_iter().find(|r| r.start == self.campo.cursor)
+    }
+
+    fn trocar_todos(&mut self) -> usize {
+        let achados = self.achados();
+        if achados.is_empty() {
+            return 0;
+        }
+        let novo = self.troca.clone().unwrap_or_default();
+        self.guardar(Tipo::Outro);
+        let mut cs: Vec<char> = self.campo.texto.chars().collect();
+        // De trás pra frente: trocar não desloca os que vêm antes.
+        for r in achados.iter().rev() {
+            cs.splice(r.clone(), novo.chars());
+        }
+        self.campo.texto = cs.into_iter().collect();
+        self.campo.cursor = self.campo.cursor.min(self.campo.texto.chars().count());
+        self.ancora = None;
+        achados.len()
+    }
+
     pub fn tecla(&mut self, tecla: &str) -> Resposta {
         if let Some(i) = self.seletor {
             return self.tecla_no_seletor(i, tecla);
@@ -363,21 +414,31 @@ impl EditorDeCodigo {
             }
         }
         if let Some((termo, true)) = self.busca.as_mut() {
+            // O campo que se digita: o termo ou o "trocar por" (515).
+            let campo: &mut String = if self.editando_troca { self.troca.get_or_insert_with(String::new) } else { termo };
             match tecla {
-                "Escape" => self.busca = None,
+                "Escape" => {
+                    self.busca = None;
+                    self.troca = None;
+                    self.editando_troca = false;
+                }
+                "Tab" => self.editando_troca = !self.editando_troca,
                 "Backspace" => {
-                    termo.pop();
+                    campo.pop();
                 }
                 "Enter" => {
                     if let Some((_, d)) = self.busca.as_mut() {
                         *d = false;
                     }
+                    self.editando_troca = false;
                     // A partir de onde se está: o primeiro achado pode ser
-                    // o do próprio cursor.
-                    self.campo.cursor = self.campo.cursor.saturating_sub(1);
-                    self.ir_ao_achado(true);
+                    // o do próprio cursor — no começo do texto, o
+                    // `cursor - 1` de antes pulava ele (515).
+                    if self.achado_no_cursor().is_none() {
+                        self.ir_ao_achado(true);
+                    }
                 }
-                t if t.chars().count() == 1 => termo.push_str(t),
+                t if t.chars().count() == 1 => campo.push_str(t),
                 _ => {}
             }
             return Resposta::Usou;
@@ -394,6 +455,27 @@ impl EditorDeCodigo {
             }
             "Escape" if self.busca.is_some() => {
                 self.busca = None;
+                self.troca = None;
+                self.trocadas = None;
+                return Resposta::Usou;
+            }
+            // Trocar este achado e ir ao próximo (515).
+            "Alt+r" if self.busca.is_some() => {
+                if let Some(r) = self.achado_no_cursor() {
+                    let novo = self.troca.clone().unwrap_or_default();
+                    self.guardar(Tipo::Outro);
+                    self.apagar_faixa(r.clone());
+                    self.inserir(&novo);
+                    self.campo.cursor = r.start + novo.chars().count();
+                    self.trocadas = Some(1);
+                }
+                self.ir_ao_achado(true);
+                return Resposta::Usou;
+            }
+            // Trocar todos, num passo só do desfazer (515).
+            "Alt+a" if self.busca.is_some() => {
+                let n = self.trocar_todos();
+                self.trocadas = Some(n);
                 return Resposta::Usou;
             }
             _ => {}
@@ -543,7 +625,19 @@ impl EditorDeCodigo {
     /// O rodapé: onde está o cursor e a linguagem.
     pub fn situacao(&self) -> String {
         if let Some((termo, digitando)) = &self.busca {
-            return if *digitando { format!("buscar: {termo}▏ Enter vai · Esc desiste") } else { format!("“{termo}” · Ctrl+G próximo · Esc limpa") };
+            let troca = self.troca.as_deref().unwrap_or("");
+            return match (*digitando, self.editando_troca) {
+                (true, false) => format!("buscar: {termo}▏ · trocar por: {troca} · Tab troca de campo · Enter vai · Esc desiste"),
+                (true, true) => format!("buscar: {termo} · trocar por: {troca}▏ · Tab troca de campo · Enter vai · Esc desiste"),
+                (false, _) => {
+                    let feito = self.trocadas.map(|n| format!(" · {n} trocada(s)")).unwrap_or_default();
+                    if self.troca.is_some() {
+                        format!("“{termo}” → “{troca}” · Ctrl+G próximo · Alt+R troca este · Alt+A troca todos · Esc limpa{feito}")
+                    } else {
+                        format!("“{termo}” · Ctrl+G próximo · Esc limpa")
+                    }
+                }
+            };
         }
         let (l, c) = self.linha_coluna();
         let lingua = self.lingua.as_deref().map(|l| LINGUAGENS.iter().find(|(k, _)| k.eq_ignore_ascii_case(l)).map_or(l, |(_, n)| n)).unwrap_or("sem linguagem");
@@ -862,6 +956,26 @@ mod testes {
         e.tecla("Shift+ArrowRight");
         assert_eq!(e.tecla("Alt+c"), Resposta::Copiar("um".into()));
         assert_eq!(e.texto(), "um\ndois\ntrês", "copiar não apaga");
+    }
+
+    #[test]
+    fn trocar_um_e_trocar_todos() {
+        let mut e = ed("foo(); Foo(); bar(foo);", 0);
+        e.tecla("Ctrl+f");
+        digitar(&mut e, "foo");
+        e.tecla("Tab");
+        digitar(&mut e, "baz");
+        e.tecla("Enter");
+        assert_eq!(e.campo.cursor, 0);
+        e.tecla("Alt+r");
+        assert_eq!(e.texto(), "baz(); Foo(); bar(foo);");
+        assert_eq!(e.campo.cursor, 7, "foi ao próximo (Foo)");
+        e.tecla("Alt+a");
+        assert_eq!(e.texto(), "baz(); baz(); bar(baz);");
+        // Trocar todos é um passo do desfazer.
+        e.tecla("Ctrl+z");
+        assert_eq!(e.texto(), "baz(); Foo(); bar(foo);");
+        assert!(e.situacao().contains("Alt+A troca todos"));
     }
 
     #[test]
