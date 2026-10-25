@@ -1596,6 +1596,16 @@ pub fn rolar(e: &mut Estado, desce: bool, coluna: u16) {
         especiais::rolar(e, desce);
         return;
     }
+    // Dentro de um bloco (ciclos 498, 505), a roda rola o desenho, três
+    // linhas por clique como o terminal rola texto. Antes ela andava o
+    // cursor entre blocos, e no último bloco da página não fazia nada: o
+    // diagrama parecia não rolar.
+    if e.vista_bloco.is_some() && vista::valida(e) {
+        for _ in 0..3 {
+            vista::tecla(e, if desce { "j" } else { "k" });
+        }
+        return;
+    }
     let passo = if desce { Passo::Proximo } else { Passo::Anterior };
     e.cursor = tela::andar(&e.arvore, &e.cursor, passo);
     pular_nivel_de_lista(e, passo);
@@ -2281,17 +2291,34 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
             // que eu tinha feito antes, e num painel estreito a trilha
             // do fluxo sumia por completo — inclusive a etapa atual,
             // que é a única que precisa estar na tela.
-            for (g, grupo) in desenhadas.into_iter().enumerate() {
-                if fora.len() + grupo.len() > e.altura {
+            // Bloco de código e diagrama podem sair PELA METADE na borda de
+            // baixo (ciclo 505). Indivisíveis, um diagrama mais alto que o
+            // espaço que sobrava sumia junto com tudo depois dele, e a
+            // página parecia acabar num título solto. Meia caixa de código
+            // não lê como erro de desenho se disser que continua.
+            let divisivel = matches!(l.tipo, Tipo::Codigo(_)) && !l.enfeite;
+            for (g, mut grupo) in desenhadas.into_iter().enumerate() {
+                let sobra = e.altura.saturating_sub(fora.len());
+                let partido = fora.len() + grupo.len() > e.altura && divisivel && sobra >= 3;
+                if partido {
+                    let resto = grupo.len() - (sobra - 1);
+                    grupo.truncate(sobra - 1);
+                    grupo.push(Line::from(vec![
+                        Span::raw("  ".repeat(l.nivel)),
+                        Span::styled(format!("┆ ⋯ mais {resto} linha(s) abaixo"), e.tema.estilo(Realce::Dica)),
+                    ]));
+                }
+                if fora.len() + grupo.len() > e.altura || partido {
                     // O cursor só está NA TELA se o primeiro grupo da linha
-                    // dele coube (ciclo 504). Contado antes, um bloco de
-                    // código recém-inserido na borda de baixo saía como
-                    // moldura vazia: a linha "achada" não pedia a rolagem,
-                    // e o grupo dela não cabia.
+                    // dele coube INTEIRO (ciclos 504, 505). Contado antes, um
+                    // bloco recém-inserido na borda de baixo saía como
+                    // moldura vazia: a linha "achada" não pedia a rolagem.
                     if cursor_aqui && g == 0 {
                         achou = false;
                     }
-                    break 'linhas;
+                    if !partido {
+                        break 'linhas;
+                    }
                 }
                 for linha in grupo {
                     fora.push(match cor_lateral {
@@ -2304,6 +2331,9 @@ pub fn desenhar(f: &mut Frame, e: &mut Estado) {
                         ),
                         None => linha,
                     });
+                }
+                if partido {
+                    break 'linhas;
                 }
             }
         }
@@ -5589,6 +5619,47 @@ mod testes {
         tecla(&mut e, "j");
         assert!(e.vista_bloco.is_none(), "a vista ficou presa num bloco que não existe");
         assert_eq!(e.cursor, vec![2], "o `j` foi engolido");
+    }
+
+    // --- Ciclo 505: diagrama alto e roda dentro do bloco ----------------------------
+
+    #[test]
+    fn diagrama_mais_alto_que_o_que_sobra_sai_pela_metade_e_o_resto_aparece() {
+        // A página de exemplo: título, um parágrafo e um fluxograma alto.
+        // Antes a tela parava no título, em branco embaixo.
+        let mut md = String::from("# T\n\nUm parágrafo.\n\n```mermaid\ngraph TD\n");
+        for i in 0..8 {
+            md.push_str(&format!("  P{i}[Passo {i}] --> P{}[Passo {}]\n", i + 1, i + 1));
+        }
+        md.push_str("```\n\nDepois.\n");
+        let mut e = Estado::novo(paginas(), analisar(&md));
+        e.foco = Foco::Conteudo;
+        let tela = desenho(&mut e, 120, 20).join("\n");
+        assert!(tela.contains("mermaid · fluxograma") && tela.contains("Passo 0"), "{tela}");
+        assert!(tela.contains("⋯ mais ") && tela.contains("linha(s) abaixo"), "{tela}");
+        // Com o cursor no diagrama, a tela rola até ele caber.
+        tecla(&mut e, "j");
+        tecla(&mut e, "j");
+        let tela = desenho(&mut e, 120, 20).join("\n");
+        assert!(!tela.contains("⋯ mais "), "o bloco do cursor ficou partido:\n{tela}");
+    }
+
+    #[test]
+    fn a_roda_dentro_do_bloco_rola_o_desenho() {
+        let mut md = String::from("```mermaid\ngraph TD\n");
+        for i in 0..12 {
+            md.push_str(&format!("  P{i}[Passo {i}] --> P{}[Passo {}]\n", i + 1, i + 1));
+        }
+        md.push_str("```\n");
+        let mut e = Estado::novo(paginas(), analisar(&md));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "Enter");
+        desenho(&mut e, 120, 24);
+        let coluna = e.largura_da_sidebar + 5;
+        rolar(&mut e, true, coluna);
+        assert_eq!(e.vista_bloco.as_ref().unwrap().vista.y, 3, "a roda não rolou o desenho");
+        rolar(&mut e, false, coluna);
+        assert_eq!(e.vista_bloco.as_ref().unwrap().vista.y, 0);
     }
 
     // --- Ciclo 504: bloco na borda de baixo ------------------------------------------

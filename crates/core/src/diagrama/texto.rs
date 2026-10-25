@@ -399,6 +399,15 @@ fn sequencia(s: &Sequencia, largura: usize) -> Result<Vec<Linha>, NaoDesenha> {
             }
         }
     }
+    // As caixas de novo embaixo, como o mermaid faz por padrão
+    // (`mirrorActors`). Sem elas, as linhas da vida terminam no vazio e o
+    // desenho parece cortado — foi o que a pessoa viu ao comparar com a
+    // janela.
+    for (i, p) in s.participantes.iter().enumerate() {
+        let cantos = if p.ator { CANTOS_REDONDOS } else { CANTOS_RETOS };
+        g.caixa(x[i] - meia[i].0, y + 1, caixa[i], &p.nome, cantos, Papel::Caixa, Papel::Nome);
+        g.letra(x[i], y + 1, '┴', Papel::Caixa);
+    }
     Ok(g.linhas())
 }
 
@@ -1163,6 +1172,9 @@ mod tests {
             "    │            │ │ pensa │",
             "    │            │ └───────┘",
             "    │            │",
+            "╭───┴────╮  ┌────┴────┐",
+            "│ Pessoa │  │ Sistema │",
+            "╰────────╯  └─────────┘",
         ];
         assert_eq!(t, esperado, "\n{}", t.join("\n"));
     }
