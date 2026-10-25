@@ -1667,7 +1667,13 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     _ => {}
                 }
             }
-            if editor.tecla(tecla) == crate::editor_codigo::Resposta::Linguagem {
+            let resposta = editor.tecla(tecla);
+            if let crate::editor_codigo::Resposta::Copiar(t) = &resposta {
+                let n = t.lines().count().max(1);
+                e.aviso = Some(format!("copiado: {n} linha(s)"));
+                e.copiar_pro_sistema = Some(t.clone());
+            }
+            if resposta == crate::editor_codigo::Resposta::Linguagem {
                 // Virou mermaid: o diagrama tem o construtor (formulário e
                 // código), e é lá que ele se edita.
                 if editor.lingua.as_deref() == Some("mermaid") {
@@ -1843,6 +1849,8 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+Z Ctrl+Y", "desfazer / refazer"),
             ("Ctrl+K", "apagar a linha"),
             ("Ctrl+F Ctrl+G", "buscar / próximo achado"),
+            ("Shift+setas", "selecionar (Tab indenta as linhas)"),
+            ("Ctrl+X Alt+C Ctrl+V", "recortar / copiar / colar"),
             ("Ctrl+L", "trocar a linguagem"),
             ("Esc ou Ctrl+S", "gravar (Ctrl+C desiste)"),
         ],
@@ -2023,7 +2031,7 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
         Modal::Construtor(c) => super::construtor::desenhar(f, e, c),
         Modal::EditorDeTexto { titulo, editor, .. } => {
             let area = componentes::area_do_modal(tela, 110, tela.height.saturating_sub(2));
-            let rodape = "Tab ⇥ · Shift+Tab ⇤ · Ctrl+Z/Y desfaz · Ctrl+K apaga linha · Ctrl+F busca · Ctrl+L linguagem · Esc grava · Ctrl+C desiste";
+            let rodape = "Shift+setas seleciona · Ctrl+X/Alt+C/Ctrl+V · Ctrl+F busca · Ctrl+L linguagem · Esc grava · Ctrl+C desiste";
             let titulo = format!("{titulo} · {}", editor.situacao());
             let dentro = componentes::desenhar_modal(f, area, &titulo, rodape, t);
             editor.desenhar(f, dentro, t);

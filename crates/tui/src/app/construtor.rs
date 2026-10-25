@@ -1321,7 +1321,9 @@ fn tecla_no_codigo(e: &mut Estado, c: &mut Construtor, tecla: &str) -> bool {
         // O editor de código de 506: indentação (o mapa mental vive dela),
         // desfazer, Home esperto, a vista que segue o cursor.
         outra => {
-            c.codigo.tecla(outra);
+            if let crate::editor_codigo::Resposta::Copiar(t) = c.codigo.tecla(outra) {
+                e.copiar_pro_sistema = Some(t);
+            }
         }
     }
     false

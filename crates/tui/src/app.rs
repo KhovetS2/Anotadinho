@@ -219,6 +219,9 @@ pub struct Estado {
     /// Dentro de um bloco de código ou diagrama (ciclo 498): a página, o
     /// bloco, onde a vista está e o tamanho medido no último quadro.
     pub vista_bloco: Option<VistaDoBloco>,
+    /// Texto pra área de transferência do sistema (ciclo 512): quem escreve
+    /// no terminal (o OSC 52) é o `main`.
+    pub copiar_pro_sistema: Option<String>,
 }
 
 /// A vista de dentro de um bloco (ciclo 498). A página e o caminho dizem de
@@ -256,6 +259,7 @@ impl Estado {
             busca_em: Foco::Paginas,
             barra_aberta: false,
             vista_bloco: None,
+            copiar_pro_sistema: None,
             d_na_sidebar: false,
             paginas,
             pagina: 0,

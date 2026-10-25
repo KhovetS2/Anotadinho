@@ -92,6 +92,9 @@ fn nome_da_tecla(k: &KeyEvent) -> Option<String> {
             KeyCode::Right => Some("Shift+ArrowRight"),
             KeyCode::Home => Some("Shift+Home"),
             KeyCode::End => Some("Shift+End"),
+            // Selecionar linhas no editor de código (ciclo 512).
+            KeyCode::Up => Some("Shift+ArrowUp"),
+            KeyCode::Down => Some("Shift+ArrowDown"),
             _ => None,
         };
         if let Some(n) = nome {
@@ -118,6 +121,47 @@ fn nome_da_tecla(k: &KeyEvent) -> Option<String> {
         KeyCode::PageDown => "PageDown".into(),
         _ => return None,
     })
+}
+
+/// Manda `texto` pra área de transferência do sistema pelo OSC 52 (ciclo
+/// 512): o terminal é quem copia, então funciona por SSH e dentro do tmux
+/// (com `set-clipboard on`), sem depender de X11, Wayland ou do Windows.
+/// Terminal que não entende a sequência só a ignora.
+fn copiar_pro_sistema(texto: &str) {
+    use std::io::Write;
+    let mut saida = io::stdout();
+    let _ = write!(saida, "\x1b]52;c;{}\x07", base64(texto.as_bytes()));
+    let _ = saida.flush();
+}
+
+/// Base64 padrão, sem dependência: é só pro OSC 52.
+fn base64(dados: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut fora = String::with_capacity(dados.len().div_ceil(3) * 4);
+    for bloco in dados.chunks(3) {
+        let b = [bloco[0], *bloco.get(1).unwrap_or(&0), *bloco.get(2).unwrap_or(&0)];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= bloco.len() {
+                fora.push(T[((n >> (18 - 6 * i)) & 63) as usize] as char);
+            } else {
+                fora.push('=');
+            }
+        }
+    }
+    fora
+}
+
+#[cfg(test)]
+mod testes_do_base64 {
+    #[test]
+    fn base64_como_o_padrao() {
+        assert_eq!(super::base64(b""), "");
+        assert_eq!(super::base64(b"f"), "Zg==");
+        assert_eq!(super::base64(b"fo"), "Zm8=");
+        assert_eq!(super::base64(b"foo"), "Zm9v");
+        assert_eq!(super::base64("ação".as_bytes()), "YcOnw6Nv");
+    }
 }
 
 /// O arquivo de uma página e a versão dele (ciclo 318): a edição grava
@@ -2174,6 +2218,9 @@ fn laco<B: ratatui::backend::Backend>(
         }
         let Some(nome) = nome_da_tecla(&k) else { continue };
         let destino = app::tecla(estado, &nome);
+        if let Some(t) = estado.copiar_pro_sistema.take() {
+            copiar_pro_sistema(&t);
+        }
         if destino.is_some() || estado.sair || estado.trocar_de_vault.is_some() {
             salvar_pendente(estado, vault);
         }

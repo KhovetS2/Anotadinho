@@ -87,6 +87,10 @@ pub struct EditorDeCodigo {
     pub seletor: Option<usize>,
     /// A busca (ciclo 509): o termo e se ele ainda está sendo digitado.
     pub busca: Option<(String, bool)>,
+    /// Onde a seleção começou (ciclo 512): o trecho vai dela ao cursor.
+    pub ancora: Option<usize>,
+    /// O que Ctrl+X e Alt+C guardaram, pro Ctrl+V.
+    pub copiado: Option<String>,
     /// A primeira linha e a primeira coluna à vista, e a altura do último
     /// quadro (pro PgUp/PgDn).
     pub topo: Cell<usize>,
@@ -106,6 +110,14 @@ pub enum Resposta {
     Ignorou,
     /// A linguagem mudou pelo seletor.
     Linguagem,
+    /// Copiou (ou recortou) este texto: quem contém manda pra área de
+    /// transferência do sistema.
+    Copiar(String),
+}
+
+/// As teclas que só andam o cursor: com Shift, elas selecionam.
+fn movimento(t: &str) -> bool {
+    matches!(t, "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" | "Home" | "End" | "Ctrl+Home" | "Ctrl+End" | "PageUp" | "PageDown")
 }
 
 fn chars(s: &str) -> Vec<char> {
@@ -229,9 +241,126 @@ impl EditorDeCodigo {
         }
     }
 
+    /// O trecho selecionado, em caracteres; vazio é sem seleção.
+    pub fn selecao(&self) -> Option<std::ops::Range<usize>> {
+        let a = self.ancora?;
+        let c = self.campo.cursor;
+        (a != c).then(|| a.min(c)..a.max(c))
+    }
+
+    /// O texto selecionado, ou a linha do cursor inteira (com a quebra)
+    /// quando não há seleção — como o Ctrl+X dos editores.
+    fn trecho_ou_linha(&self) -> std::ops::Range<usize> {
+        if let Some(r) = self.selecao() {
+            return r;
+        }
+        let cs = chars(&self.campo.texto);
+        let c = self.campo.cursor.min(cs.len());
+        let ini = Self::inicio_da_linha(&cs, c);
+        let fim = Self::fim_da_linha(&cs, c);
+        ini..(fim + 1).min(cs.len())
+    }
+
+    fn apagar_faixa(&mut self, r: std::ops::Range<usize>) {
+        let mut cs = chars(&self.campo.texto);
+        let r = r.start.min(cs.len())..r.end.min(cs.len());
+        cs.drain(r.clone());
+        self.campo.texto = cs.into_iter().collect();
+        self.campo.cursor = r.start;
+        self.ancora = None;
+    }
+
+    /// Indenta (ou desindenta) todas as linhas que a seleção toca, e a
+    /// seleção passa a ser elas inteiras.
+    fn indentar_linhas(&mut self, r: std::ops::Range<usize>, mais: bool) {
+        let cs = chars(&self.campo.texto);
+        let primeira = Self::inicio_da_linha(&cs, r.start);
+        let ultima_fim = Self::fim_da_linha(&cs, r.end.saturating_sub(1).max(r.start));
+        let bloco: String = cs[primeira..ultima_fim].iter().collect();
+        let novo: Vec<String> = bloco
+            .split('\n')
+            .map(|l| {
+                if mais {
+                    if l.is_empty() { String::new() } else { format!("{}{l}", " ".repeat(NIVEL)) }
+                } else {
+                    let recuo = l.chars().take_while(|c| *c == ' ').count();
+                    let tirar = if recuo == 0 { 0 } else { (recuo - 1) % NIVEL + 1 };
+                    l.chars().skip(tirar).collect()
+                }
+            })
+            .collect();
+        let novo = novo.join("\n");
+        self.guardar(Tipo::Outro);
+        let antes: String = cs[..primeira].iter().collect();
+        let depois: String = cs[ultima_fim..].iter().collect();
+        self.campo.texto = format!("{antes}{novo}{depois}");
+        self.ancora = Some(primeira);
+        self.campo.cursor = primeira + novo.chars().count();
+    }
+
     pub fn tecla(&mut self, tecla: &str) -> Resposta {
         if let Some(i) = self.seletor {
             return self.tecla_no_seletor(i, tecla);
+        }
+        // Shift + movimento seleciona (ciclo 512): anda como sem Shift, e a
+        // âncora fica onde estava.
+        if let Some(base) = tecla.strip_prefix("Shift+").filter(|b| movimento(b)) {
+            let ancora = self.ancora.unwrap_or(self.campo.cursor);
+            let busca = self.busca.take();
+            self.tecla(base);
+            self.busca = busca;
+            self.ancora = (ancora != self.campo.cursor).then_some(ancora);
+            return Resposta::Usou;
+        }
+        if movimento(tecla) {
+            self.ancora = None;
+        }
+        match tecla {
+            "Ctrl+x" | "Alt+c" => {
+                let r = self.trecho_ou_linha();
+                let texto: String = self.campo.texto.chars().skip(r.start).take(r.end - r.start).collect();
+                if texto.is_empty() {
+                    return Resposta::Usou;
+                }
+                if tecla == "Ctrl+x" {
+                    self.guardar(Tipo::Outro);
+                    self.apagar_faixa(r);
+                }
+                self.copiado = Some(texto.clone());
+                return Resposta::Copiar(texto);
+            }
+            "Ctrl+v" => {
+                if let Some(t) = self.copiado.clone() {
+                    if let Some(r) = self.selecao() {
+                        self.guardar(Tipo::Outro);
+                        self.apagar_faixa(r);
+                    }
+                    self.colar(&t);
+                }
+                return Resposta::Usou;
+            }
+            _ => {}
+        }
+        // Com seleção, o que se digita ou apaga troca o trecho; Tab e
+        // Shift+Tab indentam as linhas dele.
+        if let Some(r) = self.selecao().filter(|_| self.busca.as_ref().is_none_or(|(_, d)| !d)) {
+            match tecla {
+                "Tab" | "Shift+Tab" => {
+                    self.indentar_linhas(r, tecla == "Tab");
+                    return Resposta::Usou;
+                }
+                "Backspace" | "Delete" => {
+                    self.guardar(Tipo::Outro);
+                    self.apagar_faixa(r);
+                    return Resposta::Usou;
+                }
+                t if t == "Enter" || t.chars().count() == 1 => {
+                    self.guardar(Tipo::Outro);
+                    self.apagar_faixa(r);
+                    self.ultima = None;
+                }
+                _ => {}
+            }
         }
         if let Some((termo, true)) = self.busca.as_mut() {
             match tecla {
@@ -470,6 +599,16 @@ impl EditorDeCodigo {
         };
         let achado = tema.estilo(Realce::Barra);
         let termo: Vec<char> = self.busca.as_ref().map(|(t, _)| t.to_lowercase().chars().collect()).unwrap_or_default();
+        let selecionado = Style::default().bg(crate::tema::misturar(tema.var("accent-blue"), tema.var("bg-base"), 0.45)).fg(tema.var("text-primary"));
+        let sel = self.selecao();
+        // Onde cada linha começa no texto, em caracteres: a seleção é do
+        // texto inteiro.
+        let mut inicios = Vec::with_capacity(total);
+        let mut soma = 0;
+        for l in &linhas {
+            inicios.push(soma);
+            soma += l.chars().count() + 1;
+        }
         let mut fora: Vec<Line<'static>> = Vec::new();
         for (n, l) in linhas.iter().enumerate().skip(topo).take(alto) {
             // Onde o termo da busca aparece nesta linha, em caracteres.
@@ -507,6 +646,9 @@ impl EditorDeCodigo {
                     }
                     if marcados.get(k).copied().unwrap_or(false) {
                         estilo = estilo.patch(achado);
+                    }
+                    if sel.as_ref().is_some_and(|r| r.contains(&(inicios[n] + k))) {
+                        estilo = estilo.patch(selecionado);
                     }
                     if e_cursor {
                         estilo = invertido;
@@ -683,6 +825,43 @@ mod testes {
         // Um passo só no desfazer.
         e.tecla("Ctrl+z");
         assert_eq!(e.texto(), "fn f() {\n    ");
+    }
+
+    #[test]
+    fn shift_seleciona_tab_indenta_as_linhas_e_digitar_troca() {
+        let mut e = ed("a\nb\nc", 0);
+        e.tecla("Shift+ArrowDown");
+        e.tecla("Shift+ArrowRight");
+        assert_eq!(e.selecao(), Some(0..3));
+        e.tecla("Tab");
+        assert_eq!(e.texto(), "    a\n    b\nc");
+        e.tecla("Shift+Tab");
+        assert_eq!(e.texto(), "a\nb\nc");
+        // Digitar com seleção troca o trecho.
+        e.campo.cursor = 0;
+        e.ancora = None;
+        e.tecla("Shift+End");
+        e.tecla("z");
+        assert_eq!(e.texto(), "z\nb\nc");
+        // Andar sem Shift desfaz a seleção.
+        e.tecla("Shift+ArrowRight");
+        e.tecla("ArrowLeft");
+        assert_eq!(e.selecao(), None);
+    }
+
+    #[test]
+    fn ctrl_x_recorta_alt_c_copia_e_ctrl_v_cola() {
+        let mut e = ed("um\ndois\ntrês", 3);
+        // Sem seleção, a linha inteira.
+        assert_eq!(e.tecla("Ctrl+x"), Resposta::Copiar("dois\n".into()));
+        assert_eq!(e.texto(), "um\ntrês");
+        e.tecla("Ctrl+v");
+        assert_eq!(e.texto(), "um\ndois\ntrês");
+        e.campo.cursor = 0;
+        e.tecla("Shift+ArrowRight");
+        e.tecla("Shift+ArrowRight");
+        assert_eq!(e.tecla("Alt+c"), Resposta::Copiar("um".into()));
+        assert_eq!(e.texto(), "um\ndois\ntrês", "copiar não apaga");
     }
 
     #[test]
