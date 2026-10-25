@@ -1150,7 +1150,11 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                                 abrir(estado, vault, &caminho);
                             }
                         }
-                        Err(e) => estado.aviso = Some(e),
+                        // Ir pra feita com `commitar_ao_aceitar` falha quando
+                        // o commit falha (ciclo 519): a tarefa fica em revisão,
+                        // e a pessoa precisa saber o porquê — o erro do git
+                        // tem várias linhas, e o rodapé só uma.
+                        Err(e) => estado.aviso = Some(app::especiais::aviso_de_mover(destino, &e)),
                     }
                 }
                 // ── Sprints (ciclo 473): pela pessoa, como na janela.
@@ -1262,6 +1266,10 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                 Pedido::GravarConfigDoProjeto { slug, config } => {
                     let repositorio = config.repositorio.clone().map(|r| sistema::expandir_til(&r, sistema::ambiente, cfg!(windows)));
                     if repositorio.as_ref().is_some_and(|r| !std::path::Path::new(r).is_dir()) {
+                        // O formulário volta com o que foi escrito (ciclo 519):
+                        // a pasta errada não pode custar o comando de
+                        // verificação digitado junto.
+                        app::modais::abrir_config_do_projeto(estado, &slug, &config);
                         estado.aviso = Some(format!("\"{}\" não é uma pasta", repositorio.unwrap_or_default()));
                     } else {
                         let config = anotadinho_core::projeto::ConfigProjeto { repositorio, ..config };
@@ -1271,6 +1279,44 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                         }
                     }
                 }
+                // O código da tarefa (ciclo 519): o diff desde a base. O erro
+                // do `ipc` (sem repositório, não é tarefa) vai pro aviso.
+                Pedido::MudancasDaTarefa(caminho) => {
+                    let titulo = anotadinho_ipc::handle_read_page(vault.to_string(), caminho.clone())
+                        .ok()
+                        .and_then(|t| anotadinho_core::projeto::Tarefa::ler(&caminho, &t))
+                        .map(|t| format!("Mudanças — {:03} {}", t.numero, t.titulo))
+                        .unwrap_or_else(|| "Mudanças".into());
+                    match anotadinho_ipc::handle_mudancas_da_tarefa(vault.to_string(), caminho) {
+                        Ok(m) => app::mudancas::abrir(estado, &titulo, &m),
+                        Err(e) => estado.aviso = Some(format!("sem as mudanças: {e}")),
+                    }
+                }
+                Pedido::VerificacaoDaTarefa(caminho) => match anotadinho_ipc::handle_read_page(vault.to_string(), caminho.clone()) {
+                    Ok(texto) => {
+                        let tarefa = anotadinho_core::projeto::Tarefa::ler(&caminho, &texto);
+                        match app::especiais::relato_da_verificacao(&texto) {
+                            Some(relato) => {
+                                let titulo = match &tarefa {
+                                    Some(t) => format!("Verificação — {:03} {} ({})", t.numero, t.titulo, t.verificacao.as_deref().unwrap_or("?")),
+                                    None => "Verificação".into(),
+                                };
+                                // Esc volta pros detalhes, no mesmo item, como
+                                // o comentário inteiro do 503.
+                                let volta = app::especiais::menu_de_detalhes(estado, &caminho).map(|m| match m {
+                                    app::Modal::Escolha { titulo, mut lista, acao } => {
+                                        lista.selecionado = lista.itens.iter().position(|i| i.chave.starts_with("verificacao\u{0}")).unwrap_or(0);
+                                        Box::new(app::Modal::Escolha { titulo, lista, acao })
+                                    }
+                                    outro => Box::new(outro),
+                                });
+                                estado.modal = Some(app::Modal::Leitura { titulo, texto: relato, rolagem: 0, volta });
+                            }
+                            None => estado.aviso = Some("a tarefa ainda não passou por uma verificação".into()),
+                        }
+                    }
+                    Err(e) => estado.aviso = Some(e),
+                },
                 Pedido::ProporTarefas { slug, texto } => {
                     match anotadinho_ipc::handle_propor_tarefas(vault.to_string(), slug, texto, agora_local()) {
                         Ok(ids) => estado.aviso = Some(format!("{} tarefa(s) propostas num lote — revise em Propostas", ids.len())),

@@ -695,6 +695,19 @@ pub fn menu_de_detalhes(e: &Estado, caminho: &str) -> Option<Modal> {
         itens.push(Item::novo("⊕", a.nome.clone(), format!("anexo\u{0}{}", a.caminho)).com_detalhe("abrir"));
     }
     itens.push(Item::novo("+", "Anexar arquivo…", format!("anexar\u{0}{c}")));
+    // O repositório (ciclo 519): o branch e a base que o 517 guarda, e o
+    // que a revisão precisa ler — o código e o resultado do teste.
+    if let Some(b) = &t.branch_git {
+        itens.push(Item::novo("⎇", format!("Branch: {b}"), format!("mudancas\u{0}{c}")));
+    }
+    let desde = t.base_git.as_deref().map(|b| format!("desde {}", b.chars().take(7).collect::<String>())).unwrap_or_else(|| "ainda não rodou".into());
+    itens.push(Item::novo("±", "Ver mudanças no repositório", format!("mudancas\u{0}{c}")).com_detalhe(desde));
+    let (marca, estado) = match t.verificacao.as_deref() {
+        Some("passou") => ("✓", "passou"),
+        Some("falhou") => ("✗", "falhou"),
+        _ => ("·", "não rodou"),
+    };
+    itens.push(Item::novo(marca, "Ver a última verificação", format!("verificacao\u{0}{c}")).com_detalhe(estado));
     itens.push(Item::novo("▸", "Abrir a página da tarefa", format!("pagina\u{0}{c}")));
     Some(Modal::Escolha {
         titulo: format!("{:03} {}", t.numero, t.titulo),
@@ -919,6 +932,11 @@ pub fn barra_da_tarefa(e: &Estado, w: usize) -> Vec<Line<'static>> {
         Span::styled(format!("› {:03} {}  ", t.numero, t.titulo), texto.add_modifier(Modifier::BOLD)),
         Span::styled(format!(" {} ", t.etapa.label()), Style::default().fg(tema.var("bg-base")).bg(cor).add_modifier(Modifier::BOLD)),
     ];
+    match t.verificacao.as_deref() {
+        Some("passou") => l1.push(Span::styled(" ✓teste", Style::default().fg(tema.var("success")))),
+        Some("falhou") => l1.push(Span::styled(" ✗teste", Style::default().fg(tema.var("error")))),
+        _ => {}
+    }
     for d in t.etapa.proximas_para(Quem::Humano) {
         l1.push(Span::styled(format!("   → {}", d.label()), destaque));
     }
@@ -926,7 +944,7 @@ pub fn barra_da_tarefa(e: &Estado, w: usize) -> Vec<Line<'static>> {
     if detalhavel(t.etapa) {
         dicas.push("Alt+a detalhar com o agente");
     }
-    dicas.extend(["Alt+c conversa da tarefa", "Alt+p projeto", ": Tarefa…"]);
+    dicas.extend(["Alt+c conversa da tarefa", "Alt+m mudanças", "Alt+p projeto", ": Tarefa…"]);
     let l2 = Line::from(Span::styled(format!(" {}", dicas.join(" · ")), apagado));
     vec![
         cortar_linha(Line::from(l1), w),
@@ -969,6 +987,13 @@ fn selos_do_cartao(
     let (feitos, total) = x.progresso();
     if total > 0 {
         fora.push((format!("✓{feitos}/{total}"), if feitos == total { base.fg(tema.var("success")) } else { base }));
+    }
+    // A verificação do repositório (ciclo 519): o que separa "o teste
+    // passou" de "o agente disse que passou", à vista no quadro.
+    match x.verificacao.as_deref() {
+        Some("passou") => fora.push(("✓teste".into(), base.fg(tema.var("success")))),
+        Some("falhou") => fora.push(("✗teste".into(), base.fg(tema.var("error")))),
+        _ => {}
     }
     // A prioridade só quando foge da média (514, como o selo do 513).
     match x.prioridade.as_deref().map(str::to_lowercase).as_deref() {
@@ -1103,14 +1128,19 @@ fn tecla_no_projeto(e: &mut Estado, tecla: &str) -> bool {
             });
             return true;
         }
+        // O repositório e o que confere o trabalho nele (ciclo 519): um
+        // formulário só, porque a verificação, o branch e o commit não têm
+        // sentido sem o repositório — e o `o` era onde a pessoa já ia.
         "o" => {
-            e.modal = Some(Modal::Entrada {
-                titulo: "Pasta do repositório do projeto".into(),
-                campo: crate::componentes::Campo::com(config.repositorio.clone().unwrap_or_default()),
-                acao: super::modais::AcaoDaEntrada::RepositorioDoProjeto(slug),
-            });
+            super::modais::abrir_config_do_projeto(e, &slug, &config);
             return true;
         }
+        // A revisão do código (ciclo 519): o que a tarefa mudou desde a
+        // base. Maiúsculo porque `d` já é detalhar com o agente.
+        "D" => match sel {
+            Some(s) => Pedido::MudancasDaTarefa(s.caminho),
+            None => return false,
+        },
         _ => return false,
     };
     e.pedidos.push(pedido);
@@ -1344,7 +1374,7 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
             if !faixa.is_empty() {
                 itens.push(&faixa);
             }
-            itens.extend(["Enter", "v detalhes", "n nova", "s m S sprints", "c conversa", "x execuções", "? atalhos"]);
+            itens.extend(["Enter", "v detalhes", "D mudanças", "n nova", "s m S sprints", "c conversa", "x execuções", "? atalhos"]);
             let aviso = e.aviso.as_ref().or(t.erro.as_ref()).map_or(0, |a| a.chars().count() + 3);
             dica_que_cabe(&itens, (area.width as usize).saturating_sub(2 + aviso))
         }
@@ -1419,8 +1449,25 @@ pub fn dica_que_cabe(itens: &[&str], largura: usize) -> String {
     montar(&v)
 }
 
+/// Os pedaços numa linha de `w`, cortando com `…` o que passa (514): sem
+/// a marca, o pedaço cortado parecia inteiro.
+pub(super) fn caber(spans: Vec<Span<'static>>, w: usize) -> Line<'static> {
+    let mut usado = 0usize;
+    let mut cortada: Vec<Span<'static>> = Vec::new();
+    for sp in spans {
+        let n = sp.content.chars().count();
+        if usado + n > w {
+            cortada.push(Span::styled(com_reticencias(&sp.content, w.saturating_sub(usado)), sp.style));
+            break;
+        }
+        usado += n;
+        cortada.push(sp);
+    }
+    Line::from(cortada)
+}
+
 /// `s` cortado em `n` caracteres, com `…` quando cortou.
-fn com_reticencias(s: &str, n: usize) -> String {
+pub(super) fn com_reticencias(s: &str, n: usize) -> String {
     if s.chars().count() <= n {
         return s.to_string();
     }
@@ -1431,7 +1478,7 @@ fn com_reticencias(s: &str, n: usize) -> String {
 
 /// `s` quebrado em linhas de até `n` caracteres, nas palavras, com
 /// `recuo` na frente das continuações.
-fn quebrar(s: &str, n: usize, recuo: &str) -> Vec<String> {
+pub(super) fn quebrar(s: &str, n: usize, recuo: &str) -> Vec<String> {
     let n = n.max(10);
     let mut fora: Vec<String> = Vec::new();
     let mut atual = String::new();
@@ -2061,6 +2108,67 @@ fn quadro_kanban(t: &TelaEspecial, tema: &Tema, colunas: &[(String, String, Vec<
     linhas.into_iter().map(Line::from).collect()
 }
 
+/// O prazo da verificação como se fala: "15 min", "90 s".
+pub fn prazo_legivel(segundos: u64) -> String {
+    if segundos >= 60 && segundos % 60 == 0 {
+        format!("{} min", segundos / 60)
+    } else {
+        format!("{segundos} s")
+    }
+}
+
+/// A linha da verificação no cabeçalho do projeto (ciclo 519): o que
+/// decide se "concluída" vale. Sem comando, diz isso em cor de atenção:
+/// é a diferença entre o teste ter passado e o agente ter dito que passou.
+fn linha_da_verificacao(c: &anotadinho_core::projeto::ConfigProjeto, tema: &Tema) -> Vec<Span<'static>> {
+    let apagado = Style::default().fg(tema.var("text-muted"));
+    let texto = Style::default().fg(tema.var("text-primary"));
+    let mut l = match c.verificar.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        Some(v) => vec![
+            Span::styled(" verificação ", apagado),
+            Span::styled(format!("`{v}`"), texto),
+            Span::styled(format!(" · prazo {}", prazo_legivel(c.prazo_da_verificacao)), apagado),
+        ],
+        None => vec![
+            Span::styled(" sem verificação", tema.estilo(Realce::BadgeAtencao)),
+            // O `o` dito aqui, e não no rodapé: lá ele empurrava pra fora
+            // as teclas que se usam todo dia.
+            Span::styled(" — vale o que o agente disser · o configura", apagado),
+        ],
+    };
+    if c.branch_por_tarefa {
+        l.push(Span::styled(" · branch por tarefa", Style::default().fg(tema.var("accent-blue"))));
+    }
+    if c.commitar_ao_aceitar {
+        l.push(Span::styled(" · commit ao aceitar", Style::default().fg(tema.var("accent-blue"))));
+    }
+    l
+}
+
+/// O relato da última verificação: o miolo da seção **Verificação** da
+/// página da tarefa (ciclo 517), sem o título. `None` quando ainda não
+/// rodou nenhuma.
+pub fn relato_da_verificacao(texto: &str) -> Option<String> {
+    // O frontmatter fica de fora: um comentário `# …` do YAML passaria
+    // por título pro `extract_section`.
+    let corpo = texto
+        .strip_prefix("---\n")
+        .and_then(|r| r.find("\n---\n").map(|i| &r[i + 5..]))
+        .unwrap_or(texto);
+    let secao = anotadinho_core::links::extract_section(corpo, "Verificação")?;
+    let miolo = secao.split_once('\n').map_or("", |(_, r)| r).trim();
+    (!miolo.is_empty()).then(|| miolo.to_string())
+}
+
+/// O aviso de uma mudança de etapa que o `ipc` recusou (ciclo 519). Ir
+/// pra feita com `commitar_ao_aceitar` falha quando o commit falha (um
+/// hook, a identidade do git), e a tarefa fica onde estava — então o aviso
+/// diz pra onde NÃO foi, e o porquê numa linha só: a do rodapé não quebra.
+pub fn aviso_de_mover(destino: anotadinho_core::projeto::EtapaTarefa, erro: &str) -> String {
+    let uma: Vec<&str> = erro.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    format!("não foi pra {}: {}", destino.label().to_lowercase(), uma.join(" · "))
+}
+
 /// A tela do projeto (ciclo 461): cabeçalho com repositório, fila e
 /// avisos; depois uma seção por etapa, na ordem do quadro. Lista, e não
 /// colunas: oito colunas num terminal de 140 dariam ~16 caracteres por
@@ -2091,6 +2199,7 @@ fn tela_do_projeto(
             Span::styled(" · o escolhe", apagado),
         ])),
     }
+    fora.push(caber(linha_da_verificacao(&p.config, tema), w));
     let executando = p.tarefas.iter().filter(|x| x.etapa == EtapaTarefa::Executando).count();
     let fila = if p.config.pausado { "pausada" } else { "ativa" };
     let mut linha_fila = vec![Span::styled(" fila ", apagado), Span::styled(fila, if p.config.pausado { tema.estilo(Realce::BadgeAtencao) } else { texto })];
@@ -2111,20 +2220,7 @@ fn tela_do_projeto(
         }
     }
     linha_sprint.push(Span::styled(format!("  ({} de {} tarefas)", p.tarefas.len(), p.todas.len()), apagado));
-    // Cortada com marca (514): sem o `…`, o objetivo cortado parecia
-    // inteiro.
-    let mut usado = 0usize;
-    let mut cortada: Vec<Span<'static>> = Vec::new();
-    for sp in linha_sprint {
-        let n = sp.content.chars().count();
-        if usado + n > w {
-            cortada.push(Span::styled(com_reticencias(&sp.content, w.saturating_sub(usado)), sp.style));
-            break;
-        }
-        usado += n;
-        cortada.push(sp);
-    }
-    fora.push(Line::from(cortada));
+    fora.push(caber(linha_sprint, w));
     // O aviso QUEBRA em vez de cortar (514): é o que diz por que a fila
     // não anda, e cortado em "sem repositório confi" não dizia.
     for a in &p.avisos {

@@ -25,7 +25,8 @@ projeto, então o quadro dele abre sem montar nada (ciclo 501):
     python3 scripts/tui/tela.py --abrir "Meu primeiro" --execucoes reg.jsonl
 
 `--execucoes` copia um registro pro `.anotadinho/execucoes.jsonl` do vault
-temporário; `--cada` mostra a tela depois de CADA tecla; `--manter` não
+temporário; `--preparar x.sh` roda `x.sh <vault>` antes de a TUI abrir (um
+repositório git e a config do projeto, por exemplo); `--cada` mostra a tela depois de CADA tecla; `--manter` não
 apaga o vault no fim e diz onde ele ficou, pra conferir o disco.
 """
 
@@ -75,6 +76,7 @@ def main():
     ap.add_argument("pagina", nargs="?", help="arquivo .md a abrir")
     ap.add_argument("--abrir", help="o que digitar na barra de comandos (padrão: o nome da página)")
     ap.add_argument("--execucoes", help="registro de execuções (.jsonl) pro vault temporário")
+    ap.add_argument("--preparar", help="executável chamado com o caminho do vault temporário, antes de abrir")
     ap.add_argument("--cada", action="store_true", help="mostra a tela depois de cada tecla")
     ap.add_argument("--manter", action="store_true", help="não apaga o vault temporário")
     ap.add_argument("--teclas", default="", help="teclas depois de abrir, separadas por espaço")
@@ -107,6 +109,11 @@ def main():
         if a.execucoes:
             os.makedirs(os.path.join(vault, ".anotadinho"), exist_ok=True)
             shutil.copy(a.execucoes, os.path.join(vault, ".anotadinho", "execucoes.jsonl"))
+        if a.preparar:
+            # Depois do `init` e antes de a TUI subir: o que a cena precisa
+            # e o `init` não semeia (um repositório git, a config do
+            # projeto, a base da tarefa — ciclo 519).
+            subprocess.run([a.preparar, vault], check=True)
         env = f"XDG_CONFIG_HOME={cfg} TERM=xterm-256color"
         tmux("new-session", "-d", "-s", sessao, "-x", str(a.largura), "-y", str(a.altura),
              f"env {env} {a.binario} --vault {vault}")

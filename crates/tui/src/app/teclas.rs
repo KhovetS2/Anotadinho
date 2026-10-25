@@ -60,6 +60,9 @@ pub const GLOBAIS: &[(&str, &str, &str)] = &[
     ("detalhar-tarefa", "Tarefa: detalhar com o agente", "Alt+a"),
     ("conversa-tarefa", "Tarefa: conversa da tarefa", "Alt+c"),
     ("projeto-da-tarefa", "Tarefa: abrir o projeto", "Alt+p"),
+    // O diff da tarefa (ciclo 519): `m` de mudanças, já que `Alt+d` é o
+    // que a pessoa costuma pôr no lugar do Ctrl+D de Hoje.
+    ("mudancas-tarefa", "Tarefa: ver mudanças no repositório", "Alt+m"),
 ];
 
 /// A tecla de uma ação, com o remapeamento.

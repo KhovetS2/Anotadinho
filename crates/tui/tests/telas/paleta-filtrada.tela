@@ -12,10 +12,10 @@
 │                              ││  │ ϟ Nova página a partir de template…                                │                                  │
 │                              ││  │ ϟ Tarefa: mover de etapa…                                          │                                  │
 │                              ││  │ ϟ Tarefa: detalhar com o agente                                    │                                  │
+│                              ││  │ ϟ Tarefa: ver mudanças no repositório                              │                                  │
 │                              ││  │ ϟ Agentes em andamento…                                            │                                  │
 │                              ││  │ ϟ Limite de agentes em paralelo…                                   │                                  │
 │                              ││  ╰ ↑↓ escolher · Enter · Ctrl+F buscar no conteúdo · Esc ─────────────╯                                  │
-│                              ││                                                                                                          │
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │
@@ -51,8 +51,8 @@ addddddddddddddddddddddddddddddabddkppplllllllllllllllllllllllllllllllllllllllll
 addddddddddddddddddddddddddddddabddkppplllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddkppplllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddkppplllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddkppplllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllkddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddkpppppppppppppppppppppppppppppppppppppppppppppppppppppppkkkkkkkkkkkkkkddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb

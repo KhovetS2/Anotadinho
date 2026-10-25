@@ -4,6 +4,7 @@
 │                              ││──────────────────────────────────────────────────────────────────────────────────────────────────────────│
 │                              ││ Projeto                                                                                      3 tarefa(s) │
 │                              ││ repositório /home/ana/codigo/agenda                                                                      │
+│                              ││ sem verificação — vale o que o agente disser · o configura                                               │
 │                              ││ fila ativa · 1 executando                                                                                │
 │                              ││ quadro Sprint ativa: MVP · entrar e agendar · até 2026-11-05  (3 de 5 tarefas)                           │
 │                              ││ ⚠ pages/projetos/saas/tarefas/003-t.md: esperando 2                                                      │
@@ -37,14 +38,14 @@
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │
 │                              ││                                                                                                          │
-│                              ││                                                                                                          │
-└──────────────────────────────┘└ h j k l · 1 etapa · Enter · v detalhes · n nova · s m S sprints · c conversa · x execuções · ? atalhos ──┘
+└──────────────────────────────┘└ h j k l · 1 etapa · Enter · v detalhes · D mudanças · n nova · s m S sprints · c conversa · ? atalhos ───┘
 == estilos ==
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddabeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffffffffffffffffffb
 addddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
 addddddddddddddddddddddddddddddabggggggggddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffffffffffffb
 addddddddddddddddddddddddddddddabfffffffffffffhhhhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabiiiiiiiiiiiiiiiifffffffffffffffffffffffffffffffffffffffffffdddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabffffffhhhhhbbbbbbbbbbbbbbbddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabffffffffbbbbbbbbbbbbbbbbbffffffffffffffffffffffffffffffffffffffffffffffffffffffdddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiddddddddddddddddddddddddddddddddddddddddddddddddddddddb
@@ -78,8 +79,7 @@ addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddd
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssbbb
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabsssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssbbbb
 a = fg #45475a bg #1e1e2e
 b = fg #89b4fa bg #1e1e2e
 c = fg - bg #1e1e2e negrito apagado

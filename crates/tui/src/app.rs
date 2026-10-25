@@ -25,6 +25,7 @@ pub mod teclas;
 pub mod modais;
 mod vista;
 pub mod construtor;
+pub mod mudancas;
 pub use edicao::{AcaoDaPergunta, Pergunta, Registro};
 pub use modais::{Modal, Pedido, Preferencias};
 pub use markdown::{EdicaoDeBloco, Hospedeiro};
@@ -13063,12 +13064,15 @@ mod testes {
     fn as_acoes_da_barra_pela_barra_de_comandos_e_pelas_teclas() {
         let caminho = "pages/projetos/saas/tarefas/001-login.md".to_string();
         let mut e = tarefa_no_editor("ideia", 2);
-        // As quatro estão na barra de comandos, com o mesmo prefixo.
+        // As cinco estão na barra de comandos, com o mesmo prefixo (a das
+        // mudanças entrou no 519).
         modais::abrir_paleta(&mut e);
         let Some(Modal::Paleta(lista)) = &e.modal else { panic!("{:?}", e.modal) };
         let rotulos: Vec<String> = lista.itens.iter().map(|i| i.rotulo.clone()).filter(|r| r.starts_with("Tarefa:")).collect();
-        assert_eq!(rotulos.len(), 4, "{rotulos:?}");
+        assert_eq!(rotulos.len(), 5, "{rotulos:?}");
         e.modal = None;
+        tecla(&mut e, "Alt+m");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::MudancasDaTarefa(caminho.clone())));
         tecla(&mut e, "Alt+a");
         assert_eq!(e.pedidos.pop(), Some(Pedido::DetalharTarefa(caminho.clone())));
         tecla(&mut e, "Alt+c");
@@ -13208,5 +13212,338 @@ mod testes {
         assert_eq!(e.foco, Foco::Conteudo);
         // Fora da sidebar, nada.
         assert_eq!(clicar(&mut e, 90, y0), None);
+    }
+
+    // ── O repositório no fluxo da tarefa, na TUI (ciclo 519) ──────────
+
+    fn projeto_com_config(tarefas: Vec<anotadinho_core::projeto::Tarefa>, config: anotadinho_core::projeto::ConfigProjeto) -> Estado {
+        let mut e = especial_aberto("projeto");
+        let mut dados = projeto_na_tela(tarefas);
+        if let especiais::Dados::Projeto(p) = &mut dados {
+            p.config = config;
+            p.avisos.clear();
+        }
+        especiais::carregar(&mut e, dados);
+        e.pedidos.clear();
+        e
+    }
+
+    /// A linha da tela que contém `trecho`.
+    fn linha_com<'a>(tela: &'a [String], trecho: &str) -> &'a str {
+        tela.iter().find(|l| l.contains(trecho)).unwrap_or_else(|| panic!("sem {trecho}:\n{}", tela.join("\n")))
+    }
+
+    /// A cor do texto na primeira célula de `trecho` na tela.
+    fn cor_de(e: &mut Estado, largura: u16, altura: u16, trecho: &str) -> ratatui::style::Color {
+        let mut term = Terminal::new(TestBackend::new(largura, altura)).unwrap();
+        term.draw(|f| desenhar(f, e)).unwrap();
+        let buf = term.backend().buffer().clone();
+        for y in 0..altura {
+            let linha: Vec<String> = (0..largura).map(|x| buf[(x, y)].symbol().to_string()).collect();
+            let texto: String = linha.concat();
+            if let Some(byte) = texto.find(trecho) {
+                // Do byte pra coluna: cada célula aqui é um caractere.
+                let coluna = texto[..byte].chars().count() as u16;
+                return buf[(coluna, y)].fg;
+            }
+        }
+        panic!("sem {trecho} na tela");
+    }
+
+    #[test]
+    fn o_abre_o_formulario_do_repositorio_e_salvar_manda_a_config_inteira() {
+        let base = anotadinho_core::projeto::ConfigProjeto { repositorio: Some("/repo".into()), pausado: true, concorrencia: 3, ..Default::default() };
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "ideia", "")], base);
+        tecla(&mut e, "o");
+        let tela = desenho(&mut e, 80, 30).join("\n");
+        // O rótulo SEPARADO do valor: com rótulo maior que a coluna, saía
+        // "Comando de verificaçãonpm test".
+        for esperado in ["Repositório e verificação", "Repositório   /repo", "Verificação   o comando, ex. npm test", "Prazo (seg.)  900", "Branch por tarefa", "Commitar ao aceitar", "Salvar"] {
+            assert!(tela.contains(esperado), "faltou {esperado}:\n{tela}");
+        }
+        // O comando, o prazo e os dois liga/desliga; o repositório fica.
+        tecla(&mut e, "j");
+        tecla(&mut e, "c");
+        digitar(&mut e, "cargo test");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "j");
+        tecla(&mut e, "c");
+        digitar(&mut e, "120");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "j");
+        tecla(&mut e, " ");
+        tecla(&mut e, "j");
+        tecla(&mut e, " ");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(
+            e.pedidos,
+            [Pedido::GravarConfigDoProjeto {
+                slug: "saas".into(),
+                // A pausa e a concorrência não estão no formulário: voltam
+                // como estavam, e não no padrão.
+                config: anotadinho_core::projeto::ConfigProjeto {
+                    repositorio: Some("/repo".into()),
+                    pausado: true,
+                    concorrencia: 3,
+                    verificar: Some("cargo test".into()),
+                    prazo_da_verificacao: 120,
+                    branch_por_tarefa: true,
+                    commitar_ao_aceitar: true,
+                },
+            }]
+        );
+        assert!(e.modal.is_none(), "salvar fecha o formulário");
+    }
+
+    #[test]
+    fn a_config_recusa_prazo_torto_e_vazio_tira_o_comando_e_o_repositorio() {
+        let base = anotadinho_core::projeto::ConfigProjeto { repositorio: Some("/repo".into()), verificar: Some("npm test".into()), ..Default::default() };
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "ideia", "")], base);
+        tecla(&mut e, "o");
+        // Salva e devolve o aviso, ANTES de outra tecla apagá-lo; o cursor
+        // volta pro topo.
+        let salvar = |e: &mut Estado| -> Option<String> {
+            for _ in 0..5 {
+                tecla(e, "j");
+            }
+            tecla(e, "Enter");
+            let aviso = e.aviso.clone();
+            if e.modal.is_some() {
+                for _ in 0..5 {
+                    tecla(e, "k");
+                }
+            }
+            aviso
+        };
+        // Prazo que não é número: o formulário FICA, com o motivo.
+        for _ in 0..2 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "c");
+        digitar(&mut e, "15min");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "k");
+        tecla(&mut e, "k");
+        let aviso = salvar(&mut e);
+        assert!(e.pedidos.is_empty(), "{:?}", e.pedidos);
+        assert!(matches!(e.modal, Some(Modal::Detalhe { .. })), "o formulário fechou e perdeu o que foi escrito");
+        assert!(aviso.as_deref().is_some_and(|a| a.contains("\"15min\" não é um número de segundos")), "{aviso:?}");
+        // Zero também não: estouraria antes de começar.
+        for _ in 0..2 {
+            tecla(&mut e, "j");
+        }
+        tecla(&mut e, "c");
+        digitar(&mut e, "0");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "k");
+        tecla(&mut e, "k");
+        let aviso = salvar(&mut e);
+        assert!(e.pedidos.is_empty(), "{:?}", e.pedidos);
+        assert!(aviso.is_some(), "zero passou");
+        // Vazios: sem repositório, sem verificação, prazo padrão.
+        tecla(&mut e, "c");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "j");
+        tecla(&mut e, "c");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "j");
+        tecla(&mut e, "c");
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "k");
+        tecla(&mut e, "k");
+        salvar(&mut e);
+        match e.pedidos.as_slice() {
+            [Pedido::GravarConfigDoProjeto { config, .. }] => {
+                assert_eq!((config.repositorio.as_deref(), config.verificar.as_deref()), (None, None));
+                assert_eq!(config.prazo_da_verificacao, anotadinho_core::projeto::PRAZO_PADRAO_DA_VERIFICACAO);
+            }
+            outro => panic!("{outro:?}"),
+        }
+    }
+
+    #[test]
+    fn o_cabecalho_diz_a_verificacao_e_cabe_em_80_e_150_colunas() {
+        let com = anotadinho_core::projeto::ConfigProjeto {
+            repositorio: Some("/home/elis/codigo/meu-saas".into()),
+            verificar: Some("npm test".into()),
+            branch_por_tarefa: true,
+            commitar_ao_aceitar: true,
+            ..Default::default()
+        };
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "ideia", "")], com);
+        e.preferencias.sidebar = false;
+        let tela = desenho(&mut e, 150, 40);
+        let l = linha_com(&tela, "verificação");
+        assert!(l.contains("verificação `npm test` · prazo 15 min · branch por tarefa · commit ao aceitar"), "{l}");
+        // Em 80, a linha não estoura a borda: corta com a marca, e o
+        // comando, que é o que importa, fica.
+        let tela = desenho(&mut e, 80, 40);
+        let l = linha_com(&tela, "verificação");
+        assert!(l.contains("verificação `npm test` · prazo 15 min"), "{l}");
+        assert!(l.chars().count() <= 80, "{l}");
+        assert!(l.contains("commit ao aceitar") || l.contains('…'), "cortou sem marca: {l}");
+        // Sem comando, a tela diz que vale a palavra do agente.
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "ideia", "")], Default::default());
+        let tela = desenho(&mut e, 150, 40);
+        let l = linha_com(&tela, "sem verificação");
+        assert!(l.contains("sem verificação — vale o que o agente disser"), "{l}");
+        assert!(!l.contains("branch por tarefa") && !l.contains("commit ao aceitar"), "{l}");
+        assert_eq!(cor_de(&mut e, 150, 40, "sem verificação"), e.tema.estilo(crate::tema::Realce::BadgeAtencao).fg.unwrap());
+    }
+
+    #[test]
+    fn o_cartao_mostra_se_o_teste_passou_ou_falhou_na_cor_certa() {
+        let mut e = projeto_com_config(
+            vec![tarefa_de_teste(1, "revisao", "verificacao: passou\n"), tarefa_de_teste(2, "bloqueada", "verificacao: falhou\n"), tarefa_de_teste(3, "ideia", "")],
+            Default::default(),
+        );
+        e.preferencias.sidebar = false;
+        // Com o foco fora, nenhum cartão aceso: a cor é a do selo.
+        e.foco = Foco::Paginas;
+        // Larga o bastante pra revisão e bloqueada ficarem à vista.
+        let tela = desenho(&mut e, 220, 40).join("\n");
+        assert!(tela.contains("✓teste") && tela.contains("✗teste"), "{tela}");
+        assert_eq!(tela.matches("teste").count(), 2, "a tarefa que não rodou ganhou selo:\n{tela}");
+        assert_eq!(cor_de(&mut e, 220, 40, "✓teste"), e.tema.var("success"));
+        assert_eq!(cor_de(&mut e, 220, 40, "✗teste"), e.tema.var("error"));
+    }
+
+    #[test]
+    fn v_mostra_o_branch_e_leva_as_mudancas_e_a_verificacao() {
+        let extra = "base_git: abc1234def567\nbranch_git: tarefa/001-t\nverificacao: falhou\n";
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "bloqueada", extra)], Default::default());
+        let caminho = "pages/projetos/saas/tarefas/001-t.md".to_string();
+        tecla(&mut e, "v");
+        let itens = itens_do_modal(&e);
+        assert!(itens.iter().any(|(i, r)| i == "⎇" && r == "Branch: tarefa/001-t"), "{itens:?}");
+        assert!(itens.iter().any(|(i, r)| i == "✗" && r == "Ver a última verificação"), "{itens:?}");
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("desde abc1234") && tela.contains("falhou"), "{tela}");
+        descer_ate(&mut e, "Ver mudanças no repositório");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::MudancasDaTarefa(caminho.clone())));
+        tecla(&mut e, "v");
+        descer_ate(&mut e, "Ver a última verificação");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::VerificacaoDaTarefa(caminho.clone())));
+        // `D` no quadro é o mesmo caminho, sem passar pelos detalhes.
+        e.modal = None;
+        tecla(&mut e, "D");
+        assert_eq!(e.pedidos.pop(), Some(Pedido::MudancasDaTarefa(caminho)));
+    }
+
+    #[test]
+    fn a_tarefa_sem_rodar_diz_isso_nos_detalhes() {
+        let mut e = projeto_com_config(vec![tarefa_de_teste(1, "ideia", "")], Default::default());
+        tecla(&mut e, "v");
+        let itens = itens_do_modal(&e);
+        assert!(!itens.iter().any(|(_, r)| r.starts_with("Branch:")), "{itens:?}");
+        let tela = desenho(&mut e, 120, 40).join("\n");
+        assert!(tela.contains("ainda não rodou") && tela.contains("não rodou"), "{tela}");
+    }
+
+    #[test]
+    fn a_barra_da_tarefa_mostra_o_teste_e_a_tecla_das_mudancas() {
+        let caminho = "pages/projetos/saas/tarefas/001-login.md";
+        let mut e = Estado::novo(vec![PageMeta { path: caminho.into(), title: "001-login".into(), section: "pages".into() }], analisar(""));
+        e.abrir_texto("---\ntitle: Login\ntype: tarefa\nprojeto: saas\nstatus: bloqueada\nverificacao: falhou\n---\n# Login\n", None);
+        let tela = desenho(&mut e, 200, 20).join("\n");
+        assert!(tela.contains("✗teste") && tela.contains("Alt+m mudanças"), "{tela}");
+    }
+
+    fn mudancas_de_teste() -> anotadinho_ipc::repositorio::Mudancas {
+        use anotadinho_ipc::repositorio::{ArquivoMudado, Mudancas};
+        let mut diff = String::from("diff --git a/src/a.rs b/src/a.rs\nindex 111..222 100644\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1,3 +1,3 @@\n fn a() {\n-    velho();\n+    novo();\n--- comentario sql\n }\n");
+        diff.push_str("diff --git a/README.md b/README.md\nnew file\n--- /dev/null\n+++ b/README.md\n@@ -0,0 +1,40 @@\n");
+        for i in 0..40 {
+            diff.push_str(&format!("+linha {i}\n"));
+        }
+        Mudancas {
+            base: Some("abc1234def5678".into()),
+            branch: Some("tarefa/001-login".into()),
+            arquivos: vec![ArquivoMudado { estado: "M".into(), caminho: "src/a.rs".into() }, ArquivoMudado { estado: "?".into(), caminho: "README.md".into() }],
+            diff,
+            aviso: Some("o commit de onde a tarefa partiu não existe mais".into()),
+        }
+    }
+
+    fn vista(e: &Estado) -> &mudancas::VistaDasMudancas {
+        match &e.modal {
+            Some(Modal::Mudancas(v)) => v,
+            outro => panic!("{outro:?}"),
+        }
+    }
+
+    #[test]
+    fn a_vista_das_mudancas_mostra_base_branch_arquivos_e_o_diff_com_cor() {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        mudancas::abrir(&mut e, "Mudanças — 001 Login", &mudancas_de_teste());
+        for largura in [80, 150] {
+            let tela = desenho(&mut e, largura, 30);
+            let tudo = tela.join("\n");
+            for esperado in ["Mudanças — 001 Login", "base abc1234 · branch tarefa/001-login", "⚠ o commit de onde a tarefa partiu", "2 arquivos mudados", "M  src/a.rs  (mudou)", "?  README.md  (novo, fora do git)", "▸ src/a.rs", "@@ -1,3 +1,3 @@", "-    velho();", "+    novo();", "Esc fecha"] {
+                assert!(tudo.contains(esperado), "{largura}: faltou {esperado}:\n{tudo}");
+            }
+            assert!(tela.iter().all(|l| l.chars().count() <= largura as usize), "estourou:\n{tudo}");
+        }
+        assert_eq!(cor_de(&mut e, 80, 30, "+    novo"), e.tema.var("success"));
+        assert_eq!(cor_de(&mut e, 80, 30, "-    velho"), e.tema.var("error"));
+        assert_eq!(cor_de(&mut e, 80, 30, "@@ -1,3"), e.tema.var("accent-purple"));
+        // `--- x` DENTRO do trecho é uma linha removida, não o cabeçalho.
+        let v = vista(&e);
+        assert!(v.linhas.iter().any(|(t, s)| *t == mudancas::Tipo::Sai && s == "--- comentario sql"), "{:?}", v.linhas);
+        assert!(v.linhas.iter().any(|(t, s)| *t == mudancas::Tipo::Meta && s == "--- a/src/a.rs"), "{:?}", v.linhas);
+    }
+
+    #[test]
+    fn a_vista_das_mudancas_rola_pula_de_arquivo_e_fecha() {
+        let mut e = Estado::novo(paginas(), analisar(""));
+        mudancas::abrir(&mut e, "Mudanças", &mudancas_de_teste());
+        desenho(&mut e, 80, 20);
+        let arquivos = vista(&e).arquivos.clone();
+        assert_eq!(arquivos.len(), 2);
+        tecla(&mut e, "n");
+        assert_eq!(vista(&e).rolagem, arquivos[0]);
+        tecla(&mut e, "n");
+        assert_eq!(vista(&e).rolagem, arquivos[1]);
+        let tela = desenho(&mut e, 80, 20).join("\n");
+        assert!(tela.contains("arquivo 2 de 2") && tela.contains("▸ README.md"), "{tela}");
+        tecla(&mut e, "N");
+        assert_eq!(vista(&e).rolagem, arquivos[0]);
+        // `j` e depois `N`: o anterior é o que começa ANTES do topo.
+        tecla(&mut e, "j");
+        tecla(&mut e, "N");
+        assert_eq!(vista(&e).rolagem, arquivos[0]);
+        tecla(&mut e, "g");
+        assert_eq!(vista(&e).rolagem, 0);
+        tecla(&mut e, "Ctrl+d");
+        let meia = vista(&e).rolagem;
+        assert!(meia > 1, "Ctrl+D andou {meia}");
+        tecla(&mut e, "Ctrl+u");
+        assert_eq!(vista(&e).rolagem, 0);
+        // G para com a última linha no pé, não com ela sozinha no topo.
+        tecla(&mut e, "G");
+        let tela = desenho(&mut e, 80, 20);
+        assert!(tela.iter().any(|l| l.contains("+linha 39")), "{}", tela.join("\n"));
+        assert!(tela.iter().filter(|l| l.contains("+linha")).count() > 5, "G deixou a tela vazia:\n{}", tela.join("\n"));
+        tecla(&mut e, "Escape");
+        assert!(e.modal.is_none());
+    }
+
+    #[test]
+    fn relato_da_verificacao_e_o_miolo_da_secao() {
+        let md = "---\ntitle: X\n# comentário do yaml\nverificacao: falhou\n---\n# X\n\n## Critérios\n\n- [ ] a\n\n## Verificação\n\n**Verificação** — falhou\n\n```\nerro\n```\n\n## Comentários\n\n- oi\n";
+        let r = especiais::relato_da_verificacao(md).unwrap();
+        assert!(r.starts_with("**Verificação** — falhou") && r.contains("erro") && !r.contains("Comentários"), "{r}");
+        assert_eq!(especiais::relato_da_verificacao("---\ntitle: X\n---\n# X\n"), None);
+        assert_eq!(especiais::relato_da_verificacao("# X\n\n## Verificação\n\n"), None);
+    }
+
+    #[test]
+    fn o_erro_do_commit_ao_aceitar_vira_um_aviso_de_uma_linha() {
+        use anotadinho_core::projeto::EtapaTarefa;
+        let a = especiais::aviso_de_mover(EtapaTarefa::Feita, "o commit falhou: git commit: \nhusky - pre-commit hook exited with code 1\n");
+        assert_eq!(a, "não foi pra feita: o commit falhou: git commit: · husky - pre-commit hook exited with code 1");
     }
 }

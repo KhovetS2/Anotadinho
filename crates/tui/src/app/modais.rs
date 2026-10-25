@@ -58,6 +58,10 @@ pub enum Pedido {
     AbrirAnexo(String),
     /// Gravar a config de um projeto (pausa, repositório).
     GravarConfigDoProjeto { slug: String, config: anotadinho_core::projeto::ConfigProjeto },
+    /// O que a tarefa mudou no repositório desde a base (ciclo 519).
+    MudancasDaTarefa(String),
+    /// O relato da última verificação da tarefa (ciclo 519).
+    VerificacaoDaTarefa(String),
     /// "Virar tarefas" numa resposta: propõe um lote.
     ProporTarefas { slug: String, texto: String },
     /// "Atualizar arquitetura" numa resposta: propõe a seção nova.
@@ -458,6 +462,8 @@ pub enum Modal {
     },
     /// O construtor de diagramas mermaid (ciclo 500), a tela inteira.
     Construtor(super::construtor::Construtor),
+    /// O que a tarefa mudou no repositório (ciclo 519), a tela inteira.
+    Mudancas(super::mudancas::VistaDasMudancas),
 }
 
 /// O que um [`Modal::Detalhe`] edita.
@@ -497,6 +503,13 @@ pub enum AlvoDoDetalhe {
     /// e datas, como o formulário da aba Sprints da janela.
     NovaSprint {
         slug: String,
+    },
+    /// O repositório e a verificação do projeto (ciclo 519). A `base` é a
+    /// config de quando abriu: a pausa e a concorrência não estão no
+    /// formulário e voltam como estavam.
+    ConfigDoProjeto {
+        slug: String,
+        base: anotadinho_core::projeto::ConfigProjeto,
     },
     /// As pastas onde o agente pode propor (ciclo 405).
     Permissoes,
@@ -613,8 +626,6 @@ pub enum AcaoDaEntrada {
     /// O caminho de um arquivo pra anexar na tarefa: a TUI não tem
     /// diálogo nativo.
     AnexarNaTarefa(String),
-    /// A pasta do repositório do projeto.
-    RepositorioDoProjeto(String),
     /// Título de uma página nova dentro de uma pasta (ciclo 345).
     PaginaNaPasta(String),
     /// Nome de uma pasta nova dentro de outra.
@@ -757,6 +768,7 @@ const COMANDOS: &[(&str, &str)] = &[
     ("Tarefa: detalhar com o agente", "detalhar-tarefa"),
     ("Tarefa: conversa da tarefa", "conversa-tarefa"),
     ("Tarefa: abrir o quadro do projeto", "projeto-da-tarefa"),
+    ("Tarefa: ver mudanças no repositório", "mudancas-tarefa"),
     ("Ver atalhos", "atalhos"),
     ("Nova pasta…", "nova-pasta"),
     ("Mover página pra pasta…", "mover-pagina"),
@@ -931,7 +943,7 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
         // Na página de uma tarefa, as transições da pessoa (ciclo 461):
         // o mesmo que a barra de etapa da janela, sem mexer no desenho do
         // documento.
-        "etapa-tarefa" | "detalhar-tarefa" | "conversa-tarefa" | "projeto-da-tarefa" => {
+        "etapa-tarefa" | "detalhar-tarefa" | "conversa-tarefa" | "projeto-da-tarefa" | "mudancas-tarefa" => {
             let Some(tarefa) = super::especiais::tarefa_aberta(e) else {
                 e.aviso = Some("a página aberta não é uma tarefa de projeto".into());
                 return;
@@ -952,6 +964,10 @@ pub(super) fn executar(e: &mut Estado, chave: &str) {
                 }
                 "projeto-da-tarefa" => {
                     e.pedidos.push(Pedido::AbrirPagina(anotadinho_core::projeto::caminho_do_projeto(&tarefa.projeto)));
+                    return;
+                }
+                "mudancas-tarefa" => {
+                    e.pedidos.push(Pedido::MudancasDaTarefa(caminho));
                     return;
                 }
                 _ => {}
@@ -1246,6 +1262,8 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         }
                         "anexar" => e.modal = Some(entrada("Caminho do arquivo pra anexar", String::new(), AcaoDaEntrada::AnexarNaTarefa(caminho))),
                         "anexo" => e.pedidos.push(Pedido::AbrirAnexo(caminho)),
+                        "mudancas" => e.pedidos.push(Pedido::MudancasDaTarefa(caminho)),
+                        "verificacao" => e.pedidos.push(Pedido::VerificacaoDaTarefa(caminho)),
                         "pagina" => e.pedidos.push(Pedido::AbrirPagina(caminho)),
                         // O comentário INTEIRO (ciclo 503): a lista só cabe a
                         // primeira linha, e a janela mostra o texto todo. Esc
@@ -1539,20 +1557,6 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         AcaoDaEntrada::NovaTarefa(slug) => Pedido::CriarTarefa { slug, titulo: t },
                         AcaoDaEntrada::ComentarTarefa(caminho) => Pedido::ComentarTarefa { caminho, texto: t },
                         AcaoDaEntrada::AnexarNaTarefa(caminho) => Pedido::AnexarNaTarefa { caminho, origem: t },
-                        AcaoDaEntrada::RepositorioDoProjeto(slug) => {
-                            // A config atual vem da tela aberta: só o
-                            // repositório muda, a pausa fica como está.
-                            let mut config = e
-                                .especial
-                                .as_ref()
-                                .and_then(|x| match &x.dados {
-                                    Some(super::especiais::Dados::Projeto(p)) if p.projeto.slug == slug => Some(p.config.clone()),
-                                    _ => None,
-                                })
-                                .unwrap_or_default();
-                            config.repositorio = Some(t);
-                            Pedido::GravarConfigDoProjeto { slug, config }
-                        }
                         AcaoDaEntrada::PaginaNaPasta(pasta) if pasta == "pages" => Pedido::CriarPaginaComTitulo { titulo: t, tipo: None },
                         AcaoDaEntrada::PaginaNaPasta(pasta) => Pedido::CriarPaginaNaPasta { pasta, titulo: t },
                         AcaoDaEntrada::NovaPasta(dentro) => Pedido::CriarPasta(format!("{dentro}/{t}")),
@@ -1621,6 +1625,17 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                     }
                 }
                 R::Mudou if matches!(alvo, AlvoDoDetalhe::NovaSprint { .. }) => {}
+                R::Botao("salvar") if matches!(alvo, AlvoDoDetalhe::ConfigDoProjeto { .. }) => {
+                    let AlvoDoDetalhe::ConfigDoProjeto { slug, base } = &alvo else { unreachable!() };
+                    match config_do_formulario(base, &form) {
+                        Ok(config) => {
+                            e.pedidos.push(Pedido::GravarConfigDoProjeto { slug: slug.clone(), config });
+                            return;
+                        }
+                        Err(motivo) => e.aviso = Some(motivo),
+                    }
+                }
+                R::Mudou if matches!(alvo, AlvoDoDetalhe::ConfigDoProjeto { .. }) => {}
                 // Aplicar o conteúdo editado (ciclo 411): não é mais o
                 // que o agente escreveu, e o registro vai dizer isso.
                 R::Botao("aplicar") if matches!(alvo, AlvoDoDetalhe::PropostaEditada { .. }) => {
@@ -1706,6 +1721,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             e.modal = Some(Modal::Detalhe { titulo, form, alvo });
         }
         Modal::Construtor(c) => super::construtor::tecla(e, c, tecla),
+        Modal::Mudancas(v) => super::mudancas::tecla(e, v, tecla),
         Modal::EditorDeTexto { titulo, mut editor, alvo } => {
             if !editor.prende(tecla) {
                 match tecla {
@@ -1995,7 +2011,9 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("m", "pôr a tarefa numa sprint ou no backlog"),
             ("S", "sprints com datas e objetivo: iniciar, encerrar, criar, e o histórico com as feitas"),
             ("c a", "conversa / arquitetura do projeto"),
-            ("p o", "pausar a fila / escolher o repositório"),
+            ("p", "pausar a fila"),
+            ("o", "repositório, comando de verificação e prazo, branch por tarefa, commit ao aceitar"),
+            ("D", "o que a tarefa mudou no repositório: arquivos e diff (n N passam de arquivo)"),
             ("x", "execuções do agente neste projeto (Enter abre, r roda de novo)"),
         ],
     ),
@@ -2006,6 +2024,7 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("Alt+e", "mover de etapa (as transições da barra)"),
             ("Alt+a", "detalhar com o agente (ideia, detalhando, bloqueada)"),
             ("Alt+c", "conversa da tarefa"),
+            ("Alt+m", "o que a tarefa mudou no repositório"),
             ("Alt+p", "abrir o quadro do projeto"),
         ],
     ),
@@ -2095,6 +2114,7 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
             f.render_widget(Paragraph::new(linhas).scroll((rolagem as u16, 0)), dentro);
         }
         Modal::Construtor(c) => super::construtor::desenhar(f, e, c),
+        Modal::Mudancas(v) => super::mudancas::desenhar(f, e, v),
         Modal::EditorDeTexto { titulo, editor, .. } => {
             let area = componentes::area_do_modal(tela, 110, tela.height.saturating_sub(2));
             let rodape = "Shift+setas seleciona · Ctrl+X/Alt+C/Ctrl+V · Ctrl+F busca · Ctrl+L linguagem · Esc grava · Ctrl+C desiste";
@@ -2551,6 +2571,55 @@ fn pedido_da_nova_sprint(slug: &str, form: &crate::componentes::Formulario) -> R
         }
     }
     Ok(Pedido::CriarSprint { slug: slug.to_string(), nome, objetivo: form.texto("objetivo").trim().to_string(), inicio, fim })
+}
+
+/// O formulário do repositório e da verificação do projeto (ciclo 519),
+/// o `o` do quadro. `config` é o que está gravado, ou o que a pessoa
+/// tentou gravar quando o `main` recusou a pasta — reaberto com o que ela
+/// escreveu, e não com o antigo.
+pub fn abrir_config_do_projeto(e: &mut Estado, slug: &str, config: &anotadinho_core::projeto::ConfigProjeto) {
+    use crate::componentes::{CampoDoFormulario as C, Formulario, Valor};
+    // Rótulos de até 13 caracteres: a coluna do rótulo do formulário tem
+    // 14, e um maior gruda no valor ("Comando de verificaçãonpm test").
+    let mut form = Formulario::novo(vec![
+        C::novo("repositorio", "Repositório", Valor::Texto(config.repositorio.clone().unwrap_or_default())).com_dica("a pasta do código: ~/código/meu-saas"),
+        C::novo("verificar", "Verificação", Valor::Texto(config.verificar.clone().unwrap_or_default()))
+            .com_dica("o comando, ex. npm test · vazio: vale o que o agente disser"),
+        C::novo("prazo", "Prazo (seg.)", Valor::Texto(config.prazo_da_verificacao.to_string())),
+        C::novo("branch", "Branch por tarefa", Valor::Booleano(config.branch_por_tarefa)),
+        C::novo("commit", "Commitar ao aceitar (revisão → feita)", Valor::Booleano(config.commitar_ao_aceitar)),
+    ]);
+    form.botoes.push(("salvar", "Salvar".into()));
+    e.modal = Some(Modal::Detalhe {
+        titulo: "Repositório e verificação".into(),
+        form,
+        alvo: AlvoDoDetalhe::ConfigDoProjeto { slug: slug.to_string(), base: config.clone() },
+    });
+}
+
+/// A config do formulário, ou o que está errado nele. A pasta existir é o
+/// `main` que confere: é IO, e o `~` só ele expande.
+fn config_do_formulario(
+    base: &anotadinho_core::projeto::ConfigProjeto,
+    form: &crate::componentes::Formulario,
+) -> Result<anotadinho_core::projeto::ConfigProjeto, String> {
+    let texto = |chave: &str| Some(form.texto(chave).trim().to_string()).filter(|t| !t.is_empty());
+    let prazo = form.texto("prazo").trim().to_string();
+    // Zero não é "sem prazo": é uma verificação que estoura antes de
+    // começar e bloquearia toda tarefa. Sem verificação é o comando vazio.
+    let prazo_da_verificacao = match prazo.parse::<u64>() {
+        Ok(n) if n > 0 => n,
+        _ if prazo.is_empty() => anotadinho_core::projeto::PRAZO_PADRAO_DA_VERIFICACAO,
+        _ => return Err(format!("prazo: \"{prazo}\" não é um número de segundos maior que zero")),
+    };
+    Ok(anotadinho_core::projeto::ConfigProjeto {
+        repositorio: texto("repositorio"),
+        verificar: texto("verificar"),
+        prazo_da_verificacao,
+        branch_por_tarefa: form.booleano("branch"),
+        commitar_ao_aceitar: form.booleano("commit"),
+        ..base.clone()
+    })
 }
 
 /// O formulário das permissões do agente (ciclo 405): onde ele pode
