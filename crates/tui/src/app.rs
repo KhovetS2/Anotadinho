@@ -9772,7 +9772,7 @@ mod testes {
         tecla(&mut e, "v");
         let tela = desenho(&mut e, 90, 40).join("\n");
         assert!(tela.contains("10 de") && !tela.contains("24 de"), "a visualização ignorou o trecho tirado:\n{tela}");
-        assert!(tela.contains("[x] item um"), "o trecho escolhido sumiu:\n{tela}");
+        assert!(tela.contains("☑ item um"), "o trecho escolhido sumiu:\n{tela}");
     }
 
     #[test]
@@ -10984,6 +10984,20 @@ mod testes {
         digitar(&mut e, "lixo");
         tecla(&mut e, "Ctrl+c");
         assert!(e.gravacao.is_none() && e.modal.is_none());
+    }
+
+    // --- Ciclo 507: a marca de cada item ---------------------------------------------
+
+    #[test]
+    fn lista_numerada_mostra_o_numero_e_checklist_a_caixinha() {
+        let md = "1. um\n2. dois\n\n- [ ] por fazer\n- [x] feito com **força**\n- comum\n";
+        let mut e = Estado::novo(paginas(), analisar(md));
+        e.foco = Foco::Conteudo;
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("1. um") && tela.contains("2. dois"), "{tela}");
+        assert!(tela.contains("☐ por fazer") && tela.contains("☑ feito com força"), "{tela}");
+        assert!(tela.contains("- comum"), "{tela}");
+        assert!(!tela.contains("[x]") && !tela.contains("- um"), "{tela}");
     }
 
     // --- Ciclo 506: o editor de código e o diagrama no construtor -------------------

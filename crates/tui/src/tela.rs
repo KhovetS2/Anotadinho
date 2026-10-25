@@ -98,6 +98,17 @@ struct Linhas {
     caminho: Caminho,
     /// Quantos irmãos já saíram em cada nível — o índice do caminho.
     contadores: Vec<usize>,
+    /// O tipo de quem está aberto em cada nível: o item precisa saber se a
+    /// lista dele é numerada (ciclo 507).
+    tipos: Vec<Tipo>,
+}
+
+/// A caixinha de um item de checklist (`[ ] `, `[x] `), e o texto sem ela.
+fn caixinha(corpo: &str) -> Option<(&'static str, &str)> {
+    if let Some(r) = corpo.strip_prefix("[ ] ") {
+        return Some(("☐", r));
+    }
+    corpo.strip_prefix("[x] ").or_else(|| corpo.strip_prefix("[X] ")).map(|r| ("☑", r))
 }
 
 impl Renderizador for Linhas {
@@ -112,16 +123,32 @@ impl Renderizador for Linhas {
         self.caminho.truncate(nivel);
         self.caminho.push(self.contadores[nivel]);
         self.contadores[nivel] += 1;
+        self.tipos.truncate(nivel);
+        let pai = self.tipos.last().cloned();
+        self.tipos.push(u.tipo.clone());
 
+        // O item mostra a marca da lista dele (ciclo 507): o número na
+        // numerada e a caixinha no checklist, como a janela. Antes todo
+        // item saía `-`, e "1. um" virava "- um"; "[x]" saía cru.
+        let mut corpo_visivel = corpo(u);
+        let mut marca_do_item = None;
+        if u.tipo == Tipo::Item {
+            if let Some((c, resto)) = caixinha(&corpo_visivel) {
+                marca_do_item = Some(c.to_string());
+                corpo_visivel = resto.to_string();
+            } else if pai == Some(Tipo::ListaOrdenada) {
+                marca_do_item = Some(format!("{}.", self.contadores[nivel]));
+            }
+        }
         // Dentro de código nada é interpretado — a mesma regra que a
         // costura do ciclo 276 já seguia pra espaço em branco.
         let trechos = if literal(&u.tipo) {
             Vec::new()
         } else {
-            inline::trechos(&corpo(u))
+            inline::trechos(&corpo_visivel)
         };
         let texto = if trechos.is_empty() {
-            corpo(u)
+            corpo_visivel
         } else {
             inline::visivel(&trechos)
         };
@@ -131,7 +158,7 @@ impl Renderizador for Linhas {
             nivel,
             texto,
             resumo: contagem(u),
-            marca: marca(&u.tipo),
+            marca: marca_do_item.unwrap_or_else(|| marca(&u.tipo)),
             trechos,
             tipo: u.tipo.clone(),
             embed_dono: None,

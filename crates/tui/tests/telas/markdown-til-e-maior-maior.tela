@@ -4,8 +4,8 @@
 │                              │││## Título                                                                           ││
 │                              ││└────────────────────────────────────────────────────────────────────────────────────┘│
 │                              ││Um parágrafo com negrito.                                                             │
-│                              ││  - [ ] tarefa dois                                                                   │
-│                              ││  - [x] tarefa um                                                                     │
+│                              ││  ☐ tarefa dois                                                                       │
+│                              ││  ☑ tarefa um                                                                         │
 │                              ││> citação                                                                             │
 │                              ││                                                                                      │
 │                              ││                                                                                      │
@@ -25,8 +25,8 @@ accccddddddddddddddddddddddddddabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 addddddddddddddddddddddddddddddabbeeeffffffdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbb
 addddddddddddddddddddddddddddddabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 addddddddddddddddddddddddddddddabggggggggggggggggghhhhhhhgdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddeegggggggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddeegggggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddeegggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddeegggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabeeiiiiiiidddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb

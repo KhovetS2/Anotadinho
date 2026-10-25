@@ -7,16 +7,16 @@
 │                              ││ ▗▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▖                               │
 │                              ││ ▐ AGENTE  2026-08-24 19:46                                                                   ▌                               │
 │                              ││ ▐ Hoje, o fluxo de /imagem funciona assim:                                                   ▌                               │
-│                              ││ ▐   - A pessoa digita /imagem no editor e escolhe Imagem — URL ou arquivo de imagem.         ▌                               │
-│                              ││ ▐   - O texto do comando é removido.                                                         ▌                               │
-│                              ││ ▐   - Abre-se um campo pedindo “Caminho da imagem ou URL”.                                   ▌                               │
-│                              ││ ▐   - Se for uma URL iniciada por http, o editor insere diretamente um <img> apontando para  ▌                               │
-│                              ││ ▐     ela. A imagem não é copiada para o vault.                                              ▌                               │
-│                              ││ ▐   - Se for um caminho local, o backend copia o arquivo para assets/ preservando o nome     ▌                               │
-│                              ││ ▐     original.                                                                              ▌                               │
-│                              ││ ▐   - Após a cópia, o frontend insere a imagem no cursor com insert_element_at_cursor.       ▌                               │
-│                              ││ ▐   - O DOM é convertido novamente em markdown, o documento é marcado como editado e depois  ▌                               │
-│                              ││ ▐     segue o salvamento normal da nota.                                                     ▌                               │
+│                              ││ ▐   1. A pessoa digita /imagem no editor e escolhe Imagem — URL ou arquivo de imagem.        ▌                               │
+│                              ││ ▐   2. O texto do comando é removido.                                                        ▌                               │
+│                              ││ ▐   3. Abre-se um campo pedindo “Caminho da imagem ou URL”.                                  ▌                               │
+│                              ││ ▐   4. Se for uma URL iniciada por http, o editor insere diretamente um <img> apontando      ▌                               │
+│                              ││ ▐      para ela. A imagem não é copiada para o vault.                                        ▌                               │
+│                              ││ ▐   5. Se for um caminho local, o backend copia o arquivo para assets/ preservando o nome    ▌                               │
+│                              ││ ▐      original.                                                                             ▌                               │
+│                              ││ ▐   6. Após a cópia, o frontend insere a imagem no cursor com insert_element_at_cursor.      ▌                               │
+│                              ││ ▐   7. O DOM é convertido novamente em markdown, o documento é marcado como editado e        ▌                               │
+│                              ││ ▐      depois segue o salvamento normal da nota.                                             ▌                               │
 │                              ││ ▐ Portanto, /imagem é um fluxo com ação posterior e confirmação manual: o drop abriria o     ▌                               │
 │                              ││ ▐ diálogo e a pessoa ainda teria que fornecer um caminho ou URL. Ele não recebe              ▌                               │
 │                              ││ ▐ automaticamente o arquivo que está sendo arrastado.                                        ▌                               │
@@ -58,16 +58,16 @@ addddddddddddddddddddddddddddddabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 addddddddddddddddddddddddddddddabdbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbdddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabdijkkkkkklllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabdijmmmmmmmmmmmmmmmmmnnnnnnnmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdijjjllmmmmmmmmmmmmmmmmnnnnnnnmmmmmmmmmmmmmmmmmmmmmooooooooooooooooooooooooooooooooomjjjjjjjjjidddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdijjjllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdijjjllmmmmmmmmmmmmmmmmmmmmmmmmmoooooooooooooooooooooooooomjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdijjjllmmmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnnmmmmmmmmmmmmmmmjjidddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdijjjllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnnnnmmmmmmmmmmmmmmmmmmmjjjjjidddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdijjjllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnnnnnnnnnnnnnnnnnnnnnmjjjjjjjidddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdijjjllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjidddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabdijjjjjmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjlllmmmmmmmmmmmmmmmmnnnnnnnmmmmmmmmmmmmmmmmmmmmmooooooooooooooooooooooooooooooooomjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjlllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjlllmmmmmmmmmmmmmmmmmmmmmmmmmoooooooooooooooooooooooooomjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjlllmmmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnnmmmmmmmmmmjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjjmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjlllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnnnnmmmmmmmmmmmmmmmmmmmjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjjmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjlllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnnnnnnnnnnnnnnnnnnnnnmjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjlllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjidddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabdijjjjjjmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabdijmmmmmmmmmmnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjidddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabdijmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabdijmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjidddddddddddddddddddddddddddddddb

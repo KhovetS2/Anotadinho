@@ -2,10 +2,10 @@
 ┌páginas───────────────────────┐┌cena──────────────────────────────────────────────────────────────────────────────────┐
 │cena                          ││# Título                                                                              │
 │                              ││Um parágrafo com negrito.                                                             │
-│                              ││  - [ ] tarefa um                                                                     │
-│                              ││  - [ ] tarefa dois                                                                   │
+│                              ││  ☐ tarefa um                                                                         │
+│                              ││  ☐ tarefa dois                                                                       │
 │                              ││┌────────────────────────────────────────────────────────────────────────────────────┐│
-│                              │││  - [ ] tarefa três                                                                 ││
+│                              │││  ☐ tarefa três                                                                     ││
 │                              │││  - [ ] quatro                                                                      ││
 │                              ││└────────────────────────────────────────────────────────────────────────────────────┘│
 │                              ││> citação                                                                             │
@@ -23,10 +23,10 @@
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 accccddddddddddddddddddddddddddabeeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb
 addddddddddddddddddddddddddddddabggggggggggggggggghhhhhhhgdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddeegggggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
-addddddddddddddddddddddddddddddabddeegggggggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddeegggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
+addddddddddddddddddddddddddddddabddeegggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
 addddddddddddddddddddddddddddddabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-addddddddddddddddddddddddddddddabbddeegggggggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbb
+addddddddddddddddddddddddddddddabbddeegggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbb
 addddddddddddddddddddddddddddddabbddeeeeeeggggggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiibb
 addddddddddddddddddddddddddddddabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 addddddddddddddddddddddddddddddabeejjjjjjjdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddb
