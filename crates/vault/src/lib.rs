@@ -26,7 +26,7 @@ pub use watcher::{VaultEvent, VaultWatcher};
 /// essa flag, CADA `git status` do polling de 3s da UI (ciclo 103) faz
 /// o Windows abrir e fechar uma janela de console pro processo filho —
 /// visível como piscar contínuo enquanto o app está aberto.
-pub(crate) fn comando(programa: &str) -> std::process::Command {
+pub fn comando(programa: &str) -> std::process::Command {
     #[cfg_attr(not(windows), allow(unused_mut))]
     let mut cmd = std::process::Command::new(programa);
     #[cfg(windows)]

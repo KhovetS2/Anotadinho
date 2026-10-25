@@ -671,10 +671,19 @@ fn acompanhar(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila:
                 .map(|e| format!("não gravou a resposta: {e}")),
             Err(e) => Some(e),
         };
-        match anotadinho_ipc::handle_fechar_tarefa_da_conversa(vault.to_string(), path.clone(), fim_da_tarefa) {
-            Ok(Some(etapa)) => estado.aviso = Some(format!("tarefa foi pra {}: {path}", etapa.label())),
-            Ok(None) => {}
-            Err(e) => estado.aviso = Some(format!("não fechou a tarefa de {path}: {e}")),
+        // Numa thread (ciclo 517): com `verificar` no projeto, fechar a
+        // tarefa roda a suíte do SaaS, que leva minutos — no laço, a TUI
+        // congelava junto. A tarefa fica em `executando` até a thread
+        // acabar, então a vaga do projeto continua ocupada, e a releitura
+        // de 3 s da tela do projeto mostra a etapa nova quando ela chegar.
+        if anotadinho_ipc::handle_tarefa_da_conversa(vault.to_string(), path.clone()).is_some() {
+            estado.aviso = Some(format!("fechando a tarefa de {path} (verificação no repositório, se houver)…"));
+        }
+        {
+            let (v, p) = (vault.to_string(), path.clone());
+            std::thread::spawn(move || {
+                let _ = anotadinho_ipc::handle_fechar_tarefa_da_conversa(v, p, fim_da_tarefa);
+            });
         }
         let aberta = deste_vault && estado.paginas.get(estado.pagina).is_some_and(|p| p.path == path);
         if aberta {

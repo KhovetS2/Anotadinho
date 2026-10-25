@@ -15,6 +15,8 @@ pub use sprint::*;
 
 mod detalhes;
 pub use detalhes::*;
+// O repositório do projeto: verificar, diff, branch e commit (ciclo 517).
+pub mod repositorio;
 
 use anotadinho_core::PageIndexEntry;
 use anotadinho_search::SearchIndex;

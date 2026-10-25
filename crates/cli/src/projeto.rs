@@ -147,6 +147,15 @@ pub(crate) enum TarefaCommand {
         #[arg(long, default_value = "agente")]
         autor: String,
     },
+    /// O que a tarefa mudou no repositório do projeto (ciclo 517): os
+    /// arquivos e o diff, contra o commit de onde ela partiu. Só lê.
+    Mudancas {
+        /// Caminho da tarefa, relativo ao vault.
+        page_path: String,
+        /// Só a lista de arquivos, sem o diff.
+        #[arg(long)]
+        resumo: bool,
+    },
     /// Propõe mover a etapa de uma tarefa. Só as transições humanas:
     /// `executando` e `revisao` são registro do app.
     Etapa {
@@ -317,6 +326,24 @@ pub(crate) fn run_tarefa(vault: &str, action: TarefaCommand) -> Result<(), Strin
             let motivo = if motivo.trim().is_empty() { format!("tarefa nova: {}", titulo.trim()) } else { motivo };
             let id = crate::propor_conteudo(vault, caminho, conteudo, motivo, autor, lote)?;
             println!("{id}");
+        }
+        TarefaCommand::Mudancas { page_path, resumo } => {
+            let m = anotadinho_ipc::handle_mudancas_da_tarefa(vault.to_string(), page_path)?;
+            if let Some(a) = &m.aviso {
+                eprintln!("aviso: {a}");
+            }
+            println!(
+                "base: {} · branch: {}",
+                m.base.as_deref().map(|b| &b[..b.len().min(10)]).unwrap_or("—"),
+                m.branch.as_deref().unwrap_or("—")
+            );
+            for a in &m.arquivos {
+                println!("{}\t{}", a.estado, a.caminho);
+            }
+            if !resumo && !m.diff.is_empty() {
+                println!();
+                print!("{}", m.diff);
+            }
         }
         TarefaCommand::Etapa { page_path, para, autor } => {
             let destino = EtapaTarefa::from_slug(&para).ok_or_else(|| {

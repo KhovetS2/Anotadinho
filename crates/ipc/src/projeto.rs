@@ -14,6 +14,7 @@ use anotadinho_core::projeto::{
 use anotadinho_core::MarkdownCodec;
 use serde::{Deserialize, Serialize};
 
+use crate::repositorio;
 use crate::{handle_freio_do_dia, handle_read_page, handle_write_page};
 
 /// O que `handle_criar_projeto` fez.
@@ -143,6 +144,19 @@ pub fn handle_mudar_etapa_tarefa(
 ) -> Result<String, String> {
     let atual = handle_read_page(vault_path.clone(), caminho.clone())?;
     let novo = projeto::mudar_etapa(&atual, destino, Quem::Humano)?;
+    // Aceitar commita (ciclo 517), ANTES de gravar a etapa: se o commit
+    // falha (um hook, o git sem nome), a tarefa fica em revisão e o erro
+    // diz por quê — "feita" com o trabalho fora do histórico seria pior.
+    if destino == EtapaTarefa::Feita {
+        if let Some(t) = Tarefa::ler(&caminho, &atual).filter(|t| t.etapa == EtapaTarefa::Revisao) {
+            let cfg = handle_ler_projetos_cfg(vault_path.clone())?.remove(&t.projeto).unwrap_or_default();
+            if let Some(repo) = cfg.repositorio.as_deref().filter(|_| cfg.commitar_ao_aceitar) {
+                if repositorio::e_git(repo) {
+                    repositorio::commitar(repo, &format!("tarefa {:03}: {}", t.numero, t.titulo))?;
+                }
+            }
+        }
+    }
     handle_write_page(vault_path, caminho, novo.clone())?;
     Ok(novo)
 }
@@ -563,7 +577,32 @@ fn reservar_e_preparar(
     } else {
         conversa::parse(corpo)
     };
-    let pergunta = projeto::pergunta_de_executar(&tarefa);
+    // O repositório (ciclo 517): o branch da tarefa, se o projeto pede, e
+    // o commit de onde ela parte — é contra ele que a revisão mostra o que
+    // mudou. ANTES de qualquer gravação: um `git switch` que falha (árvore
+    // suja em conflito) deixa a tarefa em `executar`, com o motivo no
+    // aviso, em vez de rodar o agente no branch errado.
+    let cfg = handle_ler_projetos_cfg(vault_path.to_string())?.remove(&p.slug).unwrap_or_default();
+    let mut tarefa = tarefa;
+    let mut texto = texto;
+    if repositorio::e_git(repositorio) {
+        if cfg.branch_por_tarefa {
+            let nome = tarefa.branch_git.clone().unwrap_or_else(|| repositorio::nome_do_branch(tarefa.numero, &tarefa.titulo));
+            repositorio::ir_pro_branch(repositorio, &nome).map_err(|e| format!("não troquei pro branch {nome}: {e}"))?;
+            texto = MarkdownCodec::set_frontmatter_field(&texto, "branch_git", &nome).map_err(|e| e.to_string())?;
+            tarefa.branch_git = Some(nome);
+        }
+        // A segunda rodada (refaça, ou depois de bloqueada) continua com a
+        // base da PRIMEIRA: a revisão mostra tudo o que a tarefa mudou, e
+        // não só a última rodada.
+        if tarefa.base_git.is_none() {
+            if let Some(b) = repositorio::base_atual(repositorio) {
+                texto = MarkdownCodec::set_frontmatter_field(&texto, "base_git", &b).map_err(|e| e.to_string())?;
+                tarefa.base_git = Some(b);
+            }
+        }
+    }
+    let pergunta = projeto::pergunta_de_executar_com(&tarefa, cfg.comando_de_verificacao());
     let minha = Mensagem { autor: Autor::Voce, quando: params.agora.clone(), texto: pergunta.clone() };
     let corpo_novo = conversa::append(corpo, &minha);
     let gravado = if fm.is_empty() { corpo_novo } else { format!("{fm}\n{corpo_novo}") };
@@ -683,18 +722,75 @@ pub fn handle_fechar_tarefa(
     caminho: String,
     fim: FimDaTarefa,
 ) -> Result<EtapaTarefa, String> {
+    handle_fechar_tarefa_com(vault_path, caminho, fim, repositorio::Shell::do_sistema())
+}
+
+/// [`handle_fechar_tarefa`] com o shell da verificação por parâmetro
+/// (ciclo 517): é por aqui que o teste exerce o caminho de cada sistema.
+///
+/// Com `verificar` no projeto, a tarefa que o agente deu por concluída só
+/// vai pra `revisao` se o comando passar no repositório; senão vai pra
+/// `bloqueada`. O relato da verificação entra na seção **Verificação** da
+/// tarefa, que é anexada na próxima rodada: o agente lê o que quebrou.
+pub fn handle_fechar_tarefa_com(
+    vault_path: String,
+    caminho: String,
+    fim: FimDaTarefa,
+    shell: repositorio::Shell,
+) -> Result<EtapaTarefa, String> {
     let texto = handle_read_page(vault_path.clone(), caminho.clone())?;
     let tarefa = Tarefa::ler(&caminho, &texto).ok_or_else(|| format!("{caminho} não é uma tarefa"))?;
     if tarefa.etapa != EtapaTarefa::Executando {
         return Ok(tarefa.etapa);
     }
-    let destino = match &fim {
+    let mut destino = match &fim {
         FimDaTarefa::Respondeu(resposta) => projeto::ler_resultado(resposta).destino(),
         FimDaTarefa::Falhou(_) | FimDaTarefa::Interrompida => EtapaTarefa::Bloqueada,
     };
+    let mut texto = texto;
+    if destino == EtapaTarefa::Revisao {
+        let cfg = handle_ler_projetos_cfg(vault_path.clone())?.remove(&tarefa.projeto).unwrap_or_default();
+        if let (Some(cmd), Some(repo)) = (cfg.comando_de_verificacao(), cfg.repositorio.as_deref().filter(|r| Path::new(r).is_dir())) {
+            let v = repositorio::verificar(repo, cmd, std::time::Duration::from_secs(cfg.prazo_da_verificacao.max(1)), shell);
+            if !v.passou {
+                destino = EtapaTarefa::Bloqueada;
+            }
+            texto = projeto::com_verificacao(&texto, v.passou, &v.relato())?;
+        }
+    }
+    // A pessoa pode ter mexido na tarefa enquanto a verificação rodava
+    // (minutos): relê e só fecha se ainda está em `executando`.
+    let agora = handle_read_page(vault_path.clone(), caminho.clone())?;
+    if Tarefa::ler(&caminho, &agora).is_some_and(|t| t.etapa != EtapaTarefa::Executando) {
+        return Ok(Tarefa::ler(&caminho, &agora).map(|t| t.etapa).unwrap_or(destino));
+    }
     let novo = projeto::mudar_etapa(&texto, destino, Quem::Sistema)?;
     handle_write_page(vault_path, caminho, novo)?;
     Ok(destino)
+}
+
+/// O que a tarefa mudou no repositório do projeto (ciclo 517), contra o
+/// commit de onde a primeira rodada partiu.
+pub fn handle_mudancas_da_tarefa(vault_path: String, caminho: String) -> Result<repositorio::Mudancas, String> {
+    let texto = handle_read_page(vault_path.clone(), caminho.clone())?;
+    let tarefa = Tarefa::ler(&caminho, &texto).ok_or_else(|| format!("{caminho} não é uma tarefa"))?;
+    let cfg = handle_ler_projetos_cfg(vault_path)?.remove(&tarefa.projeto).unwrap_or_default();
+    let Some(repo) = cfg.repositorio.filter(|r| Path::new(r).is_dir()) else {
+        return Err(format!("o projeto {} não tem repositório configurado", tarefa.projeto));
+    };
+    let mut m = repositorio::mudancas_desde(&repo, tarefa.base_git.as_deref());
+    if m.aviso.is_none() && tarefa.base_git.is_none() {
+        m.aviso = Some("a tarefa ainda não rodou pelo app: mostrando o que está mudado no repositório agora".into());
+    }
+    Ok(m)
+}
+
+/// A tarefa dona desta conversa, se houver uma (o `tarefa:` do
+/// frontmatter), sem mexer em nada.
+pub fn handle_tarefa_da_conversa(vault_path: String, conversa_path: String) -> Option<String> {
+    let texto = handle_read_page(vault_path, conversa_path).ok()?;
+    let (fm, _) = MarkdownCodec::split_frontmatter(&texto).ok()?;
+    fm.extra.get("tarefa").and_then(|v| v.as_str()).map(str::to_string)
 }
 
 /// Fecha a tarefa dona desta conversa, se houver uma.
@@ -764,6 +860,103 @@ mod testes {
 
     fn etapa(v: &str, caminho: &str) -> EtapaTarefa {
         Tarefa::ler(caminho, &handle_read_page(v.into(), caminho.into()).unwrap()).unwrap().etapa
+    }
+
+    // ── O repositório (ciclo 517) ───────────────────────────────────
+
+    fn git(repo: &str, args: &[&str]) {
+        let s = std::process::Command::new("git").arg("-C").arg(repo).args(args).output().unwrap();
+        assert!(s.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&s.stderr));
+    }
+
+    /// O `montar`, com o repositório virando git (um commit) e a config do
+    /// projeto mexida por `f`.
+    fn montar_com_git(n: usize, f: impl Fn(&mut ConfigProjeto)) -> (tempfile::TempDir, tempfile::TempDir, String, String, Vec<String>) {
+        let (g, r, v, c) = montar(n);
+        let repo = r.path().to_string_lossy().to_string();
+        for a in [&["init", "-q", "-b", "main"][..], &["config", "user.email", "t@t"], &["config", "user.name", "t"]] {
+            git(&repo, a);
+        }
+        std::fs::write(r.path().join("app.txt"), "v1\n").unwrap();
+        git(&repo, &["add", "-A"]);
+        git(&repo, &["commit", "-qm", "início"]);
+        let mut cfg = handle_ler_projetos_cfg(v.clone()).unwrap();
+        f(cfg.get_mut("saas").unwrap());
+        handle_gravar_projetos_cfg(v.clone(), cfg).unwrap();
+        (g, r, v, repo, c)
+    }
+
+    #[test]
+    fn verificacao_que_falha_bloqueia_e_conta_o_que_quebrou() {
+        let (_g, _r, v, _repo, c) = montar_com_git(1, |cfg| cfg.verificar = Some("echo 2 testes falharam; exit 1".into()));
+        pedir_execucao(&v, &c[0]);
+        let t = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        assert!(t.prompt.contains("rode `echo 2 testes falharam; exit 1`"), "o prompt não avisou do comando");
+        let fim = handle_fechar_tarefa_com(v.clone(), c[0].clone(), FimDaTarefa::Respondeu("feito\nRESULTADO: concluida".into()), repositorio::Shell::Sh).unwrap();
+        assert_eq!(fim, EtapaTarefa::Bloqueada, "o agente disse concluída, mas o teste falhou");
+        let texto = handle_read_page(v.clone(), c[0].clone()).unwrap();
+        assert!(texto.contains("verificacao: falhou") && texto.contains("FALHOU (código 1)") && texto.contains("2 testes falharam"), "{texto}");
+        // A próxima rodada sabe disso.
+        let tarefa = Tarefa::ler(&c[0], &texto).unwrap();
+        assert!(projeto::pergunta_de_executar_com(&tarefa, Some("x")).contains("já rodou antes"));
+    }
+
+    #[test]
+    fn verificacao_que_passa_vai_pra_revisao_e_a_que_nao_existe_e_o_agente_que_decide() {
+        let (_g, _r, v, _repo, c) = montar_com_git(2, |cfg| cfg.verificar = Some("true".into()));
+        pedir_execucao(&v, &c[0]);
+        handle_tarefas_a_executar(v.clone(), params()).unwrap();
+        let fim = handle_fechar_tarefa_com(v.clone(), c[0].clone(), FimDaTarefa::Respondeu("RESULTADO: concluida".into()), repositorio::Shell::Sh).unwrap();
+        assert_eq!(fim, EtapaTarefa::Revisao);
+        assert!(handle_read_page(v.clone(), c[0].clone()).unwrap().contains("verificacao: passou"));
+        // O agente que diz bloqueada não paga a verificação.
+        pedir_execucao(&v, &c[1]);
+        handle_tarefas_a_executar(v.clone(), params()).unwrap();
+        let fim = handle_fechar_tarefa_com(v.clone(), c[1].clone(), FimDaTarefa::Respondeu("RESULTADO: bloqueada".into()), repositorio::Shell::Sh).unwrap();
+        assert_eq!(fim, EtapaTarefa::Bloqueada);
+        assert!(!handle_read_page(v, c[1].clone()).unwrap().contains("verificacao:"));
+    }
+
+    #[test]
+    fn a_tarefa_guarda_a_base_e_o_branch_e_a_revisao_mostra_o_que_mudou() {
+        let (_g, r, v, repo, c) = montar_com_git(1, |cfg| cfg.branch_por_tarefa = true);
+        pedir_execucao(&v, &c[0]);
+        handle_tarefas_a_executar(v.clone(), params()).unwrap();
+        let tarefa = Tarefa::ler(&c[0], &handle_read_page(v.clone(), c[0].clone()).unwrap()).unwrap();
+        let base = tarefa.base_git.clone().expect("a base não foi guardada");
+        let branch = tarefa.branch_git.clone().expect("o branch não foi guardado");
+        assert!(branch.starts_with("tarefa/001-"), "{branch}");
+        assert_eq!(repositorio::branch_atual(&repo).as_deref(), Some(branch.as_str()), "o repositório não foi pro branch");
+        // O "agente" commita uma coisa e deixa outra na árvore.
+        std::fs::write(r.path().join("app.txt"), "v2\n").unwrap();
+        git(&repo, &["commit", "-qam", "agente"]);
+        std::fs::write(r.path().join("novo.txt"), "oi\n").unwrap();
+        handle_fechar_tarefa(v.clone(), c[0].clone(), FimDaTarefa::Respondeu("RESULTADO: concluida".into())).unwrap();
+        let m = handle_mudancas_da_tarefa(v.clone(), c[0].clone()).unwrap();
+        assert_eq!(m.base.as_deref(), Some(base.as_str()));
+        assert!(m.diff.contains("-v1") && m.diff.contains("+v2") && m.diff.contains("+oi"), "{}", m.diff);
+        assert_eq!(m.arquivos.len(), 2);
+        // A segunda rodada mantém a base da primeira.
+        handle_mudar_etapa_tarefa(v.clone(), c[0].clone(), EtapaTarefa::Executar).unwrap();
+        handle_tarefas_a_executar(v.clone(), params()).unwrap();
+        let de_novo = Tarefa::ler(&c[0], &handle_read_page(v.clone(), c[0].clone()).unwrap()).unwrap();
+        assert_eq!(de_novo.base_git.as_deref(), Some(base.as_str()));
+    }
+
+    #[test]
+    fn aceitar_commita_quando_o_projeto_pede() {
+        let (_g, r, v, repo, c) = montar_com_git(1, |cfg| cfg.commitar_ao_aceitar = true);
+        pedir_execucao(&v, &c[0]);
+        handle_tarefas_a_executar(v.clone(), params()).unwrap();
+        std::fs::write(r.path().join("app.txt"), "v2\n").unwrap();
+        handle_fechar_tarefa(v.clone(), c[0].clone(), FimDaTarefa::Respondeu("RESULTADO: concluida".into())).unwrap();
+        let antes = repositorio::base_atual(&repo).unwrap();
+        handle_mudar_etapa_tarefa(v.clone(), c[0].clone(), EtapaTarefa::Feita).unwrap();
+        let depois = repositorio::base_atual(&repo).unwrap();
+        assert_ne!(antes, depois, "não commitou");
+        let log = std::process::Command::new("git").args(["-C", &repo, "log", "-1", "--format=%s"]).output().unwrap();
+        assert!(String::from_utf8_lossy(&log.stdout).starts_with("tarefa 001: "), "{}", String::from_utf8_lossy(&log.stdout));
+        assert_eq!(etapa(&v, &c[0]), EtapaTarefa::Feita);
     }
 
     #[test]

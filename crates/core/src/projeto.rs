@@ -210,15 +210,57 @@ pub struct ConfigProjeto {
     /// tarefas no mesmo repositório disputam os mesmos arquivos.
     #[serde(default = "concorrencia_padrao")]
     pub concorrencia: usize,
+    /// O comando que confere o trabalho (ciclo 517): `npm test`, `cargo
+    /// test`. Roda no repositório depois do agente; a tarefa só vai pra
+    /// `revisao` se ele passar. Sem ele, vale o que o agente disse.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verificar: Option<String>,
+    /// Prazo da verificação, em segundos.
+    #[serde(default = "prazo_padrao", skip_serializing_if = "e_prazo_padrao")]
+    pub prazo_da_verificacao: u64,
+    /// Cada tarefa no branch dela (`tarefa/003-…`), criado de onde o
+    /// repositório estiver.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub branch_por_tarefa: bool,
+    /// Aceitar (revisão → feita) commita o que a tarefa deixou na árvore.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub commitar_ao_aceitar: bool,
 }
 
 fn concorrencia_padrao() -> usize {
     1
 }
 
+/// Quinze minutos: uma suíte de SaaS pequeno cabe com folga, e um teste
+/// travado não segura a vaga do projeto pra sempre.
+pub const PRAZO_PADRAO_DA_VERIFICACAO: u64 = 900;
+
+fn prazo_padrao() -> u64 {
+    PRAZO_PADRAO_DA_VERIFICACAO
+}
+
+fn e_prazo_padrao(p: &u64) -> bool {
+    *p == PRAZO_PADRAO_DA_VERIFICACAO
+}
+
 impl Default for ConfigProjeto {
     fn default() -> Self {
-        Self { repositorio: None, pausado: false, concorrencia: concorrencia_padrao() }
+        Self {
+            repositorio: None,
+            pausado: false,
+            concorrencia: concorrencia_padrao(),
+            verificar: None,
+            prazo_da_verificacao: prazo_padrao(),
+            branch_por_tarefa: false,
+            commitar_ao_aceitar: false,
+        }
+    }
+}
+
+impl ConfigProjeto {
+    /// O comando de verificação, se há um de verdade.
+    pub fn comando_de_verificacao(&self) -> Option<&str> {
+        self.verificar.as_deref().map(str::trim).filter(|c| !c.is_empty())
     }
 }
 
@@ -385,6 +427,16 @@ pub struct Tarefa {
     /// A seção **Anexos**.
     #[serde(default)]
     pub anexos: Vec<crate::detalhes::Anexo>,
+    /// O commit do repositório de onde a execução partiu (ciclo 517): é
+    /// contra ele que a revisão mostra o que a tarefa mudou.
+    #[serde(default)]
+    pub base_git: Option<String>,
+    /// O branch em que a tarefa roda, com `branch_por_tarefa`.
+    #[serde(default)]
+    pub branch_git: Option<String>,
+    /// Como a última verificação terminou: `passou` ou `falhou`.
+    #[serde(default)]
+    pub verificacao: Option<String>,
 }
 
 pub(crate) fn texto_do_valor(v: &serde_yaml::Value) -> Option<String> {
@@ -433,6 +485,9 @@ impl Tarefa {
             checklist: crate::detalhes::checklist(texto),
             comentarios: crate::detalhes::comentarios(texto),
             anexos: crate::detalhes::anexos(texto),
+            base_git: campo("base_git"),
+            branch_git: campo("branch_git"),
+            verificacao: campo("verificacao"),
         })
     }
 
@@ -880,6 +935,37 @@ pub const MARCA_DE_RESULTADO: &str = "RESULTADO:";
 /// app lê pra decidir entre `revisao` e `bloqueada`: o agente não toca
 /// no `status`.
 pub fn pergunta_de_executar(tarefa: &Tarefa) -> String {
+    pergunta_de_executar_com(tarefa, None)
+}
+
+/// A pergunta de execução, sabendo do repositório (ciclo 517): o comando
+/// que o app vai rodar depois, o branch, e a volta da revisão.
+pub fn pergunta_de_executar_com(tarefa: &Tarefa, verificacao: Option<&str>) -> String {
+    let mut extra: Vec<String> = Vec::new();
+    if let Some(b) = &tarefa.branch_git {
+        extra.push(format!("Você está no branch `{b}`, que é desta tarefa: commite nele, com mensagens que digam o que mudou."));
+    }
+    if let Some(cmd) = verificacao {
+        extra.push(format!(
+            "Antes de terminar, rode `{cmd}` e deixe passando: o app roda o mesmo comando depois de você, e a tarefa só vai pra revisão se ele passar."
+        ));
+    }
+    if !tarefa.comentarios.is_empty() || tarefa.verificacao.as_deref() == Some("falhou") {
+        extra.push(
+            "Esta tarefa já rodou antes: os Comentários e a Verificação na página dela dizem o que a revisão pediu e o que falhou. Comece por aí."
+                .to_string(),
+        );
+    }
+    let mut p = pergunta_de_executar_base(tarefa);
+    if !extra.is_empty() {
+        // Antes do "Ao terminar": é o que muda o trabalho, não o relato.
+        let ponto = p.find("\n\nSe a abordagem").unwrap_or(p.len());
+        p.insert_str(ponto, &format!("\n\n{}", extra.join("\n")));
+    }
+    p
+}
+
+fn pergunta_de_executar_base(tarefa: &Tarefa) -> String {
     let base = match tarefa.proposta.as_deref() {
         Some(p) => format!("Siga a abordagem da proposta vinculada ({p}), que foi aprovada."),
         None => "Siga a seção Abordagem da tarefa: ela foi aceita quando a tarefa ficou pronta."
@@ -912,6 +998,44 @@ pub fn pergunta_de_executar(tarefa: &Tarefa) -> String {
         ),
     ]
     .join("\n")
+}
+
+/// O texto da tarefa com a seção **Verificação** trocada pelo `relato`
+/// (ciclo 517), e o `verificacao:` do frontmatter. A seção é UMA, sempre a
+/// da última rodada: o histórico de cada rodada fica na conversa.
+pub fn com_verificacao(texto: &str, passou: bool, relato: &str) -> Result<String, String> {
+    let com_fm = MarkdownCodec::set_frontmatter_field(texto, "verificacao", if passou { "passou" } else { "falhou" })
+        .map_err(|e| e.to_string())?;
+    let linhas: Vec<&str> = com_fm.lines().collect();
+    let titulo = "## Verificação";
+    let ini = linhas.iter().position(|l| l.trim() == titulo);
+    let mut fora: Vec<String> = Vec::new();
+    match ini {
+        Some(i) => {
+            let fim = linhas.iter().enumerate().skip(i + 1).find(|(_, l)| l.starts_with("## ")).map(|(k, _)| k).unwrap_or(linhas.len());
+            fora.extend(linhas[..i].iter().map(|s| s.to_string()));
+            fora.push(titulo.into());
+            fora.push(String::new());
+            fora.extend(relato.lines().map(str::to_string));
+            fora.push(String::new());
+            fora.extend(linhas[fim..].iter().map(|s| s.to_string()));
+        }
+        None => {
+            fora.extend(linhas.iter().map(|s| s.to_string()));
+            while fora.last().is_some_and(|l| l.trim().is_empty()) {
+                fora.pop();
+            }
+            fora.push(String::new());
+            fora.push(titulo.into());
+            fora.push(String::new());
+            fora.extend(relato.lines().map(str::to_string));
+        }
+    }
+    let mut t = fora.join("\n");
+    if !t.ends_with('\n') {
+        t.push('\n');
+    }
+    Ok(t)
 }
 
 /// O que o agente disse que aconteceu.
@@ -1206,6 +1330,31 @@ mod testes {
         assert_eq!(MarkdownCodec::split_frontmatter_text(&limpa).1, MarkdownCodec::split_frontmatter_text(texto).1);
         // Não é tarefa: recusa.
         assert!(com_prioridade("---\ntitle: x\n---\nc\n", Some("alta")).is_err());
+    }
+
+    #[test]
+    fn pergunta_com_repositorio_diz_o_comando_o_branch_e_a_volta() {
+        let mut t = tarefa(3, "executar", "branch_git: tarefa/003-t\n");
+        let p = pergunta_de_executar_com(&t, Some("npm test"));
+        assert!(p.contains("rode `npm test`") && p.contains("branch `tarefa/003-t`"), "{p}");
+        assert!(p.find("npm test").unwrap() < p.find("Ao terminar").unwrap());
+        assert!(!p.contains("já rodou antes"));
+        t.verificacao = Some("falhou".into());
+        assert!(pergunta_de_executar_com(&t, None).contains("já rodou antes"));
+        // Sem nada, igual à de antes.
+        assert_eq!(pergunta_de_executar_com(&tarefa(1, "executar", ""), None), pergunta_de_executar(&tarefa(1, "executar", "")));
+    }
+
+    #[test]
+    fn a_verificacao_vai_numa_secao_so_e_no_frontmatter() {
+        let md = tarefa_md("revisao", "");
+        let um = com_verificacao(&md, false, "**Verificação** — falhou\n\n```\nerro\n```").unwrap();
+        assert!(um.contains("verificacao: falhou") && um.contains("## Verificação\n\n**Verificação** — falhou"), "{um}");
+        let dois = com_verificacao(&um, true, "passou").unwrap();
+        assert_eq!(dois.matches("## Verificação").count(), 1, "{dois}");
+        assert!(dois.contains("verificacao: passou") && !dois.contains("erro") && dois.contains("## Verificação\n\npassou"), "{dois}");
+        let t = Tarefa::ler("pages/projetos/saas/tarefas/001-t.md", &dois).unwrap();
+        assert_eq!(t.verificacao.as_deref(), Some("passou"));
     }
 
     #[test]
