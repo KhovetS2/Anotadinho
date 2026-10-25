@@ -12,7 +12,7 @@ use anotadinho_tui::app::{Pedido, Preferencias};
 use anotadinho_tui::app::{self, Estado};
 use anotadinho_tui::sistema;
 use clap::Parser;
-use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
+use crossterm::event::{self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::execute;
 use ratatui::backend::CrosstermBackend;
@@ -2047,7 +2047,10 @@ fn main() -> Result<(), String> {
     // O mouse capturado (ciclo 454): sem isto a roda ia pro terminal, que
     // na tela alternativa não rola nada. O preço é conhecido de todo
     // programa de terminal que usa mouse: selecionar texto pede Shift.
-    execute!(saida, EnterAlternateScreen, EnableMouseCapture).map_err(|e| e.to_string())?;
+    // A colagem em bloco (ciclo 510): o terminal entrega o texto colado
+    // inteiro, como `Event::Paste`, e não como teclas — senão o Enter
+    // colado age (recuo somado no editor, mensagem enviada na conversa).
+    execute!(saida, EnterAlternateScreen, EnableMouseCapture, EnableBracketedPaste).map_err(|e| e.to_string())?;
     let mut term = Terminal::new(CrosstermBackend::new(saida)).map_err(|e| e.to_string())?;
 
     // Trocar de vault (ciclo 373) monta tudo de novo sem sair do terminal.
@@ -2071,7 +2074,7 @@ fn main() -> Result<(), String> {
     };
 
     disable_raw_mode().map_err(|e| e.to_string())?;
-    execute!(term.backend_mut(), DisableMouseCapture, LeaveAlternateScreen).map_err(|e| e.to_string())?;
+    execute!(term.backend_mut(), DisableBracketedPaste, DisableMouseCapture, LeaveAlternateScreen).map_err(|e| e.to_string())?;
     term.show_cursor().map_err(|e| e.to_string())?;
     resultado
 }
@@ -2131,6 +2134,11 @@ fn laco<B: ratatui::backend::Backend>(
         }
         let k = match event::read().map_err(|e| e.to_string())? {
             Event::Key(k) => k,
+            Event::Paste(texto) => {
+                app::colar(estado, &texto);
+                atender(estado, vault, trabalhos, fila);
+                continue;
+            }
             Event::Mouse(m) => {
                 let desce = match m.kind {
                     MouseEventKind::ScrollDown => true,

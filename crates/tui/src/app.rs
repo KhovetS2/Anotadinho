@@ -1564,6 +1564,50 @@ pub fn clicar(e: &mut Estado, coluna: u16, linha: u16) -> Option<String> {
     }
 }
 
+/// A colagem do terminal (ciclo 510, *bracketed paste*): o texto chega
+/// INTEIRO, e não uma tecla por caractere. Uma tecla por caractere fazia o
+/// Enter colado agir — no editor de código ele somava o recuo automático
+/// ao recuo do texto, e cada linha colada entrava mais pra dentro; numa
+/// conversa ele mandava a mensagem pela metade.
+pub fn colar(e: &mut Estado, texto: &str) {
+    e.aviso = None;
+    match e.modal.as_mut() {
+        Some(Modal::EditorDeTexto { editor, .. }) if editor.seletor.is_none() && !editor.busca.as_ref().is_some_and(|(_, d)| *d) => {
+            editor.colar(texto);
+            return;
+        }
+        Some(Modal::Construtor(c)) => {
+            if construtor::colar(c, texto) {
+                return;
+            }
+        }
+        _ => {}
+    }
+    let uma_linha: String = texto.replace("\r\n", "\n").replace(['\r', '\n'], " ");
+    // A inserção de um bloco é uma linha só: a quebra vira espaço.
+    if let Some(p) = e.pergunta.as_mut() {
+        let i = p.texto.char_indices().nth(p.cursor).map_or(p.texto.len(), |(i, _)| i);
+        p.texto.insert_str(i, &uma_linha);
+        p.cursor += uma_linha.chars().count();
+        p.selecao = None;
+        return;
+    }
+    if let Some(c) = e.conversa.as_mut().filter(|c| c.escrevendo) {
+        c.rascunho.inserir(&texto.replace("\r\n", "\n"));
+        return;
+    }
+    // Nos outros campos (formulário, barra de comandos, filtro), uma tecla
+    // por caractere como antes, mas sem o Enter.
+    if e.modal.is_some() || e.barra_aberta {
+        for ch in uma_linha.chars() {
+            tecla(e, &ch.to_string());
+        }
+        return;
+    }
+    // Fora de um campo, colar seriam comandos do vim, letra por letra.
+    e.aviso = Some("colar: entre num campo de texto antes (i, o, ou um formulário)".into());
+}
+
 pub fn rolar(e: &mut Estado, desce: bool, coluna: u16) {
     // Onde se digita, a roda não faz nada: andar o cursor no meio de uma
     // edição levaria o texto pro bloco errado.
@@ -10984,6 +11028,39 @@ mod testes {
         digitar(&mut e, "lixo");
         tecla(&mut e, "Ctrl+c");
         assert!(e.gravacao.is_none() && e.modal.is_none());
+    }
+
+    // --- Ciclo 510: colar do terminal ------------------------------------------------
+
+    #[test]
+    fn colar_no_editor_de_codigo_entra_como_veio() {
+        let mut e = pagina_com("```rust\nfn a() {\n}\n```\n");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0];
+        tecla(&mut e, "i");
+        tecla(&mut e, "End");
+        tecla(&mut e, "Enter");
+        colar(&mut e, "if x {\n    y();\n}");
+        tecla(&mut e, "Escape");
+        let texto = e.gravacao.clone().expect("não gravou");
+        assert!(texto.contains("fn a() {\n    if x {\n    y();\n}\n}"), "o recuo somou:\n{texto}");
+    }
+
+    #[test]
+    fn colar_na_conversa_nao_envia_e_fora_de_campo_nao_vira_comando() {
+        let mut e = Estado::novo(paginas(), analisar("Um.\n\nDois.\n"));
+        e.foco = Foco::Conteudo;
+        let antes = e.cursor.clone();
+        colar(&mut e, "dd\nG");
+        assert_eq!(e.cursor, antes, "a colagem virou comando");
+        assert!(e.aviso.as_deref().is_some_and(|a| a.contains("colar")));
+        // Na inserção de um bloco, a quebra vira espaço.
+        let mut e = pagina_com("Um.\n");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0];
+        tecla(&mut e, "A");
+        colar(&mut e, " dois\ntrês");
+        assert_eq!(e.pergunta.as_ref().unwrap().texto, "Um. dois três");
     }
 
     // --- Ciclo 509: busca dentro do bloco ------------------------------------------

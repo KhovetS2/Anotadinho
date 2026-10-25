@@ -41,6 +41,15 @@ impl Campo {
         self.texto.char_indices().nth(c).map_or(self.texto.len(), |(i, _)| i)
     }
 
+    /// Põe `s` no cursor, inteiro (a colagem do terminal, ciclo 510).
+    pub fn inserir(&mut self, s: &str) {
+        let n = self.texto.chars().count();
+        self.cursor = self.cursor.min(n);
+        let i = self.byte(self.cursor);
+        self.texto.insert_str(i, s);
+        self.cursor += s.chars().count();
+    }
+
     /// Aplica uma tecla de edição. Devolve se ela foi usada — `Enter`,
     /// `Escape` e setas verticais são de quem contém o campo.
     pub fn tecla(&mut self, tecla: &str) -> bool {

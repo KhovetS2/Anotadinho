@@ -124,6 +124,19 @@ impl EditorDeCodigo {
         &self.campo.texto
     }
 
+    /// Cola `texto` no cursor como VEIO (ciclo 510): sem o recuo do Enter,
+    /// que somado ao recuo do próprio texto colado entortava cada linha, e
+    /// como um passo só do desfazer.
+    pub fn colar(&mut self, texto: &str) {
+        let texto = texto.replace("\r\n", "\n").replace('\r', "\n");
+        if texto.is_empty() {
+            return;
+        }
+        self.guardar(Tipo::Outro);
+        self.ultima = None;
+        self.inserir(&texto);
+    }
+
     /// Troca o texto inteiro (o construtor reescreveu o código pelo
     /// formulário), como UM passo do desfazer.
     pub fn trocar(&mut self, texto: String) {
@@ -660,6 +673,16 @@ mod testes {
         assert!(e.prende("Escape") && !e.prende("Ctrl+s"));
         e.tecla("Escape");
         assert!(e.busca.is_none() && !e.prende("Escape"));
+    }
+
+    #[test]
+    fn colar_entra_como_veio_sem_somar_recuo() {
+        let mut e = ed("fn f() {\n    ", 13);
+        e.colar("if x {\r\n    y();\r\n}");
+        assert_eq!(e.texto(), "fn f() {\n    if x {\n    y();\n}");
+        // Um passo só no desfazer.
+        e.tecla("Ctrl+z");
+        assert_eq!(e.texto(), "fn f() {\n    ");
     }
 
     #[test]

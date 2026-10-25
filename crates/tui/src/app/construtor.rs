@@ -1290,6 +1290,15 @@ fn tecla_no_formulario(c: &mut Construtor, tecla: &str) {
     c.form = Some((form, l));
 }
 
+/// A colagem do terminal (ciclo 510) na aba Código.
+pub(super) fn colar(c: &mut Construtor, texto: &str) -> bool {
+    if c.aba != Aba::Codigo || c.form.is_some() || c.tipos.is_some() {
+        return false;
+    }
+    c.codigo.colar(texto);
+    true
+}
+
 fn tecla_no_codigo(e: &mut Estado, c: &mut Construtor, tecla: &str) -> bool {
     // A busca do editor (509) segura o Esc e as letras enquanto está aberta.
     if c.codigo.prende(tecla) {
