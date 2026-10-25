@@ -10960,10 +10960,13 @@ mod testes {
         // Desde o 498 o primeiro Enter entra no bloco; o segundo edita.
         tecla(&mut e, "Enter");
         tecla(&mut e, "Enter");
-        let Some(Modal::EditorDeTexto { campo, titulo, .. }) = &e.modal else { panic!("{:?} {:?}", e.modal, e.aviso) };
-        assert_eq!((campo.texto.as_str(), titulo.as_str()), ("fn a() {}", "Código rust"));
-        let tela = desenho(&mut e, 100, 20).join("\n");
-        assert!(tela.contains("  1 fn a() {}") && tela.contains("Esc grava"), "{tela}");
+        let Some(Modal::EditorDeTexto { editor, titulo, .. }) = &e.modal else { panic!("{:?} {:?}", e.modal, e.aviso) };
+        assert_eq!((editor.texto(), titulo.as_str()), ("fn a() {}", "Código rust"));
+        let tela = desenho(&mut e, 120, 20).join("\n");
+        assert!(tela.contains("  1  fn a() {}") && tela.contains("Esc grava"), "{tela}");
+        assert!(tela.contains("linha 1, coluna 1 · Rust"), "{tela}");
+        // O cursor começa no topo do bloco (506); vai pro fim.
+        tecla(&mut e, "Ctrl+End");
         tecla(&mut e, "Enter");
         digitar(&mut e, "fn b() {}");
         tecla(&mut e, "ArrowUp");
@@ -10981,6 +10984,66 @@ mod testes {
         digitar(&mut e, "lixo");
         tecla(&mut e, "Ctrl+c");
         assert!(e.gravacao.is_none() && e.modal.is_none());
+    }
+
+    // --- Ciclo 506: o editor de código e o diagrama no construtor -------------------
+
+    #[test]
+    fn o_editor_de_codigo_indenta_e_troca_a_linguagem_da_cerca() {
+        let mut e = pagina_com("# T\n\n```rust\nfn a() {\n}\n```\n\nFim.\n");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![1];
+        tecla(&mut e, "i");
+        // Fim da primeira linha, Enter: entra um nível.
+        tecla(&mut e, "End");
+        tecla(&mut e, "Enter");
+        digitar(&mut e, "x();");
+        // A linguagem pelo seletor: Python.
+        tecla(&mut e, "Ctrl+l");
+        tecla(&mut e, "p");
+        tecla(&mut e, "Enter");
+        assert!(desenho(&mut e, 120, 20).join("\n").contains("· Python"));
+        tecla(&mut e, "Ctrl+s");
+        let texto = e.gravacao.clone().expect("não gravou");
+        assert!(texto.contains("```python\nfn a() {\n    x();\n}\n```"), "{texto}");
+    }
+
+    #[test]
+    fn gravar_sem_trocar_a_linguagem_mantem_a_cerca_como_estava() {
+        let mut e = pagina_com("```rust {.numerado}\nfn a() {}\n```\n");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0];
+        tecla(&mut e, "i");
+        tecla(&mut e, "Ctrl+End");
+        digitar(&mut e, " // ok");
+        tecla(&mut e, "Escape");
+        let texto = e.gravacao.clone().expect("não gravou");
+        assert!(texto.starts_with("```rust {.numerado}\nfn a() {} // ok\n```"), "{texto}");
+    }
+
+    #[test]
+    fn editar_um_diagrama_abre_o_construtor_com_formulario_e_codigo() {
+        let mut e = pagina_com("```mermaid\ngraph TD\n  A --> B\n```\n");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0];
+        tecla(&mut e, "i");
+        assert!(matches!(e.modal, Some(Modal::Construtor(_))), "{:?}", e.modal);
+        let tela = desenho(&mut e, 120, 30).join("\n");
+        assert!(tela.contains("Construtor") && tela.contains("Código"), "{tela}");
+        // E pelo Enter de dentro do bloco (498), o mesmo.
+        e.modal = None;
+        tecla(&mut e, "Enter");
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Construtor(_))), "{:?}", e.modal);
+        // Um bloco de código que vira mermaid pelo seletor também vai pro construtor.
+        let mut e = pagina_com("```\ngraph TD\n  A --> B\n```\n");
+        e.foco = Foco::Conteudo;
+        e.cursor = vec![0];
+        tecla(&mut e, "i");
+        tecla(&mut e, "Ctrl+l");
+        tecla(&mut e, "m");
+        tecla(&mut e, "Enter");
+        assert!(matches!(e.modal, Some(Modal::Construtor(_))), "{:?}", e.modal);
     }
 
     // --- Ciclo 392: lista de agentes ------------------------------------------------

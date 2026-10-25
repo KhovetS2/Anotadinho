@@ -28,10 +28,11 @@ use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use ratatui::Frame;
 
 use super::markdown::Hospedeiro;
-use super::modais::{AlvoDoTexto, Modal};
+use super::modais::Modal;
 use super::Estado;
 use crate::codigo::{Medida, Vista};
-use crate::componentes::{self, Campo, CampoDoFormulario as C, Formulario, RespostaDoFormulario as R, Valor};
+use crate::editor_codigo::EditorDeCodigo;
+use crate::componentes::{self, CampoDoFormulario as C, Formulario, RespostaDoFormulario as R, Valor};
 use crate::tema::{Realce, Tema};
 
 /// Pra onde o "Aplicar" escreve.
@@ -95,7 +96,7 @@ pub struct Construtor {
     /// toa.
     pub original: String,
     /// O código: a fonte da verdade.
-    pub codigo: Campo,
+    pub codigo: EditorDeCodigo,
     pub aba: Aba,
     pub foco: Foco,
     /// A linha da lista com o cursor.
@@ -126,7 +127,7 @@ impl Construtor {
         let mut c = Self {
             destino,
             original: codigo.clone(),
-            codigo: Campo::com(codigo),
+            codigo: EditorDeCodigo::novo(codigo, Some("mermaid".into())),
             aba,
             foco: Foco::Edicao,
             sel: 0,
@@ -149,11 +150,11 @@ impl Construtor {
     }
 
     fn mudou(&self) -> bool {
-        self.codigo.texto != self.original
+        self.codigo.texto() != self.original
     }
 
     fn modelo(&self) -> Result<Diagrama, diagrama::ForaDoModelo> {
-        diagrama::ler(&self.codigo.texto)
+        diagrama::ler(self.codigo.texto())
     }
 
     fn linhas(&self) -> Vec<Linha> {
@@ -172,7 +173,7 @@ impl Construtor {
                     // canônica dele — senão desfazer à mão ainda deixaria
                     // diff no arquivo.
                     let como_abriu = diagrama::ler(&self.original).is_ok_and(|o| o == d);
-                    self.codigo = Campo::com(if como_abriu { self.original.clone() } else { diagrama::escrever(&d) });
+                    self.codigo.trocar(if como_abriu { self.original.clone() } else { diagrama::escrever(&d) });
                 }
                 true
             }
@@ -1091,18 +1092,21 @@ pub(super) fn abrir_do_cursor(e: &mut Estado) -> bool {
         return false;
     }
     let antes = e.modal.take();
+    // Desde o 506, editar um bloco mermaid já abre o construtor
+    // (`abrir_no_bloco`, chamado do caminho do editor de 390).
     super::markdown::enter_na_tabela_md(e);
-    match e.modal.take() {
-        Some(Modal::EditorDeTexto { campo, alvo: AlvoDoTexto::Codigo { hospedeiro, inicio, cerca, fecha }, .. }) => {
-            let c = Construtor::novo(Destino::Bloco { hospedeiro, inicio, cerca, fecha }, campo.texto, e.hoje.clone());
-            e.modal = Some(Modal::Construtor(c));
-            true
-        }
-        outro => {
-            e.modal = outro.or(antes);
-            false
-        }
+    if matches!(e.modal, Some(Modal::Construtor(_))) {
+        return true;
     }
+    e.modal = e.modal.take().or(antes);
+    false
+}
+
+/// O construtor no bloco que o editor de código abriria: o mesmo miolo e
+/// o mesmo lugar de gravar, extraídos uma vez só (`markdown::no_markdown`).
+pub(super) fn abrir_no_bloco(e: &mut Estado, hospedeiro: Hospedeiro, inicio: usize, cerca: String, fecha: String, codigo: String) {
+    let c = Construtor::novo(Destino::Bloco { hospedeiro, inicio, cerca, fecha }, codigo, e.hoje.clone());
+    e.modal = Some(Modal::Construtor(c));
 }
 
 /// O diagrama novo do menu `/`: o seletor de tipo, já com o exemplo do
@@ -1144,7 +1148,7 @@ fn desistir(e: &mut Estado, c: &Construtor) {
 
 /// "Aplicar" (ou "Inserir", no novo). `false` deixa o modal aberto.
 fn aplicar(e: &mut Estado, c: &mut Construtor) -> bool {
-    let texto = c.codigo.texto.clone();
+    let texto = c.codigo.texto().to_string();
     match &c.destino {
         Destino::Novo => {
             let t = texto.trim_end();
@@ -1220,7 +1224,7 @@ fn tecla_nos_tipos(e: &mut Estado, c: &mut Construtor, i: usize, tecla: &str) ->
         // O exemplo do tipo apontado já vai pra prévia: a pessoa vê o
         // que escolhe antes de escolher.
         let codigo = diagrama::escrever(&Diagrama::exemplo(Tipo::TODOS[i]));
-        c.codigo = Campo::com(codigo.clone());
+        c.codigo = EditorDeCodigo::novo(codigo.clone(), Some("mermaid".into()));
         c.original = codigo;
         c.vista = Vista::default();
     };
@@ -1297,11 +1301,11 @@ fn tecla_no_codigo(e: &mut Estado, c: &mut Construtor, tecla: &str) -> bool {
             Err(f) => c.aviso = Some(format!("o construtor não monta este diagrama — {}", f.mensagem())),
         },
         "Ctrl+p" => c.foco = Foco::Previa,
-        "Enter" => {
-            c.codigo.tecla("\n");
-        }
-        "ArrowUp" | "ArrowDown" => componentes::cursor_vertical(&mut c.codigo, tecla == "ArrowDown"),
-        "Home" | "End" => componentes::cursor_na_linha(&mut c.codigo, tecla == "End"),
+        // A linguagem do bloco é mermaid enquanto o construtor está
+        // aberto: trocar seria sair dele.
+        "Ctrl+l" => c.aviso = Some("o construtor é de mermaid: troque a linguagem depois, no editor de código".into()),
+        // O editor de código de 506: indentação (o mapa mental vive dela),
+        // desfazer, Home esperto, a vista que segue o cursor.
         outra => {
             c.codigo.tecla(outra);
         }
@@ -1544,9 +1548,7 @@ fn desenhar_edicao(f: &mut Frame, c: &Construtor, lido: &Result<Diagrama, diagra
             topo = alto;
         }
         let resto = Rect { y: area.y + topo, height: area.height.saturating_sub(topo), ..area };
-        let (linhas, cursor) = componentes::linhas_numeradas(&c.codigo, t);
-        let rolagem = cursor.saturating_sub(resto.height.saturating_sub(1) as usize);
-        f.render_widget(Paragraph::new(linhas).scroll((rolagem as u16, 0)), resto);
+        c.codigo.desenhar(f, resto, t);
         return;
     }
     let Ok(d) = lido else { return };
@@ -1603,7 +1605,7 @@ fn desenhar_previa(f: &mut Frame, c: &Construtor, area: Rect, t: &Tema) {
     let borda = if focada { t.estilo(Realce::BordaFoco) } else { Style::default().fg(t.var("border")) };
     let cabe = area.width.saturating_sub(2) as usize;
     let alto_total = area.height.saturating_sub(2) as usize;
-    let (conteudo, colunas, aviso) = crate::codigo::previa_mermaid(&c.codigo.texto, cabe, t);
+    let (conteudo, colunas, aviso) = crate::codigo::previa_mermaid(c.codigo.texto(), cabe, t);
     let alto = alto_total.saturating_sub(usize::from(aviso.is_some())).max(1);
     let medida = Medida { linhas: conteudo.len(), colunas, alto, largo: cabe };
     c.medida.set(medida);

@@ -430,13 +430,13 @@ pub enum Modal {
         texto: String,
         rolagem: usize,
     },
-    /// Um editor de várias linhas (ciclo 390): Enter quebra a linha, as
-    /// setas andam, Esc grava e fecha, Ctrl+C desiste.
+    /// O editor de código (ciclos 390, 506): cor, indentação, desfazer e
+    /// a linguagem; Esc (ou Ctrl+S) grava e fecha, Ctrl+C desiste.
     EditorDeTexto {
         /// O título.
         titulo: String,
-        /// O texto e o cursor.
-        campo: Campo,
+        /// O texto, o cursor e o resto do editor.
+        editor: crate::editor_codigo::EditorDeCodigo,
         /// O que gravar.
         alvo: AlvoDoTexto,
     },
@@ -1641,36 +1641,43 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
             e.modal = Some(Modal::Detalhe { titulo, form, alvo });
         }
         Modal::Construtor(c) => super::construtor::tecla(e, c, tecla),
-        Modal::EditorDeTexto { titulo, mut campo, alvo } => {
-            match tecla {
-                "Escape" => {
-                    match &alvo {
-                        AlvoDoTexto::Codigo { hospedeiro, inicio, cerca, fecha } => {
-                            super::markdown::gravar_codigo(e, hospedeiro, *inicio, cerca, fecha, &campo.texto)
+        Modal::EditorDeTexto { titulo, mut editor, alvo } => {
+            if editor.seletor.is_none() {
+                match tecla {
+                    "Escape" | "Ctrl+s" => {
+                        match &alvo {
+                            AlvoDoTexto::Codigo { hospedeiro, inicio, cerca, fecha } => {
+                                // A cerca só é reescrita se a linguagem mudou:
+                                // abrir e gravar sem mexer devolve o bloco igual,
+                                // atributos da cerca (` ```rust {.x} `) inclusive.
+                                let cerca = if editor.lingua == crate::editor_codigo::lingua_da_cerca(cerca) {
+                                    cerca.clone()
+                                } else {
+                                    crate::editor_codigo::cerca_com(cerca, editor.lingua.as_deref())
+                                };
+                                super::markdown::gravar_codigo(e, hospedeiro, *inicio, &cerca, fecha, editor.texto())
+                            }
                         }
+                        return;
                     }
-                    return;
-                }
-                "Ctrl+c" => {
-                    e.aviso = Some("edição descartada".into());
-                    return;
-                }
-                "Enter" => {
-                    campo.tecla("\n");
-                }
-                "Tab" => {
-                    campo.tecla(" ");
-                    campo.tecla(" ");
-                    campo.tecla(" ");
-                    campo.tecla(" ");
-                }
-                "ArrowUp" | "ArrowDown" => crate::componentes::cursor_vertical(&mut campo, tecla == "ArrowDown"),
-                "Home" | "End" => crate::componentes::cursor_na_linha(&mut campo, tecla == "End"),
-                outra => {
-                    campo.tecla(outra);
+                    "Ctrl+c" => {
+                        e.aviso = Some("edição descartada".into());
+                        return;
+                    }
+                    _ => {}
                 }
             }
-            e.modal = Some(Modal::EditorDeTexto { titulo, campo, alvo });
+            if editor.tecla(tecla) == crate::editor_codigo::Resposta::Linguagem {
+                // Virou mermaid: o diagrama tem o construtor (formulário e
+                // código), e é lá que ele se edita.
+                if editor.lingua.as_deref() == Some("mermaid") {
+                    let AlvoDoTexto::Codigo { hospedeiro, inicio, cerca, fecha } = alvo;
+                    let cerca = crate::editor_codigo::cerca_com(&cerca, Some("mermaid"));
+                    super::construtor::abrir_no_bloco(e, hospedeiro, inicio, cerca, fecha, editor.texto().to_string());
+                    return;
+                }
+            }
+            e.modal = Some(Modal::EditorDeTexto { titulo, editor, alvo });
         }
         Modal::Conflito(mut c) => {
             match tecla {
@@ -1829,13 +1836,24 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "Editor de código (i num bloco)",
+        &[
+            ("Tab Shift+Tab", "indentar / desindentar"),
+            ("Enter", "nova linha no mesmo recuo"),
+            ("Ctrl+Z Ctrl+Y", "desfazer / refazer"),
+            ("Ctrl+K", "apagar a linha"),
+            ("Ctrl+L", "trocar a linguagem"),
+            ("Esc ou Ctrl+S", "gravar (Ctrl+C desiste)"),
+        ],
+    ),
+    (
         "Dentro de um bloco de código ou diagrama (Enter)",
         &[
             ("j k h l, setas", "rolar a vista"),
             ("Ctrl+D Ctrl+U", "meia tela pra baixo / pra cima"),
             ("H L", "meia tela pros lados"),
             ("g G 0 $", "topo / fim / começo / fim da linha"),
-            ("i ou Enter", "editar o código"),
+            ("i ou Enter", "editar (diagrama: formulário e código)"),
             ("c", "construtor do diagrama (mermaid)"),
             ("Esc ou q", "sair do bloco"),
         ],
@@ -2001,12 +2019,12 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
             f.render_widget(Paragraph::new(linhas).scroll((rolagem as u16, 0)), dentro);
         }
         Modal::Construtor(c) => super::construtor::desenhar(f, e, c),
-        Modal::EditorDeTexto { titulo, campo, .. } => {
-            let area = componentes::area_do_modal(tela, 100, tela.height.saturating_sub(4));
-            let dentro = componentes::desenhar_modal(f, area, titulo, "Enter quebra linha · Esc grava · Ctrl+C desiste", t);
-            let (linhas, linha_do_cursor) = componentes::linhas_numeradas(campo, t);
-            let rolagem = linha_do_cursor.saturating_sub(dentro.height.saturating_sub(1) as usize);
-            f.render_widget(Paragraph::new(linhas).scroll((rolagem as u16, 0)), dentro);
+        Modal::EditorDeTexto { titulo, editor, .. } => {
+            let area = componentes::area_do_modal(tela, 110, tela.height.saturating_sub(2));
+            let rodape = "Tab ⇥ · Shift+Tab ⇤ · Ctrl+Z/Y desfaz · Ctrl+K apaga linha · Ctrl+L linguagem · Esc grava · Ctrl+C desiste";
+            let titulo = format!("{titulo} · {}", editor.situacao());
+            let dentro = componentes::desenhar_modal(f, area, &titulo, rodape, t);
+            editor.desenhar(f, dentro, t);
         }
         Modal::Conflito(c) => {
             let linhas_diff = if c.diff { anotadinho_core::diff::diff_linhas(&c.disco, &c.meu) } else { Vec::new() };

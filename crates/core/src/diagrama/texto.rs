@@ -271,7 +271,7 @@ fn sequencia(s: &Sequencia, largura: usize) -> Result<Vec<Linha>, NaoDesenha> {
     let mut vao: Vec<usize> = (0..n.saturating_sub(1)).map(|i| meia[i].1 + meia[i + 1].0 + 3).collect();
     let mut folga_esq = meia[0].0;
     let mut folga_dir = meia[n - 1].1;
-    let mut a_direita = |vao: &mut Vec<usize>, folga_dir: &mut usize, i: usize, precisa: usize| {
+    let a_direita = |vao: &mut Vec<usize>, folga_dir: &mut usize, i: usize, precisa: usize| {
         if i + 1 < n {
             vao[i] = vao[i].max(precisa + meia[i + 1].0 + 1);
         } else {

@@ -361,9 +361,18 @@ pub(super) fn no_markdown(e: &mut Estado, ed: Edicao, h: Hospedeiro) -> bool {
         let cerca = linhas.first().copied().unwrap_or("```").to_string();
         let miolo = if linhas.len() >= 2 { linhas[1..linhas.len() - 1].join("\n") } else { String::new() };
         let fecha = linhas.last().filter(|_| linhas.len() >= 2).copied().unwrap_or("```").to_string();
+        let texto = if *limpar { String::new() } else { miolo };
+        let lingua = crate::editor_codigo::lingua_da_cerca(&cerca);
+        // Diagrama abre no construtor (ciclo 506), que tem o formulário e
+        // a aba Código: um editor só, com os dois jeitos de editar, como o
+        // Enter no desenho da janela (491).
+        if lingua.as_deref().is_some_and(|l| l.eq_ignore_ascii_case("mermaid")) {
+            super::construtor::abrir_no_bloco(e, h, faixa.start, cerca, fecha, texto);
+            return true;
+        }
         e.modal = Some(super::modais::Modal::EditorDeTexto {
             titulo: format!("Código {}", cerca.trim_start_matches(['`', '~'])).trim().to_string(),
-            campo: crate::componentes::Campo::com(if *limpar { String::new() } else { miolo }),
+            editor: crate::editor_codigo::EditorDeCodigo::novo(texto, lingua),
             alvo: super::modais::AlvoDoTexto::Codigo { hospedeiro: h, inicio: faixa.start, cerca, fecha },
         });
         return true;
@@ -699,7 +708,19 @@ pub(super) fn escolher(e: &mut Estado, chave: &str) {
         return;
     }
     let trecho = match chave {
-        "codigo" => "```\ncódigo\n```".to_string(),
+        // O bloco novo já abre no editor (ciclo 506), com o seletor de
+        // linguagem aberto: antes entrava "código" de mentira na página, e
+        // a linguagem se escrevia na cerca à mão.
+        "codigo" => {
+            inserir_trecho(e, "```\n```");
+            let no_codigo = e.arvore.em(&e.cursor).is_some_and(|u| matches!(u.tipo, Tipo::Codigo(_)));
+            if no_codigo && enter_na_tabela_md(e) {
+                if let Some(Modal::EditorDeTexto { editor, .. }) = e.modal.as_mut() {
+                    editor.seletor = Some(0);
+                }
+            }
+            return;
+        }
         "tabela" => "| A | B | C |\n| --- | --- | --- |\n|  |  |  |".to_string(),
         "linha" => "---".to_string(),
         "imagem" => {

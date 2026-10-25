@@ -43,7 +43,7 @@ fn construtor(e: &Estado) -> &Construtor {
 }
 
 fn codigo(e: &Estado) -> String {
-    construtor(e).codigo.texto.clone()
+    construtor(e).codigo.texto().to_string()
 }
 
 fn desenho(e: &mut Estado, largura: u16, altura: u16) -> Vec<String> {
@@ -71,7 +71,7 @@ fn abre_pela_vista_do_bloco_e_pela_barra_de_comandos() {
     abrir(&mut e, 1);
     let c = construtor(&e);
     assert_eq!(c.aba, Aba::Construtor);
-    assert_eq!(c.codigo.texto, "graph TD\n  A[Começo]\n  B{Decide}\n  C(Fim)\n  A --> B\n  B -->|sim| C\n  A --> C");
+    assert_eq!(c.codigo.texto(), "graph TD\n  A[Começo]\n  B{Decide}\n  C(Fim)\n  A --> B\n  B -->|sim| C\n  A --> C");
     // A barra de comandos só oferece com o cursor num bloco mermaid.
     let mut e = pagina(FLUXO);
     e.cursor = vec![0];
@@ -218,15 +218,16 @@ fn fora_do_modelo_abre_no_codigo_com_o_motivo() {
     assert!(construtor(&e).aviso.as_deref().is_some_and(|a| a.contains("comentário")));
     // Tirar o comentário pelo código libera o construtor.
     e.modal.as_mut().map(|m| match m {
-        Modal::Construtor(c) => c.codigo = Campo::com("graph TD\n  A --> B"),
+        Modal::Construtor(c) => c.codigo = crate::editor_codigo::EditorDeCodigo::novo("graph TD\n  A --> B", Some("mermaid".into())),
         _ => unreachable!(),
     });
     tecla_da_tela(&mut e, "Tab");
     assert_eq!(construtor(&e).aba, Aba::Construtor);
     // Na aba Código as teclas são texto, e Ctrl+S grava o que se digitou.
     tecla_da_tela(&mut e, "Tab");
-    teclas(&mut e, &["Enter"]);
-    digitar(&mut e, "  B --> C");
+    // O editor de 506: o cursor começa no topo, e o Enter mantém o recuo.
+    teclas(&mut e, &["Ctrl+End", "Enter"]);
+    digitar(&mut e, "B --> C");
     tecla_da_tela(&mut e, "Ctrl+s");
     assert_eq!(corpo_gravado(&e), "```mermaid\ngraph TD\n  A --> B\n  B --> C\n```\n");
 }
@@ -240,7 +241,7 @@ fn bloco_novo_pelo_menu_escolhe_o_tipo_e_insere() {
     tecla_da_tela(&mut e, "Enter");
     let c = construtor(&e);
     assert_eq!(c.tipos, Some(0));
-    assert!(c.codigo.texto.starts_with("graph TD"));
+    assert!(c.codigo.texto().starts_with("graph TD"));
     // `j` aponta Sequência e a prévia já mostra o exemplo dela.
     tecla_da_tela(&mut e, "j");
     assert!(codigo(&e).starts_with("sequenceDiagram"));

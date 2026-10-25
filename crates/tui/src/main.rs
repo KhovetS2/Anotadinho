@@ -79,6 +79,9 @@ fn nome_da_tecla(k: &KeyEvent) -> Option<String> {
     if k.modifiers.contains(KeyModifiers::CONTROL) {
         return match k.code {
             KeyCode::Char(c) => Some(format!("Ctrl+{}", c.to_ascii_lowercase())),
+            // O começo e o fim do texto no editor de código (ciclo 506).
+            KeyCode::Home => Some("Ctrl+Home".into()),
+            KeyCode::End => Some("Ctrl+End".into()),
             _ => None,
         };
     }
@@ -100,6 +103,9 @@ fn nome_da_tecla(k: &KeyEvent) -> Option<String> {
         KeyCode::Enter => "Enter".into(),
         KeyCode::Esc => "Escape".into(),
         KeyCode::Tab => "Tab".into(),
+        // Desindentar no editor de código (ciclo 506). O terminal manda
+        // Shift+Tab como uma tecla própria, não como Tab com Shift.
+        KeyCode::BackTab => "Shift+Tab".into(),
         KeyCode::Backspace => "Backspace".into(),
         KeyCode::Delete => "Delete".into(),
         KeyCode::Up => "ArrowUp".into(),
