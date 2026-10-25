@@ -3,6 +3,7 @@
 
     python3 scripts/tui/piloto-projeto.py            # verificação passa
     python3 scripts/tui/piloto-projeto.py --falha    # verificação reprova
+    python3 scripts/tui/piloto-projeto.py --revisor  # o laço de revisão (522)
 
 A TUI de verdade num tmux, o agente de teste (`agente-falso.sh
 --tarefa-saas`) e um repositório git temporário com uma verificação de
@@ -12,6 +13,9 @@ Passa por: Pronta → Executar (tecla) → o agente roda no repositório → a
 verificação → Revisão com ✓teste → Mudanças (`D`) com o commit do agente e
 o arquivo novo → Feita (tecla) → o commit `tarefa 001: …` e a árvore limpa.
 Com `--falha`, para em Bloqueada com ✗teste e a saída na seção Verificação.
+Com `--revisor`, o projeto tem um revisor (o falso no modo `--revisar`): a
+1ª revisão pede ajuste, a tarefa volta pro executor SEM sair de Executando,
+e a 2ª aprova — aí ela chega à Revisão, com os dois comentários.
 
 Espera CONDIÇÃO (a etapa no disco, o texto na tela), nunca relógio: o
 quadro só muda depois que a thread de fechamento termina.
@@ -43,6 +47,7 @@ TAREFA = "pages/projetos/meu-primeiro-projeto/tarefas/001-esqueleto-do-app.md"
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--falha", action="store_true", help="a verificação reprova")
+    ap.add_argument("--revisor", action="store_true", help="com o laço de revisão pelo agente")
     ap.add_argument("--manter", action="store_true", help="não apaga a pasta temporária")
     a = ap.parse_args()
     for b in (CLI, TUI):
@@ -93,11 +98,15 @@ def main():
         os.makedirs(os.path.join(vault, ".anotadinho"))
         verificar = "node -e 'process.exit(2)'" if a.falha else "node soma.test.mjs"
         with open(os.path.join(vault, ".anotadinho", "projetos.json"), "w") as f:
-            json.dump({"meu-primeiro-projeto": {"repositorio": repo, "pausado": False, "verificar": verificar,
-                                                "branch_por_tarefa": True, "commitar_ao_aceitar": True}}, f)
+            config = {"repositorio": repo, "pausado": False, "verificar": verificar,
+                      "branch_por_tarefa": True, "commitar_ao_aceitar": True}
+            if a.revisor:
+                config["revisor"] = "falso revisor"
+            json.dump({"meu-primeiro-projeto": config}, f)
         os.makedirs(os.path.join(cfg, "anotadinho"))
         with open(os.path.join(cfg, "anotadinho", "tui.json"), "w") as f:
-            json.dump({"agente": {"nome": "falso", "binario": AGENTE, "args": ["--tarefa-saas", "{prompt}"]}}, f)
+            json.dump({"agente": {"nome": "falso", "binario": AGENTE, "args": ["--tarefa-saas", "{prompt}"]},
+                       "agentes": [{"nome": "falso revisor", "binario": AGENTE, "args": ["--revisar", "{prompt}"]}]}, f)
         subprocess.run([CLI, "--vault", vault, "set-property", TAREFA, "status", "pronta"], check=True, capture_output=True)
 
         tmux("new-session", "-d", "-s", s, "-x", "150", "-y", "36",
@@ -122,7 +131,19 @@ def main():
             conferir("## Verificação" in texto and "FALHOU" in texto, "a saída da verificação está na tarefa")
             return
 
-        esperar_status("revisao")
+        if a.revisor:
+            # O laço inteiro acontece em `executando`: espera o fim pelo disco.
+            esperar_status("revisao", limite=60)
+            texto = open(tarefa).read()
+            conferir("revisao_ia: aprovada" in texto and "rodada: 1" in texto, "o revisor devolveu uma vez e aprovou")
+            conferir("Revisão 1/3 do agente (falso revisor): ajustes" in texto and "sem argumentos deve dar 0" in texto,
+                     "o ajuste virou comentário na tarefa")
+            conferir("Revisão 2/3 do agente (falso revisor): aprovada" in texto, "a aprovação também")
+            conversa = os.path.join(vault, "pages/projetos/meu-primeiro-projeto/conversas/revisao-001.md")
+            conferir(os.path.exists(conversa) and open(conversa).read().count("VEREDITO:") >= 4,
+                     "a conversa do revisor tem as duas revisões")
+        else:
+            esperar_status("revisao")
         tela = esperar_tela(s, "001-esqueleto-do-app → Revisão")
         conferir("✓teste" in tela, "Revisão com ✓teste, e o aviso diz pra onde a tarefa foi")
         conferir(git("branch", "--show-current") == "tarefa/001-esqueleto-do-app", "rodou no branch da tarefa")

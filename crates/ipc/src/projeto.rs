@@ -144,6 +144,9 @@ pub fn handle_mudar_etapa_tarefa(
 ) -> Result<String, String> {
     let atual = handle_read_page(vault_path.clone(), caminho.clone())?;
     let novo = projeto::mudar_etapa(&atual, destino, Quem::Humano)?;
+    // "Refaça" da pessoa começa um laço de revisão novo (ciclo 522): com a
+    // rodada velha, o primeiro ajuste já bateria no teto.
+    let novo = if destino == EtapaTarefa::Executar { anotadinho_core::revisor::com_estado(&novo, None, None)? } else { novo };
     // Aceitar commita (ciclo 517), ANTES de gravar a etapa: se o commit
     // falha (um hook, o git sem nome), a tarefa fica em revisão e o erro
     // diz por quê — "feita" com o trabalho fora do histórico seria pior.
@@ -306,7 +309,7 @@ pub fn handle_tarefas_a_executar(
     let mut com_pedido: Vec<(Projeto, Vec<Tarefa>)> = Vec::new();
     for p in projetos {
         let tarefas = handle_tarefas_do_projeto(vault_path.clone(), p.slug.clone())?;
-        if tarefas.iter().any(|t| t.etapa == EtapaTarefa::Executar) {
+        if tarefas.iter().any(|t| t.etapa == EtapaTarefa::Executar || crate::revisao::espera_a_fila(t)) {
             com_pedido.push((p, tarefas));
         }
     }
@@ -339,6 +342,26 @@ pub fn handle_tarefas_a_executar(
         let (avisos, repositorio) = avisos_do_projeto(&p.slug, &cfg, &tarefas);
         saida.avisos.extend(avisos);
         let Some(repositorio) = repositorio else { continue };
+        // O laço de revisão (ciclo 522) ANTES da fila nova: a tarefa no laço
+        // já tem a vaga do projeto, e é ela que segura o branch.
+        for t in tarefas.iter().filter(|t| crate::revisao::espera_a_fila(t)) {
+            if livres == 0 {
+                break;
+            }
+            let r = if t.revisao_ia.as_deref() == Some(anotadinho_core::revisor::estado::PENDENTE) {
+                crate::revisao::reservar_revisao(&vault_path, &p, t, &tarefas, &repositorio, &cfg, &params)
+            } else {
+                reservar_e_preparar(&vault_path, &p, t, &tarefas, &repositorio, &params)
+            };
+            match r {
+                Ok(Some(trabalho)) => {
+                    livres -= 1;
+                    saida.iniciar.push(trabalho)
+                }
+                Ok(None) => {}
+                Err(e) => saida.avisos.push(format!("{}: {e}", t.caminho)),
+            }
+        }
         let ocupadas = tarefas.iter().filter(|t| t.etapa == EtapaTarefa::Executando).count();
         let vagas = cfg.concorrencia.max(1).saturating_sub(ocupadas);
         let fila = projeto::fila(&tarefas);
@@ -566,7 +589,11 @@ fn reservar_e_preparar(
     // Releitura: a listagem é de antes da trava.
     let texto = handle_read_page(vault_path.to_string(), lida.caminho.clone())?;
     let Some(tarefa) = Tarefa::ler(&lida.caminho, &texto) else { return Ok(None) };
-    if tarefa.etapa != EtapaTarefa::Executar {
+    // O executor refazendo com os ajustes do revisor (ciclo 522): a tarefa
+    // já está em `executando`, e a reserva é o `revisao_ia`.
+    let refazer = tarefa.etapa == EtapaTarefa::Executando
+        && tarefa.revisao_ia.as_deref() == Some(anotadinho_core::revisor::estado::AJUSTES);
+    if tarefa.etapa != EtapaTarefa::Executar && !refazer {
         return Ok(None);
     }
 
@@ -626,7 +653,11 @@ fn reservar_e_preparar(
     );
 
     handle_write_page(vault_path.to_string(), conversa_path.clone(), gravado)?;
-    let reservado = projeto::mudar_etapa(&texto, EtapaTarefa::Executando, Quem::Sistema)?;
+    let reservado = if refazer {
+        anotadinho_core::revisor::com_estado(&texto, Some(anotadinho_core::revisor::estado::REFAZENDO), Some(tarefa.rodada))?
+    } else {
+        projeto::mudar_etapa(&texto, EtapaTarefa::Executando, Quem::Sistema)?
+    };
     handle_write_page(vault_path.to_string(), tarefa.caminho.clone(), reservado)?;
 
     Ok(Some(TrabalhoDeTarefa {
@@ -661,7 +692,7 @@ fn pagina_da_conversa(p: &Projeto, tarefa: &Tarefa) -> String {
 ///
 /// A página que não dá pra ler fica de fora sem derrubar a execução: uma
 /// arquitetura apagada não é motivo pra tarefa não rodar.
-fn contextos_da_execucao(
+pub(crate) fn contextos_da_execucao(
     vault_path: &str,
     p: &Projeto,
     tarefa: &Tarefa,
@@ -758,8 +789,8 @@ pub fn handle_fechar_tarefa_com(
         FimDaTarefa::Falhou(_) | FimDaTarefa::Interrompida => EtapaTarefa::Bloqueada,
     };
     let mut texto = texto;
+    let cfg = handle_ler_projetos_cfg(vault_path.clone())?.remove(&tarefa.projeto).unwrap_or_default();
     if destino == EtapaTarefa::Revisao {
-        let cfg = handle_ler_projetos_cfg(vault_path.clone())?.remove(&tarefa.projeto).unwrap_or_default();
         if let (Some(cmd), Some(repo)) = (cfg.comando_de_verificacao(), cfg.repositorio.as_deref().filter(|r| Path::new(r).is_dir())) {
             let v = repositorio::verificar(repo, cmd, std::time::Duration::from_secs(cfg.prazo_da_verificacao.max(1)), shell);
             if !v.passou {
@@ -774,6 +805,17 @@ pub fn handle_fechar_tarefa_com(
     if Tarefa::ler(&caminho, &agora).is_some_and(|t| t.etapa != EtapaTarefa::Executando) {
         return Ok(Tarefa::ler(&caminho, &agora).map(|t| t.etapa).unwrap_or(destino));
     }
+    use anotadinho_core::revisor::{self, estado};
+    // Com revisor (ciclo 522), o que passou não vai pra pessoa ainda: fica
+    // em `executando`, com a revisão na fila.
+    if destino == EtapaTarefa::Revisao && cfg.nome_do_revisor().is_some() {
+        let novo = revisor::com_estado(&texto, Some(estado::PENDENTE), Some(tarefa.rodada))?;
+        handle_write_page(vault_path, caminho, novo)?;
+        return Ok(EtapaTarefa::Executando);
+    }
+    // Saindo do laço sem passar (bloqueou, a verificação reprovou): o
+    // estado da revisão sai, a rodada fica — é o histórico que a pessoa lê.
+    let texto = if tarefa.revisao_ia.is_some() { revisor::com_estado(&texto, None, Some(tarefa.rodada))? } else { texto };
     let novo = projeto::mudar_etapa(&texto, destino, Quem::Sistema)?;
     handle_write_page(vault_path, caminho, novo)?;
     Ok(destino)
@@ -795,12 +837,13 @@ pub fn handle_mudancas_da_tarefa(vault_path: String, caminho: String) -> Result<
     Ok(m)
 }
 
-/// A tarefa dona desta conversa, se houver uma (o `tarefa:` do
-/// frontmatter), sem mexer em nada.
+/// A tarefa dona desta conversa, se houver uma, sem mexer em nada: o
+/// `tarefa:` da conversa do executor, ou o `revisao_de:` da do revisor
+/// (ciclo 522).
 pub fn handle_tarefa_da_conversa(vault_path: String, conversa_path: String) -> Option<String> {
     let texto = handle_read_page(vault_path, conversa_path).ok()?;
     let (fm, _) = MarkdownCodec::split_frontmatter(&texto).ok()?;
-    fm.extra.get("tarefa").and_then(|v| v.as_str()).map(str::to_string)
+    ["tarefa", "revisao_de"].iter().find_map(|k| fm.extra.get(*k).and_then(|v| v.as_str()).map(str::to_string))
 }
 
 /// Fecha a tarefa dona desta conversa, se houver uma.
@@ -823,6 +866,11 @@ pub fn handle_fechar_tarefa_da_conversa(
     let Ok((fm, _)) = MarkdownCodec::split_frontmatter(&texto) else {
         return Ok(None);
     };
+    // A conversa do REVISOR (ciclo 522): a resposta é um veredito.
+    if let Some(tarefa) = fm.extra.get("revisao_de").and_then(|v| v.as_str()).map(str::to_string) {
+        let quando = crate::revisao::hora_da_ultima_mensagem(&texto).unwrap_or_else(|| "—".to_string());
+        return crate::revisao::fechar_revisao(&vault_path, &tarefa, fim, &quando).map(Some);
+    }
     let Some(tarefa) = fm.extra.get("tarefa").and_then(|v| v.as_str()).map(str::to_string) else {
         return Ok(None);
     };
@@ -894,6 +942,151 @@ mod testes {
         f(cfg.get_mut("saas").unwrap());
         handle_gravar_projetos_cfg(v.clone(), cfg).unwrap();
         (g, r, v, repo, c)
+    }
+
+    // ── O laço de revisão pelo agente (ciclo 522) ─────────────────────
+
+    /// O que o executor faz no fim de toda execução: grava a resposta na
+    /// conversa (com a hora) e fecha pela conversa.
+    fn responder(v: &str, conversa_path: &str, resposta: &str) -> Option<EtapaTarefa> {
+        let atual = handle_read_page(v.into(), conversa_path.into()).unwrap();
+        let (fm, corpo) = MarkdownCodec::split_frontmatter_text(&atual);
+        let msg = Mensagem { autor: Autor::Agente, quando: "2026-10-21 10:05".into(), texto: resposta.into() };
+        handle_write_page(v.into(), conversa_path.into(), format!("{fm}\n{}", conversa::append(corpo, &msg))).unwrap();
+        handle_fechar_tarefa_da_conversa(v.into(), conversa_path.into(), FimDaTarefa::Respondeu(resposta.into())).unwrap()
+    }
+
+    fn tarefa(v: &str, caminho: &str) -> Tarefa {
+        Tarefa::ler(caminho, &handle_read_page(v.into(), caminho.into()).unwrap()).unwrap()
+    }
+
+    fn com_revisor(cfg: &mut ConfigProjeto) {
+        cfg.verificar = Some("true".into());
+        cfg.executor = Some("júnior".into());
+        cfg.revisor = Some("tech lead".into());
+    }
+
+    #[test]
+    fn o_revisor_devolve_com_ajustes_e_depois_aprova() {
+        use anotadinho_core::revisor::estado;
+        let (_g, r, v, _repo, c) = montar_com_git(1, com_revisor);
+        pedir_execucao(&v, &c[0]);
+        let exe = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        assert_eq!((exe.papel, exe.agente.as_deref()), (projeto::Papel::Executor, Some("júnior")));
+        std::fs::write(r.path().join("app.txt"), "v2\n").unwrap();
+
+        // Passou na verificação: não vai pra pessoa, espera o revisor.
+        assert_eq!(responder(&v, &exe.conversa, "fiz\nRESULTADO: concluida"), Some(EtapaTarefa::Executando));
+        assert_eq!(tarefa(&v, &c[0]).revisao_ia.as_deref(), Some(estado::PENDENTE));
+
+        let rev = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        assert_eq!((rev.papel, rev.agente.as_deref()), (projeto::Papel::Revisor, Some("tech lead")));
+        assert!(rev.conversa.ends_with("conversas/revisao-001.md"), "{}", rev.conversa);
+        assert_ne!(rev.conversa, exe.conversa, "cada agente na sua conversa");
+        for esperado in ["revisão 1 de no máximo 3", "-v1", "+v2", "M  app.txt", "VEREDITO: ajustes", "não edite"] {
+            assert!(rev.prompt.contains(esperado), "falta {esperado:?} no prompt do revisor");
+        }
+        assert_eq!(tarefa(&v, &c[0]).revisao_ia.as_deref(), Some(estado::RODANDO));
+        assert!(handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.is_empty(), "a revisão saiu duas vezes");
+
+        // Ajustes: comentário, rodada 1, e a vez volta pro executor — sem
+        // sair de `executando`, que é o que segura a vaga e o branch.
+        let fim = responder(&v, &rev.conversa, "Falta o caso vazio.\n\n## Ajustes\n\n- `app.txt`: trate o vazio\n\nVEREDITO: ajustes");
+        assert_eq!(fim, Some(EtapaTarefa::Executando));
+        let t = tarefa(&v, &c[0]);
+        assert_eq!((t.etapa, t.rodada, t.revisao_ia.as_deref()), (EtapaTarefa::Executando, 1, Some(estado::AJUSTES)));
+        let ultimo = t.comentarios.last().unwrap();
+        assert!(ultimo.texto.contains("Revisão 1/3 do agente (tech lead)") && ultimo.texto.contains("trate o vazio"), "{ultimo:?}");
+        assert_eq!(ultimo.quando, "2026-10-21 10:05", "a hora vem da resposta");
+
+        let refaz = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        assert_eq!((refaz.papel, refaz.conversa.as_str()), (projeto::Papel::Executor, exe.conversa.as_str()));
+        assert!(refaz.prompt.contains("pediu ajustes") && refaz.prompt.contains("só eles"), "o executor não foi apontado pros ajustes");
+        assert_eq!(tarefa(&v, &c[0]).revisao_ia.as_deref(), Some(estado::REFAZENDO));
+
+        assert_eq!(responder(&v, &refaz.conversa, "ajustei\nRESULTADO: concluida"), Some(EtapaTarefa::Executando));
+        let rev2 = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        assert!(rev2.prompt.contains("revisão 2 de no máximo 3"));
+        assert!(rev2.prompt.contains("Falta o caso vazio"), "o revisor vê o que já pediu (histórico)");
+
+        assert_eq!(responder(&v, &rev2.conversa, "Agora sim.\nVEREDITO: aprovada"), Some(EtapaTarefa::Revisao));
+        let t = tarefa(&v, &c[0]);
+        assert_eq!((t.etapa, t.rodada, t.revisao_ia.as_deref()), (EtapaTarefa::Revisao, 1, Some(estado::APROVADA)));
+        assert!(t.comentarios.last().unwrap().texto.contains("Revisão 2/3 do agente (tech lead): aprovada"));
+    }
+
+    #[test]
+    fn no_teto_de_rodadas_a_decisao_e_da_pessoa() {
+        use anotadinho_core::revisor::estado;
+        let (_g, _r, v, _repo, c) = montar_com_git(1, |cfg| {
+            com_revisor(cfg);
+            cfg.rodadas_de_revisao = 1;
+        });
+        pedir_execucao(&v, &c[0]);
+        let exe = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        responder(&v, &exe.conversa, "RESULTADO: concluida");
+        let rev = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        assert_eq!(responder(&v, &rev.conversa, "## Ajustes\n- de novo\nVEREDITO: ajustes"), Some(EtapaTarefa::Revisao));
+        let t = tarefa(&v, &c[0]);
+        assert_eq!((t.rodada, t.revisao_ia.as_deref()), (1, Some(estado::ESGOTOU)));
+        assert!(t.comentarios.last().unwrap().texto.contains("rodadas acabaram"));
+        // O "refaça" da pessoa começa um laço novo.
+        handle_mudar_etapa_tarefa(v.clone(), c[0].clone(), EtapaTarefa::Executar).unwrap();
+        let t = tarefa(&v, &c[0]);
+        assert_eq!((t.rodada, t.revisao_ia.as_deref()), (0, None));
+    }
+
+    #[test]
+    fn revisor_quebrado_nao_joga_fora_o_trabalho_que_passou() {
+        use anotadinho_core::revisor::estado;
+        let (_g, _r, v, _repo, c) = montar_com_git(2, |cfg| {
+            com_revisor(cfg);
+            cfg.concorrencia = 2;
+        });
+        for (i, fim) in [FimDaTarefa::Falhou("claude: comando não encontrado".into()), FimDaTarefa::Respondeu("Achei ótimo.".into())]
+            .into_iter()
+            .enumerate()
+        {
+            pedir_execucao(&v, &c[i]);
+            let exe = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+            responder(&v, &exe.conversa, "RESULTADO: concluida");
+            let rev = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+            assert_eq!(rev.papel, projeto::Papel::Revisor);
+            let etapa = handle_fechar_tarefa_da_conversa(v.clone(), rev.conversa.clone(), fim).unwrap();
+            assert_eq!(etapa, Some(EtapaTarefa::Revisao));
+            let t = tarefa(&v, &c[i]);
+            assert_eq!(t.revisao_ia.as_deref(), Some(estado::FALHOU));
+            let ultimo = &t.comentarios.last().unwrap().texto;
+            assert!(ultimo.contains("não rodou: claude") || ultimo.contains("VEREDITO:"), "{ultimo}");
+        }
+    }
+
+    #[test]
+    fn sem_revisor_o_laco_nao_existe_e_a_verificacao_que_falha_tira_do_laco() {
+        use anotadinho_core::revisor::estado;
+        let (_g, _r, v, _repo, c) = montar_com_git(1, |cfg| cfg.verificar = Some("true".into()));
+        pedir_execucao(&v, &c[0]);
+        let exe = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        assert_eq!(responder(&v, &exe.conversa, "RESULTADO: concluida"), Some(EtapaTarefa::Revisao));
+        assert_eq!(tarefa(&v, &c[0]).revisao_ia, None);
+
+        // No laço, a verificação que reprova bloqueia e limpa o estado.
+        let (_g2, _r2, v2, _repo2, c2) = montar_com_git(1, |cfg| {
+            com_revisor(cfg);
+            cfg.verificar = Some("test -f passou.txt".into());
+        });
+        pedir_execucao(&v2, &c2[0]);
+        let exe = handle_tarefas_a_executar(v2.clone(), params()).unwrap().iniciar.remove(0);
+        std::fs::write(_r2.path().join("passou.txt"), "").unwrap();
+        responder(&v2, &exe.conversa, "RESULTADO: concluida");
+        let rev = handle_tarefas_a_executar(v2.clone(), params()).unwrap().iniciar.remove(0);
+        responder(&v2, &rev.conversa, "## Ajustes\n- x\nVEREDITO: ajustes");
+        let refaz = handle_tarefas_a_executar(v2.clone(), params()).unwrap().iniciar.remove(0);
+        std::fs::remove_file(_r2.path().join("passou.txt")).unwrap();
+        assert_eq!(responder(&v2, &refaz.conversa, "RESULTADO: concluida"), Some(EtapaTarefa::Bloqueada));
+        let t = tarefa(&v2, &c2[0]);
+        assert_eq!((t.rodada, t.revisao_ia.as_deref()), (1, None), "a rodada fica de histórico");
+        assert_ne!(t.revisao_ia.as_deref(), Some(estado::AJUSTES));
     }
 
     #[test]

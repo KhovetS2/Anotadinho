@@ -574,7 +574,21 @@ fn colher_fechadas(estado: &mut Estado, vault: &str) {
         // conversa: o aviso divide a linha do rodapé com as dicas.
         let tarefa = anotadinho_ipc::handle_tarefa_da_conversa(v.clone(), conversa.clone()).unwrap_or(conversa);
         let nome = std::path::Path::new(&tarefa).file_stem().and_then(|n| n.to_str()).unwrap_or(&tarefa).to_string();
+        // No laço de revisão (ciclo 522) a tarefa continua em `executando`:
+        // "→ Executando" não diria nada. O ponto do laço diz.
+        let no_laco = anotadinho_ipc::handle_read_page(v.clone(), tarefa.clone())
+            .ok()
+            .and_then(|t| anotadinho_core::projeto::Tarefa::ler(&tarefa, &t))
+            .and_then(|t| t.revisao_ia);
         match r {
+            Ok(Some(anotadinho_core::projeto::EtapaTarefa::Executando)) => {
+                use anotadinho_core::revisor::estado as laco;
+                estado.aviso = Some(match no_laco.as_deref() {
+                    Some(laco::PENDENTE) => format!("tarefa {nome}: passou · vai pro revisor"),
+                    Some(laco::AJUSTES) => format!("tarefa {nome}: o revisor pediu ajustes · volta pro executor"),
+                    _ => format!("tarefa {nome} → Executando"),
+                })
+            }
             Ok(Some(etapa)) => estado.aviso = Some(format!("tarefa {nome} → {}", etapa.label())),
             Ok(None) => {}
             Err(e) => estado.aviso = Some(format!("não fechou a tarefa {nome}: {}", e.lines().next().unwrap_or_default())),
@@ -645,7 +659,10 @@ fn conferir_projetos(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos
         adaptador.cwd = t.cwd.clone();
         let sessao = sessao_da_conversa(estado, vault, &t.conversa);
         if subir_agente(estado, vault, vault, trabalhos, &t.conversa, &t.prompt, &adaptador, 0, sessao.as_deref()) {
-            estado.aviso = Some(format!("tarefa em execução: {}", t.tarefa));
+            estado.aviso = Some(match t.papel {
+                anotadinho_core::projeto::Papel::Revisor => format!("revisando: {} ({})", t.tarefa, adaptador.nome),
+                anotadinho_core::projeto::Papel::Executor => format!("tarefa em execução: {}", t.tarefa),
+            });
         }
     }
 }

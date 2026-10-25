@@ -365,6 +365,13 @@ pub fn caminho_da_conversa_da_tarefa(slug: &str, numero: u32) -> String {
     format!("{PASTA}/{slug}/conversas/tarefa-{numero:03}.md")
 }
 
+/// A conversa do REVISOR de uma tarefa (ciclo 522). Separada da do
+/// executor: cada agente continua a sua (a sessão do executor não pode
+/// receber a fala do revisor como se fosse dele), e a pessoa lê as duas.
+pub fn caminho_da_conversa_da_revisao(slug: &str, numero: u32) -> String {
+    format!("{PASTA}/{slug}/conversas/revisao-{numero:03}.md")
+}
+
 /// Caminho de uma tarefa nova.
 pub fn caminho_da_tarefa(slug: &str, numero: u32, titulo: &str) -> String {
     format!("{}/{numero:03}-{}.md", pasta_das_tarefas(slug), slug_de_titulo(titulo))
@@ -497,6 +504,12 @@ pub struct Tarefa {
     /// Como a última verificação terminou: `passou` ou `falhou`.
     #[serde(default)]
     pub verificacao: Option<String>,
+    /// Quantas revisões do agente já pediram ajuste (ciclo 522).
+    #[serde(default)]
+    pub rodada: u32,
+    /// Onde a revisão do agente está (`core::revisor::estado`).
+    #[serde(default)]
+    pub revisao_ia: Option<String>,
 }
 
 pub(crate) fn texto_do_valor(v: &serde_yaml::Value) -> Option<String> {
@@ -548,6 +561,8 @@ impl Tarefa {
             base_git: campo("base_git"),
             branch_git: campo("branch_git"),
             verificacao: campo("verificacao"),
+            rodada: campo("rodada").and_then(|r| r.trim().parse().ok()).unwrap_or(0),
+            revisao_ia: campo("revisao_ia"),
         })
     }
 
@@ -1049,7 +1064,16 @@ pub fn pergunta_de_executar_com(tarefa: &Tarefa, verificacao: Option<&str>) -> S
             "Antes de terminar, rode `{cmd}` e deixe passando: o app roda o mesmo comando depois de você, e a tarefa só vai pra revisão se ele passar."
         ));
     }
-    if !tarefa.comentarios.is_empty() || tarefa.verificacao.as_deref() == Some("falhou") {
+    if tarefa.revisao_ia.as_deref() == Some(crate::revisor::estado::AJUSTES) {
+        // O executor de volta do revisor (ciclo 522). Específico de
+        // propósito: o executor pode ser um modelo pequeno, e "comece pelos
+        // comentários" o deixava refazendo a tarefa inteira.
+        extra.push(format!(
+            "O revisor leu a sua rodada anterior e pediu ajustes: estão no ÚLTIMO comentário da tarefa (revisão {}). \
+             Faça esses ajustes e só eles — o resto já foi aceito. Continue no mesmo branch.",
+            tarefa.rodada
+        ));
+    } else if !tarefa.comentarios.is_empty() || tarefa.verificacao.as_deref() == Some("falhou") {
         extra.push(
             "Esta tarefa já rodou antes: os Comentários e a Verificação na página dela dizem o que a revisão pediu e o que falhou. Comece por aí."
                 .to_string(),

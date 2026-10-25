@@ -17,6 +17,8 @@ mod detalhes;
 pub use detalhes::*;
 // O repositório do projeto: verificar, diff, branch e commit (ciclo 517).
 pub mod repositorio;
+// O laço de revisão pelo agente (ciclo 522).
+mod revisao;
 
 use anotadinho_core::PageIndexEntry;
 use anotadinho_search::SearchIndex;

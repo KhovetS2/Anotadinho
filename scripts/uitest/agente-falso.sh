@@ -7,7 +7,8 @@
 # lenta, cara e não determinística.
 #
 # Modos: --responder (padrão), --demorar, --falhar, --mudo, --devagar,
-# --stream (Claude Code), --codex, --onde, --args, --falha-no-stream.
+# --stream (Claude Code), --codex, --onde, --args, --falha-no-stream,
+# --tarefa, --tarefa-saas, --revisar, --stdin, --propor.
 # Guarda a linha inteira antes de consumir as pastas extras — é ela que
 # o modo --args devolve.
 TODOS="$*"
@@ -70,6 +71,21 @@ case "$1" in
     git add soma.js >/dev/null 2>&1 && git commit -qm "soma converte a entrada" >/dev/null 2>&1
     printf 'import { soma } from "./soma.js";\nif (soma("1", 2) !== 3) process.exit(1);\n' > soma.test.mjs
     printf 'Somei com conversão e escrevi o teste.\n\nRESULTADO: concluida\n'
+    exit 0
+    ;;
+  # Revisor de mentira (ciclo 522): pede ajuste na primeira revisão e
+  # aprova a seguinte — é o laço inteiro (devolve, o executor refaz,
+  # aprova) sem modelo nenhum. Lê a rodada do próprio prompt: procura a
+  # SEGUNDA, porque o histórico da conversa traz a pergunta da primeira.
+  --revisar)
+    case "$2" in
+      *"revisão 2 de"*)
+        printf 'Os critérios estão cumpridos.\n\nVEREDITO: aprovada\n'
+        ;;
+      *)
+        printf 'Falta tratar a entrada vazia.\n\n## Ajustes\n\n- `soma.js`: soma() sem argumentos deve dar 0\n\nVEREDITO: ajustes\n'
+        ;;
+    esac
     exit 0
     ;;
   # Lê o prompt da ENTRADA PADRÃO (ciclo 449) e diz quanto chegou e como

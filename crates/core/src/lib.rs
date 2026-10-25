@@ -57,6 +57,8 @@ pub mod proposta;
 pub mod prompt_padrao;
 // O módulo Projeto (ciclo 457): projeto, tarefa e a fila de execução.
 pub mod projeto;
+/// O revisor automático das tarefas (ciclo 522).
+pub mod revisor;
 // Sprints e o plano de projeto (ciclo 469).
 pub mod sprint;
 pub mod plano;
