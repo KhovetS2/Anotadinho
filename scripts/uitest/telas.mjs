@@ -111,6 +111,49 @@ for (const [comando, marca, desc, arquivo] of [
 // si é responsabilidade dela, e testá-lo aqui seria testar a
 // biblioteca.
 
+// ── sidebar sem flash na abertura (ciclo 510) ───────────────────────
+//
+// A lista das páginas era posta antes de a das pastas chegar, e o quadro
+// do meio tinha as páginas com nenhuma pasta recolhida: tudo aberto por
+// um instante, e a pasta fechava sozinha logo depois. Este cenário olha
+// a sidebar o mais rápido que dá a partir do primeiro item.
+
+telas.push({
+  nome: "tela: ao abrir, nenhuma pasta aparece aberta antes de recolher (510)",
+  async fn(b, ctx) {
+    for (let volta = 0; volta < 5; volta++) {
+      await b.js("window.__uitest_reload = 1; location.reload(); true");
+      await esperar(b, "typeof window.__uitest_reload === 'undefined'", "o reload trocar o documento", 15000);
+      // O defeito é uma pasta que aparece ABERTA e fecha sem ninguém
+      // clicar. Contar abertas reprovaria à toa: a pasta da página que
+      // volta aberta pode ser revelada, e essa fica aberta.
+      // Condição, não relógio: observa 1,5 s a partir do PRIMEIRO item —
+      // logo depois de um rebuild o primeiro quadro pode levar segundos.
+      const limite = Date.now() + 15000;
+      let ate = limite;
+      let viu = false;
+      const jaAbertas = new Set();
+      const fecharamSozinhas = new Set();
+      while (Date.now() < ate) {
+        let r;
+        try {
+          r = await b.js(`[document.querySelectorAll('.app-sidebar .sidebar-item__title').length, [...document.querySelectorAll('.app-sidebar .sidebar-folder--aberta')].map(d => d.dataset.pasta)]`);
+        } catch (e) {
+          continue;
+        }
+        if (r[0] === 0) continue;
+        if (!viu) ate = Math.min(limite, Date.now() + 1500);
+        viu = true;
+        const agora = new Set(r[1]);
+        for (const p of jaAbertas) if (!agora.has(p)) fecharamSozinhas.add(p);
+        for (const p of agora) jaAbertas.add(p);
+      }
+      ctx.assert(viu, "a sidebar não apareceu depois do reload");
+      ctx.assertEq([...fecharamSozinhas].length, 0, `volta ${volta}: pasta(s) abriram e fecharam sozinhas na abertura: ${[...fecharamSozinhas].slice(0, 3).join(", ")}`);
+    }
+  },
+});
+
 tela("página type: grafo entrega os dados pro renderizador", async (b, ctx) => {
   // A página mora numa pasta, e pasta fechada não tem filhos no DOM
   // (ciclo 466).

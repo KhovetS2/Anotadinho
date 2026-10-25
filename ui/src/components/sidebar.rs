@@ -165,7 +165,15 @@ pub fn sidebar(props: &SidebarProps) -> Html {
             let loading = loading.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 loading.set(true);
-                match api::list_pages(&vault_path).await {
+                // As duas listas chegam ANTES de qualquer `set` (ciclo 510).
+                // Com a das páginas posta antes de esperar a das pastas, havia
+                // um quadro com as páginas e nenhuma pasta recolhida: tudo
+                // aberto por ~100 ms depois de abrir o app, e o recolhimento
+                // logo abaixo vinha como flash. O harness caía nessa janela
+                // (via a pasta aberta, não clicava, e ela fechava sozinha).
+                let lista_de_paginas = api::list_pages(&vault_path).await;
+                let lista_de_pastas = api::list_folders(&vault_path).await;
+                match lista_de_paginas {
                     Ok(list) => {
                         pages.set(list);
                     }
@@ -174,7 +182,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                         pages.set(Vec::new());
                     }
                 }
-                match api::list_folders(&vault_path).await {
+                match lista_de_pastas {
                     Ok(list) => {
                         // Pastas nascem RECOLHIDAS (ciclo 207): com 200+
                         // páginas, abrir tudo enterra a estrutura que a
