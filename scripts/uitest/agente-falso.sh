@@ -8,7 +8,7 @@
 #
 # Modos: --responder (padrão), --demorar, --falhar, --mudo, --devagar,
 # --stream (Claude Code), --codex, --onde, --args, --falha-no-stream,
-# --tarefa, --tarefa-saas, --revisar, --stdin, --propor.
+# --tarefa, --tarefa-saas, --revisar, --aider, --stdin, --propor.
 # Guarda a linha inteira antes de consumir as pastas extras — é ela que
 # o modo --args devolve.
 TODOS="$*"
@@ -71,6 +71,12 @@ case "$1" in
     git add soma.js >/dev/null 2>&1 && git commit -qm "soma converte a entrada" >/dev/null 2>&1
     printf 'import { soma } from "./soma.js";\nif (soma("1", 2) !== 3) process.exit(1);\n' > soma.test.mjs
     printf 'Somei com conversão e escrevi o teste.\n\nRESULTADO: concluida\n'
+    exit 0
+    ;;
+  # Fala como o aider (ciclo 524): a resposta e, no fim, a linha de
+  # consumo que ele imprime — copiada da saída real do 0.86.2.
+  --aider)
+    printf 'Applied edit to soma.js\n\nRESULTADO: concluída\n\nTokens: 813 sent, 65 received.\nCommit ad13deb refactor(soma.js)\n'
     exit 0
     ;;
   # Revisor de mentira (ciclo 522): pede ajuste na primeira revisão e

@@ -108,7 +108,14 @@ impl Trabalho {
                     }
                     stream.resposta()
                 }
-                FormatoSaida::Texto => Ok(bruto),
+                FormatoSaida::Texto => {
+                    // O agente de texto que conta o consumo (o aider,
+                    // ciclo 524) também entra no registro.
+                    if let (Ok(mut u), Some(lido)) = (uso_lido.lock(), anotadinho_core::agente::uso_do_texto(&bruto)) {
+                        *u = Some(lido);
+                    }
+                    Ok(bruto)
+                }
             }
         });
         let mut erro = filho.stderr.take();
@@ -317,5 +324,29 @@ mod testes_de_uso {
         let u = t.uso().expect("o stream trouxe o uso");
         assert_eq!((u.entrada, u.saida), (12_000, 800));
         assert_eq!(u.custo_usd, Some(0.0432));
+    }
+
+    /// Ciclo 524: o agente de TEXTO que conta o consumo (o aider) também.
+    #[test]
+    fn o_uso_do_aider_chega_ao_trabalho() {
+        let falso = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/uitest/agente-falso.sh");
+        let adaptador = Adaptador {
+            nome: "falso".into(),
+            binario: falso.into(),
+            args: vec!["--aider".into(), "{prompt}".into()],
+            formato: FormatoSaida::Texto,
+            timeout_s: 30,
+            entrada: anotadinho_core::agente::EntradaPrompt::Argumento,
+            ..Adaptador::default()
+        };
+        let mut t = Trabalho::iniciar(&adaptador, "oi", ".", "", "").expect("subiu");
+        for _ in 0..300 {
+            if t.terminou().is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let u = t.uso().expect("a linha de tokens do aider virou uso");
+        assert_eq!((u.entrada, u.saida, u.custo_usd), (813, 65, None));
     }
 }

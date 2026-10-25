@@ -242,3 +242,11 @@ pub(crate) fn hora_da_ultima_mensagem(texto_da_conversa: &str) -> Option<String>
     let (_, corpo) = MarkdownCodec::split_frontmatter_text(texto_da_conversa);
     conversa::parse(corpo).last().map(|m| m.quando.clone()).filter(|q| !q.trim().is_empty())
 }
+
+/// Os números do projeto por papel (ciclo 524): o registro de execuções
+/// do vault cruzado com as tarefas.
+pub fn handle_numeros_do_projeto(vault_path: String, slug: String) -> Result<anotadinho_core::numeros::DoProjeto, String> {
+    let execucoes = crate::handle_listar_execucoes(vault_path.clone())?;
+    let tarefas = crate::handle_tarefas_do_projeto(vault_path, slug.clone())?;
+    Ok(anotadinho_core::numeros::do_projeto(&execucoes, &tarefas, &slug))
+}

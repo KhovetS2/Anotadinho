@@ -150,6 +150,13 @@ def main():
                      "o problema que o revisor anotou virou proposta pra base")
             conferir(not os.path.exists(os.path.join(vault, "pages/projetos/meu-primeiro-projeto/problemas.md")),
                      "a base não foi gravada sem a pessoa aprovar")
+            # Os números por papel (524), pelo CLI, do registro que a TUI gravou.
+            saida = subprocess.run([CLI, "--vault", vault, "--json", "projeto", "numeros", "meu-primeiro-projeto"],
+                                   check=True, capture_output=True, text=True).stdout
+            n = json.loads(saida)
+            conferir((n["executor"]["execucoes"], n["revisor"]["execucoes"]) == (2, 2)
+                     and n["revisor"]["agentes"] == ["falso revisor"] and n["revisao"]["depois_de_ajuste"] == 1,
+                     "os números contam 2 execuções e 2 revisões, e 1 tarefa aprovada depois de ajuste")
         else:
             esperar_status("revisao")
         tela = esperar_tela(s, "001-esqueleto-do-app → Revisão")

@@ -50,6 +50,12 @@ pub(crate) enum ProjetoCommand {
         /// Slug do projeto.
         slug: String,
     },
+    /// Os números por papel (ciclo 524): quanto o executor e o revisor
+    /// rodaram e custaram, e como a revisão pelo agente andou.
+    Numeros {
+        /// Slug do projeto.
+        slug: String,
+    },
 }
 
 /// Operações sobre sprints (ciclo 470). O que escreve, propõe.
@@ -255,6 +261,43 @@ pub(crate) fn run_projeto(vault: &str, json: bool, action: ProjetoCommand) -> Re
                 eprintln!("aviso: {a}");
             }
             eprintln!("{} proposta(s) no lote {} — revise com `propostas` e aplique o lote junto", r.ids.len(), r.lote);
+        }
+        ProjetoCommand::Numeros { slug } => {
+            let n = anotadinho_ipc::handle_numeros_do_projeto(vault.to_string(), slug.clone())?;
+            if json {
+                return crate::print_json(&n);
+            }
+            for (nome, p) in [("executor", &n.executor), ("revisor", &n.revisor), ("conversas", &n.conversas)] {
+                if p.execucoes == 0 {
+                    println!("{nome:<10} nenhuma execução");
+                    continue;
+                }
+                // Custo só do que contou: um modelo local não diz preço, e
+                // somar zero por ele fingiria que se sabe.
+                let custo = match (p.uso.custo_usd, p.com_custo) {
+                    (Some(c), k) if k == p.execucoes => format!("US$ {c:.2}"),
+                    (Some(c), k) => format!("US$ {c:.2} em {k} de {} (o resto sem custo informado)", p.execucoes),
+                    (None, _) => "sem custo informado".to_string(),
+                };
+                println!(
+                    "{nome:<10} {} execução(ões), {} falha(s), {} min · {}↓ {}↑ tokens · {custo} · {}",
+                    p.execucoes,
+                    p.falhas,
+                    p.segundos / 60,
+                    p.uso.entrada,
+                    p.uso.saida,
+                    p.agentes.join(", ")
+                );
+            }
+            let r = &n.revisao;
+            if r.revisadas == 0 {
+                println!("revisão   nenhuma tarefa revisada pelo agente ainda");
+            } else {
+                println!(
+                    "revisão   {} tarefa(s): {} de primeira, {} depois de ajuste, {} no teto, {} sem veredito · {:.1} revisões por tarefa",
+                    r.revisadas, r.de_primeira, r.depois_de_ajuste, r.esgotaram, r.falharam, r.media_de_revisoes
+                );
+            }
         }
         ProjetoCommand::Ver { slug } => {
             let e = anotadinho_ipc::handle_estado_do_projeto(vault.to_string(), slug.clone())?;

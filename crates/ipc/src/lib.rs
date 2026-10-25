@@ -19,6 +19,7 @@ pub use detalhes::*;
 pub mod repositorio;
 // O laço de revisão pelo agente (ciclo 522).
 mod revisao;
+pub use revisao::handle_numeros_do_projeto;
 
 use anotadinho_core::PageIndexEntry;
 use anotadinho_search::SearchIndex;

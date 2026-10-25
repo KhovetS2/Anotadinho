@@ -1174,7 +1174,14 @@ fn disparar(
                     }
                     match formato {
                         anotadinho_core::agente::FormatoSaida::StreamJson => stream.resposta(),
-                        anotadinho_core::agente::FormatoSaida::Texto => Ok(bruto),
+                        anotadinho_core::agente::FormatoSaida::Texto => {
+                            // O agente de texto que conta o consumo (o
+                            // aider, ciclo 524) também entra no registro.
+                            if let (Ok(mut u), Some(medido)) = (uso_lido.lock(), anotadinho_core::agente::uso_do_texto(&bruto)) {
+                                *u = Some(medido);
+                            }
+                            Ok(bruto)
+                        }
                     }
                 })
             });

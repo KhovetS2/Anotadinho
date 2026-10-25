@@ -645,6 +645,46 @@ impl Adaptador {
     }
 }
 
+/// O consumo que um agente de TEXTO conta no fim da saída (ciclo 524).
+///
+/// É o formato do aider — medido no 0.86.2: `Tokens: 813 sent, 65
+/// received.` com o Ollama, e `Tokens: 1.2k sent, 65 received. Cost:
+/// $0.01 message, $0.02 session.` com modelo pago. A ÚLTIMA linha vale (o
+/// aider conta a cada mensagem), e o custo é o da mensagem: o da sessão
+/// somaria as rodadas anteriores de novo.
+pub fn uso_do_texto(saida: &str) -> Option<Uso> {
+    fn numero(t: &str) -> Option<u64> {
+        let t = t.trim().replace(',', "");
+        let (base, mult) = match t.chars().last()? {
+            'k' | 'K' => (&t[..t.len() - 1], 1_000.0),
+            'm' | 'M' => (&t[..t.len() - 1], 1_000_000.0),
+            _ => (t.as_str(), 1.0),
+        };
+        base.parse::<f64>().ok().map(|n| (n * mult).round() as u64)
+    }
+    let linha = saida.lines().rev().find(|l| l.trim_start().starts_with("Tokens:"))?;
+    let resto = linha.trim_start().strip_prefix("Tokens:")?;
+    let (tokens, custo) = match resto.split_once("Cost:") {
+        Some((t, c)) => (t, Some(c)),
+        None => (resto, None),
+    };
+    let mut entrada = None;
+    let mut saida_t = None;
+    for parte in tokens.split(',') {
+        let parte = parte.trim().trim_end_matches('.');
+        if let Some(n) = parte.strip_suffix(" sent") {
+            entrada = numero(n);
+        } else if let Some(n) = parte.strip_suffix(" received") {
+            saida_t = numero(n);
+        }
+    }
+    let custo_usd = custo
+        .and_then(|c| c.split(',').find(|p| p.contains("message")))
+        .and_then(|p| p.trim().trim_start_matches('$').split_whitespace().next())
+        .and_then(|n| n.trim_start_matches('$').parse::<f64>().ok());
+    Some(Uso { entrada: entrada?, saida: saida_t.unwrap_or(0), custo_usd })
+}
+
 /// O agente de um papel do projeto (ciclo 521), pelo nome. A mesma regra
 /// pra TUI e janela, cada uma com a lista dela (`opcoes`).
 ///
@@ -1305,6 +1345,16 @@ mod tests {
     fn sem_git_em_lugar_nenhum_fica_o_vault() {
         let raiz = raiz_do_projeto("/casa/notas", |_| false);
         assert_eq!(raiz, "/casa/notas");
+    }
+
+    #[test]
+    fn o_uso_do_aider_sai_da_ultima_linha_de_tokens() {
+        // A saída real do aider 0.86.2 com o Ollama (2026-10-25).
+        let real = "Applied edit to soma.js\n\nRESULTADO: concluída\n\nTokens: 813 sent, 65 received.\nApplied edit to soma.js\nCommit ad13deb refactor";
+        assert_eq!(uso_do_texto(real), Some(Uso { entrada: 813, saida: 65, custo_usd: None }));
+        let pago = "Tokens: 2.0k sent, 10 received. Cost: $0.10 message, $0.10 session.\n...\nTokens: 12k sent, 1.5k received. Cost: $0.04 message, $0.14 session.";
+        assert_eq!(uso_do_texto(pago), Some(Uso { entrada: 12_000, saida: 1_500, custo_usd: Some(0.04) }), "a última, e o custo da mensagem");
+        assert_eq!(uso_do_texto("RESPOSTA sem contagem"), None);
     }
 
     #[test]
