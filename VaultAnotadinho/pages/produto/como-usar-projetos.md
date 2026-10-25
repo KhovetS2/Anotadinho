@@ -214,6 +214,7 @@ anotadinho-cli projeto tarefas <nome>
 anotadinho-cli tarefa nova <nome> "Título"        # propõe
 anotadinho-cli tarefa etapa <caminho> --para pronta   # propõe
 anotadinho-cli tarefa mudancas <caminho> [--resumo]   # o diff desde a base
+anotadinho-cli projeto numeros <nome>             # executor, revisor e a revisão
 anotadinho-cli projeto ver <nome>                 # sprints e tarefas numa chamada
 anotadinho-cli projeto modelo-de-plano            # o formato do plano
 anotadinho-cli projeto montar --file plano.yaml   # propõe o projeto inteiro
@@ -234,6 +235,9 @@ O que escreve pelo CLI **propõe**: o CLI é o canal do agente.
 | A tarefa fica em Executando | o app fechou no meio: mova pra Bloqueada e mande de novo |
 | Foi pra Bloqueada sem motivo aparente | a resposta não terminou com `RESULTADO:` — veja a conversa da tarefa |
 | Foi pra Bloqueada com ✗teste | a verificação reprovou: a saída está na seção **Verificação** da tarefa, e a próxima rodada a lê |
+| A tarefa fica em Executando com "revisão N/T" | o revisor está rodando, ou esperando a fila (pausada, freio do dia) |
+| Bloqueada logo na primeira rodada do júnior, sem mudar nada | a tarefa estava vaga demais pro modelo local: detalhe com arquivo, função e critério |
+| O seletor mostra o agente com "(não existe)" | o agente saiu das suas preferências: escolha outro, senão a tarefa bloqueia dizendo qual |
 | Revisão → Feita não andou, com "o commit falhou" | um hook do repositório recusou o commit: a tarefa fica em Revisão e o índice do git volta como estava; resolva e aceite de novo |
 | O quadro está vazio, mas há tarefas | o recorte: a sprint ativa não tem nenhuma. Troque o seletor pra **todas** ou **backlog** |
 | "já há uma sprint ativa" ao iniciar | só uma por vez: encerre a ativa antes |
@@ -242,6 +246,73 @@ O que escreve pelo CLI **propõe**: o CLI é o canal do agente.
 ## Relacionado
 
 - [[Como usar o modo agêntico]] — conversa, spec, proposta e execução
+
+## O tech lead e o júnior: revisão pelo agente
+
+Você é a PM; um agente caro e bom (o Claude) é o tech lead que revisa; um
+modelo local grátis é o júnior que coda. Em **Configurar** (na TUI, `o`):
+
+| Campo | O que faz |
+|---|---|
+| **Executor** | Quem coda as tarefas. Vazio = o agente padrão. O perfil **aider + Ollama (local)** roda o `qwen2.5-coder:7b` na sua máquina |
+| **Revisor** | Quem lê o que o executor fez. Vazio = vai direto pra você. Use o **Claude Code (revisor)**: ele só lê, não edita |
+| **Revisões até ir pra você** | O teto do laço (padrão 3) |
+
+Com revisor, a tarefa que passou na verificação não vai direto pra
+Revisão: o revisor lê a tarefa, os critérios, a verificação e o diff, e
+responde **aprovada** ou **ajustes**. Ajustes viram um comentário na
+tarefa, e o executor refaz só aquilo. Tudo isso acontece com a tarefa em
+**Executando** — o cartão diz em que ponto: "revisão 2/3" enquanto o
+revisor lê, "ajustes" enquanto o executor refaz. Termina em Revisão, a
+sua, com "revisor ok", "teto" (as revisões acabaram com ajustes
+pendentes) ou "revisor falhou" (não rodou ou não deu veredito). A
+conversa do revisor fica em `conversas/revisao-NNN.md`, separada da do
+executor.
+
+**Preparar o júnior:** instale o aider (`pipx install aider-chat`) e o
+Ollama, e baixe o modelo (`ollama pull qwen2.5-coder:7b`). Se a máquina
+aguenta, um modelo maior (`:14b`, `:32b`) erra menos: troque o `--model`
+do agente em Configurações › Agente. Na primeira vez, o aider põe
+`.aider*` no `.gitignore` do repositório.
+
+**Outros jeitos de montar o time.** Os papéis são só nomes de agentes, e
+qualquer combinação vale:
+
+- **Opus revisando, Sonnet codando:** crie dois agentes a partir do
+  Claude Code, um com `--model sonnet` (executor) e um a partir do
+  **Claude Code (revisor)** com `--model opus`. Os dois informam custo, e
+  os números por papel mostram quanto cada um gastou.
+- **opencode:** o perfil **opencode** roda `opencode run --format json
+  --auto -m opencode/big-pickle`, um modelo grátis do próprio opencode
+  (`opencode models` lista os outros; troque o `-m`). Medido: editou,
+  testou, commitou e atendeu o ajuste do revisor. Se o modelo padrão do
+  seu opencode é de um plano, uma chave expirada aparece como o erro da
+  execução ("This API key has expired"). Ele não continua sessão: o
+  histórico vai no prompt.
+
+**Detalhe antes de executar.** Medido: com uma tarefa vaga, o modelo de
+7B responde "Entendido, estou pronto pra ajudar" e não mexe em nada — o
+app marca Bloqueada, que é o certo. Com a tarefa dizendo o arquivo, a
+função e um critério verificável, ele edita, testa e commita. Detalhar
+com o agente (o tech lead) e só então mandar pro júnior é o que faz o
+arranjo render.
+
+### A base de problemas
+
+Quando o revisor vê o executor errar algo que tende a se repetir, ele o
+anota. Isso vira uma **proposta** pra `projetos/<nome>/problemas.md`; você
+aprova na fila de propostas. Aprovada, a base vai anexada no detalhe, na
+execução e na revisão das tarefas seguintes: o erro de hoje vira critério
+de aceite de amanhã. Na janela, o link fica nas Execuções; na TUI, nos
+detalhes (`v`).
+
+### Os números
+
+Na aba **Execuções** (na TUI, `x`), o topo mostra por papel quantas
+execuções, falhas, tokens e custo — só o custo que o agente informou: o
+Ollama não diz preço, e somar zero fingiria que se sabe — e como a
+revisão andou (de primeira, depois de ajuste, no teto). Pelo CLI:
+`anotadinho-cli projeto numeros <nome>`.
 
 ## Construir um SaaS do zero
 
