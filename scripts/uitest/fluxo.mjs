@@ -2342,7 +2342,12 @@ fluxo.push({
       const opcoes = await bridge.js(
         `[...document.querySelectorAll('.conversa__agente-op')].map(o => o.textContent.trim())`,
       );
-      ctx.assertEq(opcoes.length, 3, `esperava 3 agentes, veio ${JSON.stringify(opcoes)}`);
+      // Os presets ESTÃO lá, e não "são três": o 521 acrescentou dois
+      // (aider + Ollama e o revisor), e a contagem fixa reprovou um cenário
+      // que é sobre trocar de agente, não sobre quantos existem.
+      for (const nome of ["Claude Code", "Codex", "opencode", "aider + Ollama (local)", "Claude Code (revisor)"]) {
+        ctx.assert(opcoes.some((o) => o.replace("•", "").trim() === nome), `falta ${nome} no seletor: ${JSON.stringify(opcoes)}`);
+      }
 
       // Vai pro Codex e volta: o caminho ajustado tem que sobreviver.
       await bridge.js(`(() => {
@@ -3675,6 +3680,110 @@ fluxo.push({
       else fs.writeFileSync(cfgArq, cfgAntes);
       p.limpar();
       fs.rmSync(repo, { recursive: true, force: true });
+    }
+  },
+});
+
+// ── ciclo 526: os papéis e o laço de revisão na tela do projeto ─────
+
+fluxo.push({
+  nome: "projeto: executor e revisor, os selos do laço de revisão e os números por papel (526)",
+  async fn(bridge, ctx) {
+    const fs = await import("node:fs");
+    const slug = `uitest-papeis-${Date.now()}`;
+    const p = await projetoNoVault(ctx, slug, [[1, "executando", "Login"], [2, "revisao", "Cadastro"], [3, "revisao", "Busca"]]);
+    const marcar = (n, extra) => {
+      const arq = `${p.pasta}/tarefas/00${n}-t.md`;
+      fs.writeFileSync(arq, fs.readFileSync(arq, "utf8").replace(/^status: (.*)$/m, (l) => `${l}\n${extra}`));
+    };
+    marcar(1, "revisao_ia: rodando\nrodada: 1");
+    marcar(2, "revisao_ia: aprovada");
+    marcar(3, "revisao_ia: esgotou\nrodada: 3");
+    fs.writeFileSync(`${p.pasta}/problemas.md`, "---\ntitle: Problemas\ntype: problemas\n---\n# Problemas\n\n## Caso vazio sem teste\n\nfaltou\n");
+    // A config e o registro de execuções ENTRAM nos arquivos da pessoa, e
+    // os dois voltam inteiros no fim.
+    const cfgArq = `${ctx.vault}/.anotadinho/projetos.json`;
+    const cfgAntes = fs.existsSync(cfgArq) ? fs.readFileSync(cfgArq, "utf8") : null;
+    const cfg = cfgAntes ? JSON.parse(cfgAntes) : {};
+    cfg[slug] = { pausado: true, concorrencia: 1, verificar: "true", executor: "aider + Ollama (local)", revisor: "Claude Code (revisor)" };
+    fs.mkdirSync(`${ctx.vault}/.anotadinho`, { recursive: true });
+    fs.writeFileSync(cfgArq, JSON.stringify(cfg, null, 2));
+    const regArq = `${ctx.vault}/.anotadinho/execucoes.jsonl`;
+    const regAntes = fs.existsSync(regArq) ? fs.readFileSync(regArq, "utf8") : null;
+    const exec = (conversa, agente, uso) => JSON.stringify({ quando: "2026-10-25 10:00", conversa: `pages/projetos/${slug}/conversas/${conversa}.md`, agente, binario: "x", anexos: 0, prompt: 0, segundos: 30, ...(uso ? { uso } : {}), fim: "respondeu" });
+    fs.appendFileSync(regArq, [
+      exec("tarefa-001", "aider + Ollama (local)", { entrada: 813, saida: 65 }),
+      exec("revisao-001", "Claude Code (revisor)", { entrada: 12000, saida: 800, custo_usd: 0.04 }),
+    ].join("\n") + "\n");
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      // Os papéis no cabeçalho.
+      await esperar(bridge, "document.querySelector('.projeto__regra--executor strong')?.textContent === 'aider + Ollama (local)'", "o executor no cabeçalho");
+      const revisor = await bridge.js("document.querySelector('.projeto__regra--revisor')?.textContent");
+      ctx.assert(revisor.includes("Claude Code (revisor)") && revisor.includes("até 3 revisões"), `o revisor no cabeçalho: ${revisor}`);
+
+      // Os selos do laço.
+      const selo = (n, classe) => bridge.js(`document.querySelector('.projeto__cartao[data-tarefa$="00${n}-t.md"] .${classe}')?.textContent ?? null`);
+      await esperar(bridge, `!!document.querySelector('.projeto__cartao[data-tarefa$="001-t.md"] .projeto__selo--revisando')`, "o selo da revisão rodando");
+      ctx.assertEq((await selo(1, "projeto__selo--revisando")).trim(), "revisão 2/3", "a 001 está na segunda revisão de três");
+      ctx.assert((await selo(2, "projeto__selo--aprovada")) !== null, "a 002 aprovada pelo revisor");
+      ctx.assert((await selo(3, "projeto__selo--esgotou")) !== null, "a 003 no teto");
+
+      // Os detalhes da 001 dizem o ponto do laço e abrem a conversa do revisor.
+      await clicar(bridge, `.projeto__cartao[data-tarefa$="001-t.md"] .projeto__detalhes-abrir`, "os detalhes da 001");
+      await esperar(bridge, "!!document.querySelector('.tarefa-detalhes__revisao')", "a seção da revisão");
+      const secao = await bridge.js("document.querySelector('.tarefa-detalhes__revisao').textContent");
+      ctx.assert(secao.includes("o revisor está lendo") && secao.includes("1 revisão(ões) pediram ajuste"), `a seção: ${secao}`);
+      ctx.assert(await bridge.js("!!document.querySelector('.tarefa-detalhes__conversa-revisor')"), "o botão da conversa do revisor");
+
+      // Configurar: os seletores vêm com a config de agora; trocar e gravar.
+      await clicar(bridge, ".projeto__configurar", "Configurar");
+      await esperar(bridge, "!!document.querySelector('.projeto__config-painel .projeto__executor')", "o painel com os papéis");
+      ctx.assertEq(await bridge.js("document.querySelector('.projeto__executor').value"), "aider + Ollama (local)", "o executor no seletor");
+      ctx.assertEq(await bridge.js("document.querySelector('.projeto__revisor').value"), "Claude Code (revisor)", "o revisor no seletor");
+      ctx.assert(await bridge.js("[...document.querySelector('.projeto__revisor').options].some(o => o.value === 'Codex')"), "os agentes da pessoa estão na lista");
+      await bridge.js(`(() => {
+        const r = document.querySelector('.projeto__revisor');
+        r.value = '';
+        r.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`);
+      await esperar(bridge, "document.querySelector('.projeto__revisor').value === ''", "nenhum revisor no seletor");
+      await bridge.js(`(() => {
+        const i = document.querySelector('.projeto__rodadas');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '5');
+        i.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`);
+      await esperar(bridge, "document.querySelector('.projeto__rodadas').value === '5'", "as rodadas no campo");
+      await clicar(bridge, ".projeto__config-gravar", "Gravar");
+      await esperar(bridge, "!document.querySelector('.projeto__regra--revisor')", "o revisor sair do cabeçalho");
+      const gravado = JSON.parse(fs.readFileSync(cfgArq, "utf8"))[slug];
+      ctx.assertEq(gravado.revisor, undefined, "sem revisor no projetos.json");
+      ctx.assertEq(gravado.rodadas_de_revisao, 5, "as rodadas no projetos.json");
+      ctx.assertEq(gravado.executor, "aider + Ollama (local)", "o executor ficou");
+      ctx.assertEq(gravado.verificar, "true", "a verificação ficou");
+
+      // Os números por papel e a base de problemas, nas Execuções.
+      await clicar(bridge, ".projeto__aba:nth-child(4)", "a aba Execuções");
+      await esperar(bridge, "!!document.querySelector('.projeto__numero-papel--revisor')", "os números");
+      const nums = await bridge.js(`({
+        exe: document.querySelector('.projeto__numero-papel--executor')?.textContent,
+        rev: document.querySelector('.projeto__numero-papel--revisor')?.textContent,
+        revisao: document.querySelector('.projeto__numeros-revisao')?.textContent,
+        base: document.querySelector('.projeto__problemas')?.textContent,
+      })`);
+      ctx.assert(nums.exe.includes("1 execução") && nums.exe.includes("813↓ 65↑") && nums.exe.includes("sem custo informado"), `executor: ${nums.exe}`);
+      ctx.assert(nums.rev.includes("US$ 0,04") && nums.rev.includes("Claude Code (revisor)"), `revisor: ${nums.rev}`);
+      ctx.assert(nums.revisao.includes("2 tarefa(s)") && nums.revisao.includes("1 de primeira") && nums.revisao.includes("1 no teto"), `revisão: ${nums.revisao}`);
+      ctx.assertEq(nums.base.trim(), "Base de problemas (1)", "o link da base");
+    } finally {
+      if (cfgAntes === null) fs.rmSync(cfgArq, { force: true });
+      else fs.writeFileSync(cfgArq, cfgAntes);
+      if (regAntes === null) fs.rmSync(regArq, { force: true });
+      else fs.writeFileSync(regArq, regAntes);
+      p.limpar();
     }
   },
 });

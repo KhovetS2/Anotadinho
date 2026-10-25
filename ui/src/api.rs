@@ -725,9 +725,13 @@ pub struct ProjetosAvaliados {
 }
 
 /// Confere a fila dos projetos e sobe o agente das tarefas reservadas.
+///
+/// `opcoes` são os agentes da pessoa (ciclo 521): o projeto escolhe o
+/// executor pelo nome, e é nesta lista que o nome é procurado.
 pub async fn avaliar_projetos(
     vault_path: &str,
     adaptador: &anotadinho_core::agente::Adaptador,
+    opcoes: &[anotadinho_core::agente::Adaptador],
     teto: usize,
     limite: usize,
 ) -> Result<ProjetosAvaliados, String> {
@@ -736,6 +740,7 @@ pub async fn avaliar_projetos(
         Args::novo()
             .texto("vaultPath", vault_path)
             .serde("adaptador", adaptador)
+            .serde("opcoes", &opcoes)
             .serde("teto", &teto)
             .serde("limite", &limite),
     )

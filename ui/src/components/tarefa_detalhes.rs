@@ -31,6 +31,24 @@ pub struct TarefaDetalhesProps {
     pub on_mudou: Callback<()>,
     pub on_fechar: Callback<()>,
     pub on_abrir_pagina: Callback<()>,
+    /// Abrir outra página pelo caminho: a conversa do revisor (ciclo 526).
+    #[prop_or_default]
+    pub on_abrir_caminho: Option<Callback<String>>,
+}
+
+/// O ponto do laço de revisão, em palavras (ciclo 526).
+fn laco_em_palavras(revisao: &str) -> &'static str {
+    use anotadinho_core::revisor::estado;
+    match revisao {
+        estado::PENDENTE => "a verificação passou; esperando o revisor",
+        estado::RODANDO => "o revisor está lendo o que o executor fez",
+        estado::AJUSTES => "o revisor pediu ajustes; o executor vai refazer",
+        estado::REFAZENDO => "o executor está refazendo os ajustes",
+        estado::APROVADA => "aprovada pelo revisor — a decisão agora é sua",
+        estado::ESGOTOU => "as revisões acabaram com ajustes pendentes — veja o último comentário",
+        estado::FALHOU => "a revisão não rodou ou não deu veredito — veja o último comentário",
+        _ => "estado desconhecido",
+    }
 }
 
 fn valor_do_input(e: &InputEvent) -> String {
@@ -228,6 +246,26 @@ pub fn tarefa_detalhes(props: &TarefaDetalhesProps) -> Html {
                         <button class="btn btn--ghost btn--sm tarefa-detalhes__mudancas" data-nav-item="true" data-nav-parent="tarefa-detalhes"
                             onclick={abrir.reform(|_: MouseEvent| ())}>
                             <Icon name="git-branch" />{ " Ver mudanças" }
+                        </button>
+                    }
+                </section>
+            }
+
+            // O laço de revisão pelo agente (ciclo 526).
+            if let Some(r) = &t.revisao_ia {
+                <section class="tarefa-detalhes__secao tarefa-detalhes__revisao">
+                    <h4 class="tarefa-detalhes__rotulo">{ "Revisão pelo agente" }</h4>
+                    <p class="tarefa-detalhes__repo tarefa-detalhes__laco"><Icon name="eye" />{ format!(" {}", laco_em_palavras(r)) }</p>
+                    if t.rodada > 0 {
+                        <p class="tarefa-detalhes__repo">{ format!("{} revisão(ões) pediram ajuste", t.rodada) }</p>
+                    }
+                    if let (Some(abrir), false) = (props.on_abrir_caminho.clone(), r == anotadinho_core::revisor::estado::PENDENTE) {
+                        <button class="btn btn--ghost btn--sm tarefa-detalhes__conversa-revisor" data-nav-item="true" data-nav-parent="tarefa-detalhes"
+                            onclick={{
+                                let c = anotadinho_core::projeto::caminho_da_conversa_da_revisao(&t.projeto, t.numero);
+                                Callback::from(move |_: MouseEvent| abrir.emit(c.clone()))
+                            }}>
+                            <Icon name="message-circle" />{ " Conversa do revisor" }
                         </button>
                     }
                 </section>

@@ -566,7 +566,7 @@ pub fn app() -> Html {
                         let adaptador = crate::state::load_adaptador();
                         let a = crate::state::load_aparencia();
                         if let Ok(r) =
-                            api::avaliar_projetos(&path, &adaptador, a.teto_de_contexto, a.limite_de_agentes).await
+                            api::avaliar_projetos(&path, &adaptador, &crate::state::opcoes_de_agente(), a.teto_de_contexto, a.limite_de_agentes).await
                         {
                             if *ultimos.borrow() != r.avisos {
                                 for aviso in &r.avisos {

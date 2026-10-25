@@ -72,6 +72,8 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
     let erro_leitura = use_state(|| None::<String>);
     let erro = use_state(|| None::<String>);
     let execucoes = use_state(Vec::<anotadinho_core::execucao::Execucao>::new);
+    // A base de problemas (ciclo 526): quantos tem, `None` se não existe.
+    let problemas = use_state(|| None::<usize>);
     let nova = use_state(String::new);
     // Uma pergunta pra conversa geral faz a tela abrir NELA: quem apertou
     // "Detalhar" na tarefa quer ver o campo preenchido, não o quadro.
@@ -130,6 +132,7 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
     // 213), e "voltou a ser igual ao de antes" não re-renderizaria.
     let visto = use_mut_ref(|| None::<api::EstadoDoProjeto>);
     let vistas = use_mut_ref(Vec::<anotadinho_core::execucao::Execucao>::new);
+    let vistos_problemas = use_mut_ref(|| None::<usize>);
 
     // Lê o estado ao abrir, a cada mudança feita daqui, e de 3 em 3 s: o
     // agente move tarefas sozinho (executando → revisão), e um quadro que
@@ -137,17 +140,30 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
     {
         let (estado, erro, execucoes) = (estado.clone(), erro_leitura.clone(), execucoes.clone());
         let (visto, vistas) = (visto.clone(), vistas.clone());
+        let (problemas, vistos_problemas) = (problemas.clone(), vistos_problemas.clone());
         let (vault_path, slug) = (props.vault_path.clone(), slug.clone());
         use_effect_with((props.page.path.clone(), *recarga), move |_| {
             let carregar = {
                 let (estado, erro, execucoes) = (estado.clone(), erro.clone(), execucoes.clone());
                 let (visto, vistas) = (visto.clone(), vistas.clone());
+                let (problemas, vistos_problemas) = (problemas.clone(), vistos_problemas.clone());
                 let (vault_path, slug) = (vault_path.clone(), slug.clone());
                 move || {
                     let (estado, erro, execucoes) = (estado.clone(), erro.clone(), execucoes.clone());
                     let (visto, vistas) = (visto.clone(), vistas.clone());
+                    let (problemas, vistos_problemas) = (problemas.clone(), vistos_problemas.clone());
                     let (vault_path, slug) = (vault_path.clone(), slug.clone());
                     wasm_bindgen_futures::spawn_local(async move {
+                        // A base de problemas nasce por proposta aprovada,
+                        // a qualquer momento: relida com o resto.
+                        let n = api::read_page(&vault_path, &projeto::caminho_dos_problemas(&slug))
+                            .await
+                            .ok()
+                            .map(|t| anotadinho_core::problemas::titulos(&t).len());
+                        if *vistos_problemas.borrow() != n {
+                            *vistos_problemas.borrow_mut() = n;
+                            problemas.set(n);
+                        }
                         match api::estado_do_projeto(&vault_path, &slug).await {
                             Ok(e) => {
                                 // Só re-renderiza se mudou: o intervalo roda
@@ -371,6 +387,13 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                     if config_atual.commitar_ao_aceitar {
                         <span class="projeto__regra"><Icon name="check" />{ " commit ao aceitar" }</span>
                     }
+                    // Os papéis (526): só quando fogem do padrão.
+                    if let Some(e) = config_atual.nome_do_executor() {
+                        <span class="projeto__regra projeto__regra--executor"><Icon name="play" />{ " executor " }<strong>{ e }</strong></span>
+                    }
+                    if let Some(r) = config_atual.nome_do_revisor() {
+                        <span class="projeto__regra projeto__regra--revisor"><Icon name="eye" />{ " revisor " }<strong>{ r }</strong>{ format!(" · até {} revisões", config_atual.rodadas_de_revisao.max(1)) }</span>
+                    }
                 </p>
                 if *configurando && estado.is_some() {
                     { painel_de_config((*rascunho).clone().unwrap_or_else(|| config_atual.clone()), rascunho.clone(), configurando.clone(), gravar_config.clone()) }
@@ -467,7 +490,11 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                 }}
                 on_mudou={recarregar.clone()}
                 on_fechar={fechar}
-                on_abrir_pagina={abrir_pagina} />
+                on_abrir_pagina={abrir_pagina}
+                on_abrir_caminho={{
+                    let abrir = abrir.clone();
+                    Callback::from(move |c: String| abrir.emit(pagina(&c, &c)))
+                }} />
         }
     });
     let quadro = {
@@ -539,7 +566,7 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                                     indice: &indice, abrir: &abrir, mover: &mover, arrastando: &arrastando,
                                     sprints: &abertas, mudar_sprint: &mudar_sprint, hoje: &hoje,
                                     abrir_detalhe: &abrir_detalhe, detalhe_aberto: detalhe.as_deref(),
-                                    ver_mudancas: &ver_mudancas,
+                                    ver_mudancas: &ver_mudancas, rodadas: config_atual.rodadas_de_revisao.max(1),
                                 })) }
                             </div>
                         }
@@ -582,6 +609,8 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
             }
         }
         Aba::Execucoes => html! {
+            <>
+            { numeros_do_projeto(&anotadinho_core::numeros::do_projeto(&execucoes, &tarefas, &slug), *problemas, &slug, &abrir) }
             <ul class="projeto__execucoes" data-nav-group="projeto-execucoes">
                 if execucoes.is_empty() {
                     <li class="projeto__vazio">{ "Nenhuma tarefa executada ainda." }</li>
@@ -601,6 +630,7 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                     }
                 }) }
             </ul>
+            </>
         },
     };
 
@@ -615,6 +645,58 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                     on_fechar={{ let m = mudancas_de.clone(); Callback::from(move |_| m.set(None)) }} />
             }
         </main>
+    }
+}
+
+/// Os números por papel (ciclo 526, de `core::numeros`) e a base de
+/// problemas, no topo das Execuções. O custo só do que contou custo: um
+/// modelo local não diz preço, e somar zero por ele fingiria que se sabe.
+fn numeros_do_projeto(n: &anotadinho_core::numeros::DoProjeto, problemas: Option<usize>, slug: &str, abrir: &Callback<api::PageMeta>) -> Html {
+    let linha = |nome: &str, p: &anotadinho_core::numeros::DoPapel| -> Html {
+        if p.execucoes == 0 {
+            return html! {};
+        }
+        let custo = match (p.uso.custo_usd, p.com_custo) {
+            (Some(c), k) if k == p.execucoes => format!("US$ {c:.2}"),
+            (Some(c), k) => format!("US$ {c:.2} em {k} de {}", p.execucoes),
+            (None, _) => "sem custo informado".to_string(),
+        }
+        .replace('.', ",");
+        html! {
+            <li class={classes!("projeto__numero-papel", format!("projeto__numero-papel--{nome}"))}>
+                <strong>{ nome }</strong>
+                <span>{ format!("{} execução(ões){}", p.execucoes, if p.falhas > 0 { format!(", {} falha(s)", p.falhas) } else { String::new() }) }</span>
+                <span>{ format!("{}↓ {}↑ tokens", p.uso.entrada, p.uso.saida) }</span>
+                <span class="projeto__numero-custo">{ custo }</span>
+                <span class="projeto__numero-agentes">{ p.agentes.join(", ") }</span>
+            </li>
+        }
+    };
+    let r = &n.revisao;
+    let base = projeto::caminho_dos_problemas(slug);
+    html! {
+        <section class="projeto__numeros" data-nav-group="projeto-numeros">
+            <ul class="projeto__numeros-papeis">
+                { linha("executor", &n.executor) }
+                { linha("revisor", &n.revisor) }
+                { linha("conversas", &n.conversas) }
+            </ul>
+            if r.revisadas > 0 {
+                <p class="projeto__numeros-revisao">
+                    { format!(
+                        "Revisão pelo agente: {} tarefa(s) — {} de primeira, {} depois de ajuste, {} no teto, {} sem veredito · {:.1} revisões por tarefa",
+                        r.revisadas, r.de_primeira, r.depois_de_ajuste, r.esgotaram, r.falharam, r.media_de_revisoes
+                    ).replace('.', ",") }
+                </p>
+            }
+            if let Some(k) = problemas {
+                <button class="btn btn--ghost btn--sm projeto__problemas" data-nav-item="true" data-nav-parent="projeto-numeros"
+                    title="O que o revisor viu dar errado, aprovado por você: vai anexado no detalhe e na execução das tarefas"
+                    onclick={{ let (abrir, b) = (abrir.clone(), base.clone()); Callback::from(move |_: MouseEvent| abrir.emit(pagina(&b, "Problemas"))) }}>
+                    <Icon name="alert-triangle" />{ format!(" Base de problemas ({k})") }
+                </button>
+            }
+        </section>
     }
 }
 
@@ -648,6 +730,32 @@ fn painel_de_config(
         let configurando = configurando.clone();
         Callback::from(move |_: MouseEvent| configurando.set(false))
     };
+    // Os papéis (ciclo 526): o nome de um agente da pessoa. Vazio é o
+    // padrão (executor) ou nenhum (revisor).
+    let escolher = |f: fn(&mut projeto::ConfigProjeto, Option<String>)| {
+        let (rascunho, r) = (rascunho.clone(), r.clone());
+        Callback::from(move |e: Event| {
+            let alvo: web_sys::HtmlSelectElement = e.target_unchecked_into();
+            let mut novo = r.clone();
+            f(&mut novo, Some(alvo.value()).filter(|v| !v.trim().is_empty()));
+            rascunho.set(Some(novo));
+        })
+    };
+    let nomes: Vec<String> = crate::state::opcoes_de_agente().into_iter().map(|a| a.nome).collect();
+    let opcoes = |atual: Option<&str>, vazio: &str| -> Html {
+        // O nome gravado que saiu da lista aparece marcado, em vez de o
+        // seletor cair calado no padrão e o próximo Gravar apagá-lo.
+        let sumido = atual.filter(|a| !nomes.iter().any(|n| n == a)).map(str::to_string);
+        html! {
+            <>
+                <option value="" selected={atual.is_none()}>{ vazio }</option>
+                { for nomes.iter().map(|n| html! { <option value={n.clone()} selected={atual == Some(n.as_str())}>{ n }</option> }) }
+                if let Some(s) = sumido {
+                    <option value={s.clone()} selected=true>{ format!("{s} (não existe)") }</option>
+                }
+            </>
+        }
+    };
     html! {
         <section class="projeto__config-painel" data-nav-group="projeto-config">
             <label class="projeto__campo">
@@ -673,6 +781,31 @@ fn painel_de_config(
                     onchange={mudar(|c, v| c.commitar_ao_aceitar = v == "true")} />
                 { " Aceitar (revisão → feita) commita o que a tarefa deixou" }
             </label>
+            // Os papéis (ciclo 526), depois das regras do repositório: o
+            // executor na linha inteira (a dica é longa), o revisor ao lado
+            // do teto dele.
+            <label class="projeto__campo projeto__campo--largo">
+                <span class="projeto__campo-rotulo">{ "Executor" }</span>
+                <select class="input input--sm projeto__executor" data-nav-item="true" data-nav-parent="projeto-config"
+                    onchange={escolher(|c, v| c.executor = v)}>
+                    { opcoes(r.nome_do_executor(), "o agente padrão") }
+                </select>
+                <span class="projeto__campo-dica">{ "Quem coda as tarefas. Um modelo local (aider + Ollama) custa nada por rodada." }</span>
+            </label>
+            <label class="projeto__campo">
+                <span class="projeto__campo-rotulo">{ "Revisor" }</span>
+                <select class="input input--sm projeto__revisor" data-nav-item="true" data-nav-parent="projeto-config"
+                    onchange={escolher(|c, v| c.revisor = v)}>
+                    { opcoes(r.nome_do_revisor(), "nenhum — vai direto pra você") }
+                </select>
+                <span class="projeto__campo-dica">{ "Lê o diff depois da verificação e aprova ou devolve com ajustes. Use um que só lê, como o Claude Code (revisor)." }</span>
+            </label>
+            <label class="projeto__campo">
+                <span class="projeto__campo-rotulo">{ "Revisões até ir pra você" }</span>
+                <input class="input input--sm projeto__rodadas" type="number" min="1"
+                    data-nav-item="true" data-nav-parent="projeto-config" value={r.rodadas_de_revisao.max(1).to_string()}
+                    onchange={mudar(|c, v| if let Ok(n) = v.trim().parse::<u32>() { c.rodadas_de_revisao = n.max(1) })} />
+            </label>
             <div class="projeto__config-acoes">
                 <button class="btn btn--ghost btn--sm" data-nav-item="true" data-nav-parent="projeto-config" onclick={cancelar}>{ "Cancelar" }</button>
                 <button class="btn btn--primary btn--sm projeto__config-gravar" data-nav-item="true" data-nav-parent="projeto-config" onclick={salvar}>{ "Gravar" }</button>
@@ -696,6 +829,46 @@ struct Cartao<'a> {
     abrir_detalhe: &'a Callback<String>,
     detalhe_aberto: Option<&'a str>,
     ver_mudancas: &'a Callback<(String, String)>,
+    /// O teto de revisões do projeto, pro selo "revisão N/T" (526).
+    rodadas: u32,
+}
+
+/// O selo do laço de revisão (ciclo 526): (modificador, ícone, texto,
+/// dica). Em `executando`, em que ponto o laço está; em `revisao`, como
+/// ele terminou. Fora disso, nada.
+fn selo_do_laco(t: &Tarefa, teto: u32) -> Option<(&'static str, &'static str, String, String)> {
+    use anotadinho_core::revisor::estado;
+    let n = t.rodada + 1;
+    match (t.etapa, t.revisao_ia.as_deref()?) {
+        (EtapaTarefa::Executando, estado::PENDENTE | estado::RODANDO) => Some((
+            "projeto__selo--revisando",
+            "eye",
+            format!("revisão {n}/{teto}"),
+            "O revisor está lendo o que o executor fez".to_string(),
+        )),
+        (EtapaTarefa::Executando, estado::AJUSTES | estado::REFAZENDO) => Some((
+            "projeto__selo--ajustes",
+            "edit",
+            "ajustes".to_string(),
+            format!("O revisor pediu ajustes (revisão {}/{teto}): o executor está refazendo", t.rodada),
+        )),
+        (EtapaTarefa::Revisao, estado::APROVADA) => {
+            Some(("projeto__selo--aprovada", "eye", "revisor ok".to_string(), format!("O revisor aprovou na revisão {n}")))
+        }
+        (EtapaTarefa::Revisao, estado::ESGOTOU) => Some((
+            "projeto__selo--esgotou",
+            "alert-triangle",
+            "teto".to_string(),
+            format!("O revisor ainda pedia ajustes quando as {teto} revisões acabaram: veja o último comentário"),
+        )),
+        (EtapaTarefa::Revisao, estado::FALHOU) => Some((
+            "projeto__selo--revisor-falhou",
+            "alert-circle",
+            "revisor falhou".to_string(),
+            "A revisão pelo agente não rodou ou não deu veredito: veja o último comentário".to_string(),
+        )),
+        _ => None,
+    }
 }
 
 fn cartao(t: &Tarefa, c: &Cartao) -> Html {
@@ -736,7 +909,8 @@ fn cartao(t: &Tarefa, c: &Cartao) -> Html {
     // A prioridade só aparece quando foge da média (ciclo 513): o selo em
     // toda tarefa diria "média" mil vezes e esconderia as que importam.
     let prioridade = t.prioridade.as_deref().map(str::to_lowercase).filter(|p| p == "alta" || p == "baixa");
-    let tem_selos = total > 0 || t.prazo.is_some() || !t.comentarios.is_empty() || !t.anexos.is_empty() || prioridade.is_some() || t.verificacao.is_some();
+    let laco = selo_do_laco(t, c.rodadas);
+    let tem_selos = total > 0 || t.prazo.is_some() || !t.comentarios.is_empty() || !t.anexos.is_empty() || prioridade.is_some() || t.verificacao.is_some() || laco.is_some();
     let detalhar = {
         let (abrir_detalhe, caminho) = (c.abrir_detalhe.clone(), t.caminho.clone());
         Callback::from(move |_: MouseEvent| abrir_detalhe.emit(caminho.clone()))
@@ -781,6 +955,12 @@ fn cartao(t: &Tarefa, c: &Cartao) -> Html {
                         <span class={classes!("projeto__selo", "projeto__selo--verificacao", if v == "passou" { "projeto__selo--passou" } else { "projeto__selo--falhou" })}
                             title={if v == "passou" { "A verificação do projeto passou" } else { "A verificação do projeto falhou: veja a seção Verificação da tarefa" }}>
                             <Icon name={if v == "passou" { "check" } else { "x" }} />{ " teste" }
+                        </span>
+                    }
+                    // O laço de revisão pelo agente (526).
+                    if let Some((classe, icone, texto, dica)) = laco {
+                        <span class={classes!("projeto__selo", "projeto__selo--revisao", classe)} title={dica}>
+                            <Icon name={icone} />{ format!(" {texto}") }
                         </span>
                     }
                     if let Some(p) = &prioridade {
