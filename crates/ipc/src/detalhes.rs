@@ -32,6 +32,18 @@ pub fn handle_prazo_da_tarefa(vault_path: String, caminho: String, prazo: Option
     handle_write_page(vault_path, caminho, projeto::com_prazo(&atual, prazo.as_deref())?)
 }
 
+/// Põe (`Some`) ou tira (`None`) a prioridade (ciclo 513).
+pub fn handle_prioridade_da_tarefa(vault_path: String, caminho: String, prioridade: Option<String>) -> Result<(), String> {
+    let atual = ler_tarefa(&vault_path, &caminho)?;
+    handle_write_page(vault_path, caminho, projeto::com_prioridade(&atual, prioridade.as_deref())?)
+}
+
+/// Troca as dependências (ciclo 513).
+pub fn handle_dependencias_da_tarefa(vault_path: String, caminho: String, depende: Vec<String>) -> Result<(), String> {
+    let atual = ler_tarefa(&vault_path, &caminho)?;
+    handle_write_page(vault_path, caminho.clone(), projeto::com_dependencias(&atual, &caminho, &depende)?)
+}
+
 /// Marca ou desmarca o item `indice` da checklist.
 pub fn handle_alternar_item_da_tarefa(vault_path: String, caminho: String, indice: usize) -> Result<(), String> {
     let atual = ler_tarefa(&vault_path, &caminho)?;

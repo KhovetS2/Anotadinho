@@ -419,6 +419,7 @@ pub fn projeto_view(props: &ProjetoViewProps) -> Html {
                 vault_path={props.vault_path.clone()}
                 tarefa={t.clone()}
                 hoje={hoje.clone()}
+                outras={tarefas.iter().filter(|o| o.caminho != t.caminho).map(|o| (o.numero, o.titulo.clone())).collect::<Vec<_>>()}
                 on_mudou={recarregar.clone()}
                 on_fechar={fechar}
                 on_abrir_pagina={abrir_pagina} />
@@ -617,7 +618,10 @@ fn cartao(t: &Tarefa, c: &Cartao) -> Html {
     };
     let (feitos, total) = t.progresso();
     let vencida = t.vencida(c.hoje);
-    let tem_selos = total > 0 || t.prazo.is_some() || !t.comentarios.is_empty() || !t.anexos.is_empty();
+    // A prioridade só aparece quando foge da média (ciclo 513): o selo em
+    // toda tarefa diria "média" mil vezes e esconderia as que importam.
+    let prioridade = t.prioridade.as_deref().map(str::to_lowercase).filter(|p| p == "alta" || p == "baixa");
+    let tem_selos = total > 0 || t.prazo.is_some() || !t.comentarios.is_empty() || !t.anexos.is_empty() || prioridade.is_some();
     let detalhar = {
         let (abrir_detalhe, caminho) = (c.abrir_detalhe.clone(), t.caminho.clone());
         Callback::from(move |_: MouseEvent| abrir_detalhe.emit(caminho.clone()))
@@ -645,6 +649,12 @@ fn cartao(t: &Tarefa, c: &Cartao) -> Html {
             // abrindo a página.
             if tem_selos {
                 <div class="projeto__selos">
+                    if let Some(p) = &prioridade {
+                        <span class={classes!("projeto__selo", "projeto__selo--prioridade", format!("projeto__selo--{p}"))}
+                            title={format!("Prioridade {p}")}>
+                            <Icon name={if p == "alta" { "arrow-up" } else { "arrow-down" }} />{ format!(" {p}") }
+                        </span>
+                    }
                     if total > 0 {
                         <span class={classes!("projeto__selo", "projeto__selo--checklist", (feitos == total).then_some("projeto__selo--completo"))}>
                             <Icon name="check-square" />{ format!(" {feitos}/{total}") }

@@ -2414,6 +2414,8 @@
   border-radius: var(--r-sm); padding: 0 var(--sp-1);
 }
 .projeto__selo--completo { color: var(--success); }
+.projeto__selo--alta { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.projeto__selo--baixa { color: var(--text-muted); }
 .projeto__selo--vencido { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
 .projeto__tag { font-size: .6875rem; }
 
@@ -2436,6 +2438,14 @@
   border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0; display: inline-flex; opacity: .7;
 }
 .tarefa-detalhes__tag-nova { width: 7rem; }
+/* Prioridade e dependências (ciclo 513). */
+.tarefa-detalhes__prioridade { width: 9rem; }
+.tarefa-detalhes__deps { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
+.tarefa-detalhes__dep {
+  display: inline-flex; align-items: center; gap: calc(var(--sp-1) / 2);
+  background: color-mix(in srgb, var(--text-muted) 15%, transparent); color: var(--text-primary);
+}
+.tarefa-detalhes__dep-nova { max-width: 14rem; }
 .tarefa-detalhes__prazo { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .tarefa-detalhes__vencido { color: var(--error); font-size: .78rem; }
 .tarefa-detalhes__prazo--vencido .tarefa-detalhes__prazo-data { border-color: var(--error); }

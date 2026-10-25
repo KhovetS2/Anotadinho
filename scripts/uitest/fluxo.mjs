@@ -3547,6 +3547,46 @@ fluxo.push({
   },
 });
 
+// ── ciclo 513: prioridade e dependências pelo painel ─────────────────
+
+fluxo.push({
+  nome: "tarefa: o painel põe e tira prioridade e dependência (513)",
+  async fn(bridge, ctx) {
+    const slug = `uitest-prioridade-${Date.now()}`;
+    const p = await projetoNoVault(ctx, slug, [[1, "pronta", "Login"], [2, "pronta", "Cadastro"]]);
+    const arq = `${p.pasta}/tarefas/002-t.md`;
+    const ler = () => p.fs.readFileSync(arq, "utf8");
+    const CARTAO = `document.querySelector('.projeto__cartao[data-tarefa$="002-t.md"]')`;
+    try {
+      await recarregarEstavel(bridge);
+      await abrirPeloCaminho(bridge, `pages/projetos/${slug}/projeto`);
+      await clicar(bridge, `.projeto__cartao[data-tarefa$="002-t.md"] .projeto__detalhes-abrir`, "os detalhes da 002");
+      await esperar(bridge, "!!document.querySelector('.tarefa-detalhes .tarefa-detalhes__prioridade')", "o seletor de prioridade");
+
+      ctx.assertEq(await bridge.js(ESCOLHER(".tarefa-detalhes__prioridade", "alta")), true, "o seletor");
+      await esperar(bridge, `${CARTAO}?.querySelector('.projeto__selo--alta')?.textContent.trim() === 'alta'`, "o selo de prioridade alta no cartão");
+      ctx.assert(/^prioridade: alta$/m.test(ler()), `a prioridade não foi pro frontmatter:\n${ler()}`);
+
+      // A dependência é escolhida entre as OUTRAS tarefas: a própria não está.
+      const opcoes = await bridge.js(`[...document.querySelectorAll('.tarefa-detalhes__dep-nova option')].map(o => o.value)`);
+      ctx.assertEq(JSON.stringify(opcoes), JSON.stringify(["", "1"]), "as opções de dependência");
+      await bridge.js(ESCOLHER(".tarefa-detalhes__dep-nova", "1"));
+      await esperar(bridge, `${CARTAO}?.querySelector('.projeto__depende')?.textContent.includes('depende de 1')`, "a dependência no cartão");
+      await esperar(bridge, `document.querySelector('.tarefa-detalhes__dep')?.textContent.includes('001 Login')`, "o chip com o título");
+      ctx.assert(/^depende:\n- '?"?1'?"?$/m.test(ler()), `a dependência não foi pro frontmatter:\n${ler()}`);
+
+      // Tirar as duas devolve o frontmatter de antes.
+      await clicar(bridge, ".tarefa-detalhes__dep .tarefa-detalhes__tag-tirar", "tirar a dependência");
+      await esperar(bridge, `!${CARTAO}?.querySelector('.projeto__depende')`, "a dependência sair do cartão");
+      await bridge.js(ESCOLHER(".tarefa-detalhes__prioridade", ""));
+      await esperar(bridge, `!${CARTAO}?.querySelector('.projeto__selo--prioridade')`, "o selo de prioridade sair");
+      ctx.assert(!/^(prioridade|depende):/m.test(ler()), `sobrou campo no frontmatter:\n${ler()}`);
+    } finally {
+      p.limpar();
+    }
+  },
+});
+
 fluxo.push({
   nome: "tarefa rica: anexar copia sem sobrescrever, e abrir recusa fora de assets (477)",
   async fn(bridge, ctx) {

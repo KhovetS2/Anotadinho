@@ -744,6 +744,16 @@ fn prazo_da_tarefa(vault_path: String, caminho: String, prazo: Option<String>) -
 }
 
 #[tauri::command]
+fn prioridade_da_tarefa(vault_path: String, caminho: String, prioridade: Option<String>) -> Result<(), String> {
+    anotadinho_ipc::handle_prioridade_da_tarefa(vault_path, caminho, prioridade)
+}
+
+#[tauri::command]
+fn dependencias_da_tarefa(vault_path: String, caminho: String, depende: Vec<String>) -> Result<(), String> {
+    anotadinho_ipc::handle_dependencias_da_tarefa(vault_path, caminho, depende)
+}
+
+#[tauri::command]
 fn alternar_item_da_tarefa(vault_path: String, caminho: String, indice: usize) -> Result<(), String> {
     anotadinho_ipc::handle_alternar_item_da_tarefa(vault_path, caminho, indice)
 }
@@ -1653,6 +1663,8 @@ fn main() {
             criar_sprint,
             tags_da_tarefa,
             prazo_da_tarefa,
+            prioridade_da_tarefa,
+            dependencias_da_tarefa,
             alternar_item_da_tarefa,
             comentar_tarefa,
             anexar_na_tarefa,

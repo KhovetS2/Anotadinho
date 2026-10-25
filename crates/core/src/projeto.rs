@@ -454,10 +454,10 @@ impl Tarefa {
 
     /// Esta tarefa é a que `referencia` aponta?
     ///
-    /// Desde o ciclo 462 quem responde é o [`IndiceDeTarefas`]; isto fica
-    /// como GABARITO do teste que confere que os dois concordam.
-    #[cfg(test)]
-    fn casa_com(&self, referencia: &str) -> bool {
+    /// Desde o ciclo 462 quem responde à fila é o [`IndiceDeTarefas`]; isto
+    /// fica como GABARITO do teste que confere que os dois concordam, e pra
+    /// recusar a tarefa que dependeria de si (ciclo 513).
+    pub(crate) fn casa_com(&self, referencia: &str) -> bool {
         let r = referencia.trim().trim_start_matches("[[").trim_end_matches("]]").trim();
         if r.is_empty() {
             return false;
@@ -508,6 +508,56 @@ pub fn com_prazo(texto: &str, prazo: Option<&str>) -> Result<String, String> {
         None => {
             fm.extra.remove("prazo");
         }
+    }
+    MarkdownCodec::substituir_frontmatter(texto, &fm).map_err(|e| e.to_string())
+}
+
+/// As prioridades que a fila entende (ciclo 513), na ordem do seletor.
+pub const PRIORIDADES: [&str; 3] = ["alta", "media", "baixa"];
+
+/// Põe ou tira a prioridade (ciclo 513). Só as de [`PRIORIDADES`]: a fila
+/// ordena por elas (`peso_da_prioridade`), e "urgente" escrito à mão cairia
+/// em média sem ninguém ver.
+pub fn com_prioridade(texto: &str, prioridade: Option<&str>) -> Result<String, String> {
+    let (mut fm, _) = MarkdownCodec::split_frontmatter(texto).map_err(|e| format!("frontmatter ilegível: {e}"))?;
+    if fm.page_type.as_deref() != Some(TIPO_TAREFA) {
+        return Err("a página não é uma tarefa (type: tarefa)".to_string());
+    }
+    match prioridade.map(|p| p.trim().to_lowercase()).filter(|p| !p.is_empty()) {
+        Some(p) if PRIORIDADES.contains(&p.as_str()) => {
+            fm.extra.insert("prioridade".into(), valor(&p));
+        }
+        Some(p) => return Err(format!("prioridade \"{p}\" não é alta, media nem baixa")),
+        None => {
+            fm.extra.remove("prioridade");
+        }
+    }
+    MarkdownCodec::substituir_frontmatter(texto, &fm).map_err(|e| e.to_string())
+}
+
+/// Troca as dependências (ciclo 513): a lista vai como lista YAML, sem
+/// repetidas nem vazias; vazia, o campo sai. Uma tarefa não depende de si.
+pub fn com_dependencias(texto: &str, caminho: &str, depende: &[String]) -> Result<String, String> {
+    let (mut fm, _) = MarkdownCodec::split_frontmatter(texto).map_err(|e| format!("frontmatter ilegível: {e}"))?;
+    if fm.page_type.as_deref() != Some(TIPO_TAREFA) {
+        return Err("a página não é uma tarefa (type: tarefa)".to_string());
+    }
+    let propria = Tarefa::ler(caminho, texto);
+    let mut lista: Vec<String> = Vec::new();
+    for d in depende {
+        let d = d.trim().to_string();
+        if d.is_empty() || lista.contains(&d) {
+            continue;
+        }
+        if propria.as_ref().is_some_and(|t| t.casa_com(&d)) {
+            return Err("uma tarefa não pode depender dela mesma".to_string());
+        }
+        lista.push(d);
+    }
+    if lista.is_empty() {
+        fm.extra.remove("depende");
+    } else {
+        fm.extra.insert("depende".into(), serde_yaml::Value::Sequence(lista.into_iter().map(serde_yaml::Value::String).collect()));
     }
     MarkdownCodec::substituir_frontmatter(texto, &fm).map_err(|e| e.to_string())
 }
@@ -1135,6 +1185,27 @@ mod testes {
         ];
         assert_eq!(proximo_numero(&existentes), 4);
         assert_eq!(proximo_numero(&[]), 1);
+    }
+
+    #[test]
+    fn prioridade_e_dependencias_gravam_no_frontmatter() {
+        let t = ("pages/projetos/saas/tarefas/003-t.md".to_string(), tarefa_md("pronta", ""));
+        let texto = &t.1;
+        let com = com_prioridade(texto, Some("Alta")).unwrap();
+        assert_eq!(Tarefa::ler(&t.0, &com).unwrap().prioridade.as_deref(), Some("alta"));
+        assert!(com_prioridade(texto, Some("urgente")).is_err());
+        let sem = com_prioridade(&com, None).unwrap();
+        assert_eq!(Tarefa::ler(&t.0, &sem).unwrap().prioridade, None);
+        let dep = com_dependencias(texto, &t.0, &["1".into(), " 2 ".into(), "1".into(), String::new()]).unwrap();
+        assert_eq!(Tarefa::ler(&t.0, &dep).unwrap().depende, ["1", "2"]);
+        assert!(dep.contains("depende:\n- '1'\n- '2'") || dep.contains("depende:\n- \"1\"\n- \"2\""), "{dep}");
+        assert!(com_dependencias(texto, &t.0, &["3".into()]).is_err(), "depender de si");
+        let limpa = com_dependencias(&dep, &t.0, &[]).unwrap();
+        assert!(!limpa.contains("depende"), "{limpa}");
+        // O corpo fica intocado.
+        assert_eq!(MarkdownCodec::split_frontmatter_text(&limpa).1, MarkdownCodec::split_frontmatter_text(texto).1);
+        // Não é tarefa: recusa.
+        assert!(com_prioridade("---\ntitle: x\n---\nc\n", Some("alta")).is_err());
     }
 
     #[test]

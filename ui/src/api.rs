@@ -850,6 +850,22 @@ pub async fn prazo_da_tarefa(vault_path: &str, caminho: &str, prazo: Option<&str
     .await
 }
 
+pub async fn prioridade_da_tarefa(vault_path: &str, caminho: &str, prioridade: Option<&str>) -> Result<(), String> {
+    chamar_sem_retorno(
+        "prioridade_da_tarefa",
+        Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho).serde("prioridade", &prioridade),
+    )
+    .await
+}
+
+pub async fn dependencias_da_tarefa(vault_path: &str, caminho: &str, depende: &[String]) -> Result<(), String> {
+    chamar_sem_retorno(
+        "dependencias_da_tarefa",
+        Args::novo().texto("vaultPath", vault_path).texto("caminho", caminho).serde("depende", &depende),
+    )
+    .await
+}
+
 pub async fn alternar_item_da_tarefa(vault_path: &str, caminho: &str, indice: usize) -> Result<(), String> {
     chamar_sem_retorno(
         "alternar_item_da_tarefa",

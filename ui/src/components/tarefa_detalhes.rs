@@ -20,6 +20,10 @@ pub struct TarefaDetalhesProps {
     pub tarefa: Tarefa,
     /// `AAAA-MM-DD`, pra o prazo vencido.
     pub hoje: String,
+    /// As outras tarefas do projeto (número e título): de quem esta pode
+    /// depender (ciclo 513).
+    #[prop_or_default]
+    pub outras: Vec<(u32, String)>,
     /// Gravou: a tela relê o projeto.
     pub on_mudou: Callback<()>,
     pub on_fechar: Callback<()>,
@@ -82,6 +86,28 @@ pub fn tarefa_detalhes(props: &TarefaDetalhesProps) -> Html {
             let (v, c) = (v.clone(), c.clone());
             rodar(Box::pin(async move { api::prazo_da_tarefa(&v, &c, novo.as_deref()).await }));
         })
+    };
+    let prioridade = {
+        let (v, c, rodar) = (props.vault_path.clone(), t.caminho.clone(), rodar.clone());
+        Callback::from(move |nova: Option<String>| {
+            let (v, c) = (v.clone(), c.clone());
+            rodar(Box::pin(async move { api::prioridade_da_tarefa(&v, &c, nova.as_deref()).await }));
+        })
+    };
+    let gravar_deps = {
+        let (v, c, rodar) = (props.vault_path.clone(), t.caminho.clone(), rodar.clone());
+        Callback::from(move |deps: Vec<String>| {
+            let (v, c) = (v.clone(), c.clone());
+            rodar(Box::pin(async move { api::dependencias_da_tarefa(&v, &c, &deps).await }));
+        })
+    };
+    // O nome de uma dependência: a tarefa que ela cita, quando é um número
+    // do projeto; senão, como está escrita (nome de arquivo, wikilink).
+    let nome_da_dep = |d: &str| -> String {
+        match d.trim().parse::<u32>().ok().and_then(|n| props.outras.iter().find(|(m, _)| *m == n)) {
+            Some((n, titulo)) => format!("{n:03} {titulo}"),
+            None => d.to_string(),
+        }
     };
     let alternar = {
         let (v, c, rodar) = (props.vault_path.clone(), t.caminho.clone(), rodar.clone());
@@ -179,6 +205,61 @@ pub fn tarefa_detalhes(props: &TarefaDetalhesProps) -> Html {
                             let acrescentar = acrescentar_tag.clone();
                             Callback::from(move |e: KeyboardEvent| if e.key() == "Enter" { e.prevent_default(); acrescentar.emit(()) })
                         }} />
+                </div>
+            </section>
+
+            <section class="tarefa-detalhes__secao">
+                <h4 class="tarefa-detalhes__rotulo">{ "Prioridade" }</h4>
+                <select class="input input--sm tarefa-detalhes__prioridade" data-nav-item="true" data-nav-parent="tarefa-detalhes"
+                    onchange={{
+                        let prioridade = prioridade.clone();
+                        Callback::from(move |e: Event| {
+                            let alvo: web_sys::HtmlSelectElement = e.target_unchecked_into();
+                            let v = alvo.value();
+                            prioridade.emit(Some(v).filter(|v| !v.is_empty()));
+                        })
+                    }}>
+                    <option value="" selected={t.prioridade.is_none()}>{ "— (média)" }</option>
+                    { for anotadinho_core::projeto::PRIORIDADES.iter().map(|p| html! {
+                        <option value={*p} selected={t.prioridade.as_deref() == Some(*p)}>{ match *p { "alta" => "alta", "baixa" => "baixa", _ => "média" } }</option>
+                    }) }
+                </select>
+            </section>
+
+            <section class="tarefa-detalhes__secao">
+                <h4 class="tarefa-detalhes__rotulo">{ format!("Depende de · {}", t.depende.len()) }</h4>
+                <div class="tarefa-detalhes__deps">
+                    { for t.depende.iter().enumerate().map(|(i, d)| {
+                        let (gravar, mut sem) = (gravar_deps.clone(), t.depende.clone());
+                        sem.remove(i);
+                        html! {
+                            <span class="badge tarefa-detalhes__dep">{ nome_da_dep(d) }
+                                <button class="tarefa-detalhes__tag-tirar" data-nav-item="true" data-nav-parent="tarefa-detalhes"
+                                    title={format!("Não depender de {d}")}
+                                    onclick={Callback::from(move |_: MouseEvent| gravar.emit(sem.clone()))}>
+                                    <Icon name="x" />
+                                </button>
+                            </span>
+                        }
+                    }) }
+                    <select class="input input--sm tarefa-detalhes__dep-nova" data-nav-item="true" data-nav-parent="tarefa-detalhes"
+                        onchange={{
+                            let (gravar, atuais) = (gravar_deps.clone(), t.depende.clone());
+                            Callback::from(move |e: Event| {
+                                let alvo: web_sys::HtmlSelectElement = e.target_unchecked_into();
+                                let v = alvo.value();
+                                if !v.is_empty() {
+                                    let mut deps = atuais.clone();
+                                    deps.push(v);
+                                    gravar.emit(deps);
+                                }
+                            })
+                        }}>
+                        <option value="" selected=true>{ "+ depende de…" }</option>
+                        { for props.outras.iter().filter(|(n, _)| !t.depende.iter().any(|d| d.trim() == n.to_string())).map(|(n, titulo)| html! {
+                            <option value={n.to_string()}>{ format!("{n:03} {titulo}") }</option>
+                        }) }
+                    </select>
                 </div>
             </section>
 
