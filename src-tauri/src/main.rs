@@ -658,6 +658,9 @@ struct ProjetosAvaliados {
 fn avaliar_projetos(
     vault_path: String,
     adaptador: anotadinho_core::agente::Adaptador,
+    // Os agentes da pessoa (ciclo 521). Opcional: uma UI de antes deste
+    // ciclo não manda, e o executor do projeto cai nos presets.
+    opcoes: Option<Vec<anotadinho_core::agente::Adaptador>>,
     teto: usize,
     limite: usize,
 ) -> Result<ProjetosAvaliados, String> {
@@ -677,10 +680,25 @@ fn avaliar_projetos(
     };
     let fila = anotadinho_ipc::handle_tarefas_a_executar(vault_path.clone(), params)?;
     let mut feito = ProjetosAvaliados { iniciadas: Vec::new(), avisos: fila.avisos };
+    let opcoes = opcoes.unwrap_or_default();
     for t in fila.iniciar {
+        // O agente do papel (ciclo 521), pela regra única do núcleo. Nome
+        // que não existe fecha a tarefa com o motivo: reservada e sem
+        // processo, ela prenderia a vaga do projeto.
+        let mut a = match anotadinho_core::agente::escolher(t.agente.as_deref(), &opcoes, &adaptador) {
+            Ok(a) => a,
+            Err(e) => {
+                let _ = anotadinho_ipc::handle_fechar_tarefa_da_conversa(
+                    vault_path.clone(),
+                    t.conversa,
+                    anotadinho_ipc::FimDaTarefa::Falhou(e.clone()),
+                );
+                feito.avisos.push(format!("{}: {e}", t.tarefa));
+                continue;
+            }
+        };
         // O repositório entra por PARÂMETRO, no campo que o adaptador já
         // tinha: nada de estado global decidindo onde o agente escreve.
-        let mut a = adaptador.clone();
         a.cwd = t.cwd.clone();
         match iniciar_agente(a, t.prompt, vault_path.clone(), t.conversa.clone(), Some(limite)) {
             Ok(_) => feito.iniciadas.push(t.tarefa),

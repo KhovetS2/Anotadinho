@@ -197,6 +197,14 @@ pub struct TrabalhoDeTarefa {
     pub prompt: String,
     /// Diretório de trabalho do agente: o repositório do projeto.
     pub cwd: String,
+    /// O nome do agente que roda isto (ciclo 521), da config do projeto.
+    /// `None` = o agente padrão de quem executa. Quem executa resolve com
+    /// `agente::escolher`, e nome que não existe fecha a tarefa.
+    #[serde(default)]
+    pub agente: Option<String>,
+    /// Executar ou revisar (ciclo 521).
+    #[serde(default)]
+    pub papel: projeto::Papel,
 }
 
 /// O que a checagem da fila achou.
@@ -627,6 +635,8 @@ fn reservar_e_preparar(
         conversa: conversa_path,
         prompt: envio.prompt,
         cwd: repositorio.to_string(),
+        agente: cfg.nome_do_executor().map(str::to_string),
+        papel: projeto::Papel::Executor,
     }))
 }
 
@@ -999,6 +1009,21 @@ mod testes {
         assert_eq!(etapa(&v, &c[0]), EtapaTarefa::Executando);
         let segunda = handle_tarefas_a_executar(v, params()).unwrap();
         assert!(segunda.iniciar.is_empty(), "a mesma tarefa saiu duas vezes");
+    }
+
+    #[test]
+    fn a_tarefa_reservada_diz_o_executor_do_projeto() {
+        let (_g, _r, v, c) = montar(2);
+        pedir_execucao(&v, &c[0]);
+        let t = handle_tarefas_a_executar(v.clone(), params()).unwrap().iniciar.remove(0);
+        assert_eq!((t.agente.as_deref(), t.papel), (None, projeto::Papel::Executor), "sem config, o padrão");
+        let mut cfg = handle_ler_projetos_cfg(v.clone()).unwrap();
+        cfg.get_mut("saas").unwrap().executor = Some("aider + Ollama (local)".into());
+        cfg.get_mut("saas").unwrap().concorrencia = 2;
+        handle_gravar_projetos_cfg(v.clone(), cfg).unwrap();
+        pedir_execucao(&v, &c[1]);
+        let t = handle_tarefas_a_executar(v, params()).unwrap().iniciar.remove(0);
+        assert_eq!(t.agente.as_deref(), Some("aider + Ollama (local)"));
     }
 
     #[test]

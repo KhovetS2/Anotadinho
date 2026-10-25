@@ -28,6 +28,8 @@ import tempfile
 import time
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
+# Sem `__pycache__` no repositório: o `tela` é importado daqui.
+sys.dont_write_bytecode = True
 sys.path.insert(0, AQUI)
 from tela import esperar_tela, estavel, tmux  # noqa: E402
 

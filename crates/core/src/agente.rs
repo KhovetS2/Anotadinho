@@ -570,8 +570,102 @@ impl Adaptador {
                 // não roda via shim `.cmd` (spec do ciclo 449).
                 entrada: EntradaPrompt::Argumento,
             },
+            // O "júnior" grátis (ciclo 521): um modelo local pelo aider.
+            // Medido em 2026-10-25 com o aider 0.86.2 e o
+            // `qwen2.5-coder:7b`: edita, commita sozinho (o histórico da
+            // tarefa fica no branch dela) e termina com a linha
+            // `RESULTADO:`. Na primeira vez ele põe `.aider*` no
+            // `.gitignore` do repositório — aparece nas Mudanças uma vez.
+            Adaptador {
+                nome: "aider + Ollama (local)".into(),
+                binario: "aider".into(),
+                args: vec![
+                    "--model".into(),
+                    "ollama_chat/qwen2.5-coder:7b".into(),
+                    // Sem isto o aider não acha o Ollama e para pedindo
+                    // a variável — e numa execução sem terminal isso é
+                    // travar até o prazo.
+                    "--set-env".into(),
+                    "OLLAMA_API_BASE=http://127.0.0.1:11434".into(),
+                    // Sem pergunta nenhuma: não há ninguém pra responder.
+                    "--yes-always".into(),
+                    "--no-pretty".into(),
+                    "--no-stream".into(),
+                    "--no-check-update".into(),
+                    "--no-show-model-warnings".into(),
+                    "--no-analytics".into(),
+                    "--no-fancy-input".into(),
+                    "--message".into(),
+                    MARCADOR_PROMPT.into(),
+                ],
+                cwd: String::new(),
+                pastas_extras: Vec::new(),
+                // O `--read` do aider é de ARQUIVO, não de pasta.
+                arg_pasta_extra: String::new(),
+                arg_mcp: String::new(),
+                arg_sessao: String::new(),
+                timeout_s: TIMEOUT_PADRAO_S,
+                formato: FormatoSaida::Texto,
+                // O `--message-file` não lê o stdin no Windows; o
+                // argumento serve nos dois, até os 128 KiB do Linux.
+                entrada: EntradaPrompt::Argumento,
+            },
+            // O "tech lead" (ciclo 521): o Claude Code que LÊ e não edita.
+            // No `-p`, `--permission-mode default` nega o que pede
+            // permissão — medido em 2026-10-25: pedido pra editar, ele
+            // respondeu que a escrita foi negada e o arquivo ficou igual.
+            // Quem revisa não conserta: devolve pro executor.
+            Adaptador {
+                nome: "Claude Code (revisor)".into(),
+                binario: "claude".into(),
+                args: vec![
+                    "-p".into(),
+                    "--output-format".into(),
+                    "stream-json".into(),
+                    "--verbose".into(),
+                    "--permission-mode".into(),
+                    "default".into(),
+                ],
+                cwd: String::new(),
+                pastas_extras: Vec::new(),
+                arg_pasta_extra: "--add-dir".into(),
+                arg_mcp: "--mcp-config".into(),
+                arg_sessao: String::new(),
+                timeout_s: TIMEOUT_PADRAO_S,
+                formato: FormatoSaida::StreamJson,
+                entrada: EntradaPrompt::Stdin,
+            },
         ]
     }
+
+    /// O preset é de quem só lê (o revisor)? É o que separa os perfis que
+    /// TÊM que poder escrever dos que não podem.
+    pub fn so_le(&self) -> bool {
+        self.args.windows(2).any(|w| w[0] == "--permission-mode" && w[1] == "default")
+    }
+}
+
+/// O agente de um papel do projeto (ciclo 521), pelo nome. A mesma regra
+/// pra TUI e janela, cada uma com a lista dela (`opcoes`).
+///
+/// Sem nome, o `padrao` (o agente das conversas). Nome que não existe é
+/// ERRO: rodar outro agente no lugar, calado, mandaria a tarefa pro
+/// modelo caro que a pessoa quis poupar — ou o revisor que edita pra
+/// onde ela pediu um que só lê.
+pub fn escolher(nome: Option<&str>, opcoes: &[Adaptador], padrao: &Adaptador) -> Result<Adaptador, String> {
+    let Some(nome) = nome.map(str::trim).filter(|n| !n.is_empty()) else {
+        return Ok(padrao.clone());
+    };
+    if padrao.nome == nome {
+        return Ok(padrao.clone());
+    }
+    if let Some(a) = opcoes.iter().find(|a| a.nome == nome) {
+        return Ok(a.clone().migrado());
+    }
+    if let Some(a) = Adaptador::presets().into_iter().find(|a| a.nome == nome) {
+        return Ok(a);
+    }
+    Err(format!("o agente \"{nome}\" da config do projeto não existe nas preferências"))
 }
 
 impl Default for Adaptador {
@@ -1074,7 +1168,8 @@ mod tests {
         // pede escrita lê tudo e não muda nada, que foi o que travou a
         // etapa de execução.
         for p in Adaptador::presets() {
-            if p.formato != FormatoSaida::StreamJson {
+            // O revisor (ciclo 521) é o único que NÃO pode escrever.
+            if p.formato != FormatoSaida::StreamJson || p.so_le() {
                 continue;
             }
             let linha = p.args.join(" ");
@@ -1210,6 +1305,33 @@ mod tests {
     fn sem_git_em_lugar_nenhum_fica_o_vault() {
         let raiz = raiz_do_projeto("/casa/notas", |_| false);
         assert_eq!(raiz, "/casa/notas");
+    }
+
+    #[test]
+    fn escolher_pelo_nome_e_nunca_trocar_calado() {
+        let padrao = Adaptador::default();
+        let meu = Adaptador { nome: "meu júnior".into(), binario: "aider".into(), ..base() };
+        let opcoes = vec![meu.clone()];
+        assert_eq!(escolher(None, &opcoes, &padrao).unwrap().nome, padrao.nome);
+        assert_eq!(escolher(Some("  "), &opcoes, &padrao).unwrap().nome, padrao.nome, "em branco é o padrão");
+        assert_eq!(escolher(Some("meu júnior"), &opcoes, &padrao).unwrap().binario, "aider");
+        assert!(escolher(Some("Claude Code (revisor)"), &[], &padrao).unwrap().so_le(), "o preset vale sem estar nas opções");
+        let erro = escolher(Some("sumiu"), &opcoes, &padrao).unwrap_err();
+        assert!(erro.contains("\"sumiu\""), "{erro}");
+    }
+
+    #[test]
+    fn o_revisor_so_le_e_o_aider_escreve_e_fecha_com_resultado() {
+        let presets = Adaptador::presets();
+        let achar = |n: &str| presets.iter().find(|p| p.nome == n).unwrap().clone();
+        let revisor = achar("Claude Code (revisor)");
+        assert!(revisor.so_le());
+        assert!(!revisor.args.iter().any(|a| a == "acceptEdits"));
+        assert!(!achar("Claude Code").so_le(), "o executor padrão continua escrevendo");
+        let aider = achar("aider + Ollama (local)");
+        assert!(aider.validar().is_none());
+        assert!(aider.args.iter().any(|a| a == "--yes-always"), "sem terminal, pergunta é trava");
+        assert_eq!(aider.args.last().map(String::as_str), Some(MARCADOR_PROMPT));
     }
 
     #[test]

@@ -13290,6 +13290,7 @@ mod testes {
                     prazo_da_verificacao: 120,
                     branch_por_tarefa: true,
                     commitar_ao_aceitar: true,
+                    ..Default::default()
                 },
             }]
         );

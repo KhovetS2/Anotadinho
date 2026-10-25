@@ -67,6 +67,27 @@ pub enum Quem {
     Sistema,
 }
 
+/// O papel de um agente numa tarefa (ciclo 521): quem coda e quem revisa.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Papel {
+    /// Executa a tarefa no repositório.
+    #[default]
+    Executor,
+    /// Lê o que o executor fez e aprova ou pede ajuste (ciclo 522).
+    Revisor,
+}
+
+impl Papel {
+    /// Como aparece na tela.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Executor => "executor",
+            Self::Revisor => "revisor",
+        }
+    }
+}
+
 impl EtapaTarefa {
     /// Todas, na ordem do quadro.
     pub fn all() -> &'static [EtapaTarefa] {
@@ -225,6 +246,31 @@ pub struct ConfigProjeto {
     /// Aceitar (revisão → feita) commita o que a tarefa deixou na árvore.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub commitar_ao_aceitar: bool,
+    /// O agente que EXECUTA as tarefas (ciclo 521), pelo nome que ele tem
+    /// nas preferências. Vazio = o agente padrão. É o "júnior": um modelo
+    /// local barato codando o que a pessoa aprovou.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executor: Option<String>,
+    /// O agente que REVISA o que o executor fez (ciclo 521), depois da
+    /// verificação. Vazio = sem revisão automática: vai direto pra pessoa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revisor: Option<String>,
+    /// Quantas vezes o revisor pode devolver a tarefa pro executor antes
+    /// de ela ir pra pessoa de qualquer jeito.
+    #[serde(default = "rodadas_padrao", skip_serializing_if = "e_rodadas_padrao")]
+    pub rodadas_de_revisao: u32,
+}
+
+/// Três rodadas: o bastante pra um ajuste e a correção do ajuste, e pouco
+/// o bastante pra um modelo que não acerta não queimar a tarde em volta.
+pub const RODADAS_PADRAO: u32 = 3;
+
+fn rodadas_padrao() -> u32 {
+    RODADAS_PADRAO
+}
+
+fn e_rodadas_padrao(n: &u32) -> bool {
+    *n == RODADAS_PADRAO
 }
 
 fn concorrencia_padrao() -> usize {
@@ -253,11 +299,25 @@ impl Default for ConfigProjeto {
             prazo_da_verificacao: prazo_padrao(),
             branch_por_tarefa: false,
             commitar_ao_aceitar: false,
+            executor: None,
+            revisor: None,
+            rodadas_de_revisao: rodadas_padrao(),
         }
     }
 }
 
 impl ConfigProjeto {
+    /// O nome do executor, se há um de verdade (um nome em branco é o
+    /// padrão, como vazio).
+    pub fn nome_do_executor(&self) -> Option<&str> {
+        self.executor.as_deref().map(str::trim).filter(|n| !n.is_empty())
+    }
+
+    /// O nome do revisor, se há um de verdade.
+    pub fn nome_do_revisor(&self) -> Option<&str> {
+        self.revisor.as_deref().map(str::trim).filter(|n| !n.is_empty())
+    }
+
     /// O comando de verificação, se há um de verdade.
     pub fn comando_de_verificacao(&self) -> Option<&str> {
         self.verificar.as_deref().map(str::trim).filter(|c| !c.is_empty())
@@ -1186,6 +1246,20 @@ mod testes {
         let c: ConfigProjeto = serde_json::from_str("{}").unwrap();
         assert_eq!(c, ConfigProjeto::default());
         assert_eq!(c.concorrencia, 1);
+    }
+
+    #[test]
+    fn os_papeis_so_vao_pro_arquivo_quando_escolhidos() {
+        // Config de antes do 521 lê igual, e a de quem não escolheu
+        // papel nenhum continua do mesmo tamanho no disco.
+        let velha: ConfigProjeto = serde_json::from_str(r#"{"repositorio":"/r","verificar":"npm test"}"#).unwrap();
+        assert_eq!((velha.nome_do_executor(), velha.nome_do_revisor(), velha.rodadas_de_revisao), (None, None, RODADAS_PADRAO));
+        let json = serde_json::to_string(&velha).unwrap();
+        assert!(!json.contains("executor") && !json.contains("revisor") && !json.contains("rodadas"), "{json}");
+        let nova = ConfigProjeto { executor: Some("aider".into()), revisor: Some(" ".into()), rodadas_de_revisao: 5, ..velha };
+        assert_eq!((nova.nome_do_executor(), nova.nome_do_revisor()), (Some("aider"), None), "revisor em branco é nenhum");
+        let lida: ConfigProjeto = serde_json::from_str(&serde_json::to_string(&nova).unwrap()).unwrap();
+        assert_eq!(lida, nova);
     }
 
     #[test]

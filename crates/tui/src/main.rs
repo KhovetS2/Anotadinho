@@ -625,9 +625,23 @@ fn conferir_projetos(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos
     }
     let base = adaptador_da_conversa(estado);
     for t in resultado.iniciar {
+        // O agente do papel (ciclo 521), pela regra única do núcleo. Nome
+        // que não existe fecha a tarefa com o motivo: reservada e sem
+        // processo, ela prenderia a vaga do projeto.
+        let mut adaptador = match anotadinho_core::agente::escolher(t.agente.as_deref(), &estado.preferencias.agentes, &base) {
+            Ok(a) => a,
+            Err(e) => {
+                let _ = anotadinho_ipc::handle_fechar_tarefa_da_conversa(
+                    vault.to_string(),
+                    t.conversa.clone(),
+                    anotadinho_ipc::FimDaTarefa::Falhou(e.clone()),
+                );
+                estado.aviso = Some(format!("{}: {e}", t.tarefa));
+                continue;
+            }
+        };
         // O repositório entra por PARÂMETRO, no campo `cwd` que o
         // adaptador já tinha — o mesmo caminho da janela.
-        let mut adaptador = base.clone();
         adaptador.cwd = t.cwd.clone();
         let sessao = sessao_da_conversa(estado, vault, &t.conversa);
         if subir_agente(estado, vault, vault, trabalhos, &t.conversa, &t.prompt, &adaptador, 0, sessao.as_deref()) {

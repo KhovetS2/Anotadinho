@@ -267,6 +267,16 @@ pub(crate) fn run_projeto(vault: &str, json: bool, action: ProjetoCommand) -> Re
             }
             println!("{}  ({})", e.projeto.titulo, e.projeto.slug);
             println!("repositório: {}{}", e.config.repositorio.as_deref().unwrap_or("(nenhum)"), if e.config.pausado { " · fila PAUSADA" } else { "" });
+            // Os papéis (ciclo 521): quem executa e quem revisa — o agente
+            // que lê isto sabe se o trabalho dele vai passar por revisão.
+            println!(
+                "executor: {} · revisor: {}",
+                e.config.nome_do_executor().unwrap_or("(o agente padrão)"),
+                match e.config.nome_do_revisor() {
+                    Some(r) => format!("{r} (até {} rodadas)", e.config.rodadas_de_revisao),
+                    None => "(nenhum — vai direto pra pessoa)".to_string(),
+                }
+            );
             println!("\nsprints:");
             if e.sprints.is_empty() {
                 println!("  (nenhuma — o quadro mostra todas as tarefas)");
