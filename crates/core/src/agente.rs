@@ -424,7 +424,7 @@ impl Adaptador {
         // isso, quem já usou o app fica preso na versão velha — foi
         // como a configuração do usuário ficou sem `--sandbox
         // workspace-write` e a execução travava em "somente leitura".
-        const ANTIGOS: [(&str, &[&str]); 7] = [
+        const ANTIGOS: [(&str, &[&str]); 8] = [
             // ciclo 202
             ("Claude Code", &["-p", MARCADOR_PROMPT]),
             ("Codex", &["exec", MARCADOR_PROMPT]),
@@ -454,6 +454,8 @@ impl Adaptador {
                     "sandbox_workspace_write.network_access=true", MARCADOR_PROMPT,
                 ],
             ),
+            // ciclo 527: o opencode medido — JSON, stdin e `--auto`.
+            ("opencode", &["run", MARCADOR_PROMPT]),
         ];
         let antigo = ANTIGOS.iter().find(|(nome, args)| {
             self.nome == *nome
@@ -547,28 +549,37 @@ impl Adaptador {
                 formato: FormatoSaida::StreamJson,
                 entrada: EntradaPrompt::Stdin,
             },
+            // Medido em 2026-10-25 com o opencode 1.18.14 (ciclo 527): o
+            // `--format json` emite `text`, `tool_use`, `step_finish` (com
+            // tokens e custo) e `error`; sem mensagem no argumento, ele lê
+            // o prompt do stdin; `--auto` aprova as ferramentas, sem o que
+            // uma execução sem terminal pararia perguntando. O modelo
+            // padrão daqui respondeu 401 (chave do plano expirada); o
+            // `opencode/big-pickle`, grátis, editou, testou e commitou em
+            // 14 s. Troque o `-m` pelo seu (`opencode models` lista).
             Adaptador {
                 nome: "opencode".into(),
                 binario: "opencode".into(),
-                args: vec!["run".into(), MARCADOR_PROMPT.into()],
+                args: vec![
+                    "run".into(),
+                    "--format".into(),
+                    "json".into(),
+                    "--auto".into(),
+                    "-m".into(),
+                    "opencode/big-pickle".into(),
+                ],
                 cwd: String::new(),
                 pastas_extras: Vec::new(),
-                // Não confirmado contra o binário; vazio significa
-                // "não sei mandar pasta extra pra ele".
+                // Não tem argumento de pasta extra.
                 arg_pasta_extra: String::new(),
                 arg_mcp: String::new(),
+                // O `-s` dele continua a sessão, mas tem que vir DEPOIS do
+                // `run`, e o app põe o par da sessão antes dos argumentos.
+                // Sem sessão, o histórico vai no prompt.
                 arg_sessao: String::new(),
                 timeout_s: TIMEOUT_PADRAO_S,
-                // O opencode tem `--format json`, mas o formato dos
-                // eventos dele não foi conferido contra um binário
-                // rodando de verdade — aqui não havia modelo
-                // configurado pra provocar uma saída. Fica em `Texto`,
-                // que funciona com qualquer agente, até alguém checar.
-                formato: FormatoSaida::Texto,
-                // O `--help` dele não diz se lê o stdin, e não deu pra
-                // medir. Fica no argumento — e no Windows, por isso,
-                // não roda via shim `.cmd` (spec do ciclo 449).
-                entrada: EntradaPrompt::Argumento,
+                formato: FormatoSaida::StreamJson,
+                entrada: EntradaPrompt::Stdin,
             },
             // O "júnior" grátis (ciclo 521): um modelo local pelo aider.
             // Medido em 2026-10-25 com o aider 0.86.2 e o
@@ -1214,7 +1225,8 @@ mod tests {
             }
             let linha = p.args.join(" ");
             assert!(
-                linha.contains("workspace-write") || linha.contains("acceptEdits"),
+                // `--auto` é o do opencode (ciclo 527).
+                linha.contains("workspace-write") || linha.contains("acceptEdits") || linha.contains("--auto"),
                 "preset \"{}\" não pede permissão de escrita: {linha}",
                 p.nome
             );
@@ -1345,6 +1357,50 @@ mod tests {
     fn sem_git_em_lugar_nenhum_fica_o_vault() {
         let raiz = raiz_do_projeto("/casa/notas", |_| false);
         assert_eq!(raiz, "/casa/notas");
+    }
+
+    #[test]
+    fn le_o_dialeto_do_opencode_medido() {
+        // Linhas da saída real do opencode 1.18.14 (2026-10-25), cortadas
+        // ao que o leitor usa.
+        let linhas = [
+            r#"{"type":"step_start","sessionID":"ses_e8bd","part":{"type":"step-start"}}"#,
+            r#"{"type":"tool_use","sessionID":"ses_e8bd","part":{"type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"ls -la"}}}}"#,
+            r#"{"type":"step_finish","sessionID":"ses_e8bd","part":{"type":"step-finish","reason":"tool-calls","tokens":{"total":11363,"input":9503,"output":61,"reasoning":7,"cache":{"write":0,"read":1792}},"cost":0}}"#,
+            r#"{"type":"tool_use","sessionID":"ses_e8bd","part":{"type":"tool","tool":"write","state":{"status":"completed","input":{"filePath":"/r/soma.js"}}}}"#,
+            r#"{"type":"text","sessionID":"ses_e8bd","part":{"type":"text","text":"Vou conferir."}}"#,
+            r#"{"type":"text","sessionID":"ses_e8bd","part":{"type":"text","text":"Feito e commitado.\n\nRESULTADO: concluida"}}"#,
+            r#"{"type":"step_finish","sessionID":"ses_e8bd","part":{"type":"step-finish","reason":"stop","tokens":{"total":12147,"input":311,"output":60,"reasoning":0,"cache":{"write":0,"read":11776}},"cost":0}}"#,
+        ];
+        let mut l = LeitorStream::novo();
+        for x in linhas {
+            l.linha(x);
+        }
+        assert_eq!(l.resposta().unwrap(), "Feito e commitado.\n\nRESULTADO: concluida", "o último recado é a resposta");
+        assert_eq!(l.sessao().as_deref(), Some("ses_e8bd"));
+        assert_eq!(l.uso(), Some(Uso { entrada: 9503 + 1792 + 311 + 11776, saida: 61 + 7 + 60, custo_usd: Some(0.0) }), "soma os passos");
+        assert!(l.progresso().contains("· bash ls -la") && l.progresso().contains("· write /r/soma.js"), "{}", l.progresso());
+        // O erro medido: a chave do plano expirada.
+        let mut e = LeitorStream::novo();
+        e.linha(r#"{"type":"error","sessionID":"s","error":{"name":"APIError","data":{"message":"This API key has expired.","statusCode":401}}}"#);
+        assert_eq!(e.resposta(), Err("This API key has expired.".to_string()));
+    }
+
+    #[test]
+    fn o_opencode_antigo_migra_pro_medido() {
+        let velho = Adaptador {
+            nome: "opencode".into(),
+            binario: "/home/x/.opencode/bin/opencode".into(),
+            args: vec!["run".into(), MARCADOR_PROMPT.into()],
+            formato: FormatoSaida::Texto,
+            entrada: EntradaPrompt::Argumento,
+            ..base()
+        };
+        let novo = velho.migrado();
+        assert_eq!((novo.formato, novo.entrada), (FormatoSaida::StreamJson, EntradaPrompt::Stdin));
+        assert!(novo.args.iter().any(|a| a == "--auto"));
+        assert_eq!(novo.binario, "/home/x/.opencode/bin/opencode", "o caminho da pessoa fica");
+        assert!(novo.validar().is_none());
     }
 
     #[test]
@@ -1562,7 +1618,8 @@ impl LeitorStream {
 
     /// Guarda o id de sessão dos dois dialetos, se vier.
     fn anotar_sessao(&mut self, v: &serde_json::Value) {
-        for campo in ["session_id", "thread_id"] {
+        // `sessionID` é o do opencode (ciclo 527).
+        for campo in ["session_id", "thread_id", "sessionID"] {
             if let Some(id) = v.get(campo).and_then(|x| x.as_str()) {
                 if !id.trim().is_empty() {
                     self.sessao = Some(id.to_string());
@@ -1687,9 +1744,65 @@ impl LeitorStream {
             // chegar vale — a mensagem é a mesma.
             Some("error") => {
                 if self.erro.is_none() {
-                    if let Some(m) = v.get("message").and_then(|m| m.as_str()) {
+                    // O opencode (ciclo 527) põe a mensagem em
+                    // `error.data.message` — a chave expirada, por exemplo.
+                    let m = v.get("message").and_then(|m| m.as_str()).or_else(|| {
+                        let e = v.get("error")?;
+                        e.get("data").and_then(|d| d.get("message")).or_else(|| e.get("message")).and_then(|m| m.as_str())
+                    });
+                    if let Some(m) = m {
                         self.erro = Some(m.to_string());
                     }
+                }
+            }
+            // ── dialeto do opencode (ciclo 527, medido no 1.18.14) ──
+            Some("step_start") => {
+                if self.sessao.is_none() {
+                    self.anotar("conectado");
+                }
+                self.anotar_sessao(&v);
+            }
+            Some("text") => {
+                if let Some(txt) = v.get("part").and_then(|p| p.get("text")).and_then(|t| t.as_str()) {
+                    self.texto.push_str(txt);
+                    // O último recado é a resposta, como no Codex: o que
+                    // vem antes das ferramentas é narração.
+                    self.resultado = Some(txt.to_string());
+                    self.anotar(txt);
+                }
+            }
+            Some("tool_use") => {
+                let parte = v.get("part");
+                let ferramenta = parte.and_then(|p| p.get("tool")).and_then(|t| t.as_str()).unwrap_or("ferramenta");
+                let entrada = parte.and_then(|p| p.get("state")).and_then(|s| s.get("input"));
+                let alvo = entrada
+                    .and_then(|i| i.get("command").or_else(|| i.get("filePath")))
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("");
+                self.anotar(&format!("· {ferramenta} {alvo}"));
+            }
+            Some("step_finish") => {
+                // Cada passo conta o SEU consumo: soma. A entrada inclui o
+                // que veio do cache — foi mandado do mesmo jeito.
+                let parte = v.get("part");
+                let tokens = parte.and_then(|p| p.get("tokens"));
+                let n = |caminho: &[&str]| -> u64 {
+                    let mut x = tokens;
+                    for c in caminho {
+                        x = x.and_then(|v| v.get(*c));
+                    }
+                    x.and_then(|v| v.as_u64()).unwrap_or(0)
+                };
+                let passo = Uso {
+                    entrada: n(&["input"]) + n(&["cache", "read"]) + n(&["cache", "write"]),
+                    saida: n(&["output"]) + n(&["reasoning"]),
+                    custo_usd: parte.and_then(|p| p.get("cost")).and_then(|c| c.as_f64()),
+                };
+                if passo != Uso::default() {
+                    self.uso = Some(match self.uso {
+                        Some(u) => u.somar(&passo),
+                        None => passo,
+                    });
                 }
             }
             Some("turn.failed") => {
