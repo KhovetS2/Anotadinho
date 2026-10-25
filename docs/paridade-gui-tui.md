@@ -51,7 +51,9 @@ TUI (`crates/tui`) faz. Atualizado a cada ciclo da série 342+. Legenda:
 | Arrastar o cartão do projeto entre colunas | — | 465 — na TUI, os números |
 | Sprints do projeto (recorte do quadro, mover de sprint, criar/iniciar/encerrar, histórico) | ✅ | 472 (janela: seletor, aba Sprints, seletor no cartão), 473 (TUI: `s` filtro, `m` sprint da tarefa, `S` sprints — o encerramento pergunta como escolha), 503 (TUI: sprint nova com objetivo e datas no formulário, com o seletor de data; `S` mostra datas e objetivo; a encerrada lista as feitas e Enter abre a tarefa) |
 | Detalhes da tarefa (tags, prazo, critérios, comentários, anexos) | ✅ | 477 (janela: selos e painel ao lado do quadro; anexo pelo diálogo nativo), 478 (TUI: selos na 3ª linha do cartão e `v`; anexo pelo caminho digitado), 503 (TUI: Enter no comentário lê o texto inteiro) |
-| Prioridade e dependências da tarefa (editar, selo no cartão) | 🟡 | 513 (janela: seletor e chips no painel, selo ↑ alta / ↓ baixa) — TUI no 514 |
+| Prioridade e dependências da tarefa (editar, selo no cartão) | ✅ | 513 (janela: seletor e chips no painel, selo ↑ alta / ↓ baixa), 514 (TUI: `v` → Prioridade e Depende de, com marca e Enter liga/desliga; selo ↑alta/↓baixa) |
+| Clicar no cartão do quadro (seleciona; de novo, abre) | ✅ | 514 — na TUI pelo mouse, como o clique da janela |
+| Achar o projeto e a tarefa pelo título na barra de comandos | ✅ | 514 — a barra da TUI usa o título do frontmatter (◆ projeto, ☐ tarefa); antes só o nome do arquivo |
 | Cabeçalho de página tipada + propriedades | ✅ | 344, 360 — título da página e "Propriedades" (`=`) nas telas de tipo |
 
 ## Editor

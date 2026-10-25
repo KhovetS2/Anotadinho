@@ -378,6 +378,13 @@ pub struct TelaEspecial {
     /// `overflow-x` do quadro da janela. `Cell` porque só o desenho sabe
     /// quantas cabem.
     pub primeira_coluna: std::cell::Cell<usize>,
+    /// Onde cada cartão do quadro foi desenhado no último quadro (ciclo
+    /// 514): linha (contando do topo da tela especial, sem rolagem),
+    /// colunas `[x0, x1)` e a posição dele na ordem do `selecionado`.
+    pub cartoes: std::cell::RefCell<Vec<(usize, usize, usize, usize)>>,
+    /// O canto do conteúdo na tela e a rolagem do último quadro: o que
+    /// traduz um clique em linha e coluna do desenho.
+    pub origem: std::cell::Cell<(u16, u16, usize)>,
 }
 
 impl TelaEspecial {
@@ -396,6 +403,8 @@ impl TelaEspecial {
             erro: None,
             d_pendente: false,
             primeira_coluna: std::cell::Cell::new(0),
+            cartoes: std::cell::RefCell::new(Vec::new()),
+            origem: std::cell::Cell::new((0, 0, 0)),
         }
     }
 
@@ -661,6 +670,17 @@ pub fn menu_de_detalhes(e: &Estado, caminho: &str) -> Option<Modal> {
         (None, _) => "Prazo…".to_string(),
     };
     itens.push(Item::novo(if t.vencida(&p.hoje) { "⚠" } else { "◷" }, rotulo_prazo, format!("prazo\u{0}{c}\u{0}{prazo}")));
+    // Prioridade e dependências (ciclo 514), como o painel da janela (513).
+    let prioridade = t.prioridade.clone().unwrap_or_default();
+    let (marca, rotulo) = match prioridade.to_lowercase().as_str() {
+        "alta" => ("↑", "Prioridade: alta".to_string()),
+        "baixa" => ("↓", "Prioridade: baixa".to_string()),
+        _ => ("·", "Prioridade: média".to_string()),
+    };
+    itens.push(Item::novo(marca, rotulo, format!("prioridade\u{0}{c}\u{0}{}", prioridade.to_lowercase())));
+    let deps: Vec<String> = t.depende.iter().map(|d| nome_da_dependencia(&p.todas, &t.projeto, d)).collect();
+    let rotulo_deps = if deps.is_empty() { "Depende de…".to_string() } else { format!("Depende de: {}", deps.join(", ")) };
+    itens.push(Item::novo("↳", rotulo_deps, format!("depende\u{0}{c}")));
     for (i, com) in t.comentarios.iter().enumerate() {
         let mut primeira = com.texto.lines().next().unwrap_or("").to_string();
         // Mais de uma linha: o "…" diz que tem mais, e o Enter lê inteiro
@@ -680,6 +700,59 @@ pub fn menu_de_detalhes(e: &Estado, caminho: &str) -> Option<Modal> {
         titulo: format!("{:03} {}", t.numero, t.titulo),
         lista: crate::componentes::Lista::menu(itens),
         acao: super::modais::AcaoDaEscolha::DetalhesDaTarefa,
+    })
+}
+
+/// O nome de uma dependência: o número e o título da tarefa citada,
+/// quando é um número do projeto; senão, como está escrita.
+fn nome_da_dependencia(todas: &[anotadinho_core::projeto::Tarefa], projeto: &str, d: &str) -> String {
+    match d.trim().parse::<u32>().ok().and_then(|n| todas.iter().find(|t| t.numero == n && t.projeto == projeto)) {
+        Some(t) => format!("{:03} {}", t.numero, t.titulo),
+        None => d.to_string(),
+    }
+}
+
+/// As dependências da tarefa, como estão na tela.
+pub fn dependencias_da(e: &Estado, caminho: &str) -> Option<Vec<String>> {
+    let Some(Dados::Projeto(p)) = e.especial.as_ref().and_then(|t| t.dados.as_ref()) else { return None };
+    p.todas.iter().find(|t| t.caminho == caminho).map(|t| t.depende.clone())
+}
+
+/// Muda a tarefa na tela antes de o disco confirmar (como o critério do
+/// 478): a releitura de 3 s acerta o que o disco disser.
+pub fn mudar_na_tela(e: &mut Estado, caminho: &str, f: impl Fn(&mut anotadinho_core::projeto::Tarefa)) {
+    let Some(Dados::Projeto(p)) = e.especial.as_mut().and_then(|t| t.dados.as_mut()) else { return };
+    for lista in [&mut p.todas, &mut p.tarefas] {
+        if let Some(t) = lista.iter_mut().find(|t| t.caminho == caminho) {
+            f(t);
+        }
+    }
+}
+
+/// As outras tarefas do projeto, cada uma marcada se esta depende dela
+/// (ciclo 514). Enter liga ou desliga; Esc volta.
+pub fn menu_de_dependencias(e: &Estado, caminho: &str, selecionado: usize) -> Option<Modal> {
+    use crate::componentes::Item;
+    let Some(Dados::Projeto(p)) = e.especial.as_ref().and_then(|t| t.dados.as_ref()) else { return None };
+    let t = p.todas.iter().find(|t| t.caminho == caminho)?;
+    let itens: Vec<Item> = p
+        .todas
+        .iter()
+        .filter(|o| o.caminho != t.caminho && o.projeto == t.projeto)
+        .map(|o| {
+            let marcada = t.depende.iter().any(|d| d.trim() == o.numero.to_string());
+            Item::novo(if marcada { "■" } else { "□" }, format!("{:03} {}", o.numero, o.titulo), format!("{caminho}\u{0}{}", o.numero)).com_detalhe(o.etapa.label().to_lowercase())
+        })
+        .collect();
+    if itens.is_empty() {
+        return None;
+    }
+    let mut lista = crate::componentes::Lista::menu(itens);
+    lista.selecionado = selecionado.min(lista.itens.len().saturating_sub(1));
+    Some(Modal::Escolha {
+        titulo: format!("{:03} depende de… (Enter marca)", t.numero),
+        lista,
+        acao: super::modais::AcaoDaEscolha::DependenciasDaTarefa,
     })
 }
 
@@ -896,6 +969,12 @@ fn selos_do_cartao(
     let (feitos, total) = x.progresso();
     if total > 0 {
         fora.push((format!("✓{feitos}/{total}"), if feitos == total { base.fg(tema.var("success")) } else { base }));
+    }
+    // A prioridade só quando foge da média (514, como o selo do 513).
+    match x.prioridade.as_deref().map(str::to_lowercase).as_deref() {
+        Some("alta") => fora.push(("↑alta".into(), base.fg(tema.var("warning")))),
+        Some("baixa") => fora.push(("↓baixa".into(), base.fg(tema.var("text-muted")))),
+        _ => {}
     }
     if let Some(p) = &x.prazo {
         // Só mês e dia: a coluna tem uns vinte caracteres.
@@ -1254,12 +1333,21 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
         TipoEspecial::Kanban => " h l coluna · j k cartão ".to_string(),
         TipoEspecial::Tarefas => " j k · Enter abre · s ordena ".to_string(),
         TipoEspecial::Grafo => " j k página · h l conexão · Enter abre ".to_string(),
-        TipoEspecial::Projeto => format!(
+        TipoEspecial::Projeto => {
             // `s m S` juntos (ciclo 501): com o `x`, o "? atalhos" do fim
             // já não cabia em 140 colunas — e ele é quem leva ao resto.
-            " h j k l ·{} Enter · v detalhes · n nova · s m S sprints · c conversa · x execuções · ? atalhos ",
-            faixa_das_transicoes(t)
-        ),
+            // Desde o 514 o rodapé se ajusta à largura: num terminal de 80
+            // colunas ele era cortado no meio, e o "? atalhos" sumia.
+            let faixa = faixa_das_transicoes(t);
+            let faixa = faixa.trim().trim_end_matches('·').trim().to_string();
+            let mut itens: Vec<&str> = vec!["h j k l"];
+            if !faixa.is_empty() {
+                itens.push(&faixa);
+            }
+            itens.extend(["Enter", "v detalhes", "n nova", "s m S sprints", "c conversa", "x execuções", "? atalhos"]);
+            let aviso = e.aviso.as_ref().or(t.erro.as_ref()).map_or(0, |a| a.chars().count() + 3);
+            dica_que_cabe(&itens, (area.width as usize).saturating_sub(2 + aviso))
+        }
     };
     let mut borda = Block::default()
         .borders(Borders::ALL)
@@ -1287,8 +1375,81 @@ pub fn desenhar(f: &mut Frame, e: &Estado, area: Rect) {
         None => 0,
     }
     .min(linhas.len().saturating_sub(altura));
+    t.origem.set((dentro.x, dentro.y, topo));
     let visiveis: Vec<Line<'static>> = linhas.into_iter().skip(topo).take(altura).collect();
     f.render_widget(Paragraph::new(visiveis), dentro);
+}
+
+/// Um clique no quadro do projeto (ciclo 514), como na janela: o cartão
+/// fora da seleção fica selecionado; o já selecionado abre a tarefa.
+/// `false` é "não caiu num cartão".
+pub fn clicar(e: &mut Estado, coluna: u16, linha: u16) -> bool {
+    let Some(t) = e.especial.as_mut() else { return false };
+    if t.tipo != TipoEspecial::Projeto {
+        return false;
+    }
+    let (x0, y0, topo) = t.origem.get();
+    let (Some(dx), Some(dy)) = (coluna.checked_sub(x0), linha.checked_sub(y0)) else { return false };
+    let (dx, lin) = (dx as usize, dy as usize + topo);
+    let alvo = t.cartoes.borrow().iter().find(|(l, a, b, _)| *l == lin && dx >= *a && dx < *b).map(|c| c.3);
+    let Some(i) = alvo else { return false };
+    e.foco = Foco::Conteudo;
+    if t.selecionado == i {
+        tecla(e, "Enter");
+    } else {
+        t.selecionado = i;
+        t.deslocamento = 0;
+    }
+    true
+}
+
+/// Do quanto a faixa da tarefa selecionada cabe numa linha só (514): o
+/// título mais as quatro transições da bloqueada.
+const LARGURA_DA_FAIXA_NUMA_LINHA: usize = 100;
+
+/// Um rodapé de teclas na largura dada (ciclo 514): tira do fim pro
+/// começo o que não cabe, mas o ÚLTIMO item (o "? atalhos", que leva ao
+/// resto) fica sempre.
+pub fn dica_que_cabe(itens: &[&str], largura: usize) -> String {
+    let montar = |v: &[&str]| format!(" {} ", v.join(" · "));
+    let mut v: Vec<&str> = itens.to_vec();
+    while v.len() > 2 && montar(&v).chars().count() > largura {
+        v.remove(v.len() - 2);
+    }
+    montar(&v)
+}
+
+/// `s` cortado em `n` caracteres, com `…` quando cortou.
+fn com_reticencias(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        return s.to_string();
+    }
+    let mut c: String = s.chars().take(n.saturating_sub(1)).collect();
+    c.push('…');
+    c
+}
+
+/// `s` quebrado em linhas de até `n` caracteres, nas palavras, com
+/// `recuo` na frente das continuações.
+fn quebrar(s: &str, n: usize, recuo: &str) -> Vec<String> {
+    let n = n.max(10);
+    let mut fora: Vec<String> = Vec::new();
+    let mut atual = String::new();
+    for palavra in s.split(' ') {
+        let cabe = atual.chars().count() + palavra.chars().count() + usize::from(!atual.is_empty()) <= n;
+        if !cabe && !atual.is_empty() {
+            fora.push(std::mem::take(&mut atual));
+            atual.push_str(recuo);
+        }
+        if !atual.is_empty() && !atual.ends_with(' ') {
+            atual.push(' ');
+        }
+        atual.push_str(palavra);
+    }
+    if !atual.trim().is_empty() {
+        fora.push(atual);
+    }
+    fora
 }
 
 /// Os números que movem a tarefa selecionada, pro rodapé (ciclo 501):
@@ -1917,13 +2078,19 @@ fn tela_do_projeto(
     let texto = Style::default().fg(tema.var("text-primary"));
     let apagado = Style::default().fg(tema.var("text-muted"));
     let destaque = Style::default().fg(tema.var("accent-blue"));
-    let corta = |s: String, n: usize| -> String { s.chars().take(n).collect() };
     let mut fora = Vec::new();
-    let repo = p.config.repositorio.clone().unwrap_or_else(|| "sem repositório".into());
-    fora.push(Line::from(vec![
-        Span::styled(" repositório ", apagado),
-        Span::styled(corta(repo, w.saturating_sub(14)), texto),
-    ]));
+    // "repositório sem repositório" lia como erro de digitação (514).
+    match p.config.repositorio.clone() {
+        Some(repo) => fora.push(Line::from(vec![
+            Span::styled(" repositório ", apagado),
+            Span::styled(com_reticencias(&repo, w.saturating_sub(14)), texto),
+        ])),
+        None => fora.push(Line::from(vec![
+            Span::styled(" repositório ", apagado),
+            Span::styled("nenhum", tema.estilo(Realce::BadgeAtencao)),
+            Span::styled(" · o escolhe", apagado),
+        ])),
+    }
     let executando = p.tarefas.iter().filter(|x| x.etapa == EtapaTarefa::Executando).count();
     let fila = if p.config.pausado { "pausada" } else { "ativa" };
     let mut linha_fila = vec![Span::styled(" fila ", apagado), Span::styled(fila, if p.config.pausado { tema.estilo(Realce::BadgeAtencao) } else { texto })];
@@ -1944,9 +2111,26 @@ fn tela_do_projeto(
         }
     }
     linha_sprint.push(Span::styled(format!("  ({} de {} tarefas)", p.tarefas.len(), p.todas.len()), apagado));
-    fora.push(Line::from(linha_sprint));
+    // Cortada com marca (514): sem o `…`, o objetivo cortado parecia
+    // inteiro.
+    let mut usado = 0usize;
+    let mut cortada: Vec<Span<'static>> = Vec::new();
+    for sp in linha_sprint {
+        let n = sp.content.chars().count();
+        if usado + n > w {
+            cortada.push(Span::styled(com_reticencias(&sp.content, w.saturating_sub(usado)), sp.style));
+            break;
+        }
+        usado += n;
+        cortada.push(sp);
+    }
+    fora.push(Line::from(cortada));
+    // O aviso QUEBRA em vez de cortar (514): é o que diz por que a fila
+    // não anda, e cortado em "sem repositório confi" não dizia.
     for a in &p.avisos {
-        fora.push(Line::from(Span::styled(corta(format!(" ⚠ {a}"), w), tema.estilo(Realce::BadgeAtencao))));
+        for l in quebrar(&format!("⚠ {a}"), w.saturating_sub(1), "  ").into_iter().map(|l| format!(" {l}")) {
+            fora.push(Line::from(Span::styled(l, tema.estilo(Realce::BadgeAtencao))));
+        }
     }
     // As dependências olham o projeto INTEIRO: a do backlog também segura.
     let indice = projeto::IndiceDeTarefas::novo(&p.todas);
@@ -1963,12 +2147,47 @@ fn tela_do_projeto(
         Some(x) => {
             let destinos = x.etapa.proximas_para(Quem::Humano);
             let opcoes: Vec<String> = destinos.iter().enumerate().map(|(k, d)| format!("{} → {}", k + 1, d.label())).collect();
-            fora.push(Line::from(vec![
-                Span::styled(corta(format!(" {:03} {}", x.numero, x.titulo), w / 2), texto.add_modifier(Modifier::BOLD)),
-                Span::styled(corta(format!("   {}", opcoes.join("   ")), w / 2), destaque),
-            ]));
+            let titulo = format!(" {:03} {}", x.numero, x.titulo);
+            let transicoes = format!("   {}", opcoes.join("   "));
+            // As transições são as teclas que movem a tarefa: numa linha
+            // só quando cabem, senão na de baixo, inteiras (514). Cortadas
+            // ao meio ("2 → D"), a pessoa não sabia pra onde ia o 2.
+            //
+            // A altura da faixa depende só da LARGURA, não da tarefa: se
+            // mudasse com a seleção, o quadro pularia pra cima e pra baixo
+            // a cada `l`. Larga, uma linha; estreita, o título e duas
+            // linhas pras transições (a bloqueada tem quatro).
+            if w >= LARGURA_DA_FAIXA_NUMA_LINHA {
+                fora.push(Line::from(vec![
+                    Span::styled(com_reticencias(&titulo, w.saturating_sub(transicoes.chars().count()).max(w / 3)), texto.add_modifier(Modifier::BOLD)),
+                    Span::styled(transicoes, destaque),
+                ]));
+            } else {
+                fora.push(Line::from(Span::styled(com_reticencias(&titulo, w), texto.add_modifier(Modifier::BOLD))));
+                // Quebra por OPÇÃO, não por palavra: "2 → Detalhando" não
+                // se parte, e o espaço entre elas continua o mesmo.
+                let mut ls: Vec<String> = Vec::new();
+                for o in &opcoes {
+                    match ls.last_mut() {
+                        Some(l) if l.chars().count() + 3 + o.chars().count() <= w => {
+                            l.push_str("   ");
+                            l.push_str(o);
+                        }
+                        _ => ls.push(format!("  {o}")),
+                    }
+                }
+                ls.resize(2, String::new());
+                for l in ls.into_iter().take(2) {
+                    fora.push(Line::from(Span::styled(l, destaque)));
+                }
+            }
         }
-        None => fora.push(Line::from(Span::styled(" Tab entra no quadro", apagado))),
+        None => {
+            fora.push(Line::from(Span::styled(" Tab entra no quadro", apagado)));
+            if w < LARGURA_DA_FAIXA_NUMA_LINHA {
+                fora.extend([Line::default(), Line::default()]);
+            }
+        }
     }
 
     // Quantas colunas cabem, e quais: a janela desliza pra o cursor ficar
@@ -2034,11 +2253,21 @@ fn tela_do_projeto(
     // dependência e um respiro — como `.projeto__cartao`.
     let topo_do_quadro = antes + fora.len();
     let mut linhas: Vec<Vec<Span<'static>>> = vec![vec![Span::raw(" ")]; altura * ALTURA_DO_CARTAO];
-    for coluna in &colunas {
+    let mut cartoes = t.cartoes.borrow_mut();
+    cartoes.clear();
+    for (k, coluna) in colunas.iter().enumerate() {
         for r in 0..altura {
             let base = r * ALTURA_DO_CARTAO;
             match coluna.get(r) {
                 Some(x) => {
+                    // Onde o clique cai neste cartão (514): as três linhas
+                    // dele, na faixa da coluna.
+                    if let Some(i) = ordem.iter().position(|o| o.caminho == x.caminho) {
+                        let x0 = 1 + k * (largura + 1);
+                        for dl in 0..3 {
+                            cartoes.push((topo_do_quadro + base + dl, x0, x0 + largura, i));
+                        }
+                    }
                     let aceso = no_foco && selecionada.is_some_and(|s| s.caminho == x.caminho);
                     let corpo = if aceso { tema.estilo(Realce::Cursor) } else { texto.bg(elevado) };
                     let numero = if aceso { corpo } else { apagado.bg(elevado) };

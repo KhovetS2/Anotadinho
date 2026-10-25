@@ -49,6 +49,9 @@ pub enum Pedido {
     AlternarItemDaTarefa { caminho: String, indice: usize },
     TagsDaTarefa { caminho: String, tags: Vec<String> },
     PrazoDaTarefa { caminho: String, prazo: Option<String> },
+    /// A prioridade e as dependências (ciclo 514), os handlers do 513.
+    PrioridadeDaTarefa { caminho: String, prioridade: Option<String> },
+    DependenciasDaTarefa { caminho: String, depende: Vec<String> },
     ComentarTarefa { caminho: String, texto: String },
     AnexarNaTarefa { caminho: String, origem: String },
     /// Abrir um anexo — só o que está em `assets/` (`ipc::anexo_no_vault`).
@@ -665,6 +668,11 @@ pub enum AcaoDaEscolha {
     SprintsDoProjeto,
     /// O modal de detalhes da tarefa (ciclo 478): chave `ação\u{0}…`.
     DetalhesDaTarefa,
+    /// A prioridade da tarefa (ciclo 514): chave `caminho\u{0}prioridade`,
+    /// vazia pra média.
+    PrioridadeDaTarefa,
+    /// Ligar ou desligar uma dependência (514): chave `caminho\u{0}número`.
+    DependenciasDaTarefa,
     /// Trocar o tema pela chave.
     Tema,
     /// Trocar o agente pelo índice do preset.
@@ -786,11 +794,23 @@ pub fn abrir_paleta(e: &mut Estado) {
     let mut itens: Vec<Item> = super::conversa::comandos(e);
     itens.extend(super::construtor::comandos(e));
     itens.extend(COMANDOS.iter().map(|(r, c)| Item::novo("ϟ", *r, *c)));
-    itens.extend(
-        e.paginas
-            .iter()
-            .map(|p| Item::novo("≡", p.title.clone(), format!("pagina:{}", p.path)).com_detalhe(p.path.clone())),
-    );
+    // O título do frontmatter, quando o índice tem (ciclo 514). A lista de
+    // páginas só sabe o nome do arquivo: todo projeto se chamava "projeto"
+    // e toda tarefa "001-esqueleto-do-app", e digitar "Meu primeiro
+    // projeto" não achava o projeto. O nome do arquivo continua no detalhe
+    // (o caminho), e ainda casa.
+    let titulos: std::collections::HashMap<&str, (&str, &str)> =
+        e.indice_do_vault.iter().map(|x| (x.path.as_str(), (x.title.as_str(), x.page_type.as_str()))).collect();
+    itens.extend(e.paginas.iter().map(|p| {
+        let (titulo, tipo) = titulos.get(p.path.as_str()).copied().unwrap_or((p.title.as_str(), ""));
+        let titulo = if titulo.trim().is_empty() { p.title.as_str() } else { titulo };
+        let icone = match tipo {
+            "projeto" => "◆",
+            "tarefa" => "☐",
+            _ => "≡",
+        };
+        Item::novo(icone, titulo.to_string(), format!("pagina:{}", p.path)).com_detalhe(p.path.clone())
+    }));
     e.modal = Some(Modal::Paleta(Lista::filtravel(itens)));
 }
 
@@ -1209,6 +1229,21 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                         "tags" => e.modal = Some(entrada("Tags, separadas por vírgula (vazio tira todas)", resto.unwrap_or("").to_string(), AcaoDaEntrada::TagsDaTarefa(caminho))),
                         "prazo" => e.modal = Some(entrada("Prazo, AAAA-MM-DD (vazio tira)", resto.unwrap_or("").to_string(), AcaoDaEntrada::PrazoDaTarefa(caminho))),
                         "comentar" => e.modal = Some(entrada("Comentário", String::new(), AcaoDaEntrada::ComentarTarefa(caminho))),
+                        // Prioridade e dependências (ciclo 514): escolhas,
+                        // não texto — "urgente" digitado cairia em média.
+                        "prioridade" => {
+                            let atual = resto.unwrap_or("").to_string();
+                            let opcoes = [("", "—  média (o padrão)", "·"), ("alta", "alta — vai antes na fila", "↑"), ("baixa", "baixa — vai depois", "↓")];
+                            let itens: Vec<Item> = opcoes.iter().map(|(k, r, m)| Item::novo(*m, *r, format!("{caminho}\u{0}{k}"))).collect();
+                            let mut lista = Lista::menu(itens);
+                            lista.selecionado = opcoes.iter().position(|(k, _, _)| *k == atual).unwrap_or(0);
+                            e.modal = Some(Modal::Escolha { titulo: "Prioridade".into(), lista, acao: AcaoDaEscolha::PrioridadeDaTarefa });
+                        }
+                        "depende" => {
+                            if let Some(m) = super::especiais::menu_de_dependencias(e, &caminho, 0) {
+                                e.modal = Some(m);
+                            }
+                        }
                         "anexar" => e.modal = Some(entrada("Caminho do arquivo pra anexar", String::new(), AcaoDaEntrada::AnexarNaTarefa(caminho))),
                         "anexo" => e.pedidos.push(Pedido::AbrirAnexo(caminho)),
                         "pagina" => e.pedidos.push(Pedido::AbrirPagina(caminho)),
@@ -1230,6 +1265,36 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
                             }
                         }
                         _ => {}
+                    }
+                }
+                AcaoDaEscolha::PrioridadeDaTarefa => {
+                    let (caminho, chave) = chave.split_once('\u{0}').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_default();
+                    super::especiais::mudar_na_tela(e, &caminho, |t| t.prioridade = Some(chave.clone()).filter(|p| !p.is_empty()));
+                    e.pedidos.push(Pedido::PrioridadeDaTarefa { caminho: caminho.clone(), prioridade: Some(chave).filter(|p| !p.is_empty()) });
+                    // Volta pros detalhes, no item da prioridade.
+                    if let Some(Modal::Escolha { titulo, mut lista, acao }) = super::especiais::menu_de_detalhes(e, &caminho) {
+                        lista.selecionado = lista.itens.iter().position(|it| it.chave.starts_with("prioridade\u{0}")).unwrap_or(0);
+                        e.modal = Some(Modal::Escolha { titulo, lista, acao });
+                    }
+                }
+                AcaoDaEscolha::DependenciasDaTarefa => {
+                    let (caminho, chave) = chave.split_once('\u{0}').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_default();
+                    // Liga ou desliga a dependência e o modal FICA, como o
+                    // critério do 478: montar três dependências não pode
+                    // custar três aberturas.
+                    let Some(atuais) = super::especiais::dependencias_da(e, &caminho) else { return };
+                    let mut novas: Vec<String> = atuais.clone();
+                    match novas.iter().position(|d| d.trim() == chave) {
+                        Some(i) => {
+                            novas.remove(i);
+                        }
+                        None => novas.push(chave.clone()),
+                    }
+                    super::especiais::mudar_na_tela(e, &caminho, |t| t.depende = novas.clone());
+                    e.pedidos.push(Pedido::DependenciasDaTarefa { caminho: caminho.clone(), depende: novas });
+                    let sel = lista.selecionado;
+                    if let Some(m) = super::especiais::menu_de_dependencias(e, &caminho, sel) {
+                        e.modal = Some(m);
                     }
                 }
                 AcaoDaEscolha::SprintsDoProjeto => {

@@ -1185,6 +1185,14 @@ fn atender(estado: &mut Estado, vault: &str, trabalhos: &mut Trabalhos, fila: &m
                     Ok(()) => carregar_especial(estado, vault, TipoEspecial::Projeto),
                     Err(e) => estado.aviso = Some(e),
                 },
+                Pedido::PrioridadeDaTarefa { caminho, prioridade } => match anotadinho_ipc::handle_prioridade_da_tarefa(vault.to_string(), caminho, prioridade) {
+                    Ok(()) => carregar_especial(estado, vault, TipoEspecial::Projeto),
+                    Err(e) => estado.aviso = Some(e),
+                },
+                Pedido::DependenciasDaTarefa { caminho, depende } => match anotadinho_ipc::handle_dependencias_da_tarefa(vault.to_string(), caminho, depende) {
+                    Ok(()) => carregar_especial(estado, vault, TipoEspecial::Projeto),
+                    Err(e) => estado.aviso = Some(e),
+                },
                 Pedido::ComentarTarefa { caminho, texto } => {
                     match anotadinho_ipc::handle_comentar_tarefa(vault.to_string(), caminho, agora_local(), texto) {
                         Ok(()) => {

@@ -1544,6 +1544,10 @@ pub fn clicar(e: &mut Estado, coluna: u16, linha: u16) -> Option<String> {
     if e.pergunta.is_some() || e.barra_aberta || e.modal.is_some() {
         return None;
     }
+    // O cartão do quadro do projeto (ciclo 514).
+    if (coluna >= e.largura_da_sidebar || !e.preferencias.sidebar) && especiais::clicar(e, coluna, linha) {
+        return None;
+    }
     if coluna >= e.largura_da_sidebar || !e.preferencias.sidebar {
         return None;
     }
@@ -12396,6 +12400,86 @@ mod testes {
         assert_eq!(e.pedidos, [Pedido::AbrirAnexo("assets/tela.png".into())]);
         // O comentário é leitura.
         abrir(&mut e, "olhei");
+        assert!(e.pedidos.is_empty());
+    }
+
+    // ── Prioridade e dependências (ciclo 514) ─────────────────────────
+
+    #[test]
+    fn v_poe_prioridade_e_liga_e_desliga_dependencias() {
+        let c = "pages/projetos/saas/tarefas/002-t.md".to_string();
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_na_tela(vec![tarefa_de_teste(1, "feita", ""), tarefa_de_teste(2, "pronta", ""), tarefa_de_teste(3, "ideia", "")]));
+        // A 002 no quadro: anda de coluna em coluna até os detalhes serem dela.
+        for passo in ["l", "l", "l", "h", "h", "h", "h", "h"] {
+            tecla(&mut e, "v");
+            if matches!(&e.modal, Some(Modal::Escolha { titulo, .. }) if titulo.starts_with("002")) {
+                break;
+            }
+            e.modal = None;
+            tecla(&mut e, passo);
+        }
+        assert!(matches!(&e.modal, Some(Modal::Escolha { titulo, .. }) if titulo.starts_with("002")), "{:?}", e.modal);
+        assert!(itens_do_modal(&e).iter().any(|(_, r)| r == "Prioridade: média"), "{:?}", itens_do_modal(&e));
+        descer_ate(&mut e, "Prioridade");
+        tecla(&mut e, "Enter");
+        // As três, com a atual marcada; alta é a segunda.
+        tecla(&mut e, "j");
+        e.pedidos.clear();
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::PrioridadeDaTarefa { caminho: c.clone(), prioridade: Some("alta".into()) }]);
+        // Volta aos detalhes, já com a nova.
+        assert!(itens_do_modal(&e).iter().any(|(m, r)| m == "↑" && r == "Prioridade: alta"), "{:?}", itens_do_modal(&e));
+        // Dependências: só as OUTRAS, e Enter liga e desliga sem fechar.
+        e.modal = None;
+        tecla(&mut e, "v");
+        descer_ate(&mut e, "Depende de");
+        tecla(&mut e, "Enter");
+        let itens = itens_do_modal(&e);
+        assert_eq!(itens.iter().map(|(_, r)| r.as_str()).collect::<Vec<_>>(), ["001 Tarefa 1", "003 Tarefa 3"]);
+        e.pedidos.clear();
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos, [Pedido::DependenciasDaTarefa { caminho: c.clone(), depende: vec!["1".into()] }]);
+        assert_eq!(itens_do_modal(&e)[0].0, "■");
+        tecla(&mut e, "j");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos.last(), Some(&Pedido::DependenciasDaTarefa { caminho: c.clone(), depende: vec!["1".into(), "3".into()] }));
+        tecla(&mut e, "k");
+        tecla(&mut e, "Enter");
+        assert_eq!(e.pedidos.last(), Some(&Pedido::DependenciasDaTarefa { caminho: c.clone(), depende: vec!["3".into()] }));
+        // O cartão mostra a prioridade e a dependência.
+        e.modal = None;
+        let tela = desenho(&mut e, 160, 30).join("\n");
+        assert!(tela.contains("↑alta"), "{tela}");
+        assert!(tela.contains("↳3"), "{tela}");
+    }
+
+    #[test]
+    fn clicar_no_cartao_seleciona_e_clicar_de_novo_abre_a_tarefa() {
+        let mut e = especial_aberto("projeto");
+        especiais::carregar(&mut e, projeto_na_tela(vec![tarefa_de_teste(1, "ideia", ""), tarefa_de_teste(2, "pronta", "")]));
+        e.foco = Foco::Conteudo;
+        let tela = desenho(&mut e, 160, 30);
+        // Onde o 002 foi desenhado, em colunas da tela (não em bytes).
+        let (y, x) = tela
+            .iter()
+            .enumerate()
+            .find_map(|(y, l)| {
+                let cs: Vec<char> = l.chars().collect();
+                cs.windows(3).position(|w| w == ['0', '0', '2']).map(|x| (y, x))
+            })
+            .expect("o cartão 002 na tela");
+        assert!(clicar(&mut e, x as u16, y as u16).is_none());
+        let sel = |e: &Estado| e.especial.as_ref().unwrap().selecionado;
+        let ordem_do_002 = sel(&e);
+        desenho(&mut e, 160, 30);
+        assert!(matches!(&e.especial.as_ref().unwrap().dados, Some(especiais::Dados::Projeto(p)) if p.na_ordem()[ordem_do_002].numero == 2));
+        e.pedidos.clear();
+        clicar(&mut e, x as u16, y as u16);
+        assert_eq!(e.pedidos, [Pedido::AbrirPagina("pages/projetos/saas/tarefas/002-t.md".into())]);
+        // Fora de um cartão, nada.
+        e.pedidos.clear();
+        clicar(&mut e, 159, 29);
         assert!(e.pedidos.is_empty());
     }
 
