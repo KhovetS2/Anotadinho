@@ -2423,7 +2423,7 @@ cenarios.push({
       const tamanhoDepois = tamanho();
       await window.__TAURI_INTERNALS__.invoke('window_toggle_maximize', {});
       const final = await aguardar(inicio);
-      return { inicio, depois, conferido, final, tamanhoAntes, tamanhoDepois };
+      return { inicio, depois, conferido, final, tamanhoAntes, tamanhoDepois, larguraAntes: parseInt(tamanhoAntes), tela: screen.availWidth };
     })()`);
     // O gerenciador IGNOROU o pedido (ciclo 455): nem o estado nem o
     // tamanho mudaram. Medido no Hyprland, com a janela encaixada em meia
@@ -2434,6 +2434,17 @@ cenarios.push({
       ctx.naoSeAplica(
         `o gerenciador de janelas ignorou o pedido de ${ciclo.depois ? "maximizar" : "restaurar"} ` +
           `(estado e tamanho ${ciclo.tamanhoAntes} iguais depois) — janela encaixada num gerenciador em mosaico?`,
+      );
+    }
+    // A outra cara do mesmo encaixe (medida em 2026-10-25, Hyprland): a
+    // janela encaixada em meia tela (913 de 1838) é "maximizada" pro GTK;
+    // pedir pra restaurar faz o gerenciador ESTICAR a janela, e o estado
+    // continua "maximizada". O tamanho muda, então a regra de cima não
+    // pega — mas é o mesmo gerenciador decidindo, não o app.
+    if (ciclo.inicio === true && ciclo.conferido !== ciclo.depois && ciclo.larguraAntes < ciclo.tela * 0.9) {
+      ctx.naoSeAplica(
+        `a janela encaixada (${ciclo.tamanhoAntes} de ${ciclo.tela} de largura) é "maximizada" pro GTK, e o gerenciador ` +
+          `respondeu ao restaurar esticando-a (${ciclo.tamanhoDepois}) — janela encaixada num gerenciador em mosaico?`,
       );
     }
     ctx.assertEq(ciclo.depois, !ciclo.inicio, "alternar devia inverter o estado");
