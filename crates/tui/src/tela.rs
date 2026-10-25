@@ -101,6 +101,18 @@ struct Linhas {
     /// O tipo de quem está aberto em cada nível: o item precisa saber se a
     /// lista dele é numerada (ciclo 507).
     tipos: Vec<Tipo>,
+    /// O número de onde cada lista numerada aberta começa (`3.` conta
+    /// 3, 4, 5…), pelo nível.
+    inicios: Vec<usize>,
+}
+
+/// O número do primeiro item de uma lista numerada, pela fonte dela.
+fn inicio_da_lista(u: &Unidade) -> usize {
+    u.fonte
+        .as_deref()
+        .and_then(|f| f.lines().find(|l| !l.trim().is_empty()))
+        .and_then(|l| l.trim_start().split(['.', ')']).next()?.parse().ok())
+        .unwrap_or(1)
 }
 
 /// A caixinha de um item de checklist (`[ ] `, `[x] `), e o texto sem ela.
@@ -124,8 +136,11 @@ impl Renderizador for Linhas {
         self.caminho.push(self.contadores[nivel]);
         self.contadores[nivel] += 1;
         self.tipos.truncate(nivel);
+        self.inicios.truncate(nivel);
         let pai = self.tipos.last().cloned();
+        let inicio_do_pai = self.inicios.last().copied().unwrap_or(1);
         self.tipos.push(u.tipo.clone());
+        self.inicios.push(if u.tipo == Tipo::ListaOrdenada { inicio_da_lista(u) } else { 1 });
 
         // O item mostra a marca da lista dele (ciclo 507): o número na
         // numerada e a caixinha no checklist, como a janela. Antes todo
@@ -137,7 +152,7 @@ impl Renderizador for Linhas {
                 marca_do_item = Some(c.to_string());
                 corpo_visivel = resto.to_string();
             } else if pai == Some(Tipo::ListaOrdenada) {
-                marca_do_item = Some(format!("{}.", self.contadores[nivel]));
+                marca_do_item = Some(format!("{}.", inicio_do_pai + self.contadores[nivel] - 1));
             }
         }
         // Dentro de código nada é interpretado — a mesma regra que a

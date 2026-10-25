@@ -10998,6 +10998,10 @@ mod testes {
         assert!(tela.contains("☐ por fazer") && tela.contains("☑ feito com força"), "{tela}");
         assert!(tela.contains("- comum"), "{tela}");
         assert!(!tela.contains("[x]") && !tela.contains("- um"), "{tela}");
+        // A que começa em 3 conta do 3.
+        let mut e = Estado::novo(paginas(), analisar("3. três\n4. quatro\n"));
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("3. três") && tela.contains("4. quatro"), "{tela}");
     }
 
     // --- Ciclo 506: o editor de código e o diagrama no construtor -------------------
