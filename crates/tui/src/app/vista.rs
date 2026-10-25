@@ -46,6 +46,48 @@ pub(super) fn tecla(e: &mut Estado, tecla: &str) -> bool {
         e.vista_bloco = None;
         return false;
     }
+    // A busca (ciclo 509): com o termo sendo digitado, toda tecla é dele.
+    if e.vista_bloco.as_ref().is_some_and(|v| v.vista.digitando) {
+        let v = e.vista_bloco.as_mut().unwrap();
+        match tecla {
+            "Escape" => {
+                v.vista.digitando = false;
+                v.vista.busca.clear();
+            }
+            "Backspace" => {
+                v.vista.busca.pop();
+            }
+            "Enter" => {
+                v.vista.digitando = false;
+                v.vista.atual = None;
+                procurar(e, true);
+            }
+            t if t.chars().count() == 1 => v.vista.busca.push_str(t),
+            _ => {}
+        }
+        return true;
+    }
+    match tecla {
+        "/" => {
+            let v = e.vista_bloco.as_mut().unwrap();
+            v.vista.digitando = true;
+            v.vista.busca.clear();
+            v.vista.atual = None;
+            return true;
+        }
+        "n" | "N" if e.vista_bloco.as_ref().is_some_and(|v| !v.vista.busca.is_empty()) => {
+            procurar(e, tecla == "n");
+            return true;
+        }
+        // O primeiro Esc limpa a busca; o segundo sai do bloco.
+        "Escape" if e.vista_bloco.as_ref().is_some_and(|v| !v.vista.busca.is_empty()) => {
+            let v = e.vista_bloco.as_mut().unwrap();
+            v.vista.busca.clear();
+            v.vista.atual = None;
+            return true;
+        }
+        _ => {}
+    }
     let Some(v) = e.vista_bloco.as_mut() else { return false };
     let m = v.medida.get();
     let meia = (m.alto / 2).max(1);
@@ -92,4 +134,29 @@ pub(super) fn tecla(e: &mut Estado, tecla: &str) -> bool {
     v.vista.x = nx.min(m.max_x());
     v.vista.y = ny.min(m.max_y());
     true
+}
+
+/// Vai ao achado seguinte (ou anterior) e põe ele à vista: um terço abaixo
+/// do topo, e de lado só se ele estiver fora.
+fn procurar(e: &mut Estado, frente: bool) {
+    let Some(u) = e.arvore.em(&e.cursor) else { return };
+    let Tipo::Codigo(lingua) = &u.tipo else { return };
+    let fonte = u.texto.clone();
+    let lingua = lingua.clone();
+    let tema = e.tema.clone();
+    let Some(v) = e.vista_bloco.as_mut() else { return };
+    let m = v.medida.get();
+    match crate::codigo::achar(&fonte, lingua.as_deref(), m.largo, &tema, &v.vista.busca, v.vista.atual, frente) {
+        Some((linha, col)) => {
+            v.vista.atual = Some((linha, col));
+            v.vista.y = linha.saturating_sub(m.alto / 3).min(m.max_y());
+            if col < v.vista.x || col >= v.vista.x + m.largo {
+                v.vista.x = col.saturating_sub(m.largo / 4).min(m.max_x());
+            }
+        }
+        None => {
+            v.vista.atual = None;
+            e.aviso = Some(format!("“{}” não aparece no bloco", v.vista.busca));
+        }
+    }
 }

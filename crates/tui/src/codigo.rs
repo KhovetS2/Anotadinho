@@ -386,6 +386,75 @@ pub fn recortar(spans: &[Span<'static>], x: usize, largura: usize) -> Vec<Span<'
 pub struct Vista {
     pub x: usize,
     pub y: usize,
+    /// O termo da busca dentro do bloco (ciclo 509), vazio sem busca.
+    pub busca: String,
+    /// Digitando o termo (depois do `/`, antes do Enter).
+    pub digitando: bool,
+    /// O achado em que se está: linha e coluna (em células).
+    pub atual: Option<(usize, usize)>,
+}
+
+/// Onde `termo` aparece nas linhas, sem diferença de maiúscula: linha,
+/// coluna e largura, em células.
+fn achados_nas(linhas: &[Vec<Span<'static>>], termo: &str) -> Vec<(usize, usize, usize)> {
+    let termo: Vec<char> = termo.to_lowercase().chars().collect();
+    if termo.is_empty() {
+        return Vec::new();
+    }
+    let mut fora = Vec::new();
+    for (n, l) in linhas.iter().enumerate() {
+        let cs: Vec<char> = l.iter().flat_map(|s| s.content.chars()).collect();
+        let baixo: Vec<char> = cs.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+        let mut i = 0;
+        while i + termo.len() <= baixo.len() {
+            if baixo[i..i + termo.len()] == termo[..] {
+                let col: usize = cs[..i].iter().map(|c| c.width().unwrap_or(0)).sum();
+                let w: usize = cs[i..i + termo.len()].iter().map(|c| c.width().unwrap_or(0)).sum();
+                fora.push((n, col, w));
+                i += termo.len();
+            } else {
+                i += 1;
+            }
+        }
+    }
+    fora
+}
+
+/// A linha com as células de `faixas` (coluna, largura) no estilo `marca`.
+fn marcar(spans: &[Span<'static>], faixas: &[(usize, usize, Style)]) -> Vec<Span<'static>> {
+    if faixas.is_empty() {
+        return spans.to_vec();
+    }
+    let mut fora: Vec<Span<'static>> = Vec::new();
+    let mut col = 0;
+    for s in spans {
+        for ch in s.content.chars() {
+            let w = ch.width().unwrap_or(0);
+            let estilo = faixas.iter().find(|(c, l, _)| col >= *c && col < c + l).map_or(s.style, |(_, _, e)| s.style.patch(*e));
+            match fora.last_mut() {
+                Some(u) if u.style == estilo => u.content.to_mut().push(ch),
+                _ => fora.push(Span::styled(ch.to_string(), estilo)),
+            }
+            col += w;
+        }
+    }
+    fora
+}
+
+/// O achado seguinte (ou o anterior) a `desde`, dando a volta; sem
+/// `desde`, o primeiro. `None` se o termo não aparece.
+pub fn achar(fonte: &str, lingua: Option<&str>, cabe: usize, tema: &Tema, termo: &str, desde: Option<(usize, usize)>, frente: bool) -> Option<(usize, usize)> {
+    let c = conteudo_do_bloco(fonte, lingua, cabe, tema);
+    let todos: Vec<(usize, usize)> = achados_nas(&c.linhas, termo).into_iter().map(|(l, x, _)| (l, x)).collect();
+    if todos.is_empty() {
+        return None;
+    }
+    let Some(d) = desde else { return todos.first().copied() };
+    if frente {
+        todos.iter().find(|p| **p > d).or(todos.first()).copied()
+    } else {
+        todos.iter().rev().find(|p| **p < d).or(todos.last()).copied()
+    }
 }
 
 /// O tamanho do que o bloco tem e do que cabe dele, medido no último
@@ -442,7 +511,25 @@ pub fn desenhar_na_vista(
     let total = c.linhas.len();
     let y = vista.y.min(total.saturating_sub(alto));
     let x = vista.x.min(c.largura.saturating_sub(cabe));
-    let miolo: Vec<Vec<Span<'static>>> = c.linhas.iter().skip(y).take(alto).map(|l| recortar(l, x, cabe)).collect();
+    // Os achados da busca (509) acendem; o atual, mais forte.
+    let achados = achados_nas(&c.linhas, &vista.busca);
+    let fraco = tema.estilo(Realce::Barra);
+    let forte = tema.estilo(Realce::Cursor);
+    let miolo: Vec<Vec<Span<'static>>> = c
+        .linhas
+        .iter()
+        .enumerate()
+        .skip(y)
+        .take(alto)
+        .map(|(n, l)| {
+            let faixas: Vec<(usize, usize, Style)> = achados
+                .iter()
+                .filter(|(ln, _, _)| *ln == n)
+                .map(|(_, col, w)| (*col, *w, if vista.atual == Some((n, *col)) { forte } else { fraco }))
+                .collect();
+            recortar(&marcar(l, &faixas), x, cabe)
+        })
+        .collect();
     // Onde se está vai no topo, curto (`↕` linhas, `↔` colunas): num painel
     // estreito o rótulo é cortado, e o que não pode sumir é a posição.
     let mut rotulo = c.rotulo.clone();
@@ -453,17 +540,18 @@ pub fn desenhar_na_vista(
         rotulo.push_str(&format!(" · ↔ {}–{}/{}", x + 1, (x + cabe).min(c.largura), c.largura));
     }
     let n = miolo.len();
-    caixa_com(
-        &rotulo,
-        c.aviso.as_deref(),
-        miolo,
-        nivel,
-        largura,
-        n.max(2),
-        Realce::BordaFoco,
-        Some("navegando: hjkl rola · i edita · Esc sai"),
-        tema,
-    )
+    let fundo = if vista.digitando {
+        format!("/{}▏ Enter procura · Esc desiste", vista.busca)
+    } else if !vista.busca.is_empty() {
+        match vista.atual.and_then(|a| achados.iter().position(|(l, x, _)| (*l, *x) == a)) {
+            Some(k) => format!("/{} · {}/{} · n N próximo · Esc limpa", vista.busca, k + 1, achados.len()),
+            None if achados.is_empty() => format!("/{} · nada · Esc limpa", vista.busca),
+            None => format!("/{} · {} achado(s) · n próximo · Esc limpa", vista.busca, achados.len()),
+        }
+    } else {
+        "navegando: hjkl rola · / busca · i edita · Esc sai".to_string()
+    };
+    caixa_com(&rotulo, c.aviso.as_deref(), miolo, nivel, largura, n.max(2), Realce::BordaFoco, Some(&fundo), tema)
 }
 
 /// O bloco dobrado: uma linha, com a linguagem e o tamanho.

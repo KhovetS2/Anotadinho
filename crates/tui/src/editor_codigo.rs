@@ -85,6 +85,8 @@ pub struct EditorDeCodigo {
     ultima: Option<TipoDaEdicao>,
     /// O seletor de linguagem aberto, com a opção marcada.
     pub seletor: Option<usize>,
+    /// A busca (ciclo 509): o termo e se ele ainda está sendo digitado.
+    pub busca: Option<(String, bool)>,
     /// A primeira linha e a primeira coluna à vista, e a altura do último
     /// quadro (pro PgUp/PgDn).
     pub topo: Cell<usize>,
@@ -185,9 +187,74 @@ impl EditorDeCodigo {
         cs[ini..].iter().take_while(|c| **c == ' ').count()
     }
 
+    /// A tecla é do editor mesmo sendo Esc, Ctrl+S ou Ctrl+C: com o
+    /// seletor aberto, com o termo da busca sendo digitado, ou o Esc que
+    /// limpa a busca antes de fechar.
+    pub fn prende(&self, tecla: &str) -> bool {
+        self.seletor.is_some() || self.busca.as_ref().is_some_and(|(_, d)| *d) || (tecla == "Escape" && self.busca.is_some())
+    }
+
+    /// Vai ao próximo `termo` depois do cursor (ou antes, pra trás), dando
+    /// a volta, sem diferença de maiúscula.
+    fn ir_ao_achado(&mut self, frente: bool) -> bool {
+        let Some((termo, _)) = &self.busca else { return false };
+        let termo: Vec<char> = termo.to_lowercase().chars().collect();
+        if termo.is_empty() {
+            return false;
+        }
+        let texto: Vec<char> = self.campo.texto.to_lowercase().chars().collect();
+        let n = termo.len();
+        let pos: Vec<usize> = (0..texto.len().saturating_sub(n - 1)).filter(|i| texto[*i..*i + n] == termo[..]).collect();
+        let c = self.campo.cursor;
+        let alvo = if frente { pos.iter().find(|p| **p > c).or(pos.first()) } else { pos.iter().rev().find(|p| **p < c).or(pos.last()) };
+        match alvo {
+            Some(p) => {
+                self.campo.cursor = *p;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn tecla(&mut self, tecla: &str) -> Resposta {
         if let Some(i) = self.seletor {
             return self.tecla_no_seletor(i, tecla);
+        }
+        if let Some((termo, true)) = self.busca.as_mut() {
+            match tecla {
+                "Escape" => self.busca = None,
+                "Backspace" => {
+                    termo.pop();
+                }
+                "Enter" => {
+                    if let Some((_, d)) = self.busca.as_mut() {
+                        *d = false;
+                    }
+                    // A partir de onde se está: o primeiro achado pode ser
+                    // o do próprio cursor.
+                    self.campo.cursor = self.campo.cursor.saturating_sub(1);
+                    self.ir_ao_achado(true);
+                }
+                t if t.chars().count() == 1 => termo.push_str(t),
+                _ => {}
+            }
+            return Resposta::Usou;
+        }
+        match tecla {
+            "Ctrl+f" => {
+                let termo = self.busca.take().map(|(t, _)| t).unwrap_or_default();
+                self.busca = Some((termo, true));
+                return Resposta::Usou;
+            }
+            "Ctrl+g" => {
+                self.ir_ao_achado(true);
+                return Resposta::Usou;
+            }
+            "Escape" if self.busca.is_some() => {
+                self.busca = None;
+                return Resposta::Usou;
+            }
+            _ => {}
         }
         let cs = chars(&self.campo.texto);
         let c = self.campo.cursor.min(cs.len());
@@ -333,6 +400,9 @@ impl EditorDeCodigo {
 
     /// O rodapé: onde está o cursor e a linguagem.
     pub fn situacao(&self) -> String {
+        if let Some((termo, digitando)) = &self.busca {
+            return if *digitando { format!("buscar: {termo}▏ Enter vai · Esc desiste") } else { format!("“{termo}” · Ctrl+G próximo · Esc limpa") };
+        }
         let (l, c) = self.linha_coluna();
         let lingua = self.lingua.as_deref().map(|l| LINGUAGENS.iter().find(|(k, _)| k.eq_ignore_ascii_case(l)).map_or(l, |(_, n)| n)).unwrap_or("sem linguagem");
         format!("linha {}, coluna {} · {lingua}", l + 1, c + 1)
@@ -385,8 +455,24 @@ impl EditorDeCodigo {
                 Categoria::Tipo => Realce::CodigoTipo,
             })
         };
+        let achado = tema.estilo(Realce::Barra);
+        let termo: Vec<char> = self.busca.as_ref().map(|(t, _)| t.to_lowercase().chars().collect()).unwrap_or_default();
         let mut fora: Vec<Line<'static>> = Vec::new();
         for (n, l) in linhas.iter().enumerate().skip(topo).take(alto) {
+            // Onde o termo da busca aparece nesta linha, em caracteres.
+            let baixo: Vec<char> = l.to_lowercase().chars().collect();
+            let mut marcados = vec![false; baixo.len()];
+            if !termo.is_empty() && baixo.len() == l.chars().count() {
+                let mut i = 0;
+                while i + termo.len() <= baixo.len() {
+                    if baixo[i..i + termo.len()] == termo[..] {
+                        marcados[i..i + termo.len()].iter_mut().for_each(|m| *m = true);
+                        i += termo.len();
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
             let atual = n == lc;
             let mut spans = vec![Span::styled(format!("{:>num_w$} ", n + 1), if atual { numero_atual } else { numero }), Span::raw(" ")];
             // Os caracteres com o estilo de cada um.
@@ -405,6 +491,9 @@ impl EditorDeCodigo {
                 if col >= esq && col + w <= esq + largo {
                     if atual {
                         estilo = estilo.bg(fundo_atual);
+                    }
+                    if marcados.get(k).copied().unwrap_or(false) {
+                        estilo = estilo.patch(achado);
                     }
                     if e_cursor {
                         estilo = invertido;
@@ -549,6 +638,28 @@ mod testes {
         e.tecla("Ctrl+y");
         e.tecla("Ctrl+y");
         assert_eq!(e.texto(), "let x");
+    }
+
+    #[test]
+    fn ctrl_f_procura_e_ctrl_g_vai_ao_proximo() {
+        let mut e = ed("um x\ndois x\ntrês X", 0);
+        e.tecla("Ctrl+f");
+        digitar(&mut e, "x");
+        assert!(e.prende("Escape"));
+        e.tecla("Enter");
+        assert_eq!(e.linha_coluna(), (0, 3));
+        e.tecla("Ctrl+g");
+        assert_eq!(e.linha_coluna(), (1, 5));
+        e.tecla("Ctrl+g");
+        assert_eq!(e.linha_coluna(), (2, 5), "sem diferença de maiúscula");
+        e.tecla("Ctrl+g");
+        assert_eq!(e.linha_coluna(), (0, 3), "dá a volta");
+        // Digitar continua editando; o primeiro Esc só limpa a busca.
+        digitar(&mut e, "y");
+        assert_eq!(e.texto(), "um yx\ndois x\ntrês X");
+        assert!(e.prende("Escape") && !e.prende("Ctrl+s"));
+        e.tecla("Escape");
+        assert!(e.busca.is_none() && !e.prende("Escape"));
     }
 
     #[test]

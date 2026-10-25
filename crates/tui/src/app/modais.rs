@@ -1642,7 +1642,7 @@ pub fn tecla(e: &mut Estado, tecla: &str) {
         }
         Modal::Construtor(c) => super::construtor::tecla(e, c, tecla),
         Modal::EditorDeTexto { titulo, mut editor, alvo } => {
-            if editor.seletor.is_none() {
+            if !editor.prende(tecla) {
                 match tecla {
                     "Escape" | "Ctrl+s" => {
                         match &alvo {
@@ -1842,6 +1842,7 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("Enter", "nova linha no mesmo recuo"),
             ("Ctrl+Z Ctrl+Y", "desfazer / refazer"),
             ("Ctrl+K", "apagar a linha"),
+            ("Ctrl+F Ctrl+G", "buscar / próximo achado"),
             ("Ctrl+L", "trocar a linguagem"),
             ("Esc ou Ctrl+S", "gravar (Ctrl+C desiste)"),
         ],
@@ -1853,6 +1854,7 @@ pub const ATALHOS: &[(&str, &[(&str, &str)])] = &[
             ("Ctrl+D Ctrl+U", "meia tela pra baixo / pra cima"),
             ("H L", "meia tela pros lados"),
             ("g G 0 $", "topo / fim / começo / fim da linha"),
+            ("/ n N", "buscar / próximo / anterior"),
             ("i ou Enter", "editar (diagrama: formulário e código)"),
             ("c", "construtor do diagrama (mermaid)"),
             ("Esc ou q", "sair do bloco"),
@@ -2021,7 +2023,7 @@ pub fn desenhar(f: &mut Frame, e: &Estado) {
         Modal::Construtor(c) => super::construtor::desenhar(f, e, c),
         Modal::EditorDeTexto { titulo, editor, .. } => {
             let area = componentes::area_do_modal(tela, 110, tela.height.saturating_sub(2));
-            let rodape = "Tab ⇥ · Shift+Tab ⇤ · Ctrl+Z/Y desfaz · Ctrl+K apaga linha · Ctrl+L linguagem · Esc grava · Ctrl+C desiste";
+            let rodape = "Tab ⇥ · Shift+Tab ⇤ · Ctrl+Z/Y desfaz · Ctrl+K apaga linha · Ctrl+F busca · Ctrl+L linguagem · Esc grava · Ctrl+C desiste";
             let titulo = format!("{titulo} · {}", editor.situacao());
             let dentro = componentes::desenhar_modal(f, area, &titulo, rodape, t);
             editor.desenhar(f, dentro, t);

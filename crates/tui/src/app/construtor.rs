@@ -1291,6 +1291,11 @@ fn tecla_no_formulario(c: &mut Construtor, tecla: &str) {
 }
 
 fn tecla_no_codigo(e: &mut Estado, c: &mut Construtor, tecla: &str) -> bool {
+    // A busca do editor (509) segura o Esc e as letras enquanto está aberta.
+    if c.codigo.prende(tecla) {
+        c.codigo.tecla(tecla);
+        return false;
+    }
     match tecla {
         "Escape" => return sair(e, c),
         "Tab" => match c.modelo() {

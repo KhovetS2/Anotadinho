@@ -10986,6 +10986,42 @@ mod testes {
         assert!(e.gravacao.is_none() && e.modal.is_none());
     }
 
+    // --- Ciclo 509: busca dentro do bloco ------------------------------------------
+
+    #[test]
+    fn barra_dentro_do_bloco_procura_acende_e_n_vai_ao_proximo() {
+        let mut md = String::from("```sh\n");
+        for i in 0..40 {
+            md.push_str(&format!("echo {}\n", if i % 15 == 7 { "AGULHA aqui" } else { "palha" }));
+        }
+        md.push_str("```\n");
+        let mut e = Estado::novo(paginas(), analisar(&md));
+        e.foco = Foco::Conteudo;
+        tecla(&mut e, "Enter");
+        desenho(&mut e, 100, 20);
+        tecla(&mut e, "/");
+        for t in ["a", "g", "u", "l", "h", "a"] {
+            tecla(&mut e, t);
+        }
+        assert!(desenho(&mut e, 100, 20).join("\n").contains("/agulha▏"));
+        tecla(&mut e, "Enter");
+        let v = e.vista_bloco.as_ref().unwrap();
+        assert_eq!(v.vista.atual, Some((7, 5)), "a linha 8, depois de `echo `");
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("AGULHA aqui") && tela.contains("/agulha · 1/3"), "{tela}");
+        tecla(&mut e, "n");
+        assert_eq!(e.vista_bloco.as_ref().unwrap().vista.atual, Some((22, 5)));
+        let tela = desenho(&mut e, 100, 20).join("\n");
+        assert!(tela.contains("2/3"), "{tela}");
+        tecla(&mut e, "N");
+        assert_eq!(e.vista_bloco.as_ref().unwrap().vista.atual, Some((7, 5)));
+        // O primeiro Esc limpa a busca, o segundo sai.
+        tecla(&mut e, "Escape");
+        assert!(e.vista_bloco.as_ref().unwrap().vista.busca.is_empty());
+        tecla(&mut e, "Escape");
+        assert!(e.vista_bloco.is_none());
+    }
+
     // --- Ciclo 507: a marca de cada item ---------------------------------------------
 
     #[test]
