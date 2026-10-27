@@ -53,6 +53,9 @@ impl Trabalho {
         let limite = adaptador.timeout_s;
         let formato = adaptador.formato;
         let mut comando = Command::new(&executavel);
+        // O PATH do shell de login (ciclo 528): é nele que o `claude` mora
+        // quando a TUI não foi aberta de um terminal.
+        anotadinho_vault::processo::com_path_do_usuario(&mut comando);
         // O mesmo preparo da janela: sem ele, interromper mata só o
         // wrapper, e o neto Node segue rodando — no Windows, sempre.
         anotadinho_vault::processo::preparar(&mut comando);

@@ -1101,6 +1101,10 @@ fn disparar(
             // quem procura no `PATH` continua sendo o sistema.
             let executavel = anotadinho_core::agente::executavel_para_spawn(&binario);
             let mut comando = Command::new(&executavel);
+            // O PATH do shell de login (ciclo 528): aberto pelo menu, o app
+            // herda o PATH da sessão gráfica, sem `~/.local/bin` — e o
+            // `claude` não era achado.
+            anotadinho_vault::processo::com_path_do_usuario(&mut comando);
             anotadinho_vault::processo::preparar(&mut comando);
             comando
                 .args(&args)

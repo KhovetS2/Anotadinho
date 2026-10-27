@@ -27,8 +27,11 @@ pub use watcher::{VaultEvent, VaultWatcher};
 /// o Windows abrir e fechar uma janela de console pro processo filho —
 /// visível como piscar contínuo enquanto o app está aberto.
 pub fn comando(programa: &str) -> std::process::Command {
-    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut cmd = std::process::Command::new(programa);
+    // O PATH do shell de login (ciclo 528): a verificação do projeto
+    // (`npm test`) e o git rodam com as mesmas ferramentas do terminal,
+    // e não com o PATH pobre de quem abriu o app pelo menu.
+    processo::com_path_do_usuario(&mut cmd);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

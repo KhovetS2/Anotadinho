@@ -842,6 +842,42 @@ pub fn executavel_para_spawn(binario: &str) -> String {
         .unwrap_or_else(|| binario.to_string())
 }
 
+/// As marcas em volta do `PATH` que o shell de login imprime (ciclo 528).
+pub const MARCA_DO_PATH: (&str, &str) = ("__ANOTADINHO_PATH__", "__FIM_DO_PATH__");
+
+/// O `PATH` na saída do shell de login, entre as marcas. Um `.zshrc`
+/// imprime o que quiser antes e depois (boas-vindas, o prompt, avisos), e
+/// só o que está entre as marcas é o `PATH`.
+pub fn path_da_saida_do_shell(saida: &str) -> Option<String> {
+    let (abre, fecha) = MARCA_DO_PATH;
+    let ini = saida.rfind(abre)? + abre.len();
+    let fim = saida[ini..].find(fecha)? + ini;
+    Some(saida[ini..fim].trim().to_string()).filter(|p| !p.is_empty())
+}
+
+/// O `PATH` que o app dá aos processos que sobe (ciclo 528): o do próprio
+/// processo, mais o que só o shell de login conhece, mais `~/.local/bin`
+/// de reserva — sem repetir pasta, nessa ordem.
+///
+/// O app aberto pelo menu herda o `PATH` da sessão gráfica
+/// (`/usr/local/bin:/usr/bin` no Fedora), e o `claude`, o `codex`, o
+/// `aider` e o `opencode` moram em `~/.local/bin` e afins, que só o
+/// `.zshrc` põe no `PATH`. O do processo vem primeiro: quem abriu o app
+/// pelo terminal continua com o `PATH` dele valendo.
+pub fn juntar_path(processo: &str, do_login: Option<&str>, home: Option<&str>, windows: bool) -> String {
+    let sep = if windows { ';' } else { ':' };
+    let reserva = home.filter(|_| !windows).map(|h| format!("{}/.local/bin", h.trim_end_matches('/')));
+    let mut fora: Vec<String> = Vec::new();
+    let fontes = [Some(processo), do_login, reserva.as_deref()];
+    for parte in fontes.into_iter().flatten().flat_map(|p| p.split(sep)) {
+        let parte = parte.trim();
+        if !parte.is_empty() && !fora.iter().any(|f| f == parte) {
+            fora.push(parte.to_string());
+        }
+    }
+    fora.join(&sep.to_string())
+}
+
 /// A mensagem de quando o spawn falha, na língua de quem configura.
 ///
 /// O caso que importa é o do Windows (ciclo 449): prompt com quebra de
@@ -857,6 +893,14 @@ pub fn explicar_erro_de_spawn(binario: &str, erro: &std::io::Error, entrada: Ent
              desses receber o prompt (que tem quebras de linha) como argumento. Na \
              configuração do agente, troque a entrega do prompt para a entrada \
              padrão (stdin)"
+        )
+    } else if erro.kind() == std::io::ErrorKind::NotFound && !binario.contains('/') && !binario.contains('\\') {
+        // Ciclo 528: depois de juntar o PATH do shell de login, o que
+        // sobra é o programa que não está instalado — ou está num lugar
+        // que nem o shell conhece.
+        format!(
+            "não achei \"{binario}\" nem no PATH do app nem no do seu shell de login ({erro}). \
+             Se ele roda no terminal, ponha o caminho completo no agente (o que `command -v {binario}` mostra)"
         )
     } else {
         format!("não consegui executar \"{binario}\": {erro}")
@@ -1411,6 +1455,33 @@ mod tests {
         let pago = "Tokens: 2.0k sent, 10 received. Cost: $0.10 message, $0.10 session.\n...\nTokens: 12k sent, 1.5k received. Cost: $0.04 message, $0.14 session.";
         assert_eq!(uso_do_texto(pago), Some(Uso { entrada: 12_000, saida: 1_500, custo_usd: Some(0.04) }), "a última, e o custo da mensagem");
         assert_eq!(uso_do_texto("RESPOSTA sem contagem"), None);
+    }
+
+    #[test]
+    fn o_path_do_shell_sai_entre_as_marcas_mesmo_com_lixo_do_zshrc() {
+        let saida = "Bem-vindo!\n\x1b]0;~\x07\n__ANOTADINHO_PATH__/home/e/.local/bin:/usr/bin__FIM_DO_PATH__\n% ";
+        assert_eq!(path_da_saida_do_shell(saida).as_deref(), Some("/home/e/.local/bin:/usr/bin"));
+        assert_eq!(path_da_saida_do_shell("nada"), None);
+        assert_eq!(path_da_saida_do_shell("__ANOTADINHO_PATH____FIM_DO_PATH__"), None, "vazio não é PATH");
+    }
+
+    #[test]
+    fn juntar_o_path_sem_repetir_e_com_o_do_processo_primeiro() {
+        // O medido: o app aberto pelo menu tinha só /usr/local/bin:/usr/bin.
+        let j = juntar_path("/usr/local/bin:/usr/bin", Some("/home/e/.local/bin:/usr/bin:/home/e/.opencode/bin"), Some("/home/e"), false);
+        assert_eq!(j, "/usr/local/bin:/usr/bin:/home/e/.local/bin:/home/e/.opencode/bin");
+        // Sem resposta do shell, a reserva.
+        assert_eq!(juntar_path("/usr/bin", None, Some("/home/e/"), false), "/usr/bin:/home/e/.local/bin");
+        // No Windows, o separador é `;` e não há reserva.
+        assert_eq!(juntar_path(r"C:\a;C:\b", Some(r"C:\b;C:\c"), Some(r"C:\Users\e"), true), r"C:\a;C:\b;C:\c");
+    }
+
+    #[test]
+    fn o_erro_de_programa_nao_achado_diz_o_que_fazer() {
+        let e = std::io::Error::from(std::io::ErrorKind::NotFound);
+        let m = explicar_erro_de_spawn("claude", &e, EntradaPrompt::Stdin);
+        assert!(m.contains("shell de login") && m.contains("command -v claude"), "{m}");
+        assert!(explicar_erro_de_spawn("/opt/x/claude", &e, EntradaPrompt::Stdin).starts_with("não consegui executar"), "caminho completo: o erro do sistema basta");
     }
 
     #[test]
@@ -2152,10 +2223,11 @@ mod testes_config {
         let m = explicar_erro_de_spawn("claude", &erro, EntradaPrompt::Argumento);
         assert!(m.contains("stdin") && m.contains(".cmd"), "{m}");
         assert!(!m.contains("batch file"), "{m}");
-        let outro = std::io::Error::new(std::io::ErrorKind::NotFound, "program not found");
+        // O "não achado" tem mensagem própria desde o 528; o resto segue cru.
+        let outro = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied");
         assert_eq!(
             explicar_erro_de_spawn("claude", &outro, EntradaPrompt::Argumento),
-            "não consegui executar \"claude\": program not found"
+            "não consegui executar \"claude\": permission denied"
         );
     }
 

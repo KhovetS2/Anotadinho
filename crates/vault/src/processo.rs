@@ -216,3 +216,133 @@ mod tests {
         assert!(erro.is_some(), "um argumento de 300 KiB passou");
     }
 }
+
+// ── O PATH do shell de login (ciclo 528) ─────────────────────────────
+//
+// O app aberto pelo menu herda o `PATH` da sessão gráfica, que não passa
+// pelo `.zshrc`/`.zprofile` — e é lá que `~/.local/bin` (claude, codex,
+// aider) e afins entram. Sem isto, "não consegui executar \"claude\"" com
+// o `claude` funcionando no terminal ao lado.
+
+/// Quanto esperar o shell de login. Um `.zshrc` que trava (um plugin
+/// esperando rede) não pode travar o app: passou disso, fica o `PATH` do
+/// processo mais a reserva.
+const PRAZO_DO_SHELL: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// O `PATH` que `shell` (de login e interativo, como o terminal abre)
+/// enxerga, ou `None` se ele não respondeu a tempo.
+///
+/// `-i` porque muita gente põe o `PATH` no `.zshrc`, que só o shell
+/// interativo lê. Sem stdin e sem stderr: não há terminal, e o que o
+/// `.zshrc` reclama disso não interessa.
+pub fn path_do_shell(shell: &str) -> Option<String> {
+    use std::io::Read;
+    let (abre, fecha) = anotadinho_core::agente::MARCA_DO_PATH;
+    let mut filho = std::process::Command::new(shell)
+        .args(["-l", "-i", "-c", &format!("printf '{abre}%s{fecha}' \"$PATH\"")])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let inicio = std::time::Instant::now();
+    loop {
+        match filho.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if inicio.elapsed() < PRAZO_DO_SHELL => std::thread::sleep(std::time::Duration::from_millis(20)),
+            _ => {
+                let _ = filho.kill();
+                let _ = filho.wait();
+                return None;
+            }
+        }
+    }
+    let mut saida = String::new();
+    filho.stdout.take()?.read_to_string(&mut saida).ok()?;
+    anotadinho_core::agente::path_da_saida_do_shell(&saida)
+}
+
+/// O `PATH` dos processos que o app sobe: o do processo, mais o do shell
+/// de login, mais `~/.local/bin` de reserva. Calculado UMA vez — perguntar
+/// ao shell custa um `.zshrc` inteiro, e o git roda a cada 3 s.
+///
+/// No Windows, o do processo: lá os programas instalados entram no `PATH`
+/// do registro, que o app já herda.
+pub fn path_do_usuario() -> &'static str {
+    static PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    PATH.get_or_init(|| {
+        let processo = std::env::var("PATH").unwrap_or_default();
+        if cfg!(windows) {
+            return processo;
+        }
+        let shell = std::env::var("SHELL").ok().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "/bin/sh".to_string());
+        let do_login = path_do_shell(&shell);
+        anotadinho_core::agente::juntar_path(&processo, do_login.as_deref(), std::env::var("HOME").ok().as_deref(), false)
+    })
+}
+
+/// Dá ao comando o `PATH` do usuário. No Linux, o `Command` procura o
+/// executável no `PATH` dado ao filho, então isto também resolve o
+/// `claude` que só o shell conhece.
+pub fn com_path_do_usuario(comando: &mut std::process::Command) {
+    comando.env("PATH", path_do_usuario());
+}
+
+#[cfg(all(test, unix))]
+mod testes_do_path {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// Um "shell de login" de mentira: responde ao `-c` como o zsh, com o
+    /// lixo que um `.zshrc` imprime em volta, e um `PATH` com uma pasta
+    /// que o processo de teste não tem.
+    fn shell_falso(dir: &std::path::Path, extra: &str) -> String {
+        let s = dir.join("shell");
+        std::fs::write(&s, format!("#!/bin/sh\necho 'Bem-vindo ao zsh'\nPATH=\"{extra}:$PATH\"\neval \"$4\"\necho '% '\n")).unwrap();
+        std::fs::set_permissions(&s, std::fs::Permissions::from_mode(0o755)).unwrap();
+        s.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn o_path_do_shell_de_login_acha_o_programa_que_o_processo_nao_acha() {
+        let d = tempfile::TempDir::new().unwrap();
+        let bin = d.path().join("so-no-zshrc");
+        std::fs::create_dir(&bin).unwrap();
+        let agente = bin.join("agente-de-teste-528");
+        std::fs::write(&agente, "#!/bin/sh\necho achou\n").unwrap();
+        std::fs::set_permissions(&agente, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let do_login = path_do_shell(&shell_falso(d.path(), &bin.to_string_lossy())).expect("o shell respondeu");
+        assert!(do_login.starts_with(&*bin.to_string_lossy()), "{do_login}");
+        // O PATH da sessão gráfica, medido: sem a pasta.
+        let pobre = "/usr/local/bin:/usr/bin:/bin";
+        assert!(std::process::Command::new("agente-de-teste-528").env("PATH", pobre).output().is_err(), "o processo sozinho não acha");
+        let junto = anotadinho_core::agente::juntar_path(pobre, Some(&do_login), None, false);
+        let saida = std::process::Command::new("agente-de-teste-528").env("PATH", &junto).output().expect("achou pelo PATH juntado");
+        assert_eq!(String::from_utf8_lossy(&saida.stdout).trim(), "achou");
+    }
+
+    #[test]
+    fn shell_que_trava_nao_trava_o_app() {
+        let d = tempfile::TempDir::new().unwrap();
+        let s = d.path().join("shell-lento");
+        std::fs::write(&s, "#!/bin/sh\nsleep 30\n").unwrap();
+        std::fs::set_permissions(&s, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let inicio = std::time::Instant::now();
+        assert_eq!(path_do_shell(&s.to_string_lossy()), None);
+        assert!(inicio.elapsed() < PRAZO_DO_SHELL + std::time::Duration::from_secs(2), "{:?}", inicio.elapsed());
+    }
+}
+
+/// Medição à mão (ciclo 528), fora da suíte: rode o binário de teste com o
+/// ambiente do MENU (`env -i HOME=… SHELL=… PATH=/usr/local/bin:/usr/bin`)
+/// e confira que o `claude` do `~/.local/bin` é achado.
+#[cfg(all(test, unix))]
+#[test]
+#[ignore = "medição à mão: precisa do shell e do claude da pessoa"]
+fn medir_o_path_como_o_menu_abre() {
+    println!("PATH do processo: {}", std::env::var("PATH").unwrap_or_default());
+    println!("PATH do usuário:  {}", path_do_usuario());
+    let saida = crate::comando("claude").arg("--version").output().expect("o claude foi achado");
+    println!("claude --version: {}", String::from_utf8_lossy(&saida.stdout).trim());
+}
