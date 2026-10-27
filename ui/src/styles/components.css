@@ -1185,8 +1185,12 @@
   border-radius: var(--r-md);
   padding: 0.6rem 0.8rem;
   border: 1px solid var(--border);
-  /* Não estica até a borda: bloco de texto largo demais cansa de ler. */
-  max-width: 52rem;
+  /* Não estica até a borda: bloco de texto largo demais cansa de ler. E
+     nunca mais largo que a coluna (529): filho de flex cresce com o
+     conteúdo se ninguém o segura. */
+  max-width: min(52rem, 100%);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .conversa__msg--voce {
@@ -1222,6 +1226,16 @@
 
 .conversa__msg-corpo :where(p, ul, ol, pre) {
   margin: 0.35rem 0;
+}
+
+/* O bloco de código da resposta (ciclo 529) quebra a linha dentro do
+   balão. Sem isto, a linha longa de um ```markdown``` empurrava o `pre`
+   pra fora da mensagem e da coluna — o agente devolve texto pra colar
+   num bloco, e ler rolando de lado é pior que ler quebrado. */
+.conversa__msg-corpo pre {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* O reset zera o padding de toda lista, e marcador de lista é

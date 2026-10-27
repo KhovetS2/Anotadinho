@@ -24,7 +24,11 @@ done
 # esses pares ANTES do modo, e sem consumi-los o `case` abaixo caía no
 # ramo genérico — a execução "respondia" a string do id.
 RETOMADA=""
-while [ "$1" = "--resume" ] || [ "$1" = "--mcp-config" ]; do
+while [ "$1" = "--resume" ] || [ "$1" = "--mcp-config" ] || case "$1" in --allowedTools=*) true ;; *) false ;; esac; do
+  case "$1" in
+    # A liberação das ferramentas do MCP (ciclo 529) é um argumento só.
+    --allowedTools=*) shift; continue ;;
+  esac
   if [ "$1" = "--resume" ]; then RETOMADA="$2"; fi
   shift 2
 done

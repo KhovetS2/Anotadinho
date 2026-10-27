@@ -18,6 +18,11 @@
 
 use serde::{Deserialize, Serialize};
 
+/// O nome do servidor MCP do Anotadinho na config do agente: as
+/// ferramentas chegam como `mcp__anotadinho__propor`, e é por ele que a
+/// execução as libera (ciclo 529).
+pub const SERVIDOR_MCP: &str = "anotadinho";
+
 /// O JSON de configuração MCP que liga o servidor do Anotadinho num
 /// agente que aceita `--mcp-config` (ciclo 426).
 ///
@@ -30,7 +35,7 @@ use serde::{Deserialize, Serialize};
 pub fn config_mcp(cli: &str, vault: &str) -> String {
     let escapar = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
     format!(
-        "{{\n  \"mcpServers\": {{\n    \"anotadinho\": {{\n      \"command\": \"{}\",\n      \"args\": [\"--vault\", \"{}\", \"mcp\"]\n    }}\n  }}\n}}\n",
+        "{{\n  \"mcpServers\": {{\n    \"{SERVIDOR_MCP}\": {{\n      \"command\": \"{}\",\n      \"args\": [\"--vault\", \"{}\", \"mcp\"]\n    }}\n  }}\n}}\n",
         escapar(cli),
         escapar(vault)
     )
@@ -374,6 +379,17 @@ impl Adaptador {
         if !self.arg_mcp.trim().is_empty() && !config_mcp.trim().is_empty() {
             out.push(self.arg_mcp.clone());
             out.push(config_mcp.to_string());
+            // Ligar o servidor não basta (ciclo 529): no `-p`, o Claude Code
+            // NEGA toda ferramenta MCP que não foi liberada, e o agente
+            // respondia "o acesso às ferramentas do Anotadinho não foi
+            // autorizado" — sem `propor`, sem `ler_pagina`. Medido em
+            // 2026-10-26: sem isto, NEGADA; com isto, leu a página. Uma
+            // forma só (`=`): o `--allowedTools` aceita vários valores e
+            // engoliria o argumento seguinte. Aqui, e não no preset, pra
+            // valer também nos agentes que a pessoa copiou do Claude Code.
+            if self.arg_mcp.trim() == "--mcp-config" {
+                out.push(format!("--allowedTools=mcp__{SERVIDOR_MCP}"));
+            }
         }
         // As pastas extras entram ANTES do resto: o `{prompt}` costuma
         // ser o último argumento, e alguns agentes tratam tudo depois
@@ -1482,6 +1498,27 @@ mod tests {
         let m = explicar_erro_de_spawn("claude", &e, EntradaPrompt::Stdin);
         assert!(m.contains("shell de login") && m.contains("command -v claude"), "{m}");
         assert!(explicar_erro_de_spawn("/opt/x/claude", &e, EntradaPrompt::Stdin).starts_with("não consegui executar"), "caminho completo: o erro do sistema basta");
+    }
+
+    #[test]
+    fn ligar_o_mcp_do_claude_libera_as_ferramentas_dele() {
+        // O relato do ciclo 529: "o acesso às ferramentas do Anotadinho
+        // (onde_posso_escrever, ler_pagina) não foi autorizado".
+        let claude = Adaptador::default();
+        let com = claude.montar_execucao("p", "/v/.anotadinho/mcp.json", "");
+        let i = com.args.iter().position(|a| a == "--mcp-config").expect("liga o servidor");
+        assert_eq!(com.args[i + 1], "/v/.anotadinho/mcp.json");
+        assert!(com.args.contains(&format!("--allowedTools=mcp__{SERVIDOR_MCP}")), "{:?}", com.args);
+        // Também no agente copiado do Claude Code, e no revisor.
+        let meu = Adaptador { nome: "Sonnet júnior".into(), args: vec!["-p".into(), "--model".into(), "sonnet".into()], ..Adaptador::default() };
+        assert!(meu.montar_execucao("p", "/m.json", "").args.iter().any(|a| a.starts_with("--allowedTools=")));
+        let revisor = Adaptador::presets().into_iter().find(|a| a.so_le()).unwrap();
+        assert!(revisor.montar_execucao("p", "/m.json", "").args.iter().any(|a| a.starts_with("--allowedTools=")));
+        // Sem MCP, nada; e quem não fala o dialeto do Claude não recebe a flag dele.
+        assert!(!claude.montar_execucao("p", "", "").args.iter().any(|a| a.starts_with("--allowedTools")));
+        let outro = Adaptador { arg_mcp: "--mcp".into(), ..base() };
+        assert!(!outro.montar_execucao("p", "/m.json", "").args.iter().any(|a| a.starts_with("--allowedTools")));
+        assert!(config_mcp("/cli", "/v").contains(&format!("\"{SERVIDOR_MCP}\"")), "o nome liberado é o do servidor");
     }
 
     #[test]

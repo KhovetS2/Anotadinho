@@ -393,6 +393,33 @@ fluxo.push({
 // ── ciclo 203: promover mensagem em artefato ─────────────────────────
 
 fluxo.push({
+  nome: "conversa: o bloco de código da resposta quebra a linha dentro do balão (529)",
+  async fn(bridge, ctx) {
+    // O caso relatado: o agente devolveu a seção pronta num bloco, com
+    // linhas longas, e o `pre` vazava pra fora da mensagem e da coluna.
+    const longa = "- **Auth:** própria no Go. Motivo: users, memberships, actor_id e authz ficam no mesmo core e no mesmo Postgres, sem um runtime Node à parte e sem um segundo dono pra sessão.";
+    ctx.escrever(
+      "---\ntitle: __uitest\ntype: conversa\n---\n" +
+        "## você · 2026-10-26 22:59\n\nregistre\n\n" +
+        "## agente · 2026-10-26 23:00\n\nAbaixo está o texto:\n\n```markdown\n## Decisões\n\n" + longa + "\n" + longa + "\n```\n\nFim.\n",
+    );
+    await recarregarEstavel(bridge);
+    await ctx.abrirPagina(bridge, ctx.nomePagina);
+    await esperar(bridge, "!!document.querySelector('.conversa__msg--agente .conversa__msg-corpo pre')", "o bloco de código na resposta");
+    const m = await bridge.js(`(() => {
+      const msg = document.querySelector('.conversa__msg--agente');
+      const pre = msg.querySelector('.conversa__msg-corpo pre');
+      const lista = document.querySelector('.conversa__mensagens');
+      const r = (e) => e.getBoundingClientRect();
+      return { msgDir: r(msg).right, preDir: r(pre).right, listaDir: r(lista).right, rola: pre.scrollWidth > pre.clientWidth + 1 };
+    })()`);
+    ctx.assert(m.preDir <= m.msgDir + 1, `o bloco passou da mensagem: ${JSON.stringify(m)}`);
+    ctx.assert(m.msgDir <= m.listaDir + 1, `a mensagem passou da coluna: ${JSON.stringify(m)}`);
+    ctx.assert(!m.rola, `o bloco ficou com rolagem lateral em vez de quebrar: ${JSON.stringify(m)}`);
+  },
+});
+
+fluxo.push({
   nome: "promover: resposta do agente vira spec com fluxo embutido (203)",
   async fn(bridge, ctx) {
     const fs = await import("node:fs");
